@@ -9,8 +9,11 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 
 ## Backlog.
 
-- Work on one backlog task at a time. Don't start the next task, including asking its clarifying questions, until the current one has landed or been set aside. Having several tasks in flight at once invites conflicting work.
+- Work on one backlog task at a time. Don't start building the next task until the current one has landed or been set aside. Having several tasks in flight at once invites conflicting work.
+- Clarifying questions are the exception: ask them for any task at any time. If the code or design changes before the task starts, check whether the answers still hold, and ask again if they might not.
 - Pick up work from BACKLOG.md. Before starting a task, check that everything it depends on is done.
+- Also check that the task still needs doing. Earlier work, a changed design, or a new task may have already covered it or made it wrong. If it's stale, say so and propose updating it or dropping it instead of building it.
+- If a task looks hard but would get much easier with a small change to a requirement, ask the user before doing the hard version. Say what the change is, what it would save, and what it would give up.
 - When a task is done, move its full entry to BACKLOG-COMPLETE.md and set its status to `done`. Leave a one-line stub in BACKLOG.md in its place, like this:
 
   `### 20260922-1. Project skeleton. Done, see BACKLOG-COMPLETE.md.`
