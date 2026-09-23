@@ -157,6 +157,16 @@ RSpec.describe "the statistics input" do
         expect(stats.column?("id")).to be(false)
       end
 
+      it "freezes its own copy of each name, leaving the caller's strings alone" do
+        names = [+"id", +"status"]
+        stats = table({}, column_names: names)
+        names.each { |n| n << "_changed" }
+
+        expect(stats.column_names).to eq(%w[id status])
+        expect(stats.column_names).to all(be_frozen)
+        expect(names).to all(satisfy { |n| !n.frozen? })
+      end
+
       it "rejects statistics for a column that isn't in the list" do
         expect do
           table({ "status" => column(n_distinct: 3.0) }, column_names: %w[id])
@@ -206,6 +216,11 @@ RSpec.describe "the statistics input" do
 
       expect { stats.table(other) }.to raise_error(KeyError, /public\.customers/)
       expect(stats.table?(other)).to be(false)
+    end
+
+    it "keeps its tables in a frozen map" do
+      expect(stats.tables).to be_frozen
+      expect(stats.tables).to eq({ orders => orders_stats })
     end
 
     it "requires TableStatistics entries" do

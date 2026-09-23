@@ -75,11 +75,11 @@ module Quaack
       end
 
       # Changes the parsed statement in place to what to_ddl would render: no
-      # name, no CONCURRENTLY or IF NOT EXISTS, and ASC or default nulls
-      # orderings left implicit.
+      # name, and ASC or default nulls orderings left implicit. CONCURRENTLY
+      # and IF NOT EXISTS stay, so from_ddl returns nil for them.
+      # pg_get_indexdef never prints either.
       def comparable(stmt)
         stmt.idxname = ""
-        stmt.concurrent = stmt.if_not_exists = false
         stmt.index_params.each do |n|
           e = n.index_elem
           e.ordering = :SORTBY_DEFAULT if e.ordering == :SORTBY_ASC

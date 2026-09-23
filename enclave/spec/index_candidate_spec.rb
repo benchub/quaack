@@ -67,6 +67,17 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect([c, c.key, c.include, c.include.first, c.key.first.name]).to all(be_frozen)
     end
 
+    it "freezes its own copies of column names, leaving the caller's strings alone" do
+      names = [+"bare", +"keyed", +"included"]
+      c = candidate(key: [names[0], key_column.new(name: names[1])], include: [names[2]])
+      names.each { |n| n << "_changed" }
+
+      stored = [c.key[0].name, c.key[1].name, c.include[0]]
+      expect(stored).to eq(%w[bare keyed included])
+      expect(stored).to all(be_frozen)
+      expect(names).to all(satisfy { |n| !n.frozen? })
+    end
+
     it "requires a non-empty key" do
       expect { candidate(key: []) }.to raise_error(ArgumentError, /key/)
     end
@@ -109,6 +120,13 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(a.hash).to eq(b.hash)
       expect(Set[a, b].size).to eq(1)
       expect({ a => :found }[b]).to eq(:found)
+    end
+
+    it "is false, not an error, against nil or anything else that isn't a candidate" do
+      [nil, "customer_id", candidate.to_h].each do |other|
+        expect(candidate == other).to be(false), other.inspect
+        expect(candidate.eql?(other)).to be(false), other.inspect
+      end
     end
 
     it "treats an explicit default nulls ordering as the same definition" do
@@ -438,7 +456,10 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
         "CREATE INDEX i ON public.orders USING btree (a) TABLESPACE fast",
         "CREATE INDEX i ON orders USING btree (a)",
         "CREATE INDEX i ON public.orders USING gist (a DESC)",
-        "CREATE INDEX i ON public.orders USING btree (a) INCLUDE (a)"
+        "CREATE INDEX i ON public.orders USING btree (a) INCLUDE (a)",
+        # pg_get_indexdef never prints these, so from_ddl doesn't take them.
+        "CREATE INDEX CONCURRENTLY i ON public.orders USING btree (a)",
+        "CREATE INDEX IF NOT EXISTS i ON public.orders USING btree (a)"
       ].each do |ddl|
         expect(from_ddl(ddl)).to be_nil, ddl
       end
