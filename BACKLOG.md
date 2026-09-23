@@ -628,17 +628,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Status:** todo
 - **Open questions:** How do built gems get onto the jump server: copied over ssh by the driver, or installed by the operator from somewhere?
 
-### 20260923-3. Rename the enclave gem to quaacks.
-
-Rename the `quaack-enclave` gem and its executable to `quaacks`. The "s" stands for server, which pairs it with the driver's `quaack`. Update every reference, including the gemspec, the executable, the boundary and runtime specs, the allowlists, `CLAUDE.md`, and the backlog.
-
-- **Depends on:** 20260922-1.
-- **Came from:** The user, during 20260922-1.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Decided:**
-  - The gem and executable are named `quaacks`.
-  - Internal names stay as "enclave," such as the `enclave/` directory and the `Quaack::Enclave` module, to match the README's "enclave script." The README doesn't change.
+### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-4. Harden the runtime boundary check.
 
@@ -680,3 +670,15 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **README:** Where QUAACK runs.
 - **Status:** todo
 - **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.
+
+### 20260923-8. Unit-test the RepoGems helper.
+
+`spec/support/repo_gems.rb` finds each repo gem's gemspec for the boundary and runtime specs, but its lookups have no direct tests:
+- **The one-gemspec guard is untested.** Loosening `paths.size == 1` to `>= 1` in `RepoGems.gemspec` keeps every spec green. Only `enclave/` has its own "exactly one gemspec" test. If `driver/` or `protocol/` gained a second gemspec, `paths.first` could quietly pick the wrong one. Test the guard with two gemspecs planted in a temp directory.
+- **One test repeats another.** `spec/repo_gems_spec.rb` checks that the enclave gemspec is named `quaacks`, which `enclave/spec/gemspec_spec.rb` already checks. Replace it with direct tests of `RepoGems.gemspec` and `gemspec_path_of`.
+- **Noisy failures.** `enclave/spec/gemspec_spec.rb` loads its gemspec with `Gem::Specification.load` instead of `RepoGems.load`. A broken gemspec makes most of its examples fail with a `NoMethodError` on nil instead of one clear message.
+
+- **Depends on:** 20260923-3.
+- **Came from:** Second review of 20260923-3, minor findings 1 through 3.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
