@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pp"
 require "pg_query"
 require "quaack/enclave/index_candidate"
 
@@ -192,11 +193,170 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(elems(stmt.index_params).map(&:first)).to eq(%w[CustomerId select])
       expect(stmt.index_including_params.map { |n| n.index_elem.name }).to eq(["line item"])
     end
+  end
 
-    it "refuses a predicate that isn't a single expression" do
+  describe "predicates" do
+    it "refuses one that isn't a single expression, at construction" do
       ["true; DROP TABLE orders", "a = 1 UNION SELECT 1", "a = 1 ORDER BY 1", "a = 1 LIMIT 1",
        "a = 1) OR (true", "a = = 1"].each do |bad|
-        expect { candidate(predicate: bad).to_ddl }.to raise_error(ArgumentError, /predicate/), bad.inspect
+        expect { candidate(predicate: bad) }.to raise_error(ArgumentError, /predicate/), bad.inspect
+      end
+    end
+
+    it "stores the deparsed form, so equality follows it" do
+      wrapped = candidate(predicate: "((status = 'open'))")
+
+      expect(wrapped.predicate).to eq("status = 'open'")
+      expect(wrapped.predicate).to be_frozen
+      expect(wrapped).to eq(candidate(predicate: "status = 'open'"))
+    end
+
+    it "keeps casts, which don't normalize away" do
+      expect(candidate(predicate: "status::text = 'open'")).not_to eq(candidate(predicate: "status = 'open'"))
+    end
+  end
+
+  describe "ordering on methods other than btree" do
+    it "refuses a non-default direction or nulls ordering" do
+      expect do
+        candidate(access_method: :brin, key: [key_column.new(name: "a", direction: :desc)])
+      end.to raise_error(ArgumentError, /btree/)
+      expect do
+        candidate(access_method: :hash, key: [key_column.new(name: "a", nulls: :first)])
+      end.to raise_error(ArgumentError, /btree/)
+    end
+
+    it "allows the default ordering, even when it's spelled out" do
+      c = candidate(access_method: :gist, key: [key_column.new(name: "a", direction: :asc, nulls: :last)])
+
+      expect(c.to_ddl).to eq("CREATE INDEX ON public.orders USING gist (a)")
+    end
+  end
+
+  it "keeps its helpers off the public API" do
+    %i[parse_predicate bare_select column_name predicate access_method key_columns include_columns].each do |name|
+      expect(described_class).not_to respond_to(name)
+    end
+    %i[key_columns include_columns column_name normalize_access_method check_ordering normalize_predicate
+       index_params index_param relation].each do |name|
+      expect(candidate).not_to respond_to(name)
+    end
+    expect(key_column.new(name: "a")).not_to respond_to(:pick)
+    expect { Quaack::Enclave::IndexSql }.to raise_error(NameError, /private constant/)
+  end
+
+  # The predicate can hold a real literal, which is value-class data. It may
+  # appear in to_ddl, which only ever runs inside the enclave, but never in an
+  # error message, inspect, to_s, or pp, which can end up in logs.
+  describe "keeping predicate literals out of messages" do
+    let(:sentinel) { "SENTINEL-7f3a9c" }
+
+    # The whole report Ruby would print or log for the error, which
+    # includes any exception it was raised from.
+    def message_of
+      yield
+      raise "expected an error"
+    rescue ArgumentError => e
+      e.full_message(highlight: false)
+    end
+
+    it "plants the sentinel where the checks below look for it" do
+      c = candidate(predicate: "note = '#{sentinel}'")
+
+      expect(c.predicate).to include(sentinel)
+      expect(c.to_ddl).to include(sentinel)
+    end
+
+    it "redacts the predicate in inspect, to_s, and pp" do
+      c = candidate(predicate: "note = '#{sentinel}'")
+
+      [c.inspect, c.to_s, PP.pp(c, +"")].each do |shown|
+        expect(shown).not_to include(sentinel)
+        expect(shown).to include("predicate=<redacted>", "customer_id", "parse")
+      end
+      expect(candidate.inspect).to include("predicate=nil")
+    end
+
+    it "leaves it out of the errors for a predicate that isn't one expression or doesn't parse" do
+      ["note = '#{sentinel}' UNION SELECT 1", "note = 1 '#{sentinel}'", "note = '#{sentinel}' AND AND"].each do |bad|
+        expect(message_of { candidate(predicate: bad) }).not_to include(sentinel)
+      end
+    end
+
+    it "leaves it out of the error for merging a different definition" do
+      a = candidate(predicate: "note = '#{sentinel}'")
+      b = candidate(key: ["other"], predicate: "note = '#{sentinel}-2'")
+
+      expect(message_of { a.merge_sources(b) }).not_to include(sentinel)
+    end
+
+    it "leaves it out of from_ddl's errors" do
+      ["CREATE INDEX ON public.orders (a) WHERE note = '#{sentinel}'; SELECT 1",
+       "CREATE INDEX ON public.orders (a) WHERE note = 1 '#{sentinel}'"].each do |bad|
+        expect(message_of { described_class.from_ddl(bad, sources: [:existing]) }).not_to include(sentinel)
+      end
+    end
+  end
+
+  describe ".from_ddl" do
+    def from_ddl(sql) = described_class.from_ddl(sql, sources: [:existing])
+
+    it "reads an index definition as pg_get_indexdef prints it" do
+      c = from_ddl("CREATE INDEX orders_status_idx ON public.orders USING btree " \
+                   "(status, \"Created At\" DESC NULLS LAST, id NULLS FIRST) INCLUDE (total) " \
+                   "WHERE ((status)::text = 'open'::text)")
+
+      expect(c).to eq(
+        described_class.new(
+          table: orders,
+          key: ["status", key_column.new(name: "Created At", direction: :desc, nulls: :last),
+                key_column.new(name: "id", nulls: :first)],
+          include: ["total"], predicate: "status::text = 'open'::text", sources: [:parse]
+        )
+      )
+      expect(c.sources).to eq(Set[:existing])
+    end
+
+    it "reads other methods, explicit ASC, and a default nulls ordering spelled out" do
+      expect(from_ddl("CREATE INDEX i ON public.orders USING brin (created_at)"))
+        .to eq(candidate(key: ["created_at"], access_method: :brin))
+      expect(from_ddl("CREATE INDEX i ON public.orders USING btree (a ASC NULLS LAST, b DESC NULLS FIRST)"))
+        .to eq(candidate(key: ["a", key_column.new(name: "b", direction: :desc)]))
+    end
+
+    it "round-trips what to_ddl renders" do
+      [
+        candidate,
+        candidate(key: ["a", key_column.new(name: "b", direction: :desc, nulls: :last)], include: %w[c d],
+                  predicate: "c > 0 AND d IS NOT NULL"),
+        described_class.new(table: Quaack::Enclave::TableName.new(schema: "My Schema", name: "order"),
+                            key: %w[CustomerId select], include: ["line item"], access_method: :hash,
+                            sources: [:parse])
+      ].each do |c|
+        expect(from_ddl(c.to_ddl)).to eq(c), c.to_ddl
+      end
+    end
+
+    it "returns nil for an index it can't represent" do
+      [
+        "CREATE UNIQUE INDEX i ON public.orders USING btree (a)",
+        "CREATE INDEX i ON public.orders USING btree (lower(email))",
+        "CREATE INDEX i ON public.orders USING btree (email text_pattern_ops)",
+        %(CREATE INDEX i ON public.orders USING btree (email COLLATE "C")),
+        "CREATE INDEX i ON ONLY public.orders USING btree (a)",
+        "CREATE INDEX i ON public.orders USING btree (a) WITH (fillfactor='70')",
+        "CREATE INDEX i ON public.orders USING btree (a) TABLESPACE fast",
+        "CREATE INDEX i ON orders USING btree (a)",
+        "CREATE INDEX i ON public.orders USING gist (a DESC)",
+        "CREATE INDEX i ON public.orders USING btree (a) INCLUDE (a)"
+      ].each do |ddl|
+        expect(from_ddl(ddl)).to be_nil, ddl
+      end
+    end
+
+    it "raises for anything that isn't one CREATE INDEX" do
+      ["SELECT 1", "CREATE INDEX ON public.t (a); CREATE INDEX ON public.t (b)", "CREATE INDEX ON"].each do |bad|
+        expect { from_ddl(bad) }.to raise_error(ArgumentError, /CREATE INDEX/), bad
       end
     end
   end
