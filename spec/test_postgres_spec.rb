@@ -328,6 +328,41 @@ RSpec.describe TestPostgres do
       expect(child_value(out, "AFTER_FAIL")).to eq("0"), out
     end
 
+    # A forked child that exits normally ends the parent's sessions, so the
+    # harness's DROP fails. That example should fail with a message that
+    # names the likely cause, and the next example should start clean.
+    it "fails only the example whose drop failed, and says the connection was lost" do
+      source = <<~RUBY
+        #{prelude}
+        #{watch}
+        RSpec.describe "a fork that exits normally", order: :defined do
+          it("forks", key: "AFTER_BROKEN") do
+            test_database
+            racetrack_and_arena
+            $stdout.flush
+            Process.wait(fork {})
+          end
+
+          it("runs next", key: "AFTER_NEXT") do
+            puts "NEXT_RAN=\#{test_database.connection.exec("SELECT 1").getvalue(0, 0)}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(status).not_to be_success
+      expect(out).to include("2 examples, 1 failure"), out
+      expect(out).to include("# a fork that exits normally forks")
+      expect(out).to include("TestPostgres::ConnectionLost")
+      expect(out).to include("if this spec forked, the child must end with exit!")
+      expect(out).to match(/Caused by:.*PG::ConnectionBad/m)
+      # The first drop fails and that database is forgotten. The other two
+      # are still dropped, and so is the next example's.
+      expect(child_value(out, "AFTER_BROKEN")).to eq("1"), out
+      expect(child_value(out, "NEXT_RAN")).to eq("1"), out
+      expect(child_value(out, "AFTER_NEXT")).to eq("1"), out
+    end
+
     # The harness's comment says a spec that forks after using a database
     # must end the child with `exit!`. This is that case.
     it "keeps the container and the example's connection when a forked child ends with exit!" do

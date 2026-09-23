@@ -30,6 +30,7 @@ require "pg"
 # the parent's sessions too. `exit!` skips that, along with the at_exit hooks.
 module TestPostgres
   class DockerUnavailable < StandardError; end
+  class ConnectionLost < StandardError; end
 
   LABEL = "quaack.test-postgres"
   OWNER_LABEL = "quaack.test-postgres.owner-pid"
@@ -121,15 +122,40 @@ module TestPostgres
       db
     end
 
+    # Tries every drop, then raises the first error. The databases are
+    # forgotten either way, so one failed drop fails only its own example,
+    # not every one after it.
     def drop_databases
-      @created.each do |db|
-        db.close
-        admin.exec("DROP DATABASE IF EXISTS #{db.name} WITH (FORCE)")
-      end
+      error = @created.map { |db| drop(db) }.compact.first
+      raise error if error
+    ensure
       @created.clear
     end
 
     private
+
+    # Returns the error, if any, rather than raising it. A lost connection
+    # is closed and forgotten, so the next use of `admin` opens a new one.
+    def drop(db)
+      db.close
+      admin.exec("DROP DATABASE IF EXISTS #{db.name} WITH (FORCE)")
+      nil
+    rescue PG::ConnectionBad
+      @admin&.close
+      @admin = nil
+      connection_lost(db)
+    rescue PG::Error => e
+      e
+    end
+
+    # Called from a rescue, so raising here makes the PG error the cause.
+    def connection_lost(db)
+      raise ConnectionLost, "The harness's connection to Postgres was lost while dropping #{db.name}; " \
+                            "if this spec forked, the child must end with exit! " \
+                            "(see the comment at the top of spec/support/test_postgres.rb)."
+    rescue ConnectionLost => e
+      e
+    end
 
     def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
