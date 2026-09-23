@@ -28,9 +28,20 @@ module Quaack
       # One conjunct of a condition. kind is :constant (a column = a literal
       # or a parameter), :join (a column = a column under another alias), or
       # :other. columns are the mapped columns it uses.
-      Conjunct = Data.define(:node, :kind, :columns) do
+      #
+      # The node holds the conjunct's literal, so this is a plain class, not
+      # a Data: it has no to_h or deconstruct_keys to hand the node out, and
+      # inspect, which pp and to_s's callers see, shows only the kind.
+      class Conjunct
+        attr_reader :node, :kind, :columns
+
+        def initialize(node:, kind:, columns:)
+          @node = node
+          @kind = kind
+          @columns = columns
+        end
+
         def inspect = "#<#{self.class} #{kind}>"
-        alias_method :to_s, :inspect
       end
 
       attr_reader :sole_alias

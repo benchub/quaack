@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "pp"
 require "quaack/enclave/generator_two"
 require "quaack/enclave/pg_array"
 
@@ -469,10 +470,29 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       sentinels.each { |s| expect(shown).not_to include(s) }
     end
 
+    it "never show up in pp, to_h, or a failed pattern match on those helpers" do
+      node = enclave.const_get(:PlanNode).new(plan("sentinel_literals").first["Plan"])
+      columns = enclave.const_get(:PlanColumns).new(node.subtree, statistics, nil)
+      conjunct = columns.conjuncts(node, ["Filter"], "c").first
+      expect(enclave.const_get(:PlanExpression).literal_text(conjunct.node)).to eq("quaack-sentinel-email")
+      shown = [node, columns, conjunct].map(&:pretty_inspect).join
+      shown += conjunct.to_h.inspect if conjunct.respond_to?(:to_h)
+      shown += begin
+        case conjunct
+        in { node: } then node.inspect
+        end
+      rescue NoMatchingPatternError => e
+        e.message
+      end
+      sentinels.each { |s| expect(shown).not_to include(s) }
+    end
+
     it "never show up in an error message" do
       explain = plan("sentinel_literals")
-      explain.first["Plan"]["Plans"] = "not a list"
-      bad_inputs = [explain, [plan("sentinel_literals").first.to_a], plan("sentinel_literals").first]
+      explain.first["Plan"]["Plans"] = "not a list, #{sentinels.first}"
+      child = plan("sentinel_literals")
+      child.first["Plan"]["Plans"] = [child.first["Plan"]["Filter"]]
+      bad_inputs = [explain, child, [plan("sentinel_literals").first.to_a], plan("sentinel_literals").first]
       bad_inputs.each do |bad|
         expect { described_class.candidates(bad, statistics:) }
           .to raise_error(ArgumentError) { |e| sentinels.each { |s| expect(e.message).not_to include(s) } }
