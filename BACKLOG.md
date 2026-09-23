@@ -296,6 +296,9 @@ Build index candidates from the parse: ranked equality columns, one range column
   - Emit a BRIN candidate when the range column's absolute correlation is 0.9 or more and the table's `reltuples` is at least 1,000,000.
   - All three limits are configurable.
   - The user approved building this in parallel with 20260922-31 and the main line, once 20260923-11 lands. It's a pure function over its inputs, in new files in the enclave gem.
+  - Join columns: build every table's keys twice, once with its join columns counted as equality columns and once without them, then drop duplicates. A parse alone can't tell which way the join runs. On the README example this gives both `(customer_id, status, created_at)` and `(status, created_at DESC)`.
+  - A column filtered only by `IS NULL` is ranked by `null_frac`, not `equality_selectivity`.
+  - When the range column and ORDER BY conflict, emit two keys: equality plus range, and equality plus ORDER BY.
 
 ### 20260922-31. 5a-2 generator two.
 
