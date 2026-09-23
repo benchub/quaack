@@ -447,8 +447,27 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       end
     end
 
+    it "refuses a count that isn't a number, without quoting it" do
+      %w[Actual\ Rows Actual\ Loops Rows\ Removed\ by\ Filter Rows\ Removed\ by\ Index\ Recheck].each do |field|
+        explain = plan("sentinel_literals")
+        explain.first["Plan"][field] = ["quaack-sentinel-email"]
+        expect { described_class.candidates(explain, statistics:) }
+          .to raise_error(ArgumentError, /isn't a number/) { |e| expect(e.message).not_to include("quaack-sentinel") }
+      end
+      explain = plan("hash_join_batches")
+      explain.first["Plan"]["Plans"][1]["Hash Batches"] = "quaack-sentinel-email"
+      expect { described_class.candidates(explain, statistics:) }
+        .to raise_error(ArgumentError, /isn't a number/) { |e| expect(e.message).not_to include("quaack-sentinel") }
+    end
+
+    it "refuses a plan made without ANALYZE" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"].delete("Actual Loops")
+      expect { described_class.candidates(explain, statistics:) }.to raise_error(ArgumentError, /ANALYZE/)
+    end
+
     it "refuses a plan node that isn't an object" do
-      expect { described_class.candidates([{ "Plan" => { "Plans" => ["x"] } }], statistics:) }
+      expect { described_class.candidates([{ "Plan" => { "Actual Loops" => 1, "Plans" => ["x"] } }], statistics:) }
         .to raise_error(ArgumentError, /plan node/)
     end
 

@@ -160,7 +160,7 @@ module Quaack
         # whole table in each worker, so its rows per loop are the table's.
         def large_hash?(hash)
           rows = hash.parallel? ? hash.rows * hash.loops : hash.rows
-          at_least?(rows, :large_hash_rows) ||at_least?(hash["Hash Batches"].to_f, :large_hash_batches)
+          at_least?(rows, :large_hash_rows) || at_least?(hash.hash_batches, :large_hash_batches)
         end
 
         def inner_aliases(inner) = inner.subtree.map(&:alias_name).select { |a| columns.scan(a) }

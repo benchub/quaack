@@ -67,6 +67,10 @@ module Quaack
       def roots(explain)
         valid = explain.is_a?(Array) && !explain.empty? && explain.all? { |e| e.is_a?(Hash) && e["Plan"].is_a?(Hash) }
         raise ArgumentError, "explain must be the parsed JSON of EXPLAIN (FORMAT JSON)" unless valid
+        # README step 1: the rows removed and actual rows come only from ANALYZE.
+        unless explain.all? { |e| e["Plan"].key?("Actual Loops") }
+          raise ArgumentError, "explain must come from EXPLAIN ANALYZE, and this plan has no actual row counts"
+        end
 
         explain.map { |e| PlanNode.new(e["Plan"]) }
       end
