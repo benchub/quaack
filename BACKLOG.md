@@ -35,8 +35,10 @@ Give the test suite throwaway Postgres instances with HypoPG installed, plus a s
 - **Depends on:** 20260922-1.
 - **README:** Steps 4, 5a, and 9.
 - **Status:** todo
-- **Decided:** Postgres runs in Docker.
-- **Open questions:** Plain `docker run`, Docker Compose, or the testcontainers gem? Should one container hold separate racetrack and arena databases, like the real run server?
+- **Decided:**
+  - Postgres 18 runs in Docker, from our own image: `postgres:18` plus the `postgresql-18-hypopg` package, since the official image doesn't include HypoPG.
+  - A small Ruby test helper builds the image and drives it with the `docker` command. No testcontainers gem and no Compose.
+  - One container per test run. Each test that needs a database gets a fresh one, created from a template and dropped afterward. Tests that need racetrack and arena side by side get two databases in the same container, like the real run server.
 
 ### 20260922-3. Governed store.
 
