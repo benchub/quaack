@@ -9,12 +9,13 @@ require "quaack/enclave/pg_array"
 # sample data by spec/fixtures/plans/capture.rb. The statistics are read from
 # statistics.txt, which capture.rb writes from the same database: pg_class,
 # pg_stats (MCV lists included), and pg_get_indexdef.
+
+# Each line of statistics.txt, split on |.
+GENERATOR_TWO_CAPTURED = File.readlines(File.join(__dir__, "fixtures", "plans", "statistics.txt"), chomp: true)
+                             .map { |line| line.split("|", -1) }.freeze
+
 RSpec.describe Quaack::Enclave::GeneratorTwo do
   let(:enclave) { Quaack::Enclave }
-
-  # Each line of statistics.txt, split on |.
-  CAPTURED = File.readlines(File.join(__dir__, "fixtures", "plans", "statistics.txt"), chomp: true)
-                 .map { |line| line.split("|", -1) }.freeze
 
   def table_name(name, schema: "public") = enclave::TableName.new(schema:, name:)
 
@@ -27,8 +28,8 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
   def array(text) = (enclave.const_get(:PgArray).parse(text) unless text.empty?)
 
   def captured_columns(table)
-    CAPTURED.select { |kind, name| kind == "pg_stats" && name == table }
-            .to_h do |_, _, column, n_distinct, null_frac, correlation, vals, freqs|
+    GENERATOR_TWO_CAPTURED.select { |kind, name| kind == "pg_stats" && name == table }.to_h do |row|
+      _, _, column, n_distinct, null_frac, correlation, vals, freqs = row
       [column, enclave::ColumnStatistics.new(
         n_distinct: Float(n_distinct), null_frac: Float(null_frac), correlation: Float(correlation, exception: false),
         most_common_vals: array(vals), most_common_freqs: array(freqs)&.map { |f| Float(f) }
@@ -37,11 +38,13 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
   end
 
   def captured_index_ddls(table)
-    CAPTURED.select { |kind, _, ddl| kind == "indexdef" && ddl.include?(" ON public.#{table} ") }
-            .to_h { |_, name, ddl| [name, ddl] }
+    GENERATOR_TWO_CAPTURED.select { |kind, _, ddl| kind == "indexdef" && ddl.include?(" ON public.#{table} ") }
+                          .to_h { |_, name, ddl| [name, ddl] }
   end
 
-  def captured_reltuples(table) = Float(CAPTURED.find { |kind, name| kind == "reltuples" && name == table }[2])
+  def captured_reltuples(table)
+    Float(GENERATOR_TWO_CAPTURED.find { |kind, name| kind == "reltuples" && name == table }[2])
+  end
 
   def captured_table(table, column_names, schema: "public", index_ddls: captured_index_ddls(table))
     enclave::TableStatistics.new(name: table_name(table, schema:), reltuples: captured_reltuples(table), column_names:,
@@ -321,7 +324,8 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       # Two workers and the leader each report 83,333.33 of the 250,000 rows,
       # in one batch.
       tables = { "events" => %w[id kind], "visits" => %w[id event_id] }.map do |name, column_names|
-        enclave::TableStatistics.new(name: table_name(name), reltuples: 250_000, column_names:, columns: {}, indexes: {})
+        enclave::TableStatistics.new(name: table_name(name), reltuples: 250_000, column_names:, columns: {},
+                                     indexes: {})
       end
       expect(ddl("parallel_hash_join", stats: enclave::Statistics.new(tables:))).to eq([btree("visits", "event_id")])
     end
@@ -448,7 +452,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     end
 
     it "refuses a count that isn't a number, without quoting it" do
-      %w[Actual\ Rows Actual\ Loops Rows\ Removed\ by\ Filter Rows\ Removed\ by\ Index\ Recheck].each do |field|
+      ["Actual Rows", "Actual Loops", "Rows Removed by Filter", "Rows Removed by Index Recheck"].each do |field|
         explain = plan("sentinel_literals")
         explain.first["Plan"][field] = ["quaack-sentinel-email"]
         expect { described_class.candidates(explain, statistics:) }

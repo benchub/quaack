@@ -23,8 +23,13 @@ module Quaack
         # Seq Scan whose Filter removes most rows: a btree on the Filter's
         # constant equality columns, most selective first. The plan can't
         # show how much each conjunct removes, so a `col = literal` conjunct
-        # removes most rows on its own when 1 - its
-        # TableStatistics#equality_selectivity is at least most_rows_removed.
+        # removes most rows on its own when 1 - TableStatistics#value_frequency
+        # for its literal is at least most_rows_removed: the MCV frequency for
+        # an MCV, and the estimate for other values otherwise. A literal
+        # value_frequency can't estimate (nil) gets no partial index. The
+        # literal is looked up as pg_stats text, so see value_frequency for
+        # the spellings that miss. 5a-3 drops partials on columns that aren't
+        # low-cardinality, such as one on a unique column's value.
         # Each one gets a partial index WHERE that conjunct, keyed on the
         # Filter's other columns, constant equality columns first. With no
         # other columns there's no partial index, because the plain btree on
@@ -72,10 +77,14 @@ module Quaack
         # INCLUDE, and the others can't order a key the way btree does.
         def filtered_index_scan(node)
           table = scan_table(node, "Index Scan", "Bitmap Heap Scan")
-          existing = table.indexes[index_name(node)] if table && many_rows_removed?(node)
-          existing = nil unless existing&.access_method == :btree
+          existing = btree_in_use(node, table) if table && many_rows_removed?(node)
           added = existing ? filter_columns(node) - existing.key.map(&:name) : []
           added.empty? ? [] : extended(existing, added)
+        end
+
+        def btree_in_use(node, table)
+          index = table.indexes[index_name(node)]
+          index if index&.access_method == :btree
         end
 
         def extended(existing, added)

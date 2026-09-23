@@ -28,8 +28,9 @@ module Quaack
     # number:
     #
     # - most_rows_removed (0.9): a Seq Scan's filter removes at least this
-    #   fraction of the rows it read. A constant equality removes most rows
-    #   on its own when 1 - its equality_selectivity is at least this too.
+    #   fraction of the rows it read. A `col = literal` conjunct removes most
+    #   rows on its own when 1 - the literal's
+    #   TableStatistics#value_frequency is at least this too.
     # - many_rows_removed (0.5) and many_rows_min (1,000): an Index Scan's or
     #   Bitmap Heap Scan's Filter and index recheck remove at least this
     #   fraction of the rows it fetched, and at least this many rows over all
@@ -67,12 +68,16 @@ module Quaack
       def roots(explain)
         valid = explain.is_a?(Array) && !explain.empty? && explain.all? { |e| e.is_a?(Hash) && e["Plan"].is_a?(Hash) }
         raise ArgumentError, "explain must be the parsed JSON of EXPLAIN (FORMAT JSON)" unless valid
-        # README step 1: the rows removed and actual rows come only from ANALYZE.
-        unless explain.all? { |e| e["Plan"].key?("Actual Loops") }
-          raise ArgumentError, "explain must come from EXPLAIN ANALYZE, and this plan has no actual row counts"
-        end
 
+        check_analyze(explain)
         explain.map { |e| PlanNode.new(e["Plan"]) }
+      end
+
+      # README step 1: the rows removed and actual rows come only from ANALYZE.
+      def check_analyze(explain)
+        return if explain.all? { |e| e["Plan"].key?("Actual Loops") }
+
+        raise ArgumentError, "explain must come from EXPLAIN ANALYZE, and this plan has no actual row counts"
       end
 
       def check_thresholds(given)
@@ -86,7 +91,7 @@ module Quaack
         end
       end
 
-      private_class_method :roots, :check_thresholds
+      private_class_method :roots, :check_analyze, :check_thresholds
 
       # One call's walk over one plan. It holds the plan only for the length
       # of the call.
@@ -114,7 +119,7 @@ module Quaack
         # An existing index with more columns, as a plain candidate.
         def extend_index(existing, **) = existing.with(**, unique: false, sources: [:plan])
 
-        # Whether a value meets a threshold. nil (an unknown selectivity) and
+        # Whether a value meets a threshold. nil (an unknown frequency) and
         # NaN (the removed fraction of a node that read no rows) never do.
         def at_least?(value, threshold) = !value.nil? && value >= thresholds.fetch(threshold)
 
