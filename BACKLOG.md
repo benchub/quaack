@@ -325,6 +325,10 @@ Build index candidates from problem patterns in a plan. Use the production plan 
   - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
   - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
   - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
+- **Notes from the 20260923-14 review:**
+  - `EXPLAIN` without `VERBOSE` gives `"Relation Name"` and `"Alias"` but no schema. So this task has to map each plan relation to a `TableName` itself, and handle a table name that exists in more than one schema.
+  - Plan filter strings can qualify columns by alias, like `(o.a = 1)`. Strip the qualifiers before building a predicate. Postgres rejects `o.a` in `CREATE INDEX`, and `t.lag > 0` and `lag > 0` count as different definitions.
+  - To extend an existing index, use `existing.with(key: ..., unique: false, sources: [...])`, as the `IndexCandidate` docs say.
 
 ### 20260922-32. 5a-3 dedupe and filter.
 
@@ -680,17 +684,7 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **Status:** todo
 - **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.
 
-### 20260923-11. Index candidate and statistics shapes.
-
-Define the two shapes that 5a-1 and 5a-2 share, so both generators can be built in parallel without conflicting:
-- **`IndexCandidate`** is an immutable value. It holds the table (schema qualified), the key columns with their sort directions, the `INCLUDE` columns, the index method, an optional partial predicate, and the generators that proposed it. Two candidates with the same definition compare equal whatever their sources are. It can render itself as `CREATE INDEX` DDL through pg_query.
-- **The statistics input** is what the generators read about each table and column. Per table, it holds `reltuples`. Per column, it holds `n_distinct`, `null_frac`, and `correlation`. It includes a helper for the distinct count: when `n_distinct` is negative, take its absolute value times `reltuples`.
-
-- **Depends on:** 20260922-1.
-- **Came from:** The user, who asked to build 5a-1 and 5a-2 in parallel with the main line.
-- **README:** 5a, 5a-1, 5a-2, and 5a-3.
-- **Status:** in progress
-- **Note:** Built and reviewed twice, but not landed. The work is on branch `shapes-20260923-11` at `324f495`. The second review found a trust-boundary leak, vacuous tests, and a sufficiency gap, so 20260923-14 finishes it from that branch. Both land together.
+### 20260923-11. Index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-12. 5a-2 on rewrite plans.
 
@@ -716,24 +710,7 @@ The second review of 20260923-4 found no boundary holes, since every in-scope pl
 - **README:** None. This is test infrastructure.
 - **Status:** todo
 
-### 20260923-14. Finish the index candidate and statistics shapes.
-
-Start from the unlanded 20260923-11 branch (`shapes-20260923-11`, `324f495`) and fix what its second review found:
-- **UNIQUE indexes (sufficiency).** `IndexCandidate.from_ddl` returns nil for every UNIQUE index, primary keys included, because the shape has no uniqueness. So `TableStatistics#indexes` never shows those indexes' columns. 5a-2 can't extend `orders_pkey`, and 5a-3 can't see that `(id)` is already covered.
-- **Pattern-matching leak (trust boundary).** `case cand in {...}` with no match raises `NoMatchingPatternError`, whose message holds the raw predicate. The public `definition` exposes the predicate the same way. Close both, or document them next to `to_h` if closing isn't reasonable, and add sentinel tests.
-- **Vacuous tests.** These mutants survive:
-  - dropping `name.dup.freeze` in `KeyColumn` and in the column-name helper, since the "deeply frozen" test only passes literals, which are already frozen
-  - dropping the `is_a?(IndexCandidate)` guard in `==` and `eql?`, where `cand == nil` must be false
-  - `column_names.dup.freeze` in place of freezing each name
-  - dropping `by_name.freeze` in `Statistics`
-  - dropping the CONCURRENTLY and IF NOT EXISTS reset in `from_ddl`
-- **Unchecked definitions (correctness, low).** The constructor accepts some definitions Postgres rejects: `$1`, subqueries, and volatile or aggregate functions in predicates, BRIN with INCLUDE, and multicolumn hash. Reject the cheap ones, or document that the shape doesn't check them.
-- **Minor.** A `Complex` `n_distinct` raises RangeError, not ArgumentError. Duplicate `column_names` are accepted.
-
-- **Depends on:** 20260923-11 (unlanded branch).
-- **Came from:** Second review of 20260923-11.
-- **README:** 5a, 5a-2, and 5a-3.
-- **Status:** in progress
+### 20260923-14. Finish the index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-15. Finish the test database harness without ForkGuard.
 
@@ -763,6 +740,19 @@ Minor findings from the second review of 20260922-2:
 - **Depends on:** 20260923-15.
 - **Came from:** Both reviews of 20260922-2.
 - **README:** Steps 4 and 4b.
+- **Status:** todo
+
+### 20260923-17. Index shape loose ends.
+
+Minor findings from the second review of 20260923-14:
+- **Untested requires.** The three `require_relative` lines added to `enclave/lib/quaack/enclave.rb` have no test. Deleting them keeps every suite green. Add a `"quaack/enclave"` use to `standalone_require_spec.rb` that reaches `IndexCandidate`.
+- **Shadowed built-in names.** The built-in aggregate and window name check refuses an unqualified call to a user function that shares a built-in's name, such as `public.lead(int)`. Postgres accepts it, and `pg_get_indexdef` prints it unqualified. So `from_ddl` returns nil for such an existing index. It's rare and harmless, since the index just can't be represented. Document it. Also add a test that a column named like a built-in, such as `lag > 0`, is accepted.
+- **Proportion.** The aggregate and window check guards input the mechanical generators can't produce, because a valid query's WHERE clause can't hold those calls. It also misses set-returning functions, `DEFAULT`, and `merge_action()`. Decide whether to keep it, trim it, or finish it when 5a-5 extends the shape.
+- **Redundant check.** The `!sql.strip.empty?` check in `index_candidate.rb` duplicates the parse error.
+
+- **Depends on:** 20260923-14.
+- **Came from:** Second review of 20260923-14.
+- **README:** 5a.
 - **Status:** todo
 
 ## After version 1.
