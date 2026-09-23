@@ -35,12 +35,12 @@ PLANS = {
   "seq_scan_most_rows" => [
     ["enable_indexscan = off", "enable_bitmapscan = off"],
     "SELECT c.name FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
-    "WHERE o.status = 'shipped' AND o.total_cents = 5100"
+    "WHERE o.status = 'shipped' AND o.created_at > '2026-01-01' AND o.total_cents = 5100"
   ],
   "seq_scan_most_rows_verbose" => [
     ["enable_indexscan = off", "enable_bitmapscan = off"],
     "SELECT c.name FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
-    "WHERE o.status = 'shipped' AND o.total_cents = 5100"
+    "WHERE o.status = 'shipped' AND o.created_at > '2026-01-01' AND o.total_cents = 5100"
   ],
   "index_scan_filter" => [
     ["enable_seqscan = off", "enable_bitmapscan = off"],
@@ -107,6 +107,37 @@ PLANS = {
   "group_aggregate_presorted" => [
     ["enable_hashagg = off", "enable_sort = off"],
     "SELECT o.customer_id, count(*) FROM public.orders o GROUP BY o.customer_id"
+  ],
+  # The index in use is the primary key, and the Filter has a range before a
+  # constant equality.
+  "index_scan_unique_filter" => [
+    ["enable_seqscan = off", "enable_bitmapscan = off"],
+    "SELECT c.id FROM public.customers c WHERE c.id < 1800 AND c.created_at > '2025-01-05' " \
+    "AND c.name = 'Ada Smith 8'"
+  ],
+  # The inner side is an Index Scan with the join in its Index Cond, and a
+  # Filter with a range before a constant equality.
+  "nested_loop_parameterized" => [
+    ["enable_hashjoin = off", "enable_mergejoin = off", "enable_memoize = off", "enable_bitmapscan = off"],
+    "SELECT c.name, o.total_cents FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
+    "WHERE c.name = 'Ada Jones 8' AND o.total_cents > 1000 AND o.status = 'shipped'"
+  ],
+  "hash_aggregate_two_tables" => [
+    [], "SELECT c.name, o.status, count(*) FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
+        "GROUP BY c.name, o.status"
+  ],
+  "sort_two_tables" => [
+    [], "SELECT c.name, o.total_cents FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
+        "ORDER BY c.name, o.total_cents, c.created_at"
+  ],
+  # A lossy bitmap needs more heap pages than the sample tables have, so this
+  # one makes its own table inside the transaction. The spec builds its
+  # statistics by hand: a million rows, and the one index.
+  "bitmap_heap_scan_lossy" => [
+    ["enable_seqscan = off", "enable_indexscan = off", "work_mem = '64kB'"],
+    "SELECT e.id FROM public.events e WHERE e.kind < 300 AND e.id < 100000",
+    "CREATE TABLE public.events AS SELECT i AS id, i % 1000 AS kind FROM generate_series(1, 1000000) AS i; " \
+    "CREATE INDEX events_kind_idx ON public.events (kind); ANALYZE public.events"
   ],
   "init_plan" => [
     [], "SELECT c.name FROM public.customers c " \

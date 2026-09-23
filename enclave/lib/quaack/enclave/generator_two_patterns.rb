@@ -48,17 +48,19 @@ module Quaack
 
         def partials(table, conjuncts, alias_name, equality)
           columns = (equality + own_columns(conjuncts, alias_name).map(&:name)).uniq
-          conjuncts.select { |c| removes_most_alone?(c, alias_name) }.map do |c|
+          conjuncts.select { |c| removes_most_alone?(c) }.map do |c|
             key = columns - [c.columns.first.name]
             build(table, key:, predicate: PlanExpression.unqualified_sql(c.node)) if key.any?
           end
         end
 
-        def removes_most_alone?(conjunct, alias_name)
-          column = conjunct.columns.first
-          return false unless conjunct.kind == :constant && column.alias_name == alias_name
+        # A scan's own Filter can only compare its own columns to constants,
+        # because Postgres prints another relation's column there as a
+        # parameter, so the conjunct's column is the scan's.
+        def removes_most_alone?(conjunct)
+          return false unless conjunct.kind == :constant
 
-          selectivity = selectivity(column)
+          selectivity = selectivity(conjunct.columns.first)
           at_least?(selectivity && (1 - selectivity), :most_rows_removed)
         end
 
@@ -92,8 +94,7 @@ module Quaack
         def index_name(node)
           return node["Index Name"] if node.type == "Index Scan"
 
-          only = node.children.first if node.children.size == 1
-          only["Index Name"] if only&.type == "Bitmap Index Scan"
+          node.children.find { |c| c.type == "Bitmap Index Scan" }&.[]("Index Name")
         end
 
         # Bitmap Heap Scan over a BitmapAnd or BitmapOr: one index on the
@@ -161,8 +162,9 @@ module Quaack
         # Each inner alias's columns in join equalities, in order.
         def join_columns(conjuncts, inner_aliases)
           columns = conjuncts.select { |c| c.kind == :join }.filter_map do |c|
-            inner, outer = c.columns.partition { |column| inner_aliases.include?(column.alias_name) }
-            inner.first if inner.size == 1 && outer.size == 1
+            # A join conjunct has two columns under different aliases.
+            inner = c.columns.select { |column| inner_aliases.include?(column.alias_name) }
+            inner.first if inner.size == 1
           end
           columns.group_by(&:alias_name)
         end
@@ -180,26 +182,24 @@ module Quaack
         # equality columns of the scans below it that read the first sort
         # key's relation, most selective first, then the sort keys with their
         # direction and nulls ordering. The sort keys stop at the first one
-        # that isn't a plain column of that relation. A sort key that's also
-        # an equality column is left out, since it has one value.
+        # that isn't a plain column of that relation. Postgres already drops
+        # a sort key that an equality makes constant, so none of the sort
+        # keys repeats an equality column.
         def sort(node)
           keys = node.sort? ? columns.sort_keys(node["Sort Key"]) : []
           return [] if keys.empty?
 
           lead = keys.first.first
-          equality = equality_names(node, lead.alias_name)
-          [build(lead.table, key: equality + sort_columns(keys, equality))]
-        end
-
-        def equality_names(node, alias_name)
-          scans = node.subtree.select { |n| n.alias_name == alias_name }
-          by_selectivity(scans.flat_map { |scan| constant_columns(scan_conjuncts(scan), alias_name) }.uniq).map(&:name)
-        end
-
-        def sort_columns(keys, equality)
-          keys.reject { |column, *| equality.include?(column.name) }.map do |column, direction, nulls|
+          sorted = keys.map do |column, direction, nulls|
             IndexCandidate::KeyColumn.new(name: column.name, direction:, nulls:)
           end
+          [build(lead.table, key: equality_names(node, lead.alias_name) + sorted)]
+        end
+
+        # Every node's quals are read, and constant_columns keeps only the
+        # alias's own columns.
+        def equality_names(node, alias_name)
+          by_selectivity(node.subtree.flat_map { |n| constant_columns(scan_conjuncts(n), alias_name) }.uniq).map(&:name)
         end
 
         # Aggregate with Strategy Hashed, or Sorted over a Sort: for each
@@ -208,7 +208,7 @@ module Quaack
           return [] unless node.type == "Aggregate" && sorted_or_hashed?(node)
 
           columns.group_columns(node["Group Key"]).group_by(&:alias_name).map do |_, group|
-            build(group.first.table, key: group.map(&:name).uniq)
+            build(group.first.table, key: group.map(&:name))
           end
         end
 

@@ -65,18 +65,19 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
   def btree(table, columns, rest = "") = "CREATE INDEX ON public.#{table} USING btree (#{columns})#{rest}"
 
   describe "a Seq Scan whose filter removes most rows" do
+    # The filter is (created_at > ...) AND (status = 'shipped') AND
+    # (total_cents = 5100). total_cents is unique, so it removes most rows on
+    # its own. status has six values.
+    let(:seq_scan) do
+      [btree("orders", "total_cents, status"), btree("orders", "status, created_at", " WHERE total_cents = 5100")]
+    end
+
     it "proposes a btree on the equality columns, most selective first, and a partial index" do
-      # The filter is (status = 'shipped') AND (total_cents = 5100). total_cents
-      # is unique, so it removes most rows on its own. status has six values.
-      expect(ddl("seq_scan_most_rows")).to eq(
-        [btree("orders", "total_cents, status"), btree("orders", "status", " WHERE total_cents = 5100")]
-      )
+      expect(ddl("seq_scan_most_rows")).to eq(seq_scan)
     end
 
     it "strips alias qualifiers from the columns and the partial predicate, as VERBOSE prints them" do
-      expect(ddl("seq_scan_most_rows_verbose")).to eq(
-        [btree("orders", "total_cents, status"), btree("orders", "status", " WHERE total_cents = 5100")]
-      )
+      expect(ddl("seq_scan_most_rows_verbose")).to eq(seq_scan)
     end
 
     it "fires when the removed fraction is exactly the threshold, and not above it" do
@@ -90,12 +91,10 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       at_status = ddl("seq_scan_most_rows", most_rows_removed: 1 - (1.0 / 6))
       expect(at_status).to eq(
         [btree("orders", "total_cents, status"),
-         btree("orders", "total_cents", " WHERE status = 'shipped'::text"),
-         btree("orders", "status", " WHERE total_cents = 5100")]
+         btree("orders", "total_cents, created_at", " WHERE status = 'shipped'::text"),
+         btree("orders", "status, created_at", " WHERE total_cents = 5100")]
       )
-      expect(ddl("seq_scan_most_rows", most_rows_removed: 1 - (1.0 / 6) + 1e-9)).to eq(
-        [btree("orders", "total_cents, status"), btree("orders", "status", " WHERE total_cents = 5100")]
-      )
+      expect(ddl("seq_scan_most_rows", most_rows_removed: 1 - (1.0 / 6) + 1e-9)).to eq(seq_scan)
     end
 
     it "skips the partial index when the filter has no other column to key on" do
@@ -106,7 +105,9 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "leaves out a column that isn't in the table's column list" do
       stats = enclave::Statistics.new(tables: [orders_stats(column_names: %w[id customer_id total_cents created_at],
                                                             index_ddls: {}), customers_stats])
-      expect(ddl("seq_scan_most_rows", stats:)).to eq([btree("orders", "total_cents")])
+      expect(ddl("seq_scan_most_rows", stats:)).to eq(
+        [btree("orders", "total_cents"), btree("orders", "created_at", " WHERE total_cents = 5100")]
+      )
     end
 
     it "keys on a parameter, as a generic plan prints one, but never makes it a partial predicate" do
@@ -114,7 +115,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_parameter")).to eq([btree("orders", "total_cents, status")])
     end
 
-    it "puts equality columns with unknown selectivity last" do
+    it "puts equality columns with unknown selectivity last, and makes no partial index on them" do
       no_stats = orders_stats.with(columns: orders_stats.columns.except("total_cents"))
       stats = enclave::Statistics.new(tables: [no_stats, customers_stats])
       expect(ddl("seq_scan_most_rows", stats:)).to eq([btree("orders", "status, total_cents")])
@@ -135,10 +136,38 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("bitmap_heap_scan_filter")).to eq(extended)
     end
 
-    it "proposes plain candidates, not unique ones, from the plan only" do
-      candidates = generate("index_scan_filter")
+    it "extends a unique index into plain candidates from the plan only, constant equality columns first" do
+      # Index Scan on customers_pkey, Filter (created_at > ...) AND (name = ...).
+      candidates = generate("index_scan_unique_filter")
+      expect(candidates.map(&:to_ddl)).to eq(
+        [btree("customers", "id, name, created_at"), btree("customers", "id", " INCLUDE (name, created_at)")]
+      )
       expect(candidates.map(&:unique)).to eq([false, false])
       expect(candidates.map(&:sources)).to eq([Set[:plan], Set[:plan]])
+    end
+
+    it "moves a filter column out of the index's INCLUDE columns when it joins the key" do
+      index_ddls = orders_index_ddls.merge(
+        "orders_status_created_at_idx" =>
+          "CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at) " \
+          "INCLUDE (total_cents)"
+      )
+      stats = enclave::Statistics.new(tables: [orders_stats(index_ddls:), customers_stats])
+      expect(ddl("index_scan_filter", stats:)).to eq(extended)
+    end
+
+    it "counts the rows the index recheck removes, as a lossy bitmap does" do
+      # A parallel Bitmap Heap Scan over three loops, removing 45,655 rows per
+      # loop in the recheck and 90,000 in the Filter.
+      events = enclave::TableStatistics.new(
+        name: table_name("events"), reltuples: 1_000_000, column_names: %w[id kind], columns: {},
+        indexes: indexes("public", "events_kind_idx" =>
+                                     "CREATE INDEX events_kind_idx ON public.events USING btree (kind)")
+      )
+      stats = enclave::Statistics.new(tables: [events])
+      lossy = [btree("events", "kind, id"), btree("events", "kind", " INCLUDE (id)")]
+      expect(ddl("bitmap_heap_scan_lossy", stats:, many_rows_min: (45_655 + 90_000) * 3)).to eq(lossy)
+      expect(ddl("bitmap_heap_scan_lossy", stats:, many_rows_min: ((45_655 + 90_000) * 3) + 1)).to eq([])
     end
 
     it "fires at exactly the fraction and row thresholds, and not above either" do
@@ -179,6 +208,11 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "treats an Incremental Sort the same way" do
       expect(ddl("incremental_sort")).to eq([btree("orders", "status, total_cents")])
     end
+
+    it "stops the sort keys at the first one from another table" do
+      # Sort Key: c.name, o.total_cents, c.created_at.
+      expect(ddl("sort_two_tables")).to eq([btree("customers", "name")])
+    end
   end
 
   describe "a Nested Loop with an expensive inner side" do
@@ -191,6 +225,17 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "fires at exactly the threshold, and not above it" do
       expect(ddl("nested_loop_inner", expensive_inner_rows: 71 * 200)).to include(btree("customers", "id, created_at"))
       expect(ddl("nested_loop_inner", expensive_inner_rows: (71 * 200) + 1)).to eq([btree("orders", "status")])
+    end
+
+    it "finds the join in the inner Index Scan's Index Cond, and puts constant equality columns first" do
+      # Inner: Index Scan on orders, Index Cond (customer_id = c.id), Filter
+      # (total_cents > 1000) AND (status = 'shipped'). It returns no rows, so
+      # only a zero threshold fires. The outer Seq Scan on customers removes
+      # all but one row.
+      expect(ddl("nested_loop_parameterized", expensive_inner_rows: 0)).to eq(
+        [btree("orders", "customer_id, status, total_cents"), btree("customers", "name")]
+      )
+      expect(ddl("nested_loop_parameterized")).to eq([btree("customers", "name")])
     end
   end
 
@@ -212,11 +257,26 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("bitmap_or")).to eq([btree("customers", "id, email")])
       expect(ddl("bitmap_and")).to eq([btree("orders", "customer_id, id")])
     end
+
+    it "leaves out an index with more than one column, and needs two columns left" do
+      two_columns = customers_stats.with(
+        indexes: customers_stats.indexes.merge(
+          indexes("public", "customers_email_key" =>
+                              "CREATE UNIQUE INDEX customers_email_key ON public.customers USING btree (email, name)")
+        )
+      )
+      stats = enclave::Statistics.new(tables: [orders_stats, two_columns])
+      expect(ddl("bitmap_or", stats:)).to eq([])
+    end
   end
 
   describe "an aggregate" do
     it "indexes the GROUP BY keys of a hash aggregate" do
       expect(ddl("hash_aggregate")).to eq([btree("orders", "status, total_cents")])
+    end
+
+    it "proposes one index for each table in the GROUP BY" do
+      expect(ddl("hash_aggregate_two_tables")).to eq([btree("customers", "name"), btree("orders", "status")])
     end
 
     it "indexes the GROUP BY keys of a sorted aggregate once, though its Sort proposes the same index" do
@@ -255,12 +315,17 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "uses the Schema that VERBOSE prints" do
       stats = enclave::Statistics.new(tables: [orders_stats, archive, customers_stats])
       expect(ddl("seq_scan_most_rows_verbose", stats:)).to eq(
-        [btree("orders", "total_cents, status"), btree("orders", "status", " WHERE total_cents = 5100")]
+        [btree("orders", "total_cents, status"), btree("orders", "status, created_at", " WHERE total_cents = 5100")]
       )
+      expect(ddl("seq_scan_most_rows", stats:)).to eq([])
     end
 
     it "skips a relation with no statistics" do
       expect(ddl("init_plan", stats: enclave::Statistics.new(tables: [customers_stats]))).to eq([])
+    end
+
+    it "uses the one table with the name, even when schemas doesn't list its schema" do
+      expect(ddl("init_plan", schemas: ["archive"])).to eq([btree("orders", "total_cents")])
     end
   end
 
@@ -371,6 +436,20 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "drops every qualifier from a predicate, keeping its casts" do
       node = expression.conjuncts("(s.o.status = 'x'::text)").first
       expect(expression.unqualified_sql(node)).to eq("status = 'x'::text")
+    end
+
+    it "sorts conditions into constant equalities, join equalities, and the rest" do
+      scans = enclave.const_get(:PlanNode).new(plan("hash_join_batches").first["Plan"]).subtree
+      columns = enclave.const_get(:PlanColumns).new(scans, statistics, nil)
+      kinds = lambda do |filter|
+        node = enclave.const_get(:PlanNode).new("Filter" => filter)
+        columns.conjuncts(node, ["Filter"], "o").map { |c| [c.kind, c.columns.map(&:name)] }
+      end
+      expect(kinds.call("((status)::varchar = 'x'::text)")).to eq([[:constant, ["status"]]])
+      expect(kinds.call("(o.customer_id = c.id)")).to eq([[:join, %w[customer_id id]]])
+      expect(kinds.call("(total_cents = customer_id)")).to eq([[:other, %w[total_cents customer_id]]])
+      expect(kinds.call("(status = ANY ('{a,b}'::text[]))")).to eq([[:other, ["status"]]])
+      expect(kinds.call("(public.o.status = 'x'::text)")).to eq([[:other, []]])
     end
   end
 end

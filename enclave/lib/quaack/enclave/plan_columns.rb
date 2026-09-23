@@ -67,9 +67,7 @@ module Quaack
       # The conjuncts of the node's conditions under the given keys, such as
       # "Filter". A bare column belongs to default_alias.
       def conjuncts(node, keys, default_alias)
-        keys.select { |key| node[key].is_a?(String) }.flat_map do |key|
-          PlanExpression.conjuncts(node[key]).map { |c| conjunct(c, default_alias) }
-        end
+        keys.flat_map { |key| PlanExpression.conjuncts(node[key]).map { |c| conjunct(c, default_alias) } }
       end
 
       # The leading Sort Keys that are plain columns of the first key's
@@ -98,7 +96,7 @@ module Quaack
         end
       end
 
-      def strings(texts) = texts.is_a?(Array) ? texts.grep(String) : []
+      def strings(texts) = Array(texts)
 
       def key_column(text)
         expression, direction, nulls = PlanExpression.sort_key(text)

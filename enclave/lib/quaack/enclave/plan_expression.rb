@@ -17,6 +17,7 @@ module Quaack
       # The top-level AND conjuncts of a condition, as parse tree nodes, or
       # [] if it doesn't parse. Postgres prints some conditions pg_query
       # can't read, such as "(id = (InitPlan 1).col1)", so those give [].
+      # So does nil, for a node without the condition.
       def conjuncts(text)
         where = parse_select("SELECT WHERE #{text}")&.where_clause
         return [] unless where
@@ -60,8 +61,8 @@ module Quaack
         node = uncast(node)
         return nil unless node.node == :column_ref
 
-        parts = node.column_ref.fields.map { |f| f.string&.sval }
-        parts if parts.all?
+        # A * gives a nil part, which never matches a column name.
+        node.column_ref.fields.map { |f| f.string&.sval }
       end
 
       # A constant: a literal, a parameter, or either under casts.
@@ -84,7 +85,7 @@ module Quaack
       def column_refs(node)
         found = []
         each_message(node) { |m| found << m.fields.map { |f| f.string&.sval } if m.is_a?(PgQuery::ColumnRef) }
-        found.select(&:all?)
+        found
       end
 
       def each_message(message, &)

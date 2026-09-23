@@ -1,0 +1,129 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Gather",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 4280.26,
+      "Total Cost": 17506.37,
+      "Plan Rows": 29997,
+      "Plan Width": 4,
+      "Actual Startup Time": 7.034,
+      "Actual Total Time": 18.84,
+      "Actual Rows": 29999.0,
+      "Actual Loops": 1,
+      "Disabled": false,
+      "Workers Planned": 2,
+      "Workers Launched": 2,
+      "Single Copy": false,
+      "Shared Hit Blocks": 1322,
+      "Shared Read Blocks": 1315,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": true,
+          "Async Capable": false,
+          "Relation Name": "events",
+          "Alias": "e",
+          "Startup Cost": 3280.26,
+          "Total Cost": 13506.67,
+          "Plan Rows": 12499,
+          "Plan Width": 4,
+          "Actual Startup Time": 5.868,
+          "Actual Total Time": 14.568,
+          "Actual Rows": 9999.67,
+          "Actual Loops": 3,
+          "Disabled": false,
+          "Recheck Cond": "(kind < 300)",
+          "Rows Removed by Index Recheck": 45655,
+          "Filter": "(id < 100000)",
+          "Rows Removed by Filter": 90000,
+          "Exact Heap Blocks": 264,
+          "Lossy Heap Blocks": 515,
+          "Shared Hit Blocks": 1322,
+          "Shared Read Blocks": 1315,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Workers": [
+            {
+              "Worker Number": 0,
+              "Exact Heap Blocks": 239,
+              "Lossy Heap Blocks": 522
+            },
+            {
+              "Worker Number": 1,
+              "Exact Heap Blocks": 264,
+              "Lossy Heap Blocks": 524
+            }
+          ],
+          "Plans": [
+            {
+              "Node Type": "Bitmap Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Index Name": "events_kind_idx",
+              "Startup Cost": 0.0,
+              "Total Cost": 3272.76,
+              "Plan Rows": 294978,
+              "Plan Width": 0,
+              "Actual Startup Time": 6.723,
+              "Actual Total Time": 6.723,
+              "Actual Rows": 300000.0,
+              "Actual Loops": 1,
+              "Disabled": false,
+              "Index Cond": "(kind < 300)",
+              "Index Searches": 1,
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 269,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": []
+            }
+          ]
+        }
+      ]
+    },
+    "Settings": {
+      "enable_seqscan": "off",
+      "enable_indexscan": "off",
+      "work_mem": "64kB"
+    },
+    "Planning": {
+      "Shared Hit Blocks": 10,
+      "Shared Read Blocks": 1,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.091,
+    "Triggers": [],
+    "Execution Time": 19.767
+  }
+]

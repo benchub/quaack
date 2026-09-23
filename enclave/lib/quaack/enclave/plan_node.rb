@@ -47,12 +47,9 @@ module Quaack
       # Rows the Filter and the index recheck removed, per loop.
       def removed = @fields["Rows Removed by Filter"].to_f + @fields["Rows Removed by Index Recheck"].to_f
 
-      # The fraction of the rows read that removed accounts for, or nil if the
-      # node read no rows.
-      def removed_fraction
-        read = removed + rows
-        removed / read if read.positive?
-      end
+      # The fraction of the rows read that removed accounts for. It's NaN for
+      # a node that read no rows, so it never meets a threshold.
+      def removed_fraction = removed / (removed + rows)
 
       def sort? = SORTS.include?(type)
 
