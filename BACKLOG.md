@@ -17,18 +17,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-1. Project skeleton. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-2. Test database harness.
-
-Give the test suite throwaway Postgres instances with HypoPG installed, plus a small sample schema like the README's `orders` and `customers` example. Integration tests for most later tasks need this.
-
-- **Depends on:** 20260922-1.
-- **README:** Steps 4, 5a, and 9.
-- **Status:** in progress
-- **Note:** Built, fixed once, and reviewed twice, but not landed. The work is on branch `harness-20260922-2` at `1bd288f`. The second review found that `TestPostgres::ForkGuard`, added in the fix round, leaks every connection a test opens with `Database#connect`. It also found that the fork test is partly vacuous. So 20260923-15 finishes the task from that branch, and both land together.
-- **Decided:**
-  - Postgres 18 runs in Docker, from our own image: `postgres:18` plus the `postgresql-18-hypopg` package, since the official image doesn't include HypoPG.
-  - A small Ruby test helper builds the image and drives it with the `docker` command. No testcontainers gem and no Compose.
-  - One container per test run. Each test that needs a database gets a fresh one, created from a template and dropped afterward. Tests that need racetrack and arena side by side get two databases in the same container, like the real run server.
+### 20260922-2. Test database harness. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-3. Governed store.
 
@@ -712,18 +701,7 @@ The second review of 20260923-4 found no boundary holes, since every in-scope pl
 
 ### 20260923-14. Finish the index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-15. Finish the test database harness without ForkGuard.
-
-Start from the unlanded 20260922-2 branch (`harness-20260922-2`, `1bd288f`) and fix what its second review found:
-- **Remove `TestPostgres::ForkGuard` and the connection tracking (correctness).** `TestPostgres.open` keeps a strong reference to every connection. So a connection a test opens with `Database#connect` and never closes never gets its socket back. With the default macOS limit of 256 open files, about 250 such examples crash the run with `Errno::EMFILE`, and the container leaks because the `at_exit` `docker rm` can't open a pipe. Nothing in QUAACK forks. Keep the owner-pid guard on the `at_exit` cleanup. Document that a spec must not fork after using a database, or that the child must `exit!`.
-- **Fork test (vacuous in part).** After ForkGuard is gone, the fork test should check what's still promised: a forked child that exits with `exit!` doesn't remove the parent's container, and the parent's own example connection still works in the same example.
-- **"Dropped afterward" isn't pinned (test quality).** Changing `config.after` to `config.before` keeps every test green. Check within the example's own lifecycle that its databases exist during the example and are gone after it.
-- Add a regression test for the connection leak. For example, open many connections through `connect` and drop them, then check the process doesn't keep their sockets open.
-
-- **Depends on:** 20260922-2 (unlanded branch).
-- **Came from:** Second review of 20260922-2, findings 1 through 4.
-- **README:** Steps 4, 5a, and 9.
-- **Status:** in progress
+### 20260923-15. Finish the test database harness without ForkGuard. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-16. Harness loose ends.
 
@@ -735,10 +713,15 @@ Minor findings from the second review of 20260922-2:
 - **Slow timeout test.** The readiness-timeout test takes about 4 s. A 1 s timeout would halve that.
 - **Repeated backtrace.** A memoized launch failure repeats the first example's backtrace in every later failure.
 - **Old images pile up.** Each Dockerfile edit leaves an old `quaack-test-postgres:<hash>` image of about 660 MB.
+- **The admin connection outlives a fork elsewhere.** Only a drop resets a dead admin connection. If a spec forks in an example with no databases of its own, every later example fails with an empty `PG::ConnectionBad`. Reset the admin connection when it's dead, or check it before reuse.
+- **`WITH (FORCE)` is untested.** Removing it keeps every test green, but a spec that holds a `connect` session open would then fail with `PG::ObjectInUse`.
+- **Only the first drop error is reported.** If an example leaves `admin` inside `BEGIN`, every later example fails. The admin connection is reset only for `ConnectionBad`.
+- **`ConnectionLost` always blames forking,** even when the container died or the backend was terminated.
+- **Faster child specs.** The `IS_TEMPLATE` and `ConnectionLost` tests could run in-process with `pg_terminate_backend` and save about 3.5 s.
 - **Arena template.** Arena's template comes from `template1`, not `template0` with locale settings matching production. The real arena setup in 20260922-27 should handle this, so check it there.
 
 - **Depends on:** 20260923-15.
-- **Came from:** Both reviews of 20260922-2.
+- **Came from:** Both reviews of 20260922-2, and the second review of 20260923-15.
 - **README:** Steps 4 and 4b.
 - **Status:** todo
 
