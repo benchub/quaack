@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
+require "json"
 require "open3"
 require "rbconfig"
+require_relative "../../spec/support/test_postgres"
 
 GEM_ROOT = File.expand_path("..", __dir__)
 
@@ -17,4 +19,5 @@ RSpec.configure do |config|
   config.expect_with(:rspec) { |c| c.syntax = :expect }
   config.order = :random
   Kernel.srand config.seed
+  TestPostgres.configure(config)
 end
