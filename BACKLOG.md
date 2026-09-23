@@ -125,7 +125,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 - **Depends on:** 20260922-1, 20260922-18.
 - **README:** What goes into the enclave.
 - **Status:** todo
-- **Open questions:** Which of those forms count as "plain"? The list above is my guess.
+- **Decided:** A plain insert is `INSERT INTO <subset table> (<columns>) VALUES (...), ...`. The values can be constants, casts, `DEFAULT`, and calls to immutable functions that pass the 3d volatility check. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, `WITH`, `OVERRIDING`, and any function that isn't immutable.
 
 ## Step 1: Input.
 
@@ -189,7 +189,7 @@ Run the full schema-only dump on every namespace the query touches, plus `public
 - **Depends on:** 20260922-17.
 - **README:** 3b.
 - **Status:** todo
-- **Open questions:** Only direct FK parents, or the whole chain up? Arena needs the whole chain to satisfy FKs.
+- **Decided:** Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
 - **Decided:** Don't parse the dump. Find the subset tables and their FK parents from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
 
 ### 20260922-19. 3c statistics.
@@ -207,7 +207,7 @@ Check `provolatile` for every function in the query, including the select list. 
 - **Depends on:** 20260922-14.
 - **README:** 3d.
 - **Status:** todo
-- **Open questions:** Should operators' underlying functions and casts count too?
+- **Decided:** Yes. Resolve each operator's `oprcode` and each cast's `castfunc` in `pg_catalog`, and abort if any of them is volatile.
 
 ### 20260922-21. 3e literal set.
 
@@ -225,7 +225,7 @@ Classify each column as PII or not, using a configured list and a high-cardinali
 - **Depends on:** 20260922-19.
 - **README:** 3f.
 - **Status:** todo
-- **Open questions:** Format and location of the configured PII list? What threshold defines "high-cardinality" for the text heuristic?
+- **Decided:** The PII list is a set of `schema.table.column` globs, such as `*.users.email`, in the `quaacks` config file on the jump server. A text column is high-cardinality when it has 50 or more distinct values, the same line 3f uses for low-cardinality. The config can change the threshold.
 
 ### 20260922-23. 3g redaction.
 
