@@ -2,19 +2,22 @@
 
 require_relative "table_name"
 require_relative "index_candidate"
+require_relative "column_statistics"
 
 module Quaack
   module Enclave
     # The statistics input: what the index generators (README 5a-1 and 5a-2)
     # and the filter (5a-3) read about each table. It holds names, derived
-    # scalars, and existing index definitions. It never holds
-    # most_common_vals or histogram_bounds. The existing indexes can hold
-    # partial-index predicates, which are value-class data (see
-    # IndexCandidate).
+    # scalars, existing index definitions, and each column's MCV list. It
+    # never holds histogram_bounds. Two parts of it are value-class data: the
+    # MCV values (see ColumnStatistics) and the partial-index predicates in
+    # the existing indexes (see IndexCandidate). inspect, to_s, pp, and error
+    # messages redact both, up through TableStatistics and Statistics, whose
+    # inspect and pp are built from their parts'.
     #
     # Later tasks fill it in: the column list and existing indexes come from
-    # the schema dump (README 3b), and the numbers from pg_stats and pg_class
-    # (3c).
+    # the schema dump (README 3b), and the numbers and MCV lists from
+    # pg_stats and pg_class (3c).
     #
     #   orders = TableName.new(schema: "public", name: "orders")
     #   stats = Statistics.new(tables: [
@@ -22,34 +25,19 @@ module Quaack
     #       name: orders,
     #       reltuples: 1_000_000,
     #       column_names: %w[id status note],     # every column, in attnum order
-    #       columns: { "status" => ColumnStatistics.new(n_distinct: 5, null_frac: 0, correlation: nil) },
+    #       columns: { "status" => ColumnStatistics.new(n_distinct: 5, null_frac: 0, correlation: nil,
+    #                                                   most_common_vals: %w[delivered shipped],  # optional
+    #                                                   most_common_freqs: [0.7, 0.2]) },         # optional
     #       indexes: { "orders_pkey" => IndexCandidate.from_ddl(pkey_indexdef, sources: [:existing]),
     #                  "orders_lower_note_idx" => nil }  # nil: from_ddl couldn't represent it
     #     )
     #   ])
-    #   stats.table(orders).distinct_count("status")   # => 5.0
+    #   stats.table(orders).distinct_count("status")              # => 5.0
+    #   stats.table(orders).value_frequency("status", "shipped")  # => 0.2, its MCV frequency
+    #   stats.table(orders).value_frequency("status", "pending")  # => 0.0333..., (1 - 0.9) / (5 - 2)
     #
     # Numbers are stored as finite Floats. Missing lookups raise KeyError. Use
     # table? and column? to check first.
-
-    # One column's row from pg_stats. correlation can be nil, because pg_stats
-    # leaves it null for types without a sort order.
-    ColumnStatistics = Data.define(:n_distinct, :null_frac, :correlation) do
-      def initialize(n_distinct:, null_frac:, correlation:)
-        super(n_distinct: in_range(:n_distinct, n_distinct, -1..),
-              null_frac: in_range(:null_frac, null_frac, 0..1),
-              correlation: correlation && in_range(:correlation, correlation, -1..1))
-      end
-
-      private
-
-      def in_range(what, value, range)
-        number = Float(value) if value.is_a?(Numeric) && value.real?
-        return number if number&.finite? && range.cover?(number)
-
-        raise ArgumentError, "#{what} must be a finite number in #{range}, got #{value.inspect}"
-      end
-    end
 
     # One table: its name, pg_class.reltuples, every column's name in attnum
     # order, the pg_stats row for each column that has one, and the existing
@@ -93,7 +81,8 @@ module Quaack
       # selective. This is the "discount by null_frac" from README 5a-1 step 2.
       # It's applied to the selectivity, not to the distinct count, because
       # the distinct count already leaves out nulls. It matches Postgres's
-      # estimate for a value that isn't an MCV, and ignores MCV frequencies.
+      # estimate for a value that isn't an MCV when there's no MCV list, and
+      # ignores MCV frequencies. value_frequency uses them.
       # Returns nil when the distinct count is unknown or zero.
       def equality_selectivity(column_name)
         count = distinct_count(column_name)
@@ -102,7 +91,69 @@ module Quaack
         (1 - column(column_name).null_frac) / count
       end
 
+      # The estimated fraction of the table's rows that match
+      # `column = literal`, the way Postgres's var_eq_const (selfuncs.c)
+      # estimates it. 5a-2 uses it to tell whether a constant predicate
+      # removes most rows on its own. literal_text is the literal in the text
+      # form pg_stats prints the column's values in.
+      #
+      # - If literal_text is an MCV, it's that MCV's frequency.
+      # - Otherwise the rows the MCVs and nulls don't cover,
+      #   max(0, 1 - sum(most_common_freqs) - null_frac), are split evenly
+      #   among the other distinct values: divided by distinct_count minus
+      #   the number of MCVs, but only when that's more than 1, as Postgres
+      #   does. So when every distinct value is an MCV, there's no division
+      #   by zero or a negative: the leftover fraction, often 0.0, stands.
+      #   Then, as in Postgres, the result is capped at the least common
+      #   MCV's frequency. A column with no MCV list gets
+      #   (1 - null_frac) / distinct_count.
+      #
+      # Returns nil when the column is in column_names but has no pg_stats
+      # row, and for a literal that isn't an MCV when the distinct count is
+      # unknown or zero. Raises KeyError for a column that isn't in
+      # column_names at all.
+      #
+      # The MCV match compares text, not values under the column type's
+      # equality operator, which is what Postgres uses. So it misses a
+      # literal spelled differently from how pg_stats prints the value:
+      # 1.5 for a numeric MCV printed as 1.50, 'ABC' for a citext MCV 'abc',
+      # 'ab' for a char(n) MCV printed with its padding as "ab  ", a date or
+      # timestamp written in another format, DateStyle, or time zone, a
+      # float printed with different digits, or a boolean in a prefix
+      # spelling like 'tr' (the full spellings do match; see
+      # ColumnStatistics#mcv_frequency). A missed match falls through to the
+      # estimate for values that aren't MCVs, which is usually far too low.
+      # When the MCVs cover the whole column, as they often do for status and
+      # type columns, it comes out 0.0: "selects almost nothing", for what
+      # may be the column's most common value.
+      #
+      # Postgres also does things this doesn't:
+      # - It uses 1 / reltuples for a column with a unique index.
+      # - It rounds the distinct count to a whole number, at least 1.
+      # - It falls back to a default distinct count (200, or reltuples for a
+      #   small table) where this returns nil.
+      # - It uses the planner's current row estimate, not reltuples.
+      # The row count EXPLAIN shows is this times the rows, rounded, and at
+      # least 1.
+      def value_frequency(column_name, literal_text)
+        raise ArgumentError, "literal_text must be a String" unless literal_text.is_a?(String)
+        return nil if !column?(column_name) && column_names.include?(column_name)
+
+        stats = column(column_name)
+        stats.mcv_frequency(literal_text) || other_value_frequency(stats, distinct_count(column_name))
+      end
+
       private
+
+      def other_value_frequency(stats, count)
+        return nil if count.nil? || count.zero?
+
+        freqs = stats.most_common_freqs || []
+        frequency = [1 - freqs.sum - stats.null_frac, 0.0].max
+        others = count - freqs.size
+        frequency /= others if others > 1
+        [frequency, *freqs.min].min
+      end
 
       def finite(reltuples)
         number = Float(reltuples) if reltuples.is_a?(Numeric) && reltuples.real?
