@@ -777,6 +777,7 @@ Start from the unlanded 20260922-30 branch (`gen1-20260922-30`, `f2a1408`) and f
 ### 20260923-21. 5a-1 loose ends.
 
 Minor findings from the reviews of 20260922-30:
+- **Missed `IS NULL` candidates after join reduction.** 5a-1 decides nullability from the syntax alone. Once a strict counted conjunct on a table rejects its nulls, Postgres turns the outer join inner, or turns FULL into LEFT or RIGHT. Then an `IS NULL` on that table is pushed down too, but 5a-1 still skips it. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)` (cost 67 against 4440), and the FULL JOIN version misses the same index. `IS NOT NULL` counts as strict here too. Count an `IS NULL` on a table once a strict counted conjunct on that table rejects its nulls at or above the outer join.
 - An ORDER BY on a nullable-side table's columns becomes a key, such as `LEFT JOIN o ... ORDER BY o.created_at`. The table can't be the outer side, so the index is wasted.
 - `FOR UPDATE OF o` is falsely refused as an unqualified relation.
 - `(o).*` isn't recognized as a star, for ordinals or INCLUDE.
@@ -787,7 +788,7 @@ Minor findings from the reviews of 20260922-30:
 - Incremental sort isn't handled.
 
 - **Depends on:** 20260923-20.
-- **Came from:** Both reviews of 20260922-30, and its builder's notes.
+- **Came from:** Both reviews of 20260922-30, the first review of 20260923-20, and the 20260922-30 builder's notes.
 - **README:** 5a-1.
 - **Status:** todo
 
