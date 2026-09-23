@@ -286,28 +286,7 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 
 ### 20260922-30. 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-31. 5a-2 generator two.
-
-Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
-
-- **Depends on:** 20260923-11, 20260923-14, and 20260923-19. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
-- **README:** 5a-2.
-- **Status:** todo
-- **Decided:**
-  - This task covers the production plan only. Rewrites move to 20260923-12.
-  - Thresholds, all configurable:
-    - **Most rows:** the filter removes at least 90% of the rows scanned.
-    - **Many rows:** the filter removes at least 50% of the rows scanned, and at least 1,000 rows.
-    - **Expensive inner side:** inner loops times actual rows is at least 10,000.
-    - **Large inner build:** the Hash node has at least 100,000 rows, or more than one batch.
-  - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
-  - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
-  - **Partial-index signal:** a `col = literal` conjunct removes most rows on its own when that literal's estimated frequency, from the MCV frequencies added in 20260923-19, is at most `1 - most_rows_removed`. The user chose this after the first review found the old per-column average only fired on columns 5a-3 drops.
-  - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
-- **Notes from the 20260923-14 review:**
-  - `EXPLAIN` without `VERBOSE` gives `"Relation Name"` and `"Alias"` but no schema. So this task has to map each plan relation to a `TableName` itself, and handle a table name that exists in more than one schema.
-  - Plan filter strings can qualify columns by alias, like `(o.a = 1)`. Strip the qualifiers before building a predicate. Postgres rejects `o.a` in `CREATE INDEX`, and `t.lag > 0` and `lag > 0` count as different definitions.
-  - To extend an existing index, use `existing.with(key: ..., unique: false, sources: [...])`, as the `IndexCandidate` docs say.
+### 20260922-31. 5a-2 generator two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-32. 5a-3 dedupe and filter.
 
@@ -776,6 +755,31 @@ Split out of 20260923-20. Postgres reads a column that ORDER BY repeats only at 
 - **Depends on:** 20260923-20.
 - **Came from:** The tests-only round of 20260923-20, where the old test stayed vacuous against an adjacent-only dedupe.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260923-24. 5a-2 loose ends.
+
+Findings from the reviews of 20260922-31:
+- **Common values spelled differently get a partial (wasted candidates).** When a literal's text doesn't match its `pg_stats` spelling and the MCVs cover the column, `value_frequency` returns 0.0, so a common value looks rare. HypoPG examples: `n = 1.5` on a numeric printed as `1.50` (33% of rows), `c = 'cd'::bpchar` on `char(4)` (90%), and `(i)::numeric = 7.0` on an int column (80%). Give no partial when the column side is cast to another type. Also consider treating a literal that isn't an MCV as unknown when `sum(most_common_freqs) + null_frac` is about 1.
+- **Booleans never reach the partial path.** Postgres prints `b = true` as `b` and `b = false` as `(NOT b)`, so a rare-flag partial like `WHERE NOT deleted` is never proposed.
+- **Test gaps:**
+  - Putting back a blanket `rescue ArgumentError` stays green.
+  - `check_analyze` using `any?` survives, since there's no multi-element EXPLAIN array.
+  - Sort equality columns from deeper scans aren't tested.
+  - Column refs inside function arguments aren't tested.
+  - `removed_fraction` for a node that read no rows isn't tested.
+  - `PlanNode#inner` as `children.last` survives.
+  - "Skips a relation with no statistics" is weak.
+- **`(InitPlan 1).col1` conditions** are dropped whole, since pg_query can't parse them.
+- **Other:**
+  - `COLLATE` filters propose nothing.
+  - A 3,000-deep plan raises SystemStackError. The caller's `JSON.parse` fails first at about depth 49 anyway, so whoever parses stored plans should pass `max_nesting: false`.
+  - Fix the grammar slip "a Actual Rows".
+  - Leave `inner.size == 1`, Merge Append sort keys, the weak INCLUDE and BitmapOr variants, and exposing the private helpers for 20260923-12.
+
+- **Depends on:** 20260922-31.
+- **Came from:** Both reviews of 20260922-31.
+- **README:** 5a-2.
 - **Status:** todo
 
 ## After version 1.

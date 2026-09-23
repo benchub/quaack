@@ -181,3 +181,27 @@ Start from the unlanded 20260922-30 branch (`gen1-20260922-30`, `f2a1408`) and f
 - **README:** 5a-1.
 - **Status:** done
 - **Landed:** Squash-merged into `main` with 20260922-30. It narrowed the outer-join rule to skipping only `IS NULL` on a table made nullable below, and fixed the vacuous tests. Both reviews found no correctness blockers. The second review found two vacuous tests. The tests-only round fixed the alias test, but the repeated-ORDER-BY test was still vacuous. At the user's choice, the dedupe it covered was removed before landing and split out to 20260923-23. The other findings went into 20260923-21.
+
+### 20260922-31. 5a-2 generator two.
+
+Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
+
+- **Depends on:** 20260923-11, 20260923-14, and 20260923-19. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
+- **README:** 5a-2.
+- **Status:** done
+- **Decided:**
+  - This task covers the production plan only. Rewrites move to 20260923-12.
+  - Thresholds, all configurable:
+    - **Most rows:** the filter removes at least 90% of the rows scanned.
+    - **Many rows:** the filter removes at least 50% of the rows scanned, and at least 1,000 rows.
+    - **Expensive inner side:** inner loops times actual rows is at least 10,000.
+    - **Large inner build:** the Hash node has at least 100,000 rows, or more than one batch.
+  - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
+  - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
+  - **Partial-index signal:** a `col = literal` conjunct removes most rows on its own when that literal's estimated frequency, from the MCV frequencies added in 20260923-19, is at most `1 - most_rows_removed`. The user chose this after the first review found the old per-column average only fired on columns 5a-3 drops.
+  - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
+- **Notes from the 20260923-14 review:**
+  - `EXPLAIN` without `VERBOSE` gives `"Relation Name"` and `"Alias"` but no schema. So this task has to map each plan relation to a `TableName` itself, and handle a table name that exists in more than one schema.
+  - Plan filter strings can qualify columns by alias, like `(o.a = 1)`. Strip the qualifiers before building a predicate. Postgres rejects `o.a` in `CREATE INDEX`, and `t.lag > 0` and `lag > 0` count as different definitions.
+  - To extend an existing index, use `existing.with(key: ..., unique: false, sources: [...])`, as the `IndexCandidate` docs say.
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review. Generator two walks a production EXPLAIN ANALYZE plan and proposes candidates for each README 5a-2 pattern. It's tested against 35 real PG 18 fixtures that `capture.rb` regenerates from the harness data. The first review found that the partial-index signal fired only on columns 5a-3 drops. The user chose MCV frequencies (20260923-19), and the fix round switched to them. The fix round also fixed Parallel Hash row counts, a `pp` leak, a vacuous test, eight surviving mutants, and swallowed refusals. The second review found no leaks and no vacuous tests. Its findings became 20260923-24.
