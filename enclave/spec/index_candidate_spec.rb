@@ -140,7 +140,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
         candidate(key: ["a", key_column.new(name: "b", direction: :desc)], include: ["c"]),
         candidate(key: ["a", key_column.new(name: "b", nulls: :first)], include: ["c"]),
         candidate(key: %w[a b], include: ["d"]),
-        candidate(key: %w[a b], include: ["c"], access_method: :hash),
+        candidate(key: %w[a b], include: ["c"], access_method: :gist),
         candidate(key: %w[a b], include: ["c"], predicate: "c > 0"),
         candidate(key: %w[a b], include: ["c"], unique: true),
         candidate(key: %w[a b], include: ["c"], table: Quaack::Enclave::TableName.new(schema: "other", name: "orders"))
@@ -248,8 +248,77 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(wrapped).to eq(candidate(predicate: "status = 'open'"))
     end
 
+    it "refuses parameters, which Postgres can't bind in an index predicate" do
+      ["a = $1", "a > 0 AND b = $2"].each do |bad|
+        expect { candidate(predicate: bad) }.to raise_error(ArgumentError, /predicate can't use a parameter/), bad
+      end
+    end
+
+    it "refuses subqueries" do
+      ["a IN (SELECT 1)", "EXISTS (SELECT 1)", "a = (SELECT 1)", "a = ANY (SELECT 1)",
+       "NOT (b > 0 OR EXISTS (SELECT 1))"]
+        .each do |bad|
+        expect { candidate(predicate: bad) }.to raise_error(ArgumentError, /predicate can't use a subquery/), bad
+      end
+    end
+
+    it "refuses aggregate, window, and grouping calls" do
+      ["count(*) > 0", "sum(b) > 0", "pg_catalog.max(b) > 0", "MIN(b) > 0", "a > 0 AND avg(b) > 1",
+       "count(DISTINCT b) > 1", "my_agg(b ORDER BY b) > 0", "my_agg(b) FILTER (WHERE b > 0) > 0",
+       "my_agg(0.5) WITHIN GROUP (ORDER BY b) > 0", "rank() OVER () > 1", "my_window(b) OVER () > 1",
+       "GROUPING(b) > 0"].each do |bad|
+        expect { candidate(predicate: bad) }
+          .to raise_error(ArgumentError, /predicate can't use an aggregate, window, or grouping function/), bad
+      end
+    end
+
+    it "allows ordinary calls, including a schema's own function with an aggregate's name" do
+      ["lower(note) = 'x'", "myschema.sum(b) > 0", "coalesce(b, 0) > 0", "b > 0 AND c IS NULL"].each do |ok|
+        expect(candidate(predicate: ok).predicate).to be_a(String), ok
+      end
+    end
+
+    it "doesn't judge volatility, which needs the catalog" do
+      expect(candidate(predicate: "b > random()").predicate).to eq("b > random()")
+    end
+
     it "keeps casts, which don't normalize away" do
       expect(candidate(predicate: "status::text = 'open'")).not_to eq(candidate(predicate: "status = 'open'"))
+    end
+  end
+
+  describe "what each built-in method supports" do
+    it "refuses INCLUDE on brin, gin, and hash" do
+      %i[brin gin hash].each do |method|
+        expect { candidate(access_method: method, include: ["total"]) }
+          .to raise_error(ArgumentError, /#{method} doesn't support INCLUDE/)
+      end
+    end
+
+    it "allows INCLUDE on btree, gist, spgist, and methods it doesn't know" do
+      %i[btree gist spgist my_custom_am].each do |method|
+        expect(candidate(access_method: method, include: ["total"]).include).to eq(["total"]), method.to_s
+      end
+    end
+
+    it "refuses more than one key column on hash and spgist" do
+      %i[hash spgist].each do |method|
+        expect { candidate(access_method: method, key: %w[a b]) }
+          .to raise_error(ArgumentError, /#{method} doesn't support more than one key column/)
+      end
+    end
+
+    it "allows several key columns on btree, gist, gin, brin, and methods it doesn't know" do
+      %i[btree gist gin brin my_custom_am].each do |method|
+        expect(candidate(access_method: method, key: %w[a b]).key.map(&:name)).to eq(%w[a b]), method.to_s
+      end
+    end
+
+    it "makes from_ddl return nil for what the method doesn't support" do
+      ["CREATE INDEX i ON public.orders USING brin (a) INCLUDE (b)",
+       "CREATE INDEX i ON public.orders USING hash (a, b)"].each do |ddl|
+        expect(described_class.from_ddl(ddl, sources: [:existing])).to be_nil, ddl
+      end
     end
   end
 
@@ -280,6 +349,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
     end
     expect(key_column.new(name: "a")).not_to respond_to(:pick)
     expect { Quaack::Enclave::IndexSql }.to raise_error(NameError, /private constant/)
+    expect { Quaack::Enclave::IndexMethods }.to raise_error(NameError, /private constant/)
   end
 
   # The predicate can hold a real literal, which is value-class data. It may
@@ -361,6 +431,15 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect([hides_predicate, matches_the_rest]).to eq([false, true])
     end
 
+    it "leaves it out of the errors for a parameter, subquery, or aggregate" do
+      ["note = '#{sentinel}' AND a = $1", "note IN (SELECT '#{sentinel}')", "count(*) > 0 AND note = '#{sentinel}'"]
+        .each do |bad|
+        message = message_of { candidate(predicate: bad) }
+        expect(message).to include("predicate can't use")
+        expect(message).not_to include(sentinel)
+      end
+    end
+
     it "leaves it out of the error for merging a different definition" do
       a = candidate(predicate: "note = '#{sentinel}'")
       b = candidate(key: ["other"], predicate: "note = '#{sentinel}-2'")
@@ -408,7 +487,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
         candidate(key: ["a", key_column.new(name: "b", direction: :desc, nulls: :last)], include: %w[c d],
                   predicate: "c > 0 AND d IS NOT NULL"),
         described_class.new(table: Quaack::Enclave::TableName.new(schema: "My Schema", name: "order"),
-                            key: %w[CustomerId select], include: ["line item"], access_method: :hash,
+                            key: %w[CustomerId select], include: ["line item"], access_method: :gist,
                             sources: [:parse])
       ].each do |c|
         expect(from_ddl(c.to_ddl)).to eq(c), c.to_ddl

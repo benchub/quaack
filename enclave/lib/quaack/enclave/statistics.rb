@@ -23,8 +23,8 @@ module Quaack
     #       reltuples: 1_000_000,
     #       column_names: %w[id status note],     # every column, in attnum order
     #       columns: { "status" => ColumnStatistics.new(n_distinct: 5, null_frac: 0, correlation: nil) },
-    #       indexes: { "orders_pkey" => nil,      # nil: from_ddl couldn't represent it
-    #                  "orders_status_idx" => IndexCandidate.from_ddl(indexdef, sources: [:existing]) }
+    #       indexes: { "orders_pkey" => IndexCandidate.from_ddl(pkey_indexdef, sources: [:existing]),
+    #                  "orders_lower_note_idx" => nil }  # nil: from_ddl couldn't represent it
     #     )
     #   ])
     #   stats.table(orders).distinct_count("status")   # => 5.0
@@ -44,7 +44,7 @@ module Quaack
       private
 
       def in_range(what, value, range)
-        number = Float(value) if value.is_a?(Numeric)
+        number = Float(value) if value.is_a?(Numeric) && value.real?
         return number if number&.finite? && range.cover?(number)
 
         raise ArgumentError, "#{what} must be a finite number in #{range}, got #{value.inspect}"
@@ -53,9 +53,10 @@ module Quaack
 
     # One table: its name, pg_class.reltuples, every column's name in attnum
     # order, the pg_stats row for each column that has one, and the existing
-    # indexes by name. An index maps to nil when IndexCandidate.from_ddl
-    # couldn't represent it. A negative reltuples means the table has never
-    # been analyzed.
+    # indexes by name. No column name can appear twice. An index maps to nil
+    # when IndexCandidate.from_ddl couldn't represent it. Primary keys and
+    # other unique indexes are candidates with unique: true. A negative
+    # reltuples means the table has never been analyzed.
     TableStatistics = Data.define(:name, :reltuples, :columns, :column_names, :indexes) do
       def initialize(name:, reltuples:, columns:, column_names:, indexes:)
         raise ArgumentError, "name must be a TableName" unless name.is_a?(TableName)
@@ -104,7 +105,7 @@ module Quaack
       private
 
       def finite(reltuples)
-        number = Float(reltuples) if reltuples.is_a?(Numeric)
+        number = Float(reltuples) if reltuples.is_a?(Numeric) && reltuples.real?
         return number if number&.finite?
 
         raise ArgumentError, "reltuples must be a finite number, got #{reltuples.inspect}"
@@ -114,7 +115,13 @@ module Quaack
         valid = column_names.is_a?(Array) && column_names.all? { |c| c.is_a?(String) && !c.empty? }
         raise ArgumentError, "column_names must be an Array of non-empty Strings" unless valid
 
+        check_no_repeats(column_names)
         column_names.map { |c| c.dup.freeze }.freeze
+      end
+
+      def check_no_repeats(column_names)
+        twice = column_names.tally.select { |_, count| count > 1 }.keys
+        raise ArgumentError, "column_names lists a name twice: #{twice.join(", ")}" if twice.any?
       end
 
       def column_map(columns, column_names)

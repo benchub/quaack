@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "table_name"
 require_relative "index_sql"
+require_relative "index_methods"
 
 module Quaack
   module Enclave
@@ -16,6 +17,7 @@ module Quaack
     #     include: ["total"],              # default []
     #     access_method: :btree,           # default :btree
     #     predicate: "status = 'open'",    # default nil
+    #     unique: false,                   # default false
     #     sources: [:parse]                # the generators that proposed it
     #   ).to_ddl
     #   # => "CREATE INDEX ON public.orders USING btree (customer_id, created_at DESC)
@@ -23,12 +25,28 @@ module Quaack
     #
     # A bare String in key is an ascending column. Column and table names are
     # real catalog names, unquoted. to_ddl quotes them. The DDL has no index
-    # name, which both Postgres and HypoPG allow. Only btree takes a
-    # non-default direction or nulls ordering.
+    # name, which both Postgres and HypoPG allow.
+    #
+    # unique is for existing indexes, which from_ddl reads: primary keys,
+    # UNIQUE constraints, and CREATE UNIQUE INDEX. The generators propose
+    # plain indexes. A unique index and a plain one on the same columns are
+    # different definitions, so 5a-3 compares key columns itself when it
+    # checks whether an existing index covers a candidate.
+    #
+    # The constructor refuses what Postgres would refuse for the built-in
+    # methods: a non-default direction or nulls ordering, or unique, on
+    # anything but btree; INCLUDE on brin, gin, or hash; and more than one
+    # key column on hash or spgist.
     #
     # The predicate is parsed at construction and stored as pg_query deparses
     # it, so "(status = 'open')" and "status = 'open'" make equal candidates.
     # Casts don't normalize away: "status::text = 'open'" stays different.
+    # The constructor refuses a predicate with a parameter ($1), a subquery,
+    # or an aggregate, window, or grouping call. It finds a plain aggregate
+    # call like sum(b) by name, against the aggregates built into Postgres 18,
+    # so a user-defined aggregate called without aggregate syntax gets
+    # through. It doesn't check function volatility (random(), now()),
+    # because that needs the catalog. README 3d does that.
     #
     # Equality and hash ignore sources, so two generators' copies of the same
     # definition collapse in a Set or a Hash. merge_sources combines them.
@@ -36,28 +54,32 @@ module Quaack
     #
     # A candidate with a predicate is value-class data under the README's trust
     # boundary, because the predicate can hold a real literal. So inspect,
-    # to_s, pp, and every error message leave the predicate text out. Only
-    # to_ddl, the predicate reader, and to_h give it back.
+    # to_s, pp, and every error message leave the predicate text out. Pattern
+    # matching can't see the predicate at all: deconstruct_keys leaves it out
+    # and there's no deconstruct, so a failed match can't quote it. Only
+    # to_ddl, the predicate reader, and to_h give it back, and they return the
+    # raw text, so keep what they return inside the enclave.
     IndexCandidate = Data.define(:table, :key, :include, :access_method, :predicate, :unique, :sources) do
       # One keyword per member, which is more than the cop allows.
       def initialize(table:, key:, sources:, include: [], access_method: :btree, predicate: nil, unique: false) # rubocop:disable Metrics/ParameterLists
         raise ArgumentError, "table must be a schema-qualified TableName" unless table.is_a?(TableName)
 
         key = key_columns(key)
+        include = include_columns(include, key)
         access_method = normalize_access_method(access_method)
-        check_ordering(key, access_method)
-        check_unique(unique, access_method)
-        super(table:, key:, include: include_columns(include, key), access_method:,
-              predicate: normalize_predicate(predicate), unique:, sources: sources.to_set(&:to_sym).freeze)
+        IndexMethods.check(access_method, key:, include:, unique:)
+        super(table:, key:, include:, access_method:, predicate: normalize_predicate(predicate), unique:,
+              sources: sources.to_set(&:to_sym).freeze)
       end
 
       # Reads one CREATE INDEX, as pg_get_indexdef prints it, into a candidate
       # with the given sources. The index name is dropped: TableStatistics
       # keeps it as the key of its indexes map. Returns nil for an index this
-      # shape can't represent: UNIQUE, expression keys, opclasses, collations,
-      # ON ONLY, WITH options, TABLESPACE, an unqualified table, or anything
-      # the constructor refuses. Raises ArgumentError if the SQL isn't exactly
-      # one CREATE INDEX. No error message includes the SQL.
+      # shape can't represent: expression keys, opclasses, collations, NULLS
+      # NOT DISTINCT, ON ONLY, WITH options, TABLESPACE, CONCURRENTLY, IF NOT
+      # EXISTS, an unqualified table, or anything the constructor refuses.
+      # Raises ArgumentError if the SQL isn't exactly one CREATE INDEX. No
+      # error message includes the SQL.
       def self.from_ddl(sql, sources:) = IndexSql.read_index(sql, sources)
 
       # Pattern matching sees every member but the predicate, so a failed
@@ -97,8 +119,7 @@ module Quaack
       def to_ddl
         PgQuery.deparse_stmt(
           PgQuery::IndexStmt.new(
-            relation:,
-            unique:,
+            relation:, unique:,
             access_method: access_method.to_s,
             index_params:,
             index_including_params: include.map { |c| index_param(c, :asc, :last) },
@@ -142,22 +163,6 @@ module Quaack
         return name.to_sym if /\A[a-z_][a-z0-9_]*\z/.match?(name)
 
         raise ArgumentError, "index method must be a plain identifier, got #{method.inspect}"
-      end
-
-      # Of the built-in methods, only btree can order its entries. Postgres
-      # refuses DESC or NULLS FIRST/LAST on any other, even where HypoPG
-      # doesn't.
-      def check_ordering(key, access_method)
-        return if access_method == :btree || key.all?(&:default_order?)
-
-        raise ArgumentError, "only btree takes a non-default direction or nulls ordering, not #{access_method}"
-      end
-
-      def check_unique(unique, access_method)
-        raise ArgumentError, "unique must be true or false, got #{unique.inspect}" unless [true, false].include?(unique)
-        return if !unique || access_method == :btree
-
-        raise ArgumentError, "a unique index must use btree, not #{access_method}"
       end
 
       def normalize_predicate(sql)

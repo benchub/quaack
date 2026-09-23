@@ -116,6 +116,13 @@ RSpec.describe "the statistics input" do
       end
     end
 
+    it "rejects complex numbers with an ArgumentError" do
+      expect { column(n_distinct: Complex(1, 2)) }.to raise_error(ArgumentError, /n_distinct/)
+      expect { column(n_distinct: 1.0, null_frac: Complex(0.5, 0)) }.to raise_error(ArgumentError, /null_frac/)
+      expect { column(n_distinct: 1.0, correlation: Complex(0, 1)) }.to raise_error(ArgumentError, /correlation/)
+      expect { table({}, reltuples: Complex(10, 1)) }.to raise_error(ArgumentError, /reltuples/)
+    end
+
     it "stores numbers as Floats, so integer inputs don't do integer division" do
       stats = table({ "status" => column(n_distinct: 7, null_frac: 0, correlation: 1) }, reltuples: 1000)
 
@@ -171,6 +178,10 @@ RSpec.describe "the statistics input" do
         expect do
           table({ "status" => column(n_distinct: 3.0) }, column_names: %w[id])
         end.to raise_error(ArgumentError, /status/)
+      end
+
+      it "rejects a name that's listed twice" do
+        expect { table({}, column_names: %w[id status id]) }.to raise_error(ArgumentError, /twice: id/)
       end
 
       it "requires non-empty String names" do
