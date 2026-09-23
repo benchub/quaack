@@ -647,5 +647,6 @@ Rename the `quaack-enclave` gem and its executable to `quaacks`. The "s" stands 
 - **Came from:** The user, during 20260922-1.
 - **README:** Where QUAACK runs.
 - **Status:** todo
-- **Decided:** The gem and executable are named `quaacks`.
-- **Open questions:** Should the internal names change too, such as the `enclave/` directory and the `Quaack::Enclave` module, or stay as "enclave" to match the README?
+- **Decided:**
+  - The gem and executable are named `quaacks`.
+  - Internal names stay as "enclave," such as the `enclave/` directory and the `Quaack::Enclave` module, to match the README's "enclave script." The README doesn't change.
