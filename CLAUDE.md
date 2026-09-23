@@ -57,6 +57,8 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
    Once the work is committed to `main`, remove the task's worktree and delete its branch. Don't leave finished worktrees lying around.
 7. **Record.** Findings that are real but out of the task's scope become new backlog tasks at any round, not just the last one.
 
+Every agent keeps its temporary files in its own subdirectory of the scratchpad, named for its role and task, such as `build-20260922-2/` or `review-20260923-11-r2/`. Several agents often run at once, so a file at the top of the scratchpad can get overwritten by another agent without warning. Never edit or delete another agent's scratch files.
+
 ## Test-driven development.
 
 Every change follows red, then green:
