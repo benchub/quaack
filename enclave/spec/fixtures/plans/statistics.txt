@@ -1,0 +1,16 @@
+reltuples|customers|2000
+reltuples|orders|20000
+pg_stats|customers|created_at|-1|0|1||
+pg_stats|customers|email|-1|0|-0.004259041||
+pg_stats|customers|id|-1|0|1||
+pg_stats|customers|name|-0.98|0.02|-0.0038049063||
+pg_stats|orders|created_at|-1|0|1||
+pg_stats|orders|customer_id|2000|0|0.014523825|{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100}|{0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005,0.0005}
+pg_stats|orders|id|-1|0|1||
+pg_stats|orders|status|6|0|0.5291626|{delivered,shipped,pending,cancelled,returned,failed}|{0.71,0.12,0.09,0.04,0.03,0.01}
+pg_stats|orders|total_cents|-1|0|0.0026016105||
+indexdef|customers_pkey|CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)
+indexdef|customers_email_key|CREATE UNIQUE INDEX customers_email_key ON public.customers USING btree (email)
+indexdef|orders_pkey|CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)
+indexdef|orders_customer_id_idx|CREATE INDEX orders_customer_id_idx ON public.orders USING btree (customer_id)
+indexdef|orders_status_created_at_idx|CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at)
