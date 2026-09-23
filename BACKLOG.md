@@ -23,7 +23,8 @@ Give the test suite throwaway Postgres instances with HypoPG installed, plus a s
 
 - **Depends on:** 20260922-1.
 - **README:** Steps 4, 5a, and 9.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built, fixed once, and reviewed twice, but not landed. The work is on branch `harness-20260922-2` at `1bd288f`. The second review found that `TestPostgres::ForkGuard`, added in the fix round, leaks every connection a test opens with `Database#connect`. It also found that the fork test is partly vacuous. So 20260923-15 finishes the task from that branch, and both land together.
 - **Decided:**
   - Postgres 18 runs in Docker, from our own image: `postgres:18` plus the `postgresql-18-hypopg` package, since the official image doesn't include HypoPG.
   - A small Ruby test helper builds the image and drives it with the `docker` command. No testcontainers gem and no Compose.
@@ -733,6 +734,36 @@ Start from the unlanded 20260923-11 branch (`shapes-20260923-11`, `324f495`) and
 - **Came from:** Second review of 20260923-11.
 - **README:** 5a, 5a-2, and 5a-3.
 - **Status:** in progress
+
+### 20260923-15. Finish the test database harness without ForkGuard.
+
+Start from the unlanded 20260922-2 branch (`harness-20260922-2`, `1bd288f`) and fix what its second review found:
+- **Remove `TestPostgres::ForkGuard` and the connection tracking (correctness).** `TestPostgres.open` keeps a strong reference to every connection. So a connection a test opens with `Database#connect` and never closes never gets its socket back. With the default macOS limit of 256 open files, about 250 such examples crash the run with `Errno::EMFILE`, and the container leaks because the `at_exit` `docker rm` can't open a pipe. Nothing in QUAACK forks. Keep the owner-pid guard on the `at_exit` cleanup. Document that a spec must not fork after using a database, or that the child must `exit!`.
+- **Fork test (vacuous in part).** After ForkGuard is gone, the fork test should check what's still promised: a forked child that exits with `exit!` doesn't remove the parent's container, and the parent's own example connection still works in the same example.
+- **"Dropped afterward" isn't pinned (test quality).** Changing `config.after` to `config.before` keeps every test green. Check within the example's own lifecycle that its databases exist during the example and are gone after it.
+- Add a regression test for the connection leak. For example, open many connections through `connect` and drop them, then check the process doesn't keep their sockets open.
+
+- **Depends on:** 20260922-2 (unlanded branch).
+- **Came from:** Second review of 20260922-2, findings 1 through 4.
+- **README:** Steps 4, 5a, and 9.
+- **Status:** in progress
+
+### 20260923-16. Harness loose ends.
+
+Minor findings from the second review of 20260922-2:
+- **Untested branches.**
+  - `rescue Errno::EPERM` in the owner-pid check could return false and nothing would notice.
+  - "Never build the image" survives on a machine that already has it.
+- **Child specs load the root spec_helper.** Harness child processes run from the repo root, so `.rspec` loads the root `spec_helper` and `TestPostgres.configure` runs twice. The children don't prove the documented setup works on its own.
+- **Slow timeout test.** The readiness-timeout test takes about 4 s. A 1 s timeout would halve that.
+- **Repeated backtrace.** A memoized launch failure repeats the first example's backtrace in every later failure.
+- **Old images pile up.** Each Dockerfile edit leaves an old `quaack-test-postgres:<hash>` image of about 660 MB.
+- **Arena template.** Arena's template comes from `template1`, not `template0` with locale settings matching production. The real arena setup in 20260922-27 should handle this, so check it there.
+
+- **Depends on:** 20260923-15.
+- **Came from:** Both reviews of 20260922-2.
+- **README:** Steps 4 and 4b.
+- **Status:** todo
 
 ## After version 1.
 
