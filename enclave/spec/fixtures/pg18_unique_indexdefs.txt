@@ -1,0 +1,18 @@
+# Real pg_get_indexdef output from PostgreSQL 18.4 (postgres:18 Docker
+# image), one index per line, for this schema:
+#
+#   CREATE TABLE public.orders (id bigint PRIMARY KEY, email text UNIQUE,
+#     a int, b int, c int, d int, e int,
+#     CONSTRAINT orders_a_b_key UNIQUE (a, b));
+#   CREATE UNIQUE INDEX orders_c_idx ON public.orders (c) INCLUDE (d) WHERE e > 0;
+#   CREATE UNIQUE INDEX orders_d_nnd_idx ON public.orders (d) NULLS NOT DISTINCT;
+#   CREATE UNIQUE INDEX orders_e_desc_idx ON public.orders (e DESC NULLS LAST);
+#
+#   SELECT pg_get_indexdef(indexrelid) FROM pg_index
+#   WHERE indrelid = 'public.orders'::regclass ORDER BY indexrelid::regclass::text;
+CREATE UNIQUE INDEX orders_a_b_key ON public.orders USING btree (a, b)
+CREATE UNIQUE INDEX orders_c_idx ON public.orders USING btree (c) INCLUDE (d) WHERE (e > 0)
+CREATE UNIQUE INDEX orders_d_nnd_idx ON public.orders USING btree (d) NULLS NOT DISTINCT
+CREATE UNIQUE INDEX orders_e_desc_idx ON public.orders USING btree (e DESC NULLS LAST)
+CREATE UNIQUE INDEX orders_email_key ON public.orders USING btree (email)
+CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)

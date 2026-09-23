@@ -79,6 +79,20 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect { candidate(table: "orders") }.to raise_error(ArgumentError, /TableName/)
     end
 
+    it "defaults unique to false and accepts only true or false" do
+      expect(candidate.unique).to be(false)
+      expect(candidate(unique: true).unique).to be(true)
+      [nil, "true", 1].each do |bad|
+        expect { candidate(unique: bad) }.to raise_error(ArgumentError, /unique/), bad.inspect
+      end
+    end
+
+    it "refuses unique on any method but btree, which is the only built-in one that supports it" do
+      %i[hash gist my_custom_am].each do |method|
+        expect { candidate(unique: true, access_method: method) }.to raise_error(ArgumentError, /unique.*btree/)
+      end
+    end
+
     it "requires the predicate to be SQL text or nil" do
       expect { candidate(predicate: 1) }.to raise_error(ArgumentError, /predicate/)
       expect { candidate(predicate: "  ") }.to raise_error(ArgumentError, /predicate/)
@@ -110,6 +124,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
         candidate(key: %w[a b], include: ["d"]),
         candidate(key: %w[a b], include: ["c"], access_method: :hash),
         candidate(key: %w[a b], include: ["c"], predicate: "c > 0"),
+        candidate(key: %w[a b], include: ["c"], unique: true),
         candidate(key: %w[a b], include: ["c"], table: Quaack::Enclave::TableName.new(schema: "other", name: "orders"))
       ]
 
@@ -165,6 +180,10 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       )
       expect(stmt.index_including_params.map { |n| n.index_elem.name }).to eq(%w[total note])
       expect(PgQuery.deparse_expr(stmt.where_clause)).to eq("status = 'shipped' AND deleted_at IS NULL")
+    end
+
+    it "renders a unique index" do
+      expect(candidate(unique: true).to_ddl).to eq("CREATE UNIQUE INDEX ON public.orders USING btree (customer_id)")
     end
 
     it "renders a desc column with nulls last explicitly" do
@@ -238,7 +257,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(described_class).not_to respond_to(name)
     end
     %i[key_columns include_columns column_name normalize_access_method check_ordering normalize_predicate
-       index_params index_param relation].each do |name|
+       index_params index_param relation definition].each do |name|
       expect(candidate).not_to respond_to(name)
     end
     expect(key_column.new(name: "a")).not_to respond_to(:pick)
@@ -281,6 +300,47 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       ["note = '#{sentinel}' UNION SELECT 1", "note = 1 '#{sentinel}'", "note = '#{sentinel}' AND AND"].each do |bad|
         expect(message_of { candidate(predicate: bad) }).not_to include(sentinel)
       end
+    end
+
+    # Everything a failed pattern match can show: the message, the full
+    # report, and, for a missing key, the hash it was matching and the key.
+    def pattern_error_text
+      yield
+      raise "expected the pattern not to match"
+    rescue NoMatchingPatternKeyError => e
+      [e.message, e.full_message(highlight: false), e.matchee.inspect, e.key.inspect].join("\n")
+    rescue NoMatchingPatternError => e
+      [e.message, e.full_message(highlight: false)].join("\n")
+    end
+
+    it "leaves it out of failed pattern matches" do
+      c = candidate(predicate: "note = '#{sentinel}'")
+      texts = [
+        pattern_error_text { c => { predicate: "other" } },
+        pattern_error_text { c => { predicate: String, nope: 1 } },
+        pattern_error_text { c => { nope: 1 } },
+        pattern_error_text { c => [*, "other", *] },
+        pattern_error_text do
+          case c
+          in { predicate: "other" } then nil
+          end
+        end
+      ]
+
+      texts.each { |text| expect(text).not_to include(sentinel) }
+      expect(texts[3]).to include("deconstruct")
+    end
+
+    it "doesn't expose the predicate to pattern matching, but still matches the other members" do
+      c = candidate(predicate: "note = '#{sentinel}'", unique: true)
+
+      expect(c.deconstruct_keys(nil)).not_to have_key(:predicate)
+      expect(c.deconstruct_keys(%i[predicate unique])).to eq({ unique: true })
+      expect(c).not_to respond_to(:deconstruct)
+      hides_predicate = (c in { predicate: String })
+      matches_the_rest = (c in { unique: true, key: [{ name: "customer_id" }], access_method: :btree })
+
+      expect([hides_predicate, matches_the_rest]).to eq([false, true])
     end
 
     it "leaves it out of the error for merging a different definition" do
@@ -337,9 +397,39 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       end
     end
 
+    describe "unique indexes, as Postgres 18 prints them" do
+      # Index name => pg_get_indexdef output, from a real Postgres 18.
+      let(:indexdefs) do
+        File.readlines(File.join(__dir__, "fixtures", "pg18_unique_indexdefs.txt"), chomp: true)
+            .grep_v(/\A#/).to_h { |line| [line[/INDEX (\S+) ON/, 1], line] }
+      end
+
+      def unique(**overrides) = candidate(unique: true, **overrides)
+
+      it "reads a primary key, a UNIQUE column, and a two-column UNIQUE constraint" do
+        expect(from_ddl(indexdefs.fetch("orders_pkey"))).to eq(unique(key: ["id"]))
+        expect(from_ddl(indexdefs.fetch("orders_email_key"))).to eq(unique(key: ["email"]))
+        expect(from_ddl(indexdefs.fetch("orders_a_b_key"))).to eq(unique(key: %w[a b]))
+      end
+
+      it "reads CREATE UNIQUE INDEX with INCLUDE, a predicate, and a direction" do
+        expect(from_ddl(indexdefs.fetch("orders_c_idx")))
+          .to eq(unique(key: ["c"], include: ["d"], predicate: "e > 0"))
+        expect(from_ddl(indexdefs.fetch("orders_e_desc_idx")))
+          .to eq(unique(key: [key_column.new(name: "e", direction: :desc, nulls: :last)]))
+      end
+
+      it "returns nil for NULLS NOT DISTINCT, which the shape doesn't model" do
+        expect(from_ddl(indexdefs.fetch("orders_d_nnd_idx"))).to be_nil
+      end
+
+      it "reads a plain index as not unique" do
+        expect(from_ddl("CREATE INDEX i ON public.orders USING btree (id)").unique).to be(false)
+      end
+    end
+
     it "returns nil for an index it can't represent" do
       [
-        "CREATE UNIQUE INDEX i ON public.orders USING btree (a)",
         "CREATE INDEX i ON public.orders USING btree (lower(email))",
         "CREATE INDEX i ON public.orders USING btree (email text_pattern_ops)",
         %(CREATE INDEX i ON public.orders USING btree (email COLLATE "C")),

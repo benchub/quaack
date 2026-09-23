@@ -58,7 +58,8 @@ module Quaack
           table: table_name(stmt.relation),
           key: stmt.index_params.map { |n| key_column(n.index_elem) },
           include: stmt.index_including_params.map { |n| n.index_elem.name },
-          access_method: stmt.access_method, predicate: where && PgQuery.deparse_expr(where), sources:
+          access_method: stmt.access_method, predicate: where && PgQuery.deparse_expr(where),
+          unique: stmt.unique, sources:
         )
       rescue ArgumentError
         nil

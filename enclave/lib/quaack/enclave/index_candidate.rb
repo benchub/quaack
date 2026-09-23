@@ -38,16 +38,17 @@ module Quaack
     # boundary, because the predicate can hold a real literal. So inspect,
     # to_s, pp, and every error message leave the predicate text out. Only
     # to_ddl, the predicate reader, and to_h give it back.
-    IndexCandidate = Data.define(:table, :key, :include, :access_method, :predicate, :sources) do
+    IndexCandidate = Data.define(:table, :key, :include, :access_method, :predicate, :unique, :sources) do
       # One keyword per member, which is more than the cop allows.
-      def initialize(table:, key:, sources:, include: [], access_method: :btree, predicate: nil) # rubocop:disable Metrics/ParameterLists
+      def initialize(table:, key:, sources:, include: [], access_method: :btree, predicate: nil, unique: false) # rubocop:disable Metrics/ParameterLists
         raise ArgumentError, "table must be a schema-qualified TableName" unless table.is_a?(TableName)
 
         key = key_columns(key)
         access_method = normalize_access_method(access_method)
         check_ordering(key, access_method)
+        check_unique(unique, access_method)
         super(table:, key:, include: include_columns(include, key), access_method:,
-              predicate: normalize_predicate(predicate), sources: sources.to_set(&:to_sym).freeze)
+              predicate: normalize_predicate(predicate), unique:, sources: sources.to_set(&:to_sym).freeze)
       end
 
       # Reads one CREATE INDEX, as pg_get_indexdef prints it, into a candidate
@@ -59,8 +60,11 @@ module Quaack
       # one CREATE INDEX. No error message includes the SQL.
       def self.from_ddl(sql, sources:) = IndexSql.read_index(sql, sources)
 
-      # Everything but sources.
-      def definition = [table, key, include, access_method, predicate]
+      # Pattern matching sees every member but the predicate, so a failed
+      # match can't quote it. There's no positional (array) pattern.
+      def deconstruct_keys(keys) = super.except(:predicate)
+
+      undef_method :deconstruct
 
       def ==(other) = other.is_a?(IndexCandidate) && definition == other.definition
 
@@ -94,6 +98,7 @@ module Quaack
         PgQuery.deparse_stmt(
           PgQuery::IndexStmt.new(
             relation:,
+            unique:,
             access_method: access_method.to_s,
             index_params:,
             index_including_params: include.map { |c| index_param(c, :asc, :last) },
@@ -101,6 +106,12 @@ module Quaack
           )
         )
       end
+
+      protected
+
+      # Everything but sources. Protected, so == can compare two candidates
+      # without the raw predicate showing up as one more public reader.
+      def definition = [table, key, include, access_method, predicate, unique]
 
       private
 
@@ -140,6 +151,13 @@ module Quaack
         return if access_method == :btree || key.all?(&:default_order?)
 
         raise ArgumentError, "only btree takes a non-default direction or nulls ordering, not #{access_method}"
+      end
+
+      def check_unique(unique, access_method)
+        raise ArgumentError, "unique must be true or false, got #{unique.inspect}" unless [true, false].include?(unique)
+        return if !unique || access_method == :btree
+
+        raise ArgumentError, "a unique index must use btree, not #{access_method}"
       end
 
       def normalize_predicate(sql)
