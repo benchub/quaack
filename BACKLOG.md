@@ -298,19 +298,32 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 
 Build index candidates from the parse: ranked equality columns, one range column, matching `ORDER BY` columns, a capped key, `INCLUDE` columns, every leading prefix, and BRIN on a well-correlated range column of a large table.
 
-- **Depends on:** 20260922-14, 20260922-19.
+- **Depends on:** 20260923-11. It takes a parsed, fully qualified query and the 20260923-11 statistics input, so it doesn't need 20260922-14 or 20260922-19 to exist. Those tasks must produce the same input later.
 - **README:** 5a-1.
 - **Status:** todo
-- **Open questions:** Cap at three or four columns: which one? What counts as "close to 1 or -1" and "large"?
+- **Decided:**
+  - Cap the key at three columns.
+  - Emit a BRIN candidate when the range column's absolute correlation is 0.9 or more and the table's `reltuples` is at least 1,000,000.
+  - All three limits are configurable.
+  - The user approved building this in parallel with 20260922-31 and the main line, once 20260923-11 lands. It's a pure function over its inputs, in new files in the enclave gem.
 
 ### 20260922-31. 5a-2 generator two.
 
 Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
 
-- **Depends on:** 20260922-13, 20260922-19.
+- **Depends on:** 20260923-11. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
 - **README:** 5a-2.
 - **Status:** todo
-- **Open questions:** Thresholds for "most rows," "many rows," "expensive inner side," and "large inner build"? A racetrack plain `EXPLAIN` has no rows removed, so how do the filter patterns work on rewrites?
+- **Decided:**
+  - This task covers the production plan only. Rewrites move to 20260923-12.
+  - Thresholds, all configurable:
+    - **Most rows:** the filter removes at least 90% of the rows scanned.
+    - **Many rows:** the filter removes at least 50% of the rows scanned, and at least 1,000 rows.
+    - **Expensive inner side:** inner loops times actual rows is at least 10,000.
+    - **Large inner build:** the Hash node has at least 100,000 rows, or more than one batch.
+  - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
+  - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
+  - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
 
 ### 20260922-32. 5a-3 dedupe and filter.
 
@@ -673,6 +686,27 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **README:** Where QUAACK runs.
 - **Status:** todo
 - **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.
+
+### 20260923-11. Index candidate and statistics shapes.
+
+Define the two shapes that 5a-1 and 5a-2 share, so both generators can be built in parallel without conflicting:
+- **`IndexCandidate`** is an immutable value. It holds the table (schema qualified), the key columns with their sort directions, the `INCLUDE` columns, the index method, an optional partial predicate, and the generators that proposed it. Two candidates with the same definition compare equal whatever their sources are. It can render itself as `CREATE INDEX` DDL through pg_query.
+- **The statistics input** is what the generators read about each table and column. Per table, it holds `reltuples`. Per column, it holds `n_distinct`, `null_frac`, and `correlation`. It includes a helper for the distinct count: when `n_distinct` is negative, take its absolute value times `reltuples`.
+
+- **Depends on:** 20260922-1.
+- **Came from:** The user, who asked to build 5a-1 and 5a-2 in parallel with the main line.
+- **README:** 5a, 5a-1, 5a-2, and 5a-3.
+- **Status:** todo
+
+### 20260923-12. 5a-2 on rewrite plans.
+
+20260922-31 builds generator two from the production plan only. The task also wanted it to run on rewrites, with the racetrack plan. A racetrack plain `EXPLAIN` has no actual rows and no rows removed, so most of the patterns can't fire there. Decide how the patterns work on estimates, then build it.
+
+- **Depends on:** 20260922-31, 20260922-26.
+- **Came from:** Splitting 20260922-31, at the user's request to build it early.
+- **README:** 5a-2, step 8.
+- **Status:** todo
+- **Open questions:** Do the patterns use estimated rows in place of actual rows, or only the patterns that don't need rows removed?
 
 ## After version 1.
 
