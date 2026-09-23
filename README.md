@@ -46,7 +46,7 @@ Everything the enclave script prints goes through the egress function, including
 - Index DDL.
 - The LLM-generated inserts from step 10.
 
-All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pglast and rejects anything that isn't what it claims to be:
+All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pg_query and rejects anything that isn't what it claims to be:
 
 - **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
 - **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses.
@@ -114,7 +114,7 @@ Validate the connection to step 1's production server. Then record the following
 
 ### 3a. Relations.
 
-Use pglast to list the relations the query uses, and check the `relkind` of each one. For now, abort if the query uses a view or a materialized view. Don't handle partitioning until we need it.
+Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, abort if the query uses a view or a materialized view. Don't handle partitioning until we need it.
 
 ### 3b. Schema dump.
 
@@ -243,7 +243,7 @@ Three different generators propose candidate index definitions. The steps run in
 
 For each table in the query:
 
-1. Use pglast to collect the columns that appear in equality predicates, range predicates, join conditions, `ORDER BY`, `GROUP BY`, and the select list.
+1. Use pg_query to collect the columns that appear in equality predicates, range predicates, join conditions, `ORDER BY`, `GROUP BY`, and the select list.
 2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
 3. Build the index key in this order:
    - Equality columns, most selective first.
@@ -438,7 +438,7 @@ Save each remaining candidate's 5a-4 results. Step 11 picks up from there.
 
 The enclave script runs all of step 9. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
 
-From the pglast parse, pull out every predicate atom:
+From the pg_query parse, pull out every predicate atom:
 
 - Column-versus-literal equality.
 - Range and `LIKE` predicates.
