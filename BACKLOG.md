@@ -22,8 +22,11 @@ Set up the repo: package layout with separate driver and enclave packages, depen
 - **Depends on:** None.
 - **README:** Where QUAACK runs.
 - **Status:** todo
-- **Decided:** Ruby, with the pg_query gem. Ruby is already on the jump servers, and adding pg_query is simple.
-- **Open questions:** Which Ruby version (match the jump servers), and which CI system? Which Postgres versions must we support?
+- **Decided:**
+  - Ruby 3.4, with the pg_query gem. Ruby is already on the jump servers, and adding pg_query is simple. Locally, Ruby 3.4 is Homebrew's keg-only `ruby@3.4`.
+  - Postgres 18 only.
+  - Separate gems in one repo: a driver gem, an enclave gem, and a small shared gem for the protocol between them. The enclave gem never depends on the driver gem or the LLM SDK.
+  - RSpec for tests and GitHub Actions for CI.
 
 ### 20260922-2. Test database harness.
 
