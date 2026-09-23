@@ -23,6 +23,11 @@ require "pg"
 #
 # There's no fallback. If Docker isn't running, every example that asks for
 # a database fails with DockerUnavailable. None are skipped.
+#
+# A spec must not fork after it has used a database, or the forked child
+# must end with `exit!`. The child shares the parent's sockets. If it exits
+# normally, it closes its copies of the parent's connections, and that ends
+# the parent's sessions too. `exit!` skips that, along with the at_exit hooks.
 module TestPostgres
   class DockerUnavailable < StandardError; end
 
@@ -56,7 +61,7 @@ module TestPostgres
     end
 
     def connection_params = { host: host, port: port, dbname: name, user: USER, password: PASSWORD }
-    def connect = TestPostgres.open(**connection_params)
+    def connect = PG.connect(**connection_params)
     def connection = @connection ||= connect
 
     def close
@@ -81,7 +86,7 @@ module TestPostgres
       @counter = 0
     end
 
-    def admin = @admin ||= TestPostgres.open(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
+    def admin = @admin ||= PG.connect(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
 
     def database_names = admin.exec("SELECT datname FROM pg_database").column_values(0)
 
@@ -146,35 +151,7 @@ module TestPostgres
     end
   end
 
-  # A forked process shares the parent's sockets. When it exits, pg closes
-  # its copies of the harness's connections, and that ends the parent's
-  # sessions too. So in the fork, this points each of those sockets at
-  # /dev/null first. The fork can't use the harness's connections, but the
-  # parent keeps them.
-  module ForkGuard
-    def _fork
-      pid = super
-      TestPostgres.discard_connections if pid.zero?
-      pid
-    end
-  end
-  Process.singleton_class.prepend(ForkGuard)
-
   module_function
-
-  # Every connection the harness opens goes through here, so a fork can
-  # find them.
-  def open(**params)
-    (@connections ||= []).reject!(&:finished?)
-    PG.connect(**params).tap { |conn| @connections << conn }
-  end
-
-  def discard_connections
-    (@connections || []).each do |conn|
-      conn.socket_io.reopen(File::NULL) unless conn.finished?
-    end
-    @connections = []
-  end
 
   def docker(*args)
     out, err, status = Open3.capture3("docker", *args)

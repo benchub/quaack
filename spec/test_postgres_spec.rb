@@ -84,6 +84,21 @@ RSpec.describe TestPostgres do
     expect(conns.map(&:finished?)).to eq([true, true, true])
   end
 
+  # A connection from `connect` that a test drops without closing must be
+  # free to be garbage-collected, which closes its socket. If the harness
+  # kept a reference to it, the socket would stay open until the process
+  # ran out of file descriptors.
+  it "lets go of connections a test drops without closing" do
+    open_fds = -> { Dir.children("/dev/fd").size }
+    db = test_database
+    before = open_fds.call
+
+    40.times { db.connect.exec("SELECT 1") }
+    GC.start
+
+    expect(open_fds.call - before).to be < 5
+  end
+
   it "returns the same database for every call within one example" do
     expect(test_database).to equal(test_database)
     expect(racetrack_and_arena).to equal(racetrack_and_arena)
@@ -189,36 +204,54 @@ RSpec.describe TestPostgres do
   end
 
   describe "in a spec process of its own" do
-    let(:child_source) do
+    # An around hook wraps every before and after hook, whatever order they
+    # were registered in, so this runs once the harness has finished with an
+    # example. It prints how many of this process's test databases are left.
+    let(:watch) do
       <<~RUBY
-        require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}
-        RSpec.configure { |c| TestPostgres.configure(c) }
-        FIRST = []
-        RSpec.describe "a tiny suite", order: :defined do
-          it "creates a table" do
-            FIRST << test_database.name
-            test_database.connection.exec("CREATE TABLE leftover (id int)")
-            puts "CONTAINER=\#{TestPostgres.server.container_id}"
-          end
-
-          it "looks for it" do
-            puts "FIRST_SAME=\#{test_database.name == FIRST[0]}"
-            puts "LEFTOVER=\#{test_database.connection.exec("SELECT to_regclass('leftover') IS NOT NULL").getvalue(0, 0)}"
-            puts "FIRST_EXISTS=\#{TestPostgres.server.database_names.include?(FIRST[0])}"
+        RSpec.configure do |c|
+          c.around do |example|
+            example.run
+            left = TestPostgres.server.database_names.grep(/\\Aquaack_test_\#{Process.pid}_/)
+            puts "\#{example.metadata[:key]}=\#{left.size}"
           end
         end
       RUBY
     end
 
-    it "gives each test its own database, drops it afterward, and removes the container at exit" do
+    let(:child_source) do
+      <<~RUBY
+        require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}
+        RSpec.configure { |c| TestPostgres.configure(c) }
+        #{watch}
+        FIRST = []
+        RSpec.describe "a tiny suite", order: :defined do
+          it "creates a table", key: "AFTER_ONE" do
+            FIRST << test_database.name
+            test_database.connection.exec("CREATE TABLE leftover (id int)")
+            puts "CONTAINER=\#{TestPostgres.server.container_id}"
+            puts "DURING_ONE=\#{TestPostgres.server.database_names.include?(FIRST[0])}"
+          end
+
+          it "looks for it", key: "AFTER_TWO" do
+            puts "FIRST_SAME=\#{test_database.name == FIRST[0]}"
+            puts "LEFTOVER=\#{test_database.connection.exec("SELECT to_regclass('leftover') IS NOT NULL").getvalue(0, 0)}"
+          end
+        end
+      RUBY
+    end
+
+    it "gives each test its own database, drops it at the end of that test, and removes the container at exit" do
       out, status = run_child_spec(child_source)
       container = child_value(out, "CONTAINER")
 
       expect(status).to be_success, out
       expect(container).to match(/\A\h{64}\z/)
+      expect(child_value(out, "DURING_ONE")).to eq("true")
+      expect(child_value(out, "AFTER_ONE")).to eq("0")
       expect(child_value(out, "FIRST_SAME")).to eq("false")
       expect(child_value(out, "LEFTOVER")).to eq("f")
-      expect(child_value(out, "FIRST_EXISTS")).to eq("false")
+      expect(child_value(out, "AFTER_TWO")).to eq("0")
       expect(docker_ids("id=#{container}")).to be_empty
     end
 
@@ -274,40 +307,83 @@ RSpec.describe TestPostgres do
       RUBY
     end
 
-    it "drops an example's databases even when the example fails" do
+    it "drops an example's databases at the end of that example, even when it fails" do
       source = <<~RUBY
         #{prelude}
-        FIRST = []
-        RSpec.describe "a failing example", order: :defined do
-          it("fails") { FIRST << test_database.name << racetrack_and_arena.arena.name; raise "planted" }
-          it("looks") { puts "LEFT=\#{(TestPostgres.server.database_names & FIRST).size}" }
-        end
-      RUBY
-      out, status = run_child_spec(source)
-
-      expect(status).not_to be_success
-      expect(out).to include("2 examples, 1 failure")
-      expect(child_value(out, "LEFT")).to eq("0"), out
-    end
-
-    it "keeps the container when a process forked from the spec process exits" do
-      source = <<~RUBY
-        #{prelude}
-        RSpec.describe "forking", order: :defined do
-          it("forks") { test_database; Process.wait(fork { puts "CHILD_RAN=true" }) }
-          it("looks") do
-            running, = Open3.capture2("docker", "ps", "-q", "--no-trunc", "--filter", "id=\#{TestPostgres.server.container_id}")
-            puts "RUNNING=\#{running.strip == TestPostgres.server.container_id}"
-            puts "QUERY=\#{test_database.connection.exec("SELECT 1").getvalue(0, 0)}"
+        #{watch}
+        RSpec.describe "a failing example" do
+          it("fails", key: "AFTER_FAIL") do
+            test_database
+            racetrack_and_arena
+            puts "DURING_FAIL=\#{TestPostgres.server.database_names.grep(/\\Aquaack_test_\#{Process.pid}_/).size}"
+            raise "planted"
           end
         end
       RUBY
       out, status = run_child_spec(source)
 
-      expect(child_value(out, "CHILD_RAN")).to eq("true")
-      expect(child_value(out, "RUNNING")).to eq("true")
+      expect(status).not_to be_success
+      expect(out).to include("1 example, 1 failure")
+      expect(child_value(out, "DURING_FAIL")).to eq("3"), out
+      expect(child_value(out, "AFTER_FAIL")).to eq("0"), out
+    end
+
+    # The harness's comment says a spec that forks after using a database
+    # must end the child with `exit!`. This is that case.
+    it "keeps the container and the example's connection when a forked child ends with exit!" do
+      source = <<~RUBY
+        #{prelude}
+        RSpec.describe "forking" do
+          it("forks") do
+            conn = test_database.connection
+            conn.exec("SELECT 1")
+            Process.wait(fork { exit!(7) })
+            puts "CHILD_STATUS=\#{$?.exitstatus}"
+            running, = Open3.capture2("docker", "ps", "-q", "--no-trunc", "--filter", "id=\#{TestPostgres.server.container_id}")
+            puts "RUNNING=\#{running.strip == TestPostgres.server.container_id}"
+            puts "QUERY=\#{conn.exec("SELECT 1").getvalue(0, 0)}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(child_value(out, "CHILD_STATUS")).to eq("7"), out
+      expect(child_value(out, "RUNNING")).to eq("true"), out
       expect(child_value(out, "QUERY")).to eq("1"), out
       expect(status).to be_success, out
+    end
+
+    # A child forked from the spec process runs the same at_exit hooks when
+    # it exits normally, and only the process that started a container may
+    # remove it. The harness never connects to the container here, so the
+    # child can exit normally without closing a connection it shares.
+    it "leaves a container to the process that started it when a forked child exits normally" do
+      source = <<~RUBY
+        require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}
+        RSpec.describe "a fork" do
+          it("forks") do
+            id = TestPostgres.docker("create", "--label", "\#{TestPostgres::LABEL}=1",
+                                     "--label", "\#{TestPostgres::OWNER_LABEL}=\#{Process.pid}", TestPostgres.image_tag)
+            TestPostgres.remove_at_exit(id)
+            puts "CREATED=\#{id}"
+            $stdout.flush
+            Process.wait(fork { puts "CHILD_RAN=true" })
+            puts "CHILD_STATUS=\#{$?.exitstatus}"
+            puts "KEPT=\#{TestPostgres.docker("ps", "-a", "-q", "--no-trunc", "--filter", "id=\#{id}") == id}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+      created = child_value(out, "CREATED")
+
+      expect(status).to be_success, out
+      expect(created).to match(/\A\h{64}\z/)
+      expect(child_value(out, "CHILD_RAN")).to eq("true")
+      expect(child_value(out, "CHILD_STATUS")).to eq("0")
+      expect(child_value(out, "KEPT")).to eq("true"), out
+      expect(docker_ids("id=#{created}")).to be_empty
+    ensure
+      Open3.capture2e("docker", "rm", "-f", "-v", created) if created
     end
 
     describe "when a launch fails" do
