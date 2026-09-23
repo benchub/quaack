@@ -113,7 +113,10 @@ Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject an
 - **Depends on:** 20260922-1, 20260922-17.
 - **README:** What goes into the enclave.
 - **Status:** todo
-- **Open questions:** Should this also reject `CREATE UNIQUE INDEX`, `CONCURRENTLY`, or custom tablespaces?
+- **Decided:**
+  - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
+  - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
+- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today.
 
 ### 20260922-12. Inbound check for step 10 inserts.
 
@@ -163,7 +166,10 @@ Check the connection to the production server and record the version, extensions
 - **Depends on:** 20260922-4, 20260922-13.
 - **README:** Step 2.
 - **Status:** todo
-- **Open questions:** How does the enclave script connect to production (read replica, credentials source)? How do we find instance memory from inside Postgres?
+- **Decided:**
+  - Connect with the operator's own libpq setup on the jump server: the host from the input, plus `PGUSER`, `~/.pgpass`, and `~/.pg_service.conf`. QUAACK stores no credentials, and it reads inside a read-only transaction.
+  - A `quaacks` config value holds a one-line shell command for finding instance memory, with the hostname filled in. The enclave script runs it on the jump server. That leaves room for any cloud provider.
+- **Open questions:** What does the memory command print (bytes, or a size like `64GB`)? What happens when it isn't configured, or when it fails?
 
 ## Step 3: Schema, statistics, and classification.
 
@@ -174,7 +180,7 @@ List the query's relations with pg_query and check each `relkind`. Abort on view
 - **Depends on:** 20260922-14.
 - **README:** 3a.
 - **Status:** todo
-- **Open questions:** Should partitioned tables and foreign tables abort too, since partitioning is out of scope for now?
+- **Decided:** Allow only plain tables (`relkind` `r`). Abort on views, materialized views, partitioned tables, and foreign tables, and name the relation and its kind in the message.
 
 ### 20260922-18. 3b schema dump and subset.
 
