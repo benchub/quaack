@@ -19,14 +19,14 @@ class IsolatedInstall
   # The script that records $LOADED_FEATURES. It shows up in them itself.
   def dumper = File.join(@dir, "dump_features.rb")
 
-  # `gem_name` is a repo gem such as "quaack-enclave". `closure` is the names
+  # `gem_name` is a repo gem such as "quaacks". `closure` is the names
   # of everything it depends on.
   def initialize(gem_name, closure:, dir:)
     @dir = dir
     @home = File.join(dir, "gem_home")
     @gem_names = [gem_name, *closure].uniq
     %w[gems specifications extensions].each { |d| FileUtils.mkdir_p(File.join(@home, d)) }
-    repo_gems, other_gems = @gem_names.partition { |n| repo_gem_dir(n) }
+    repo_gems, other_gems = @gem_names.partition { |n| repo_gemspec(n) }
     other_gems.each { |n| link_installed(n) }
     install_repo_gems(repo_gems)
   end
@@ -60,10 +60,7 @@ class IsolatedInstall
     }
   end
 
-  def repo_gem_dir(name)
-    dir = File.join(REPO_ROOT, name.delete_prefix("quaack-"))
-    name.start_with?("quaack-") && File.exist?(File.join(dir, "#{name}.gemspec")) ? dir : nil
-  end
+  def repo_gemspec(name) = RepoGems.gemspec_path_of(name)
 
   # Links an already-installed gem from the bundle, so native extensions
   # don't have to be rebuilt.
@@ -85,7 +82,8 @@ class IsolatedInstall
   def install_repo_gems(names)
     packages = names.map do |name|
       package = File.join(@dir, "#{name}.gem")
-      gem_command("build", "#{name}.gemspec", "--output", package, chdir: repo_gem_dir(name))
+      gemspec = repo_gemspec(name)
+      gem_command("build", File.basename(gemspec), "--output", package, chdir: File.dirname(gemspec))
       package
     end
     gem_command("install", "--local", "--ignore-dependencies", "--no-document", "--install-dir", @home, *packages)

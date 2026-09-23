@@ -3,7 +3,7 @@
 require_relative "lib/quaack/enclave/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "quaack-enclave"
+  spec.name = "quaacks"
   spec.version = Quaack::Enclave::VERSION
   spec.authors = ["Ben Chobot"]
   spec.summary = "The QUAACK enclave script, which runs on the production jump server."
@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir.glob(["lib/**/*.rb", "exe/*"], base: __dir__)
   spec.bindir = "exe"
-  spec.executables = ["quaack-enclave"]
+  spec.executables = ["quaacks"]
   spec.require_paths = ["lib"]
 
   # Never add the driver gem or an LLM SDK here. spec/boundary_spec.rb at the

@@ -8,9 +8,7 @@
 RSpec.describe "the driver/enclave boundary" do
   def gem_dir(name) = File.join(REPO_ROOT, name)
 
-  def gemspec(name)
-    Gem::Specification.load(File.join(gem_dir(name), "quaack-#{name}.gemspec"))
-  end
+  def gemspec(dir) = RepoGems.gemspec(dir)
 
   def violation_report(violations) = violations.join("\n")
 
@@ -34,7 +32,7 @@ RSpec.describe "the driver/enclave boundary" do
     it "has its library and executable actually scanned" do
       files = Boundary.source_files(gem_dir("enclave")).map { |f| f.delete_prefix("#{gem_dir("enclave")}/") }
 
-      expect(files).to include("lib/quaack/enclave.rb", "lib/quaack/enclave/cli.rb", "exe/quaack-enclave")
+      expect(files).to include("lib/quaack/enclave.rb", "lib/quaack/enclave/cli.rb", "exe/quaacks")
     end
   end
 
@@ -63,8 +61,10 @@ RSpec.describe "the driver/enclave boundary" do
   describe "the driver gem" do
     let(:closure) { Boundary.dependency_closure(gemspec("driver")) }
 
+    # Keyed on the enclave gemspec's own name, so a rename can't leave this
+    # check looking for a gem that no longer exists.
     it "doesn't depend, directly or transitively, on the enclave gem" do
-      expect(closure.names).not_to include("quaack-enclave")
+      expect(closure.names).not_to include(gemspec("enclave").name)
       expect(closure.unresolved).to eq([])
     end
 

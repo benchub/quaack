@@ -4,10 +4,10 @@ require_relative "version"
 
 module Quaack
   module Enclave
-    # The quaack-enclave command line. The driver calls it over ssh. Stdout is
+    # The quaacks command line. The driver calls it over ssh. Stdout is
     # the channel back to the driver, so usage errors go to stderr only.
     class CLI
-      USAGE = "Usage: quaack-enclave --version\n"
+      USAGE = "Usage: quaacks --version\n"
       EX_USAGE = 64
 
       def initialize(stdout: $stdout, stderr: $stderr)
@@ -17,7 +17,7 @@ module Quaack
 
       def run(argv)
         if argv == ["--version"]
-          @stdout.print "quaack-enclave #{VERSION}\n"
+          @stdout.print "quaacks #{VERSION}\n"
           0
         else
           @stderr.print USAGE

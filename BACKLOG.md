@@ -620,7 +620,7 @@ The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 ver
 
 ### 20260923-2. Enclave deploys by gem install only.
 
-The repo has one Gemfile and one lockfile for all three gems. So `bundle install` from a checkout on the jump server would install the driver gem, its LLM SDK once 20260922-6 adds it, and the dev tools. The enclave has to deploy by building and installing the `quaack-enclave` gem on its own. Document that, and make the wrong way hard or impossible, for example by having the enclave executable refuse to run under a bundle that includes the driver.
+The repo has one Gemfile and one lockfile for all three gems. So `bundle install` from a checkout on the jump server would install the driver gem, its LLM SDK once 20260922-6 adds it, and the dev tools. The enclave has to deploy by building and installing the `quaacks` gem on its own. Document that, and make the wrong way hard or impossible, for example by having the enclave executable refuse to run under a bundle that includes the driver.
 
 - **Depends on:** 20260922-1.
 - **Came from:** First review of 20260922-1.

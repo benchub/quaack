@@ -17,7 +17,7 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 - The jump servers are ARM (`aarch64-linux`), like the development Macs. Nothing needs to support x86_64.
 - The command runs RuboCop and then every spec suite. Each suite runs in its own process: `protocol/spec`, `enclave/spec`, `driver/spec`, and the cross-gem specs in `spec/`.
 - Run `bundle install` first on a fresh checkout. The committed `.bundle/config` installs gems into `vendor/bundle`, never globally.
-- The repo holds three gems, `protocol/` (shared), `enclave/`, and `driver/`, all in one root `Gemfile`. The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
+- The repo holds three gems, all in one root `Gemfile`: `protocol/` holds `quaack-protocol` (shared), `enclave/` holds `quaacks` (the enclave script, which runs on the jump server), and `driver/` holds `quaack-driver` (its executable is `quaack`). The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
   - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there. Today that allowlist is the check the boundary actually rests on.
   - `spec/runtime_boundary_spec.rb` installs each side with only its own dependencies, runs its `--version` outside Bundler, and checks everything it loaded. It has known gaps: it trusts the gemspec's own dependency list, and it only sees what `--version` loads. Backlog tasks track closing them.
   - `spec/boundary_checker_spec.rb` proves the static checker catches planted violations.
