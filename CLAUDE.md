@@ -51,7 +51,7 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
    - The work does what the task and README say.
 4. **Fix once.** Send the review findings back to the same builder, so it keeps its context. It gets one more try.
 5. **Review again.** Run a second review with a fresh reviewer agent.
-6. **Land.** Landing means merging the task's branch into `main` locally. There are no pull requests. If the second review is clean, land the work. If it still has findings:
+6. **Land.** Landing means merging the task's branch into `main` locally with `git merge --no-ff`. There are no pull requests. Never squash. A squash drops the branch's history, and git then can't tell the branch was merged, so the safe `git branch -d` refuses to delete it. If the branch has a problem, such as commits missing the attribution trailer, send it back to the builder to fix on its branch before landing. If the second review is clean, land the work. If it still has findings:
    - Land the parts that are sound.
    - Never land code with an unresolved trust-boundary or correctness finding, or with a vacuous test. A test is vacuous if it stays green when the behavior it names is broken.
    - If the second review finds vacuous tests, the builder gets one more round that fixes only those tests. A fresh reviewer then checks just those tests, by breaking the code they cover and confirming they go red. Any test that's still vacuous after that keeps its code from landing, along with the code it was meant to cover.
