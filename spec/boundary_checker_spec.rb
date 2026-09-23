@@ -12,8 +12,8 @@ RSpec.describe Boundary do
   let(:file) { "/fake/enclave/lib/quaack/enclave/step.rb" }
   let(:forbidden) { ["quaack/driver", "anthropic", "openai"] }
 
-  def scan(source, forbidden: self.forbidden)
-    described_class.scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden)
+  def scan(source, forbidden: self.forbidden, names_only: false)
+    described_class.scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden, names_only: names_only)
   end
 
   # One line can break more than one rule, so compare the lines flagged.
@@ -38,6 +38,21 @@ RSpec.describe Boundary do
       source = %(CLIENT = Once.new { require "openai" }\nlog(require("quaack/driver"))\n)
 
       expect(flagged_lines(source)).to eq([1, 2])
+    end
+
+    it "flags a require or require_relative of a path it can't read, even inside a method body" do
+      source = <<~RUBY
+        def self.summarize
+          require File.expand_path("../../../../driver/lib/quaack/driver", __dir__)
+        end
+        require_relative name
+        require "quaack/\#{side}"
+      RUBY
+
+      violations = scan(source)
+
+      expect(violations.map(&:line)).to eq([2, 4, 5])
+      expect(violations.first.message).to include("can't read")
     end
 
     it "flags a require of a file inside a forbidden library" do
@@ -109,7 +124,7 @@ RSpec.describe Boundary do
     end
 
     it "flags Bundler.require, which would load every gem in the shared bundle" do
-      source = %(require "bundler"\nBundler.require\nBundler.load\nKernel.require "pg_query"\n)
+      source = %(require "bundler"\nBundler.require\nBundler.load\nKernel.require "pg_query"\nconfig.require\n)
 
       expect(flagged_lines(source)).to eq([2])
     end
@@ -155,7 +170,45 @@ RSpec.describe Boundary do
     end
   end
 
+  # Loading enclave code on a laptop leaks no production data, so the driver
+  # gets only the forbidden-name rule.
+  describe "names_only, the driver's mode" do
+    let(:source) do
+      <<~RUBY
+        load "/etc/quaack/driver_config.rb"
+        Bundler.require
+        require "./local_settings"
+        require_relative "../../../../tools/setup"
+        require File.join(dir, "plugin")
+      RUBY
+    end
+
+    it "accepts paths, Bundler.require, and requires it can't read, which the enclave's rules flag" do
+      expect(flagged_lines(source)).to eq([1, 2, 3, 4, 5])
+      expect(scan(source, names_only: true)).to eq([])
+    end
+
+    it "still flags a require of a forbidden library" do
+      source = %(x = 1\nrequire "quaack/enclave/cli"\n)
+
+      expect(flagged_lines(source, forbidden: ["quaack/enclave"], names_only: true)).to eq([2])
+    end
+  end
+
   describe "the real forbidden lists" do
+    # Written out here, not read from LLM_SDK_REQUIRES, so dropping one from
+    # that list fails this test.
+    %w[
+      anthropic openai ruby_llm langchain gemini-ai cohere ollama-ai mistral-ai
+      groq omniai aws-sdk-bedrockruntime google/cloud/ai_platform
+    ].each do |sdk|
+      it "stop the enclave and the protocol gem from requiring #{sdk}" do
+        [Boundary::ENCLAVE_FORBIDDEN_REQUIRES, Boundary::PROTOCOL_FORBIDDEN_REQUIRES].each do |list|
+          expect(flagged_lines(%(require "#{sdk}"), forbidden: list)).to eq([1])
+        end
+      end
+    end
+
     it "stop the enclave from requiring the driver or any common LLM SDK" do
       source = %w[quaack/driver quaack/driver/cli anthropic openai ruby_llm langchain].map { |lib| %(require "#{lib}") }
 
@@ -192,6 +245,20 @@ RSpec.describe Boundary do
         violations = described_class.require_violations(dir, forbidden: forbidden)
 
         expect(violations.map { |v| [File.basename(v.file), v.line] }).to contain_exactly(["bad.rb", 1], ["tool", 2])
+      end
+    end
+
+    it "with names_only, flags only forbidden names, not shebangs or paths" do
+      Dir.mktmpdir do |dir|
+        write(dir, "exe/tool", %(#!/usr/bin/ruby -w\nload "/etc/quaack/driver_config.rb"\n))
+        write(dir, "lib/quaack/bad.rb", %(require "quaack/driver"\n))
+
+        where = lambda do |**opts|
+          described_class.require_violations(dir, forbidden:, **opts).map { [File.basename(it.file), it.line] }
+        end
+
+        expect(where.call).to contain_exactly(["tool", 1], ["tool", 2], ["bad.rb", 1])
+        expect(where.call(names_only: true)).to eq([["bad.rb", 1]])
       end
     end
 

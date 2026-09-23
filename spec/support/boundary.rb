@@ -11,14 +11,20 @@ require "prism"
 # spec/support/runtime_boundary.rb). spec/runtime_boundary_spec.rb loads every
 # lib file and flags anything forbidden that loads, so these checks only add
 # a precise message and cover code that never runs, such as a require inside
-# a method body. So they look only at plain string requires:
+# a method body. So they look almost only at plain string requires:
 #
 # - A require, load, or autoload of a forbidden library, such as
 #   quaack/driver or openai in the enclave, or quaack/enclave in the driver.
+#   This is the only rule for the driver (`names_only`), since loading
+#   enclave code on a laptop leaks no production data.
 # - A require_relative or absolute path that leaves the gem, such as into the
 #   driver's tree, or a path relative to the working directory.
+# - A require or require_relative of a path that isn't a plain string, which
+#   this check can't read.
 # - Bundler.require, which would load every gem in the shared bundle. The
-#   runtime check's install has no Gemfile, so it can't see this.
+#   runtime check catches it at the top level, since it runs from the repo
+#   and Bundler finds the repo's Gemfile, but not in code that never runs.
+#   On a jump server with no Gemfile it just raises.
 # - An executable whose shebang isn't exactly SHEBANG.
 #
 # They don't look at send, define_method, symbols, eval, or $LOAD_PATH.
@@ -62,15 +68,15 @@ module Boundary
       Dir.glob(File.join(gem_dir, "exe", "*"))).select { |f| File.file?(f) }.sort
   end
 
-  # Every plain string require in the gem's source files that loads something
-  # in `forbidden` or reaches outside the gem, and every executable whose
-  # shebang isn't exactly SHEBANG.
-  def require_violations(gem_dir, forbidden:)
+  # Every violation of the rules above in the gem's source files. With
+  # `names_only`, only requires of something in `forbidden` count.
+  def require_violations(gem_dir, forbidden:, names_only: false)
     exe_dir = File.join(File.expand_path(gem_dir), "exe", "")
     source_files(gem_dir).flat_map do |file|
       source = File.read(file)
-      shebang = File.expand_path(file).start_with?(exe_dir) ? shebang_violations(file, source) : []
-      shebang + scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden)
+      exe = !names_only && File.expand_path(file).start_with?(exe_dir)
+      shebang = exe ? shebang_violations(file, source) : []
+      shebang + scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden, names_only: names_only)
     end
   end
 
@@ -81,11 +87,11 @@ module Boundary
     [Violation.new(file, 1, "executable's first line must be exactly #{SHEBANG}")]
   end
 
-  def scan_source(source, file:, gem_dir:, forbidden:)
+  def scan_source(source, file:, gem_dir:, forbidden:, names_only: false)
     result = Prism.parse(source, filepath: file)
     return [Violation.new(file, 1, "doesn't parse, so its requires can't be checked")] unless result.success?
 
-    visitor = RequireVisitor.new(file: file, gem_dir: File.expand_path(gem_dir), forbidden: forbidden)
+    visitor = RequireVisitor.new(file: file, gem_dir: File.expand_path(gem_dir), forbidden:, names_only:)
     result.value.accept(visitor)
     visitor.violations
   end
@@ -125,16 +131,16 @@ module Boundary
   class RequireVisitor < Prism::Visitor
     attr_reader :violations
 
-    def initialize(file:, gem_dir:, forbidden:)
+    def initialize(file:, gem_dir:, forbidden:, names_only:)
       super()
       @file = file
       @gem_dir = gem_dir
       @forbidden = forbidden
+      @names_only = names_only
       @violations = []
     end
 
-    # Any receiver counts, so Kernel.require is checked too. A call whose
-    # argument isn't a plain string, such as JSON.load(text), is left alone.
+    # Any receiver counts, so Kernel.require is checked too.
     def visit_call_node(node)
       check_require(node) if REQUIRE_METHODS.include?(node.name)
       super
@@ -143,10 +149,19 @@ module Boundary
     private
 
     def check_require(node)
-      return flag(node, "Bundler.require would load every gem in the shared bundle") if bundler_require?(node)
-
       arg = required_argument(node)
-      check_required(node, arg.unescaped) if arg.is_a?(Prism::StringNode)
+      path = arg.unescaped if arg.is_a?(Prism::StringNode)
+      return check_name(node, path) if @names_only
+      return flag(node, "Bundler.require would load every gem in the shared bundle") if bundler_require?(node)
+      return check_required(node, path) if path
+
+      # The one rule for a path that isn't a plain string, kept because
+      # `require File.expand_path("../../../driver/lib/quaack/driver", __dir__)`
+      # is a common older idiom, and in code that never runs no other check
+      # sees it. load and autoload stay exempt, so JSON.load(text) passes.
+      return unless arg && %i[require require_relative].include?(node.name)
+
+      flag(node, "#{node.name} of a path this check can't read, so it can't tell what it loads")
     end
 
     def required_argument(node)
@@ -159,9 +174,15 @@ module Boundary
         check_path(node, File.expand_path(path, File.dirname(@file)))
       elsif path.start_with?("./", "../")
         flag(node, "#{node.name} #{path.inspect} depends on the working directory")
-      elsif (hit = forbidden_match(path))
-        flag(node, "#{node.name} #{path.inspect} loads #{hit}, which this gem must never load")
+      else
+        check_name(node, path)
       end
+    end
+
+    def check_name(node, path)
+      return unless path && (hit = Boundary.forbidden_match(path, @forbidden))
+
+      flag(node, "#{node.name} #{path.inspect} loads #{hit}, which this gem must never load")
     end
 
     def check_path(node, absolute)
@@ -169,8 +190,6 @@ module Boundary
 
       flag(node, "#{node.name} reaches #{absolute}, outside #{@gem_dir}")
     end
-
-    def forbidden_match(path) = Boundary.forbidden_match(path, @forbidden)
 
     def bundler_require?(node)
       node.name == :require &&
