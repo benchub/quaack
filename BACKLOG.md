@@ -743,18 +743,7 @@ Findings from both reviews of 20260923-13, all outside its diff:
 - **README:** None. This is test infrastructure.
 - **Status:** todo
 
-### 20260923-19. MCV frequencies in the statistics input.
-
-5a-2 needs to know how often a specific literal occurs to decide whether `col = literal` removes most rows on its own. Add the column's most-common values and their frequencies to `ColumnStatistics`, plus a helper that estimates one literal's frequency the way Postgres does. If the literal is an MCV, use its frequency. Otherwise use `(1 - sum of MCV frequencies - null_frac) / (distinct count - number of MCVs)`.
-
-- **Depends on:** 20260923-14.
-- **Came from:** First review of 20260922-31. The user chose MCV frequencies over a low-cardinality rule.
-- **README:** 3c, 3f, and 5a-2.
-- **Status:** todo
-- **Decided:**
-  - The new fields are optional, so existing callers keep working. 5a-1 is being built against this shape right now.
-  - MCV values are real data, so they're value-class. `inspect`, `to_s`, `pp`, pattern matching, and every error message must redact them, the way `IndexCandidate` redacts predicates. Add sentinel tests.
-  - A literal is compared to MCV values by its text form, as `pg_stats` prints them. Document what that can't match.
+### 20260923-19. MCV frequencies in the statistics input. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-20. Finish 5a-1 generator one.
 
@@ -790,6 +779,20 @@ Minor findings from the reviews of 20260922-30:
 - **Depends on:** 20260923-20.
 - **Came from:** Both reviews of 20260922-30, the first review of 20260923-20, and the 20260922-30 builder's notes.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260923-22. MCV statistics loose ends.
+
+Minor findings from the second review of 20260923-19:
+- **The boolean guard is only half pinned.** The only negative case is `%w[t f x]`. The mutants `size <= 2`, `include?(most_common_vals.last)`, and `!include?("x")` all survive. Add a two-value non-boolean case such as `%w[1 0]` or `%w[x t]`.
+- **A text column with only `t` and `f` as MCVs** maps `true` and `1` onto them. The doc could name `varchar`, `"char"`, and `char(1)`, and say that the harm is limited to literals that match no rows.
+- **An invalid-UTF-8 literal on a t/f column** raises `Encoding::CompatibilityError` from `strip`. It doesn't leak.
+- **`TableStatistics#finite` quotes a rejected `reltuples`,** unlike `in_range`. Drop the value for consistency.
+- **Optional:** add a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
+
+- **Depends on:** 20260923-19.
+- **Came from:** Second review of 20260923-19.
+- **README:** 3c.
 - **Status:** todo
 
 ## After version 1.
