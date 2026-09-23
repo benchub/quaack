@@ -409,7 +409,7 @@ Discard candidates that fail to plan on the racetrack, or whose output column co
 
 For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse and racetrack plan. Save the 5a-4 results for step 11.
 
-- **Depends on:** 20260922-40, 20260922-29, 20260922-30, 20260922-31, 20260922-32.
+- **Depends on:** 20260922-40, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260923-12.
 - **README:** Step 8.
 - **Status:** todo
 
