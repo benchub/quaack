@@ -31,7 +31,9 @@ module TestPostgres
   DIR = File.join(__dir__, "postgres")
   USER = "postgres"
   PASSWORD = "quaack-test"
-  READY_TIMEOUT = 60
+  # Seconds to wait for Postgres to take connections. The environment
+  # variable is there so a spec can test the timeout without a long wait.
+  READY_TIMEOUT = Integer(ENV.fetch("QUAACK_TEST_PG_READY_TIMEOUT", "60"))
   # The racetrack template gets the sample rows and ANALYZE. The arena
   # template gets only the schema, since arena starts empty.
   RACETRACK_TEMPLATE = "quaack_racetrack_template"
@@ -54,7 +56,7 @@ module TestPostgres
     end
 
     def connection_params = { host: host, port: port, dbname: name, user: USER, password: PASSWORD }
-    def connect = PG.connect(**connection_params)
+    def connect = TestPostgres.open(**connection_params)
     def connection = @connection ||= connect
 
     def close
@@ -79,7 +81,7 @@ module TestPostgres
       @counter = 0
     end
 
-    def admin = @admin ||= PG.connect(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
+    def admin = @admin ||= TestPostgres.open(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
 
     def database_names = admin.exec("SELECT datname FROM pg_database").column_values(0)
 
@@ -91,7 +93,7 @@ module TestPostgres
       begin
         admin
       rescue PG::ConnectionBad => e
-        raise "Postgres in #{container_id} wasn't ready after #{READY_TIMEOUT}s: #{e.message}" if now > deadline
+        raise not_ready(e) if now > deadline
 
         sleep 0.1
         retry
@@ -122,14 +124,16 @@ module TestPostgres
       @created.clear
     end
 
-    def stop
-      @admin&.close
-      TestPostgres.docker("rm", "-f", "-v", container_id)
-    end
-
     private
 
     def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    # Postgres logs to stderr, so this reads both streams.
+    def not_ready(error)
+      logs, = Open3.capture2e("docker", "logs", "--tail", "20", container_id)
+      "Postgres in #{container_id} wasn't ready after #{READY_TIMEOUT}s: #{error.message.strip}\n" \
+        "Its last log lines:\n#{logs}"
+    end
 
     # Nothing may be connected to a template when it's copied, so the
     # connection that loads it is closed before anyone uses it.
@@ -142,7 +146,35 @@ module TestPostgres
     end
   end
 
+  # A forked process shares the parent's sockets. When it exits, pg closes
+  # its copies of the harness's connections, and that ends the parent's
+  # sessions too. So in the fork, this points each of those sockets at
+  # /dev/null first. The fork can't use the harness's connections, but the
+  # parent keeps them.
+  module ForkGuard
+    def _fork
+      pid = super
+      TestPostgres.discard_connections if pid.zero?
+      pid
+    end
+  end
+  Process.singleton_class.prepend(ForkGuard)
+
   module_function
+
+  # Every connection the harness opens goes through here, so a fork can
+  # find them.
+  def open(**params)
+    (@connections ||= []).reject!(&:finished?)
+    PG.connect(**params).tap { |conn| @connections << conn }
+  end
+
+  def discard_connections
+    (@connections || []).each do |conn|
+      conn.socket_io.reopen(File::NULL) unless conn.finished?
+    end
+    @connections = []
+  end
 
   def docker(*args)
     out, err, status = Open3.capture3("docker", *args)
@@ -161,7 +193,9 @@ module TestPostgres
 
   # Tagged with a hash of the Dockerfile, so an edit gets a new tag and a
   # rebuild, and an unchanged one reuses the image already built.
-  def image_tag = "quaack-test-postgres:#{Digest::SHA256.file(File.join(DIR, "Dockerfile")).hexdigest[0, 12]}"
+  def image_tag(dir = DIR)
+    "quaack-test-postgres:#{Digest::SHA256.file(File.join(dir, "Dockerfile")).hexdigest[0, 12]}"
+  end
 
   def build_image
     docker("image", "inspect", image_tag)
@@ -196,19 +230,36 @@ module TestPostgres
            "-p", "127.0.0.1::5432", image_tag, *SERVER_SETTINGS.flat_map { |s| ["-c", s] })
   end
 
-  def server = @server ||= launch
+  # A launch that fails isn't tried again. Every later example gets the same
+  # error, rather than another build, another 60-second wait, and another
+  # container.
+  def server
+    raise @launch_error if @launch_error
+
+    @server ||= launch
+  rescue StandardError => e
+    @launch_error ||= e
+    raise
+  end
 
   def launch
     check_docker
     remove_stale_containers
     build_image
-    started = Server.new(start_container)
-    # Registered before waiting, so a container that never gets ready is
-    # still removed.
-    at_exit { started.stop }
+    id = start_container
+    remove_at_exit(id)
+    started = Server.new(id)
     started.wait_until_ready
     started.build_templates
     started
+  end
+
+  # Registered as soon as the container exists, so it's removed even if
+  # nothing after this works. Only the process that started it removes it:
+  # a process forked from it runs the same at_exit hooks when it exits.
+  def remove_at_exit(id)
+    owner = Process.pid
+    at_exit { docker("rm", "-f", "-v", id) if Process.pid == owner }
   end
 
   def create_database = server.create_database(RACETRACK_TEMPLATE)

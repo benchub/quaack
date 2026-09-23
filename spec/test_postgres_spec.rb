@@ -29,8 +29,9 @@ RSpec.describe TestPostgres do
     end
   end
 
-  # RSpec prints its progress dots on the same line, so this isn't anchored.
-  def child_value(out, key) = out[/\b#{key}=(\S*)/, 1]
+  # RSpec prints its progress marks (. and F) on the same line, so this isn't
+  # anchored. No key is a suffix of another.
+  def child_value(out, key) = out[/#{key}=(\S*)/, 1]
 
   it "runs Postgres 18" do
     expect(value(test_database, "SHOW server_version_num").to_i).to be_between(180_000, 189_999)
@@ -59,6 +60,68 @@ RSpec.describe TestPostgres do
     TestPostgres.drop_databases
 
     expect(TestPostgres.server.database_names).not_to include(db.name)
+  end
+
+  it "drops both of a racetrack and arena pair" do
+    pair = TestPostgres.create_run_server
+    names = [pair.racetrack.name, pair.arena.name]
+    expect(TestPostgres.server.database_names).to include(*names)
+
+    TestPostgres.drop_databases
+
+    expect(TestPostgres.server.database_names & names).to be_empty
+  end
+
+  # DROP ... WITH (FORCE) would end the backends anyway, so this checks the
+  # client side: the harness closes its own connections rather than leaving
+  # FORCE to cut them off.
+  it "closes its connections to a database before dropping it" do
+    pair = TestPostgres.create_run_server
+    conns = [TestPostgres.create_database, pair.racetrack, pair.arena].map(&:connection)
+
+    TestPostgres.drop_databases
+
+    expect(conns.map(&:finished?)).to eq([true, true, true])
+  end
+
+  it "returns the same database for every call within one example" do
+    expect(test_database).to equal(test_database)
+    expect(racetrack_and_arena).to equal(racetrack_and_arena)
+  end
+
+  it "runs with autovacuum off, as the run server does" do
+    expect(value(test_database, "SHOW autovacuum")).to eq("off")
+  end
+
+  it "publishes Postgres only on 127.0.0.1" do
+    server = TestPostgres.server
+    out, status = Open3.capture2("docker", "port", server.container_id, "5432/tcp")
+
+    expect(status).to be_success
+    expect(out.lines.map(&:strip)).to eq(["127.0.0.1:#{server.port}"])
+  end
+
+  describe "the image tag" do
+    def tag_for(dockerfile_text)
+      Dir.mktmpdir do |dir|
+        File.write(File.join(dir, "Dockerfile"), dockerfile_text)
+        TestPostgres.image_tag(dir)
+      end
+    end
+
+    let(:dockerfile) { File.read(File.join(TestPostgres::DIR, "Dockerfile")) }
+
+    it "is what the running container was started from" do
+      image, = Open3.capture2("docker", "inspect", "--format", "{{.Config.Image}}", TestPostgres.server.container_id)
+
+      expect(image.strip).to eq(TestPostgres.image_tag)
+    end
+
+    it "comes from the Dockerfile's contents, so an edit gets a new tag" do
+      expect(tag_for(dockerfile)).to eq(TestPostgres.image_tag)
+      expect(tag_for("#{dockerfile}# an edit\n")).not_to eq(TestPostgres.image_tag)
+      expect(tag_for("#{dockerfile}# an edit\n")).to match(/\Aquaack-test-postgres:\h{12}\z/)
+    end
   end
 
   describe "the sample schema" do
@@ -201,6 +264,103 @@ RSpec.describe TestPostgres do
         expect(status).not_to be_success
         expect(out).to include("1 example, 1 failure")
         expect(out).to include("TestPostgres needs Docker, and the Docker daemon isn't reachable")
+      end
+    end
+
+    let(:prelude) do
+      <<~RUBY
+        require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}
+        RSpec.configure { |c| TestPostgres.configure(c) }
+      RUBY
+    end
+
+    it "drops an example's databases even when the example fails" do
+      source = <<~RUBY
+        #{prelude}
+        FIRST = []
+        RSpec.describe "a failing example", order: :defined do
+          it("fails") { FIRST << test_database.name << racetrack_and_arena.arena.name; raise "planted" }
+          it("looks") { puts "LEFT=\#{(TestPostgres.server.database_names & FIRST).size}" }
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(status).not_to be_success
+      expect(out).to include("2 examples, 1 failure")
+      expect(child_value(out, "LEFT")).to eq("0"), out
+    end
+
+    it "keeps the container when a process forked from the spec process exits" do
+      source = <<~RUBY
+        #{prelude}
+        RSpec.describe "forking", order: :defined do
+          it("forks") { test_database; Process.wait(fork { puts "CHILD_RAN=true" }) }
+          it("looks") do
+            running, = Open3.capture2("docker", "ps", "-q", "--no-trunc", "--filter", "id=\#{TestPostgres.server.container_id}")
+            puts "RUNNING=\#{running.strip == TestPostgres.server.container_id}"
+            puts "QUERY=\#{test_database.connection.exec("SELECT 1").getvalue(0, 0)}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(child_value(out, "CHILD_RAN")).to eq("true")
+      expect(child_value(out, "RUNNING")).to eq("true")
+      expect(child_value(out, "QUERY")).to eq("1"), out
+      expect(status).to be_success, out
+    end
+
+    describe "when a launch fails" do
+      # A stand-in for the docker command that logs every call and then runs
+      # the real one, except that `docker port` does what `port_script` says.
+      # Faking it here, at the edge, is how these make a launch fail partway.
+      def with_fake_docker(port_script)
+        Dir.mktmpdir do |dir|
+          log = File.join(dir, "calls.log")
+          File.write(File.join(dir, "docker"), <<~SH, perm: 0o755)
+            #!/bin/sh
+            echo "$1" >> #{log}
+            if [ "$1" = port ]; then #{port_script}; fi
+            exec #{real_docker} "$@"
+          SH
+          yield({ "PATH" => "#{dir}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}" }, log)
+        end
+      end
+
+      def real_docker
+        ENV.fetch("PATH").split(File::PATH_SEPARATOR).map { |d| File.join(d, "docker") }.find { |f| File.executable?(f) }
+      end
+
+      let(:source) do
+        <<~RUBY
+          #{prelude}
+          RSpec.describe "a broken launch" do
+            it("one") { puts "PID=\#{Process.pid}"; test_database }
+            it("two") { test_database }
+          end
+        RUBY
+      end
+
+      it "tries once, fails every example with the same error, and leaves no container behind" do
+        with_fake_docker('echo "planted port failure" >&2; exit 1') do |env, log|
+          out, status = run_child_spec(source, env: env)
+
+          expect(status).not_to be_success
+          expect(out).to include("2 examples, 2 failures")
+          expect(out.scan("docker port failed: planted port failure").size).to eq(2)
+          expect(File.readlines(log, chomp: true).count("run")).to eq(1)
+          expect(docker_ids("label=#{TestPostgres::OWNER_LABEL}=#{child_value(out, "PID")}")).to be_empty
+        end
+      end
+
+      it "says what the container logged when Postgres never gets ready" do
+        with_fake_docker('echo "127.0.0.1:1"; exit 0') do |env, _log|
+          out, status = run_child_spec(source, env: env.merge("QUAACK_TEST_PG_READY_TIMEOUT" => "3"))
+
+          expect(status).not_to be_success
+          expect(out).to include("wasn't ready after 3s")
+          expect(out).to match(/Its last log lines:.*database system/m)
+        end
       end
     end
   end
