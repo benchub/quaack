@@ -54,6 +54,7 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
    - Never land code with an unresolved trust-boundary or correctness finding.
    - Add a new BACKLOG.md task for each finding that's left, pointing back to the original task ID.
    The original task moves to BACKLOG-COMPLETE.md only if what landed covers it. Otherwise it stays open, with a note saying what landed.
+   Once the work is committed to `main`, remove the task's worktree and delete its branch. Don't leave finished worktrees lying around.
 7. **Record.** Findings that are real but out of the task's scope become new backlog tasks at any round, not just the last one.
 
 ## Test-driven development.
