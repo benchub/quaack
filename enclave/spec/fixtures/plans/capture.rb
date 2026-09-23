@@ -49,6 +49,11 @@ PLANS = {
   "bitmap_heap_scan_filter" => [
     [], "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents < 5000"
   ],
+  # The InitPlan comes before the Bitmap Index Scan in the heap scan's Plans.
+  "bitmap_heap_scan_init_plan" => [
+    [], "SELECT o.id FROM public.orders o " \
+        "WHERE o.status = (SELECT 'shipped'::text FROM public.customers c WHERE c.id = 1) AND o.total_cents < 5000"
+  ],
   "sort_under_limit" => [
     [], "SELECT o.id FROM public.orders o WHERE o.customer_id = 5 ORDER BY o.created_at DESC LIMIT 3"
   ],
@@ -66,7 +71,8 @@ PLANS = {
     "SELECT c.name, o.total_cents FROM public.customers c JOIN public.orders o ON o.customer_id = c.id"
   ],
   "bitmap_or" => [
-    [], "SELECT c.id FROM public.customers c WHERE c.id = 5 OR c.email = 'ada.smith.8@example.com'"
+    # Two of the three arms use the same index.
+    [], "SELECT c.id FROM public.customers c WHERE c.id < 5 OR c.email = 'ada.smith.8@example.com' OR c.id > 1995"
   ],
   "hash_aggregate" => [
     [], "SELECT o.status, o.total_cents, count(*) FROM public.orders o GROUP BY o.status, o.total_cents"
@@ -113,7 +119,7 @@ PLANS = {
   "index_scan_unique_filter" => [
     ["enable_seqscan = off", "enable_bitmapscan = off"],
     "SELECT c.id FROM public.customers c WHERE c.id < 1800 AND c.created_at > '2025-01-05' " \
-    "AND c.name = 'Ada Smith 8'"
+    "AND c.name = 'Ada Smith 8' AND c.id % 2 = 0"
   ],
   # The inner side is an Index Scan with the join in its Index Cond, and a
   # Filter with a range before a constant equality.

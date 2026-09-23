@@ -136,8 +136,13 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("bitmap_heap_scan_filter")).to eq(extended)
     end
 
+    it "finds the Bitmap Index Scan behind an InitPlan in the heap scan's children" do
+      expect(ddl("bitmap_heap_scan_init_plan")).to eq(extended)
+    end
+
     it "extends a unique index into plain candidates from the plan only, constant equality columns first" do
-      # Index Scan on customers_pkey, Filter (created_at > ...) AND (name = ...).
+      # Index Scan on customers_pkey, Filter (created_at > ...) AND
+      # (name = ...) AND ((id % 2) = 0). id is already in the key.
       candidates = generate("index_scan_unique_filter")
       expect(candidates.map(&:to_ddl)).to eq(
         [btree("customers", "id, name, created_at"), btree("customers", "id", " INCLUDE (name, created_at)")]
@@ -253,7 +258,8 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
   end
 
   describe "a BitmapOr or BitmapAnd of single-column indexes" do
-    it "proposes one composite index on their columns" do
+    it "proposes one composite index on their columns, each column once" do
+      # BitmapOr of customers_pkey, customers_email_key, and customers_pkey.
       expect(ddl("bitmap_or")).to eq([btree("customers", "id, email")])
       expect(ddl("bitmap_and")).to eq([btree("orders", "customer_id, id")])
     end
@@ -337,6 +343,15 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     end
   end
 
+  describe "its thresholds" do
+    it "default to the values the task decided" do
+      expect(described_class::THRESHOLDS).to eq(
+        most_rows_removed: 0.9, many_rows_removed: 0.5, many_rows_min: 1000,
+        expensive_inner_rows: 10_000, large_hash_rows: 100_000, large_hash_batches: 2
+      )
+    end
+  end
+
   describe "bad input" do
     it "refuses anything but the parsed EXPLAIN JSON array" do
       [{ "Plan" => {} }, [], [{ "Plan" => "x" }], [{}], nil].each do |bad|
@@ -356,8 +371,10 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "refuses statistics that aren't a Statistics, and schemas that aren't names" do
       expect { described_class.candidates(plan("init_plan"), statistics: {}) }
         .to raise_error(ArgumentError, /Statistics/)
-      expect { described_class.candidates(plan("init_plan"), statistics:, schemas: "public") }
-        .to raise_error(ArgumentError, /schemas/)
+      [" public", ["public", :archive]].each do |bad|
+        expect { described_class.candidates(plan("init_plan"), statistics:, schemas: bad) }
+          .to raise_error(ArgumentError, /schemas/), bad.inspect
+      end
     end
 
     it "refuses a threshold that isn't a number in range" do
@@ -377,6 +394,11 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "reach the partial predicates, so the checks below have something to catch" do
       candidates = generate("sentinel_literals")
       expect(candidates.map(&:to_ddl).join).to include(*sentinels)
+    end
+
+    it "come from equally selective columns, which keep the plan's order" do
+      # email and name both have an equality selectivity of 1/2,000.
+      expect(generate("sentinel_literals").first.to_ddl).to eq(btree("customers", "email, name"))
     end
 
     it "never show up in the candidates' inspect or to_s" do
@@ -449,7 +471,15 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(kinds.call("(o.customer_id = c.id)")).to eq([[:join, %w[customer_id id]]])
       expect(kinds.call("(total_cents = customer_id)")).to eq([[:other, %w[total_cents customer_id]]])
       expect(kinds.call("(status = ANY ('{a,b}'::text[]))")).to eq([[:other, ["status"]]])
-      expect(kinds.call("(public.o.status = 'x'::text)")).to eq([[:other, []]])
+      expect(kinds.call("(o.status.x = 'x'::text)")).to eq([[:other, []]])
+    end
+
+    it "reads a bare key as the plan's one alias, and only when there's one" do
+      one = enclave.const_get(:PlanNode).new(plan("seq_scan_parameter").first["Plan"]).subtree
+      two = enclave.const_get(:PlanNode).new(plan("hash_join_batches").first["Plan"]).subtree
+      keys = ->(nodes) { enclave.const_get(:PlanColumns).new(nodes, statistics, nil).sort_keys(["id"]) }
+      expect(keys.call(one).map { |column, *| [column.alias_name, column.name] }).to eq([%w[o id]])
+      expect(keys.call(two)).to eq([])
     end
   end
 end

@@ -13,7 +13,7 @@
       "Plan Rows": 235,
       "Plan Width": 8,
       "Actual Startup Time": 0.015,
-      "Actual Total Time": 0.49,
+      "Actual Total Time": 0.501,
       "Actual Rows": 235.0,
       "Actual Loops": 1,
       "Disabled": false,
@@ -49,8 +49,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.224,
+    "Planning Time": 0.176,
     "Triggers": [],
-    "Execution Time": 0.518
+    "Execution Time": 0.527
   }
 ]

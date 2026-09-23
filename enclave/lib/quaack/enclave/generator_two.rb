@@ -21,7 +21,7 @@ module Quaack
     # result is a frozen, duplicate-free array of candidates, each with
     # sources [:plan]. It comes in the order of a depth-first walk of the
     # plan, InitPlans and SubPlans included, and within a node in the order
-    # of the patterns in GeneratorTwoPatterns. The same input always gives
+    # of GeneratorTwoPatterns#patterns. The same input always gives
     # the same output.
     #
     # The thresholds are keyword arguments, each a finite, non-negative
@@ -44,8 +44,9 @@ module Quaack
     # Trust boundary: a partial-index candidate's predicate holds a real
     # literal from the plan, so the result is value-class data until 5a-3
     # filters it. This module sends nothing anywhere. No error it raises
-    # includes anything from the plan, and its helpers' inspect output
-    # leaves the plan out.
+    # includes anything from the plan. PlanNode and PlanColumns::Conjunct,
+    # the helpers that hold plan text, leave it out of inspect, so nothing
+    # that inspects them, or the helpers that hold them, shows it either.
     module GeneratorTwo
       THRESHOLDS = {
         most_rows_removed: 0.9, many_rows_removed: 0.5, many_rows_min: 1_000,
@@ -81,6 +82,8 @@ module Quaack
         end
       end
 
+      private_class_method :roots, :check_thresholds
+
       # One call's walk over one plan. It holds the plan only for the length
       # of the call.
       class Walk
@@ -92,10 +95,8 @@ module Quaack
           @thresholds = thresholds
         end
 
-        def inspect = "#<#{self.class}>"
-
         def candidates
-          @nodes.flat_map { |node| PATTERNS.flat_map { |pattern| send(pattern, node) } }.compact.uniq.freeze
+          @nodes.flat_map { |node| patterns(node) }.compact.uniq.freeze
         end
 
         private
@@ -117,8 +118,8 @@ module Quaack
           nil
         end
 
-        # Whether a value from the plan meets a threshold. A nil value, such
-        # as the removed fraction of a node that read no rows, never does.
+        # Whether a value meets a threshold. nil (an unknown selectivity) and
+        # NaN (the removed fraction of a node that read no rows) never do.
         def at_least?(value, threshold) = !value.nil? && value >= thresholds.fetch(threshold)
 
         # The TableStatistics a scan node of one of the types reads, or nil.

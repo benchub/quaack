@@ -9,17 +9,17 @@
       "Relation Name": "customers",
       "Alias": "c",
       "Startup Cost": 0.28,
-      "Total Cost": 96.76,
+      "Total Cost": 105.75,
       "Plan Rows": 1,
       "Plan Width": 8,
-      "Actual Startup Time": 0.156,
-      "Actual Total Time": 0.157,
+      "Actual Startup Time": 0.149,
+      "Actual Total Time": 0.15,
       "Actual Rows": 0.0,
       "Actual Loops": 1,
       "Disabled": false,
       "Index Cond": "(id < 1800)",
       "Rows Removed by Index Recheck": 0,
-      "Filter": "((created_at > '2025-01-05 00:00:00+00'::timestamp with time zone) AND (name = 'Ada Smith 8'::text))",
+      "Filter": "((created_at > '2025-01-05 00:00:00+00'::timestamp with time zone) AND (name = 'Ada Smith 8'::text) AND ((id % '2'::bigint) = 0))",
       "Rows Removed by Filter": 1799,
       "Index Searches": 1,
       "Shared Hit Blocks": 26,
@@ -38,7 +38,7 @@
       "enable_bitmapscan": "off"
     },
     "Planning": {
-      "Shared Hit Blocks": 107,
+      "Shared Hit Blocks": 109,
       "Shared Read Blocks": 0,
       "Shared Dirtied Blocks": 0,
       "Shared Written Blocks": 0,
@@ -49,8 +49,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.175,
+    "Planning Time": 0.183,
     "Triggers": [],
-    "Execution Time": 0.174
+    "Execution Time": 0.159
   }
 ]

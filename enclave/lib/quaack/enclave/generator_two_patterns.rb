@@ -17,11 +17,6 @@ module Quaack
     # is left out (see PlanColumns), so a pattern with nothing left to key
     # on proposes nothing.
     module GeneratorTwoPatterns
-      # The order the patterns run in on each node.
-      PATTERNS = %i[
-        seq_scan filtered_index_scan bitmap_combination sort nested_loop hash_join aggregate
-      ].freeze
-
       SCAN_QUALS = ["Filter", "Index Cond", "Recheck Cond"].freeze
 
       module ScanPatterns
@@ -34,23 +29,22 @@ module Quaack
         # Filter's other columns, constant equality columns first. With no
         # other columns there's no partial index, because the plain btree on
         # the column already covers it. A `col = $1` conjunct can't be a
-        # predicate, and the IndexCandidate constructor refuses it.
+        # predicate. The IndexCandidate constructor refuses both an empty key
+        # and a parameter, so build gives nil for them, and a Filter with no
+        # constant equality columns proposes nothing.
         def seq_scan(node)
           table = scan_table(node, "Seq Scan")
           return [] unless table && at_least?(node.removed_fraction, :most_rows_removed)
 
           conjuncts = scan_conjuncts(node, ["Filter"])
           equality = by_selectivity(constant_columns(conjuncts, node.alias_name)).map(&:name)
-          return [] if equality.empty?
-
           [build(table, key: equality), *partials(table, conjuncts, node.alias_name, equality)]
         end
 
         def partials(table, conjuncts, alias_name, equality)
           columns = (equality + own_columns(conjuncts, alias_name).map(&:name)).uniq
           conjuncts.select { |c| removes_most_alone?(c) }.map do |c|
-            key = columns - [c.columns.first.name]
-            build(table, key:, predicate: PlanExpression.unqualified_sql(c.node)) if key.any?
+            build(table, key: columns - [c.columns.first.name], predicate: PlanExpression.unqualified_sql(c.node))
           end
         end
 
@@ -99,11 +93,13 @@ module Quaack
 
         # Bitmap Heap Scan over a BitmapAnd or BitmapOr: one index on the
         # columns of the single-column indexes it combines, in plan order,
-        # when there are at least two.
+        # when there are at least two. Only a Bitmap Heap Scan has Bitmap
+        # Index Scans under it, so this reads any scan.
         def bitmap_combination(node)
-          table = scan_table(node, "Bitmap Heap Scan")
-          names = table ? bitmap_index_scans(node).filter_map { |s| single_column(table.indexes[s["Index Name"]]) } : []
-          names.uniq.size > 1 ? [build(table, key: names.uniq)] : []
+          table = columns.table(node)
+          scans = table ? bitmap_index_scans(node) : []
+          names = scans.filter_map { |s| single_column(table.indexes[s["Index Name"]]) }.uniq
+          names.size > 1 ? [build(table, key: names)] : []
         end
 
         def single_column(index) = (index.key.first.name if index&.key&.size == 1)
@@ -199,7 +195,8 @@ module Quaack
         # Every node's quals are read, and constant_columns keeps only the
         # alias's own columns.
         def equality_names(node, alias_name)
-          by_selectivity(node.subtree.flat_map { |n| constant_columns(scan_conjuncts(n), alias_name) }.uniq).map(&:name)
+          # Only the alias's one scan has any, so there are no repeats.
+          by_selectivity(node.subtree.flat_map { |n| constant_columns(scan_conjuncts(n), alias_name) }).map(&:name)
         end
 
         # Aggregate with Strategy Hashed, or Sorted over a Sort: for each
@@ -220,6 +217,12 @@ module Quaack
       include ScanPatterns
       include JoinPatterns
       include OrderPatterns
+
+      # Every pattern's candidates for one node, in this order.
+      def patterns(node)
+        seq_scan(node) + filtered_index_scan(node) + bitmap_combination(node) + sort(node) +
+          nested_loop(node) + hash_join(node) + aggregate(node)
+      end
     end
 
     private_constant :GeneratorTwoPatterns

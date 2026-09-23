@@ -42,15 +42,12 @@ module Quaack
         @sole_alias = @scans.keys.first if @scans.size == 1
       end
 
-      def inspect = "#<#{self.class}>"
-
       # The scan node for an alias, or nil.
       def scan(alias_name) = @scans[alias_name]
 
-      # The TableStatistics for a scan node, or nil.
+      # The TableStatistics for a scan node, or nil. A node that scans no
+      # table matches no name.
       def table(node)
-        return nil unless node.relation
-
         matches = named(node)
         matches = matches.select { |t| @schemas.include?(t.name.schema) } if matches.size > 1 && @schemas
         matches.first if matches.size == 1

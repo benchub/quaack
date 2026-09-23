@@ -10,8 +10,8 @@
       "Total Cost": 53.0,
       "Plan Rows": 1,
       "Plan Width": 8,
-      "Actual Startup Time": 0.091,
-      "Actual Total Time": 0.091,
+      "Actual Startup Time": 0.095,
+      "Actual Total Time": 0.095,
       "Actual Rows": 0.0,
       "Actual Loops": 1,
       "Disabled": false,
@@ -44,8 +44,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.158,
+    "Planning Time": 0.155,
     "Triggers": [],
-    "Execution Time": 0.11
+    "Execution Time": 0.113
   }
 ]

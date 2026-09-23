@@ -22,9 +22,8 @@ module Quaack
         @children = plans.map { |child| PlanNode.new(child) }.freeze
       end
 
+      # to_s needs nothing: Object#to_s never shows instance variables.
       def inspect = "#<#{self.class} #{type.inspect}>"
-
-      alias to_s inspect
 
       def [](key) = @fields[key]
 
@@ -37,8 +36,8 @@ module Quaack
       # Only a plan made with VERBOSE has the schema.
       def schema = string("Schema")
 
-      # nil for a node that doesn't scan a table, such as a CTE Scan.
-      def alias_name = relation && string("Alias")
+      # A CTE Scan or Subquery Scan has one too. Its columns map to no table.
+      def alias_name = string("Alias")
 
       def rows = @fields["Actual Rows"].to_f
 

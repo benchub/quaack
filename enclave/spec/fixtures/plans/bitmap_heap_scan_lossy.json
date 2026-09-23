@@ -4,12 +4,12 @@
       "Node Type": "Gather",
       "Parallel Aware": false,
       "Async Capable": false,
-      "Startup Cost": 4280.26,
-      "Total Cost": 17506.37,
-      "Plan Rows": 29997,
+      "Startup Cost": 4331.79,
+      "Total Cost": 17607.98,
+      "Plan Rows": 30464,
       "Plan Width": 4,
-      "Actual Startup Time": 7.034,
-      "Actual Total Time": 18.84,
+      "Actual Startup Time": 7.051,
+      "Actual Total Time": 18.568,
       "Actual Rows": 29999.0,
       "Actual Loops": 1,
       "Disabled": false,
@@ -34,12 +34,12 @@
           "Async Capable": false,
           "Relation Name": "events",
           "Alias": "e",
-          "Startup Cost": 3280.26,
-          "Total Cost": 13506.67,
-          "Plan Rows": 12499,
+          "Startup Cost": 3331.79,
+          "Total Cost": 13561.58,
+          "Plan Rows": 12693,
           "Plan Width": 4,
-          "Actual Startup Time": 5.868,
-          "Actual Total Time": 14.568,
+          "Actual Startup Time": 5.898,
+          "Actual Total Time": 14.765,
           "Actual Rows": 9999.67,
           "Actual Loops": 3,
           "Disabled": false,
@@ -47,8 +47,8 @@
           "Rows Removed by Index Recheck": 45655,
           "Filter": "(id < 100000)",
           "Rows Removed by Filter": 90000,
-          "Exact Heap Blocks": 264,
-          "Lossy Heap Blocks": 515,
+          "Exact Heap Blocks": 261,
+          "Lossy Heap Blocks": 505,
           "Shared Hit Blocks": 1322,
           "Shared Read Blocks": 1315,
           "Shared Dirtied Blocks": 0,
@@ -62,13 +62,13 @@
           "Workers": [
             {
               "Worker Number": 0,
-              "Exact Heap Blocks": 239,
-              "Lossy Heap Blocks": 522
+              "Exact Heap Blocks": 261,
+              "Lossy Heap Blocks": 521
             },
             {
               "Worker Number": 1,
-              "Exact Heap Blocks": 264,
-              "Lossy Heap Blocks": 524
+              "Exact Heap Blocks": 245,
+              "Lossy Heap Blocks": 535
             }
           ],
           "Plans": [
@@ -79,11 +79,11 @@
               "Async Capable": false,
               "Index Name": "events_kind_idx",
               "Startup Cost": 0.0,
-              "Total Cost": 3272.76,
-              "Plan Rows": 294978,
+              "Total Cost": 3324.18,
+              "Plan Rows": 299700,
               "Plan Width": 0,
-              "Actual Startup Time": 6.723,
-              "Actual Total Time": 6.723,
+              "Actual Startup Time": 6.737,
+              "Actual Total Time": 6.737,
               "Actual Rows": 300000.0,
               "Actual Loops": 1,
               "Disabled": false,
@@ -122,8 +122,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.091,
+    "Planning Time": 0.086,
     "Triggers": [],
-    "Execution Time": 19.767
+    "Execution Time": 19.576
   }
 ]
