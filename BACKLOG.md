@@ -217,7 +217,10 @@ Build the slow, worst-case, and typical literal sets and keep them in the govern
 - **Depends on:** 20260922-14, 20260922-19.
 - **README:** 3e.
 - **Status:** todo
-- **Open questions:** The README defines worst-case for equality columns and typical from a histogram bound. What do non-equality literals (ranges, `LIKE`, `IN` lists) get in the worst-case and typical sets?
+- **Decided:** Pick values by operator.
+  - **Ranges:** the worst case is the histogram bound that selects the most rows, and the typical value is the middle bound.
+  - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
+  - **`LIKE` and any other operator:** use the slow literal in all three sets.
 
 ### 20260922-22. 3f PII and low-cardinality classification.
 
@@ -235,7 +238,7 @@ Replace literals with numbered, shape-preserving placeholders. Annotate each wit
 - **Depends on:** 20260922-13, 20260922-15.
 - **README:** 3g.
 - **Status:** todo
-- **Open questions:** Racetrack plans for rewrites may carry literals in forms the original didn't, like casts or folded constants. How do we map those back to placeholders, and what do we do with a literal we can't map?
+- **Decided:** Match each literal in a racetrack plan to the placeholder map by value, after normalizing casts. Replace anything still unmatched with a generic `$?` marker, so no literal leaks, and count the masks for the 15b burndown.
 
 ### 20260922-24. 3h clock anchoring.
 
@@ -244,7 +247,7 @@ Replace the listed time functions with `quaack.clock_anchor()` in the AST. Keep 
 - **Depends on:** 20260922-14.
 - **README:** 3h.
 - **Status:** todo
-- **Open questions:** The README says `clock_anchor()` returns "the capture time from 3h," but nothing captures a time yet. Is it the time the production plan ran, and where does that come from?
+- **Decided:** `quaacks intake` takes an optional `--captured-at` flag, the time the production plan ran. Without it, the anchor is the time of intake. The run stores the anchor, and `clock_anchor()` returns it.
 
 ## Step 4: Run server.
 
@@ -255,7 +258,7 @@ Verify the run server: same major version and extensions as production plus Hypo
 - **Depends on:** 20260922-16.
 - **README:** Step 4.
 - **Status:** todo
-- **Open questions:** How do we check "no background jobs" (pg_cron, other schedulers)?
+- **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
 
 ### 20260922-26. 4a racetrack setup.
 
