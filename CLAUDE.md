@@ -7,6 +7,20 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 - Write QUAACK in Ruby. Use the pg_query gem for all SQL parsing, deparsing, and tree walking.
 - Use Docker for anything that needs Postgres, including tests. The test suite starts its own throwaway Postgres containers with HypoPG. It never uses a shared or long-lived database.
 
+## Development.
+
+- Use Ruby 3.4. Homebrew's `ruby@3.4` is keg-only, and the system Ruby on PATH is 3.1, so put 3.4 first on PATH for every command:
+
+  `PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH bundle exec rake`
+
+- That one command runs RuboCop and then every spec suite. Each suite runs in its own process: `protocol/spec`, `enclave/spec`, `driver/spec`, and the cross-gem specs in `spec/`.
+- Run `bundle install` first on a fresh checkout. The committed `.bundle/config` installs gems into `vendor/bundle`, never globally.
+- The repo holds three gems, `protocol/` (shared), `enclave/`, and `driver/`, all in one root `Gemfile`. The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
+  - `spec/runtime_boundary_spec.rb` is the real guarantee. It installs each side with only its own dependencies, runs it outside Bundler, and checks everything it loaded.
+  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there.
+  - `spec/boundary_checker_spec.rb` proves the static checker catches planted violations.
+- If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add it there.
+
 ## Backlog.
 
 - Work on one backlog task at a time. Don't start building the next task until the current one has landed or been set aside. Having several tasks in flight at once invites conflicting work.

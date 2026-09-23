@@ -1,0 +1,23 @@
+name: CI
+
+# The repo doesn't use pull requests.
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and specs (Ruby 3.4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: RuboCop and every gem's specs
+        run: bundle exec rake

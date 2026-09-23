@@ -1,0 +1,8 @@
+# Gems install into the repo, never globally. See .bundle/config.
+/vendor/
+/.bundle/*
+!/.bundle/config
+
+*.gem
+/pkg/
+.rspec_status

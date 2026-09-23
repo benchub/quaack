@@ -1,0 +1,21 @@
+# frozen_string_literal: true
+
+require_relative "lib/quaack/driver/version"
+
+Gem::Specification.new do |spec|
+  spec.name = "quaack-driver"
+  spec.version = Quaack::Driver::VERSION
+  spec.authors = ["Ben Chobot"]
+  spec.summary = "The QUAACK driver, which runs on an engineer's laptop."
+  spec.required_ruby_version = ">= 3.4"
+  spec.metadata["rubygems_mfa_required"] = "true"
+
+  spec.files = Dir.glob(["lib/**/*.rb", "exe/*"], base: __dir__)
+  spec.bindir = "exe"
+  spec.executables = ["quaack"]
+  spec.require_paths = ["lib"]
+
+  # Never add the enclave gem here. spec/boundary_spec.rb at the repo root
+  # fails if it shows up, directly or transitively.
+  spec.add_dependency "quaack-protocol"
+end
