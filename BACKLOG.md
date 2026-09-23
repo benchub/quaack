@@ -662,16 +662,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 
 ### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-4. Harden the runtime boundary check.
-
-The runtime check in `spec/runtime_boundary_spec.rb` has two gaps:
-- **It trusts the gemspec.** It builds its allowed set from the enclave gemspec's own dependency closure. If the enclave gains a dependency on `quaack-driver`, the check installs the driver and allows loading it. Only the dependency allowlist in `spec/boundary_spec.rb` catches that today. The runtime check should take the closure from that same allowlist, or assert that nothing loads from the driver gem or a known LLM gem.
-- **It only runs `--version`.** A forbidden require in any other code path, such as `Kernel.enum_for("require", "quaack/driver").first` in the usage branch, passes every check. Make it also require every file under the installed gem's `lib/`. Write down what it still can't catch, like lazy loads inside method bodies.
-
-- **Depends on:** 20260922-1.
-- **Came from:** Second review of 20260922-1, findings 1 and 2.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-4. Harden the runtime boundary check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-5. Discover spec suites instead of listing them. Done, see BACKLOG-COMPLETE.md.
 
@@ -753,4 +744,17 @@ RSpec reads `.rspec-local`, `~/.rspec`, and `SPEC_OPTS`. None of them are in the
 - **Depends on:** 20260923-5.
 - **Came from:** Second review of 20260923-5, finding 3.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-13. Tighten the runtime boundary checker tests.
+
+The second review of 20260923-4 found no boundary holes, since every in-scope plant in the real repo turns the runtime spec red. But some tests prove less than their names say:
+- **Three checker tests pass with their plant removed.** In `spec/runtime_boundary_checker_spec.rb`, the tests for an orphan enclave lib file, an orphan protocol lib file, and the driver loading the enclave from a file `--version` never reaches each add the other side as a dependency. The every-file run then loads that gem's own files, which get flagged whether or not the planted `hidden.rb` exists. Drop the added dependency, or assert that the message names the planted file. Also add a deliberate test that a bare driver dependency, with no require, is flagged.
+- **The real-gem every-file test can't tell every file from the entry file.** `spec/runtime_boundary_spec.rb` asserts that the entry file and `cli.rb` loaded, but the entry file loads `cli.rb` itself. Requiring only the first file keeps it green.
+- **Code no test observes.** Nothing tests the trailing `/` in `under?`. The `rubyarchdir` entry in `stdlib_dirs` is redundant. `forbidden_require?` tries every `/lib/` split when the last one would do. `Check#closure`'s custom lookup can be replaced with `Boundary.installed_spec` and stay green. Simplify or test each one.
+- **Known-gaps comment.** Mention `begin; require "openai"; rescue LoadError; end`. A rescued LoadError passes the runtime check, and only the static check catches it.
+
+- **Depends on:** 20260923-4.
+- **Came from:** Second review of 20260923-4, findings 1, 2, 3, and 5. Finding 4 was a CLAUDE.md wording fix, made at landing.
+- **README:** None. This is test infrastructure.
 - **Status:** todo
