@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 # The driver and the enclave script run on different machines, on opposite
-# sides of the trust boundary. See README.md, "Where QUAACK runs." These specs
-# fail if either gem reaches into the other, or if the enclave can load an LLM
-# SDK.
+# sides of the trust boundary. See README.md, "Where QUAACK runs." These are
+# the static checks: they fail if either gem declares or requires the other,
+# or if the enclave can reach an LLM SDK. runtime_boundary_spec.rb holds the
+# runtime check.
 RSpec.describe "the driver/enclave boundary" do
   def gem_dir(name) = File.join(REPO_ROOT, name)
 
@@ -13,25 +14,19 @@ RSpec.describe "the driver/enclave boundary" do
 
   def violation_report(violations) = violations.join("\n")
 
-  enclave_forbidden_gems = ["quaack-driver", *Boundary::LLM_SDK_GEMS]
-  enclave_forbidden_requires = ["quaack/driver", *Boundary::LLM_SDK_REQUIRES]
-
   describe "the enclave gem" do
     let(:closure) { Boundary.dependency_closure(gemspec("enclave")) }
 
-    it "doesn't depend, directly or transitively, on the driver gem or an LLM SDK" do
-      expect(closure.names & enclave_forbidden_gems).to eq([])
+    # Every gem the enclave can load, directly or transitively. It's an
+    # allowlist, so any new dependency fails here until someone reviews it and
+    # adds it. Never add the driver gem or an LLM SDK.
+    it "depends on exactly the reviewed gems" do
+      expect(closure.names).to contain_exactly("pg_query", "google-protobuf", "bigdecimal", "rake", "quaack-protocol")
       expect(closure.unresolved).to eq([])
     end
 
-    it "has its dependency tree actually walked" do
-      # pg_query pulls in google-protobuf, so seeing it proves the walk went
-      # past direct dependencies.
-      expect(closure.names).to include("pg_query", "quaack-protocol", "google-protobuf")
-    end
-
     it "never requires the driver gem, an LLM SDK, or a file outside itself" do
-      violations = Boundary.require_violations(gem_dir("enclave"), forbidden: enclave_forbidden_requires)
+      violations = Boundary.require_violations(gem_dir("enclave"), forbidden: Boundary::ENCLAVE_FORBIDDEN_REQUIRES)
 
       expect(violations).to be_empty, violation_report(violations)
     end
@@ -45,17 +40,15 @@ RSpec.describe "the driver/enclave boundary" do
 
   describe "the protocol gem" do
     # Both sides load it, so it must obey both sides' rules.
-    it "doesn't depend on the driver gem, the enclave gem, or an LLM SDK" do
+    it "depends on nothing at all" do
       closure = Boundary.dependency_closure(gemspec("protocol"))
 
-      expect(closure.names & ["quaack-enclave", *enclave_forbidden_gems]).to eq([])
+      expect(closure.names).to eq([])
       expect(closure.unresolved).to eq([])
     end
 
     it "never requires the driver gem, the enclave gem, an LLM SDK, or a file outside itself" do
-      violations = Boundary.require_violations(
-        gem_dir("protocol"), forbidden: ["quaack/enclave", *enclave_forbidden_requires]
-      )
+      violations = Boundary.require_violations(gem_dir("protocol"), forbidden: Boundary::PROTOCOL_FORBIDDEN_REQUIRES)
 
       expect(violations).to be_empty, violation_report(violations)
     end
@@ -80,7 +73,7 @@ RSpec.describe "the driver/enclave boundary" do
     end
 
     it "never requires the enclave gem or a file outside itself" do
-      violations = Boundary.require_violations(gem_dir("driver"), forbidden: ["quaack/enclave"])
+      violations = Boundary.require_violations(gem_dir("driver"), forbidden: Boundary::DRIVER_FORBIDDEN_REQUIRES)
 
       expect(violations).to be_empty, violation_report(violations)
     end

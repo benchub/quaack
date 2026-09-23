@@ -15,7 +15,11 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 
 - That one command runs RuboCop and then every spec suite. Each suite runs in its own process: `protocol/spec`, `enclave/spec`, `driver/spec`, and the cross-gem specs in `spec/`.
 - Run `bundle install` first on a fresh checkout. The committed `.bundle/config` installs gems into `vendor/bundle`, never globally.
-- The repo holds three gems, `protocol/` (shared), `enclave/`, and `driver/`, all in one root `Gemfile`. The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. `spec/boundary_spec.rb` enforces both rules, and `spec/boundary_checker_spec.rb` proves the checker catches planted violations. If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add it there.
+- The repo holds three gems, `protocol/` (shared), `enclave/`, and `driver/`, all in one root `Gemfile`. The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
+  - `spec/runtime_boundary_spec.rb` is the real guarantee. It installs each side with only its own dependencies, runs it outside Bundler, and checks everything it loaded.
+  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there.
+  - `spec/boundary_checker_spec.rb` proves the static checker catches planted violations.
+- If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add it there.
 
 ## Backlog.
 

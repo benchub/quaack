@@ -5,7 +5,7 @@ require_relative "lib/quaack/driver/version"
 Gem::Specification.new do |spec|
   spec.name = "quaack-driver"
   spec.version = Quaack::Driver::VERSION
-  spec.authors = ["Instructure"]
+  spec.authors = ["Ben Chobot"]
   spec.summary = "The QUAACK driver, which runs on an engineer's laptop."
   spec.required_ruby_version = ">= 3.4"
   spec.metadata["rubygems_mfa_required"] = "true"

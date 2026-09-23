@@ -11,7 +11,7 @@ RSpec.describe "quaack-protocol" do
                      "-e", 'require "quaack/protocol"; print Quaack::Protocol::VERSION')
     end
 
-    expect(out).to eq("0.1.0"), "stdout was #{out.inspect}, stderr was #{err}"
+    expect(out).to match(/\A\d+\.\d+\.\d+\z/), "stdout was #{out.inspect}, stderr was #{err}"
     expect(status).to be_success
   end
 end

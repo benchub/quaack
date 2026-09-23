@@ -13,7 +13,8 @@ RSpec.describe "quaack-enclave executable" do
   end
 
   it "rejects anything else with a usage message on stderr and nothing on stdout" do
-    [[], ["--bogus"], %w[some subcommand]].each do |argv|
+    [[], ["--bogus"], %w[some subcommand], %w[--version extra], %w[extra --version],
+     %w[--version --version]].each do |argv|
       out, err, status = run_ruby(exe, *argv)
 
       expect(out).to eq(""), "argv #{argv.inspect} printed #{out.inspect} to stdout"

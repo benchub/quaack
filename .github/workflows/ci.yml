@@ -1,8 +1,8 @@
 name: CI
 
+# The repo doesn't use pull requests.
 on:
   push:
-  pull_request:
 
 permissions:
   contents: read
