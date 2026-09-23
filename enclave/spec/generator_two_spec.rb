@@ -143,6 +143,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_parameter")).to eq([btree("orders", "total_cents, status")])
     end
 
+    it "proposes nothing for a filter with no constant equality" do
+      # The inner Seq Scan on customers removes 96% of its rows, but its
+      # Filter is only (created_at < ...).
+      expect(ddl("nested_loop_inner", expensive_inner_rows: 1_000_000)).to eq([btree("orders", "status")])
+    end
+
     it "puts equality columns with unknown selectivity last, and makes no partial index on them" do
       no_stats = orders_stats.with(columns: orders_stats.columns.except("total_cents"))
       stats = enclave::Statistics.new(tables: [no_stats, customers_stats])
@@ -226,6 +232,16 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
         stats = enclave::Statistics.new(tables: [orders_stats(index_ddls:), customers_stats])
         expect(ddl("index_scan_filter", stats:)).to eq([])
       end
+    end
+
+    it "extends only a btree index, since other methods can't take the columns" do
+      # SubPlan 1's Bitmap Heap Scan uses orders_customer_id_idx. A hash index
+      # can't have a second key column or INCLUDE columns.
+      index_ddls = orders_index_ddls.merge(
+        "orders_customer_id_idx" => "CREATE INDEX orders_customer_id_idx ON public.orders USING hash (customer_id)"
+      )
+      stats = enclave::Statistics.new(tables: [orders_stats(index_ddls:), customers_stats])
+      expect(ddl("sub_plan", stats:)).to eq([])
     end
   end
 

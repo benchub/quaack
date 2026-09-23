@@ -96,27 +96,19 @@ module Quaack
         end
 
         def candidates
-          @nodes.flat_map { |node| patterns(node) }.compact.uniq.freeze
+          @nodes.flat_map { |node| patterns(node) }.uniq.freeze
         end
 
         private
 
         attr_reader :columns, :thresholds
 
-        # nil for a definition the constructor refuses. Its message never
-        # quotes a predicate, and it isn't raised anyway.
-        def build(table, **)
-          IndexCandidate.new(table: table.name, sources: [:plan], **)
-        rescue ArgumentError
-          nil
-        end
+        # The patterns check what the constructor would refuse before they
+        # build, so a refusal here is a bug, and it raises.
+        def build(table, **) = IndexCandidate.new(table: table.name, sources: [:plan], **)
 
         # An existing index with more columns, as a plain candidate.
-        def extend_index(existing, **)
-          existing.with(**, unique: false, sources: [:plan])
-        rescue ArgumentError
-          nil
-        end
+        def extend_index(existing, **) = existing.with(**, unique: false, sources: [:plan])
 
         # Whether a value meets a threshold. nil (an unknown selectivity) and
         # NaN (the removed fraction of a node that read no rows) never do.

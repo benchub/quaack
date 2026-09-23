@@ -7,8 +7,8 @@ module Quaack
   module Enclave
     # The README 5a-2 patterns, for GeneratorTwo's walk. It's private to the
     # enclave namespace. Each pattern takes one PlanNode and returns the
-    # candidates it proposes there, with nil for any the IndexCandidate
-    # constructor refused. The walk supplies columns (a PlanColumns) and the
+    # candidates it proposes there. Each checks what the IndexCandidate
+    # constructor would refuse before it builds. The walk supplies columns (a PlanColumns) and the
     # helpers build, extend_index, at_least?, scan_table, scan_conjuncts,
     # own_columns, constant_columns, by_selectivity, and selectivity.
     #
@@ -28,23 +28,25 @@ module Quaack
         # Each one gets a partial index WHERE that conjunct, keyed on the
         # Filter's other columns, constant equality columns first. With no
         # other columns there's no partial index, because the plain btree on
-        # the column already covers it. A `col = $1` conjunct can't be a
-        # predicate. The IndexCandidate constructor refuses both an empty key
-        # and a parameter, so build gives nil for them, and a Filter with no
-        # constant equality columns proposes nothing.
+        # the column already covers it. A `col = $1` conjunct has no literal,
+        # so it's never a predicate. A Filter with no constant equality
+        # columns proposes nothing.
         def seq_scan(node)
           table = scan_table(node, "Seq Scan")
           return [] unless table && at_least?(node.removed_fraction, :most_rows_removed)
 
           conjuncts = scan_conjuncts(node, ["Filter"])
           equality = by_selectivity(constant_columns(conjuncts, node.alias_name)).map(&:name)
+          return [] if equality.empty?
+
           [build(table, key: equality), *partials(table, conjuncts, node.alias_name, equality)]
         end
 
         def partials(table, conjuncts, alias_name, equality)
           columns = (equality + own_columns(conjuncts, alias_name).map(&:name)).uniq
-          conjuncts.select { |c| removes_most_alone?(c) }.map do |c|
-            build(table, key: columns - [c.columns.first.name], predicate: PlanExpression.unqualified_sql(c.node))
+          conjuncts.select { |c| removes_most_alone?(c) }.filter_map do |c|
+            key = columns - [c.columns.first.name]
+            build(table, key:, predicate: PlanExpression.unqualified_sql(c.node)) if key.any?
           end
         end
 
@@ -66,10 +68,12 @@ module Quaack
         # Bitmap Index Scan), extended with the Filter's columns, constant
         # equality columns first: once in the key, and once as INCLUDE
         # columns. An index that isn't listed or maps to nil is skipped, and
-        # so is a variant its method can't take.
+        # so is one that isn't btree: hash takes one key column and no
+        # INCLUDE, and the others can't order a key the way btree does.
         def filtered_index_scan(node)
           table = scan_table(node, "Index Scan", "Bitmap Heap Scan")
           existing = table.indexes[index_name(node)] if table && many_rows_removed?(node)
+          existing = nil unless existing&.access_method == :btree
           added = existing ? filter_columns(node) - existing.key.map(&:name) : []
           added.empty? ? [] : extended(existing, added)
         end
