@@ -2,13 +2,13 @@
 
 require "quaack/enclave/version"
 
-RSpec.describe "quaack-enclave executable" do
-  let(:exe) { File.join(GEM_ROOT, "exe", "quaack-enclave") }
+RSpec.describe "quaacks executable" do
+  let(:exe) { File.join(GEM_ROOT, "exe", "quaacks") }
 
   it "prints its version for --version" do
     out, err, status = run_ruby(exe, "--version")
 
-    expect(out).to eq("quaack-enclave #{Quaack::Enclave::VERSION}\n"), "stderr was #{err}"
+    expect(out).to eq("quaacks #{Quaack::Enclave::VERSION}\n"), "stderr was #{err}"
     expect(status.exitstatus).to eq(0)
   end
 
@@ -18,7 +18,7 @@ RSpec.describe "quaack-enclave executable" do
       out, err, status = run_ruby(exe, *argv)
 
       expect(out).to eq(""), "argv #{argv.inspect} printed #{out.inspect} to stdout"
-      expect(err).to eq("Usage: quaack-enclave --version\n"), "argv #{argv.inspect} printed #{err.inspect}"
+      expect(err).to eq("Usage: quaacks --version\n"), "argv #{argv.inspect} printed #{err.inspect}"
       expect(status.exitstatus).to eq(64), "argv #{argv.inspect} exited #{status.exitstatus}"
     end
   end

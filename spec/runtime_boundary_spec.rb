@@ -22,15 +22,13 @@ RSpec.describe "what each side loads at runtime" do
     end
   end
 
-  def closure_of(name)
-    spec = Gem::Specification.load(File.join(REPO_ROOT, name.delete_prefix("quaack-"), "#{name}.gemspec"))
-    Boundary.dependency_closure(spec).names
-  end
-
-  shared_examples "a side that loads only its own closure" do |gem_name, exe, version_line|
+  # `gem_dir` is the repo directory, such as "enclave". The gem's name comes
+  # from its gemspec, since it doesn't follow from the directory.
+  shared_examples "a side that loads only its own closure" do |gem_dir, exe, version_line|
     before(:context) do
       @dir = Dir.mktmpdir("quaack-isolated")
-      @install = IsolatedInstall.new(gem_name, closure: closure_of(gem_name), dir: @dir)
+      @spec = RepoGems.gemspec(gem_dir)
+      @install = IsolatedInstall.new(@spec.name, closure: Boundary.dependency_closure(@spec).names, dir: @dir)
       @run = @install.run(exe, "--version")
     end
 
@@ -48,20 +46,20 @@ RSpec.describe "what each side loads at runtime" do
 
     it "loads itself from the installed gem, not from the repo checkout" do
       installed = File.realpath(File.join(@install.home, "gems"))
-      own = @run.loaded_features.select { |f| f.end_with?("/lib/quaack/#{gem_name.delete_prefix("quaack-")}.rb") }
+      own = @run.loaded_features.select { |f| f.end_with?("/lib/quaack/#{gem_dir}.rb") }
 
       expect(own).not_to be_empty, "stderr was #{@run.stderr}"
-      expect(own).to all(start_with("#{installed}/#{gem_name}-"))
+      expect(own).to all(start_with("#{installed}/#{@spec.name}-#{@spec.version}/"))
     end
   end
 
-  describe "quaack-enclave" do
+  describe "the enclave side" do
     it_behaves_like "a side that loads only its own closure",
-                    "quaack-enclave", "quaack-enclave", "quaack-enclave #{Quaack::Enclave::VERSION}\n"
+                    "enclave", "quaacks", "quaacks #{Quaack::Enclave::VERSION}\n"
   end
 
-  describe "quaack-driver" do
+  describe "the driver side" do
     it_behaves_like "a side that loads only its own closure",
-                    "quaack-driver", "quaack", "quaack #{Quaack::Driver::VERSION}\n"
+                    "driver", "quaack", "quaack #{Quaack::Driver::VERSION}\n"
   end
 end
