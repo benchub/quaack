@@ -55,7 +55,7 @@ Build the driver side of the link: call enclave subcommands over ssh, pass argum
 - **Depends on:** 20260922-4.
 - **README:** Where QUAACK runs.
 - **Status:** todo
-- **Open questions:** How are larger inputs, like a batch of rewrite candidates, passed: arguments, stdin, or files copied over first?
+- **Decided:** Larger inputs go to the enclave script as a JSON document on stdin, piped into `ssh <jump server> quaacks <subcommand>`. The local test transport pipes the same JSON.
 
 ### 20260922-6. LLM client.
 
@@ -133,7 +133,7 @@ Read the three operator inputs from the governed store (query text, `EXPLAIN (AN
 - **Depends on:** 20260922-3, 20260922-4.
 - **README:** Step 1.
 - **Status:** todo
-- **Open questions:** How does the operator put inputs in the store: a subcommand, or files dropped in a known place?
+- **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
 
 ### 20260922-14. Fully qualify relations.
 
@@ -142,7 +142,8 @@ Rewrite the query AST so every relation is schema qualified and `search_path` ne
 - **Depends on:** 20260922-13.
 - **README:** Step 1.
 - **Status:** todo
-- **Open questions:** Resolving unqualified names needs the production `search_path`. Do we read it from the input plan's `SETTINGS`, or from the server in step 2?
+- **Decided:** The operator's query should already qualify every relation. If it doesn't, resolve the unqualified names with the `search_path` from the input plan's `SETTINGS`, since that's what the session used when the plan was made.
+- **Open questions:** `SETTINGS` only lists values that differ from the built-in default, so a plan made under the default `"$user", public` won't show a `search_path`. Confirm that, then decide whether to assume that default or abort and ask for a qualified query.
 
 ### 20260922-15. Canonical plan form.
 
@@ -612,7 +613,7 @@ At the end of a run, delete the governed store directory and tell the operator t
 - **Depends on:** 20260922-3.
 - **README:** Where QUAACK runs.
 - **Status:** todo
-- **Open questions:** Should teardown also run when a step aborts?
+- **Decided:** Teardown runs when a run ends, whether it succeeded or aborted. A `--keep` flag leaves the run server and store directory in place for debugging, and `quaacks teardown <run>` removes them later.
 
 ## Added later.
 
