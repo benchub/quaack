@@ -54,6 +54,7 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
    - Never land code with an unresolved trust-boundary or correctness finding, or with a vacuous test. A test is vacuous if it stays green when the behavior it names is broken.
    - If the second review finds vacuous tests, the builder gets one more round that fixes only those tests. A fresh reviewer then checks just those tests, by breaking the code they cover and confirming they go red. Any test that's still vacuous after that keeps its code from landing, along with the code it was meant to cover.
    - Add a new BACKLOG.md task for each finding that's left, pointing back to the original task ID.
+   - If a task can't be finished within this loop, split it up. Land the pieces that passed review, and make new tasks for the rest. Each new task gets its own full loop.
    The original task moves to BACKLOG-COMPLETE.md only if what landed covers it. Otherwise it stays open, with a note saying what landed.
    Once the work is committed to `main`, remove the task's worktree and delete its branch. Don't leave finished worktrees lying around.
 7. **Record.** Findings that are real but out of the task's scope become new backlog tasks at any round, not just the last one.
