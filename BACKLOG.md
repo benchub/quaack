@@ -619,4 +619,22 @@ At the end of a run, delete the governed store directory and tell the operator t
 
 ## Added later.
 
-None yet.
+### 20260923-1. Postgres 17 parser under Postgres 18.
+
+The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 version exists yet. The user accepted the Postgres 17 grammar for now. When pg_query fails to parse something, abort with a message that names the parser's Postgres version, so a Postgres 18-only construct is easy to spot. When pg_query ships Postgres 18 support, upgrade it and drop the special message.
+
+- **Depends on:** 20260922-1.
+- **Came from:** First review of 20260922-1.
+- **README:** Anywhere pg_query parses SQL, including 3a, 5a-1, step 9, and the inbound checks.
+- **Status:** todo
+- **Open questions:** Does step 3b ever need to parse the schema dump? A Postgres 18 dump can hold syntax the Postgres 17 parser rejects, like virtual generated columns or `NOT ENFORCED` constraints.
+
+### 20260923-2. Enclave deploys by gem install only.
+
+The repo has one Gemfile and one lockfile for all three gems. So `bundle install` from a checkout on the jump server would install the driver gem, its LLM SDK once 20260922-6 adds it, and the dev tools. The enclave has to deploy by building and installing the `quaack-enclave` gem on its own. Document that, and make the wrong way hard or impossible, for example by having the enclave executable refuse to run under a bundle that includes the driver.
+
+- **Depends on:** 20260922-1.
+- **Came from:** First review of 20260922-1.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+- **Open questions:** How do built gems get onto the jump server: copied over ssh by the driver, or installed by the operator from somewhere?
