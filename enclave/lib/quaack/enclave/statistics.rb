@@ -117,10 +117,15 @@ module Quaack
       # equality operator, which is what Postgres uses. So it misses a
       # literal spelled differently from how pg_stats prints the value:
       # 1.5 for a numeric MCV printed as 1.50, 'ABC' for a citext MCV 'abc',
-      # a date or timestamp written in another format, DateStyle, or time
-      # zone, or a float printed with different digits. A missed match falls
-      # through to the estimate for values that aren't MCVs, so it comes out
-      # lower than Postgres's.
+      # 'ab' for a char(n) MCV printed with its padding as "ab  ", a date or
+      # timestamp written in another format, DateStyle, or time zone, a
+      # float printed with different digits, or a boolean in a prefix
+      # spelling like 'tr' (the full spellings do match; see
+      # ColumnStatistics#mcv_frequency). A missed match falls through to the
+      # estimate for values that aren't MCVs, which is usually far too low.
+      # When the MCVs cover the whole column, as they often do for status and
+      # type columns, it comes out 0.0: "selects almost nothing", for what
+      # may be the column's most common value.
       #
       # Postgres also does things this doesn't:
       # - It uses 1 / reltuples for a column with a unique index.

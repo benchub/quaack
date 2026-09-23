@@ -18,8 +18,12 @@ module Quaack
     # Pattern matching can't see them at all: deconstruct_keys leaves them
     # out and there's no deconstruct, so a failed match can't quote them.
     # Only the most_common_vals reader and to_h give them back, and they
-    # return the raw values, so keep what they return inside the enclave. The
-    # frequencies are derived scalars and show everywhere.
+    # return the raw values, so treat what they return as value-class and
+    # keep it inside the enclave. Don't mutate it either: the arrays and
+    # strings are frozen, and the FrozenError that core Ruby raises for
+    # `most_common_vals << x` or `sort!` quotes every value. Copy it first
+    # (most_common_vals.dup). The frequencies are derived scalars and show
+    # everywhere.
     ColumnStatistics = Data.define(:n_distinct, :null_frac, :correlation, :most_common_vals, :most_common_freqs) do
       def initialize(n_distinct:, null_frac:, correlation:, most_common_vals: nil, most_common_freqs: nil)
         most_common_vals, most_common_freqs = most_common(most_common_vals, most_common_freqs)
@@ -32,6 +36,14 @@ module Quaack
       # The frequency of literal_text if it's one of the MCVs, compared by
       # exact text. Otherwise nil. TableStatistics#value_frequency covers the
       # values that aren't MCVs.
+      #
+      # One exception to exact text: pg_stats prints booleans as t and f, so
+      # when every MCV is t or f, a literal in one of the spellings in
+      # BOOLEAN_SPELLINGS (true, yes, on, 1, and so on, in any case) matches
+      # as t or f. A text column whose only MCVs are t and f gets the same
+      # treatment, which is wrong for it but rare. Nothing strips spaces
+      # otherwise: pg_stats keeps char(n)'s padding ("ab  "), so 'ab' misses
+      # a bpchar MCV. This can't know the column's type, so it can't fix that.
       def mcv_frequency(literal_text)
         index = most_common_vals&.index(boolean_text(literal_text))
         most_common_freqs[index] if index
@@ -89,8 +101,8 @@ module Quaack
 
       def strings?(vals) = vals.is_a?(Array) && vals.all?(String)
 
-      # Unlike in_range, the message leaves the value out, in case an MCV
-      # value was passed as a frequency by mistake.
+      # This and in_range leave the value out of the message, in case an MCV
+      # value was passed as a number by mistake.
       def frequency(value)
         number = Float(value) if value.is_a?(Numeric) && value.real?
         return number if number && (0..1).cover?(number) # NaN and Infinity aren't in 0..1
@@ -102,7 +114,7 @@ module Quaack
         number = Float(value) if value.is_a?(Numeric) && value.real?
         return number if number&.finite? && range.cover?(number)
 
-        raise ArgumentError, "#{what} must be a finite number in #{range}, got #{value.inspect}"
+        raise ArgumentError, "#{what} must be a finite number in #{range}"
       end
     end
 

@@ -556,6 +556,18 @@ RSpec.describe "the statistics input" do
       messages.each { |message| expect(message).not_to include(sentinel) }
     end
 
+    it "leaves it out of the error when a value is passed as a scalar by mistake" do
+      messages = %i[n_distinct null_frac correlation].map do |scalar|
+        message_of do
+          Quaack::Enclave::ColumnStatistics.new(n_distinct: 1.0, null_frac: 0.0, correlation: nil,
+                                                scalar => "#{sentinel}-a")
+        end
+      end
+
+      expect(messages.zip(%w[n_distinct null_frac correlation])).to all(satisfy { |m, name| m.include?(name) })
+      messages.each { |message| expect(message).not_to include(sentinel) }
+    end
+
     def column_with(vals, freqs)
       Quaack::Enclave::ColumnStatistics.new(n_distinct: 3.0, null_frac: 0.0, correlation: nil,
                                             most_common_vals: vals, most_common_freqs: freqs)

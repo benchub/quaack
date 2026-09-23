@@ -16,12 +16,15 @@ module Quaack
     # element is unquoted and its backslash escapes undone. An unquoted NULL,
     # in any case, is nil. A quoted "NULL" is the text.
     #
-    # It reads only what array_out prints for a one-dimensional array with
-    # the comma delimiter. It raises ArgumentError for anything else: a
-    # nested (multidimensional) array; a type whose delimiter isn't a
-    # comma, such as box; bounds
-    # decoration like [0:2]={...}; or whitespace around elements, which
-    # array_in accepts but array_out never prints.
+    # It reads only what array_out prints for a one-dimensional array of a
+    # type whose delimiter is a comma, which is nearly every type. It raises
+    # ArgumentError for a nested (multidimensional) array, bounds decoration
+    # like [0:2]={...}, whitespace around elements (which array_in accepts
+    # but array_out never prints), and other malformed text. A type with
+    # another delimiter parses wrong, without an error: box uses ;, so
+    # {(1,1),(0,0);(2,2),(1,1)} splits on its inner commas. A PostGIS
+    # geometry MCV list would split the same way, and then fail loudly in
+    # ColumnStatistics, whose value and frequency counts no longer match.
     #
     # The text holds real values, so no error message quotes it.
     module PgArray
