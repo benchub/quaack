@@ -9,18 +9,18 @@
       "Relation Name": "orders",
       "Alias": "o",
       "Startup Cost": 0.29,
-      "Total Cost": 694.85,
-      "Plan Rows": 235,
+      "Total Cost": 700.85,
+      "Plan Rows": 12,
       "Plan Width": 8,
-      "Actual Startup Time": 0.014,
-      "Actual Total Time": 0.515,
-      "Actual Rows": 235.0,
+      "Actual Startup Time": 0.166,
+      "Actual Total Time": 0.636,
+      "Actual Rows": 18.0,
       "Actual Loops": 1,
       "Disabled": false,
       "Index Cond": "(status = 'shipped'::text)",
       "Rows Removed by Index Recheck": 0,
-      "Filter": "(total_cents < 5000)",
-      "Rows Removed by Filter": 2165,
+      "Filter": "(date_trunc('day'::text, created_at) = '2026-02-01 00:00:00+00'::timestamp with time zone)",
+      "Rows Removed by Filter": 2382,
       "Index Searches": 1,
       "Shared Hit Blocks": 178,
       "Shared Read Blocks": 0,
@@ -49,8 +49,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.195,
+    "Planning Time": 0.194,
     "Triggers": [],
-    "Execution Time": 0.54
+    "Execution Time": 0.655
   }
 ]

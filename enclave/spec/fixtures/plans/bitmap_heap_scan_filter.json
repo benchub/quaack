@@ -7,17 +7,17 @@
       "Relation Name": "orders",
       "Alias": "o",
       "Startup Cost": 98.35,
-      "Total Cost": 301.35,
+      "Total Cost": 307.35,
       "Plan Rows": 235,
       "Plan Width": 8,
-      "Actual Startup Time": 0.104,
-      "Actual Total Time": 0.418,
+      "Actual Startup Time": 0.103,
+      "Actual Total Time": 0.47,
       "Actual Rows": 235.0,
       "Actual Loops": 1,
       "Disabled": false,
       "Recheck Cond": "(status = 'shipped'::text)",
       "Rows Removed by Index Recheck": 0,
-      "Filter": "(total_cents < 5000)",
+      "Filter": "((total_cents > 100) AND (total_cents < 5000))",
       "Rows Removed by Filter": 2165,
       "Exact Heap Blocks": 167,
       "Lossy Heap Blocks": 0,
@@ -42,8 +42,8 @@
           "Total Cost": 98.29,
           "Plan Rows": 2400,
           "Plan Width": 0,
-          "Actual Startup Time": 0.086,
-          "Actual Total Time": 0.086,
+          "Actual Startup Time": 0.085,
+          "Actual Total Time": 0.085,
           "Actual Rows": 2400.0,
           "Actual Loops": 1,
           "Disabled": false,
@@ -64,7 +64,7 @@
     },
     "Settings": {},
     "Planning": {
-      "Shared Hit Blocks": 111,
+      "Shared Hit Blocks": 118,
       "Shared Read Blocks": 0,
       "Shared Dirtied Blocks": 0,
       "Shared Written Blocks": 0,
@@ -75,8 +75,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.215,
+    "Planning Time": 0.204,
     "Triggers": [],
-    "Execution Time": 0.447
+    "Execution Time": 0.505
   }
 ]

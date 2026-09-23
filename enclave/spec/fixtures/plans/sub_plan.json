@@ -12,8 +12,8 @@
       "Total Cost": 7413.95,
       "Plan Rows": 199,
       "Plan Width": 23,
-      "Actual Startup Time": 0.047,
-      "Actual Total Time": 1.032,
+      "Actual Startup Time": 0.066,
+      "Actual Total Time": 1.137,
       "Actual Rows": 199.0,
       "Actual Loops": 1,
       "Disabled": false,
@@ -70,8 +70,8 @@
               "Total Cost": 37.17,
               "Plan Rows": 2,
               "Plan Width": 0,
-              "Actual Startup Time": 0.002,
-              "Actual Total Time": 0.004,
+              "Actual Startup Time": 0.003,
+              "Actual Total Time": 0.005,
               "Actual Rows": 2.01,
               "Actual Loops": 199,
               "Disabled": false,
@@ -139,8 +139,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.229,
+    "Planning Time": 0.232,
     "Triggers": [],
-    "Execution Time": 1.073
+    "Execution Time": 1.178
   }
 ]

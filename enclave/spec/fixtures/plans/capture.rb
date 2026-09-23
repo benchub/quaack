@@ -6,7 +6,8 @@
 #   ruby enclave/spec/fixtures/plans/capture.rb
 #
 # It starts a throwaway postgres:18 container with its own name, loads
-# sample.sql, runs ANALYZE, and writes one <name>.json per plan below: the
+# the test harness's sample schema and rows (spec/support/postgres/schema.sql
+# and data.sql at the repository root), runs ANALYZE, and writes one <name>.json per plan below: the
 # exact output of EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON), or with
 # VERBOSE too for a name that ends in _verbose. It also
 # writes statistics.txt, the pg_class, pg_stats, and pg_get_indexdef values
@@ -22,6 +23,7 @@ require "open3"
 require "securerandom"
 
 DIR = __dir__
+SAMPLE = File.expand_path("../../../../spec/support/postgres", DIR)
 CONTAINER = "quaack-plan-capture-#{SecureRandom.hex(4)}".freeze
 EXPLAIN = "EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)"
 # The one fixture that shows what VERBOSE adds: a "Schema" on each scan, and
@@ -46,8 +48,10 @@ PLANS = {
     ["enable_seqscan = off", "enable_bitmapscan = off"],
     "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents < 5000"
   ],
+  # The Filter names total_cents twice.
   "bitmap_heap_scan_filter" => [
-    [], "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents < 5000"
+    [], "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents > 100 " \
+        "AND o.total_cents < 5000"
   ],
   # The InitPlan comes before the Bitmap Index Scan in the heap scan's Plans.
   "bitmap_heap_scan_init_plan" => [
@@ -145,6 +149,46 @@ PLANS = {
     "CREATE TABLE public.events AS SELECT i AS id, i % 1000 AS kind FROM generate_series(1, 1000000) AS i; " \
     "CREATE INDEX events_kind_idx ON public.events (kind); ANALYZE public.events"
   ],
+  # status = 'failed' is 1% of the rows, by its MCV frequency.
+  "seq_scan_rare_value" => [
+    ["enable_indexscan = off", "enable_bitmapscan = off"],
+    "SELECT o.id FROM public.orders o WHERE o.status = 'failed' AND o.total_cents > 100"
+  ],
+  # The Sort's keys stop at the change of table. The aggregate's don't.
+  "group_aggregate_two_tables" => [
+    ["enable_hashagg = off"],
+    "SELECT c.name, o.status, count(*) FROM public.customers c JOIN public.orders o ON o.customer_id = c.id " \
+    "GROUP BY c.name, o.status"
+  ],
+  # Two workers and the leader each report a third of the Hash's rows. The
+  # tables are made in the transaction, like the lossy bitmap's.
+  "parallel_hash_join" => [
+    [], "SELECT count(*) FROM public.events e JOIN public.visits v ON v.event_id = e.id",
+    "CREATE TABLE public.events AS SELECT i AS id, i % 1000 AS kind FROM generate_series(1, 250000) AS i; " \
+    "CREATE TABLE public.visits AS SELECT i AS id, i AS event_id FROM generate_series(1, 250000) AS i; " \
+    "ALTER TABLE public.events SET (parallel_workers = 2); ALTER TABLE public.visits SET (parallel_workers = 2); " \
+    "ANALYZE public.events; ANALYZE public.visits"
+  ],
+  # A merge join whose inner side is large, with a join equality it can't
+  # merge on in its Join Filter.
+  "merge_join_filter" => [
+    ["enable_hashjoin = off", "enable_nestloop = off"],
+    "SELECT c.name FROM public.customers c LEFT JOIN public.orders o ON o.customer_id = c.id AND o.status = c.name"
+  ],
+  # Two equality columns under a Sort, the less selective first in the plan.
+  "sort_two_equalities" => [
+    [], "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.customer_id = 5 ORDER BY o.created_at"
+  ],
+  "bitmap_and_in_or" => [
+    ["enable_indexscan = off", "enable_seqscan = off", "cpu_tuple_cost = 10", "cpu_index_tuple_cost = 0",
+     "cpu_operator_cost = 0"],
+    "SELECT o.id FROM public.orders o WHERE (o.customer_id < 200 AND o.id < 2000) OR o.id > 19990"
+  ],
+  # The Filter's only column is already in the index key.
+  "index_scan_key_filter" => [
+    ["enable_seqscan = off", "enable_bitmapscan = off"],
+    "SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND date_trunc('day', o.created_at) = '2026-02-01'"
+  ],
   "init_plan" => [
     [], "SELECT c.name FROM public.customers c " \
         "WHERE c.id = (SELECT o.customer_id FROM public.orders o WHERE o.total_cents = 5100 LIMIT 1)"
@@ -158,7 +202,8 @@ PLANS = {
 STATISTICS = <<~SQL
   SELECT 'reltuples', relname, reltuples::text FROM pg_class
    WHERE relname IN ('orders', 'customers') ORDER BY relname;
-  SELECT 'pg_stats', tablename, attname, n_distinct, null_frac, correlation FROM pg_stats
+  SELECT 'pg_stats', tablename, attname, n_distinct, null_frac, correlation,
+         most_common_vals::text, most_common_freqs::text FROM pg_stats
    WHERE schemaname = 'public' AND tablename IN ('orders', 'customers') ORDER BY tablename, attname;
   SELECT 'indexdef', indexrelid::regclass, pg_get_indexdef(indexrelid) FROM pg_index
    WHERE indrelid IN ('public.orders'::regclass, 'public.customers'::regclass) ORDER BY 2::text;
@@ -193,7 +238,7 @@ begin
       "postgres:18", "-c", "autovacuum=off")
   wait_for_postgres
   sleep 2
-  psql(File.read(File.join(DIR, "sample.sql")))
+  %w[schema.sql data.sql].each { |sql| psql(File.read(File.join(SAMPLE, sql))) }
   psql("ANALYZE;")
 
   PLANS.each do |name, (settings, query, setup)|

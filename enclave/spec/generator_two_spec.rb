@@ -2,18 +2,20 @@
 
 require "json"
 require "quaack/enclave/generator_two"
+require "quaack/enclave/pg_array"
 
-# The plans are real Postgres 18 output, captured from the sample data by
-# spec/fixtures/plans/capture.rb. The statistics below are the real values
-# from that same database, which capture.rb writes to statistics.txt.
+# The plans are real Postgres 18 output, captured from the test harness's
+# sample data by spec/fixtures/plans/capture.rb. The statistics are read from
+# statistics.txt, which capture.rb writes from the same database: pg_class,
+# pg_stats (MCV lists included), and pg_get_indexdef.
 RSpec.describe Quaack::Enclave::GeneratorTwo do
   let(:enclave) { Quaack::Enclave }
 
-  def table_name(name, schema: "public") = enclave::TableName.new(schema:, name:)
+  # Each line of statistics.txt, split on |.
+  CAPTURED = File.readlines(File.join(__dir__, "fixtures", "plans", "statistics.txt"), chomp: true)
+                 .map { |line| line.split("|", -1) }.freeze
 
-  def column_stats(n_distinct, null_frac, correlation)
-    enclave::ColumnStatistics.new(n_distinct:, null_frac:, correlation:)
-  end
+  def table_name(name, schema: "public") = enclave::TableName.new(schema:, name:)
 
   def indexes(schema, ddls)
     ddls.transform_values do |ddl|
@@ -21,38 +23,39 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     end
   end
 
-  def orders_stats(schema: "public", column_names: %w[id customer_id status total_cents created_at],
-                   index_ddls: orders_index_ddls)
-    columns = {
-      "id" => column_stats(-1, 0, 1), "customer_id" => column_stats(2000, 0, 0.014523825),
-      "status" => column_stats(6, 0, 0.5291626), "total_cents" => column_stats(-1, 0, 0.0026016105),
-      "created_at" => column_stats(-1, 0, 1)
-    }.slice(*column_names)
-    enclave::TableStatistics.new(name: table_name("orders", schema:), reltuples: 20_000, column_names:, columns:,
+  def array(text) = (enclave.const_get(:PgArray).parse(text) unless text.empty?)
+
+  def captured_columns(table)
+    CAPTURED.select { |kind, name| kind == "pg_stats" && name == table }
+            .to_h do |_, _, column, n_distinct, null_frac, correlation, vals, freqs|
+      [column, enclave::ColumnStatistics.new(
+        n_distinct: Float(n_distinct), null_frac: Float(null_frac), correlation: Float(correlation, exception: false),
+        most_common_vals: array(vals), most_common_freqs: array(freqs)&.map { |f| Float(f) }
+      )]
+    end
+  end
+
+  def captured_index_ddls(table)
+    CAPTURED.select { |kind, _, ddl| kind == "indexdef" && ddl.include?(" ON public.#{table} ") }
+            .to_h { |_, name, ddl| [name, ddl] }
+  end
+
+  def captured_reltuples(table) = Float(CAPTURED.find { |kind, name| kind == "reltuples" && name == table }[2])
+
+  def captured_table(table, column_names, schema: "public", index_ddls: captured_index_ddls(table))
+    enclave::TableStatistics.new(name: table_name(table, schema:), reltuples: captured_reltuples(table), column_names:,
+                                 columns: captured_columns(table).slice(*column_names),
                                  indexes: indexes(schema, index_ddls))
   end
 
-  let(:orders_index_ddls) do
-    {
-      "orders_pkey" => "CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)",
-      "orders_customer_id_idx" => "CREATE INDEX orders_customer_id_idx ON public.orders USING btree (customer_id)",
-      "orders_status_created_at_idx" =>
-        "CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at)"
-    }
+  def orders_stats(schema: "public", column_names: %w[id customer_id status total_cents created_at],
+                   index_ddls: orders_index_ddls)
+    captured_table("orders", column_names, schema:, index_ddls:)
   end
 
-  let(:customers_stats) do
-    enclave::TableStatistics.new(
-      name: table_name("customers"), reltuples: 2000, column_names: %w[id name email created_at],
-      columns: { "id" => column_stats(-1, 0, 1), "name" => column_stats(-0.98, 0.02, -0.0038049063),
-                 "email" => column_stats(-1, 0, -0.004259041), "created_at" => column_stats(-1, 0, 1) },
-      indexes: indexes("public", {
-                         "customers_pkey" => "CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)",
-                         "customers_email_key" =>
-                           "CREATE UNIQUE INDEX customers_email_key ON public.customers USING btree (email)"
-                       })
-    )
-  end
+  let(:orders_index_ddls) { captured_index_ddls("orders") }
+
+  let(:customers_stats) { captured_table("customers", %w[id name email created_at]) }
 
   let(:statistics) { enclave::Statistics.new(tables: [orders_stats, customers_stats]) }
 

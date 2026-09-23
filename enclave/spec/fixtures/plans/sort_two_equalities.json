@@ -1,19 +1,25 @@
 [
   {
     "Plan": {
-      "Node Type": "Limit",
+      "Node Type": "Sort",
       "Parallel Aware": false,
       "Async Capable": false,
-      "Startup Cost": 328.58,
-      "Total Cost": 329.53,
-      "Plan Rows": 10,
-      "Plan Width": 37,
-      "Actual Startup Time": 0.418,
-      "Actual Total Time": 0.42,
-      "Actual Rows": 10.0,
+      "Startup Cost": 37.18,
+      "Total Cost": 37.19,
+      "Plan Rows": 1,
+      "Plan Width": 16,
+      "Actual Startup Time": 0.055,
+      "Actual Total Time": 0.056,
+      "Actual Rows": 0.0,
       "Actual Loops": 1,
       "Disabled": false,
-      "Shared Hit Blocks": 187,
+      "Sort Key": [
+        "created_at"
+      ],
+      "Sort Method": "quicksort",
+      "Sort Space Used": 25,
+      "Sort Space Type": "Memory",
+      "Shared Hit Blocks": 18,
       "Shared Read Blocks": 0,
       "Shared Dirtied Blocks": 0,
       "Shared Written Blocks": 0,
@@ -25,47 +31,28 @@
       "Temp Written Blocks": 0,
       "Plans": [
         {
-          "Node Type": "Incremental Sort",
+          "Node Type": "Bitmap Heap Scan",
           "Parent Relationship": "Outer",
           "Parallel Aware": false,
           "Async Capable": false,
-          "Startup Cost": 328.58,
-          "Total Cost": 2220.16,
-          "Plan Rows": 20000,
-          "Plan Width": 37,
-          "Actual Startup Time": 0.417,
-          "Actual Total Time": 0.418,
-          "Actual Rows": 10.0,
+          "Relation Name": "orders",
+          "Alias": "o",
+          "Startup Cost": 4.36,
+          "Total Cost": 37.17,
+          "Plan Rows": 1,
+          "Plan Width": 16,
+          "Actual Startup Time": 0.048,
+          "Actual Total Time": 0.048,
+          "Actual Rows": 0.0,
           "Actual Loops": 1,
           "Disabled": false,
-          "Sort Key": [
-            "status",
-            "total_cents"
-          ],
-          "Presorted Key": [
-            "status"
-          ],
-          "Full-sort Groups": {
-            "Group Count": 1,
-            "Sort Methods Used": [
-              "top-N heapsort"
-            ],
-            "Sort Space Memory": {
-              "Average Sort Space Used": 26,
-              "Peak Sort Space Used": 26
-            }
-          },
-          "Pre-sorted Groups": {
-            "Group Count": 1,
-            "Sort Methods Used": [
-              "top-N heapsort"
-            ],
-            "Sort Space Memory": {
-              "Average Sort Space Used": 25,
-              "Peak Sort Space Used": 25
-            }
-          },
-          "Shared Hit Blocks": 187,
+          "Recheck Cond": "(customer_id = 5)",
+          "Rows Removed by Index Recheck": 0,
+          "Filter": "(status = 'shipped'::text)",
+          "Rows Removed by Filter": 10,
+          "Exact Heap Blocks": 10,
+          "Lossy Heap Blocks": 0,
+          "Shared Hit Blocks": 15,
           "Shared Read Blocks": 0,
           "Shared Dirtied Blocks": 0,
           "Shared Written Blocks": 0,
@@ -77,25 +64,23 @@
           "Temp Written Blocks": 0,
           "Plans": [
             {
-              "Node Type": "Index Scan",
+              "Node Type": "Bitmap Index Scan",
               "Parent Relationship": "Outer",
               "Parallel Aware": false,
               "Async Capable": false,
-              "Scan Direction": "Forward",
-              "Index Name": "orders_status_created_at_idx",
-              "Relation Name": "orders",
-              "Alias": "o",
-              "Startup Cost": 0.29,
-              "Total Cost": 1537.85,
-              "Plan Rows": 20000,
-              "Plan Width": 37,
-              "Actual Startup Time": 0.005,
-              "Actual Total Time": 0.303,
-              "Actual Rows": 801.0,
+              "Index Name": "orders_customer_id_idx",
+              "Startup Cost": 0.0,
+              "Total Cost": 4.36,
+              "Plan Rows": 10,
+              "Plan Width": 0,
+              "Actual Startup Time": 0.011,
+              "Actual Total Time": 0.011,
+              "Actual Rows": 10.0,
               "Actual Loops": 1,
               "Disabled": false,
+              "Index Cond": "(customer_id = 5)",
               "Index Searches": 1,
-              "Shared Hit Blocks": 177,
+              "Shared Hit Blocks": 5,
               "Shared Read Blocks": 0,
               "Shared Dirtied Blocks": 0,
               "Shared Written Blocks": 0,
@@ -112,7 +97,7 @@
     },
     "Settings": {},
     "Planning": {
-      "Shared Hit Blocks": 149,
+      "Shared Hit Blocks": 151,
       "Shared Read Blocks": 0,
       "Shared Dirtied Blocks": 0,
       "Shared Written Blocks": 0,
@@ -123,8 +108,8 @@
       "Temp Read Blocks": 0,
       "Temp Written Blocks": 0
     },
-    "Planning Time": 0.206,
+    "Planning Time": 0.23,
     "Triggers": [],
-    "Execution Time": 0.434
+    "Execution Time": 0.076
   }
 ]
