@@ -189,8 +189,9 @@ Run the full schema-only dump on every namespace the query touches, plus `public
 - **Depends on:** 20260922-17.
 - **README:** 3b.
 - **Status:** todo
-- **Decided:** Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
-- **Decided:** Don't parse the dump. Find the subset tables and their FK parents from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
+- **Decided:**
+  - Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
+  - Don't parse the dump. Find the subset tables and their FK ancestors from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
 
 ### 20260922-19. 3c statistics.
 
