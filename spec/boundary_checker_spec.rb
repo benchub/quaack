@@ -27,6 +27,19 @@ RSpec.describe Boundary do
       expect(violations.first.message).to include("quaack/driver")
     end
 
+    # The runtime check never sees this, since the method never runs there.
+    it "flags a forbidden require inside a method body, with its line" do
+      source = %(module Quaack\n  def self.summarize\n    require "openai"\n  end\nend\n)
+
+      expect(flagged_lines(source)).to eq([3])
+    end
+
+    it "flags a forbidden require inside a block or as another call's argument" do
+      source = %(CLIENT = Once.new { require "openai" }\nlog(require("quaack/driver"))\n)
+
+      expect(flagged_lines(source)).to eq([1, 2])
+    end
+
     it "flags a require of a file inside a forbidden library" do
       expect(scan(%(require "quaack/driver/cli"))).not_to be_empty
     end
@@ -86,91 +99,59 @@ RSpec.describe Boundary do
         self.require "quaack/driver"
         Quaack.autoload(:Driver, "quaack/driver")
         thing.require_relative "../../../../driver/x"
-        YAML.load(text)
       RUBY
 
-      expect(flagged_lines(source)).to eq([1, 2, 3, 4, 5])
+      expect(flagged_lines(source)).to eq([1, 2, 3, 4])
     end
 
     it "ignores other methods, including ones whose names contain require or load" do
       expect(scan(%(JSON.parse(text)\nrequired_keys(x)\nloader.call(y)\nObject.autoload(:X, "pg_query")\n))).to eq([])
     end
 
-    it "flags requires it can't check because the argument isn't a plain string" do
-      source = %(require name\nrequire "quaack/\#{side}"\nsend(:require, "quaack/driver")\n)
-
-      expect(flagged_lines(source)).to eq([1, 2, 3])
-    end
-
-    it "flags send, public_send, and __send__ unless the method is a harmless literal" do
-      source = <<~RUBY
-        send("require", "quaack/driver")
-        m = :size
-        obj.public_send(m)
-        obj.__send__(name_for(x))
-        obj.send(:instance_eval, code)
-        obj.send(:size)
-        obj.public_send("length")
-      RUBY
-
-      expect(flagged_lines(source)).to eq([1, 3, 4, 5])
-    end
-
-    it "flags method lookups and aliases that name a require or eval method, or a name it can't read" do
-      source = <<~RUBY
-        method("require")
-        Kernel.instance_method(name).bind_call(self, "x")
-        alias_method "r", "require"
-        alias_method :reload, :refresh
-        define_method(:shout) { 1 }
-      RUBY
-
-      expect(flagged_lines(source)).to eq([1, 2, 3])
-    end
-
-    it "flags the symbols :require, :require_relative, :load, and :autoload anywhere, including in alias" do
-      source = <<~RUBY
-        m = :require
-        method(:load)
-        alias r require
-        list = %i[autoload require_relative]
-        alias_method :r, :require
-        m = :required
-      RUBY
-
-      expect(flagged_lines(source)).to eq([1, 2, 3, 4, 5])
-    end
-
-    it "flags eval of a string in every form, but not instance_eval with a block" do
-      source = <<~RUBY
-        eval("x")
-        binding.eval("x")
-        Kernel.eval "x"
-        obj.instance_eval("x")
-        klass.class_eval "x"
-        mod.module_eval("x", __FILE__)
-        RubyVM::InstructionSequence.compile(s).eval
-        obj.instance_eval { x }
-        klass.class_eval do
-          y
-        end
-      RUBY
-
-      expect(flagged_lines(source)).to eq([1, 2, 3, 4, 5, 6, 7])
-    end
-
-    it "flags any use of $LOAD_PATH, $:, or $-I" do
-      source = %($LOAD_PATH.unshift(File.join(__dir__, "x"))\n$: << "y"\n$-I.push("z")\npaths = $LOAD_PATH.dup\n)
-
-      expect(flagged_lines(source)).to eq([1, 2, 3, 4])
-    end
-
     it "flags Bundler.require, which would load every gem in the shared bundle" do
-      expect(flagged_lines(%(require "bundler"\nBundler.require\n))).to eq([2])
+      source = %(require "bundler"\nBundler.require\nBundler.load\nKernel.require "pg_query"\n)
+
+      expect(flagged_lines(source)).to eq([2])
     end
 
     it "flags a file that doesn't parse, since it can't be checked" do
       expect(scan("require \"pg_query\"\ndef broken(\n")).not_to be_empty
+    end
+  end
+
+  # Ordinary code the checker once flagged. The runtime check sees anything
+  # these load when it runs, so the static check leaves them alone.
+  describe ".scan_source on ordinary code" do
+    it "accepts a dispatch through public_send with a built name" do
+      expect(scan(%(public_send("cmd_\#{sub}", args)\n))).to eq([])
+    end
+
+    it "accepts define_method with a built name" do
+      expect(scan(%(define_method("step_\#{n}") { n }\n))).to eq([])
+    end
+
+    it "accepts symbols that share a name with a require method" do
+      expect(scan(%(ACTIONS = %i[save load].freeze\n))).to eq([])
+    end
+
+    it "accepts a hash whose key is require" do
+      expect(scan(%(gem_options = { require: true }\n))).to eq([])
+    end
+
+    it "accepts a load whose argument isn't a string, such as JSON.load" do
+      expect(scan(%(JSON.load(text)\n))).to eq([])
+    end
+
+    it "accepts send with a symbol or with a name held in a variable" do
+      expect(scan(%(obj.send(:x)\nsend(pattern, node)\n))).to eq([])
+    end
+
+    it "accepts class_eval of a string that defines methods" do
+      expect(scan(%(class_eval("def \#{name} = @\#{name}", __FILE__, __LINE__)\n))).to eq([])
+    end
+
+    it "accepts a change to $LOAD_PATH" do
+      expect(scan(%($LOAD_PATH.unshift(File.expand_path("../lib", __dir__))\n))).to eq([])
     end
   end
 
@@ -206,6 +187,7 @@ RSpec.describe Boundary do
         write(dir, "lib/quaack/ok.rb", %(require "pg_query"\n))
         write(dir, "lib/quaack/deep/bad.rb", %(require "anthropic"\n))
         write(dir, "exe/tool", %(#!/usr/bin/env ruby\nrequire "quaack/driver"\n))
+        FileUtils.mkdir_p(File.join(dir, "exe", "completions"))
 
         violations = described_class.require_violations(dir, forbidden: forbidden)
 
