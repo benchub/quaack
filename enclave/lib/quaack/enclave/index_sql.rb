@@ -32,18 +32,19 @@ module Quaack
         raise ArgumentError, "predicate doesn't parse as SQL", cause: nil
       end
 
-      # Every aggregate in pg_catalog on Postgres 18, window-only ones
-      # included. The raw parse tree can't tell an aggregate call from any
-      # other call, so a plain call like sum(b) is found by name. Any call
-      # with aggregate or window syntax is caught whatever its name.
-      BUILT_IN_AGGREGATES = %w[
+      # Every aggregate and window function in pg_catalog on Postgres 18. The
+      # raw parse tree can't tell an aggregate call from any other call, so a
+      # plain call like sum(b) is found by name. Any call with aggregate or
+      # window syntax is caught whatever its name, and so are JSON_ARRAYAGG
+      # and JSON_OBJECTAGG, which parse as their own nodes.
+      AGGREGATE_AND_WINDOW_FUNCTIONS = %w[
         any_value array_agg avg bit_and bit_or bit_xor bool_and bool_or corr count covar_pop covar_samp cume_dist
-        dense_rank every json_agg json_agg_strict json_object_agg json_object_agg_strict json_object_agg_unique
-        json_object_agg_unique_strict jsonb_agg jsonb_agg_strict jsonb_object_agg jsonb_object_agg_strict
-        jsonb_object_agg_unique jsonb_object_agg_unique_strict max min mode percent_rank percentile_cont
-        percentile_disc range_agg range_intersect_agg rank regr_avgx regr_avgy regr_count regr_intercept regr_r2
-        regr_slope regr_sxx regr_sxy regr_syy stddev stddev_pop stddev_samp string_agg sum var_pop var_samp
-        variance xmlagg
+        dense_rank every first_value json_agg json_agg_strict json_object_agg json_object_agg_strict
+        json_object_agg_unique json_object_agg_unique_strict jsonb_agg jsonb_agg_strict jsonb_object_agg
+        jsonb_object_agg_strict jsonb_object_agg_unique jsonb_object_agg_unique_strict lag last_value lead max min
+        mode nth_value ntile percent_rank percentile_cont percentile_disc range_agg range_intersect_agg rank
+        regr_avgx regr_avgy regr_count regr_intercept regr_r2 regr_slope regr_sxx regr_sxy regr_syy row_number
+        stddev stddev_pop stddev_samp string_agg sum var_pop var_samp variance xmlagg
       ].to_set.freeze
 
       # Refuses what Postgres never allows in an index predicate and a parse
@@ -54,7 +55,8 @@ module Quaack
         problem = case node
                   when PgQuery::ParamRef then "a parameter"
                   when PgQuery::SubLink then "a subquery"
-                  when PgQuery::GroupingFunc then "an aggregate, window, or grouping function"
+                  when PgQuery::GroupingFunc, PgQuery::JsonArrayAgg, PgQuery::JsonObjectAgg
+                    "an aggregate, window, or grouping function"
                   when PgQuery::FuncCall then "an aggregate, window, or grouping function" if aggregate?(node)
                   end
         raise ArgumentError, "predicate can't use #{problem}" if problem
@@ -62,14 +64,15 @@ module Quaack
 
       def aggregate?(call) = aggregate_syntax?(call) || built_in_aggregate?(call)
 
+      # WITHIN GROUP always fills agg_order, so it needs no check of its own.
       def aggregate_syntax?(call)
-        [call.agg_star, call.agg_distinct, call.agg_within_group, call.over, call.agg_filter].any? ||
+        [call.agg_star, call.agg_distinct, call.over, call.agg_filter].any? ||
           call.agg_order.any?
       end
 
       def built_in_aggregate?(call)
         *schema, name = call.funcname.map { |n| n.string.sval }
-        BUILT_IN_AGGREGATES.include?(name) && [[], ["pg_catalog"]].include?(schema)
+        AGGREGATE_AND_WINDOW_FUNCTIONS.include?(name) && [[], ["pg_catalog"]].include?(schema)
       end
 
       # The predicate as pg_query deparses it.

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pp"
 require "quaack/enclave/statistics"
 require "quaack/enclave/index_candidate"
 
@@ -27,12 +28,14 @@ RSpec.describe "the statistics input" do
 
     it "freezes its own copies of the parts, leaving the caller's strings alone" do
       schema = +"public"
-      name = described_class.new(schema:, name: +"orders")
+      table = +"orders"
+      name = described_class.new(schema:, name: table)
       schema << "_changed"
+      table << "_changed"
 
-      expect(name.schema).to eq("public")
+      expect([name.schema, name.name]).to eq(%w[public orders])
       expect([name.schema, name.name]).to all(be_frozen)
-      expect(schema).not_to be_frozen
+      expect([schema, table]).to all(satisfy { |s| !s.frozen? })
     end
 
     it "requires a non-empty schema and name" do
@@ -227,6 +230,22 @@ RSpec.describe "the statistics input" do
         expect { table({}, indexes: { "i" => index_on(other, ["id"]) }) }.to raise_error(ArgumentError, /customers/)
         expect { table({}, indexes: { "i" => "CREATE INDEX" }) }.to raise_error(ArgumentError, /IndexCandidate/)
         expect { table({}, indexes: { "" => by_status }) }.to raise_error(ArgumentError, /index name/)
+      end
+    end
+  end
+
+  it "redacts a partial index's predicate in inspect and pp, for a table and for the whole input" do
+    sentinel = "SENTINEL-5d21e8"
+    partial = Quaack::Enclave::IndexCandidate.new(table: orders, key: ["id"], predicate: "note = '#{sentinel}'",
+                                                  sources: [:existing])
+    table_stats = table({}, column_names: %w[id note], indexes: { "orders_partial_idx" => partial })
+    stats = Quaack::Enclave::Statistics.new(tables: [table_stats])
+
+    expect(partial.predicate).to include(sentinel)
+    [table_stats, stats].each do |shown|
+      [shown.inspect, PP.pp(shown, +"")].each do |text|
+        expect(text).to include("predicate=<redacted>")
+        expect(text).not_to include(sentinel)
       end
     end
   end

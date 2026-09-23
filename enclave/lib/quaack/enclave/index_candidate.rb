@@ -31,7 +31,14 @@ module Quaack
     # UNIQUE constraints, and CREATE UNIQUE INDEX. The generators propose
     # plain indexes. A unique index and a plain one on the same columns are
     # different definitions, so 5a-3 compares key columns itself when it
-    # checks whether an existing index covers a candidate.
+    # checks whether an existing index covers a candidate. A deferrable
+    # UNIQUE constraint also reads as unique: true, because pg_get_indexdef
+    # prints it the same way. To propose a candidate built on an existing
+    # index, as 5a-2 does when it extends the index in use, use
+    # existing.with(key: ..., unique: false, sources: [...]). A plain
+    # with(key: ...) on orders_pkey would keep unique: true and
+    # sources: [:existing], so 5a-3 couldn't dedupe it against the other
+    # generators' plain candidates.
     #
     # The constructor refuses what Postgres would refuse for the built-in
     # methods: a non-default direction or nulls ordering, or unique, on
@@ -42,10 +49,10 @@ module Quaack
     # it, so "(status = 'open')" and "status = 'open'" make equal candidates.
     # Casts don't normalize away: "status::text = 'open'" stays different.
     # The constructor refuses a predicate with a parameter ($1), a subquery,
-    # or an aggregate, window, or grouping call. It finds a plain aggregate
-    # call like sum(b) by name, against the aggregates built into Postgres 18,
-    # so a user-defined aggregate called without aggregate syntax gets
-    # through. It doesn't check function volatility (random(), now()),
+    # or an aggregate, window, or grouping call. It finds a plain call like
+    # sum(b) by name, against the aggregates and window functions built into
+    # Postgres 18, so a user-defined aggregate or window function called
+    # without aggregate or window syntax gets through. It doesn't check function volatility (random(), now()),
     # because that needs the catalog. README 3d does that.
     #
     # Equality and hash ignore sources, so two generators' copies of the same

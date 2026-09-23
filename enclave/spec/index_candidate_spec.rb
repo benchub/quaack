@@ -277,16 +277,21 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       ["count(*) > 0", "sum(b) > 0", "pg_catalog.max(b) > 0", "MIN(b) > 0", "a > 0 AND avg(b) > 1",
        "count(DISTINCT b) > 1", "my_agg(b ORDER BY b) > 0", "my_agg(b) FILTER (WHERE b > 0) > 0",
        "my_agg(0.5) WITHIN GROUP (ORDER BY b) > 0", "rank() OVER () > 1", "my_window(b) OVER () > 1",
-       "GROUPING(b) > 0"].each do |bad|
+       "GROUPING(b) > 0", "my_agg(*) > 0", "my_agg(DISTINCT b) > 0", "JSON_ARRAYAGG(b) IS NOT NULL",
+       "JSON_OBJECTAGG(b : c) IS NOT NULL"].each do |bad|
         expect { candidate(predicate: bad) }
           .to raise_error(ArgumentError, /predicate can't use an aggregate, window, or grouping function/), bad
       end
     end
 
-    it "refuses a plain call to every aggregate built into Postgres 18" do
-      names = File.readlines(File.join(__dir__, "fixtures", "pg18_aggregates.txt"), chomp: true)
-                  .grep_v(/\A#/).join(" ").split
-      expect(names.size).to eq(54)
+    # The names in a fixture of real Postgres 18 output.
+    def fixture_names(file)
+      File.readlines(File.join(__dir__, "fixtures", file), chomp: true).grep_v(/\A#/).join(" ").split
+    end
+
+    it "refuses a plain call to every aggregate and window function built into Postgres 18" do
+      names = fixture_names("pg18_aggregates.txt") | fixture_names("pg18_window_functions.txt")
+      expect(names.size).to eq(61)
 
       names.each do |name|
         expect { candidate(predicate: "#{name}(b) > 0") }.to raise_error(ArgumentError, /aggregate/), name
@@ -545,6 +550,21 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
       it "returns nil for NULLS NOT DISTINCT, which the shape doesn't model" do
         expect(from_ddl(indexdefs.fetch("orders_d_nnd_idx"))).to be_nil
+      end
+
+      it "reads a deferrable UNIQUE constraint as unique, since pg_get_indexdef prints it the same way" do
+        d = Quaack::Enclave::TableName.new(schema: "public", name: "d")
+
+        expect(from_ddl(indexdefs.fetch("d_a_key"))).to eq(unique(table: d, key: ["a"]))
+      end
+
+      it "turns an existing unique index into a plain candidate that matches a generator's" do
+        pkey = from_ddl(indexdefs.fetch("orders_pkey"))
+        extended = pkey.with(key: [*pkey.key, key_column.new(name: "status")], unique: false, sources: [:plan])
+
+        expect(extended).to eq(candidate(key: %w[id status]))
+        expect(extended.sources).to eq(Set[:plan])
+        expect(pkey.with(key: [*pkey.key, key_column.new(name: "status")])).not_to eq(candidate(key: %w[id status]))
       end
 
       it "reads a plain index as not unique" do
