@@ -37,6 +37,7 @@ Build the stateless enclave script: a subcommand dispatcher that reads from the 
 - **Depends on:** 20260922-3, 20260922-7, 20260922-8.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note:** The static boundary check (20260923-7) flags `require` or `require_relative` of a computed path in the enclave, such as `require_relative "steps/#{name}"` or requiring every file in a directory. So the dispatcher lists its requires by hand and maps subcommands through a table or `public_send`, which is still allowed. That also keeps argv from choosing which file gets loaded.
 
 ### 20260922-5. Driver transport.
 
@@ -630,17 +631,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 
 ### 20260923-5. Discover spec suites instead of listing them. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-7. Simplify and relax the static boundary checker.
-
-The static checker in `spec/support/boundary.rb` is about 220 lines, is still easy to get around, and flags ordinary code the next tasks need. It flags `public_send("cmd_#{sub}")` (the natural shape of the 20260922-4 dispatcher), `define_method("step_#{n}")`, `%i[save load]`, `{ require: true }`, and `JSON.load(x)`. It also applies every rule to the driver, where loading enclave code doesn't leak production data. Cut it back:
-- For the driver, a plain require check that forbids `quaack/enclave` is enough.
-- For the enclave, keep plain string requires plus the shebang rule. Review whether the send, lookup, symbol, eval, and `$LOAD_PATH` rules earn their cost once 20260923-4 lands.
-
-- **Depends on:** 20260923-4.
-- **Came from:** Second review of 20260922-1, findings 5 and 6.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.
+### 20260923-7. Simplify and relax the static boundary checker. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-11. Index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
@@ -780,6 +771,19 @@ Findings from the reviews of 20260922-31:
 - **Depends on:** 20260922-31.
 - **Came from:** Both reviews of 20260922-31.
 - **README:** 5a-2.
+- **Status:** todo
+
+### 20260923-25. Static checker loose ends.
+
+Minor findings from the second review of 20260923-7:
+- `::Bundler.require` isn't flagged, because `bundler_require?` needs a `ConstantReadNode` receiver, and `::Bundler` parses as a `ConstantPathNode`.
+- In names-only mode, the driver misses `require_relative "../../../../enclave/lib/quaack/enclave"`, and doesn't check its shebang. That's by design per the task, but say so in the header.
+- The header and the `require_violations` comment say names-only mode checks only forbidden names, but parse failures are still flagged. Fix the wording.
+- Nothing pins `names_only: true` for the real driver in `spec/boundary_spec.rb`. Dropping it stays green. The fixture tests do pin the mode itself.
+
+- **Depends on:** 20260923-7.
+- **Came from:** Second review of 20260923-7.
+- **README:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.
