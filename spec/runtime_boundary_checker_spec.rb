@@ -208,7 +208,8 @@ RSpec.describe RuntimeBoundary do
   end
 
   describe RuntimeBoundary::Rules do
-    let(:status) { Open3.capture2e(RbConfig.ruby, "-e", "exit 0").last }
+    # Rules reads only the exit status.
+    let(:status) { Struct.new(:exitstatus).new(0) }
 
     def violations(rules, feature)
       rules.run_violations("run", IsolatedInstall::Run.new("", "", status, [feature]), 0).map(&:message)

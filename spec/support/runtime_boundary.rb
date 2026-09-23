@@ -125,10 +125,12 @@ module RuntimeBoundary
 
     private
 
-    # The dependencies of a gem in `sources` come from the bundle's gem of
-    # that name, not from its gemspec. The copies the checker spec builds
-    # keep the real gem's dependencies, and a gem the bundle lacks still
-    # counts, just with none of its own.
+    # The side's own dependencies come from its gemspec, which may be a copy,
+    # so a dependency added to that copy counts. Every other gem's come from
+    # the bundle's gem of that name, even if `sources` has a copy of it, so a
+    # dependency added to a protocol copy is ignored. That's fine: the gem it
+    # names isn't installed, so a require of it still exits 1. A gem the
+    # bundle lacks still counts, just with no dependencies of its own.
     def closure = Boundary.dependency_closure(@spec).names
 
     # Maps each run's label to the run and the exit status it must end with.
