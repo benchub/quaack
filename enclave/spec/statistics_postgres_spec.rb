@@ -82,7 +82,7 @@ RSpec.describe "value_frequency against real Postgres statistics" do
 
   # pg_stats prints booleans as t and f, and the MCVs cover the whole
   # column, so a missed spelling would come out at the one-row floor.
-  it "matches the planner on a boolean column, however the literal is spelled" do
+  it "matches the planner on a boolean column with no NULLs, however the literal is spelled" do
     conn.exec(<<~SQL)
       CREATE TABLE flags (active boolean);
       INSERT INTO flags SELECT i % 20 <> 0 FROM generate_series(1, 10000) AS i;

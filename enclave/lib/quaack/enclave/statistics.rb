@@ -134,7 +134,11 @@ module Quaack
       #   small table) where this returns nil.
       # - It uses the planner's current row estimate, not reltuples.
       # The row count EXPLAIN shows is this times the rows, rounded, and at
-      # least 1.
+      # least 1, with one exception: Postgres rewrites bool_col = false as
+      # NOT bool_col and estimates it as 1 - freq(t), which counts NULL rows
+      # as matching. This follows var_eq_const instead and returns freq(f),
+      # the fraction that really matches, so on a nullable boolean it is
+      # lower than EXPLAIN's estimate for = false.
       def value_frequency(column_name, literal_text)
         raise ArgumentError, "literal_text must be a String" unless literal_text.is_a?(String)
         return nil if !column?(column_name) && column_names.include?(column_name)
