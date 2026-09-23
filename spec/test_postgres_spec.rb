@@ -328,6 +328,35 @@ RSpec.describe TestPostgres do
       expect(child_value(out, "AFTER_FAIL")).to eq("0"), out
     end
 
+    # Postgres won't drop a template database, so this drop fails every time
+    # it's tried. It should fail only its own example, and the example's
+    # other databases should still be dropped.
+    it "forgets an example's databases when one of its drops fails, and still drops the rest" do
+      source = <<~RUBY
+        #{prelude}
+        #{watch}
+        RSpec.describe "an undroppable database", order: :defined do
+          it("marks it", key: "AFTER_MARKED") do
+            TestPostgres.server.admin.exec("ALTER DATABASE \#{test_database.name} IS_TEMPLATE true")
+            racetrack_and_arena
+          end
+
+          it("runs next", key: "AFTER_LATER") do
+            puts "LATER_RAN=\#{test_database.connection.exec("SELECT 1").getvalue(0, 0)}"
+          end
+        end
+      RUBY
+      out, status = run_child_spec(source)
+
+      expect(status).not_to be_success
+      expect(out).to include("2 examples, 1 failure"), out
+      expect(out).to include("# an undroppable database marks it")
+      expect(out).to include("cannot drop a template database")
+      expect(child_value(out, "AFTER_MARKED")).to eq("1"), out
+      expect(child_value(out, "LATER_RAN")).to eq("1"), out
+      expect(child_value(out, "AFTER_LATER")).to eq("1"), out
+    end
+
     # A forked child that exits normally ends the parent's sessions, so the
     # harness's DROP fails. That example should fail with a message that
     # names the likely cause, and the next example should start clean.
