@@ -3,15 +3,32 @@
 require "prism"
 
 # Static checks for the line between the driver and the enclave. They run as
-# specs, not in production. See spec/boundary_spec.rb for the rules and
-# spec/boundary_checker_spec.rb for proof that each check catches a planted
+# specs, not in production. spec/boundary_spec.rb runs them on the real gems,
+# and spec/boundary_checker_spec.rb proves each one catches a planted
 # violation.
 #
-# These checks can't catch everything. Clever code can hide a require from
-# any static check. spec/runtime_boundary_spec.rb runs each side from an
-# install that holds only its own dependencies and checks what it loads.
-# These checks catch the plain mistakes early, including in code the runtime
-# check never runs.
+# They catch honest mistakes, not deliberate evasion (see
+# spec/support/runtime_boundary.rb). spec/runtime_boundary_spec.rb loads every
+# lib file and flags anything forbidden that loads, so these checks only add
+# a precise message and cover code that never runs, such as a require inside
+# a method body. So they look almost only at plain string requires:
+#
+# - A require, load, or autoload of a forbidden library, such as
+#   quaack/driver or openai in the enclave, or quaack/enclave in the driver.
+#   This is the only rule for the driver (`names_only`), since loading
+#   enclave code on a laptop leaks no production data.
+# - A require_relative or absolute path that leaves the gem, such as into the
+#   driver's tree, or a path relative to the working directory.
+# - A require or require_relative of a path that isn't a plain string, which
+#   this check can't read.
+# - Bundler.require, which would load every gem in the shared bundle. The
+#   runtime check catches it at the top level, since it runs from the repo
+#   and Bundler finds the repo's Gemfile, but not in code that never runs.
+#   On a jump server with no Gemfile it just raises.
+# - An executable whose shebang isn't exactly SHEBANG.
+#
+# They don't look at send, define_method, symbols, eval, or $LOAD_PATH.
+# Hiding a require behind those takes intent, and ordinary code uses them.
 module Boundary
   # What LLM SDKs are loaded as. The enclave must never require any of them.
   # ENCLAVE_ALLOWED_GEMS keeps the gems themselves out. This list catches a
@@ -34,16 +51,6 @@ module Boundary
   DRIVER_FORBIDDEN_REQUIRES = ["quaack/enclave"].freeze
 
   REQUIRE_METHODS = %i[require require_relative load autoload].freeze
-  EVAL_METHODS = %i[eval instance_eval class_eval module_eval].freeze
-  SEND_METHODS = %i[send __send__ public_send].freeze
-  # Methods that take method names, so they can reach a require or eval
-  # indirectly.
-  LOOKUP_METHODS = %i[
-    method public_method singleton_method instance_method public_instance_method
-    alias_method define_method
-  ].freeze
-  DANGEROUS_NAMES = [*REQUIRE_METHODS, *EVAL_METHODS, *SEND_METHODS].map(&:to_s).freeze
-  LOAD_PATH_GLOBALS = %i[$LOAD_PATH $: $-I].freeze
   SHEBANG = "#!/usr/bin/env ruby"
 
   Violation = Data.define(:file, :line, :message) do
@@ -61,15 +68,15 @@ module Boundary
       Dir.glob(File.join(gem_dir, "exe", "*"))).select { |f| File.file?(f) }.sort
   end
 
-  # Every require in the gem's source files that loads something in
-  # `forbidden` or reaches outside the gem, every require the check can't
-  # read, and every executable whose shebang isn't exactly SHEBANG.
-  def require_violations(gem_dir, forbidden:)
+  # Every violation of the rules above in the gem's source files. With
+  # `names_only`, only requires of something in `forbidden` count.
+  def require_violations(gem_dir, forbidden:, names_only: false)
     exe_dir = File.join(File.expand_path(gem_dir), "exe", "")
     source_files(gem_dir).flat_map do |file|
       source = File.read(file)
-      shebang = File.expand_path(file).start_with?(exe_dir) ? shebang_violations(file, source) : []
-      shebang + scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden)
+      exe = !names_only && File.expand_path(file).start_with?(exe_dir)
+      shebang = exe ? shebang_violations(file, source) : []
+      shebang + scan_source(source, file: file, gem_dir: gem_dir, forbidden: forbidden, names_only: names_only)
     end
   end
 
@@ -80,11 +87,11 @@ module Boundary
     [Violation.new(file, 1, "executable's first line must be exactly #{SHEBANG}")]
   end
 
-  def scan_source(source, file:, gem_dir:, forbidden:)
+  def scan_source(source, file:, gem_dir:, forbidden:, names_only: false)
     result = Prism.parse(source, filepath: file)
     return [Violation.new(file, 1, "doesn't parse, so its requires can't be checked")] unless result.success?
 
-    visitor = RequireVisitor.new(file: file, gem_dir: File.expand_path(gem_dir), forbidden: forbidden)
+    visitor = RequireVisitor.new(file: file, gem_dir: File.expand_path(gem_dir), forbidden:, names_only:)
     result.value.accept(visitor)
     visitor.violations
   end
@@ -124,78 +131,42 @@ module Boundary
   class RequireVisitor < Prism::Visitor
     attr_reader :violations
 
-    def initialize(file:, gem_dir:, forbidden:)
+    def initialize(file:, gem_dir:, forbidden:, names_only:)
       super()
       @file = file
       @gem_dir = gem_dir
       @forbidden = forbidden
+      @names_only = names_only
       @violations = []
     end
 
+    # Any receiver counts, so Kernel.require is checked too.
     def visit_call_node(node)
-      check_call(node)
-      super
-    end
-
-    def visit_symbol_node(node)
-      if REQUIRE_METHODS.map(&:to_s).include?(node.unescaped)
-        flag(node, "names #{node.unescaped}, which could call it indirectly")
-      end
-      super
-    end
-
-    # $LOAD_PATH and its aliases are read-only, so every use that changes the
-    # load path starts with a read, such as `$:.unshift` or `$: << dir`.
-    def visit_global_variable_read_node(node)
-      check_global(node)
+      check_require(node) if REQUIRE_METHODS.include?(node.name)
       super
     end
 
     private
 
-    def check_call(node)
-      case node.name
-      when *REQUIRE_METHODS then check_require(node)
-      when *SEND_METHODS then check_names(node, [arguments(node).first])
-      when *LOOKUP_METHODS then check_names(node, arguments(node))
-      else
-        flag(node, "#{node.name} of a string can run code this check can't see") if eval_of_string?(node)
-      end
-    end
-
-    def arguments(node) = node.arguments&.arguments || []
-
-    def eval_of_string?(node)
-      node.name == :eval || (EVAL_METHODS.include?(node.name) && !arguments(node).empty?)
-    end
-
-    # Each argument must be a plain name that isn't a require, eval, or send.
-    def check_names(node, args)
-      args.each do |arg|
-        name = arg.is_a?(Prism::SymbolNode) || arg.is_a?(Prism::StringNode) ? arg.unescaped : nil
-        next if name && !DANGEROUS_NAMES.include?(name)
-
-        flag(node, "#{node.name} with #{name ? name.inspect : "a name it can't read"} can call a require indirectly")
-      end
-    end
-
-    def check_global(node)
-      return unless LOAD_PATH_GLOBALS.include?(node.name)
-
-      flag(node, "uses #{node.name}, which changes what a require loads")
-    end
-
     def check_require(node)
-      return flag(node, "Bundler.require would load every gem in the shared bundle") if bundler_require?(node)
-
       arg = required_argument(node)
-      return check_required(node, arg.unescaped) if arg.is_a?(Prism::StringNode)
+      path = arg.unescaped if arg.is_a?(Prism::StringNode)
+      return check_name(node, path) if @names_only
+      return flag(node, "Bundler.require would load every gem in the shared bundle") if bundler_require?(node)
+      return check_required(node, path) if path
 
-      flag(node, "#{node.name} with an argument that isn't a plain string can't be checked")
+      # The one rule for a path that isn't a plain string, kept because
+      # `require File.expand_path("../../../driver/lib/quaack/driver", __dir__)`
+      # is a common older idiom, and in code that never runs no other check
+      # sees it. load and autoload stay exempt, so JSON.load(text) passes.
+      return unless arg && %i[require require_relative].include?(node.name)
+
+      flag(node, "#{node.name} of a path this check can't read, so it can't tell what it loads")
     end
 
     def required_argument(node)
-      node.name == :autoload ? arguments(node)[1] : arguments(node)[0]
+      args = node.arguments&.arguments || []
+      node.name == :autoload ? args[1] : args[0]
     end
 
     def check_required(node, path)
@@ -203,9 +174,15 @@ module Boundary
         check_path(node, File.expand_path(path, File.dirname(@file)))
       elsif path.start_with?("./", "../")
         flag(node, "#{node.name} #{path.inspect} depends on the working directory")
-      elsif (hit = forbidden_match(path))
-        flag(node, "#{node.name} #{path.inspect} loads #{hit}, which this gem must never load")
+      else
+        check_name(node, path)
       end
+    end
+
+    def check_name(node, path)
+      return unless path && (hit = Boundary.forbidden_match(path, @forbidden))
+
+      flag(node, "#{node.name} #{path.inspect} loads #{hit}, which this gem must never load")
     end
 
     def check_path(node, absolute)
@@ -213,8 +190,6 @@ module Boundary
 
       flag(node, "#{node.name} reaches #{absolute}, outside #{@gem_dir}")
     end
-
-    def forbidden_match(path) = Boundary.forbidden_match(path, @forbidden)
 
     def bundler_require?(node)
       node.name == :require &&
