@@ -13,8 +13,13 @@ RSpec.describe "quaacks gemspec" do
     expect(spec.executables).to eq(["quaacks"])
   end
 
-  it "ships the executable it names" do
-    expect(spec.files).to include("exe/quaacks")
+  # Not spec.files: RubyGems adds bindir/executables to it whether or not the
+  # file exists, so that check can't fail.
+  it "has the executable it names on disk, marked executable" do
+    path = File.join(GEM_ROOT, spec.bindir, "quaacks")
+
+    expect(File.file?(path)).to be(true), "#{path} is missing"
+    expect(File.executable?(path)).to be(true), "#{path} isn't executable"
   end
 
   it "depends at runtime on pg_query and the shared protocol gem" do
