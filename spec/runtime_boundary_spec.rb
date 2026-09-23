@@ -27,18 +27,27 @@ RSpec.describe "what each side loads at runtime" do
       expect(@report.violations).to eq([]), @report.violations.join("\n")
     end
 
-    it "requires every file under the installed gem's lib/, not only what --version loads" do
-      lib = File.join(@report.install.gem_dirs.fetch(@spec.name), "lib")
-      loaded = @report.runs.fetch("every file under lib/").loaded_features
-
-      expect(loaded).to include(File.join(lib, "quaack", gem_dir, "cli.rb"), File.join(lib, "quaack", "#{gem_dir}.rb"))
+    # Today the entry file loads every other lib file itself, so these can't
+    # tell a run that requires every file from one that requires only the
+    # entry. spec/runtime_boundary_checker_spec.rb proves that with files
+    # nothing requires.
+    def lib_files(gem_name)
+      lib = File.join(@report.install.gem_dirs.fetch(gem_name), "lib")
+      Dir.glob("**/*.rb", base: lib).map { |file| File.join(lib, file) }
     end
 
-    it "requires every file under the installed protocol gem's lib/ too, since it ships with this side" do
-      lib = File.join(@report.install.gem_dirs.fetch("quaack-protocol"), "lib", "quaack")
-      loaded = @report.runs.fetch("every file under lib/").loaded_features
+    it "loads every file under the installed gem's lib/ in the every-file run" do
+      files = lib_files(@spec.name)
 
-      expect(loaded).to include(File.join(lib, "protocol.rb"), File.join(lib, "protocol", "version.rb"))
+      expect(files.size).to be > 1
+      expect(@report.runs.fetch("every file under lib/").loaded_features).to include(*files)
+    end
+
+    it "loads every file under the installed protocol gem's lib/ too, since it ships with this side" do
+      files = lib_files("quaack-protocol")
+
+      expect(files.size).to be > 1
+      expect(@report.runs.fetch("every file under lib/").loaded_features).to include(*files)
     end
 
     it "loads itself from the installed gem, not from the repo checkout" do

@@ -83,6 +83,18 @@ RSpec.describe RuntimeBoundary do
   end
 
   describe "a dependency the gemspec declares but the allowlist doesn't" do
+    it "flags the driver with no require of it, since the every-file run loads all of its files" do
+      gemspec = copy_of("enclave")
+      add_dependency(gemspec, "quaack-driver")
+      report = check(described_class.enclave(gemspec_path: gemspec))
+      driver = File.join(report.install.gem_dirs.fetch("quaack-driver"), "lib", "quaack", "driver.rb")
+
+      expect(messages(report, run: "quaacks --version")).to eq([])
+      expect(messages(report, run: "every file under lib/"))
+        .to include("loaded #{driver}, which isn't from the standard library or an allowed gem",
+                    "loaded #{driver}, which this side must never load")
+    end
+
     it "flags the driver, even though the gemspec pulls it in" do
       gemspec = copy_of("enclave")
       add_dependency(gemspec, "quaack-driver")
@@ -139,14 +151,21 @@ RSpec.describe RuntimeBoundary do
   end
 
   describe "code that --version never reaches" do
+    # These plants load the other side from the repo checkout, not through a
+    # dependency. A dependency on the other side gets flagged on its own,
+    # since the every-file run loads all of its files, so it would hide
+    # whether the planted file was reached.
+    let(:repo_driver) { File.join(REPO_ROOT, "driver", "lib", "quaack", "driver.rb") }
+
     it "flags a lib file nothing requires that loads the driver" do
       gemspec = copy_of("enclave")
-      add_dependency(gemspec, "quaack-driver")
-      write(gemspec, "lib/quaack/enclave/hidden.rb", %(require "quaack/driver"\n))
+      write(gemspec, "lib/quaack/enclave/hidden.rb", %(require #{repo_driver.inspect}\n))
       report = check(described_class.enclave(gemspec_path: gemspec))
 
       expect(messages(report, run: "quaacks --version")).to eq([])
-      expect(messages(report, run: "every file under lib/")).to include(outside, forbidden)
+      expect(messages(report, run: "every file under lib/"))
+        .to include("loaded #{repo_driver}, which isn't from the standard library or an allowed gem",
+                    "loaded #{repo_driver}, which this side must never load")
     end
 
     it "flags the usage branch loading the driver" do
@@ -161,12 +180,14 @@ RSpec.describe RuntimeBoundary do
 
     it "flags a lib file of the protocol gem, which ships with the enclave, that loads the driver" do
       protocol = copy_of("protocol")
-      write(protocol, "lib/quaack/protocol/hidden.rb", %(require "quaack/driver"\n))
-      gemspec = copy_of("enclave")
-      add_dependency(gemspec, "quaack-driver")
-      report = check(described_class.enclave(gemspec_path: gemspec, sources: { "quaack-protocol" => protocol }))
+      write(protocol, "lib/quaack/protocol/hidden.rb", %(require #{repo_driver.inspect}\n))
+      report = check(described_class.enclave(gemspec_path: copy_of("enclave"),
+                                             sources: { "quaack-protocol" => protocol }))
 
-      expect(messages(report, run: "every file under lib/")).to include(outside, forbidden)
+      expect(messages(report, run: "quaacks --version")).to eq([])
+      expect(messages(report, run: "every file under lib/"))
+        .to include("loaded #{repo_driver}, which isn't from the standard library or an allowed gem",
+                    "loaded #{repo_driver}, which this side must never load")
     end
 
     it "flags a run whose loaded files weren't recorded, such as one that ends with exit!" do
@@ -186,12 +207,59 @@ RSpec.describe RuntimeBoundary do
     end
   end
 
-  it "flags the driver side loading the enclave from a lib file --version never reaches" do
-    gemspec = copy_of("driver")
-    add_dependency(gemspec, "quaacks")
-    write(gemspec, "lib/quaack/driver/hidden.rb", %(require "quaack/enclave"\n))
+  describe RuntimeBoundary::Rules do
+    let(:status) { Open3.capture2e(RbConfig.ruby, "-e", "exit 0").last }
 
-    expect(messages(check(described_class.driver(gemspec_path: gemspec)), run: "every file under lib/"))
-      .to include(%r{loaded \S+/lib/quaack/enclave\.rb, which this side must never load})
+    def violations(rules, feature)
+      rules.run_violations("run", IsolatedInstall::Run.new("", "", status, [feature]), 0).map(&:message)
+    end
+
+    it "doesn't count a gem dir that only shares a prefix with an allowed or forbidden one", :aggregate_failures do
+      rules = described_class.new(dumper: "/x/dump_features.rb",
+                                  allowed_dirs: ["/x/gems/quaacks-0.1.0", "/x/gems/quaack-driver-0.1.0-extra"],
+                                  forbidden_dirs: ["/x/gems/quaack-driver-0.1.0"], forbidden_requires: [])
+      outside_allowed = "/x/gems/quaacks-0.1.0-extra/lib/extra.rb"
+
+      expect(violations(rules, outside_allowed))
+        .to eq(["loaded #{outside_allowed}, which isn't from the standard library or an allowed gem"])
+      expect(violations(rules, "/x/gems/quaack-driver-0.1.0-extra/lib/extra.rb")).to eq([])
+    end
+
+    # A GEM_HOME often sits under a lib/ of its own, such as
+    # /usr/local/lib/ruby/gems, so only the part after the gem's lib/ counts.
+    it "matches a forbidden require against the path after the last lib/" do
+      gem_dir = "/usr/local/lib/ruby/gems/3.4.0/gems/harmless-helper-1.0.0"
+      rules = described_class.new(dumper: "/x/dump_features.rb", allowed_dirs: [gem_dir],
+                                  forbidden_dirs: [], forbidden_requires: ["openai"])
+
+      expect(violations(rules, "#{gem_dir}/lib/openai.rb"))
+        .to eq(["loaded #{gem_dir}/lib/openai.rb, which this side must never load"])
+    end
+  end
+
+  describe "the driver side" do
+    it "flags a dependency on the enclave, even with no require of it, since every file of it gets loaded" do
+      gemspec = copy_of("driver")
+      add_dependency(gemspec, "quaacks")
+      report = check(described_class.driver(gemspec_path: gemspec))
+      enclave = File.join(report.install.gem_dirs.fetch("quaacks"), "lib", "quaack", "enclave.rb")
+
+      expect(messages(report, run: "quaack --version")).to eq([])
+      expect(messages(report, run: "every file under lib/"))
+        .to include("loaded #{enclave}, which this side must never load")
+    end
+
+    # The full enclave can't load here, since the driver has no pg_query, so
+    # the plant loads a file of it that needs nothing else.
+    it "flags loading the enclave from a lib file --version never reaches" do
+      gemspec = copy_of("driver")
+      enclave = File.join(REPO_ROOT, "enclave", "lib", "quaack", "enclave", "version.rb")
+      write(gemspec, "lib/quaack/driver/hidden.rb", %(require #{enclave.inspect}\n))
+      report = check(described_class.driver(gemspec_path: gemspec))
+
+      expect(messages(report, run: "quaack --version")).to eq([])
+      expect(messages(report, run: "every file under lib/"))
+        .to eq(["loaded #{enclave}, which isn't from the standard library or an allowed gem"])
+    end
   end
 end
