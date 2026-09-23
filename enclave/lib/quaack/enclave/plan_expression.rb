@@ -68,6 +68,20 @@ module Quaack
       # A constant: a literal, a parameter, or either under casts.
       def constant?(node) = %i[a_const param_ref].include?(uncast(node).node)
 
+      # The literal in an `a = literal` conjunct, as text, the way pg_stats
+      # would print it, or nil if there's no literal. The text is a real
+      # value: pass it to TableStatistics#value_frequency and nowhere else.
+      def literal_text(node)
+        constant = equality_sides(node)&.map { |side| uncast(side) }&.find { |side| side.node == :a_const }
+        value = constant&.a_const
+        case value&.val
+        when :sval then value.sval.sval
+        when :ival then value.ival.ival.to_s
+        when :fval then value.fval.fval
+        when :boolval then value.boolval.boolval.to_s
+        end
+      end
+
       def uncast(node)
         node = node.type_cast.arg while node.node == :type_cast
         node

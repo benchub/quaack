@@ -89,15 +89,39 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_most_rows", most_rows_removed: 1.0001)).to eq([])
     end
 
-    it "makes a partial index on any constant equality whose selectivity alone meets the threshold" do
-      # status = 'shipped' alone removes 1 - 1/6 of the rows, going by pg_stats.
-      at_status = ddl("seq_scan_most_rows", most_rows_removed: 1 - (1.0 / 6))
-      expect(at_status).to eq(
+    it "makes a partial index on a rare value of a low-cardinality column, by its MCV frequency" do
+      # Filter (total_cents > 100) AND (status = 'failed'). 'failed' is 1% of
+      # the rows, though status has only six values.
+      expect(ddl("seq_scan_rare_value")).to eq(
+        [btree("orders", "status"), btree("orders", "total_cents", " WHERE status = 'failed'::text")]
+      )
+    end
+
+    it "makes the partial index when the value's frequency leaves exactly the threshold, and not above it" do
+      # 'failed' has an MCV frequency of 0.01, and the scan removes 99%.
+      partial = btree("orders", "total_cents", " WHERE status = 'failed'::text")
+      expect(ddl("seq_scan_rare_value", most_rows_removed: 1 - 0.01)).to include(partial)
+      expect(ddl("seq_scan_rare_value", most_rows_removed: 1 - 0.01 + 1e-9)).not_to include(partial)
+    end
+
+    it "makes a partial index on a common value only when the threshold allows it" do
+      # 'shipped' has an MCV frequency of 0.12.
+      expect(ddl("seq_scan_most_rows", most_rows_removed: 0.88)).to eq(
         [btree("orders", "total_cents, status"),
          btree("orders", "total_cents, created_at", " WHERE status = 'shipped'::text"),
          btree("orders", "status, created_at", " WHERE total_cents = 5100")]
       )
-      expect(ddl("seq_scan_most_rows", most_rows_removed: 1 - (1.0 / 6) + 1e-9)).to eq(seq_scan)
+    end
+
+    it "still proposes a partial on a unique column's value, leaving 5a-3 to drop it" do
+      # total_cents has no MCV list, so its frequency is 1/20,000.
+      expect(ddl("seq_scan_most_rows")).to include(btree("orders", "status, created_at", " WHERE total_cents = 5100"))
+    end
+
+    it "makes no partial index on a column with no pg_stats row" do
+      no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
+      stats = enclave::Statistics.new(tables: [no_status, customers_stats])
+      expect(ddl("seq_scan_rare_value", stats:)).to eq([btree("orders", "status")])
     end
 
     it "skips the partial index when the filter has no other column to key on" do
@@ -456,6 +480,23 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "splits only a top-level AND" do
       expect(expression.conjuncts("((a = 1) AND (b = 2))").size).to eq(2)
       expect(expression.conjuncts("((a = 1) OR (b = 2))").size).to eq(1)
+    end
+
+    it "reads a decimal literal as its text" do
+      expect(expression.literal_text(expression.conjuncts("(x = 1.50)").first)).to eq("1.50")
+    end
+
+    it "reads a boolean literal as its text" do
+      expect(expression.literal_text(expression.conjuncts("(x = false)").first)).to eq("false")
+    end
+
+    it "reads a cast literal on either side, and nothing for NULL, a parameter, or a column" do
+      text = ->(sql) { expression.literal_text(expression.conjuncts(sql).first) }
+      expect(text.call("('-5'::integer = x)")).to eq("-5")
+      expect(text.call("(x = NULL::text)")).to be_nil
+      expect(text.call("(x = $1)")).to be_nil
+      expect(text.call("(x = y)")).to be_nil
+      expect(text.call("(x < 5)")).to be_nil
     end
 
     it "drops every qualifier from a predicate, keeping its casts" do

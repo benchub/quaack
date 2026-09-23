@@ -52,10 +52,12 @@ module Quaack
         # because Postgres prints another relation's column there as a
         # parameter, so the conjunct's column is the scan's.
         def removes_most_alone?(conjunct)
-          return false unless conjunct.kind == :constant
+          text = PlanExpression.literal_text(conjunct.node) if conjunct.kind == :constant
+          return false unless text
 
-          selectivity = selectivity(conjunct.columns.first)
-          at_least?(selectivity && (1 - selectivity), :most_rows_removed)
+          column = conjunct.columns.first
+          frequency = column.table.value_frequency(column.name, text)
+          at_least?(frequency && (1 - frequency), :most_rows_removed)
         end
 
         # Index Scan or Bitmap Heap Scan whose Filter and recheck remove many
