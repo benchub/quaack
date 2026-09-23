@@ -166,8 +166,14 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("index_scan_filter")).to eq(extended)
     end
 
-    it "finds a Bitmap Heap Scan's index on its Bitmap Index Scan" do
+    it "finds a Bitmap Heap Scan's index on its Bitmap Index Scan, adding a column the Filter names twice once" do
+      # Filter (total_cents > 100) AND (total_cents < 5000).
       expect(ddl("bitmap_heap_scan_filter")).to eq(extended)
+    end
+
+    it "proposes nothing when every Filter column is already in the index key" do
+      # Filter (date_trunc('day', created_at) = ...) on orders_status_created_at_idx.
+      expect(ddl("index_scan_key_filter")).to eq([])
     end
 
     it "finds the Bitmap Index Scan behind an InitPlan in the heap scan's children" do
@@ -254,6 +260,11 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("sort_external_merge")).to eq([btree("orders", "status, total_cents DESC NULLS LAST, id")])
     end
 
+    it "puts the most selective equality column first" do
+      # Filter (status = 'shipped'), Recheck Cond (customer_id = 5).
+      expect(ddl("sort_two_equalities")).to eq([btree("orders", "customer_id, status, created_at")])
+    end
+
     it "treats an Incremental Sort the same way" do
       expect(ddl("incremental_sort")).to eq([btree("orders", "status, total_cents")])
     end
@@ -285,6 +296,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
         [btree("orders", "customer_id, status, total_cents"), btree("customers", "name")]
       )
       expect(ddl("nested_loop_parameterized")).to eq([btree("customers", "name")])
+    end
+
+    it "leaves a Merge Join alone, even with a large inner side and a join equality in its Join Filter" do
+      # Merge Join, Join Filter (o.status = c.name), inner Index Scan on
+      # orders returning 20,000 rows.
+      expect(ddl("merge_join_filter")).to eq([])
     end
   end
 
@@ -325,6 +342,8 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       # BitmapOr of customers_pkey, customers_email_key, and customers_pkey.
       expect(ddl("bitmap_or")).to eq([btree("customers", "id, email")])
       expect(ddl("bitmap_and")).to eq([btree("orders", "customer_id, id")])
+      # BitmapOr of a BitmapAnd (orders_customer_id_idx, orders_pkey) and orders_pkey.
+      expect(ddl("bitmap_and_in_or")).to eq([btree("orders", "customer_id, id")])
     end
 
     it "leaves out an index with more than one column, and needs two columns left" do
@@ -527,6 +546,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       _, direction, nulls = expression.sort_key("o.total_cents DESC NULLS LAST")
       expect([direction, nulls]).to eq(%i[desc last])
       expect(expression.sort_key("total_cents").drop(1)).to eq([:asc, nil])
+      expect(expression.sort_key("total_cents NULLS FIRST").drop(1)).to eq(%i[asc first])
     end
 
     it "gives nothing for a string that's more than one key or condition" do
@@ -577,6 +597,8 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(kinds.call("(total_cents = customer_id)")).to eq([[:other, %w[total_cents customer_id]]])
       expect(kinds.call("(status = ANY ('{a,b}'::text[]))")).to eq([[:other, ["status"]]])
       expect(kinds.call("(o.status.x = 'x'::text)")).to eq([[:other, []]])
+      # A column of an alias the plan has no scan for isn't a constant.
+      expect(kinds.call("(total_cents = z.id)")).to eq([[:other, ["total_cents"]]])
     end
 
     it "reads a bare key as the plan's one alias, and only when there's one" do
