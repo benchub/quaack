@@ -51,7 +51,8 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 5. **Review again.** Run a second review with a fresh reviewer agent.
 6. **Land.** Landing means merging the task's branch into `main` locally. There are no pull requests. If the second review is clean, land the work. If it still has findings:
    - Land the parts that are sound.
-   - Never land code with an unresolved trust-boundary or correctness finding.
+   - Never land code with an unresolved trust-boundary or correctness finding, or with a vacuous test. A test is vacuous if it stays green when the behavior it names is broken.
+   - If the second review finds vacuous tests, the builder gets one more round that fixes only those tests. A fresh reviewer then checks just those tests, by breaking the code they cover and confirming they go red. Any test that's still vacuous after that keeps its code from landing, along with the code it was meant to cover.
    - Add a new BACKLOG.md task for each finding that's left, pointing back to the original task ID.
    The original task moves to BACKLOG-COMPLETE.md only if what landed covers it. Otherwise it stays open, with a note saying what landed.
    Once the work is committed to `main`, remove the task's worktree and delete its branch. Don't leave finished worktrees lying around.
