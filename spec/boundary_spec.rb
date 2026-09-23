@@ -15,11 +15,10 @@ RSpec.describe "the driver/enclave boundary" do
   describe "the enclave gem" do
     let(:closure) { Boundary.dependency_closure(gemspec("enclave")) }
 
-    # Every gem the enclave can load, directly or transitively. It's an
-    # allowlist, so any new dependency fails here until someone reviews it and
-    # adds it. Never add the driver gem or an LLM SDK.
+    # Any new dependency fails here until someone reviews it and adds it to
+    # Boundary::ENCLAVE_ALLOWED_GEMS. The runtime check uses the same list.
     it "depends on exactly the reviewed gems" do
-      expect(closure.names).to contain_exactly("pg_query", "google-protobuf", "bigdecimal", "rake", "quaack-protocol")
+      expect(closure.names).to contain_exactly(*Boundary::ENCLAVE_ALLOWED_GEMS)
       expect(closure.unresolved).to eq([])
     end
 

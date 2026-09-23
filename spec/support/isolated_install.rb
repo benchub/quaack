@@ -14,41 +14,52 @@ class IsolatedInstall
 
   Run = Data.define(:stdout, :stderr, :status, :loaded_features)
 
-  attr_reader :dir, :home, :gem_names
+  # `built_gem_names` are the gems built from a gemspec, the repo's own or one
+  # in `sources`, rather than linked from the bundle.
+  attr_reader :dir, :home, :gem_names, :built_gem_names
 
   # The script that records $LOADED_FEATURES. It shows up in them itself.
   def dumper = File.join(@dir, "dump_features.rb")
 
   # `gem_name` is a repo gem such as "quaacks". `closure` is the names
-  # of everything it depends on.
-  def initialize(gem_name, closure:, dir:)
+  # of everything it depends on. `sources` maps gem names to gemspecs to build
+  # and install instead of the repo's own or the bundle's, such as a
+  # throwaway copy of a repo gem.
+  def initialize(gem_name, closure:, dir:, sources: {})
     @dir = dir
+    @sources = sources
     @home = File.join(dir, "gem_home")
     @gem_names = [gem_name, *closure].uniq
     %w[gems specifications extensions].each { |d| FileUtils.mkdir_p(File.join(@home, d)) }
-    repo_gems, other_gems = @gem_names.partition { |n| repo_gemspec(n) }
+    @built_gem_names, other_gems = @gem_names.partition { |n| repo_gemspec(n) }
     other_gems.each { |n| link_installed(n) }
-    install_repo_gems(repo_gems)
+    install_repo_gems(@built_gem_names)
   end
 
   # Runs the executable `exe` with `args`. Records $LOADED_FEATURES at exit.
-  def run(exe, *)
+  def run(exe, *) = run_ruby(File.join(@home, "bin", exe), *)
+
+  # Runs the Ruby script `script` with `args`, the same way as an executable.
+  def run_ruby(script, *)
     features_file = File.join(@dir, "loaded_features.txt")
     FileUtils.rm_f(features_file)
     dumper = self.dumper
     File.write(dumper, "at_exit { File.write(ENV.fetch('QUAACK_FEATURES_OUT'), $LOADED_FEATURES.join(\"\\n\")) }\n")
     env = isolated_env.merge("RUBYOPT" => "-r#{dumper}", "QUAACK_FEATURES_OUT" => features_file)
     out, err, status = Bundler.with_unbundled_env do
-      Open3.capture3(env, RbConfig.ruby, File.join(@home, "bin", exe), *)
+      Open3.capture3(env, RbConfig.ruby, script, *)
     end
     features = File.exist?(features_file) ? File.read(features_file).split("\n") : []
     Run.new(out, err, status, features)
   end
 
-  # Where each installed gem's files live, with symlinks resolved, since
-  # Ruby records loaded features by their real path.
-  def installed_gem_dirs
-    Dir.glob(File.join(@home, "gems", "*")).map { |d| File.realpath(d) }
+  # Maps each installed gem's name to where its files live, with symlinks
+  # resolved, since Ruby records loaded features by their real path.
+  def gem_dirs
+    Dir.glob(File.join(@home, "specifications", "*.gemspec")).to_h do |path|
+      spec = Gem::Specification.load(path)
+      [spec.name, File.realpath(spec.full_gem_path)]
+    end
   end
 
   private
@@ -60,7 +71,7 @@ class IsolatedInstall
     }
   end
 
-  def repo_gemspec(name) = RepoGems.gemspec_path_of(name)
+  def repo_gemspec(name) = @sources[name] || RepoGems.gemspec_path_of(name)
 
   # Links an already-installed gem from the bundle, so native extensions
   # don't have to be rebuilt.

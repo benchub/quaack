@@ -17,11 +17,11 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 - The jump servers are ARM (`aarch64-linux`), like the development Macs. Nothing needs to support x86_64.
 - The command runs RuboCop and then every spec suite. Each suite runs in its own process, from its own directory. The suites are the cross-gem specs in the root `spec/`, plus each top-level directory other than `vendor/` that has a `spec/` folder: today that's `protocol/`, `enclave/`, and `driver/`. The `Rakefile` finds them, so a new gem's specs run without being listed anywhere. Every suite runs even after one fails. The run fails if any suite fails, if a suite runs no examples, or if the root `spec/` suite didn't run.
 - Run `bundle install` first on a fresh checkout. The committed `.bundle/config` installs gems into `vendor/bundle`, never globally.
-- The repo holds three gems, all in one root `Gemfile`: `protocol/` holds `quaack-protocol` (shared), `enclave/` holds `quaacks` (the enclave script, which runs on the jump server), and `driver/` holds `quaack-driver` (its executable is `quaack`). The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
-  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there. Today that allowlist is the check the boundary actually rests on.
-  - `spec/runtime_boundary_spec.rb` installs each side with only its own dependencies, runs its `--version` outside Bundler, and checks everything it loaded. It has known gaps: it trusts the gemspec's own dependency list, and it only sees what `--version` loads. Backlog tasks track closing them.
-  - `spec/boundary_checker_spec.rb` proves the static checker catches planted violations.
-- If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add it there.
+- The repo holds three gems, all in one root `Gemfile`: `protocol/` holds `quaack-protocol` (shared), `enclave/` holds `quaacks` (the enclave script, which runs on the jump server), and `driver/` holds `quaack-driver` (its executable is `quaack`). The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Four specs enforce this:
+  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must exactly match the allowlist `Boundary::ENCLAVE_ALLOWED_GEMS` in `spec/support/boundary.rb`, so a new dependency fails until you review it and add it there.
+  - `spec/runtime_boundary_spec.rb` installs each side outside Bundler, runs it, requires every file of each repo gem it ships, and checks that nothing it loads comes from outside the standard library and its allowed gems (the same allowlist, for the enclave) or from the other side or an LLM SDK. It guards against honest mistakes, not deliberate evasion. `spec/support/runtime_boundary.rb` says what it covers and what it can't catch.
+  - `spec/boundary_checker_spec.rb` and `spec/runtime_boundary_checker_spec.rb` prove the static and runtime checks catch planted violations.
+- If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add the name it's required as to `LLM_SDK_REQUIRES` there. Both checks use that list.
 
 ## Backlog.
 

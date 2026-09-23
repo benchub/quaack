@@ -8,19 +8,25 @@ require "prism"
 # violation.
 #
 # These checks can't catch everything. Clever code can hide a require from
-# any static check. The guarantee comes from spec/runtime_boundary_spec.rb,
-# which runs each side from an install that holds only its own dependencies.
-# These checks catch the plain mistakes early, including in files that
-# `--version` never loads.
+# any static check. spec/runtime_boundary_spec.rb runs each side from an
+# install that holds only its own dependencies and checks what it loads.
+# These checks catch the plain mistakes early, including in code the runtime
+# check never runs.
 module Boundary
   # What LLM SDKs are loaded as. The enclave must never require any of them.
-  # The enclave's gem allowlist in boundary_spec.rb keeps the gems themselves
-  # out. This list catches a require of one in code the runtime check doesn't
-  # reach.
+  # ENCLAVE_ALLOWED_GEMS keeps the gems themselves out. This list catches a
+  # require of one, statically and in what the runtime check sees loaded.
   LLM_SDK_REQUIRES = %w[
     anthropic openai ruby_llm langchain gemini-ai cohere ollama-ai mistral-ai
     groq omniai aws-sdk-bedrockruntime google/cloud/ai_platform
   ].freeze
+
+  # Every gem the enclave may load, directly or transitively, besides itself.
+  # It's an allowlist, reviewed by hand: boundary_spec.rb fails if the
+  # enclave's dependencies don't match it exactly, and
+  # runtime_boundary_spec.rb fails if the enclave loads a gem that isn't on
+  # it. Never add the driver gem or an LLM SDK.
+  ENCLAVE_ALLOWED_GEMS = %w[bigdecimal google-protobuf pg_query quaack-protocol rake].freeze
 
   ENCLAVE_FORBIDDEN_REQUIRES = ["quaack/driver", *LLM_SDK_REQUIRES].freeze
   # Both sides load the protocol gem, so it obeys both sides' rules.
@@ -98,6 +104,15 @@ module Boundary
       found ? queue.concat(found.runtime_dependencies) : unresolved << dep.name
     end
     Closure.new(names: names.to_a, unresolved: unresolved)
+  end
+
+  # The entry in `forbidden` that the require path `path` loads, or nil.
+  # Normalizes the path the way the load path would see it: resolves . and
+  # .. segments, drops doubled slashes and a .rb suffix, and ignores case,
+  # since a case-insensitive disk loads Quaack/Driver as quaack/driver.
+  def forbidden_match(path, forbidden)
+    path = File.expand_path(path, "/").delete_prefix("/").delete_suffix(".rb").downcase
+    forbidden.find { |lib| path == lib || path.start_with?("#{lib}/") }
   end
 
   def installed_spec(name)
@@ -199,13 +214,7 @@ module Boundary
       flag(node, "#{node.name} reaches #{absolute}, outside #{@gem_dir}")
     end
 
-    # Normalizes the path the way the load path would see it: resolves . and
-    # .. segments, drops doubled slashes and a .rb suffix, and ignores case,
-    # since a case-insensitive disk loads Quaack/Driver as quaack/driver.
-    def forbidden_match(path)
-      path = File.expand_path(path, "/").delete_prefix("/").delete_suffix(".rb").downcase
-      @forbidden.find { |lib| path == lib || path.start_with?("#{lib}/") }
-    end
+    def forbidden_match(path) = Boundary.forbidden_match(path, @forbidden)
 
     def bundler_require?(node)
       node.name == :require &&
