@@ -116,6 +116,11 @@ RSpec.describe "the statistics input" do
       end
     end
 
+    it "accepts a correlation anywhere from -1 to 1" do
+      expect([-1.0, -0.9, 1.0].map { |c| column(n_distinct: 1.0, correlation: c).correlation }).to eq([-1.0, -0.9, 1.0])
+      expect { column(n_distinct: 1.0, correlation: -1.5) }.to raise_error(ArgumentError, /correlation/)
+    end
+
     it "rejects complex numbers with an ArgumentError" do
       expect { column(n_distinct: Complex(1, 2)) }.to raise_error(ArgumentError, /n_distinct/)
       expect { column(n_distinct: 1.0, null_frac: Complex(0.5, 0)) }.to raise_error(ArgumentError, /null_frac/)
@@ -201,6 +206,21 @@ RSpec.describe "the statistics input" do
         expect(stats.indexes).to be_frozen
       end
 
+      it "keeps its own frozen copy of the map, leaving the caller's hash alone" do
+        indexes = { "orders_status_idx" => by_status }
+        stats = table({}, indexes:)
+        indexes["other_idx"] = nil
+
+        expect(stats.indexes.keys).to eq(["orders_status_idx"])
+        expect(indexes).not_to be_frozen
+      end
+
+      it "requires a Hash" do
+        [[["orders_status_idx", nil]], nil].each do |bad|
+          expect { table({}, indexes: bad) }.to raise_error(ArgumentError, /indexes must be a Hash/), bad.inspect
+        end
+      end
+
       it "rejects an index on another table, or something that isn't a candidate" do
         other = Quaack::Enclave::TableName.new(schema: "public", name: "customers")
 
@@ -208,6 +228,14 @@ RSpec.describe "the statistics input" do
         expect { table({}, indexes: { "i" => "CREATE INDEX" }) }.to raise_error(ArgumentError, /IndexCandidate/)
         expect { table({}, indexes: { "" => by_status }) }.to raise_error(ArgumentError, /index name/)
       end
+    end
+  end
+
+  it "keeps its helpers off the public API" do
+    expect(column(n_distinct: 1.0)).not_to respond_to(:in_range)
+    stats = table({})
+    %i[finite names_of check_no_repeats column_map index_map check_index].each do |name|
+      expect(stats).not_to respond_to(name)
     end
   end
 

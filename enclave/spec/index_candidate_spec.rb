@@ -78,6 +78,17 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(names).to all(satisfy { |n| !n.frozen? })
     end
 
+    it "requires non-empty String names in INCLUDE" do
+      ["", :total, nil].each do |bad|
+        expect { candidate(include: [bad]) }.to raise_error(ArgumentError, /column name/), bad.inspect
+      end
+    end
+
+    it "keeps the default nulls orderings in a frozen map" do
+      expect(key_column::DEFAULT_NULLS).to eq({ asc: :last, desc: :first })
+      expect(key_column::DEFAULT_NULLS).to be_frozen
+    end
+
     it "requires a non-empty key" do
       expect { candidate(key: []) }.to raise_error(ArgumentError, /key/)
     end
@@ -272,6 +283,16 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       end
     end
 
+    it "refuses a plain call to every aggregate built into Postgres 18" do
+      names = File.readlines(File.join(__dir__, "fixtures", "pg18_aggregates.txt"), chomp: true)
+                  .grep_v(/\A#/).join(" ").split
+      expect(names.size).to eq(54)
+
+      names.each do |name|
+        expect { candidate(predicate: "#{name}(b) > 0") }.to raise_error(ArgumentError, /aggregate/), name
+      end
+    end
+
     it "allows ordinary calls, including a schema's own function with an aggregate's name" do
       ["lower(note) = 'x'", "myschema.sum(b) > 0", "coalesce(b, 0) > 0", "b > 0 AND c IS NULL"].each do |ok|
         expect(candidate(predicate: ok).predicate).to be_a(String), ok
@@ -330,6 +351,12 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect do
         candidate(access_method: :hash, key: [key_column.new(name: "a", nulls: :first)])
       end.to raise_error(ArgumentError, /btree/)
+    end
+
+    it "refuses it on any key column, not just the first" do
+      expect do
+        candidate(access_method: :gist, key: ["a", key_column.new(name: "b", direction: :desc)])
+      end.to raise_error(ArgumentError, /only btree takes a non-default direction/)
     end
 
     it "allows the default ordering, even when it's spelled out" do
