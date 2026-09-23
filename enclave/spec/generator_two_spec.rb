@@ -282,6 +282,25 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("hash_join_batches", large_hash_batches: 3, large_hash_rows: 2000)).to eq([btree("customers", "id")])
       expect(ddl("hash_join_batches", large_hash_batches: 3, large_hash_rows: 2001)).to eq([])
     end
+
+    it "counts a Parallel Hash's rows over all its participants" do
+      # Two workers and the leader each report 83,333.33 of the 250,000 rows,
+      # in one batch.
+      tables = { "events" => %w[id kind], "visits" => %w[id event_id] }.map do |name, column_names|
+        enclave::TableStatistics.new(name: table_name(name), reltuples: 250_000, column_names:, columns: {}, indexes: {})
+      end
+      expect(ddl("parallel_hash_join", stats: enclave::Statistics.new(tables:))).to eq([btree("visits", "event_id")])
+    end
+
+    it "counts a plain Hash under a Gather once, since each worker builds a whole copy" do
+      # Each of three participants hashes all 40,000 rows, in one batch.
+      tables = { "events" => %w[id kind], "visits" => %w[id event_id] }.map do |name, column_names|
+        enclave::TableStatistics.new(name: table_name(name), reltuples: 1, column_names:, columns: {}, indexes: {})
+      end
+      stats = enclave::Statistics.new(tables:)
+      expect(ddl("gather_hash_join", stats:, large_hash_rows: 40_001)).to eq([])
+      expect(ddl("gather_hash_join", stats:, large_hash_rows: 40_000)).to eq([btree("visits", "event_id")])
+    end
   end
 
   describe "a BitmapOr or BitmapAnd of single-column indexes" do

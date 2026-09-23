@@ -169,6 +169,15 @@ PLANS = {
     "ALTER TABLE public.events SET (parallel_workers = 2); ALTER TABLE public.visits SET (parallel_workers = 2); " \
     "ANALYZE public.events; ANALYZE public.visits"
   ],
+  # With Parallel Hash off, each participant builds its own whole copy of a
+  # 40,000-row hash table.
+  "gather_hash_join" => [
+    ["enable_parallel_hash = off"],
+    "SELECT count(*) FROM public.events e JOIN public.visits v ON v.event_id = e.id",
+    "CREATE TABLE public.events AS SELECT i AS id, i % 1000 AS kind FROM generate_series(1, 250000) AS i; " \
+    "CREATE TABLE public.visits AS SELECT i AS id, i AS event_id FROM generate_series(1, 40000) AS i; " \
+    "ALTER TABLE public.events SET (parallel_workers = 2); ANALYZE public.events; ANALYZE public.visits"
+  ],
   # A merge join whose inner side is large, with a join equality it can't
   # merge on in its Join Filter.
   "merge_join_filter" => [

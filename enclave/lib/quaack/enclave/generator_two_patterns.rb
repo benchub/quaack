@@ -151,8 +151,12 @@ module Quaack
           join_columns(conjuncts, inner_aliases(hash)).values.map { |keys| join_index(keys) }
         end
 
+        # A Parallel Hash builds one shared table, and each participant
+        # reports its share of the rows. A plain Hash under a Gather builds a
+        # whole table in each worker, so its rows per loop are the table's.
         def large_hash?(hash)
-          at_least?(hash.rows, :large_hash_rows) || at_least?(hash["Hash Batches"].to_f, :large_hash_batches)
+          rows = hash.parallel? ? hash.rows * hash.loops : hash.rows
+          at_least?(rows, :large_hash_rows) ||at_least?(hash["Hash Batches"].to_f, :large_hash_batches)
         end
 
         def inner_aliases(inner) = inner.subtree.map(&:alias_name).select { |a| columns.scan(a) }

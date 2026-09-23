@@ -52,6 +52,8 @@ module Quaack
 
       def sort? = SORTS.include?(type)
 
+      def parallel? = @fields["Parallel Aware"] == true
+
       def inner = children.find { |c| c["Parent Relationship"] == "Inner" }
 
       # This node and every node under it, depth first.
