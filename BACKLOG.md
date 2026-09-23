@@ -284,22 +284,7 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 - **README:** 5a-4.
 - **Status:** todo
 
-### 20260922-30. 5a-1 generator one.
-
-Build index candidates from the parse: ranked equality columns, one range column, matching `ORDER BY` columns, a capped key, `INCLUDE` columns, every leading prefix, and BRIN on a well-correlated range column of a large table.
-
-- **Depends on:** 20260923-11 and 20260923-14. It takes a parsed, fully qualified query and the 20260923-11 statistics input, so it doesn't need 20260922-14 or 20260922-19 to exist. Those tasks must produce the same input later.
-- **README:** 5a-1.
-- **Status:** in progress
-- **Decided:**
-  - Cap the key at three columns.
-  - Emit a BRIN candidate when the range column's absolute correlation is 0.9 or more and the table's `reltuples` is at least 1,000,000.
-  - All three limits are configurable.
-  - The user approved building this in parallel with 20260922-31 and the main line, once 20260923-11 lands. It's a pure function over its inputs, in new files in the enclave gem.
-  - Join columns: build every table's keys twice, once with its join columns counted as equality columns and once without them, then drop duplicates. A parse alone can't tell which way the join runs. On the README example this gives both `(customer_id, status, created_at)` and `(status, created_at DESC)`.
-  - A column filtered only by `IS NULL` is ranked by `null_frac`, not `equality_selectivity`.
-  - When the range column and ORDER BY conflict, emit two keys: equality plus range, and equality plus ORDER BY.
-- **Note:** Built, fixed once, and reviewed twice, but not landed. The work is on branch `gen1-20260922-30` at `f2a1408`. The second review found an `IS NULL` in an upper join's ON that still lands on a nullable table, plus four vacuous tests. So 20260923-20 finishes the task from that branch, and both land together.
+### 20260922-30. 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-31. 5a-2 generator two.
 
@@ -745,23 +730,7 @@ Findings from both reviews of 20260923-13, all outside its diff:
 
 ### 20260923-19. MCV frequencies in the statistics input. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-20. Finish 5a-1 generator one.
-
-Start from the unlanded 20260922-30 branch (`gen1-20260922-30`, `f2a1408`) and fix what its second review found:
-- **`IS NULL` on a nullable table (correctness).** WHERE conjuncts on a nullable table are skipped, but ON conjuncts aren't checked against nullability from lower joins. `c LEFT JOIN o ON o.customer_id = c.id JOIN i ON i.id = c.id AND o.note IS NULL` still proposes `orders (note)`, and HypoPG shows it's never used. Replace the broad rule with a narrower one. Every predicate kind 5a-1 reads is strict except `IS NULL`, and Postgres turns an outer join into an inner join and pushes a strict qual down. So skip only an `IS NULL` conjunct, in WHERE or in any ON, when it touches a table made nullable by an outer join below the place the conjunct applies. Keep the rule for ON conjuncts that touch only the preserved side of an outer join. Check the result with HypoPG, including the `o.status = 1 AND o.region = 7` case, which should now propose `orders(region, status)` or `(status, region)`.
-- **Vacuous tests.**
-  - The three-column tie-break tests stay green without their position terms. Fold them into the 50-column tests or delete them.
-  - The ordinal-after-star test only puts the star first. Add `SELECT id, *, created_at ... ORDER BY 3 DESC`.
-  - The filter-plus-join test reads the filter before the join. Add a fixture with the join written first.
-- **Untested code.**
-  - `pinned?` survives as `kinds.first == :one`. Add a test that mixes predicate kinds on one column.
-  - Two CTE scoping mutants survive: outer scope inside CTE bodies, and forward references under `WITH RECURSIVE`.
-  - `cap.is_a?(Integer)` survives.
-
-- **Depends on:** 20260922-30 (unlanded branch).
-- **Came from:** Second review of 20260922-30, findings 1, 3, 4, and 5.
-- **README:** 5a-1.
-- **Status:** in progress
+### 20260923-20. Finish 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-21. 5a-1 loose ends.
 
@@ -771,6 +740,7 @@ Minor findings from the reviews of 20260922-30:
 - **BRIN on prefix-LIKE columns.** BRIN can't serve LIKE, and HypoPG shows it unused. Restrict BRIN to comparison ranges.
 - **Tests to add:** nullability at depth for RIGHT and FULL joins (the mutants `JOIN_RIGHT then left.last(1)` and `JOIN_FULL then left.last(1) + right.last(1)` survive); "USING always counts" for outer joins; "LIKE with ESCAPE doesn't count"; and the error sentinel test should also check `full_message` and the cause.
 - **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table. It's harmless, but say so.
+- **Alias matching isn't pinned as case-sensitive.** A case-insensitive alias match passes every test, but `SELECT created_at AS "ID" ... ORDER BY id` sorts by the table's `id` in Postgres. Add a test.
 - An ORDER BY on a nullable-side table's columns becomes a key, such as `LEFT JOIN o ... ORDER BY o.created_at`. The table can't be the outer side, so the index is wasted.
 - `FOR UPDATE OF o` is falsely refused as an unqualified relation.
 - `(o).*` isn't recognized as a star, for ordinals or INCLUDE.
@@ -797,6 +767,15 @@ Minor findings from the second review of 20260923-19:
 - **Depends on:** 20260923-19.
 - **Came from:** Second review of 20260923-19.
 - **README:** 3c.
+- **Status:** todo
+
+### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1.
+
+Split out of 20260923-20. Postgres reads a column that ORDER BY repeats only at its first position, whatever the repeat's direction or position. An index on `(a, created_at)` serves both `ORDER BY a, a DESC, created_at` and `ORDER BY a, created_at, a DESC` with no Sort. Generator one no longer drops repeats. So today `WHERE a IN (1, 2) ORDER BY a, a, created_at` gives only `(a)`, and `ORDER BY created_at, created_at DESC` can propose a key with `created_at` twice. Re-add the dedupe, keeping the first occurrence. Test it with a non-adjacent repeat such as `ORDER BY a, created_at, a DESC`, so an adjacent-only dedupe goes red.
+
+- **Depends on:** 20260923-20.
+- **Came from:** The tests-only round of 20260923-20, where the old test stayed vacuous against an adjacent-only dedupe.
+- **README:** 5a-1.
 - **Status:** todo
 
 ## After version 1.
