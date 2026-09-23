@@ -199,8 +199,23 @@ RSpec.describe "the statistics input" do
         end
       end
 
+      it "divides as soon as more than one other distinct value is left" do
+        [[3.5, 0.1 / 1.5], [4.0, 0.05]].each do |n_distinct, expected|
+          stats = table({ "status" => status(n_distinct:, null_frac: 0.1, freqs: [0.5, 0.3]) })
+
+          expect(stats.value_frequency("status", "pending")).to be_within(1e-12).of(expected), n_distinct.to_s
+        end
+      end
+
       it "never says a value that isn't an MCV is more common than the least common MCV" do
         stats = table({ "status" => status(n_distinct: 3.0, freqs: [0.5, 0.05]) })
+
+        expect(stats.value_frequency("status", "pending")).to eq(0.05)
+      end
+
+      # pg_stats lists MCVs most common first, but this doesn't rely on it.
+      it "caps at the least common MCV even when the list isn't sorted" do
+        stats = table({ "status" => status(n_distinct: 3.0, freqs: [0.05, 0.5]) })
 
         expect(stats.value_frequency("status", "pending")).to eq(0.05)
       end

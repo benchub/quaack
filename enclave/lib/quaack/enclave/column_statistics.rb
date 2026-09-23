@@ -85,7 +85,7 @@ module Quaack
       # value was passed as a frequency by mistake.
       def frequency(value)
         number = Float(value) if value.is_a?(Numeric) && value.real?
-        return number if number&.finite? && (0..1).cover?(number)
+        return number if number && (0..1).cover?(number) # NaN and Infinity aren't in 0..1
 
         raise ArgumentError, "most_common_freqs must hold finite numbers in 0..1"
       end
