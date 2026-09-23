@@ -6,8 +6,9 @@ require_relative "../driver/lib/quaack/driver/version"
 # The runtime half of the boundary check. Each side's gem is built and
 # installed with only its own dependency closure, then its executable runs
 # outside Bundler. Everything it loads must come from Ruby's standard library
-# or from a gem in that closure. The static checks in boundary_spec.rb can be
-# fooled by clever code. This can't, for whatever the executable loads.
+# or from a gem in that closure. It only sees what `--version` loads, and it
+# trusts the gemspec's own dependency list, so the exact dependency allowlist
+# in boundary_spec.rb is what stops a new dependency on the driver.
 RSpec.describe "what each side loads at runtime" do
   def stdlib_dirs
     [RbConfig::CONFIG["rubylibdir"], RbConfig::CONFIG["rubyarchdir"]].map { |d| File.realpath(d) }

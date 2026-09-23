@@ -2,7 +2,7 @@
 
 source "https://rubygems.org"
 
-# One bundle for the whole repo, so development and CI stay simple. Each gem
+# One bundle for the whole repo, so development stays simple. Each gem
 # still declares its own runtime dependencies in its gemspec, and
 # spec/boundary_spec.rb checks that the enclave and driver gems never depend
 # on each other.

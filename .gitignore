@@ -6,3 +6,6 @@
 *.gem
 /pkg/
 .rspec_status
+
+# Agent worktrees.
+/.claude/worktrees/

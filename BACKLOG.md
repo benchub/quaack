@@ -15,18 +15,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ## Foundations.
 
-### 20260922-1. Project skeleton.
-
-Set up the repo: package layout with separate driver and enclave packages, dependency management, test runner, linting, and CI. The two packages must not import each other's internals, since they run on different machines.
-
-- **Depends on:** None.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Decided:**
-  - Ruby 3.4, with the pg_query gem. Ruby is already on the jump servers, and adding pg_query is simple. Locally, Ruby 3.4 is Homebrew's keg-only `ruby@3.4`.
-  - Postgres 18 only.
-  - Separate gems in one repo: a driver gem, an enclave gem, and a small shared gem for the protocol between them. The enclave gem never depends on the driver gem or the LLM SDK.
-  - RSpec for tests and GitHub Actions for CI.
+### 20260922-1. Project skeleton. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-2. Test database harness.
 
@@ -641,7 +630,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 
 ### 20260923-3. Rename the enclave gem to quaacks.
 
-Rename the `quaack-enclave` gem and its executable to `quaacks`. The "s" stands for server, which pairs it with the driver's `quaack`. Update every reference, including the gemspec, the executable, the boundary and runtime specs, the allowlists, CI, `CLAUDE.md`, and the backlog.
+Rename the `quaack-enclave` gem and its executable to `quaacks`. The "s" stands for server, which pairs it with the driver's `quaack`. Update every reference, including the gemspec, the executable, the boundary and runtime specs, the allowlists, `CLAUDE.md`, and the backlog.
 
 - **Depends on:** 20260922-1.
 - **Came from:** The user, during 20260922-1.
@@ -650,3 +639,44 @@ Rename the `quaack-enclave` gem and its executable to `quaacks`. The "s" stands 
 - **Decided:**
   - The gem and executable are named `quaacks`.
   - Internal names stay as "enclave," such as the `enclave/` directory and the `Quaack::Enclave` module, to match the README's "enclave script." The README doesn't change.
+
+### 20260923-4. Harden the runtime boundary check.
+
+The runtime check in `spec/runtime_boundary_spec.rb` has two gaps:
+- **It trusts the gemspec.** It builds its allowed set from the enclave gemspec's own dependency closure. If the enclave gains a dependency on `quaack-driver`, the check installs the driver and allows loading it. Only the dependency allowlist in `spec/boundary_spec.rb` catches that today. The runtime check should take the closure from that same allowlist, or assert that nothing loads from the driver gem or a known LLM gem.
+- **It only runs `--version`.** A forbidden require in any other code path, such as `Kernel.enum_for("require", "quaack/driver").first` in the usage branch, passes every check. Make it also require every file under the installed gem's `lib/`. Write down what it still can't catch, like lazy loads inside method bodies.
+
+- **Depends on:** 20260922-1.
+- **Came from:** Second review of 20260922-1, findings 1 and 2.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-5. Discover spec suites instead of listing them.
+
+Removing the root suite from `SPEC_SUITES` in the `Rakefile` turns off every boundary check, and `rake` stays green. That's because the spec that pins `SPEC_SUITES` lives in the root suite itself. Derive the suites from the directories that have a `spec/` folder, so there's nothing to forget.
+
+- **Depends on:** 20260922-1.
+- **Came from:** Second review of 20260922-1, finding 3.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-6. Test the runtime check's environment scrubbing.
+
+Removing `GEM_PATH` or `RUBYLIB` from the isolated environment in `spec/support/isolated_install.rb` stays green. Without `GEM_PATH`, RubyGems can see the user and Homebrew gem directories. Also consider `RUBYGEMS_GEMDEPS` and `HOME` (for `~/.gemrc`). Plant a leak for each and prove the check goes red. Also check that closure gems like `quaack-protocol` load from the installed copy, not the repo.
+
+- **Depends on:** 20260923-4.
+- **Came from:** Second review of 20260922-1, finding 4.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-7. Simplify and relax the static boundary checker.
+
+The static checker in `spec/support/boundary.rb` is about 220 lines, is still easy to get around, and flags ordinary code the next tasks need. It flags `public_send("cmd_#{sub}")` (the natural shape of the 20260922-4 dispatcher), `define_method("step_#{n}")`, `%i[save load]`, `{ require: true }`, and `JSON.load(x)`. It also applies every rule to the driver, where loading enclave code doesn't leak production data. Cut it back:
+- For the driver, a plain require check that forbids `quaack/enclave` is enough.
+- For the enclave, keep plain string requires plus the shebang rule. Review whether the send, lookup, symbol, eval, and `$LOAD_PATH` rules earn their cost once 20260923-4 lands.
+
+- **Depends on:** 20260923-4.
+- **Came from:** Second review of 20260922-1, findings 5 and 6.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+- **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.

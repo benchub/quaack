@@ -13,11 +13,13 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 
   `PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH bundle exec rake`
 
-- That one command runs RuboCop and then every spec suite. Each suite runs in its own process: `protocol/spec`, `enclave/spec`, `driver/spec`, and the cross-gem specs in `spec/`.
+- There's no hosted CI. That one command is the whole check, so run it before landing anything.
+- The jump servers are ARM (`aarch64-linux`), like the development Macs. Nothing needs to support x86_64.
+- The command runs RuboCop and then every spec suite. Each suite runs in its own process: `protocol/spec`, `enclave/spec`, `driver/spec`, and the cross-gem specs in `spec/`.
 - Run `bundle install` first on a fresh checkout. The committed `.bundle/config` installs gems into `vendor/bundle`, never globally.
 - The repo holds three gems, `protocol/` (shared), `enclave/`, and `driver/`, all in one root `Gemfile`. The enclave gem must never depend on the driver gem or an LLM SDK. The driver must never load the enclave gem. Three specs enforce this:
-  - `spec/runtime_boundary_spec.rb` is the real guarantee. It installs each side with only its own dependencies, runs it outside Bundler, and checks everything it loaded.
-  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there.
+  - `spec/boundary_spec.rb` holds the static checks. The enclave's dependencies must match an allowlist exactly, so a new dependency fails until you review it and add it there. Today that allowlist is the check the boundary actually rests on.
+  - `spec/runtime_boundary_spec.rb` installs each side with only its own dependencies, runs its `--version` outside Bundler, and checks everything it loaded. It has known gaps: it trusts the gemspec's own dependency list, and it only sees what `--version` loads. Backlog tasks track closing them.
   - `spec/boundary_checker_spec.rb` proves the static checker catches planted violations.
 - If you add an LLM SDK that isn't listed in `spec/support/boundary.rb`, add it there.
 
