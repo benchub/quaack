@@ -115,6 +115,25 @@ RSpec.describe "the statistics input" do
         expect(with_mcvs(%w[a b], [0.6, 0.4 + 5e-7]).most_common_freqs.sum).to be > 1
       end
 
+      # pg_stats prints booleans as t and f, but a query can spell them many
+      # ways.
+      it "matches Postgres's boolean spellings when every MCV is t or f" do
+        stats = with_mcvs(%w[t f], [0.95, 0.05])
+        trues = %w[true TRUE True t T yes Y y on ON 1] + [" true ", "t\n"]
+        falses = %w[false FALSE f F no N n off OFF 0] + [" off"]
+
+        expect(trues.map { |t| stats.mcv_frequency(t) }).to all(eq(0.95))
+        expect(falses.map { |t| stats.mcv_frequency(t) }).to all(eq(0.05))
+        expect(%w[maybe tru 2 yess].map { |t| stats.mcv_frequency(t) }).to all(be_nil)
+      end
+
+      it "doesn't read boolean spellings into an MCV list that isn't only t and f" do
+        stats = with_mcvs(%w[t f x], [0.5, 0.25, 0.1])
+
+        expect(%w[true false yes].map { |t| stats.mcv_frequency(t) }).to all(be_nil)
+        expect(%w[t f].map { |t| stats.mcv_frequency(t) }).to eq([0.5, 0.25])
+      end
+
       it "gives an MCV's frequency by its exact text, and nil for anything else" do
         stats = with_mcvs(%w[delivered shipped], [0.5, 0.25])
 
@@ -181,6 +200,13 @@ RSpec.describe "the statistics input" do
 
         # (1 - 0.7 - 0.1) / (10 - 2)
         expect(stats.value_frequency("status", "pending")).to be_within(1e-12).of(0.025)
+      end
+
+      it "turns a negative n_distinct into a count before splitting what's left" do
+        stats = table({ "email" => status(n_distinct: -0.5, null_frac: 0.1) }, reltuples: 100.0)
+
+        # (1 - 0.7 - 0.1) / (0.5 * 100 - 2)
+        expect(stats.value_frequency("email", "pending")).to be_within(1e-12).of(0.2 / 48)
       end
 
       it "treats a column with no MCV list like one whose MCVs cover nothing" do

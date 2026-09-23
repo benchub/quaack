@@ -33,7 +33,7 @@ module Quaack
       # exact text. Otherwise nil. TableStatistics#value_frequency covers the
       # values that aren't MCVs.
       def mcv_frequency(literal_text)
-        index = most_common_vals&.index(literal_text)
+        index = most_common_vals&.index(boolean_text(literal_text))
         most_common_freqs[index] if index
       end
 
@@ -56,6 +56,14 @@ module Quaack
       def pretty_print(pp) = pp.text(inspect)
 
       private
+
+      # When every MCV is t or f, the column is almost surely boolean, so a
+      # literal in one of boolin's full spellings reads as t or f.
+      def boolean_text(literal_text)
+        return literal_text unless most_common_vals.all? { |v| %w[t f].include?(v) }
+
+        ColumnStatistics::BOOLEAN_SPELLINGS.fetch(literal_text.strip.downcase, literal_text)
+      end
 
       def most_common(vals, freqs)
         return [nil, nil] if vals.nil? && freqs.nil?
@@ -101,5 +109,13 @@ module Quaack
     # How far over 1 the frequencies may sum. pg_stats stores them as float4,
     # so a list that covers every row can come out a hair over.
     ColumnStatistics::FREQUENCY_SUM_SLACK = 1e-6
+
+    # The spellings Postgres's boolin reads, ignoring case and surrounding
+    # whitespace, and the text pg_stats prints for each. boolin also takes
+    # unique prefixes, such as tr or of. Those aren't here, so they miss.
+    ColumnStatistics::BOOLEAN_SPELLINGS = {
+      "true" => "t", "t" => "t", "yes" => "t", "y" => "t", "on" => "t", "1" => "t",
+      "false" => "f", "f" => "f", "no" => "f", "n" => "f", "off" => "f", "0" => "f"
+    }.freeze
   end
 end

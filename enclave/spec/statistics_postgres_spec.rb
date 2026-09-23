@@ -79,4 +79,43 @@ RSpec.describe "value_frequency against real Postgres statistics" do
       expect(our_rows(stats, "v", literal)).to be_within(1).of(planner_rows("skewed", "v", literal)), literal
     end
   end
+
+  # pg_stats prints booleans as t and f, and the MCVs cover the whole
+  # column, so a missed spelling would come out at the one-row floor.
+  it "matches the planner on a boolean column, however the literal is spelled" do
+    conn.exec(<<~SQL)
+      CREATE TABLE flags (active boolean);
+      INSERT INTO flags SELECT i % 20 <> 0 FROM generate_series(1, 10000) AS i;
+      ANALYZE flags;
+    SQL
+    stats = table_statistics("flags", "active")
+
+    expect(stats.column("active").most_common_vals).to contain_exactly("t", "f")
+    %w[true TRUE yes on 1 t false no off 0 f].each do |literal|
+      expect(our_rows(stats, "active", literal)).to be_within(1).of(planner_rows("flags", "active", literal)), literal
+    end
+    expect(our_rows(stats, "active", "true")).to be_within(1).of(9500)
+  end
+
+  # Most columns 5a-2 sees have a negative n_distinct: a fraction of the
+  # rows, not a count.
+  it "matches the planner on a column whose n_distinct is negative, with a full MCV list" do
+    conn.exec(<<~SQL)
+      CREATE TABLE many (n integer);
+      INSERT INTO many SELECT i % 100 FROM generate_series(1, 10000) AS i;
+      INSERT INTO many SELECT 1000 + i % 3000 FROM generate_series(1, 9000) AS i;
+      ANALYZE many;
+    SQL
+    stats = table_statistics("many", "n")
+    column = stats.column("n")
+
+    expect(column.n_distinct).to be_negative
+    expect(column.most_common_vals.size).to eq(100)
+    expect(column.most_common_vals).to include("7")
+    expect(column.most_common_vals).not_to include("1234")
+    expect(our_rows(stats, "n", "1234")).to be > 2
+    %w[7 1234].each do |literal|
+      expect(our_rows(stats, "n", literal)).to be_within(1).of(planner_rows("many", "n", literal)), literal
+    end
+  end
 end
