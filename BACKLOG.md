@@ -36,7 +36,9 @@ Build the per-run store directory on the jump server: its layout, a run ID, and 
 - **Depends on:** 20260922-1.
 - **README:** Where QUAACK runs (the storage table), and the note about destroying state after each run.
 - **Status:** todo
-- **Open questions:** File format for stored results? File permissions and encryption at rest?
+- **Decided:**
+  - Each stored result is a JSON file in the run's directory.
+  - The run directory is mode 0700 and its files are 0600, in the operator's home directory. Encryption at rest comes from the jump server's disk encryption. There's no encryption in the app.
 
 ### 20260922-4. Enclave command-line script.
 
@@ -62,7 +64,9 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 - **Depends on:** 20260922-1.
 - **README:** Where QUAACK runs, 15b.
 - **Status:** todo
-- **Open questions:** Which provider and model? Where do credentials come from?
+- **Decided:**
+  - Use the Anthropic API through the official `anthropic` Ruby gem. The key comes from `ANTHROPIC_API_KEY` on the laptop. The default model is `claude-opus-5-5`, and config can override it.
+  - Don't build a provider abstraction yet, but don't make one hard to add later. The user may want other providers, or several models working in parallel, someday.
 
 ## Trust boundary.
 
@@ -73,7 +77,10 @@ Build the single egress function. It only accepts fields on a whitelist, and it 
 - **Depends on:** 20260922-1.
 - **README:** Trust boundary.
 - **Status:** todo
-- **Open questions:** Is the whitelist a typed schema, a list of field names, or both? How do we flag whitelist changes for review (CODEOWNERS, a test snapshot, something else)?
+- **Decided:**
+  - The whitelist is one file in the protocol gem that maps each output type to its allowed field names, such as `column_stats: [table, column, n_distinct, null_frac, correlation, mcv_freqs, low_card_values]` and `error: [step, rule, sqlstate]`. It lists the fields of QUAACK's own output messages, not database columns, so it changes only when QUAACK changes what a step outputs.
+  - The egress function drops any field not on its type's list, and drops any output of an unknown type. There are no field types.
+  - Changes to the whitelist get reviewed through the normal git diff. There's no snapshot test and no CODEOWNERS.
 
 ### 20260922-8. Error filtering.
 
@@ -144,7 +151,7 @@ Define the canonical plan: keep node type, relation, index, join type, strategy,
 - **Depends on:** 20260922-1.
 - **README:** Step 1.
 - **Status:** todo
-- **Open questions:** Quals hold literals, and aliases appear inside quals. How do we compare quals after stripping aliases, and across plans with different literals?
+- **Decided:** Parse each qual with pg_query, replace each alias with the relation it stands for, and compare the pg_query fingerprints, which ignore constants. Two plans that differ only in literal values or alias names compare equal.
 
 ## Step 2: Production inventory.
 
@@ -176,6 +183,7 @@ Run the full schema-only dump on every namespace the query touches, plus `public
 - **README:** 3b.
 - **Status:** todo
 - **Open questions:** Only direct FK parents, or the whole chain up? Arena needs the whole chain to satisfy FKs.
+- **Decided:** Don't parse the dump. Find the subset tables and their FK parents from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
 
 ### 20260922-19. 3c statistics.
 
@@ -616,7 +624,7 @@ The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 ver
 - **Came from:** First review of 20260922-1.
 - **README:** Anywhere pg_query parses SQL, including 3a, 5a-1, step 9, and the inbound checks.
 - **Status:** todo
-- **Open questions:** Does step 3b ever need to parse the schema dump? A Postgres 18 dump can hold syntax the Postgres 17 parser rejects, like virtual generated columns or `NOT ENFORCED` constraints.
+- **Decided:** Step 3b doesn't parse the schema dump. It finds the subset tables and their FK parents from `pg_catalog`, and gets the subset from `pg_dump --table` for each one (see 20260922-18). So pg_query only parses queries and inbound SQL, and Postgres 18-only syntax in a dump doesn't matter.
 
 ### 20260923-2. Enclave deploys by gem install only.
 
@@ -626,7 +634,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Came from:** First review of 20260922-1.
 - **README:** Where QUAACK runs.
 - **Status:** todo
-- **Open questions:** How do built gems get onto the jump server: copied over ssh by the driver, or installed by the operator from somewhere?
+- **Decided:** The driver builds the `quaacks` and `quaack-protocol` gems locally, copies them to the jump server over ssh, and installs them into a user gem directory there. It checks the installed version before each run. There's no gem server.
 
 ### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
 
@@ -643,15 +651,6 @@ The runtime check in `spec/runtime_boundary_spec.rb` has two gaps:
 
 ### 20260923-5. Discover spec suites instead of listing them. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-6. Test the runtime check's environment scrubbing.
-
-Removing `GEM_PATH` or `RUBYLIB` from the isolated environment in `spec/support/isolated_install.rb` stays green. Without `GEM_PATH`, RubyGems can see the user and Homebrew gem directories. Also consider `RUBYGEMS_GEMDEPS` and `HOME` (for `~/.gemrc`). Plant a leak for each and prove the check goes red. Also check that closure gems like `quaack-protocol` load from the installed copy, not the repo.
-
-- **Depends on:** 20260923-4.
-- **Came from:** Second review of 20260922-1, finding 4.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
-
 ### 20260923-7. Simplify and relax the static boundary checker.
 
 The static checker in `spec/support/boundary.rb` is about 220 lines, is still easy to get around, and flags ordinary code the next tasks need. It flags `public_send("cmd_#{sub}")` (the natural shape of the 20260922-4 dispatcher), `define_method("step_#{n}")`, `%i[save load]`, `{ require: true }`, and `JSON.load(x)`. It also applies every rule to the driver, where loading enclave code doesn't leak production data. Cut it back:
@@ -663,6 +662,19 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **README:** Where QUAACK runs.
 - **Status:** todo
 - **Note:** Do this before 20260922-4, or the dispatcher will trip the checker.
+
+## After version 1.
+
+These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
+
+### 20260923-6. Test the runtime check's environment scrubbing.
+
+Removing `GEM_PATH` or `RUBYLIB` from the isolated environment in `spec/support/isolated_install.rb` stays green. Without `GEM_PATH`, RubyGems can see the user and Homebrew gem directories. Also consider `RUBYGEMS_GEMDEPS` and `HOME` (for `~/.gemrc`). Plant a leak for each and prove the check goes red. Also check that closure gems like `quaack-protocol` load from the installed copy, not the repo.
+
+- **Depends on:** 20260923-4.
+- **Came from:** Second review of 20260922-1, finding 4.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
 
 ### 20260923-8. Unit-test the RepoGems helper.
 
