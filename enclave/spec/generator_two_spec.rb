@@ -312,6 +312,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("hash_aggregate_two_tables")).to eq([btree("customers", "name"), btree("orders", "status")])
     end
 
+    it "indexes a sorted aggregate's GROUP BY keys beyond what its Sort proposes" do
+      # GroupAggregate over Sort, Group Key and Sort Key both c.name, o.status.
+      # The Sort pattern stops at o.status. The aggregate doesn't.
+      expect(ddl("group_aggregate_two_tables")).to eq([btree("customers", "name"), btree("orders", "status")])
+    end
+
     it "indexes the GROUP BY keys of a sorted aggregate once, though its Sort proposes the same index" do
       candidates = generate("group_aggregate_sort")
       expect(candidates.map(&:to_ddl)).to eq([btree("customers", "name, created_at")])
