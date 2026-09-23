@@ -3,6 +3,9 @@
 require "pg_query"
 require_relative "enclave/version"
 require_relative "enclave/cli"
+require_relative "enclave/table_name"
+require_relative "enclave/index_candidate"
+require_relative "enclave/statistics"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does

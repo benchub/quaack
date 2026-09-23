@@ -1,0 +1,6 @@
+# Every window function name in pg_catalog on PostgreSQL 18.4 (postgres:18
+# Docker image), from:
+#
+#   SELECT string_agg(DISTINCT proname, ' ' ORDER BY proname) FROM pg_proc
+#   WHERE prokind = 'w' AND pronamespace = 'pg_catalog'::regnamespace;
+cume_dist dense_rank first_value lag last_value lead nth_value ntile percent_rank rank row_number
