@@ -1,0 +1,51 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "customers",
+      "Alias": "c",
+      "Startup Cost": 0.0,
+      "Total Cost": 53.0,
+      "Plan Rows": 1,
+      "Plan Width": 8,
+      "Actual Startup Time": 0.094,
+      "Actual Total Time": 0.094,
+      "Actual Rows": 0.0,
+      "Actual Loops": 1,
+      "Disabled": false,
+      "Filter": "((email = 'quaack-sentinel-email'::text) AND (name = 'quaack-sentinel-name'::text))",
+      "Rows Removed by Filter": 2000,
+      "Shared Hit Blocks": 23,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Settings": {
+      "enable_indexscan": "off",
+      "enable_bitmapscan": "off"
+    },
+    "Planning": {
+      "Shared Hit Blocks": 88,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.179,
+    "Triggers": [],
+    "Execution Time": 0.113
+  }
+]

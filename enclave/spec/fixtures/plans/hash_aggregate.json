@@ -1,0 +1,83 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Hashed",
+      "Partial Mode": "Simple",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 517.0,
+      "Total Cost": 717.0,
+      "Plan Rows": 20000,
+      "Plan Width": 21,
+      "Actual Startup Time": 4.57,
+      "Actual Total Time": 6.153,
+      "Actual Rows": 20000.0,
+      "Actual Loops": 1,
+      "Disabled": false,
+      "Group Key": [
+        "status",
+        "total_cents"
+      ],
+      "Planned Partitions": 0,
+      "HashAgg Batches": 1,
+      "Peak Memory Usage": 1561,
+      "Disk Usage": 0,
+      "Shared Hit Blocks": 167,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Relation Name": "orders",
+          "Alias": "o",
+          "Startup Cost": 0.0,
+          "Total Cost": 367.0,
+          "Plan Rows": 20000,
+          "Plan Width": 13,
+          "Actual Startup Time": 0.003,
+          "Actual Total Time": 1.239,
+          "Actual Rows": 20000.0,
+          "Actual Loops": 1,
+          "Disabled": false,
+          "Shared Hit Blocks": 167,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Settings": {},
+    "Planning": {
+      "Shared Hit Blocks": 146,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.241,
+    "Triggers": [],
+    "Execution Time": 6.904
+  }
+]

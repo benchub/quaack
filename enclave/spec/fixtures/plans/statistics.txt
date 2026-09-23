@@ -1,0 +1,16 @@
+reltuples|customers|2000
+reltuples|orders|20000
+pg_stats|customers|created_at|-1|0|1
+pg_stats|customers|email|-1|0|-0.004259041
+pg_stats|customers|id|-1|0|1
+pg_stats|customers|name|-0.98|0.02|-0.0038049063
+pg_stats|orders|created_at|-1|0|1
+pg_stats|orders|customer_id|2000|0|0.014523825
+pg_stats|orders|id|-1|0|1
+pg_stats|orders|status|6|0|0.5291626
+pg_stats|orders|total_cents|-1|0|0.0026016105
+indexdef|customers_pkey|CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)
+indexdef|customers_email_key|CREATE UNIQUE INDEX customers_email_key ON public.customers USING btree (email)
+indexdef|orders_pkey|CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (id)
+indexdef|orders_customer_id_idx|CREATE INDEX orders_customer_id_idx ON public.orders USING btree (customer_id)
+indexdef|orders_status_created_at_idx|CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at)
