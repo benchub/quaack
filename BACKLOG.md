@@ -17,18 +17,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-1. Project skeleton. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-2. Test database harness.
-
-Give the test suite throwaway Postgres instances with HypoPG installed, plus a small sample schema like the README's `orders` and `customers` example. Integration tests for most later tasks need this.
-
-- **Depends on:** 20260922-1.
-- **README:** Steps 4, 5a, and 9.
-- **Status:** in progress
-- **Note:** Built, fixed once, and reviewed twice, but not landed. The work is on branch `harness-20260922-2` at `1bd288f`. The second review found that `TestPostgres::ForkGuard`, added in the fix round, leaks every connection a test opens with `Database#connect`. It also found that the fork test is partly vacuous. So 20260923-15 finishes the task from that branch, and both land together.
-- **Decided:**
-  - Postgres 18 runs in Docker, from our own image: `postgres:18` plus the `postgresql-18-hypopg` package, since the official image doesn't include HypoPG.
-  - A small Ruby test helper builds the image and drives it with the `docker` command. No testcontainers gem and no Compose.
-  - One container per test run. Each test that needs a database gets a fresh one, created from a template and dropped afterward. Tests that need racetrack and arena side by side get two databases in the same container, like the real run server.
+### 20260922-2. Test database harness. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-3. Governed store.
 
@@ -301,18 +290,22 @@ Build index candidates from the parse: ranked equality columns, one range column
 
 - **Depends on:** 20260923-11 and 20260923-14. It takes a parsed, fully qualified query and the 20260923-11 statistics input, so it doesn't need 20260922-14 or 20260922-19 to exist. Those tasks must produce the same input later.
 - **README:** 5a-1.
-- **Status:** todo
+- **Status:** in progress
 - **Decided:**
   - Cap the key at three columns.
   - Emit a BRIN candidate when the range column's absolute correlation is 0.9 or more and the table's `reltuples` is at least 1,000,000.
   - All three limits are configurable.
   - The user approved building this in parallel with 20260922-31 and the main line, once 20260923-11 lands. It's a pure function over its inputs, in new files in the enclave gem.
+  - Join columns: build every table's keys twice, once with its join columns counted as equality columns and once without them, then drop duplicates. A parse alone can't tell which way the join runs. On the README example this gives both `(customer_id, status, created_at)` and `(status, created_at DESC)`.
+  - A column filtered only by `IS NULL` is ranked by `null_frac`, not `equality_selectivity`.
+  - When the range column and ORDER BY conflict, emit two keys: equality plus range, and equality plus ORDER BY.
+- **Note:** Built, fixed once, and reviewed twice, but not landed. The work is on branch `gen1-20260922-30` at `f2a1408`. The second review found an `IS NULL` in an upper join's ON that still lands on a nullable table, plus four vacuous tests. So 20260923-20 finishes the task from that branch, and both land together.
 
 ### 20260922-31. 5a-2 generator two.
 
 Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
 
-- **Depends on:** 20260923-11 and 20260923-14. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
+- **Depends on:** 20260923-11, 20260923-14, and 20260923-19. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
 - **README:** 5a-2.
 - **Status:** todo
 - **Decided:**
@@ -324,6 +317,7 @@ Build index candidates from problem patterns in a plan. Use the production plan 
     - **Large inner build:** the Hash node has at least 100,000 rows, or more than one batch.
   - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
   - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
+  - **Partial-index signal:** a `col = literal` conjunct removes most rows on its own when that literal's estimated frequency, from the MCV frequencies added in 20260923-19, is at most `1 - most_rows_removed`. The user chose this after the first review found the old per-column average only fired on columns 5a-3 drops.
   - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
 - **Notes from the 20260923-14 review:**
   - `EXPLAIN` without `VERBOSE` gives `"Relation Name"` and `"Alias"` but no schema. So this task has to map each plan relation to a `TableName` itself, and handle a table name that exists in more than one schema.
@@ -696,34 +690,11 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **Status:** todo
 - **Open questions:** Do the patterns use estimated rows in place of actual rows, or only the patterns that don't need rows removed?
 
-### 20260923-13. Tighten the runtime boundary checker tests.
-
-The second review of 20260923-4 found no boundary holes, since every in-scope plant in the real repo turns the runtime spec red. But some tests prove less than their names say:
-- **Three checker tests pass with their plant removed.** In `spec/runtime_boundary_checker_spec.rb`, the tests for an orphan enclave lib file, an orphan protocol lib file, and the driver loading the enclave from a file `--version` never reaches each add the other side as a dependency. The every-file run then loads that gem's own files, which get flagged whether or not the planted `hidden.rb` exists. Drop the added dependency, or assert that the message names the planted file. Also add a deliberate test that a bare driver dependency, with no require, is flagged.
-- **The real-gem every-file test can't tell every file from the entry file.** `spec/runtime_boundary_spec.rb` asserts that the entry file and `cli.rb` loaded, but the entry file loads `cli.rb` itself. Requiring only the first file keeps it green.
-- **Code no test observes.** Nothing tests the trailing `/` in `under?`. The `rubyarchdir` entry in `stdlib_dirs` is redundant. `forbidden_require?` tries every `/lib/` split when the last one would do. `Check#closure`'s custom lookup can be replaced with `Boundary.installed_spec` and stay green. Simplify or test each one.
-- **Known-gaps comment.** Mention `begin; require "openai"; rescue LoadError; end`. A rescued LoadError passes the runtime check, and only the static check catches it.
-
-- **Depends on:** 20260923-4.
-- **Came from:** Second review of 20260923-4, findings 1, 2, 3, and 5. Finding 4 was a CLAUDE.md wording fix, made at landing.
-- **Note:** This task came before the rule that vacuous tests block landing. It fixes the vacuous tests that landed with 20260923-4, so it comes before version 1.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
+### 20260923-13. Tighten the runtime boundary checker tests. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-14. Finish the index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-15. Finish the test database harness without ForkGuard.
-
-Start from the unlanded 20260922-2 branch (`harness-20260922-2`, `1bd288f`) and fix what its second review found:
-- **Remove `TestPostgres::ForkGuard` and the connection tracking (correctness).** `TestPostgres.open` keeps a strong reference to every connection. So a connection a test opens with `Database#connect` and never closes never gets its socket back. With the default macOS limit of 256 open files, about 250 such examples crash the run with `Errno::EMFILE`, and the container leaks because the `at_exit` `docker rm` can't open a pipe. Nothing in QUAACK forks. Keep the owner-pid guard on the `at_exit` cleanup. Document that a spec must not fork after using a database, or that the child must `exit!`.
-- **Fork test (vacuous in part).** After ForkGuard is gone, the fork test should check what's still promised: a forked child that exits with `exit!` doesn't remove the parent's container, and the parent's own example connection still works in the same example.
-- **"Dropped afterward" isn't pinned (test quality).** Changing `config.after` to `config.before` keeps every test green. Check within the example's own lifecycle that its databases exist during the example and are gone after it.
-- Add a regression test for the connection leak. For example, open many connections through `connect` and drop them, then check the process doesn't keep their sockets open.
-
-- **Depends on:** 20260922-2 (unlanded branch).
-- **Came from:** Second review of 20260922-2, findings 1 through 4.
-- **README:** Steps 4, 5a, and 9.
-- **Status:** in progress
+### 20260923-15. Finish the test database harness without ForkGuard. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-16. Harness loose ends.
 
@@ -735,10 +706,15 @@ Minor findings from the second review of 20260922-2:
 - **Slow timeout test.** The readiness-timeout test takes about 4 s. A 1 s timeout would halve that.
 - **Repeated backtrace.** A memoized launch failure repeats the first example's backtrace in every later failure.
 - **Old images pile up.** Each Dockerfile edit leaves an old `quaack-test-postgres:<hash>` image of about 660 MB.
+- **The admin connection outlives a fork elsewhere.** Only a drop resets a dead admin connection. If a spec forks in an example with no databases of its own, every later example fails with an empty `PG::ConnectionBad`. Reset the admin connection when it's dead, or check it before reuse.
+- **`WITH (FORCE)` is untested.** Removing it keeps every test green, but a spec that holds a `connect` session open would then fail with `PG::ObjectInUse`.
+- **Only the first drop error is reported.** If an example leaves `admin` inside `BEGIN`, every later example fails. The admin connection is reset only for `ConnectionBad`.
+- **`ConnectionLost` always blames forking,** even when the container died or the backend was terminated.
+- **Faster child specs.** The `IS_TEMPLATE` and `ConnectionLost` tests could run in-process with `pg_terminate_backend` and save about 3.5 s.
 - **Arena template.** Arena's template comes from `template1`, not `template0` with locale settings matching production. The real arena setup in 20260922-27 should handle this, so check it there.
 
 - **Depends on:** 20260923-15.
-- **Came from:** Both reviews of 20260922-2.
+- **Came from:** Both reviews of 20260922-2, and the second review of 20260923-15.
 - **README:** Steps 4 and 4b.
 - **Status:** todo
 
@@ -753,6 +729,70 @@ Minor findings from the second review of 20260923-14:
 - **Depends on:** 20260923-14.
 - **Came from:** Second review of 20260923-14.
 - **README:** 5a.
+- **Status:** todo
+
+### 20260923-18. Runtime checker test loose ends.
+
+Findings from both reviews of 20260923-13, all outside its diff:
+- **Dead plants in three older tests.** In `spec/runtime_boundary_checker_spec.rb`, three tests stay green with their planted `require` deleted: "flags the driver as forbidden even when the allowlist admits it", "flags an LLM SDK by what it loads as", and "flags any file from the installed driver gem". Each adds a dependency on a gem built from source, so the every-file run flags that gem's files anyway. They aren't vacuous, since each goes red when its named rule breaks, but the plant proves nothing. Restrict each assertion to the `--version` run, or assert the planted path.
+- **Failing for the right reason.** The two bare-dependency tests fail with a `KeyError` from `gem_dirs.fetch` when their dependency is removed, not on their assertion. Assert that the gem is installed first.
+- **Isolation code no test watches.** In `spec/support/isolated_install.rb`, nothing tests `"GEM_PATH" => @home`, `"RUBYOPT" => nil`, `Bundler.with_unbundled_env` in `run_ruby`, or `File.realpath` in `stdlib_dirs`. Test them, or say why they're belt and braces. This overlaps with 20260923-6.
+
+- **Depends on:** 20260923-13.
+- **Came from:** Both reviews of 20260923-13.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-19. MCV frequencies in the statistics input. Done, see BACKLOG-COMPLETE.md.
+
+### 20260923-20. Finish 5a-1 generator one.
+
+Start from the unlanded 20260922-30 branch (`gen1-20260922-30`, `f2a1408`) and fix what its second review found:
+- **`IS NULL` on a nullable table (correctness).** WHERE conjuncts on a nullable table are skipped, but ON conjuncts aren't checked against nullability from lower joins. `c LEFT JOIN o ON o.customer_id = c.id JOIN i ON i.id = c.id AND o.note IS NULL` still proposes `orders (note)`, and HypoPG shows it's never used. Replace the broad rule with a narrower one. Every predicate kind 5a-1 reads is strict except `IS NULL`, and Postgres turns an outer join into an inner join and pushes a strict qual down. So skip only an `IS NULL` conjunct, in WHERE or in any ON, when it touches a table made nullable by an outer join below the place the conjunct applies. Keep the rule for ON conjuncts that touch only the preserved side of an outer join. Check the result with HypoPG, including the `o.status = 1 AND o.region = 7` case, which should now propose `orders(region, status)` or `(status, region)`.
+- **Vacuous tests.**
+  - The three-column tie-break tests stay green without their position terms. Fold them into the 50-column tests or delete them.
+  - The ordinal-after-star test only puts the star first. Add `SELECT id, *, created_at ... ORDER BY 3 DESC`.
+  - The filter-plus-join test reads the filter before the join. Add a fixture with the join written first.
+- **Untested code.**
+  - `pinned?` survives as `kinds.first == :one`. Add a test that mixes predicate kinds on one column.
+  - Two CTE scoping mutants survive: outer scope inside CTE bodies, and forward references under `WITH RECURSIVE`.
+  - `cap.is_a?(Integer)` survives.
+
+- **Depends on:** 20260922-30 (unlanded branch).
+- **Came from:** Second review of 20260922-30, findings 1, 3, 4, and 5.
+- **README:** 5a-1.
+- **Status:** in progress
+
+### 20260923-21. 5a-1 loose ends.
+
+Minor findings from the reviews of 20260922-30:
+- **Missed `IS NULL` candidates after join reduction.** 5a-1 decides nullability from the syntax alone. Once a strict counted conjunct on a table rejects its nulls, Postgres turns the outer join inner, or turns FULL into LEFT or RIGHT. Then an `IS NULL` on that table is pushed down too, but 5a-1 still skips it. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)` (cost 67 against 4440), and the FULL JOIN version misses the same index. `IS NOT NULL` counts as strict here too. Count an `IS NULL` on a table once a strict counted conjunct on that table rejects its nulls at or above the outer join.
+- An ORDER BY on a nullable-side table's columns becomes a key, such as `LEFT JOIN o ... ORDER BY o.created_at`. The table can't be the outer side, so the index is wasted.
+- `FOR UPDATE OF o` is falsely refused as an unqualified relation.
+- `(o).*` isn't recognized as a star, for ordinals or INCLUDE.
+- Column alias lists like `AS o(a, b)` aren't modeled.
+- `col = NULL` yields a candidate.
+- INCLUDE covers only the select list and GROUP BY, so index-only scans are rare.
+- A prefix LIKE needs `text_pattern_ops` unless the collation is C.
+- Incremental sort isn't handled.
+
+- **Depends on:** 20260923-20.
+- **Came from:** Both reviews of 20260922-30, the first review of 20260923-20, and the 20260922-30 builder's notes.
+- **README:** 5a-1.
+- **Status:** todo
+
+### 20260923-22. MCV statistics loose ends.
+
+Minor findings from the second review of 20260923-19:
+- **The boolean guard is only half pinned.** The only negative case is `%w[t f x]`. The mutants `size <= 2`, `include?(most_common_vals.last)`, and `!include?("x")` all survive. Add a two-value non-boolean case such as `%w[1 0]` or `%w[x t]`.
+- **A text column with only `t` and `f` as MCVs** maps `true` and `1` onto them. The doc could name `varchar`, `"char"`, and `char(1)`, and say that the harm is limited to literals that match no rows.
+- **An invalid-UTF-8 literal on a t/f column** raises `Encoding::CompatibilityError` from `strip`. It doesn't leak.
+- **`TableStatistics#finite` quotes a rejected `reltuples`,** unlike `in_range`. Drop the value for consistency.
+- **Optional:** add a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
+
+- **Depends on:** 20260923-19.
+- **Came from:** Second review of 20260923-19.
+- **README:** 3c.
 - **Status:** todo
 
 ## After version 1.

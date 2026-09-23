@@ -19,7 +19,7 @@ require "rbconfig"
 #   allowlist, so its allowed gems are its gemspec's closure.
 # - It isn't forbidden to that side, even if the allowlist admits it. A file
 #   is forbidden if it's in the other side's installed gem, or if its path
-#   after any lib/ segment is one of the side's forbidden requires, such as
+#   after its last lib/ segment is one of the side's forbidden requires, such as
 #   quaack/driver or openai. That last test catches an LLM SDK by what it
 #   loads as, whatever its gem is called.
 #
@@ -34,6 +34,12 @@ require "rbconfig"
 # that none of the three runs calls loads nothing, and files outside lib/,
 # other than the executable, aren't required. The static checks in
 # boundary_spec.rb catch plain requires there.
+#
+# And it can't see a require that fails and is rescued, such as
+# `begin; require "openai"; rescue LoadError; end`. The side's install
+# doesn't have the gem, so nothing loads and the run exits cleanly, but the
+# code would load it wherever the gem is installed. Only the static check
+# catches that.
 module RuntimeBoundary
   EVERY_LIB_FILE = "every file under lib/"
 
@@ -94,6 +100,8 @@ module RuntimeBoundary
     $VERBOSE = verbose
   end
 
+  # rubyarchdir sits inside rubylibdir on Homebrew's Ruby, but not on every
+  # build. Debian's, for one, keeps it under /usr/lib/<multiarch>/ruby/.
   def stdlib_dirs
     [RbConfig::CONFIG["rubylibdir"], RbConfig::CONFIG["rubyarchdir"]].map { |d| File.realpath(d) }
   end
@@ -117,12 +125,13 @@ module RuntimeBoundary
 
     private
 
-    def closure
-      lookup = lambda do |name|
-        @sources[name] ? RuntimeBoundary.quietly { RepoGems.load(@sources[name]) } : Boundary.installed_spec(name)
-      end
-      Boundary.dependency_closure(@spec, lookup: lookup).names
-    end
+    # The side's own dependencies come from its gemspec, which may be a copy,
+    # so a dependency added to that copy counts. Every other gem's come from
+    # the bundle's gem of that name, even if `sources` has a copy of it, so a
+    # dependency added to a protocol copy is ignored. That's fine: the gem it
+    # names isn't installed, so a require of it still exits 1. A gem the
+    # bundle lacks still counts, just with no dependencies of its own.
+    def closure = Boundary.dependency_closure(@spec).names
 
     # Maps each run's label to the run and the exit status it must end with.
     def runs
@@ -171,11 +180,8 @@ module RuntimeBoundary
 
     def under?(path, dirs) = dirs.any? { |dir| path.start_with?("#{dir}/") }
 
-    # Whether the path after any lib/ segment is a forbidden require, the way
-    # the load path would see it.
-    def forbidden_require?(path)
-      parts = path.split("/lib/")
-      (1...parts.size).any? { |i| Boundary.forbidden_match(parts[i..].join("/lib/"), forbidden_requires) }
-    end
+    # Whether the path after its last lib/ segment is a forbidden require, the
+    # way the load path would see it.
+    def forbidden_require?(path) = Boundary.forbidden_match(path.rpartition("/lib/").last, forbidden_requires)
   end
 end

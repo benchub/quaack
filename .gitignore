@@ -7,5 +7,6 @@
 /pkg/
 .rspec_status
 
-# Agent worktrees.
+# Agent worktrees, and personal Claude Code settings.
 /.claude/worktrees/
+/.claude/settings.local.json
