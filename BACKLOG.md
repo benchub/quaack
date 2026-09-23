@@ -641,14 +641,7 @@ The runtime check in `spec/runtime_boundary_spec.rb` has two gaps:
 - **README:** Where QUAACK runs.
 - **Status:** todo
 
-### 20260923-5. Discover spec suites instead of listing them.
-
-Removing the root suite from `SPEC_SUITES` in the `Rakefile` turns off every boundary check, and `rake` stays green. That's because the spec that pins `SPEC_SUITES` lives in the root suite itself. Derive the suites from the directories that have a `spec/` folder, so there's nothing to forget.
-
-- **Depends on:** 20260922-1.
-- **Came from:** Second review of 20260922-1, finding 3.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
+### 20260923-5. Discover spec suites instead of listing them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-6. Test the runtime check's environment scrubbing.
 
@@ -681,4 +674,26 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **Depends on:** 20260923-3.
 - **Came from:** Second review of 20260923-3, minor findings 1 through 3.
 - **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-9. Close the test gaps in the spec task guards.
+
+Task 20260923-5 made `rake spec` find the suites itself, run them all, and fail if the root suite didn't run. The second review found that the guards work today, but some mutants of them still pass every test:
+- **The root guard is only tested by changing SPEC_SUITES.** The test in `spec/rakefile_spec.rb` swaps `SPEC_SUITES` for `%w[foo]`. So a guard that checks `SPEC_SUITES` instead of what actually ran also passes. Combined with a later `drop(1)` in the loop, full `rake` goes green with no root suite. Add a test where `SPEC_SUITES` still includes `"."` but the loop skips it.
+- **Nothing tests a suite that can't start.** When `sh` can't start the command, `ok` is nil. Changing `unless ok` to `if ok == false` keeps every test green, and then a missing interpreter makes `rake spec` pass with zero examples run. Also, `ran` records a suite as run even when it never started. Test both.
+- **Output is hard to use.** The echoed command has no shell quoting, so you can't paste it to rerun one suite. A suite that can't start is reported only as `Spec suites failed: x/spec`, with no reason or exit status.
+- **The Rakefile comment oversells the guard.** It says the guard catches "a loop that skips a suite", but that holds only for the root suite.
+
+- **Depends on:** 20260923-5.
+- **Came from:** Second review of 20260923-5, findings 1, 2, 4, 5, and 6.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-10. Stop local RSpec options from filtering out boundary specs.
+
+RSpec reads `.rspec-local`, `~/.rspec`, and `SPEC_OPTS`. None of them are in the repo, and `.rspec-local` isn't gitignored. A `.rspec-local` with `--exclude-pattern "**/boundary*_spec.rb"` made full `rake` pass with a planted enclave dependency on `quaack-driver`. The root suite ran 20 examples instead of 61. Local `rake` is the only check, so a personal options file can quietly turn off the trust-boundary checks. Make the spec task ignore local and personal RSpec options, or check that the boundary specs actually ran, and test it with a planted exclusion.
+
+- **Depends on:** 20260923-5.
+- **Came from:** Second review of 20260923-5, finding 3.
+- **README:** Where QUAACK runs.
 - **Status:** todo
