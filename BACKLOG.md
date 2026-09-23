@@ -298,7 +298,7 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 
 Build index candidates from the parse: ranked equality columns, one range column, matching `ORDER BY` columns, a capped key, `INCLUDE` columns, every leading prefix, and BRIN on a well-correlated range column of a large table.
 
-- **Depends on:** 20260923-11. It takes a parsed, fully qualified query and the 20260923-11 statistics input, so it doesn't need 20260922-14 or 20260922-19 to exist. Those tasks must produce the same input later.
+- **Depends on:** 20260923-11 and 20260923-14. It takes a parsed, fully qualified query and the 20260923-11 statistics input, so it doesn't need 20260922-14 or 20260922-19 to exist. Those tasks must produce the same input later.
 - **README:** 5a-1.
 - **Status:** todo
 - **Decided:**
@@ -311,7 +311,7 @@ Build index candidates from the parse: ranked equality columns, one range column
 
 Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
 
-- **Depends on:** 20260923-11. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
+- **Depends on:** 20260923-11 and 20260923-14. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
 - **README:** 5a-2.
 - **Status:** todo
 - **Decided:**
@@ -688,7 +688,8 @@ Define the two shapes that 5a-1 and 5a-2 share, so both generators can be built 
 - **Depends on:** 20260922-1.
 - **Came from:** The user, who asked to build 5a-1 and 5a-2 in parallel with the main line.
 - **README:** 5a, 5a-1, 5a-2, and 5a-3.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built and reviewed twice, but not landed. The work is on branch `shapes-20260923-11` at `324f495`. The second review found a trust-boundary leak, vacuous tests, and a sufficiency gap, so 20260923-14 finishes it from that branch. Both land together.
 
 ### 20260923-12. 5a-2 on rewrite plans.
 
@@ -713,6 +714,25 @@ The second review of 20260923-4 found no boundary holes, since every in-scope pl
 - **Note:** This task came before the rule that vacuous tests block landing. It fixes the vacuous tests that landed with 20260923-4, so it comes before version 1.
 - **README:** None. This is test infrastructure.
 - **Status:** todo
+
+### 20260923-14. Finish the index candidate and statistics shapes.
+
+Start from the unlanded 20260923-11 branch (`shapes-20260923-11`, `324f495`) and fix what its second review found:
+- **UNIQUE indexes (sufficiency).** `IndexCandidate.from_ddl` returns nil for every UNIQUE index, primary keys included, because the shape has no uniqueness. So `TableStatistics#indexes` never shows those indexes' columns. 5a-2 can't extend `orders_pkey`, and 5a-3 can't see that `(id)` is already covered.
+- **Pattern-matching leak (trust boundary).** `case cand in {...}` with no match raises `NoMatchingPatternError`, whose message holds the raw predicate. The public `definition` exposes the predicate the same way. Close both, or document them next to `to_h` if closing isn't reasonable, and add sentinel tests.
+- **Vacuous tests.** These mutants survive:
+  - dropping `name.dup.freeze` in `KeyColumn` and in the column-name helper, since the "deeply frozen" test only passes literals, which are already frozen
+  - dropping the `is_a?(IndexCandidate)` guard in `==` and `eql?`, where `cand == nil` must be false
+  - `column_names.dup.freeze` in place of freezing each name
+  - dropping `by_name.freeze` in `Statistics`
+  - dropping the CONCURRENTLY and IF NOT EXISTS reset in `from_ddl`
+- **Unchecked definitions (correctness, low).** The constructor accepts some definitions Postgres rejects: `$1`, subqueries, and volatile or aggregate functions in predicates, BRIN with INCLUDE, and multicolumn hash. Reject the cheap ones, or document that the shape doesn't check them.
+- **Minor.** A `Complex` `n_distinct` raises RangeError, not ArgumentError. Duplicate `column_names` are accepted.
+
+- **Depends on:** 20260923-11 (unlanded branch).
+- **Came from:** Second review of 20260923-11.
+- **README:** 5a, 5a-2, and 5a-3.
+- **Status:** in progress
 
 ## After version 1.
 
