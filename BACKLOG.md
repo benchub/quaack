@@ -304,7 +304,7 @@ Build index candidates from the parse: ranked equality columns, one range column
 
 Build index candidates from problem patterns in a plan. Use the production plan for the original query and the racetrack plan for rewrites.
 
-- **Depends on:** 20260923-11 and 20260923-14. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
+- **Depends on:** 20260923-11, 20260923-14, and 20260923-19. It takes the production plan JSON and the 20260923-11 statistics input, so it doesn't need 20260922-13 or 20260922-19 to exist.
 - **README:** 5a-2.
 - **Status:** todo
 - **Decided:**
@@ -316,6 +316,7 @@ Build index candidates from problem patterns in a plan. Use the production plan 
     - **Large inner build:** the Hash node has at least 100,000 rows, or more than one batch.
   - Tests use real Postgres 18 `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, captured once from Docker and committed as fixtures. Don't hand-write plan JSON.
   - A partial-index candidate holds a real literal, so it's value-class data until 5a-3 filters it. Nothing here sends it anywhere.
+  - **Partial-index signal:** a `col = literal` conjunct removes most rows on its own when that literal's estimated frequency, from the MCV frequencies added in 20260923-19, is at most `1 - most_rows_removed`. The user chose this after the first review found the old per-column average only fired on columns 5a-3 drops.
   - The user approved building this in parallel with 20260922-30 and the main line, once 20260923-11 lands.
 - **Notes from the 20260923-14 review:**
   - `EXPLAIN` without `VERBOSE` gives `"Relation Name"` and `"Alias"` but no schema. So this task has to map each plan relation to a `TableName` itself, and handle a table name that exists in more than one schema.
@@ -688,19 +689,7 @@ The static checker in `spec/support/boundary.rb` is about 220 lines, is still ea
 - **Status:** todo
 - **Open questions:** Do the patterns use estimated rows in place of actual rows, or only the patterns that don't need rows removed?
 
-### 20260923-13. Tighten the runtime boundary checker tests.
-
-The second review of 20260923-4 found no boundary holes, since every in-scope plant in the real repo turns the runtime spec red. But some tests prove less than their names say:
-- **Three checker tests pass with their plant removed.** In `spec/runtime_boundary_checker_spec.rb`, the tests for an orphan enclave lib file, an orphan protocol lib file, and the driver loading the enclave from a file `--version` never reaches each add the other side as a dependency. The every-file run then loads that gem's own files, which get flagged whether or not the planted `hidden.rb` exists. Drop the added dependency, or assert that the message names the planted file. Also add a deliberate test that a bare driver dependency, with no require, is flagged.
-- **The real-gem every-file test can't tell every file from the entry file.** `spec/runtime_boundary_spec.rb` asserts that the entry file and `cli.rb` loaded, but the entry file loads `cli.rb` itself. Requiring only the first file keeps it green.
-- **Code no test observes.** Nothing tests the trailing `/` in `under?`. The `rubyarchdir` entry in `stdlib_dirs` is redundant. `forbidden_require?` tries every `/lib/` split when the last one would do. `Check#closure`'s custom lookup can be replaced with `Boundary.installed_spec` and stay green. Simplify or test each one.
-- **Known-gaps comment.** Mention `begin; require "openai"; rescue LoadError; end`. A rescued LoadError passes the runtime check, and only the static check catches it.
-
-- **Depends on:** 20260923-4.
-- **Came from:** Second review of 20260923-4, findings 1, 2, 3, and 5. Finding 4 was a CLAUDE.md wording fix, made at landing.
-- **Note:** This task came before the rule that vacuous tests block landing. It fixes the vacuous tests that landed with 20260923-4, so it comes before version 1.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
+### 20260923-13. Tighten the runtime boundary checker tests. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-14. Finish the index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
@@ -740,6 +729,31 @@ Minor findings from the second review of 20260923-14:
 - **Came from:** Second review of 20260923-14.
 - **README:** 5a.
 - **Status:** todo
+
+### 20260923-18. Runtime checker test loose ends.
+
+Findings from both reviews of 20260923-13, all outside its diff:
+- **Dead plants in three older tests.** In `spec/runtime_boundary_checker_spec.rb`, three tests stay green with their planted `require` deleted: "flags the driver as forbidden even when the allowlist admits it", "flags an LLM SDK by what it loads as", and "flags any file from the installed driver gem". Each adds a dependency on a gem built from source, so the every-file run flags that gem's files anyway. They aren't vacuous, since each goes red when its named rule breaks, but the plant proves nothing. Restrict each assertion to the `--version` run, or assert the planted path.
+- **Failing for the right reason.** The two bare-dependency tests fail with a `KeyError` from `gem_dirs.fetch` when their dependency is removed, not on their assertion. Assert that the gem is installed first.
+- **Isolation code no test watches.** In `spec/support/isolated_install.rb`, nothing tests `"GEM_PATH" => @home`, `"RUBYOPT" => nil`, `Bundler.with_unbundled_env` in `run_ruby`, or `File.realpath` in `stdlib_dirs`. Test them, or say why they're belt and braces. This overlaps with 20260923-6.
+
+- **Depends on:** 20260923-13.
+- **Came from:** Both reviews of 20260923-13.
+- **README:** None. This is test infrastructure.
+- **Status:** todo
+
+### 20260923-19. MCV frequencies in the statistics input.
+
+5a-2 needs to know how often a specific literal occurs to decide whether `col = literal` removes most rows on its own. Add the column's most-common values and their frequencies to `ColumnStatistics`, plus a helper that estimates one literal's frequency the way Postgres does. If the literal is an MCV, use its frequency. Otherwise use `(1 - sum of MCV frequencies - null_frac) / (distinct count - number of MCVs)`.
+
+- **Depends on:** 20260923-14.
+- **Came from:** First review of 20260922-31. The user chose MCV frequencies over a low-cardinality rule.
+- **README:** 3c, 3f, and 5a-2.
+- **Status:** todo
+- **Decided:**
+  - The new fields are optional, so existing callers keep working. 5a-1 is being built against this shape right now.
+  - MCV values are real data, so they're value-class. `inspect`, `to_s`, `pp`, pattern matching, and every error message must redact them, the way `IndexCandidate` redacts predicates. Add sentinel tests.
+  - A literal is compared to MCV values by its text form, as `pg_stats` prints them. Document what that can't match.
 
 ## After version 1.
 
