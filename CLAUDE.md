@@ -25,7 +25,7 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
 ## How a backlog task gets built.
 
 1. **Clarify first.** Before any agent starts, the main session asks the user the task's open questions and anything else it needs answered. Subagents can't ask the user, so the builder's brief has to include the answers.
-2. **Build.** Launch a builder agent in its own git worktree. Give it the task entry, the answers, and the rules in this file.
+2. **Build.** Launch a builder agent in its own git worktree. Give it the task entry, the answers, and the rules in this file. If the builder hits something much harder than expected, or finds the task is stale, it stops and reports back instead of pushing through. The main session then takes the question to the user.
 3. **Review.** Launch a separate reviewer agent with a fresh context. It gets the task entry, the diff, and this file, but not the builder's reasoning. Its job is adversarial: find what's wrong. It must check that:
    - Each test failed for the right reason before the code made it pass.
    - No test is vacuous. It breaks the code on purpose and confirms the tests go red.
