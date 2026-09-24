@@ -43,11 +43,21 @@ module Quaack
       # Starts a new run: makes its directory under base, making base (and
       # any missing directory above it) mode 0700 first.
       def self.create(base: default_base)
-        PrivateFiles.make_directories(base)
+        make_base(base)
         run_id = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}"
         path = File.join(base, run_id)
-        PrivateFiles.make_directory(path)
+        begin
+          PrivateFiles.make_directory(path)
+        rescue SystemCallError
+          raise Error, "couldn't make a run directory in #{base}", cause: nil
+        end
         new(run_id, path)
+      end
+
+      def self.make_base(base)
+        PrivateFiles.make_directories(base)
+      rescue SystemCallError
+        raise Error, "couldn't make the base directory #{base}", cause: nil
       end
 
       # Opens a run an earlier call started. The run ID usually comes from
@@ -81,7 +91,7 @@ module Quaack
         "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
       end
 
-      private_class_method :directory_problem, :new
+      private_class_method :make_base, :directory_problem, :new
 
       attr_reader :run_id, :path
 
@@ -125,7 +135,12 @@ module Quaack
         return unless stat
         raise Error, "run #{run_id}: its path isn't a directory, so it wasn't deleted" unless stat.directory?
 
-        FileUtils.rm_r(path)
+        begin
+          FileUtils.rm_r(path)
+        rescue SystemCallError
+          # The error names the file, and a file name can be a value.
+          raise Error, "couldn't delete the directory of run #{run_id}", cause: nil
+        end
         nil
       end
 

@@ -48,6 +48,32 @@ RSpec.describe Quaack::Enclave::Store do
   end
 
   describe ".create" do
+    it "raises Store::Error, naming only the base, when the base is a file" do
+      file = File.join(@tmp, "file")
+      File.write(file, STORE_SENTINEL)
+
+      expect_store_error(/\Acouldn't make the base directory #{file}\z/) { described_class.create(base: file) }
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+    end
+
+    it "raises Store::Error, naming only the base, when the base can't be made" do
+      locked = File.join(@tmp, "locked")
+      Dir.mkdir(locked, 0o555)
+      deep = File.join(locked, "runs")
+
+      expect_store_error(/\Acouldn't make the base directory #{deep}\z/) { described_class.create(base: deep) }
+    ensure
+      File.chmod(0o700, locked)
+    end
+
+    it "raises Store::Error, naming only the base, when the run's directory can't be made in it" do
+      Dir.mkdir(base, 0o500)
+
+      expect_store_error(/\Acouldn't make a run directory in #{base}\z/) { described_class.create(base:) }
+    ensure
+      File.chmod(0o700, base)
+    end
+
     it "names the run with a UTC timestamp and eight random hex characters" do
       before = Time.now.utc
       run_id = store.run_id
@@ -421,6 +447,12 @@ RSpec.describe Quaack::Enclave::Store do
       expect_store_error(/#{store.run_id}.*mode 0755, not 0700/) { described_class.open(store.run_id, base:) }
     end
 
+    it "refuses a run directory with a special bit set, such as sticky" do
+      File.chmod(0o1700, store.path)
+
+      expect_store_error(/#{store.run_id}.*mode 1700, not 0700/) { described_class.open(store.run_id, base:) }
+    end
+
     it "refuses a run directory owned by someone else" do
       other = Process.euid + 1
 
@@ -470,6 +502,17 @@ RSpec.describe Quaack::Enclave::Store do
 
       expect(File.exist?(store.path)).to be(false)
       expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+
+    it "raises Store::Error, naming only the run, when it can't delete the directory" do
+      locked = File.join(store.path, "locked")
+      Dir.mkdir(locked)
+      File.write(File.join(locked, "#{STORE_SENTINEL}.json"), "[]")
+      File.chmod(0o500, locked)
+
+      expect_store_error(/\Acouldn't delete the directory of run #{store.run_id}\z/) { store.teardown }
+    ensure
+      File.chmod(0o700, locked)
     end
 
     it "refuses to delete a run path that's been replaced by a symlink" do
