@@ -346,6 +346,37 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(leftovers).to eq(clean)
   end
 
+  # The run's reset removes a hidden hypothetical index, so it hides
+  # nothing by the time the run checks.
+  it "runs when the caller left a hidden hypothetical index" do
+    oid = conn.exec("SELECT indexrelid FROM hypopg_create_index('CREATE INDEX ON public.t (a)')").getvalue(0, 0)
+    conn.exec_params("SELECT hypopg_hide_index($1::oid)", [oid])
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a"])])
+
+    expect(report.results.first.used?).to be(true)
+    expect(leftovers).to eq(clean)
+  end
+
+  # The run won't replace or drop a statement it didn't prepare.
+  it "fails closed when the session already has a statement by the run's name, and leaves it" do
+    conn.exec("PREPARE quaack_5a4 AS SELECT 1")
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] })
+
+    expect(error).to have_attributes(rule: :prepare_failed, sqlstate: "42P05", cause: nil)
+    expect(conn.exec("SELECT statement FROM pg_prepared_statements").values)
+      .to eq([["PREPARE quaack_5a4 AS SELECT 1"]])
+    expect(conn.exec("EXECUTE quaack_5a4").getvalue(0, 0)).to eq("1")
+  end
+
+  # A real index can have a name that looks like a hypothetical one.
+  it "doesn't count a real index named like a hypothetical one as the candidate" do
+    conn.exec('CREATE INDEX "<1>t_a" ON t (a)')
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["c"])])
+
+    expect(index_names(report.results.first.plans[:slow].raw_plan)).to eq(["<1>t_a"])
+    expect(report.results.first.used?).to be(false)
+  end
+
   it "plans a join deeper than JSON's default nesting limit" do
     joins = (1...60).map { |i| "JOIN public.t t#{i} ON t#{i}.a = t#{i - 1}.b" }.join(" ")
     report = run("SELECT t0.c FROM public.t t0 #{joins} WHERE t0.a = $1", { slow: ["5"] }, [candidate(key: ["a"])])

@@ -330,14 +330,14 @@ module Quaack
           "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
         end
 
-        # used is whether any node scans the hypothetical index, by the name
-        # HypoPG gave it. Only this candidate's hypothetical index exists
-        # while it plans, since the run resets HypoPG before creating it. (A
-        # hypothetical index that a function the planner folds creates in
-        # the middle of planning doesn't show up in the plan, as tried on
-        # HypoPG 1.4.) So no test can tell this from matching any
-        # hypothetical index, but the exact name keeps it from depending on
-        # that.
+        # used is whether any node scans the hypothetical index, by the exact
+        # name HypoPG gave it. Only this candidate's hypothetical index
+        # exists while it plans, since the run resets HypoPG before creating
+        # it. (A hypothetical index that a function the planner folds
+        # creates in the middle of planning doesn't show up in the plan, as
+        # tried on HypoPG 1.4.) But a real index can have a name that looks
+        # like a hypothetical one, such as "<1>x", so matching any name that
+        # starts with "<" would count it.
         def plan(explain, index_name, identities)
           root = explain.first["Plan"]
           used = !index_name.nil? && PlanNode.new(root).subtree.any? { |node| node["Index Name"] == index_name }
