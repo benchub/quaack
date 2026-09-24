@@ -81,7 +81,7 @@ Inside the enclave, the enclave script keeps its data in three places:
 
 All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
 
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache.
+When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory and prints a reminder to destroy the run server, which the enclave can't do itself. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
 
 ## 1. Input.
 
@@ -118,7 +118,7 @@ Validate the connection to step 1's production server. Then record the following
 
 ### 3a. Relations.
 
-Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, abort if the query uses a view or a materialized view. Don't handle partitioning until we need it.
+Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
 ### 3b. Schema dump.
 

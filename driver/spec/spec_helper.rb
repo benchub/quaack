@@ -4,6 +4,9 @@ require "open3"
 require "rbconfig"
 
 GEM_ROOT = File.expand_path("..", __dir__)
+REPO_ROOT = File.expand_path("..", GEM_ROOT)
+
+require_relative "support/enclave_commands"
 
 # Tells Quaack::Driver::LLM::Client, in this process and every child process a
 # spec starts, that specs are running, so it refuses to call the real API.

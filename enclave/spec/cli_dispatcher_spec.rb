@@ -177,6 +177,61 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(out.string).to eq(error_line("echo", "bad_run"))
       expect(calls).to eq([])
     end
+
+    it "fails as bad_store_base when the store's base is a file, can't be searched, or is a symlink" do
+      store = Quaack::Enclave::Store.create(base:)
+      file = File.join(base, "file").tap { File.write(it, "") }
+      linked = File.join(base, "linked").tap { File.symlink(base, it) }
+      closed = File.join(base, "closed").tap { Dir.mkdir(it) }
+      File.chmod(0o000, closed)
+
+      [file, File.join(closed, "runs"), linked].each do |bad_base|
+        out.truncate(0) && out.rewind
+        cli = cli_class.new(steps:, stdin: StringIO.new, out:, store_base: bad_base)
+
+        expect(cli.run(["echo", "--run", store.run_id])).to eq(70), "#{bad_base} printed #{out.string}"
+        expect(out.string).to eq(error_line("echo", "bad_store_base")), bad_base
+      end
+      expect(calls).to eq([])
+    ensure
+      File.chmod(0o700, closed)
+    end
+  end
+
+  # A step that names a run but doesn't open it (run_id: true), as teardown
+  # does, since its run may already be gone.
+  describe "a run named but not opened" do
+    let(:steps) { { "end" => step_class.new(handler: recorder, run_id: true) } }
+
+    it "passes the run ID and the store base, not a Store, even when the run isn't there" do
+      expect(cli(steps).run(%w[end --run 20260923T221500Z-0a1b2c3d])).to eq(0)
+      expect(calls).to eq([{ input: nil, store: nil, options: {}, run_id: "20260923T221500Z-0a1b2c3d",
+                             store_base: base }])
+    end
+
+    it "passes Store.default_base when the CLI has no store base" do
+      cli = cli_class.new(steps:, stdin: StringIO.new, out:)
+
+      expect(cli.run(%w[end --run 20260923T221500Z-0a1b2c3d])).to eq(0)
+      expect(calls[0][:store_base]).to eq(Quaack::Enclave::Store.default_base)
+    end
+
+    it "refuses a missing or malformed run ID as usage" do
+      [[], ["--run"], ["--run", CLI_SENTINEL], ["--run", "../20260923T221500Z-0a1b2c3d"],
+       ["20260923T221500Z-0a1b2c3d"]].each do |args|
+        out.truncate(0) && out.rewind
+        expect(cli(steps).run(["end", *args])).to eq(64), "args #{args.inspect}"
+        expect(out.string).to eq(error_line("end", "usage")), "args #{args.inspect}"
+      end
+      expect(calls).to eq([])
+    end
+
+    it "can't be combined with run: true or new_run: true" do
+      [{ run: true }, { new_run: true }].each do |other|
+        expect { step_class.new(handler: recorder, run_id: true, **other) }
+          .to raise_error(ArgumentError, "a step that names a run can't also open or start one"), other.inspect
+      end
+    end
   end
 
   # A step that starts a run (new_run: true), as intake does.
@@ -192,6 +247,35 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(store).to be_a(Quaack::Enclave::Store)
       expect(runs).to eq([store.run_id])
       expect(Quaack::Enclave::Store.open(store.run_id, base:).path).to eq(store.path)
+    end
+
+    it "fails as bad_store_base, making nothing, when the store's base is a file, can't be made, or is a symlink" do
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+      target = File.join(base, "target").tap { Dir.mkdir(it, 0o700) }
+      file = File.join(base, "file").tap { File.write(it, "") }
+      linked = File.join(base, "linked").tap { File.symlink(target, it) }
+      closed = File.join(base, "closed").tap { Dir.mkdir(it, 0o500) }
+
+      [file, File.join(closed, "runs"), linked].each do |bad_base|
+        out.truncate(0) && out.rewind
+        cli = cli_class.new(steps:, stdin: StringIO.new, out:, store_base: bad_base)
+
+        expect(cli.run(["start"])).to eq(70), bad_base
+        expect(out.string).to eq(error_line("start", "bad_store_base")), bad_base
+      end
+      expect(calls).to eq([])
+      expect([Dir.children(target), Dir.children(closed)]).to eq([[], []])
+    ensure
+      File.chmod(0o700, closed)
+    end
+
+    # The error line never reads a cause, but a caller that did would find
+    # the Store::BadBase, which names the base.
+    it "raises bad_store_base with no cause" do
+      file = File.join(base, "file").tap { File.write(it, "") }
+
+      expect { cli_class::BadStoreBase.from_store { Quaack::Enclave::Store.create(base: file) } }
+        .to raise_error(cli_class::BadStoreBase) { |e| expect([e.rule, e.cause]).to eq(["bad_store_base", nil]) }
     end
 
     it "keeps what the step wrote when it succeeds" do
