@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse/parentheses"
 
 module Quaack
   module Enclave
@@ -63,7 +64,7 @@ module Quaack
       # The deparsed SQL's own PgQuery.parse result, whose query is the SQL
       # and whose tree matches the one given.
       def faithful_parse(tree)
-        sql = PgQuery.deparse(tree)
+        sql = PgQuery.deparse(Parentheses.add!(copy(tree)))
         parse = reparse(sql)
         raise Error, cause: nil unless comparable(parse.tree) == comparable(tree)
 
@@ -89,11 +90,13 @@ module Quaack
 
       # A copy of the tree with its version and every location cleared.
       def comparable(tree)
-        copy = tree.class.decode(tree.class.encode(tree, recursion_limit: DEPTH), recursion_limit: DEPTH)
-        copy.version = 0
-        clear_locations(copy)
-        copy
+        cleared = copy(tree)
+        cleared.version = 0
+        clear_locations(cleared)
+        cleared
       end
+
+      def copy(tree) = tree.class.decode(tree.class.encode(tree, recursion_limit: DEPTH), recursion_limit: DEPTH)
 
       # A location is an int32. CreateTableSpaceStmt's location is a string,
       # its directory, so it's compared like any other field.

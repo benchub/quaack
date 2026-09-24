@@ -327,23 +327,26 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
                                    "SELECT o.id FROM public.orders o WHERE CASE WHEN true THEN o.note END = 'x'"])
     end
 
-    # pg_query's deparser drops the parentheses these need, so the SQL
-    # would mean something else or not parse. Replacing the whole construct
-    # with TRUE takes it out of the SQL, so that one still works.
-    {
-      "IS NOT DISTINCT FROM with AND" => ["(o.status = 1) IS NOT DISTINCT FROM (o.active AND o.total > 2)", 3],
-      "an ARRAY subquery's subscript" => ["o.status = (ARRAY(SELECT 1))[1] AND (o.active OR o.total > 2)", 2]
-    }.each do |construct, (predicate, inner)|
-      it "refuses to replace an atom in a query with #{construct}, but for the whole construct" do
-        parse = PgQuery.parse(where(predicate))
-        outer, *rest = described_class.extract(parse, column_names:)
-        expect(described_class.with_true(parse, outer)).to start_with("SELECT o.id FROM public.orders o WHERE true")
-        expect(rest.size).to eq(inner)
-        rest.each do |atom|
-          expect { described_class.with_true(parse, atom) }
-            .to raise_error(Quaack::Enclave::Deparse::Error) { |e| expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil]) }
-        end
-      end
+    # pg_query's deparser alone drops the parentheses these need, so the
+    # SQL would mean something else or not parse. Deparse puts them back
+    # (20260924-4).
+    it "replaces an atom inside IS NOT DISTINCT FROM with AND" do
+      sql = where("(o.status = 1) IS NOT DISTINCT FROM (o.active AND o.total > 2)")
+      expect(replaced(sql)).to eq([
+                                    where("true"),
+                                    where("true IS NOT DISTINCT FROM (o.active AND o.total > 2)"),
+                                    where("o.status = 1 IS NOT DISTINCT FROM (true AND o.total > 2)"),
+                                    where("o.status = 1 IS NOT DISTINCT FROM (o.active AND true)")
+                                  ])
+    end
+
+    it "replaces an atom next to an ARRAY subquery's subscript" do
+      sql = where("o.status = (ARRAY(SELECT 1))[1] AND (o.active OR o.total > 2)")
+      expect(replaced(sql)).to eq([
+                                    where("true AND (o.active OR o.total > 2)"),
+                                    where("o.status = (ARRAY(SELECT 1))[1] AND (true OR o.total > 2)"),
+                                    where("o.status = (ARRAY(SELECT 1))[1] AND (o.active OR true)")
+                                  ])
     end
 
     it "leaves the parse it was given alone" do
@@ -556,6 +559,15 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     it "takes the argument of IS TRUE, IS NOT FALSE, and the like" do
       expect(shapes(where("(o.status = 1 OR o.note IS NULL) IS NOT FALSE")))
         .to eq(["(o.status = $1 OR o.note IS NULL) IS NOT FALSE", "o.status = $1", "o.note IS NULL"])
+    end
+
+    # pg_query's deparser alone writes these as o.status = $1 OR o.active
+    # IS NULL, and o.note = $2 IS NOT DISTINCT FROM o.active AND o.total
+    # > $3, which are other predicates (20260924-4).
+    it "keeps the parentheses an operand needs" do
+      expect(shapes(where("(o.status = 1 OR o.active) IS NULL AND " \
+                          "o.note = 'x' IS NOT DISTINCT FROM (o.active AND o.total > 2)")).values_at(0, 3))
+        .to eq(["(o.status = $1 OR o.active) IS NULL", "o.note = $2 IS NOT DISTINCT FROM (o.active AND o.total > $3)"])
     end
 
     it "takes comparisons inside function arguments and COALESCE" do
