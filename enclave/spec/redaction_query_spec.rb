@@ -242,9 +242,15 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
   end
 
   describe "refusals" do
+    # Every SQL-only deparse bug Deparse's specs keep refusing either hangs
+    # on a constant, which redaction replaces, or is outside SupportedSql.
+    # So this uses a tree changed after parsing, as RelationQualifier's is:
+    # the parser cuts a name to 63 bytes, so it comes back as another tree.
     it "refuses a query pg_query would deparse as a different query" do
-      expect { redact("SELECT (ARRAY(SELECT o.id FROM public.orders o))[1]") }
-        .to raise_error(Quaack::Enclave::Deparse::Error, /deparse_mismatch/)
+      parse = PgQuery.parse("SELECT o.id FROM public.orders o WHERE o.id = 5")
+      parse.tree.stmts[0].stmt.select_stmt.from_clause[0].range_var.relname = "t" * 64
+      expect { described_class.query(parse) }
+        .to raise_error(Quaack::Enclave::Deparse::Error) { |e| expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil]) }
     end
 
     it "refuses a query that already has $n parameters" do

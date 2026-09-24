@@ -282,6 +282,9 @@ RSpec.describe Quaack::Enclave::Redaction do
       "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY 1 HAVING (o.status || '-x') <> 'x' ORDER BY 1",
       "SELECT o.status || '-x' AS k, count(*) FROM public.orders o GROUP BY k ORDER BY o.status || '-x'",
       "SELECT o.status || '-x' AS k, count(*) FROM public.orders o GROUP BY k HAVING (o.status || '-x') <> 'x'",
+      # An alias that isn't the first entry.
+      "SELECT o.customer_id, date_trunc('month', o.created_at) AS m, count(*) FROM public.orders o " \
+      "WHERE o.customer_id < 5 GROUP BY 1, m ORDER BY 1, date_trunc('month', o.created_at)",
       "SELECT DISTINCT ON (1) o.status || '-x', o.id FROM public.orders o ORDER BY o.status || '-x', o.id",
       "SELECT DISTINCT ON (o.status || '-x') o.status || '-x', o.id FROM public.orders o ORDER BY 1, o.id",
       # A key written twice.
