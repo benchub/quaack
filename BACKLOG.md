@@ -21,25 +21,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-3. Governed store. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-4. Enclave command-line script.
-
-Build the stateless enclave script: a subcommand dispatcher that reads from the governed store, does one step's work, writes new state back, and prints its result. Nothing stays in memory between calls. All output goes through the egress function.
-
-- **Depends on:** 20260922-3, 20260922-7, 20260922-8.
-- **README:** Where QUAACK runs.
-- **Note (from the reviews of 20260922-8 and 20260922-46):** use `ErrorFilter` (20260922-8) this way:
-  - Call `ErrorFilter.silence_stderr!` first.
-  - Run the dispatcher inside a single top-level `ErrorFilter.guard`, since nested guards write two lines for one signal.
-  - Call `ErrorFilter.drop_notices` on every connection, including production and racetrack, and again after any `conn.reset`.
-  - The current CLI prints USAGE to stderr, which will be silenced, so it has to go through egress instead.
-  - An error line written after a partial stdout write lands on the same line.
-  - A process killed by a signal dies with the signal, so the driver should treat a signal death as a failure and use the error line it already got.
-  - Merge the arena runner's local notice receiver with `drop_notices`.
-  - Consider `conn.cancel` or a `statement_timeout` when SIGTERM arrives mid-query.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260922-4` through a build, a review, a fix round, and a second review, but not landed. The second review found that the input comment scan uses 60 to 80 times the input size in memory. 20260923-53 finishes the work on top of that branch.
-- **Note (from the review of 20260922-46):** The enclave's stderr goes over ssh to the laptop, so it's a path around egress. The CLI must control stderr as well as stdout. That covers uncaught exceptions and backtraces, Ruby warnings, and libpq NOTICE and WARNING output on every connection, including production. A PL/pgSQL `RAISE NOTICE` in a stable function can print a row value. Install a notice receiver that drops notices, and send anything else on stderr through egress or discard it.
-- **Note:** The static boundary check (20260923-7) flags `require` or `require_relative` of a computed path in the enclave, such as `require_relative "steps/#{name}"` or requiring every file in a directory. So the dispatcher lists its requires by hand and maps subcommands through a table or `public_send`, which is still allowed. That also keeps argv from choosing which file gets loaded.
+### 20260922-4. Enclave command-line script. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-5. Driver transport.
 
@@ -80,15 +62,7 @@ Build a reusable test helper that runs a step on data with known sentinel values
 - **README:** Trust boundary.
 - **Status:** todo
 
-### 20260922-10. Inbound check for rewrite candidates.
-
-Parse each rewrite candidate with pg_query. Accept exactly one `SELECT`. Reject data-modifying CTEs, `SELECT INTO`, and locking clauses. Run the 3d volatility check on it. Each rejection names the rule it broke.
-
-- **Depends on:** 20260922-1, 20260922-20.
-- **README:** What goes into the enclave.
-- **Note (from the review of 20260922-20):** Run the 3a relation check on rewrite candidates too. Reject views, and relations the original query doesn't use, because a view's body can call a volatile function that the 3d check never sees.
-- **Note (from the review of 20260922-46):** The arena runner relies on this check to refuse function calls with side effects that persist or change the session. Examples are `set_config` (which can turn off `statement_timeout`), session-level `pg_advisory_lock` (it survives ROLLBACK), and `lo_import`. The 3d volatility check refuses all of them. Test that it does, and call `SupportedSql.check!` (20260923-33) on every candidate.
-- **Status:** todo
+### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-11. Inbound check for index DDL.
 
@@ -223,6 +197,12 @@ Verify the run server: same major version and extensions as production plus Hypo
 
 - **Depends on:** 20260922-16.
 - **README:** Step 4.
+- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
+  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
+  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
+  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
+  - Per-tablespace `random_page_cost`.
+  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
 - **Status:** todo
 - **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
 
@@ -927,18 +907,7 @@ Minor findings from the reviews of 20260923-33:
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260923-53. Finish the enclave CLI.
-
-Split out of 20260922-4. The work so far is on branch `task/20260922-4`. Build on that branch, then land both together. Fix what the second review of 20260922-4 found:
-- **The input comment scan uses 60 to 80 times the input size in memory.** Onigmo pushes a backtrack entry for every character that `+`, `++`, or `*+` repeats. A 64 MB run of spaces took 5 GB, and a 64 MB string took 3.7 GB. An OOM kill is a SIGKILL, so the driver gets no error line. Skip ahead with `skip_until` or `String#index` instead of a repeated class. Pin memory in a test, for example by checking RSS growth in a subprocess on a large input.
-- **Unknown escapes mean different things on the two json versions.** json 2.9.1, which the jump server uses, accepts `\q`, `\x41`, `\a`, `\'`, `\0`, and `\U0041` and keeps the escaped character. json 3.0.2 refuses them. Refuse any `\` followed by a character other than `"\/bfnrtu` inside a string, and add these to `INPUT_REFUSED_ON_EVERY_JSON`.
-- **Exponent overflow becomes Infinity.** `1e400` parses to `Float::INFINITY` on both versions. Refuse non-finite floats in Input.
-- **The driver can't tell `exit!(0)` from an empty success.** The main session's default: every successful run ends with a final `{"type":"done"}` line, and a whitelist `done` type with no fields. The driver treats a run without it as failed. Record that in 20260922-5.
-
-- **Depends on:** 20260922-4's branch.
-- **Came from:** Second review of 20260922-4.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-53. Finish the enclave CLI. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-54. Finish the 9d result comparator.
 
@@ -980,6 +949,32 @@ Split out of 20260923-39. The work so far is on branch `task/20260923-39`, which
 - **Depends on:** 20260923-39's branch.
 - **Came from:** Second review of 20260923-39.
 - **README:** 5a-4.
+- **Status:** todo
+
+### 20260923-57. Rewrite candidate check loose ends.
+
+Minor findings from the reviews of 20260922-10:
+- **Only-the-last mutants survive.** `used.last(1).each` in the relkind loop and `.last(1).find` in the placeholder check both stay green, because every test puts the bad item last. Add a view-before-table case and a bad-before-good placeholder case.
+- **The reparse of the qualified SQL can raise a raw `PgQuery::ParseError`.** An example is `(ARRAY(SELECT ...))[1]`. It fails closed as `internal_error`, but it should be the check's own error. 20260923-55 covers this.
+- **Partitioned tables are refused.** A candidate against relkind `p` is refused, consistent with 3a (20260922-17). Revisit that if 3a starts allowing them.
+
+- **Depends on:** 20260922-10.
+- **Came from:** The reviews of 20260922-10.
+- **README:** What goes into the enclave.
+- **Status:** todo
+
+### 20260923-58. Enclave CLI loose ends.
+
+Findings from the reviews of 20260922-4 and 20260923-53:
+- **JSON.parse itself uses 50 to 135 times the input size on dense arrays.** A 64 MB `{"a":[{},{},...]}` peaked at 8.6 GB, and `[0,0,...]` at 3.2 GB. The double parse (`UniqueKeys`, then plain) adds to the peak. Lower `Input::MAX_BYTES`, or cap the element count before parsing.
+- **The scan is slow on dense quotes or backslashes,** about 8 to 10 s for 64 MB. It's linear, and fine at realistic sizes.
+- **Anything printed or warned while `require "quaack/enclave"` loads** goes out before `silence_stderr!` and `claim_stdout!`, and so does a LoadError backtrace. Silence first in `exe/quaacks`, before the require.
+- **`Store#parse` relies on `max_nesting` alone,** and json 3.0.2 doesn't count an empty innermost container. Run `PlainData.check` there too, as `Input` does.
+- **Cancel on SIGTERM:** consider `conn.cancel` or a `statement_timeout` when SIGTERM arrives mid-query. This belongs with 20260922-16.
+
+- **Depends on:** 20260923-53.
+- **Came from:** The reviews of 20260922-4 and 20260923-53.
+- **README:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.
