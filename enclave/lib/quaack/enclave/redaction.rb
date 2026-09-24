@@ -59,8 +59,12 @@ module Quaack
     # Each constant gets its own placeholder, except where Postgres requires
     # two expressions to be the same, as a GROUP BY expression and the same
     # expression in the select list must be. There, equal constants in the
-    # same places share one placeholder (see Sharing for the list), and
-    # the map holds it once. It's numbered where its first constant sits.
+    # same places share one placeholder (see Sharing for the list, and for
+    # keys written by position or alias), and the map holds it once. It's
+    # numbered where its first constant sits. The search for a key's copies
+    # covers the whole of the other clause, aggregate arguments and FILTER
+    # included, so it can share more than Postgres needs, but only
+    # constants that hold equal values.
     #
     # == Row counts
     #

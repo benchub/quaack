@@ -167,8 +167,10 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
         expect(filter("(x = '5000000000'::bigint)", map(entry("0x12A05F200", "bigint")))).to eq("(x = $1::bigint)")
       end
 
-      it "reads a hex number with a plus sign" do
+      it "reads a hex number with a plus sign, or a capital X, but not two signs" do
         expect(filter("(x = 31)", map(entry("+0x1F")))).to eq("(x = $1)")
+        expect(filter("(x = 31)", map(entry("0X1F")))).to eq("(x = $1)")
+        expect(filter("(x = 5)", map(entry("--5")))).to eq("(x = $?)")
       end
 
       it "reads exponents with a capital E and a sign, and a leading sign" do
@@ -427,6 +429,26 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     raise "the child ran past #{seconds} seconds"
   end
 
+  # A key that matches itself joins each constant with itself. Joining
+  # that way must be a no-op, or finding a representative loops forever.
+  it "shares a placeholder that three clauses require to match, without looping" do
+    code = <<~RUBY
+      require "quaack/enclave/redaction"
+      puts Quaack::Enclave::Redaction.query(PgQuery.parse("SELECT DISTINCT o.status || 'a' FROM public.orders o " \
+        "GROUP BY o.status || 'a', 1 ORDER BY o.status || 'a'")).sql
+    RUBY
+    expect(in_child(code, seconds: 10).chomp)
+      .to eq("SELECT DISTINCT o.status || $1 FROM public.orders o GROUP BY o.status || $1, 1 ORDER BY o.status || $1")
+  end
+
+  it "reads a GROUP BY of a deep expression quickly" do
+    chain = (["o.status"] + (1..200).map { "'#{it}'" }).join(" || ")
+    Timeout.timeout(1) do
+      expect(described_class.query(PgQuery.parse("SELECT #{chain} FROM public.orders o GROUP BY #{chain}"))
+        .placeholder_map.size).to eq(200)
+    end
+  end
+
   describe "binding" do
     # A fake connection at the edge that says it can't type $1 however
     # it's declared.
@@ -469,6 +491,8 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       bound = described_class.binding("SELECT $1", { "$1" => entry("x") })
       expect { bound.prepare(failing { raise ArgumentError, "not postgres" }, "quaack_other") }
         .to raise_error(ArgumentError, "not postgres")
+      connection = Class.new { def exec_prepared(*) = raise(ArgumentError, "not postgres either") }.new
+      expect { bound.execute(connection, "quaack_other") }.to raise_error(ArgumentError, "not postgres either")
     end
 
     it "retypes only for SQLSTATE 42P18, and only for its exact message" do

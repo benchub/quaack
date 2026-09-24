@@ -153,6 +153,25 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
         .to eq("SELECT o.status FROM public.orders o GROUP BY 1 HAVING $1 = $2")
     end
 
+    it "lists a shared placeholder once" do
+      result = redact("SELECT o.status || 'a', count(*) FROM public.orders o GROUP BY o.status || 'a' " \
+                      "HAVING o.id > 5 ORDER BY o.status || 'a'")
+      expect(result.placeholders.map(&:number)).to eq([1, 2])
+    end
+
+    it "resolves a key by position or by alias to its select-list entry" do
+      expect(redact("SELECT o.status || 'a' AS k FROM public.orders o GROUP BY k ORDER BY o.status || 'a'").sql)
+        .to eq("SELECT o.status || $1 AS k FROM public.orders o GROUP BY k ORDER BY o.status || $1")
+      expect(redact("SELECT o.id, o.status || 'a' FROM public.orders o GROUP BY 2, o.id " \
+                    "HAVING o.status || 'a' <> ''").sql)
+        .to eq("SELECT o.id, o.status || $1 FROM public.orders o GROUP BY 2, o.id HAVING (o.status || $1) <> $2")
+      expect(redact("SELECT o.status || 'a' AS status FROM public.orders o GROUP BY o.status " \
+                    "ORDER BY o.status || 'a'").sql)
+        .to eq("SELECT o.status || $1 AS status FROM public.orders o GROUP BY o.status ORDER BY o.status || $2")
+      expect(redact("SELECT o.status || 'a' FROM public.orders o GROUP BY 3 ORDER BY o.status || 'a'").sql)
+        .to eq("SELECT o.status || $1 FROM public.orders o GROUP BY 3 ORDER BY o.status || $2")
+    end
+
     it "keeps one placeholder per occurrence where Postgres doesn't require a match" do
       expect(redact("SELECT string_agg(o.status || 'a', ',' ORDER BY o.status || 'a') FROM public.orders o").sql)
         .to eq("SELECT string_agg(o.status || $1, $2 ORDER BY o.status || $3) FROM public.orders o")

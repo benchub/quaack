@@ -11,6 +11,7 @@ require "quaack/enclave/store"
 # plan from a plain EXPLAIN.
 REDACTION_PRODUCTION = "EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS, FORMAT JSON)"
 REDACTION_RACETRACK = "EXPLAIN (FORMAT JSON)"
+REDACTION_SUBQUERY = "(SELECT c.name FROM public.customers c WHERE c.id = o.customer_id AND c.name <> 'x')"
 
 RSpec.describe Quaack::Enclave::Redaction do
   let(:production) { REDACTION_PRODUCTION }
@@ -275,6 +276,28 @@ RSpec.describe Quaack::Enclave::Redaction do
       "SELECT DISTINCT o.status || 'a' FROM public.orders o ORDER BY o.status || 'a'",
       "SELECT string_agg(DISTINCT o.status || 'a', ',' ORDER BY o.status || 'a') FROM public.orders o",
       "SELECT rank() OVER (ORDER BY o.status || 'a') FROM public.orders o GROUP BY o.status || 'a' ORDER BY 1",
+      # Keys written by position or by alias.
+      "SELECT date_trunc('day', o.created_at), count(*) FROM public.orders o GROUP BY 1 " \
+      "ORDER BY date_trunc('day', o.created_at)",
+      "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY 1 HAVING (o.status || '-x') <> 'x' ORDER BY 1",
+      "SELECT o.status || '-x' AS k, count(*) FROM public.orders o GROUP BY k ORDER BY o.status || '-x'",
+      "SELECT o.status || '-x' AS k, count(*) FROM public.orders o GROUP BY k HAVING (o.status || '-x') <> 'x'",
+      "SELECT DISTINCT ON (1) o.status || '-x', o.id FROM public.orders o ORDER BY o.status || '-x', o.id",
+      "SELECT DISTINCT ON (o.status || '-x') o.status || '-x', o.id FROM public.orders o ORDER BY 1, o.id",
+      # A key written twice.
+      "SELECT DISTINCT o.status || '-x' FROM public.orders o ORDER BY o.status || '-x', o.status || '-x'",
+      "SELECT string_agg(DISTINCT o.status || '-x', ',' ORDER BY o.status || '-x', o.status || '-x') " \
+      "FROM public.orders o",
+      # A whole subquery as the key.
+      "SELECT #{REDACTION_SUBQUERY} FROM public.orders o WHERE o.id < 50 GROUP BY #{REDACTION_SUBQUERY} ORDER BY 1",
+      "SELECT DISTINCT #{REDACTION_SUBQUERY} FROM public.orders o WHERE o.id < 50 ORDER BY #{REDACTION_SUBQUERY}",
+      # A named window, an expression with several constants, and a chain
+      # of matches two links long.
+      "SELECT rank() OVER w FROM public.orders o GROUP BY o.status || 'a' WINDOW w AS (ORDER BY o.status || 'a') " \
+      "ORDER BY 1",
+      "SELECT substr(o.status, 1, 2), count(*) FROM public.orders o GROUP BY substr(o.status, 1, 2) ORDER BY 1",
+      "SELECT DISTINCT ON (o.status || 'a') o.status || 'a', count(*) FROM public.orders o " \
+      "GROUP BY o.status || 'a' ORDER BY o.status || 'a'",
       # The GROUP BY and HAVING sentinel query, which returns no rows.
       "SELECT o.status || 'quaack-sentinel-group', count(*) FROM public.orders o " \
       "GROUP BY o.status || 'quaack-sentinel-group' HAVING count(*) > 918273603"
@@ -292,6 +315,20 @@ RSpec.describe Quaack::Enclave::Redaction do
       literals.each do |literal|
         map = described_class.query(PgQuery.parse("SELECT #{literal}")).placeholder_map
         expect(map["$1"]["type"]).to eq(rows("SELECT pg_typeof(#{literal})::text").first.first), literal
+      end
+    end
+
+    # Postgres takes these as the same expression, but they're written
+    # differently, so they don't share, and the prepare fails closed.
+    it "fails closed on matching expressions written differently" do
+      ["SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY status || '-x'",
+       "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY o.status || '-x'::text"].each do |query|
+        result = redact(query)
+        bound = described_class.binding(result.query.sql, result.placeholder_map)
+        expect { bound.prepare(test_database.connection, "quaack_differ") }.to raise_error(described_class::Error) { |e|
+          expect([e.message, e.rule, e.sqlstate, e.cause]).to eq(["prepare_failed (SQLSTATE 42803)", "prepare_failed",
+                                                                  "42803", nil])
+        }
       end
     end
 
@@ -339,13 +376,20 @@ RSpec.describe Quaack::Enclave::Redaction do
       expect { described_class.binding("SELECT $2", map) }.to raise_error(described_class::Error, "unknown_placeholder")
       expect { described_class.binding("DELETE FROM public.orders WHERE id = $1", map) }
         .to raise_error(described_class::Error, "not_one_select")
+      expect { described_class.binding("SELECT 'quaack-sentinel", map) }
+        .to raise_error(described_class::Error) { |e| expect([e.rule, e.cause]).to eq(["not_one_select", nil]) }
     end
 
     it "refuses what SupportedSql refuses, such as a data-modifying CTE or FOR UPDATE" do
       map = redact("SELECT o.id FROM public.orders o WHERE o.id = 5").placeholder_map
       ["WITH d AS (DELETE FROM public.orders WHERE id = $1 RETURNING id) SELECT id FROM d",
        "SELECT o.id FROM public.orders o WHERE o.id = $1 FOR UPDATE"].each do |sql|
-        expect { described_class.binding(sql, map) }.to raise_error(described_class::Error, "unsupported_construct")
+        error = begin
+          described_class.binding(sql, map)
+        rescue described_class::Error => e
+          e
+        end
+        expect([error.class, error.message, error.cause]).to eq([described_class::Error, "unsupported_construct", nil])
       end
     end
 

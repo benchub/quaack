@@ -168,6 +168,8 @@ Produce a redacted query and a redacted production plan. These redacted versions
   - SELECT DISTINCT and ORDER BY.
   - An aggregate's DISTINCT arguments and its ORDER BY.
 
+  A GROUP BY, DISTINCT ON, or ORDER BY key written by position or by alias, such as `GROUP BY 1`, stands for its select-list entry. A key that's a whole subquery shares the subquery's literals too. The search for the key's copies covers everything in the other clause, including aggregate arguments and FILTER. That can share a few more literals than Postgres needs, but they always hold equal values, so the query means the same. A key written differently from its copy, such as `status` against `o.status`, isn't found, and the query fails to prepare.
+
   A shared placeholder gets its row counts the same way as any other. When the quals of more than one node hold it, its row counts are marked ambiguous.
 - Annotate each placeholder with two row counts from the step 1 plan, taken at the node that consumes it: the planner's estimated rows and the actual rows.
 - Strip literal values out of the plan's quals the same way.
