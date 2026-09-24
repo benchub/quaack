@@ -137,7 +137,7 @@ Rewrite the query AST so every relation is schema qualified and `search_path` ne
 - **README:** Step 1.
 - **Status:** todo
 - **Decided:** The operator's query should already qualify every relation. If it doesn't, resolve the unqualified names with the `search_path` from the input plan's `SETTINGS`, since that's what the session used when the plan was made.
-- **Open questions:** `SETTINGS` only lists values that differ from the built-in default, so a plan made under the default `"$user", public` won't show a `search_path`. Confirm that, then decide whether to assume that default or abort and ask for a qualified query.
+- **Decided:** When `SETTINGS` has no `search_path`, assume the default `"$user", public`. Resolve `"$user"` as the connecting role, then `public`, in `pg_catalog`. Abort if a name resolves nowhere.
 
 ### 20260922-15. Canonical plan form.
 
@@ -396,7 +396,7 @@ Pull every predicate atom out of the parse: equality, range, `LIKE`, `IN`, `IS N
 - **Depends on:** 20260922-14, 20260922-23.
 - **README:** Step 9.
 - **Status:** todo
-- **Open questions:** How do we handle atoms under `OR`, `NOT`, `CASE`, or subqueries?
+- **Decided:** Extract atoms everywhere, including under `OR`, `NOT`, `CASE`, and in subqueries. The 9c vacuity guard catches any that fixtures can't exercise.
 
 ### 20260922-44. 9 value pools.
 
@@ -430,7 +430,7 @@ Compare results using the rules for no `ORDER BY`, a partial `ORDER BY` (add a t
 - **Depends on:** 20260922-46.
 - **README:** 9d.
 - **Status:** todo
-- **Open questions:** What float tolerance?
+- **Decided:** `float4` and `float8` values are equal within a relative 1e-9, with an absolute 1e-12 near zero. Numeric and integer columns compare exactly.
 
 ### 20260922-48. 9c vacuity guard.
 
