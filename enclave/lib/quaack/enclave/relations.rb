@@ -32,7 +32,7 @@ module Quaack
     # SupportedSql only lets a RangeVar go where a FROM item goes, so that
     # covers FROM, joins, subqueries, CTE bodies, LATERAL, set operations,
     # and sublinks anywhere in the query. Each relation is listed once, in
-    # the order the query first names it.
+    # the order the query's text first names it.
     #
     # Each relation's relkind is read from pg_class, in its own schema.
     # Anything but r is refused, with a rule for its kind, so the error line
@@ -41,7 +41,15 @@ module Quaack
     # sequence_relation (S), composite_type_relation (c), toast_relation
     # (t), index_relation (i and I), and not_a_table for any other. A
     # partition is relkind r, so a query that names one directly passes.
-    # When several aren't plain tables, the first the query names wins.
+    #
+    # A plain table scans its inheritance children too, unless the query
+    # says ONLY. So unless every reference to it says ONLY, each of its
+    # descendants, at any depth, must be a plain table as well, or the
+    # query is refused with the rule for the first one that isn't. Only
+    # the relations the query names are listed, not their descendants.
+    #
+    # When several relations aren't plain tables, the first the query's
+    # text names wins.
     #
     # The other refusals: parse_error, unsupported_construct, bad_search_path
     # (the Settings' search_path doesn't read), unknown_relation (a name
@@ -83,25 +91,40 @@ module Quaack
 
       OTHER = ["not_a_table", "a relation"].freeze
 
+      # The relation in schema $1 named $2, and when $3 is true, every
+      # inheritance descendant of it, at any depth. Each row is a schema,
+      # name, and relkind. The relation comes first, and each descendant
+      # follows its parent, since the rows are ordered by the path of oids
+      # that reaches them.
       RELKIND_SQL = <<~SQL
-        SELECT c.relkind
-        FROM pg_catalog.pg_class c
+        WITH RECURSIVE tree (oid, path) AS (
+          SELECT c.oid, ARRAY[c.oid]
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = $1 AND c.relname = $2
+          UNION ALL
+          SELECT i.inhrelid, tree.path || i.inhrelid
+          FROM tree
+          JOIN pg_catalog.pg_inherits i ON i.inhparent = tree.oid
+          WHERE $3::boolean
+        )
+        SELECT n.nspname, c.relname, c.relkind
+        FROM tree
+        JOIN pg_catalog.pg_class c ON c.oid = tree.oid
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = $1 AND c.relname = $2
+        ORDER BY tree.path
       SQL
 
       module_function
 
       def check(sql, settings, connection)
-        supported!(parse(sql))
-        qualified = qualify(sql, settings, connection)
-        relations = tables(qualified.parse)
-        relations.each { |table| plain_table!(table, connection) }
-        Result.new(sql: qualified.sql, parse: qualified.parse, relations:)
+        parse = parse(sql)
+        supported!(parse)
+        qualified = qualify(parse.tree, settings, connection)
+        relations = tables(parse.tree)
+        relations.each { |table, inherits| plain_table!(table, inherits, connection) }
+        Result.new(sql: qualified.query, parse: qualified, relations: relations.keys)
       end
-
-      # The rule for a relation of relkind, which isn't r.
-      def rule_for(relkind) = KINDS.fetch(relkind, OTHER).first
 
       def parse(sql)
         PgQuery.parse(sql)
@@ -115,36 +138,54 @@ module Quaack
         raise Error.from(e), cause: nil
       end
 
-      # The query qualified, as RelationQualifier qualifies it. The search
+      # Qualifies the tree in place, the way RelationQualifier.qualify does,
+      # and returns the qualified SQL's own parse. The tree keeps where in
+      # the query's text each relation was, which tables needs. The search
       # path is read first, so a bad one gets its own rule rather than
       # unknown_relation.
-      def qualify(sql, settings, connection)
+      def qualify(tree, settings, connection)
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        RelationQualifier.qualify(sql, settings, connection)
+        RelationQualifier.qualify_tree(tree, settings, connection)
+        Deparse.faithful_parse(tree)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
       rescue Deparse::Error => e
         raise Error.from(e), cause: nil
       end
 
-      # Each relation in a qualified parse, once, in tree order. A RangeVar
-      # with no schema left is a reference to a CTE.
-      def tables(parse)
-        ranges = range_vars(parse.tree).reject { |range| range.schemaname.empty? }
-        ranges.map { |range| TableName.new(schema: range.schemaname, name: range.relname) }.uniq
+      # Each relation in a qualified tree, once, in the order the query's
+      # text first names it, and whether any reference to it takes in its
+      # inheritance descendants (no ONLY). The tree's own order isn't the
+      # text's: it keeps WITH after FROM, and OFFSET before LIMIT. A
+      # RangeVar with no schema left is a reference to a CTE.
+      def tables(tree)
+        ranges = range_vars(tree).reject { |range| range.schemaname.empty? }.sort_by(&:location)
+        ranges.each_with_object({}) do |range, found|
+          table = TableName.new(schema: range.schemaname, name: range.relname)
+          found[table] = found.fetch(table, false) || range.inh
+        end
       end
 
-      def plain_table!(table, connection)
-        rows = connection.exec_params(RELKIND_SQL, [table.schema, table.name])
-        raise Error.new("unknown_relation", "#{table} doesn't exist") if rows.ntuples.zero?
+      def plain_table!(table, inherits, connection)
+        rows = connection.exec_params(RELKIND_SQL, [table.schema, table.name, inherits.to_s]).values
+        (_, _, relkind), *descendants = rows
+        raise Error.new("unknown_relation", "#{table} doesn't exist") unless relkind
 
-        relkind = rows.getvalue(0, 0)
-        return if relkind == "r"
+        refuse!(relkind, "#{table} is") unless relkind == "r"
+        descendants.each do |schema, name, kind|
+          next if kind == "r"
 
+          refuse!(kind, "#{table} has an inheritance descendant, #{TableName.new(schema:, name:)}, that is")
+        end
+      end
+
+      # Refuses a relation of relkind, which isn't r. Every refusal for a
+      # relkind comes through here.
+      def refuse!(relkind, subject)
         rule, kind = KINDS.fetch(relkind, OTHER)
-        raise Error.new(rule, "#{table} is #{kind} (relkind #{relkind}), not a plain table")
+        raise Error.new(rule, "#{subject} #{kind} (relkind #{relkind}), not a plain table")
       end
 
       # Every RangeVar in the tree, in tree order.

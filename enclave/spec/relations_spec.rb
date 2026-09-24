@@ -159,8 +159,89 @@ RSpec.describe Quaack::Enclave::Relations do
       expect { check("SELECT 1 FROM orders, public.order_view, public.parted") }.to rejected("view_relation")
     end
 
+    # The parse tree keeps WITH after FROM, and OFFSET before LIMIT, so the
+    # order is the query text's, not the tree's.
+    it "is the first one in the query's text, even in a CTE before the FROM" do
+      expect { check("WITH c AS (SELECT 1 FROM public.order_view) SELECT 1 FROM public.parted") }
+        .to rejected("view_relation")
+    end
+
+    it "is the first one in the query's text, even in a LIMIT before an OFFSET" do
+      sql = "SELECT 1 FROM orders LIMIT (SELECT 1 FROM public.parted) OFFSET (SELECT 0 FROM public.order_view)"
+      expect { check(sql) }.to rejected("partitioned_relation")
+    end
+
+    it "lists relations in the query's text order" do
+      sql = "WITH c AS (SELECT 1 FROM sales.items) SELECT 1 FROM orders, c " \
+            "LIMIT (SELECT 1 FROM customers) OFFSET (SELECT 0 FROM public.parted_low)"
+      expect(check(sql).relations).to eq(
+        [table_name("sales", "items"), table_name("public", "orders"), table_name("public", "customers"),
+         table_name("public", "parted_low")]
+      )
+    end
+
+    # No relkind in Postgres 18 lacks a rule, so the catalog is faked at the
+    # edge: the real connection answers everything, but the relkind lookup
+    # says every relation it finds has relkind x.
     it "is refused with not_a_table when its relkind has no rule of its own" do
-      expect(described_class.rule_for("x")).to eq("not_a_table")
+      real = conn
+      odd = Object.new
+      odd.define_singleton_method(:exec) { |*args| real.exec(*args) }
+      odd.define_singleton_method(:exec_params) do |sql, params|
+        rows = real.exec_params(sql, params)
+        next rows unless sql == Quaack::Enclave::Relations::RELKIND_SQL
+
+        odd_rows = rows.values.map { |row| [*row[0..-2], "x"] }
+        Object.new.tap { |result| result.define_singleton_method(:values) { odd_rows } }
+      end
+
+      expect { described_class.check("SELECT 1 FROM public.orders", nil, odd) }
+        .to rejected("not_a_table", "not_a_table: public.orders is a relation (relkind x), not a plain table")
+    end
+  end
+
+  # A table's inheritance children are scanned with it, unless the query
+  # says ONLY, so each of them must be a plain table too.
+  describe "inheritance" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.parent (id int);
+        CREATE TABLE public.child () INHERITS (public.parent);
+        CREATE FOREIGN TABLE public.fchild () INHERITS (public.parent) SERVER elsewhere;
+        CREATE TABLE public.base (id int);
+        CREATE TABLE public.mid () INHERITS (public.base);
+        CREATE TABLE public.kid () INHERITS (public.mid);
+        CREATE TABLE public.top (id int);
+        CREATE TABLE public.middle () INHERITS (public.top);
+        CREATE FOREIGN TABLE public.bottom () INHERITS (public.middle) SERVER elsewhere;
+      SQL
+    end
+
+    it "refuses a table with a child that isn't a plain table, naming the child" do
+      expect { check("SELECT id FROM parent") }
+        .to rejected("foreign_relation", "foreign_relation: public.parent has an inheritance descendant, " \
+                                         "public.fchild, that is a foreign table (relkind f), not a plain table")
+    end
+
+    it "refuses one two levels down" do
+      expect { check("SELECT id FROM public.top") }
+        .to rejected("foreign_relation", "foreign_relation: public.top has an inheritance descendant, " \
+                                         "public.bottom, that is a foreign table (relkind f), not a plain table")
+    end
+
+    it "accepts a table whose descendants are all plain tables, at every level" do
+      expect(check("SELECT id FROM base").relations).to eq([table_name("public", "base")])
+      expect(check("SELECT id FROM mid").relations).to eq([table_name("public", "mid")])
+    end
+
+    it "accepts ONLY, which scans the table alone" do
+      expect(check("SELECT id FROM ONLY parent").relations).to eq([table_name("public", "parent")])
+      expect(check("SELECT id FROM ONLY top").relations).to eq([table_name("public", "top")])
+    end
+
+    it "checks the descendants when the table is also named without ONLY, in either order" do
+      expect { check("SELECT 1 FROM ONLY parent, parent") }.to rejected("foreign_relation")
+      expect { check("SELECT 1 FROM parent, ONLY parent") }.to rejected("foreign_relation")
     end
   end
 
