@@ -415,6 +415,25 @@ RSpec.describe Quaack::Enclave::Store do
     end
   end
 
+  describe "#entry?" do
+    it "says whether an entry has been written" do
+      expect(store.entry?("burndown")).to be(false)
+      store.write("burndown", {})
+
+      expect([store.entry?("burndown"), store.entry?(:burndown), store.entry?("inputs")]).to eq([true, true, false])
+    end
+
+    it "counts an entry that's a symlink as there, so reading it fails rather than starting afresh" do
+      File.symlink(File.join(@tmp, "missing.json"), File.join(store.path, "inputs.json"))
+
+      expect(store.entry?("inputs")).to be(true)
+    end
+
+    it "refuses a name that isn't a lowercase word" do
+      expect_store_error(/lowercase word/) { store.entry?("../#{STORE_SENTINEL}") }
+    end
+  end
+
   describe ".open" do
     it "opens an existing run and reads what an earlier call wrote" do
       store.write("inputs", { "query" => "SELECT 1" })

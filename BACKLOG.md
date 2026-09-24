@@ -346,15 +346,7 @@ Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row p
 
 ### 20260922-46. 9a, 9b, and 9e arena transaction runner. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-47. 9d result comparator.
-
-Compare results using the rules for no `ORDER BY`, a partial `ORDER BY` (add a tiebreaker), `LIMIT` without `ORDER BY` (subset check), and float tolerance.
-
-- **Depends on:** 20260922-46.
-- **README:** 9d.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260922-47` through a build, a review, a fix round, and a second review, but not landed. The second review found false matches when a tie crosses a LIMIT or OFFSET cut or a DISTINCT ON pick, and when a column is an enum. 20260923-54 finishes it on top of that branch.
-- **Decided:** `float4` and `float8` values are equal within a relative 1e-9, with an absolute 1e-12 near zero. Numeric and integer columns compare exactly.
+### 20260922-47. 9d result comparator. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-48. 9c vacuity guard.
 
@@ -475,14 +467,7 @@ Keep the top three candidates by total blocks.
 
 ## Step 15: Report.
 
-### 20260922-61. Burndown counters.
-
-Record per-stage counts (in, added, dropped by reason, out) in the governed store as each enclave step runs, and in the driver for LLM calls. Every stage task should call into this as it's built.
-
-- **Depends on:** 20260922-3, 20260922-7.
-- **README:** 15b.
-- **Status:** todo
-- **Note:** This should be built early, right after the foundations, even though it lives in this section.
+### 20260922-61. Burndown counters. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-62. 15 main report.
 
@@ -883,21 +868,7 @@ Minor findings from the reviews of 20260923-33:
 
 ### 20260923-53. Finish the enclave CLI. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-54. Finish the 9d result comparator.
-
-Split out of 20260922-47. The work so far is on branch `task/20260922-47`. Build on that branch, then land both together. Fix what the second review of 20260922-47 found:
-- **A false match when a tie crosses a LIMIT or OFFSET cut, or a DISTINCT ON pick.** The two tiebreaker runs, ascending and then descending, only expose the first and last row of each tie group. So a candidate can widen the tie at the cut and still match both runs. The reviewer reproduced this for LIMIT, DISTINCT ON, and OFFSET on real Postgres.
-  - The main session's default is to fail closed. If the original's ascending and descending runs return different row multisets, the original depends on how ties break, so refuse the comparison with `unsupported_order` and never report a match.
-  - Otherwise the two-run scheme is sound. Test all three repros.
-  - A precise check could come later: the rows before the tied group must match exactly, and the rest must be drawn from that group.
-- **Enum columns are left out of the tiebreaker, which allows a false match.** For example, `ORDER BY m` on an enum matched a candidate that sorted by another column. Include enums by looking up the catalog (`typtype = 'e'`), and ranges and composites too if that's cheap. Test it.
-- **The comment claiming `max` and `min` are equivalent is wrong.** 7.603 against 7.603000007603 is equal under `max` and unequal under `min`. Fix the comment, and pin that pair in a test.
-
-- **Depends on:** 20260922-47's branch.
-- **Came from:** Second review of 20260922-47.
-- **README:** 9d.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260923-54` through a build, a review, a fix round, a second review, a tests-only round, and a tests-only review, but not landed. The tests-only review found the tie-of-three test still vacuous against a first-versus-last mutant in `hidden_differences?`. 20260924-2 fixes that test, and then both land together.
+### 20260923-54. Finish the 9d result comparator. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-55. Round-trip guard for deparsed SQL. Done, see BACKLOG-COMPLETE.md.
 
@@ -947,17 +918,7 @@ Minor findings from the second review of 20260923-56:
 - **README:** 5a-4.
 - **Status:** todo
 
-### 20260924-2. Pin hidden_differences? for every row in a tie group.
-
-Split out of 20260923-54. Build on its branch `task/20260923-54`, then land both together. The tests-only review of 20260923-54 found "refuses an interval column when a tie of three hides a different interval behind a repeat" still vacuous. Changing `hidden_differences?` in `result_comparison/tiebreaker.rb` to compare only `rows.first` and `rows.last` survives the whole suite, because the fixture ['1 day', '1 day', '24 hours'] puts the odd value last. Add a fixture with the odd value in the middle, such as ['1 day', '24 hours', '1 day'] or a group of four. It must go red under the first-two, first-and-last, and `all?` mutants.
-
-Also, from the same review:
-- The two composite tests (numeric and interval) should assert `rule: :unsupported_order`, not just `match? == false`.
-
-- **Depends on:** 20260923-54's branch.
-- **Came from:** Tests-only review of 20260923-54.
-- **README:** 9d.
-- **Status:** todo
+### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-3. Intake loose ends.
 
@@ -993,6 +954,51 @@ Before deparsing, wrap the operand in an explicit parenthesis node, or post-proc
 - **Depends on:** 20260923-55.
 - **Came from:** The reviews of 20260923-55.
 - **README:** Step 1.
+- **Status:** todo
+
+### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse.
+
+High priority. A rewrite that drops a secondary sort key below the top level matches by luck, because fixtures load in id order and small sorts keep input order. Examples are a subquery `ORDER BY grp, id LIMIT 2` becoming `ORDER BY grp LIMIT 2`, and a LATERAL top-1 that drops `, id`. That's a realistic LLM mistake, and README 9d only covers the top level. Run each 9d comparison a second time with the same fixture loaded in reverse physical order, and require both runs to match. This also covers the DISTINCT and GROUP BY representative gaps and the multiset collation gap that the reviews of 20260923-54 documented. It belongs in step 9 orchestration (20260922-49) or ArenaRunner. Decide which, and update README 9d.
+
+- **Depends on:** 20260922-47.
+- **Came from:** Second review of 20260923-54.
+- **README:** 9d.
+- **Status:** todo
+
+### 20260924-6. Narrow the 9d fail-closed rule for top-N queries.
+
+Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker (json, jsonb, xml, citext, hstore, PostGIS, interval, numeric[], and composites of those) is refused, even when the sort key is unique. That refuses every candidate for common top-N queries over such tables, and those are prime rewrite targets. Options: rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie. Or add `::text` sort keys for left-out columns.
+
+- **Depends on:** 20260922-47.
+- **Came from:** Second review of 20260923-54.
+- **README:** 9d.
+- **Status:** todo
+
+### 20260924-7. 9d comparator loose ends.
+
+- **Range over a nondeterministic collation passes the collation check.** A custom range type over text with a nondeterministic collation isn't caught, because the check doesn't read `pg_range.rngcollation`. Add `OR c.oid IN (SELECT rngcollation FROM pg_range)`.
+- **A precise check for ties at a cut.** The rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
+- **Interval compare by value, and lower-level nondeterminism.** Intervals could compare by value in the comparator. For nondeterminism below the top level (a subquery LIMIT, DISTINCT, or GROUP BY), see 20260924-5.
+- **README 9d** should describe the two-run tiebreaker and the fail-closed rules.
+
+- **Depends on:** 20260922-47.
+- **Came from:** The reviews of 20260922-47 and 20260923-54.
+- **README:** 9d.
+- **Status:** todo
+
+### 20260924-8. Burndown loose ends.
+
+Findings from the second review of 20260922-61:
+- **`Protocol::Burndown.valid?` raises ArgumentError instead of returning false** on a record that mixes String and Symbol keys, because `record.keys.sort` can't compare them. It fails closed, but it breaks egress's contract of raising `Egress::Error`. Check that every key is a String before sorting.
+- **Integer counts have no upper bound.** A 16-digit number could go out as a count if an Integer from the database were passed in. Consider a sanity cap, such as counts below 10**12.
+- **Misuse double-counts instead of being refused.** Calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`, is accepted. Consider deriving `since` from the stored burndown for each search.
+- **`since` and the Dedupe live only in memory.** 5a-5 needs a separate enclave call after the driver's LLM call, so the next process has to rebuild both. Add a note for 20260922-33.
+- **`record_single_candidate_test` doesn't tie its report to the Dedupe's proposals.**
+- **Question for the user:** should drop reasons and total names be closed lists in the protocol gem, like `STAGES`? Today any lowercase word passes, so a one-word value could be stored as a reason.
+
+- **Depends on:** 20260922-61.
+- **Came from:** Both reviews of 20260922-61.
+- **README:** 15b.
 - **Status:** todo
 
 ## After version 1.

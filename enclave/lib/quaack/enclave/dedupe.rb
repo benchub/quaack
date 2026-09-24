@@ -18,6 +18,7 @@ module Quaack
     #   search.proposals  # every survivor so far, with sources merged
     #   search.set_aside  # GIN, GiST, and SP-GiST survivors, untested, for step 12
     #   search.drops      # a Drop for each candidate dropped, in order
+    #   search.considered # how many candidates filter has considered
     #
     # Call filter on each generator's output as soon as it's produced. It
     # returns the candidates from that call worth testing in 5a-4, in order,
@@ -108,7 +109,15 @@ module Quaack
         @drops = []
         @proposals = []
         @set_aside = []
+        @considered = 0
       end
+
+      # Every candidate filter has considered. Each one is dropped, set
+      # aside, or kept as a proposal, so it should equal their sum. The
+      # 15b burndown records it as the count that came in, and checks that.
+      # A candidate is counted once it's been considered, so a filter call
+      # that raises partway counts only the candidates it got through.
+      attr_reader :considered
 
       def drops = @drops.dup.freeze
 
@@ -118,7 +127,9 @@ module Quaack
 
       def filter(candidates)
         check_candidates(candidates)
-        kept = candidates.filter_map { |candidate| consider(candidate) }
+        kept = candidates.filter_map do |candidate|
+          consider(candidate).tap { @considered += 1 }
+        end
         kept.map { |candidate| @proposals.find { |p| p == candidate } }.freeze
       end
 

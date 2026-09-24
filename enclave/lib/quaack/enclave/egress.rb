@@ -2,6 +2,7 @@
 
 require "json"
 require "quaack/protocol/whitelist"
+require "quaack/protocol/burndown"
 require_relative "plain_data"
 
 module Quaack
@@ -27,7 +28,9 @@ module Quaack
     #
     # Values of allowed fields go out unchanged: there are no field types.
     # So the whitelist must list only fields whose values are always
-    # shape-class data. A value must be plain JSON data, though: nil, true,
+    # shape-class data. The one exception is the burndown type, whose
+    # stages and totals must pass Protocol::Burndown.valid?, or it raises
+    # Egress::Error. A value must be plain JSON data, though: nil, true,
     # false, an Integer, a Float, a String, a Symbol (sent as its name), or
     # an Array or Hash of those, with String or Symbol keys. Anything else,
     # such as an exception, a Struct, a Time, or a subclass of String, could
@@ -90,9 +93,20 @@ module Quaack
       def write(type, pairs)
         fields = pairs.to_h
         fields.each_value { PlainData.check(it) }
+        check_burndown(fields) if type == "burndown"
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError
         raise Error, "a value in this #{type} message can't be written as JSON", cause: nil
+      end
+
+      # A burndown's fields are nested Hashes, which go out as they are, so
+      # they must be exactly a burndown (see Protocol::Burndown.valid?): only
+      # counts, under names that are stages or lowercase words. Both fields
+      # are needed.
+      def check_burndown(fields)
+        return if Protocol::Burndown.valid?(stages: fields["stages"], totals: fields["totals"])
+
+        raise Error, "a value in this burndown message isn't a burndown"
       end
     end
   end
