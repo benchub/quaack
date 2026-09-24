@@ -19,6 +19,18 @@ Set up the repo: package layout with separate driver and enclave packages, depen
   - The jump servers are ARM (`aarch64-linux`). Nothing needs x86_64.
 - **Landed:** Merged into `main` after two reviews. The first review's findings were fixed in the builder's one fix round. The second review found no blockers, and its findings became 20260923-4 through 20260923-7. At landing, the main session removed the GitHub Actions workflow and the x86_64 lockfile platform, and corrected docs that overstated the runtime boundary check.
 
+### 20260922-6. LLM client.
+
+Build the driver's LLM client, with a test double so tests never make real LLM calls. Count every call by step for the 15b burndown.
+
+- **Depends on:** 20260922-1.
+- **README:** Where QUAACK runs, 15b.
+- **Status:** done
+- **Decided:**
+  - Use the Anthropic API through the official `anthropic` Ruby gem. The key comes from `ANTHROPIC_API_KEY` on the laptop. The default model is `claude-opus-5-5`, and config can override it.
+  - Don't build a provider abstraction yet, but don't make one hard to add later. The user may want other providers, or several models working in parallel, someday.
+- **Landed:** Merged into `main` after two reviews. The first review's findings were fixed in the builder's one fix round. The second review found no blockers, and its minor findings went to 20260924-14.
+
 ## Added later.
 
 ### 20260923-3. Rename the enclave gem to quaacks.

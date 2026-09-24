@@ -37,16 +37,7 @@ Build the driver side of the link: call enclave subcommands over ssh, pass argum
 - **Status:** todo
 - **Decided:** Larger inputs go to the enclave script as a JSON document on stdin, piped into `ssh <jump server> quaacks <subcommand>`. The local test transport pipes the same JSON.
 
-### 20260922-6. LLM client.
-
-Build the driver's LLM client, with a test double so tests never make real LLM calls. Count every call by step for the 15b burndown.
-
-- **Depends on:** 20260922-1.
-- **README:** Where QUAACK runs, 15b.
-- **Status:** todo
-- **Decided:**
-  - Use the Anthropic API through the official `anthropic` Ruby gem. The key comes from `ANTHROPIC_API_KEY` on the laptop. The default model is `claude-opus-5-5`, and config can override it.
-  - Don't build a provider abstraction yet, but don't make one hard to add later. The user may want other providers, or several models working in parallel, someday.
+### 20260922-6. LLM client. Done, see BACKLOG-COMPLETE.md.
 
 ## Trust boundary.
 
@@ -1062,6 +1053,26 @@ Findings from the reviews of 20260922-9:
 - **Depends on:** 20260922-9.
 - **Came from:** Both reviews of 20260922-9.
 - **README:** Trust boundary.
+- **Status:** todo
+
+### 20260924-14. LLM client loose ends.
+
+Findings from the builds and reviews of 20260922-6:
+- **Streaming.** Non-streaming requests are capped at the gem's limit: 21,333 max_tokens for the default model, and lower for some models. Add streaming if a step ever needs bigger outputs.
+- **Lazy-load `anthropic`.** Requiring it adds about 0.5s to every driver CLI start, even for commands that never call the LLM.
+- **A driver config file** for the model and similar settings. Today config comes only from code and the environment.
+- **Surviving mutants in `driver/lib/quaack/driver/llm/client.rb`:**
+  - `limit = MODEL_NONSTREAMING_TOKENS[...]` → `nil`. The per-model limit is never tested. Try `model: "claude-opus-4-0"` with `max_tokens: 8193`.
+  - `ENV[ALLOW_REAL_ENV] == "1"` → truthy. Nothing tests `QUAACK_ALLOW_REAL_LLM=yes` against the client guard. The root suite and child processes rely on that guard alone.
+  - `ENV[SPECS_ENV] == "1"` → truthy. Nothing tests `QUAACK_SPECS=0`.
+  - `e.message` passed through with extra text. Messages are matched by prefix only.
+- **The `NoNetwork` prepend is only in the driver suite.** The root suite and child processes get only the client-level guard. Consider sharing it.
+- **The workload-identity token exchange bypasses `PooledNetRequester`.** It calls `Net::HTTP` directly when a client is built with no key and federation credentials exist. Our client always passes a key, so only a spec that builds `Anthropic::Client` directly could reach it.
+- **`calculate_nonstreaming_timeout` isn't in the gem's `rbi/` or `sig/`,** so a 1.x update could rename it. The specs would go red, but note this when bumping the gem.
+
+- **Depends on:** 20260922-6.
+- **Came from:** The builds and both reviews of 20260922-6.
+- **README:** Where QUAACK runs, 15b.
 - **Status:** todo
 
 ## After version 1.
