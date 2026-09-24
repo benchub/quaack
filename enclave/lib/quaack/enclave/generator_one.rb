@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "table_name"
 require_relative "index_candidate"
 require_relative "statistics"
+require_relative "supported_sql"
 
 module Quaack
   module Enclave
@@ -13,11 +14,12 @@ module Quaack
     #   GeneratorOne.candidates(PgQuery.parse(sql), statistics)
     #   # => [IndexCandidate, ...], each with sources: [:parse]
     #
-    # The query must be one SELECT, not a set operation or SELECT ... INTO,
-    # with no data-modifying CTE, and with every relation schema qualified
-    # except a reference to a CTE whose name reaches it: the rest of its
-    # SELECT, later CTEs in the same WITH, and, under WITH RECURSIVE, every
-    # CTE there. The limits must be an Integer max_key_columns of at least
+    # The query must use only what SupportedSql lists, or it raises
+    # SupportedSql::Error. So it's one SELECT, with no SELECT ... INTO and
+    # no data-modifying CTE. It also must not be a set operation, and every
+    # relation must be schema qualified except a reference to a CTE whose
+    # name reaches it: the rest of its SELECT, later CTEs in the same WITH,
+    # and, under WITH RECURSIVE, every CTE there. The limits must be an Integer max_key_columns of at least
     # 1, a finite brin_min_correlation in 0..1, and a finite
     # brin_min_reltuples. Anything else raises ArgumentError, and no message
     # quotes the SQL. A table with no statistics raises KeyError. The result
@@ -28,8 +30,7 @@ module Quaack
     # including joins, get candidates. Each one gets its own, and so does
     # each alias of a self-join. Tables inside a subquery, a CTE, or a
     # subquery in WHERE or the select list get none, though they're still
-    # checked for qualification. So does a table with TABLESAMPLE. A
-    # subquery or function in FROM has no table's columns, so its columns
+    # checked for qualification. A subquery or function in FROM has no table's columns, so its columns
     # are skipped, but a join to one still counts for the table on the other
     # side.
     #
@@ -137,26 +138,23 @@ module Quaack
           raise ArgumentError, "#{what} must be a finite number in #{range}, got #{value.inspect}"
         end
 
+        # SupportedSql makes sure it's one SELECT, with no SELECT ... INTO
+        # and no data-modifying CTE.
         def select(parse)
           raise ArgumentError, "expected a pg_query parse result" unless parse.is_a?(PgQuery::ParserResult)
-          raise ArgumentError, "expected exactly one statement" unless parse.tree.stmts.size == 1
 
+          SupportedSql.check!(parse)
           select = parse.tree.stmts.first.stmt.select_stmt
-          check_kind(select)
+          raise ArgumentError, "generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)" if set?(select)
+
           check_relations(select, [])
           select
-        end
-
-        def check_kind(select)
-          raise ArgumentError, "generator one takes only a SELECT" if select.nil?
-          raise ArgumentError, "generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)" if set?(select)
-          raise ArgumentError, "generator one doesn't take SELECT ... INTO" if select.into_clause
         end
 
         def set?(select) = select.op != :SETOP_NONE
 
         # Every relation must name its schema, except a reference to a CTE
-        # whose name reaches it, and no CTE may modify data.
+        # whose name reaches it.
         def check_relations(node, ctes)
           case node
           when PgQuery::RangeVar then check_range(node, ctes)
@@ -194,8 +192,6 @@ module Quaack
           exprs = with.ctes.map(&:common_table_expr)
           names = exprs.map(&:ctename)
           exprs.each_with_index do |expr, i|
-            raise ArgumentError, "generator one doesn't take a data-modifying CTE" unless expr.ctequery.select_stmt
-
             check_relations(expr.ctequery, ctes + (with.recursive ? names : names.first(i)))
           end
           names

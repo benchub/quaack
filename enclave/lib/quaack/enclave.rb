@@ -19,6 +19,7 @@ require_relative "enclave/dedupe"
 require_relative "enclave/arena_runner"
 require_relative "enclave/result_comparator"
 require_relative "enclave/result_comparison"
+require_relative "enclave/supported_sql"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does

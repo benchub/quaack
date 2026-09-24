@@ -23,6 +23,8 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
   def generate(sql, stats, **limits) = described_class.candidates(PgQuery.parse(sql), stats, **limits)
 
+  def unsupported(detail) = raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
+
   def desc(name, nulls: :first) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction: :desc, nulls:)
 
   def asc(name, nulls: :last) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction: :asc, nulls:)
@@ -115,14 +117,29 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect { described_class.candidates("SELECT 1", stats) }.to raise_error(ArgumentError, /pg_query parse result/)
     end
 
+    # The statement checks generator one had until 20260923-33 are
+    # SupportedSql's now.
     it "refuses more or fewer than one statement" do
-      expect { generate("SELECT 1; SELECT 2", stats) }.to raise_error(ArgumentError, /exactly one statement/)
-      expect { generate("", stats) }.to raise_error(ArgumentError, /exactly one statement/)
+      expect { generate("SELECT 1; SELECT 2", stats) }
+        .to unsupported("ParseResult with 2 statements, not one")
+      expect { generate("", stats) }.to unsupported("ParseResult with 0 statements, not one")
     end
 
     it "refuses a statement that isn't a SELECT" do
       expect { generate("DELETE FROM public.orders WHERE status = 1", stats) }
-        .to raise_error(ArgumentError, /only a SELECT/)
+        .to unsupported("DeleteStmt")
+    end
+
+    # Each would give candidates without the check.
+    {
+      "SIMILAR TO" => ["SELECT 1 FROM public.orders WHERE status SIMILAR TO 'a'", "A_Expr AEXPR_SIMILAR"],
+      "TABLESAMPLE" => ["SELECT 1 FROM public.orders TABLESAMPLE system (1), public.customers c WHERE c.id = 1",
+                        "RangeTableSample"],
+      "ROW" => ["SELECT 1 FROM public.orders WHERE status = 1 AND ROW(status) IS NOT NULL", "RowExpr"]
+    }.each do |construct, (sql, detail)|
+      it "refuses #{construct}, which isn't on the supported list" do
+        expect { generate(sql, stats) }.to unsupported(detail)
+      end
     end
 
     it "refuses a set operation" do
@@ -163,15 +180,15 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "refuses a data-modifying CTE, even inside a subquery" do
       expect { generate("WITH d AS (DELETE FROM public.orders RETURNING *) SELECT 1 FROM d", stats) }
-        .to raise_error(ArgumentError, /data-modifying CTE/)
+        .to unsupported("DeleteStmt")
       sql = "SELECT 1 FROM public.orders WHERE status IN " \
             "(WITH u AS (UPDATE public.customers SET id = 1 RETURNING id) SELECT id FROM u)"
-      expect { generate(sql, stats) }.to raise_error(ArgumentError, /data-modifying CTE/)
+      expect { generate(sql, stats) }.to unsupported("UpdateStmt")
     end
 
     it "refuses SELECT ... INTO" do
       expect { generate("SELECT status INTO public.copy FROM public.orders", stats) }
-        .to raise_error(ArgumentError, /INTO/)
+        .to unsupported("IntoClause")
     end
 
     it "refuses an unqualified table that a CTE's name doesn't reach" do
@@ -955,11 +972,16 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
 
     it "never puts a literal from the query into an error" do
-      ["SELECT '#{sentinel}' FROM orders", "SELECT '#{sentinel}'; SELECT 1",
-       "DELETE FROM public.orders WHERE note = '#{sentinel}'",
-       "SELECT '#{sentinel}' UNION SELECT '#{sentinel}'", "SELECT '#{sentinel}' INTO public.x",
-       "WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1"].each do |sql|
-        expect { generate(sql, stats) }.to raise_error(ArgumentError) { |e| expect(e.message).not_to include(sentinel) }
+      refused = Quaack::Enclave::SupportedSql::Error
+      cases = [
+        ["SELECT '#{sentinel}' FROM orders", ArgumentError], ["SELECT '#{sentinel}'; SELECT 1", refused],
+        ["DELETE FROM public.orders WHERE note = '#{sentinel}'", refused],
+        ["SELECT '#{sentinel}' UNION SELECT '#{sentinel}'", ArgumentError],
+        ["SELECT '#{sentinel}' INTO public.x", refused],
+        ["WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1", refused]
+      ]
+      cases.each do |sql, error|
+        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(e.message).not_to include(sentinel) }
       end
     end
   end
