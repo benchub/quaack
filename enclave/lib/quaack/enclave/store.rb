@@ -59,10 +59,10 @@ module Quaack
       # Starts a new run: makes its directory under base, making base (and
       # any missing directory above it) mode 0700 first.
       def self.create(base: default_base)
-        in_base(base, "couldn't make the base directory #{base}") { PrivateFiles.make_directories(base) }
+        in_base(base, "couldn't make the store's base directory") { PrivateFiles.make_directories(base) }
         run_id = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}"
         path = File.join(base, run_id)
-        in_base(base, "couldn't make a run directory in #{base}") { PrivateFiles.make_directory(path) }
+        in_base(base, "couldn't make a run directory in the store's base") { PrivateFiles.make_directory(path) }
         new(run_id, path)
       end
 
@@ -77,20 +77,28 @@ module Quaack
         new(run_id, path)
       end
 
-      # Refuses a linked base (see LINKED_BASE), and yields, turning a
-      # SystemCallError from either into BadBase with failure as its
-      # message. The SystemCallError names a file, which can be below base,
-      # so it's left behind.
-      def self.in_base(base, failure)
-        raise BadBase, LINKED_BASE, cause: nil if PrivateFiles.linked?(base)
+      # Private helpers for the class and its instances alike, so teardown
+      # checks the base just as open does.
+      module BaseChecks
+        private
 
-        yield
-      rescue SystemCallError
-        raise BadBase, failure, cause: nil
+        # Refuses a linked base (see LINKED_BASE), and yields, turning a
+        # SystemCallError from either into BadBase with failure as its
+        # message. The SystemCallError names a file, which can be below
+        # base, so it's left behind.
+        def in_base(base, failure)
+          raise BadBase, LINKED_BASE, cause: nil if PrivateFiles.linked?(base)
+
+          yield
+        rescue SystemCallError
+          raise BadBase, failure, cause: nil
+        end
+
+        # in_base, for a lookup of the run's path.
+        def look_up(run_id, base, &) = in_base(base, "couldn't look up run #{run_id} in the store's base", &)
       end
-
-      # in_base, for a lookup of the run's path.
-      def self.look_up(run_id, base, &) = in_base(base, "couldn't look up run #{run_id} in the store's base", &)
+      extend BaseChecks
+      include BaseChecks
 
       # The run ID usually comes from argv, so it must be exactly in the
       # RUN_ID form before it goes into a path.
@@ -100,7 +108,7 @@ module Quaack
         raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
       end
 
-      private_class_method :in_base, :look_up, :run_path, :new
+      private_class_method :run_path, :new
 
       attr_reader :run_id, :path
 
@@ -147,7 +155,7 @@ module Quaack
       # symlink inside the run directory without following it. It raises
       # BadBase for a base open would refuse.
       def teardown
-        stat = self.class.send(:look_up, run_id, File.dirname(path)) { PrivateFiles.lstat(path) }
+        stat = look_up(run_id, File.dirname(path)) { PrivateFiles.lstat(path) }
         return unless stat
         raise Error, "run #{run_id}: its path isn't a directory, so it wasn't deleted" unless stat.directory?
 

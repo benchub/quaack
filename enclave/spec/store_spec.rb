@@ -49,30 +49,34 @@ RSpec.describe Quaack::Enclave::Store do
   end
 
   describe ".create" do
-    it "raises Store::Error, naming only the base, when the base is a file" do
-      file = File.join(@tmp, "file")
+    # Each base is named for the sentinel, so a message that named the base
+    # would show it.
+    it "raises Store::Error, naming no path, when the base is a file" do
+      file = File.join(@tmp, STORE_SENTINEL)
       File.write(file, STORE_SENTINEL)
 
-      expect_store_error(/\Acouldn't make the base directory #{file}\z/) { described_class.create(base: file) }
+      expect_store_error(/\Acouldn't make the store's base directory\z/) { described_class.create(base: file) }
       expect(File.read(file)).to eq(STORE_SENTINEL)
     end
 
-    it "raises Store::Error, naming only the base, when the base can't be made" do
+    it "raises Store::Error, naming no path, when the base can't be made" do
       locked = File.join(@tmp, "locked")
       Dir.mkdir(locked, 0o555)
-      deep = File.join(locked, "runs")
+      deep = File.join(locked, STORE_SENTINEL)
 
-      expect_store_error(/\Acouldn't make the base directory #{deep}\z/) { described_class.create(base: deep) }
+      expect_store_error(/\Acouldn't make the store's base directory\z/) { described_class.create(base: deep) }
     ensure
       File.chmod(0o700, locked)
     end
 
-    it "raises Store::Error, naming only the base, when the run's directory can't be made in it" do
-      Dir.mkdir(base, 0o500)
+    it "raises Store::Error, naming no path, when the run's directory can't be made in the base" do
+      shut = File.join(@tmp, STORE_SENTINEL).tap { Dir.mkdir(it, 0o500) }
 
-      expect_store_error(/\Acouldn't make a run directory in #{base}\z/) { described_class.create(base:) }
+      expect_store_error(/\Acouldn't make a run directory in the store's base\z/) do
+        described_class.create(base: shut)
+      end
     ensure
-      File.chmod(0o700, base)
+      File.chmod(0o700, shut)
     end
 
     it "raises BadBase when the base is a file, can't be made, or can't take a run's directory" do
@@ -453,6 +457,19 @@ RSpec.describe Quaack::Enclave::Store do
       end
       expect(File).to have_received(:lstat).with(fifo)
     end
+
+    # The same swap, to a symlink to a regular file outside the run: only
+    # the open's O_NOFOLLOW stops it, since the fstat would find a regular
+    # file.
+    it "won't follow an entry that turns out to be a symlink once it's opened" do
+      outside = File.join(@tmp, "outside.json").tap { File.write(it, "[\"#{STORE_SENTINEL}\"]") }
+      linked = File.join(store.path, "inputs.json").tap { File.symlink(outside, it) }
+      regular = File.lstat(outside)
+      allow(File).to(receive(:lstat).and_wrap_original { |lstat, path| path == linked ? regular : lstat.call(path) })
+
+      expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
+      expect(File).to have_received(:lstat).with(linked)
+    end
   end
 
   describe "#entry?" do
@@ -678,6 +695,19 @@ RSpec.describe Quaack::Enclave::Store do
           expect(contents(target)).to eq(before)
         end
 
+        # A trailing slash makes lstat follow the link, so the base must be
+        # normalized before the check.
+        it "refuses it the same way when its name ends in slashes" do
+          before = contents(target)
+
+          ["#{linked}/", "#{linked}//"].each do |slashed|
+            expect_bad_base { described_class.create(base: slashed) }
+            expect_bad_base { described_class.open(run_id, base: slashed) }
+            expect_bad_base { described_class.teardown(run_id, base: slashed) }
+          end
+          expect(contents(target)).to eq(before)
+        end
+
         it "won't say a run that isn't in it is already gone" do
           expect_bad_base { described_class.teardown("20260923T221500Z-00000009", base: linked) }
         end
@@ -844,6 +874,13 @@ RSpec.describe Quaack::Enclave::Store do
     it "keeps the run-path helper private" do
       expect(described_class.private_methods).to include(:run_path)
       expect { described_class.run_path(store.run_id, base) }.to raise_error(NoMethodError)
+    end
+
+    it "keeps the base helpers private, on the class and on a store" do
+      [described_class, store].each do |receiver|
+        expect(receiver.private_methods).to include(:in_base, :look_up)
+        expect { receiver.look_up(store.run_id, base) { nil } }.to raise_error(NoMethodError)
+      end
     end
   end
 end

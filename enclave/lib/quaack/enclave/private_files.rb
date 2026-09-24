@@ -59,6 +59,12 @@ module Quaack
       # nonblocking. It checks before the open, and again on what it
       # opened, in case the file was swapped in between. The String comes
       # back in the locale's encoding, which may not be UTF-8.
+      #
+      # The open and the fstat after it would refuse anything the lstat
+      # does, so no test can tell the lstat is there. It stays so that
+      # nothing but a regular file is ever opened: opening a device node
+      # can do something by itself. Pinning that would take a device node
+      # in the store, and only root can make one.
       def read(file)
         raise Errno::EINVAL, "not a regular file" unless File.lstat(file).file?
 
@@ -84,8 +90,13 @@ module Quaack
       end
 
       # Whether dir, or the directory it's in, is a symlink. It looks no
-      # further up.
-      def linked?(dir) = [File.dirname(dir), dir].any? { lstat(it)&.symlink? }
+      # further up. dir is normalized first, since lstat follows a symlink
+      # whose name ends in a slash. absolute_path, unlike expand_path,
+      # leaves a leading ~ alone.
+      def linked?(dir)
+        dir = File.absolute_path(dir)
+        [File.dirname(dir), dir].any? { lstat(it)&.symlink? }
+      end
 
       # The file's lstat, or nil if there's nothing there.
       def lstat(path)
