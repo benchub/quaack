@@ -137,6 +137,15 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
         .to eq(deparse('SELECT home FROM "a""b".widgets'))
     end
 
+    it "finds a schema whose name has a backslash, a comma, and braces" do
+      odd = 'x\\y, {z}'
+      widgets_in(odd, "b")
+
+      result = qualify("SELECT home FROM widgets", settings_for("#{conn.quote_ident(odd)}, b"))
+
+      expect(result.resolved["widgets"].schema).to eq(odd)
+    end
+
     it "matches a quoted, mixed-case relation name exactly" do
       conn.exec('CREATE SCHEMA "Sales"')
       conn.exec('CREATE TABLE "Sales"."Order Items" (id int)')
@@ -157,6 +166,42 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
         .to raise_error(described_class::Error, /search_path/)
       expect { qualify("SELECT * FROM orders", { "search_path" => "a,,public" }) }
         .to raise_error(described_class::Error, /search_path/)
+    end
+
+    it "ignores spaces around each entry" do
+      widgets_in("a", "b")
+
+      expect(qualify("SELECT home FROM widgets", { "search_path" => "  nosuch ,a , b  " }).sql)
+        .to eq(deparse("SELECT home FROM a.widgets"))
+      expect(qualify("SELECT home FROM widgets", { "search_path" => ' "nosuch" , b' }).sql)
+        .to eq(deparse("SELECT home FROM b.widgets"))
+    end
+
+    it "raises on two entries with no comma between them" do
+      expect { qualify("SELECT * FROM orders", { "search_path" => "a public" }) }
+        .to raise_error(described_class::Error, /search_path/)
+    end
+
+    # Postgres cuts every name to NAMEDATALEN - 1 bytes, the path's entries
+    # and CREATE SCHEMA's alike, without splitting a character. SET with an
+    # identifier cuts it before SETTINGS sees it, but SET with a string
+    # literal doesn't, so these paths are written by hand.
+    it "cuts each entry to 63 bytes, as Postgres does" do
+      ascii = "s" * 70
+      multibyte = "é" * 40
+      widgets_in(ascii)
+      stored = conn.exec("SELECT nspname FROM pg_namespace WHERE nspname LIKE 'sss%'").getvalue(0, 0)
+
+      expect(qualify("SELECT home FROM widgets", { "search_path" => ascii }).resolved["widgets"].schema).to eq(stored)
+      expect(stored.bytesize).to eq(63)
+
+      conn.exec("DROP SCHEMA #{conn.quote_ident(stored)} CASCADE")
+      widgets_in(multibyte)
+      clipped = "é" * 31
+      expect(qualify("SELECT home FROM widgets", { "search_path" => "\"#{multibyte}\"" }).resolved["widgets"].schema)
+        .to eq(clipped)
+      expect(conn.exec_params("SELECT count(*) FROM pg_namespace WHERE nspname = $1", [clipped]).getvalue(0, 0))
+        .to eq("1")
     end
   end
 
@@ -271,6 +316,57 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
 
       expect(qualify(sql, settings).sql)
         .to eq(deparse("WITH gone AS (DELETE FROM a.widgets RETURNING home) SELECT home FROM gone"))
+    end
+  end
+
+  describe "names that aren't looked up in the search path" do
+    before { widgets_in("a", "b") }
+
+    let(:settings) { settings_for("b, a") }
+
+    # The names after FOR UPDATE OF are FROM items, not relations, and
+    # Postgres rejects a qualified one.
+    it "leaves a locking clause's names alone, and Postgres takes the result" do
+      ["SELECT * FROM widgets w FOR UPDATE OF w",
+       "SELECT * FROM widgets FOR UPDATE OF widgets SKIP LOCKED"].each do |sql|
+        qualified = qualify(sql, settings).sql
+
+        expect(qualified).to eq(deparse(sql.sub("FROM widgets", "FROM b.widgets")))
+        expect(conn.exec(qualified).column_values(0)).to eq(["b"])
+      end
+    end
+
+    # These run under the test's own search_path, to show what Postgres
+    # does with the original, and then check the rewrite matches.
+    def under_path(path)
+      conn.exec("SET search_path = #{path}")
+      yield
+    ensure
+      conn.exec("RESET search_path")
+    end
+
+    it "qualifies a DELETE's target even when a CTE has its name" do
+      sql = "WITH widgets AS (SELECT 1) DELETE FROM widgets"
+      under_path("b, a") { conn.exec(sql) }
+      expect(conn.exec("SELECT count(*) FROM b.widgets").getvalue(0, 0)).to eq("0")
+
+      expect(qualify(sql, settings).sql).to eq(deparse("WITH widgets AS (SELECT 1) DELETE FROM b.widgets"))
+    end
+
+    it "qualifies an INSERT's target but not a CTE of the same name in its source" do
+      sql = "WITH widgets AS (SELECT 'z'::text) INSERT INTO widgets (home) SELECT * FROM widgets"
+
+      expect(qualify(sql, settings).sql)
+        .to eq(deparse("WITH widgets AS (SELECT 'z'::text) INSERT INTO b.widgets (home) SELECT * FROM widgets"))
+    end
+
+    it "qualifies UPDATE and MERGE targets even when a CTE has their name" do
+      update = "WITH widgets AS (SELECT 1) UPDATE widgets SET home = 'y'"
+      merge = "WITH widgets AS (SELECT 'q'::text AS home) MERGE INTO widgets t USING widgets s ON t.home = s.home " \
+              "WHEN NOT MATCHED THEN INSERT VALUES (s.home)"
+
+      expect(qualify(update, settings).sql).to eq(deparse(update.sub("UPDATE widgets", "UPDATE b.widgets")))
+      expect(qualify(merge, settings).sql).to eq(deparse(merge.sub("INTO widgets", "INTO b.widgets")))
     end
   end
 

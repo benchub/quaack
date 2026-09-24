@@ -22,7 +22,9 @@ module Quaack
     # name reaches it isn't a relation, so it's left alone: a CTE's name
     # reaches the rest of its statement, including subqueries, and later
     # CTEs in the same WITH. Under WITH RECURSIVE it reaches every CTE
-    # there, itself included.
+    # there, itself included. The target of INSERT, UPDATE, DELETE, or MERGE
+    # is always a table, so CTE names don't reach it. The names in FOR
+    # UPDATE OF name FROM items, not relations, so they're left alone too.
     #
     # Every other name is resolved the way Postgres resolved it for the
     # session that made the plan, using the search_path in Settings. EXPLAIN
@@ -82,23 +84,36 @@ module Quaack
         raise Error, "the query doesn't parse", cause: nil
       end
 
+      # The statements whose relation field is their target, which is always
+      # a table, never a CTE.
+      DML_STATEMENTS = [PgQuery::InsertStmt, PgQuery::UpdateStmt, PgQuery::DeleteStmt, PgQuery::MergeStmt].freeze
+
       # Every RangeVar with no schema that isn't a reference to a CTE in
-      # scope.
+      # scope. A locking clause's RangeVars (FOR UPDATE OF w) name FROM
+      # items, not relations, and Postgres rejects them qualified, so
+      # they're skipped.
       def collect(node, ctes, found)
         case node
-        when PgQuery::RangeVar then found << node if node.schemaname.empty? && !ctes.include?(node.relname)
+        when PgQuery::RangeVar then found << node if unqualified?(node, ctes)
+        when PgQuery::LockingClause then nil
         when Google::Protobuf::RepeatedField then node.each { |child| collect(child, ctes, found) }
         when Google::Protobuf::MessageExts then collect_message(node, ctes, found)
         end
       end
 
+      def unqualified?(range, ctes) = range.schemaname.empty? && !ctes.include?(range.relname)
+
       def collect_message(node, ctes, found)
         with = node.class.descriptor.lookup("with_clause")&.get(node)
         names = with ? collect_ctes(with, ctes, found) : []
         node.class.descriptor.each do |field|
-          collect(field.get(node), ctes + names, found) unless field.name == "with_clause"
+          next if field.name == "with_clause"
+
+          collect(field.get(node), dml_target?(node, field) ? [] : ctes + names, found)
         end
       end
+
+      def dml_target?(node, field) = field.name == "relation" && DML_STATEMENTS.include?(node.class)
 
       # Walks each CTE's body with the names that reach it, and returns the
       # names.
@@ -120,13 +135,14 @@ module Quaack
 
       # Postgres's SplitIdentifierString: a comma-separated list where each
       # entry is a double-quoted identifier, with "" for a quote, or an
-      # unquoted one folded to lower case.
+      # unquoted one folded to lower case. Each is cut to NAMEDATALEN - 1
+      # bytes, without splitting a character, as Postgres cuts it.
       def split_identifiers(raw)
         scanner = StringScanner.new(raw)
         names = []
         loop do
           scanner.skip(/\s*/)
-          names << next_identifier(scanner, raw)
+          names << truncate(next_identifier(scanner, raw))
           scanner.skip(/\s*/)
           break if scanner.eos?
           raise Error, "search_path #{raw} isn't a list of identifiers" unless scanner.skip(/,/)
@@ -148,8 +164,21 @@ module Quaack
         end
       end
 
+      MAX_IDENTIFIER_BYTES = 63
+
+      def truncate(name)
+        name.bytesize > MAX_IDENTIFIER_BYTES ? name.byteslice(0, MAX_IDENTIFIER_BYTES).scrub("") : name
+      end
+
+      # A text[] literal with every element quoted, so the enclave needn't
+      # load the pg gem to encode one.
+      def text_array(names)
+        elements = names.map { |name| %("#{name.gsub(/["\\]/) { |char| "\\#{char}" }}") }
+        "{#{elements.join(",")}}"
+      end
+
       def resolve(name, path, connection)
-        rows = connection.exec_params(RESOLVE_SQL, [PG::TextEncoder::Array.new.encode(path), name])
+        rows = connection.exec_params(RESOLVE_SQL, [text_array(path), name])
         return TableName.new(schema: rows.getvalue(0, 0), name:) if rows.ntuples == 1
 
         raise Error, "relation #{name} isn't schema qualified, and no schema in the search path " \
