@@ -476,15 +476,15 @@ Wire every step together in the driver, from intake through the report and teard
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64.
 - **README:** All.
 - **Status:** todo
+- **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
+  - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
+  - Require the `teardown` line followed by the done line.
+  - Treat `store: "already_gone"` as success.
+  - On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand. The enclave never sends the path.
+  - Turn `next_step: "destroy_run_server"` into a plain operator message. Nothing destroys the run server automatically.
+  - Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command for later.
 
-### 20260922-66. Run teardown.
-
-At the end of a run, delete the governed store directory and tell the operator to destroy the run server.
-
-- **Depends on:** 20260922-3.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Decided:** Teardown runs when a run ends, whether it succeeded or aborted. A `--keep` flag leaves the run server and store directory in place for debugging, and `quaacks teardown <run>` removes them later.
+### 20260922-66. Run teardown. Done, see BACKLOG-COMPLETE.md.
 
 ## Added later.
 
@@ -760,6 +760,7 @@ Minor findings from the second review of 20260923-32:
 - **Came from:** Second review of 20260923-32.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note (from the review of 20260922-66):** A symlinked store base (`~/.quaack/runs`) is followed by create, open, and teardown. Decide whether to refuse it.
 
 ### 20260923-35. Volatility check loose ends.
 
@@ -1087,6 +1088,19 @@ The three `Cast` survivors in `expression.rb` (the WITH line in `Cast#word?`, `a
 - **Depends on:** 20260924-11's branch.
 - **Came from:** Second review of 20260924-11.
 - **README:** 3g.
+- **Status:** todo
+
+### 20260924-17. Teardown loose ends.
+
+Findings from the reviews of 20260922-66:
+- **The rule is wrong when the recheck fails.** If the recheck `lstat` inside `Store.teardown`'s `rescue Error` raises a `SystemCallError`, such as EACCES after the base's mode changes mid-call, the raw Errno escapes as `internal_error`, where it should be `bad_store_base` or `teardown_failed`.
+- **The rule is wrong after a race.** If the run path is swapped for a non-directory between `open`'s check and the delete, the path is left alone, as it should be, but the rule is `teardown_failed`, not `bad_run`.
+- **A doc comment describes unbuilt behavior.** The top of `steps/teardown.rb` says the driver runs teardown at the end of every run. That's future work (20260922-65).
+- **A redundant check.** `return :already_gone unless PrivateFiles.lstat(path)` is an equivalent mutant, because the recheck already covers it. Keep it as a fast path with a comment, or drop it.
+
+- **Depends on:** 20260922-66.
+- **Came from:** The reviews of 20260922-66.
+- **README:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.

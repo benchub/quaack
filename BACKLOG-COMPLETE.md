@@ -31,6 +31,16 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
   - Don't build a provider abstraction yet, but don't make one hard to add later. The user may want other providers, or several models working in parallel, someday.
 - **Landed:** Merged into `main` after two reviews. The first review's findings were fixed in the builder's one fix round. The second review found no blockers, and its minor findings went to 20260924-14.
 
+### 20260922-66. Run teardown.
+
+At the end of a run, delete the governed store directory and tell the operator to destroy the run server.
+
+- **Depends on:** 20260922-3.
+- **README:** Where QUAACK runs.
+- **Status:** done
+- **Decided:** Teardown runs when a run ends, whether it succeeded or aborted. A `--keep` flag leaves the run server and store directory in place for debugging, and `quaacks teardown --run <run>` removes the store later. It only reminds the operator to destroy the run server.
+- **Landed:** The enclave side was merged into `main` after a review, a fix round, and a clean second review. It adds `quaacks teardown --run <id>`, `Store.teardown`, the `teardown` whitelist type (`run_id`, `store`, `next_step`), and the rules `bad_run`, `bad_store_base`, and `teardown_failed`. The driver side (automatic teardown when a run ends, and `--keep`) is wiring, so it moved to 20260922-65 as a note. The minor findings went to 20260924-17.
+
 ## Added later.
 
 ### 20260923-3. Rename the enclave gem to quaacks.
