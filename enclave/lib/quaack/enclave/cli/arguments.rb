@@ -8,12 +8,12 @@ module Quaack
       # Parses the arguments after the subcommand, for one step. Each is an
       # option the step declares: `--name value` for a :value option,
       # `--name` alone for a :flag, and `--run <run ID>` for a step that
-      # needs a run. Anything else, a repeated option, a missing value, or
+      # needs a run or names one. Anything else, a repeated option, a missing value, or
       # a missing option the step requires is refused as usage. Values come back as given, and run_id is nil
       # if there's no --run; the CLI and the steps check them.
       Arguments = Data.define(:options, :run_id) do
         def self.parse(step, args)
-          declared = step.run ? { **step.options, "run" => :value } : step.options
+          declared = step.run || step.run_id ? { **step.options, "run" => :value } : step.options
           args = args.dup
           options = {}
           until args.empty?
