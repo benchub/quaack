@@ -915,3 +915,12 @@ Verify the run server: same major version and extensions as production plus Hypo
   - Step 2 also records TimeZone, DateStyle, IntervalStyle, and default_statistics_target, because they aren't EXPLAIN-flagged.
   - A GUC with no recorded value must be EXPLAIN-flagged and at its boot_val.
 - **Landed:** Merged into `main` after two clean lean reviews. The entry point is `RunServerCheck.run(store:, connection:, own_connections:)`. It raises on the first failure, with a `run_server_*` rule and a message of the form `rule: name`. The leftovers went to 20260924-29.
+
+### 20260922-26. 4a racetrack setup.
+
+In the restored racetrack database, create `hypopg`, the `quaack` schema, and `clock_anchor()`.
+
+- **Depends on:** 20260922-25, 20260922-24.
+- **README:** 4a.
+- **Status:** done
+- **Landed:** Merged into `main` after two clean lean reviews. The entry point is `Racetrack.setup(store:, connection:)`. `quaack.clock_anchor()` is plpgsql, STABLE, PARALLEL SAFE, and COST 1, which matches `now()` and isn't inlined, so plans and runtime pruning match production's `now()` on PG18. A foreign object in the `quaack` schema is refused, checked through pg_depend.

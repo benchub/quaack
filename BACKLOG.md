@@ -93,13 +93,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ### 20260922-25. Run server checks. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-26. 4a racetrack setup.
-
-In the restored racetrack database, create `hypopg`, the `quaack` schema, and `clock_anchor()`.
-
-- **Depends on:** 20260922-25, 20260922-24.
-- **README:** 4a.
-- **Status:** todo
+### 20260922-26. 4a racetrack setup. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-27. 4b arena setup.
 
@@ -108,6 +102,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 - **Depends on:** 20260922-25, 20260922-18, 20260922-24.
 - **README:** 4b.
 - **Status:** todo
+- **Note (from 20260922-26):** Reuse `Racetrack.create_clock_anchor` and `anchor_literal` for arena, perhaps through a shared module.
 
 ## Step 5: Plan gate and index candidates.
 
@@ -118,6 +113,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 - **Depends on:** 20260922-26, 20260922-15, 20260922-21, 20260922-23.
 - **README:** Step 5.
 - **Status:** todo
+- **Note (from 20260922-26):** CanonicalPlan fingerprints include function names, so a racetrack qual like `created_at > quaack.clock_anchor()` won't match production's `created_at > now()`. Map the anchor back to the original functions (as `ClockAnchoring.restore` does), or normalize both sides, before comparing.
 
 ### 20260922-29. 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
@@ -335,6 +331,7 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Depends on:** 20260922-56, 20260922-57.
 - **README:** 14a and 14b.
 - **Status:** todo
+- **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
 - **Open questions:** Does "no worse" allow any increase at all, or is it within the 5% threshold?
 
 ### 20260922-59. 14c production result comparison.
