@@ -122,6 +122,15 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_most_rows")).to include(btree("orders", "status, created_at", " WHERE total_cents = 5100"))
     end
 
+    # pg_query deparses a type modifier that isn't a constant as nothing,
+    # so this conjunct's predicate can't be written faithfully. Postgres
+    # never prints one, so the captured Filter is edited by hand.
+    it "skips a partial index whose predicate pg_query can't deparse faithfully, and keeps the rest" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND ((status)::mytype(lower('bob')) = 'failed'::text))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
+    end
+
     it "makes no partial index on a column with no pg_stats row" do
       no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
       stats = enclave::Statistics.new(tables: [no_status, customers_stats])
