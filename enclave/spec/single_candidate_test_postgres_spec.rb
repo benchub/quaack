@@ -2,6 +2,7 @@
 
 require "delegate"
 require "json"
+require "pp"
 require "quaack/enclave/single_candidate_test"
 
 # 5a-4 against real HypoPG on the test harness. The table's s column is
@@ -553,6 +554,78 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
       .to raise_error(described_class::Error, "in_transaction")
     expect(conn.transaction_status).not_to eq(0)
     conn.exec("ROLLBACK")
+  end
+
+  def session(query, literal_sets, &) = described_class.session(conn, query:, literal_sets:, &)
+
+  it "measures with no hypothetical index when a session measures none after one" do
+    plans = session("SELECT * FROM t WHERE a = $1", { slow: ["5"] }) do |s|
+      s.measure([candidate(key: ["a"])])
+      s.measure([]).plans
+    end
+
+    expect(index_names(plans[:slow].raw_plan)).to eq([])
+    expect(plans[:slow].used).to eq([])
+  end
+
+  # The wrapper swaps the second hypopg_reset in the transaction, the one
+  # the baseline's measurement runs after start's, for SQL whose error
+  # message quotes the sentinel.
+  it "turns a failure resetting HypoPG before a measurement into an error that quotes nothing" do
+    reset_fails = Class.new(SimpleDelegator) do
+      def exec(sql, *)
+        if sql.include?("hypopg_reset") && !transaction_status.zero? && (@resets = (@resets || 0) + 1) == 2
+          return super("SELECT 'SENTINEL-5a4-7f3c'::int")
+        end
+
+        super
+      end
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: reset_fails.new(conn))
+
+    expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: "22P02", cause: nil)
+    expect(error.full_message).not_to include("SENTINEL")
+    expect(leftovers).to eq(clean)
+  end
+
+  # The wrapper records every call that could send SQL once the block has
+  # ended.
+  it "refuses to measure after the session's block has ended, without touching the database" do
+    recording = Class.new(SimpleDelegator) do
+      attr_accessor :calls
+
+      %i[exec exec_params prepare].each do |name|
+        define_method(name) do |*args|
+          calls&.push(name)
+          super(*args)
+        end
+      end
+    end.new(conn)
+    escaped = described_class.session(recording, query: "SELECT * FROM t WHERE a = $1",
+                                                 literal_sets: { slow: ["5"] }) { |s| s }
+    recording.calls = []
+    error = nil
+    begin
+      escaped.measure([candidate(key: ["a"])])
+    rescue described_class::Error => e
+      error = e
+    end
+
+    expect(error).to have_attributes(rule: :session_closed, sqlstate: nil, cause: nil)
+    expect(recording.calls).to eq([])
+    expect(leftovers).to eq(clean)
+  end
+
+  it "keeps the raw plan's literals out of a Measurement's inspect" do
+    measurement = session("SELECT * FROM t WHERE flag = $1", { slow: [sentinel] }) do |s|
+      s.measure([candidate(key: ["flag"])])
+    end
+    measured = measurement.plans[:slow]
+    shown = [measurement, measured].flat_map { |v| [v.inspect, v.to_s, v.pretty_inspect] }
+
+    expect(JSON.generate(measured.raw_plan)).to include(sentinel)
+    expect(measured.used).to eq([true])
+    expect(shown).to all(satisfy { |text| !text.include?(sentinel) })
   end
 
   it "freezes its results" do

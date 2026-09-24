@@ -251,13 +251,7 @@ If any LLM candidate went unused or lost to a simpler mechanical candidate, send
 - **Status:** todo
 - **Open questions:** How do we decide "helped less than a simpler mechanical candidate"? Simpler by column count, size, or both?
 
-### 20260922-35. 5a-7 combination and ranking.
-
-Combine candidates greedily up to three indexes. Rank by worst-case cost reduction across literals, and break ties by size. Keep the top three plus the best combination if it wins. Each kept entry carries DDL, size, costs per literal, canonical plan, and partial-index tag.
-
-- **Depends on:** 20260922-29.
-- **README:** 5a-7.
-- **Status:** todo
+### 20260922-35. 5a-7 combination and ranking. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-36. Step 5 orchestration.
 
@@ -1008,6 +1002,18 @@ Findings from both reviews of 20260924-5:
 - **Depends on:** 20260924-5.
 - **Came from:** Both reviews of 20260924-5.
 - **README:** 9d.
+- **Status:** todo
+
+### 20260924-10. 5a-7 loose ends.
+
+Findings from the reviews of 20260922-35:
+- **Duplicate candidates in `results`** can make `top` list the same index twice. 5a-3 dedupes within a search, so this can't happen in 5a-7's own flow. Step 8's caller should dedupe first.
+- **`rank` checks the literal-set names against the baseline, but not the values.** It's a documented precondition, but a caller who passes different values under the same names would compare against the wrong baseline.
+- **The greedy search never drops an index once added.** A smarter search could find `[a, c]` where the greedy keeps `[b, a]`. It follows the README's greedy rule, so change it only if someone wants that.
+
+- **Depends on:** 20260922-35.
+- **Came from:** The reviews of 20260922-35.
+- **README:** 5a-7.
 - **Status:** todo
 
 ## After version 1.
