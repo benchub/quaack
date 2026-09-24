@@ -25,7 +25,9 @@ Build the per-run store directory on the jump server: its layout, a run ID, and 
 
 - **Depends on:** 20260922-1.
 - **README:** Where QUAACK runs (the storage table), and the note about destroying state after each run.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-3` through a build, a review, a fix round, and a second review, but not landed. The second review found `SystemStackError` on Hash nesting inside `MAX_DEPTH` on aarch64 Linux, and tests that miss a walk that skips sibling values. 20260923-32 finishes it on top of that branch.
+- **Defaults the main session chose (the user was away):** the base is `~/.quaack/runs/`, run IDs look like `20260923T221500Z-<8 hex>`, entry names match `/\A[a-z][a-z0-9_]*\z/`, writes are atomic, and opening a run checks that it's 0700 and owned by the current user.
 - **Decided:**
   - Each stored result is a JSON file in the run's directory.
   - The run directory is mode 0700 and its files are 0600, in the operator's home directory. Encryption at rest comes from the jump server's disk encryption. There's no encryption in the app.
@@ -365,15 +367,7 @@ For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse an
 
 ## Step 9: Predicate-aware fixtures.
 
-### 20260922-43. 9 predicate atom extraction.
-
-Pull every predicate atom out of the parse: equality, range, `LIKE`, `IN`, `IS NULL`, and every join condition. Give each a redacted shape for reporting.
-
-- **Depends on:** 20260922-14, 20260922-23.
-- **README:** Step 9.
-- **Status:** in progress
-- **Decided:** Extract atoms everywhere, including under `OR`, `NOT`, `CASE`, and in subqueries. The 9c vacuity guard catches any that fixtures can't exercise.
-- **Note:** Built on branch `task/20260922-43`, with a build, a review, a fix round, and a second review, but not landed. The second review found that `extract` raises on a recursive CTE with `CYCLE` inside an atom, and that the explicit `normalize(x, 'lit')` redaction is untested. 20260923-29 finishes it on top of that branch, and 20260923-30 holds the rest.
+### 20260922-43. 9 predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-44. 9 value pools.
 
@@ -768,7 +762,7 @@ Minor findings from the second review of 20260923-7:
 Minor findings from the second review of 20260922-7:
 - **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
 - **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
-- **Deep nesting and cycles raise `SystemStackError`.** A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
+- **Deep nesting and cycles raise `SystemStackError`.** (20260923-32 fixes this through the shared `PlainData.check`, once it lands.) A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
 - **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
 
 - **Depends on:** 20260922-7.
@@ -810,23 +804,7 @@ Minor findings from the second review of 20260922-15:
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260923-29. Finish predicate atom extraction.
-
-Split out of 20260922-43, whose branch `task/20260922-43` holds the work so far. Build on that branch, then land both together. Fix what the second review of 20260922-43 found:
-- **A recursive CTE with `CYCLE` inside an atom makes `extract` raise** `PgQuery::ParseError: deparse: unpermitted node type in AexprConst`. The deparser needs `CTECycleClause.cycle_mark_value` and `cycle_mark_default` to be `A_Const`. Keep them, or swap them for string placeholders, the way JSON paths are handled. Repro: `SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM t) CYCLE n SET c USING p SELECT 1 FROM t WHERE t.n = o.id)`.
-- **The explicit `normalize` call isn't tested.** Removing `node.funcformat == :COERCE_SQL_SYNTAX &&` from `Literals.normal_form?` stays green, and then `pg_catalog.normalize(o.note, 'SENTINEL')` keeps its literal. Add a sentinel test.
-- **XMLROOT shapes are wrong.** The `version no value` and `standalone` arguments are keywords that the deparser reads as `A_Const`. Keep them, the way the normal form is kept.
-- **Surviving mutants for nested atoms:**
-  - `null_test` in `boolean?`
-  - `SUBQUERY_TESTS` shrunk (nested `IN (SELECT ...)` and `ALL`)
-  - `EXPRESSIONS.key?` in `boolean_expression?` (`NULLIF`)
-  - the ELSE and the argument of a simple CASE
-  - the unreachable `path_placeholder` branch (drop it)
-
-- **Depends on:** 20260922-43's branch.
-- **Came from:** Second review of 20260922-43.
-- **README:** Step 9.
-- **Status:** todo
+### 20260923-29. Finish predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-30. Predicate atom loose ends.
 
@@ -834,7 +812,10 @@ Findings from both reviews of 20260922-43 that don't block it:
 - **pg_query deparse bugs make `with_true` wrong for a whole query.**
   - `IS NOT DISTINCT FROM (a AND b)` loses its parentheses, which changes the meaning.
   - `XMLTABLE ... PASSING CAST(x AS xml)` deparses to invalid SQL.
-  - Add a round-trip guard: after deparsing, reparse and compare the tree with the expected one, and raise if they differ.
+  - A typed CYCLE mark deparses as `TO '2020-01-01'::date`, which Postgres rejects. That makes `with_true` invalid for every atom in such a query, and the shape doesn't parse either.
+  - `xmlexists('//a' PASSING BY REF (x::xml))` loses its parentheses.
+  - `(ARRAY(SELECT 1))[1]` deparses as `ARRAY(SELECT 1)[1]`, which is a syntax error.
+  - Add a round-trip guard: after deparsing, reparse and compare the tree with the expected one, and raise if they differ. Use every case above as a test.
 - **NATURAL JOIN gives no atoms.** When both sides are plain tables, compute the common columns, or at least emit a marker that can't be replaced, so the report counts it.
 - **USING atoms can't be replaced.** 9c (20260922-48) has to mark them untested, not skip them silently.
 - **Column resolution is conservative.**
@@ -846,7 +827,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 - **Wire in qualification.** `extract` assumes a qualified query. Its caller should run `RelationQualifier` (20260922-14) first.
 
 - **Depends on:** 20260923-29.
-- **Came from:** Both reviews of 20260922-43, and its builder's notes.
+- **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
 - **README:** Step 9 and 9c.
 - **Status:** todo
 
@@ -863,6 +844,38 @@ Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build
 - **Came from:** Second review of 20260922-32.
 - **README:** 5a-3.
 - **Status:** todo
+
+### 20260923-32. Finish the governed store.
+
+Split out of 20260922-3. The work so far is on branch `task/20260922-3`. Build on that branch, then land both together. It also changes egress, which now shares `PlainData.check`. Fix what the second review of 20260922-3 found:
+- **Hash nesting within `MAX_DEPTH` raises `SystemStackError` on aarch64 Linux.** json 2.9.1 on `ruby:3.4-slim` writes nested Hashes only about 9,700 deep on the main thread, and about 1,200 in a thread. The comment on `MAX_DEPTH = 10_000` promises more than that. The deepest real pg_query tree is about 1,500 levels. Lower `MAX_DEPTH` with room to spare. Add Hash and Array round-trip tests at `MAX_DEPTH`. Also turn `SystemStackError` from JSON into `Store::Error` and `Egress::Error`.
+- **Tests miss a walk that skips sibling values.** Each of these changes stays green:
+  - `hash.values` changed to `first(1)` or `last(1)`
+  - an Array walk using `item.last(1)`
+  - egress checking only the last field
+
+  Put bad values first, in the middle, and in a field other than `rule`.
+- **Egress now honors a singleton `to_json` on a plain Array or Hash,** because it generates the original object, not a copy. That's evasion, not an honest mistake, so just say so in a comment.
+
+- **Depends on:** 20260922-3's branch.
+- **Came from:** Second review of 20260922-3.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-33. Fail closed on unsupported SQL constructs.
+
+The user decided that enclave code that walks SQL supports an explicit list of constructs and refuses everything else. That covers predicate atoms, relation qualification, the volatility check, and the inbound checks (20260922-10, 11, and 12). The reviews of 20260922-43, 20260922-14, and 20260922-20 kept finding bugs in rare constructs, such as JSON_TABLE, XMLTABLE, typed CYCLE marks, TABLESAMPLE, and ordered-set aggregates. Specs like "no literal survives" covered the whole grammar, so each review found more.
+- Define one shared allowlist of pg_query node types, and of the fields within them where it matters, in the enclave gem. Start with the common constructs: SELECT, joins, CTEs (not CYCLE or SEARCH), subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL.
+- Before any walker runs, check the parse against the allowlist. Abort on anything else with the rule `unsupported_construct`, naming the node type. That's shape, and it holds no literals.
+- **Constructs outside the list are refused in version 1.** Supporting each one becomes its own task under "After version 1", which the main session adds when this task defines the list. Group them by family, such as JSON_TABLE and the JSON functions, XMLTABLE and the XML functions, CTE CYCLE and SEARCH, and TABLESAMPLE. The user decided this. Special-case code already written for refused constructs, such as the JSON_TABLE path swap, CYCLE marks, and XMLROOT keywords, can stay if its tests still reach it. The after-v1 task for that construct decides whether to enable it or remove it.
+- Update README "What goes into the enclave" and step 1 to say that queries using constructs outside the list are refused.
+- Review this against the supported list, not the whole grammar. Correctness findings still block landing, since the user kept review severity strict.
+
+- **Depends on:** 20260922-14, 20260922-43, and 20260922-20.
+- **Came from:** The user's decision after the reviews of 20260922-43, 20260923-29, and 20260922-20.
+- **README:** What goes into the enclave, step 1, and step 9.
+- **Status:** todo
+- **Decided (by the user):** Use the default list: SELECT, joins, CTEs without CYCLE or SEARCH, subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL. There are no sample queries to check it against.
 
 ## After version 1.
 
