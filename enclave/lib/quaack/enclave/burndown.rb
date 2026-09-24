@@ -17,6 +17,11 @@ module Quaack
     #   #      "totals" => { "hypothetical_explains" => 12 } }
     #   Egress.serialize(Burndown.message(store))  # the burndown type on the whitelist
     #
+    # Stages that have a result object record it through an adapter:
+    #
+    #   Burndown.record_dedupe(store, dedupe, search: :original)                  # 5a-3
+    #   Burndown.record_single_candidate_test(store, report, search: :original)   # 5a-4
+    #
     # A stage is one of Protocol::Burndown::STAGES. A search is :original
     # for the original query, or a Symbol naming a rewrite, since 5a-3
     # through 5a-7 run again for each rewrite in steps 8 and 11. A record's
@@ -70,21 +75,37 @@ module Quaack
       module_function
 
       # Adds one run of a stage to the burndown, for one search.
-      def record(store, stage, search, **counts)
-        stage = Input.stage(stage)
-        search = Input.name(search, "search")
-        new_record = Input.record(stage, counts)
-        update(store) do |burndown|
-          searches = burndown["stages"][stage] ||= {}
-          searches[search] = searches.key?(search) ? Entry.add_records(searches[search], new_record) : new_record
-        end
-      end
+      def record(store, stage, search, **counts) = add(store, [[stage, search, counts]], {})
 
       # Adds to the work totals, such as hypothetical_explains,
       # indexes_built, measurement_runs, and fixture_loads.
-      def add_totals(store, **counts)
-        counts = Input.breakdown(counts, "totals")
-        update(store) { |burndown| burndown["totals"] = Entry.add_breakdowns(burndown["totals"], counts) }
+      def add_totals(store, **counts) = add(store, [], counts)
+
+      # Records one Dedupe search as a 5a-3 run, and returns the counts it
+      # recorded. The search's own counts grow with each filter call, and
+      # one search is filtered again for the LLM's candidates in 5a-5 and
+      # 5a-6. So to record only what came since an earlier record, as a run
+      # of another stage, pass since: the counts that record returned.
+      def record_dedupe(store, dedupe, search:, stage: "5a-3", since: nil)
+        counts = { in: dedupe.considered, dropped: dedupe.drops.map(&:reason).tally,
+                   set_aside: dedupe.set_aside.size, out: dedupe.proposals.size }
+        add(store, [[stage, search, since ? difference(counts, since) : counts]], {})
+        counts
+      end
+
+      # Records a SingleCandidateTest report as a 5a-4 run: in is every
+      # candidate tested, out is the ones the planner used for some literal
+      # set, and the rest are dropped as never_used or, if HypoPG wouldn't
+      # create them, hypopg_refused. Each plan with a hypothetical index adds
+      # one to the hypothetical_explains total. The baseline's plans have
+      # none, so they don't count.
+      def record_single_candidate_test(store, report, search:, stage: "5a-4")
+        results = report.results
+        used = results.count(&:used?)
+        refused = results.count(&:refusal)
+        dropped = { never_used: results.size - used - refused, hypopg_refused: refused }.reject { |_, n| n.zero? }
+        add(store, [[stage, search, { in: results.size, dropped:, out: used }]],
+            { hypothetical_explains: results.sum { it.plans.size } })
       end
 
       # The burndown so far, with String keys, or an empty one.
@@ -103,19 +124,40 @@ module Quaack
         { type: :burndown, stages: burndown["stages"], totals: burndown["totals"] }
       end
 
-      def update(store)
+      # Checks every record and total, then adds them all to the entry in
+      # one write. records are [stage, search, counts] triples.
+      def add(store, records, totals)
+        records = records.map { |stage, search, counts| Input.stage_record(stage, search, counts) }
+        totals = Input.breakdown(totals, "totals")
         burndown = read(store)
-        yield burndown
+        records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record) }
+        burndown["totals"] = Entry.add_breakdowns(burndown["totals"], totals)
         store.write(ENTRY, burndown)
         nil
       end
 
-      private_class_method :update
+      # counts less since, leaving out any reason whose count didn't change.
+      def difference(counts, since)
+        counts.to_h do |field, count|
+          next [field, count - since.fetch(field)] unless count.is_a?(Hash)
+
+          earlier = since.fetch(field)
+          [field, count.to_h { |reason, n| [reason, n - earlier.fetch(reason, 0)] }.reject { |_, n| n.zero? }]
+        end
+      end
+
+      private_class_method :add, :difference
 
       # Checks what callers pass in, which has Symbol names, and gives it
       # back with String ones, as the entry keeps it.
       module Input
         module_function
+
+        # [stage, search, record] with String names, as the entry keeps them.
+        def stage_record(stage, search, counts)
+          stage = stage(stage)
+          [stage, name(search, "search"), record(stage, counts)]
+        end
 
         def stage(stage)
           return stage if stage.instance_of?(String) && Protocol::Burndown::STAGES.include?(stage)
@@ -176,6 +218,11 @@ module Quaack
         def adds_up?(record)
           came = record["in"] + record["added"].values.sum
           came - record["dropped"].values.sum - record["set_aside"] == record["out"]
+        end
+
+        def add_record(burndown, stage, search, record)
+          searches = burndown["stages"][stage] ||= {}
+          searches[search] = searches.key?(search) ? add_records(searches[search], record) : record
         end
 
         def add_records(old, new)

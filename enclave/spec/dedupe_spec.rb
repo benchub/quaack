@@ -60,6 +60,15 @@ RSpec.describe Quaack::Enclave::Dedupe do
       }
     end
 
+    it "counts every candidate it's given, across calls, whatever happens to it" do
+      s = search
+      s.filter([candidate(["customer_id"]), candidate(["customer_id"]), candidate(["note"], access_method: :gin)])
+      s.filter([candidate(["status"], predicate: "note = 'x'"), candidate(["status"])])
+
+      expect(s.considered).to eq(5)
+      expect(s.drops.size + s.set_aside.size + s.proposals.size).to eq(5)
+    end
+
     it "raises KeyError for a candidate on a table with no statistics" do
       other = Quaack::Enclave::TableName.new(schema: "public", name: "nowhere")
 

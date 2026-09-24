@@ -3,6 +3,7 @@
 require "json"
 require "tmpdir"
 require "quaack/enclave/burndown"
+require "quaack/enclave/dedupe"
 require "quaack/enclave/egress"
 
 # Stands in for a real production value. It must never get into the
@@ -253,6 +254,63 @@ RSpec.describe Quaack::Enclave::Burndown do
       plant("stages" => { "5a-3" => { "original" => good_record } }, "totals" => { "fixture_loads" => 2 })
 
       expect(described_class.read(store)["totals"]).to eq("fixture_loads" => 2)
+    end
+  end
+
+  describe ".record_dedupe" do
+    let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
+    let(:dedupe) do
+      table = Quaack::Enclave::TableStatistics.new(
+        name: orders, reltuples: 1000, columns: {}, column_names: %w[id customer_id status note],
+        indexes: { "orders_customer_id_idx" => candidate(["customer_id"], sources: [:existing]) }
+      )
+      Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]),
+                                  low_cardinality: [[orders, "status"]])
+    end
+
+    def candidate(key, sources: [:parse], **) = Quaack::Enclave::IndexCandidate.new(table: orders, key:, sources:, **)
+
+    # Seven candidates: one covered, one duplicate, one partial on a column
+    # that isn't low-cardinality, one GIN set aside, and three survivors.
+    def mechanical
+      dedupe.filter([candidate(["customer_id"]), candidate(["status"]), candidate(["status"], sources: [:plan]),
+                     candidate(["note"], predicate: "note = '#{BURNDOWN_SENTINEL}'"),
+                     candidate(["note"], access_method: :gin), candidate(["id"]), candidate(%w[status id])])
+    end
+
+    it "records a search's drops by reason, what it set aside, and what went on to 5a-4" do
+      mechanical
+      described_class.record_dedupe(store, dedupe, search: :original)
+
+      expect(described_class.read(store).dig("stages", "5a-3", "original")).to eq(
+        "in" => 7, "added" => {},
+        "dropped" => { "covered_by_existing" => 1, "duplicate" => 1, "partial_not_low_cardinality" => 1 },
+        "set_aside" => 1, "out" => 3, "extra" => {}
+      )
+      expect(File.read(stored_file)).not_to include(BURNDOWN_SENTINEL)
+    end
+
+    it "takes in from what the search was given, so a search that lost a candidate doesn't add up" do
+      mechanical
+      lossy = Struct.new(:considered, :drops, :set_aside, :proposals)
+                    .new(dedupe.considered, dedupe.drops, dedupe.set_aside, dedupe.proposals.drop(1))
+
+      expect_refused(/5a-3/) { described_class.record_dedupe(store, lossy, search: :original) }
+      expect(store.entry?("burndown")).to be(false)
+    end
+
+    it "records only what later filter calls added, given the counts an earlier record returned" do
+      mechanical
+      earlier = described_class.record_dedupe(store, dedupe, search: :rewrite1)
+      dedupe.filter([candidate(["id"], sources: [:llm]), candidate(%w[id note]),
+                     candidate(["note"], access_method: :gist)])
+      described_class.record_dedupe(store, dedupe, stage: "5a-5", search: :rewrite1, since: earlier)
+
+      stages = described_class.read(store)["stages"]
+      expect(stages.dig("5a-3", "rewrite1", "in")).to eq(7)
+      expect(stages.dig("5a-5", "rewrite1")).to eq(
+        "in" => 3, "added" => {}, "dropped" => { "duplicate" => 1 }, "set_aside" => 1, "out" => 1, "extra" => {}
+      )
     end
   end
 
