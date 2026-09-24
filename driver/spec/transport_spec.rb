@@ -35,6 +35,145 @@ RSpec.describe Quaack::Driver::Transport do
     end
   end
 
+  describe "arguments" do
+    # A step that declares some options, and returns the argv it got.
+    let(:echo) do
+      probe("[{ type: :version, version: JSON.generate(ARGV) }]",
+            options: { "query" => :value, "captured-at" => :value, "flag" => :flag })
+    end
+
+    def argv_of(result) = JSON.parse(result.messages.first.fetch("version"))
+
+    it "passes each arg as --name value, or --name alone for true, in order" do
+      result = echo.call("probe", args: { query: "SELECT 1 -- x", "captured-at": "--run", "flag" => true })
+
+      expect(argv_of(result)).to eq(["probe", "--query", "SELECT 1 -- x", "--captured-at", "--run", "--flag"])
+    end
+
+    it "refuses a subcommand or an option name the CLI can't take, before running anything" do
+      marker = File.join(dir, "ran")
+      never = local.new(command: EnclaveCommands.raw("File.write(#{marker.inspect}, '')"))
+      ["", "Version", "-x", "--version", "a b", "../x", "x=y", nil].each do |subcommand|
+        expect { never.call(subcommand) }.to raise_error(ArgumentError), "for #{subcommand.inspect}"
+      end
+      ["", "Query", "-x", "--x", "a b", "x=y", "a_b", "1x", 1, nil].each do |name|
+        expect { never.call("probe", args: { name => "v" }) }.to raise_error(ArgumentError), "for #{name.inspect}"
+      end
+      expect(File.exist?(marker)).to be(false)
+    end
+
+    it "refuses a value that isn't a String or true, or holds a NUL" do
+      [nil, false, 1, :x, ["a"], "a\0b"].each do |value|
+        expect { echo.call("probe", args: { query: value }) }.to raise_error(ArgumentError), "for #{value.inspect}"
+      end
+    end
+  end
+
+  describe "input on stdin" do
+    it "sends input as one JSON document, which the step gets back exactly" do
+      input = { "query" => %(SELECT 'é', "x" /* y */\n), "n" => [1, 2.5, nil, true, false], "deep" => { "a" => {} },
+                "text" => "\\u0041   \t" }
+      step = probe("[{ type: :version, version: JSON.generate(inputs[:input]) }]", input: true)
+
+      expect(JSON.parse(step.call("probe", input:).messages.first["version"])).to eq(input)
+    end
+
+    it "writes it with JSON.generate, so Symbol keys arrive as Strings" do
+      step = probe("[{ type: :version, version: JSON.generate(inputs[:input]) }]", input: true)
+
+      expect(JSON.parse(step.call("probe", input: { a: { b: :c } }).messages.first["version"]))
+        .to eq({ "a" => { "b" => "c" } })
+    end
+
+    it "sends nothing on stdin when there's no input" do
+      step = probe("[{ type: :version, version: $stdin.read }]")
+
+      expect(step.call("probe").messages).to eq([{ "type" => "version", "version" => "" }])
+    end
+
+    it "refuses input that isn't a Hash, or that JSON can't write" do
+      step = probe("[]", input: true)
+      [[], "x", 1, { "a" => Float::NAN }].each do |input|
+        expect { step.call("probe", input:) }.to raise_error(ArgumentError), "for #{input.inspect}"
+      end
+    end
+
+    it "doesn't hang when the step never reads a large input" do
+      result = local.new(command: EnclaveCommands.quaacks).call("version", input: { "a" => "x" * (8 * 1024 * 1024) })
+
+      expect(result.messages.map { it["type"] }).to eq(["version"])
+    end
+  end
+
+  describe "limits" do
+    def elapsed
+      start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      yield
+      Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
+    end
+
+    # Whether a process with pid is still running.
+    def alive?(pid)
+      Process.kill(0, pid)
+      true
+    rescue Errno::ESRCH
+      false
+    end
+
+    it "kills a run that takes longer than its timeout, and says so" do
+      pid_file = File.join(dir, "pid")
+      step = local.new(command: EnclaveCommands.probe(dir, "File.write(#{pid_file.inspect}, Process.pid.to_s); sleep 30"),
+                       timeout: 1)
+      error = nil
+
+      expect(elapsed { error = failure(step) }).to be < 10
+      expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
+      expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
+      expect(alive?(Integer(File.read(pid_file)))).to be(false)
+    end
+
+    it "kills a run that ignores SIGTERM with SIGKILL" do
+      step = local.new(command: EnclaveCommands.raw('trap("TERM") {}; sleep 30'), timeout: 0.5)
+      error = nil
+
+      expect(elapsed { error = failure(step) }).to be < 10
+      expect([error.rule, error.signal]).to eq(%w[timeout KILL])
+    end
+
+    it "times out a run that closes its stdout and keeps going" do
+      step = local.new(command: EnclaveCommands.raw("STDOUT.close; sleep 30"), timeout: 0.5)
+      error = nil
+
+      expect(elapsed { error = failure(step) }).to be < 10
+      expect(error.rule).to eq("timeout")
+    end
+
+    it "kills a run that prints more than max_output_bytes, and says so" do
+      step = local.new(command: EnclaveCommands.raw('print "x" * 5000; $stdout.flush; sleep 30'), max_output_bytes: 1000)
+      error = nil
+
+      expect(elapsed { error = failure(step) }).to be < 10
+      expect([error.rule, error.signal]).to eq(%w[output_too_large TERM])
+    end
+
+    it "reads a run that prints exactly max_output_bytes" do
+      line = %({"type":"version","version":"1"}\n{"type":"done"}\n)
+      step = local.new(command: EnclaveCommands.raw("print #{line.inspect}"), max_output_bytes: line.bytesize)
+
+      expect(step.call("probe").messages).to eq([{ "type" => "version", "version" => "1" }])
+    end
+
+    it "has defaults generous enough for any step, and refuses a timeout or cap that isn't positive" do
+      expect(Quaack::Driver::Transport::Base::DEFAULT_TIMEOUT).to eq(3600)
+      expect(Quaack::Driver::Transport::Base::MAX_OUTPUT_BYTES).to eq(64 * 1024 * 1024)
+      [0, -1, nil, "1"].each do |bad|
+        expect { local.new(command: ["true"], timeout: bad) }.to raise_error(ArgumentError), "timeout #{bad.inspect}"
+        expect { local.new(command: ["true"], max_output_bytes: bad) }
+          .to raise_error(ArgumentError), "max_output_bytes #{bad.inspect}"
+      end
+    end
+  end
+
   describe "a run that fails" do
     # A step error with its own rule and SQLSTATE, and a message holding a
     # sentinel, which must never reach the driver.
