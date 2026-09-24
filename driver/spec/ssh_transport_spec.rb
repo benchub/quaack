@@ -82,6 +82,27 @@ RSpec.describe Quaack::Driver::Transport::Ssh do
     end
   end
 
+  it "refuses an ssh that isn't a command name or path" do
+    [nil, "", 1, ["ssh"], "ss\0h"].each do |bad|
+      expect { described_class.new(host: "jump", ssh: bad) }.to raise_error(ArgumentError), "for #{bad.inspect}"
+    end
+  end
+
+  it "keeps its own copy of the options" do
+    echo_quaacks
+    options = ["-o", "ConnectTimeout=5"]
+    transport = described_class.new(host: "jump-1.example", ssh:, options:)
+    options.replace(["-o", "Changed=1"])
+    transport.call("probe", input: {})
+
+    expect(EnclaveCommands.ssh_argv(dir)).to eq(["-o", "ConnectTimeout=5", "--", "jump-1.example", "quaacks probe"])
+  end
+
+  it "fails as not_started when there's no ssh to run" do
+    expect { described_class.new(host: "jump", ssh: File.join(dir, "no-ssh")).call("version") }
+      .to raise_error(Quaack::Driver::EnclaveError, "quaacks version failed: not_started")
+  end
+
   it "treats ssh failing to connect, exit 255 with nothing on stdout, as incomplete" do
     unreachable = File.join(dir, "unreachable-ssh")
     File.write(unreachable, "#!/bin/sh\necho 'ssh: connect to host jump port 22: Connection refused' >&2\nexit 255\n")

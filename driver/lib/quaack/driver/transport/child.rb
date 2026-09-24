@@ -27,6 +27,9 @@ module Quaack
         # :output_too_large if the child was killed for going past one.
         Run = Data.define(:stdout, :status, :limit)
 
+        # The command couldn't be started, as when it doesn't exist.
+        class NotStarted < StandardError; end
+
         GRACE = 2
         CHUNK = 64 * 1024
 
@@ -38,13 +41,19 @@ module Quaack
           deadline = now + timeout
           # The [command, argv0] form never goes through a shell, even when
           # argv has only one element.
-          input, output, waiter = Open3.popen2([argv.first, argv.first], *argv.drop(1), err: File::NULL)
+          input, output, waiter = start(argv)
           stdout, limit = Pump.new(input, output, stdin, deadline:, max_bytes: max_output_bytes).run
           limit ||= wait(waiter, deadline)
           terminate(waiter) if limit
           Run.new(stdout:, status: waiter.value, limit:)
         ensure
           clean_up(waiter, input, output)
+        end
+
+        def start(argv)
+          Open3.popen2([argv.first, argv.first], *argv.drop(1), err: File::NULL)
+        rescue SystemCallError
+          raise NotStarted, "the command couldn't be started", cause: nil
         end
 
         # nil once the child has ended, or :timeout if it's still running at

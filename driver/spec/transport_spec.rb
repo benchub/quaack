@@ -21,8 +21,14 @@ RSpec.describe Quaack::Driver::Transport do
 
   def probe(body, **step) = local.new(command: EnclaveCommands.probe(dir, body, **step), timeout:)
   def raw(source) = local.new(command: EnclaveCommands.raw(source), timeout:)
+
   # The file descriptors this process has open.
-  def open_fds = Dir.children("/dev/fd").size
+  # The file descriptors this process has open, after collecting any IO
+  # an earlier spec left for the garbage collector to close.
+  def open_fds
+    GC.start
+    Dir.children("/dev/fd").size
+  end
 
   # The EnclaveError that calling transport raises.
   def failure(transport, subcommand = "probe", **)
@@ -73,6 +79,111 @@ RSpec.describe Quaack::Driver::Transport do
         expect { echo.call("probe", args: { query: value }) }.to raise_error(ArgumentError), "for #{value.inspect}"
       end
     end
+
+    it "refuses a value that isn't valid UTF-8, and a name in an encoding that isn't ASCII-compatible" do
+      ["a".encode("UTF-16LE"), "caf\xE9".b, "caf\xE9".dup.force_encoding("UTF-8"),
+       "é".encode("ISO-8859-1")].each do |value|
+        expect { echo.call("probe", args: { query: value }) }.to raise_error(ArgumentError), "for #{value.inspect}"
+      end
+      expect { echo.call("probe".encode("UTF-16LE")) }.to raise_error(ArgumentError)
+      expect { echo.call("probe", args: { "query".encode("UTF-16LE") => "x" }) }.to raise_error(ArgumentError)
+      expect(argv_of(echo.call("probe", args: { query: "é ✓".encode("UTF-8"), "captured-at": "x".b })))
+        .to eq(["probe", "--query", "é ✓", "--captured-at", "x"])
+    end
+
+    it "takes names up to 63 characters, as the CLI does, and refuses longer ones" do
+      error = failure(echo, "probe", args: { "a#{"b" * 62}" => "v" })
+
+      expect(error.rule).to eq("usage")
+      expect { echo.call("a#{"b" * 63}") }.to raise_error(ArgumentError)
+      expect { echo.call("probe", args: { "a#{"b" * 63}" => "v" }) }.to raise_error(ArgumentError)
+    end
+
+    it "refuses args that aren't a Hash" do
+      [[%w[query x]], nil, "query"].each do |args|
+        expect { echo.call("probe", args:) }.to raise_error(ArgumentError), "for #{args.inspect}"
+      end
+    end
+
+    it "takes argv up to MAX_ARGV_BYTES in all, and refuses more, since larger input belongs on stdin" do
+      max = Quaack::Driver::Transport::Base::MAX_ARGV_BYTES
+      # probe, --query, and the value, each with its NUL.
+      fits = "x" * (max - "probe".bytesize - "--query".bytesize - 3)
+
+      expect(max).to eq(64 * 1024)
+      expect(argv_of(echo.call("probe", args: { query: fits })).last.bytesize).to eq(fits.bytesize)
+      expect { echo.call("probe", args: { query: "#{fits}x" }) }.to raise_error(ArgumentError)
+    end
+  end
+
+  describe "making a transport" do
+    it "refuses a command that isn't a non-empty Array of Strings" do
+      [[], "quaacks", [nil], ["ruby", 1], nil, [""]].each do |command|
+        expect { local.new(command:) }.to raise_error(ArgumentError), "for #{command.inspect}"
+      end
+    end
+
+    it "keeps its own copy of the command" do
+      command = EnclaveCommands.quaacks
+      transport = local.new(command:, timeout:)
+      command.replace(["false"])
+
+      expect(transport.call("version").messages.map { it["type"] }).to eq(["version"])
+    end
+
+    it "fails as not_started when the command can't be run" do
+      error = failure(local.new(command: [File.join(dir, "missing")], timeout:))
+
+      expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["not_started", nil, nil, nil])
+      expect(error.message).to eq("quaacks probe failed: not_started")
+    end
+
+    it "never lets the run's stderr reach the driver's" do
+      step = raw(%($stderr.write("#{sentinel}"); STDERR.flush; print %({"type":"done"}\\n)))
+      log = File.join(dir, "stderr")
+      # STDERR, not $stderr: it owns file descriptor 2, which a child inherits.
+      stderr = STDERR # rubocop:disable Style/GlobalStdStream
+      saved = stderr.dup
+      begin
+        stderr.reopen(log, "w")
+        step.call("probe")
+      ensure
+        stderr.reopen(saved)
+      end
+
+      expect(File.read(log)).not_to include(sentinel)
+    end
+  end
+
+  describe "errors raised inside a rescue" do
+    # A caller that calls the transport while handling an error of its own.
+    def inside_rescue
+      raise "outer #{sentinel}"
+    rescue RuntimeError
+      begin
+        yield
+      rescue StandardError => e
+        e
+      end
+    end
+
+    it "never takes the caller's error as its cause" do
+      errors = [
+        inside_rescue { probe("raise 'x'").call("probe") },
+        inside_rescue { raw("print 1").call("probe") },
+        inside_rescue { raw(%(print %({"type":"x"}\\n{"type":"done"}\\n))).call("probe") },
+        inside_rescue { local.new(command: EnclaveCommands.raw("sleep 30"), timeout: 0.2).call("probe") },
+        inside_rescue { local.new(command: [File.join(dir, "missing")]).call("probe") },
+        inside_rescue { raw("").call("Bad") },
+        inside_rescue { raw("").call("probe", input: []) },
+        inside_rescue { local.new(command: []) },
+        inside_rescue { local.new(command: ["x"], timeout: 0) }
+      ]
+
+      expect(errors.map(&:class)).to eq(([Quaack::Driver::EnclaveError] * 5) + ([ArgumentError] * 4))
+      expect(errors.map(&:cause)).to all(be_nil)
+      errors.each { expect(it.full_message(highlight: false)).not_to include(sentinel) }
+    end
   end
 
   describe "input on stdin" do
@@ -112,7 +223,8 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "doesn't hang when the step never reads a large input" do
-      result = local.new(command: EnclaveCommands.quaacks, timeout:).call("version", input: { "a" => "x" * (8 * 1024 * 1024) })
+      result = local.new(command: EnclaveCommands.quaacks, timeout:).call("version",
+                                                                          input: { "a" => "x" * (8 * 1024 * 1024) })
 
       expect(result.messages.map { it["type"] }).to eq(["version"])
     end
@@ -371,6 +483,23 @@ RSpec.describe Quaack::Driver::Transport do
     it "refuses a done line with a field, or a done line that isn't the last line" do
       expect(refusal(%({"type":"done","version":"1"})).rule).to eq("unexpected_output")
       expect(refusal(%({"type":"done"}\n{"type":"version","version":"1"})).rule).to eq("unexpected_output")
+    end
+
+    # Egress sends a burndown only if Protocol::Burndown.valid? passes, so
+    # the driver checks the same.
+    it "reads a burndown that Protocol::Burndown.valid? passes, and refuses one it doesn't" do
+      good = %({"type":"burndown","stages":{},"totals":{"queries":3}})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages).to eq([{ "type" => "burndown", "stages" => {}, "totals" => { "queries" => 3 } }])
+      [%({"type":"burndown","stages":{},"totals":{"queries":"#{sentinel}"}}),
+       %({"type":"burndown","stages":{"#{sentinel}":{}},"totals":{}}), %({"type":"burndown","totals":{}}),
+       %({"type":"burndown","stages":{}})].each do |line|
+        error = refusal(line)
+
+        expect(error.rule).to eq("unexpected_output"), "for #{line}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
     end
 
     it "refuses a message that repeats a key" do

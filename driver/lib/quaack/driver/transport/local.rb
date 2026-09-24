@@ -14,6 +14,8 @@ module Quaack
       class Local < Base
         def initialize(command:, **)
           super(**)
+          refuse("command must be a non-empty Array of Strings") unless words?(command)
+
           @command = command.dup.freeze
         end
 

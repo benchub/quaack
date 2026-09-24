@@ -2,6 +2,7 @@
 
 require "json"
 require "quaack/protocol/whitelist"
+require "quaack/protocol/burndown"
 require_relative "../enclave_error"
 
 module Quaack
@@ -74,8 +75,8 @@ module Quaack
           lines = lines(stdout).filter_map { line(it) }
           messages = lines.grep(Hash)
           error!(subcommand, status, messages)
-          raise failure(subcommand, status) unless status.success? && done?(lines.last)
-          raise failure(subcommand, status, rule: "unexpected_output") unless allowed?(lines)
+          raise failure(subcommand, status), cause: nil unless status.success? && done?(lines.last)
+          raise failure(subcommand, status, rule: "unexpected_output"), cause: nil unless allowed?(lines)
 
           messages[0...-1]
         end
@@ -83,7 +84,7 @@ module Quaack
         # Raises the first error line's EnclaveError, if there's one.
         def error!(subcommand, status, messages)
           error = messages.find { it["type"] == "error" }
-          raise failure(subcommand, status, error) if error
+          raise failure(subcommand, status, error), cause: nil if error
         end
 
         # How the process ended, for an EnclaveError.
@@ -148,9 +149,18 @@ module Quaack
             next true if line == :skip
             next false unless line.is_a?(Hash) && (done?(line) == (index == lines.size - 1))
 
-            fields = FIELDS[line["type"]]
-            fields && (line.keys - ["type"] - fields).empty?
+            message?(line)
           end
+        end
+
+        # Whether line is a message of a type on the whitelist, with only the
+        # fields it lists for it. A burndown must also pass
+        # Protocol::Burndown.valid?, as egress checks before sending one.
+        def message?(line)
+          fields = FIELDS[line["type"]]
+          return false unless fields && (line.keys - ["type"] - fields).empty?
+
+          line["type"] != "burndown" || Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
         end
 
         def failure(subcommand, status, error = nil, rule: "incomplete")

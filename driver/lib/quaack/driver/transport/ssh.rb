@@ -33,11 +33,13 @@ module Quaack
 
         # host is the jump server, ssh the ssh executable, and options the
         # ssh options that come before the host, in place of
-        # DEFAULT_OPTIONS. timeout and max_output_bytes are Base's.
+        # DEFAULT_OPTIONS. timeout and max_output_bytes are Base's. Each is
+        # checked here, and a bad one raises ArgumentError.
         def initialize(host:, ssh: "ssh", options: DEFAULT_OPTIONS, **)
           super(**)
-          raise ArgumentError, "host must be one ssh host name" unless host.is_a?(String) && HOST.match?(host)
-          raise ArgumentError, "options must be an Array of Strings" unless strings?(options)
+          refuse("host must be one ssh host name") unless host.is_a?(String) && HOST.match?(host)
+          refuse("ssh must be the ssh executable's name or path") unless words?([ssh])
+          refuse("options must be an Array of Strings") unless options.is_a?(Array) && options.all? { text?(it) }
 
           @host = host
           @ssh = ssh
@@ -45,8 +47,6 @@ module Quaack
         end
 
         private
-
-        def strings?(options) = options.is_a?(Array) && options.all?(String)
 
         def command(argv) = [@ssh, *@options, "--", @host, Shellwords.join(["quaacks", *argv])]
       end
