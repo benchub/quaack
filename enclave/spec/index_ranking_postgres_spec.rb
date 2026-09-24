@@ -330,6 +330,34 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(measured).to all(satisfy { |ddls| ddls.uniq == ddls })
   end
 
+  # The heavy set sorts all of w, so its baseline costs much more. The index
+  # on a saves the same amount from both sets, which is a small fraction of
+  # the heavy set's cost. The index on z saves less from the light set, but
+  # a bigger fraction of it, and saves the sort from the heavy set.
+  it "ranks by the fraction of the cost saved, not the amount" do
+    query = "SELECT a FROM t WHERE a = $1 UNION ALL (SELECT z FROM w WHERE z <= $2 ORDER BY z)"
+    sets = { light: %w[5 10], heavy: %w[5 50000] }
+    ranking = ranked(query, sets, [on_a, on_z])
+    saved = ranking.top.to_h { |e| [e.candidates.first, e.costs.values.map { |c| c.before - c.after }.min] }
+
+    expect(ranking.top.map(&:candidates)).to eq([[on_z], [on_a]])
+    expect(saved[on_a]).to be > saved[on_z] * 2
+    expect(ranking.top.map(&:worst_reduction)).to eq(ranking.top.map(&:worst_reduction).sort.reverse)
+  end
+
+  # The partial index helps its branch less than the others help theirs,
+  # so the greedy step adds it after the best single index.
+  it "tags a combination partial when an index added after the first has a predicate" do
+    query = "SELECT a FROM t WHERE c <= $1 AND flag = 'closed' UNION ALL SELECT a FROM t WHERE a = $2 " \
+            "UNION ALL SELECT x FROM o WHERE x = $3"
+    closed = candidate(key: ["c"], predicate: "flag = 'closed'")
+    ranking = ranked(query, { slow: %w[20000 5 5] }, [closed, on_x, on_a])
+
+    expect(ranking.combination.candidates.first).to eq(on_a)
+    expect(ranking.combination.candidates.drop(1)).to include(closed)
+    expect(ranking.combination.partial).to be(true)
+  end
+
   it "freezes what it returns" do
     ranking = ranked(join, join_sets, [on_x, on_y])
     entries = [*ranking.top, ranking.combination]
