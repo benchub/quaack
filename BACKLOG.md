@@ -19,18 +19,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-2. Test database harness. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-3. Governed store.
-
-Build the per-run store directory on the jump server: its layout, a run ID, and reads and writes of every intermediate result. Also build the teardown that deletes the run's directory when the run ends.
-
-- **Depends on:** 20260922-1.
-- **README:** Where QUAACK runs (the storage table), and the note about destroying state after each run.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260922-3` through a build, a review, a fix round, and a second review, but not landed. The second review found `SystemStackError` on Hash nesting inside `MAX_DEPTH` on aarch64 Linux, and tests that miss a walk that skips sibling values. 20260923-32 finishes it on top of that branch.
-- **Defaults the main session chose (the user was away):** the base is `~/.quaack/runs/`, run IDs look like `20260923T221500Z-<8 hex>`, entry names match `/\A[a-z][a-z0-9_]*\z/`, writes are atomic, and opening a run checks that it's 0700 and owned by the current user.
-- **Decided:**
-  - Each stored result is a JSON file in the run's directory.
-  - The run directory is mode 0700 and its files are 0600, in the operator's home directory. Encryption at rest comes from the jump server's disk encryption. There's no encryption in the app.
+### 20260922-3. Governed store. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-4. Enclave command-line script.
 
@@ -39,6 +28,7 @@ Build the stateless enclave script: a subcommand dispatcher that reads from the 
 - **Depends on:** 20260922-3, 20260922-7, 20260922-8.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note (from the review of 20260922-46):** The enclave's stderr goes over ssh to the laptop, so it's a path around egress. The CLI must control stderr as well as stdout. That covers uncaught exceptions and backtraces, Ruby warnings, and libpq NOTICE and WARNING output on every connection, including production. A PL/pgSQL `RAISE NOTICE` in a stable function can print a row value. Install a notice receiver that drops notices, and send anything else on stderr through egress or discard it.
 - **Note:** The static boundary check (20260923-7) flags `require` or `require_relative` of a computed path in the enclave, such as `require_relative "steps/#{name}"` or requiring every file in a directory. So the dispatcher lists its requires by hand and maps subcommands through a table or `public_send`, which is still allowed. That also keeps argv from choosing which file gets loaded.
 
 ### 20260922-5. Driver transport.
@@ -205,6 +195,7 @@ Replace literals with numbered, shape-preserving placeholders. Annotate each wit
 
 - **Depends on:** 20260922-13, 20260922-15.
 - **README:** 3g.
+- **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
 - **Status:** todo
 - **Decided:** Match each literal in a racetrack plan to the placeholder map by value, after normalizing casts. Replace anything still unmatched with a generic `$?` marker, so no literal leaks, and count the masks for the 15b burndown.
 
@@ -260,6 +251,7 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 
 - **Depends on:** 20260922-26, 20260922-21, 20260922-15, 20260922-23.
 - **README:** 5a-4.
+- **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
 - **Status:** todo
 
 ### 20260922-30. 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
@@ -762,7 +754,7 @@ Minor findings from the second review of 20260923-7:
 Minor findings from the second review of 20260922-7:
 - **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
 - **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
-- **Deep nesting and cycles raise `SystemStackError`.** (20260923-32 fixes this through the shared `PlainData.check`, once it lands.) A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
+- **Deep nesting and cycles raise `SystemStackError`.** Fixed by 20260923-32 through the shared `PlainData.check`. Drop this item. A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
 - **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
 
 - **Depends on:** 20260922-7.
@@ -845,22 +837,7 @@ Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build
 - **README:** 5a-3.
 - **Status:** todo
 
-### 20260923-32. Finish the governed store.
-
-Split out of 20260922-3. The work so far is on branch `task/20260922-3`. Build on that branch, then land both together. It also changes egress, which now shares `PlainData.check`. Fix what the second review of 20260922-3 found:
-- **Hash nesting within `MAX_DEPTH` raises `SystemStackError` on aarch64 Linux.** json 2.9.1 on `ruby:3.4-slim` writes nested Hashes only about 9,700 deep on the main thread, and about 1,200 in a thread. The comment on `MAX_DEPTH = 10_000` promises more than that. The deepest real pg_query tree is about 1,500 levels. Lower `MAX_DEPTH` with room to spare. Add Hash and Array round-trip tests at `MAX_DEPTH`. Also turn `SystemStackError` from JSON into `Store::Error` and `Egress::Error`.
-- **Tests miss a walk that skips sibling values.** Each of these changes stays green:
-  - `hash.values` changed to `first(1)` or `last(1)`
-  - an Array walk using `item.last(1)`
-  - egress checking only the last field
-
-  Put bad values first, in the middle, and in a field other than `rule`.
-- **Egress now honors a singleton `to_json` on a plain Array or Hash,** because it generates the original object, not a copy. That's evasion, not an honest mistake, so just say so in a comment.
-
-- **Depends on:** 20260922-3's branch.
-- **Came from:** Second review of 20260922-3.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-32. Finish the governed store. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-33. Fail closed on unsupported SQL constructs.
 
@@ -876,6 +853,18 @@ The user decided that enclave code that walks SQL supports an explicit list of c
 - **README:** What goes into the enclave, step 1, and step 9.
 - **Status:** todo
 - **Decided (by the user):** Use the default list: SELECT, joins, CTEs without CYCLE or SEARCH, subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL. There are no sample queries to check it against.
+
+### 20260923-34. Governed store loose ends.
+
+Minor findings from the second review of 20260923-32:
+- **`Store.open` and `#teardown` still let a raw `SystemCallError` out of `PrivateFiles.lstat`.** For example, after `File.chmod(0, base)`, both raise `Errno::EACCES` naming `<base>/<run_id>`. A base that's a regular file gives `Errno::ENOTDIR`. Nothing below the run directory is named, so nothing leaks, but the class promises `Store::Error`.
+- **The 4 MB-thread test pins `MAX_DEPTH` loosely on macOS.** A value of 6,000 still passes there, though it would likely fail on aarch64 Linux.
+- **Reading an entry that's a FIFO blocks forever.** Only the owner can plant one, so this is informational.
+
+- **Depends on:** 20260923-32.
+- **Came from:** Second review of 20260923-32.
+- **README:** Where QUAACK runs.
+- **Status:** todo
 
 ## After version 1.
 
