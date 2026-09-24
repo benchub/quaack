@@ -972,11 +972,14 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
 
     it "never puts a literal from the query into an error" do
-      ["SELECT '#{sentinel}' FROM orders", "SELECT '#{sentinel}'; SELECT 1",
-       "DELETE FROM public.orders WHERE note = '#{sentinel}'",
-       "SELECT '#{sentinel}' UNION SELECT '#{sentinel}'", "SELECT '#{sentinel}' INTO public.x",
-       "WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1"].each do |sql|
-        expect { generate(sql, stats) }.to raise_error(StandardError) { |e| expect(e.message).not_to include(sentinel) }
+      refused = Quaack::Enclave::SupportedSql::Error
+      [["SELECT '#{sentinel}' FROM orders", ArgumentError], ["SELECT '#{sentinel}'; SELECT 1", refused],
+       ["DELETE FROM public.orders WHERE note = '#{sentinel}'", refused],
+       ["SELECT '#{sentinel}' UNION SELECT '#{sentinel}'", ArgumentError],
+       ["SELECT '#{sentinel}' INTO public.x", refused],
+       ["WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1", refused]
+      ].each do |sql, error|
+        expect { generate(sql, stats) }.to raise_error(error) { |e| expect(e.message).not_to include(sentinel) }
       end
     end
   end

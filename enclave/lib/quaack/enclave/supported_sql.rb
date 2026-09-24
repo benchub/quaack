@@ -10,8 +10,8 @@ module Quaack
     #   # => nil, or raises Error "unsupported_construct: RangeTableSample"
     #
     # The walkers that read a query's parse (RelationQualifier,
-    # VolatilityCheck, and PredicateAtoms) call it first, so each only has
-    # to be right for what's listed here. Supporting more is its own task
+    # VolatilityCheck, GeneratorOne, and PredicateAtoms) call it first, so
+    # each only has to be right for what's listed here. Supporting more is its own task
     # after version 1. The inbound checks for rewrite candidates, and input
     # intake, call it too once they're built.
     #

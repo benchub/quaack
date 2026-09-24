@@ -422,6 +422,13 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       shapes.each { |shape| expect { PgQuery.parse("SELECT #{shape}") }.not_to raise_error }
     end
 
+    it "redacts a field name that's a string argument of another SQL-syntax function" do
+      sql = "SELECT 1 FROM public.orders o WHERE substring('second' FROM 2) = o.note " \
+            "AND position(o.note IN 'year') > 0 AND trim(both o.note FROM 'hour') = 'a'"
+      expect(in_child(sql).map(&:first))
+        .to eq(["SUBSTRING($2 FROM $3) = o.note", "POSITION(o.note IN $4) > $5", "TRIM (BOTH o.note FROM $6) = $7"])
+    end
+
     it "redacts EXTRACT's field when it isn't a field name, and extract's called as a plain function" do
       sql = "SELECT 1 FROM public.orders o WHERE EXTRACT('SENTINEL' FROM o.created_at) > 5 " \
             "AND pg_catalog.extract('epoch', o.created_at) > 6"
