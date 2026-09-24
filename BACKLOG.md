@@ -875,7 +875,7 @@ The user decided that enclave code that walks SQL supports an explicit list of c
 - **Came from:** The user's decision after the reviews of 20260922-43, 20260923-29, and 20260922-20.
 - **README:** What goes into the enclave, step 1, and step 9.
 - **Status:** todo
-- **Open questions:** Which constructs make the first list? Check them against a sample of real slow queries if the user can provide one.
+- **Decided (by the user):** Use the default list: SELECT, joins, CTEs without CYCLE or SEARCH, subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL. There are no sample queries to check it against.
 
 ## After version 1.
 
