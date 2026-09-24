@@ -2,6 +2,7 @@
 
 require "tmpdir"
 require "quaack/enclave/burndown"
+require "quaack/enclave/dedupe"
 require "quaack/enclave/single_candidate_test"
 
 # The 5a-4 burndown record from a real SingleCandidateTest report, run
@@ -58,14 +59,90 @@ RSpec.describe Quaack::Enclave::Burndown do
     expect(File.read(File.join(store.path, "burndown.json"))).not_to include(sentinel)
   end
 
-  it "records the LLM's run of 5a-4 under the stage the caller names, adding to the totals" do
-    tested = report
+  it "leaves out a reason no candidate was dropped for" do
+    tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
+                                                            literal_sets: { slow: ["5"] },
+                                                            candidates: [candidate(key: ["a"]), candidate(key: ["c"])])
     described_class.record_single_candidate_test(store, tested, search: :original)
-    described_class.record_single_candidate_test(store, tested, stage: "5a-5", search: :original)
 
-    burndown = described_class.read(store)
-    expect(burndown["stages"].keys).to eq(%w[5a-4 5a-5])
-    expect(burndown.dig("stages", "5a-5", "original", "out")).to eq(2)
-    expect(burndown["totals"]).to eq("hypothetical_explains" => 18)
+    expect(described_class.read(store).dig("stages", "5a-4", "original", "dropped")).to eq("never_used" => 1)
+  end
+
+  it "records only 5a-4, so it takes no stage" do
+    expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "5a-5") }
+      .to raise_error(ArgumentError, /unknown keyword: :stage/)
+  end
+
+  describe "an LLM round" do
+    let(:dedupe) do
+      table = Quaack::Enclave::TableStatistics.new(name: t, reltuples: 100_000, columns: {},
+                                                   column_names: %w[a c s], indexes: {})
+      Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]), low_cardinality: [])
+    end
+
+    def test(candidates)
+      Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
+                                                     literal_sets: { slow: ["5"], worst: ["7"], typical: ["70000"] },
+                                                     candidates:)
+    end
+
+    def llm(**) = Quaack::Enclave::IndexCandidate.new(table: t, sources: [:llm], **)
+
+    # 5a-3 and 5a-4 on two mechanical candidates, which the planner uses.
+    def mechanical
+      survivors = dedupe.filter([candidate(key: ["a"]), candidate(key: %w[a c])])
+      since = described_class.record_dedupe(store, dedupe, search: :original)
+      mechanical_report = test(survivors)
+      described_class.record_single_candidate_test(store, mechanical_report, search: :original)
+      [since, mechanical_report]
+    end
+
+    # Three LLM candidates: a duplicate, a GIN set aside, and one the
+    # planner never uses.
+    def llm_candidates = [llm(key: ["a"]), llm(key: ["c"], access_method: :gin), llm(key: ["c"])]
+
+    it "records 5a-3 and 5a-4 on the LLM's candidates as one 5a-5 record that adds them" do
+      since, = mechanical
+      survivors = dedupe.filter(llm_candidates)
+      llm_report = test(survivors)
+      expect(llm_report.results.map(&:used?)).to eq([false])
+
+      described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:, report: llm_report)
+
+      burndown = described_class.read(store)
+      expect(burndown.dig("stages", "5a-5", "original")).to eq(
+        "in" => 0, "added" => { "llm" => 3 }, "dropped" => { "duplicate" => 1, "never_used" => 1 },
+        "set_aside" => 1, "out" => 0, "extra" => {}
+      )
+      expect(burndown.dig("stages", "5a-3", "original", "in")).to eq(2)
+      expect(burndown.dig("stages", "5a-4", "original", "out")).to eq(2)
+      expect(burndown["totals"]).to eq("hypothetical_explains" => 6 + 3)
+    end
+
+    it "records the 5a-6 round from what the 5a-5 round returned" do
+      since, = mechanical
+      after_5a5 = described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:,
+                                                          report: test(dedupe.filter(llm_candidates)))
+      revised = test(dedupe.filter([llm(key: %w[a s])]))
+      expect(revised.results.map(&:used?)).to eq([true])
+
+      described_class.record_llm_round(store, stage: "5a-6", search: :original, dedupe:, since: after_5a5,
+                                              report: revised)
+
+      expect(described_class.read(store).dig("stages", "5a-6", "original")).to eq(
+        "in" => 0, "added" => { "llm" => 1 }, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {}
+      )
+    end
+
+    it "refuses a round whose report didn't test what this round's filtering kept" do
+      since, mechanical_report = mechanical
+      dedupe.filter(llm_candidates)
+
+      expect do
+        described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:,
+                                                report: mechanical_report)
+      end.to raise_error(described_class::Error, /5a-5/)
+      expect(described_class.read(store)["stages"].keys).to eq(%w[5a-3 5a-4])
+    end
   end
 end

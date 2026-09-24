@@ -22,10 +22,11 @@ module Quaack
       # Counts one LLM call made for step.
       def llm_call(step)
         steps = Protocol::Burndown::LLM_STEPS
-        unless step.instance_of?(String) && steps.include?(step)
-          raise ArgumentError, "step must be a step that calls an LLM, one of #{steps.join(", ")}"
-        end
+        index = steps.index(step)
+        raise ArgumentError, "step must be a step that calls an LLM, one of #{steps.join(", ")}" unless index
 
+        # Counted under the protocol's own String, never the caller's.
+        step = steps[index]
         @llm_calls[step] = @llm_calls.fetch(step, 0) + 1
         nil
       end

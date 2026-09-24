@@ -69,6 +69,18 @@ RSpec.describe Quaack::Enclave::Dedupe do
       expect(s.drops.size + s.set_aside.size + s.proposals.size).to eq(5)
     end
 
+    it "counts only the candidates it actually considered when filter fails" do
+      s = search
+      expect { s.filter([candidate(["id"]), "quaack-sentinel"]) }.to raise_error(ArgumentError)
+      expect(s.considered).to eq(0)
+
+      stranger = Quaack::Enclave::TableName.new(schema: "public", name: "strangers")
+      expect { s.filter([candidate(["id"]), candidate(["id"], table: stranger), candidate(["note"])]) }
+        .to raise_error(KeyError)
+      expect(s.considered).to eq(1)
+      expect(s.drops.size + s.set_aside.size + s.proposals.size).to eq(1)
+    end
+
     it "raises KeyError for a candidate on a table with no statistics" do
       other = Quaack::Enclave::TableName.new(schema: "public", name: "nowhere")
 

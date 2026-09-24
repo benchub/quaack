@@ -19,8 +19,10 @@ module Quaack
     #
     # Stages that have a result object record it through an adapter:
     #
-    #   Burndown.record_dedupe(store, dedupe, search: :original)                  # 5a-3
+    #   since = Burndown.record_dedupe(store, dedupe, search: :original)          # 5a-3
     #   Burndown.record_single_candidate_test(store, report, search: :original)   # 5a-4
+    #   Burndown.record_llm_round(store, stage: "5a-5", search: :original,        # 5a-5
+    #                             dedupe:, since:, report: llm_report)
     #
     # A stage is one of Protocol::Burndown::STAGES. A search is :original
     # for the original query, or a Symbol naming a rewrite, since 5a-3
@@ -68,9 +70,8 @@ module Quaack
 
       ENTRY = "burndown"
 
-      FIELDS = %w[in added dropped set_aside out extra].freeze
-      COUNTS = %w[in set_aside out].freeze
-      BREAKDOWNS = %w[added dropped extra].freeze
+      FIELDS = Protocol::Burndown::FIELDS
+      BREAKDOWNS = Protocol::Burndown::BREAKDOWNS
 
       module_function
 
@@ -81,15 +82,14 @@ module Quaack
       # indexes_built, measurement_runs, and fixture_loads.
       def add_totals(store, **counts) = add(store, [], counts)
 
-      # Records one Dedupe search as a 5a-3 run, and returns the counts it
-      # recorded. The search's own counts grow with each filter call, and
-      # one search is filtered again for the LLM's candidates in 5a-5 and
-      # 5a-6. So to record only what came since an earlier record, as a run
-      # of another stage, pass since: the counts that record returned.
-      def record_dedupe(store, dedupe, search:, stage: "5a-3", since: nil)
-        counts = { in: dedupe.considered, dropped: dedupe.drops.map(&:reason).tally,
-                   set_aside: dedupe.set_aside.size, out: dedupe.proposals.size }
-        add(store, [[stage, search, since ? difference(counts, since) : counts]], {})
+      # Records one Dedupe search as a 5a-3 run: in is every candidate it
+      # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
+      # and SP-GiST candidates, and out is its proposals, which go on to
+      # 5a-4. It returns the counts it recorded, for the since of the LLM
+      # round that follows (see record_llm_round).
+      def record_dedupe(store, dedupe, search:)
+        counts = Adapters.dedupe_counts(dedupe)
+        add(store, [["5a-3", search, counts]], {})
         counts
       end
 
@@ -99,13 +99,33 @@ module Quaack
       # create them, hypopg_refused. Each plan with a hypothetical index adds
       # one to the hypothetical_explains total. The baseline's plans have
       # none, so they don't count.
-      def record_single_candidate_test(store, report, search:, stage: "5a-4")
-        results = report.results
-        used = results.count(&:used?)
-        refused = results.count(&:refusal)
-        dropped = { never_used: results.size - used - refused, hypopg_refused: refused }.reject { |_, n| n.zero? }
-        add(store, [[stage, search, { in: results.size, dropped:, out: used }]],
-            { hypothetical_explains: results.sum { it.plans.size } })
+      def record_single_candidate_test(store, report, search:)
+        add(store, [["5a-4", search, Adapters.tested_counts(report)]], Adapters.tested_totals(report))
+      end
+
+      # Records one LLM round, 5a-5 or 5a-6, as one record. A round filters
+      # the LLM's candidates through the search's own Dedupe, which already
+      # holds the mechanical proposals, and then tests what's left in 5a-4.
+      # The two are a chain, so the round's record covers both:
+      #
+      # - in is 0, and added is { llm: the candidates the round filtered },
+      #   including any replacements asked for in 5a-5.
+      # - dropped holds the round's 5a-3 reasons and its 5a-4 ones.
+      # - set_aside is what the round's filtering set aside.
+      # - out is what the planner used, from report.
+      #
+      # since is the counts that the search's last record_dedupe or
+      # record_llm_round returned, so only this round's filtering counts.
+      # report must test exactly the candidates this round's filtering
+      # kept, or the record won't add up and it's refused. It returns the
+      # search's counts, for the since of the next round.
+      def record_llm_round(store, stage:, search:, dedupe:, since:, report:) # rubocop:disable Metrics/ParameterLists
+        raise Error, "an LLM round's stage must be 5a-5 or 5a-6" unless %w[5a-5 5a-6].include?(stage)
+
+        counts = Adapters.dedupe_counts(dedupe)
+        add(store, [[stage, search, Adapters.round_counts(counts, Adapters.since(since), report)]],
+            Adapters.tested_totals(report))
+        counts
       end
 
       # The burndown so far, with String keys, or an empty one.
@@ -136,17 +156,52 @@ module Quaack
         nil
       end
 
-      # counts less since, leaving out any reason whose count didn't change.
-      def difference(counts, since)
-        counts.to_h do |field, count|
-          next [field, count - since.fetch(field)] unless count.is_a?(Hash)
+      private_class_method :add
 
-          earlier = since.fetch(field)
-          [field, count.to_h { |reason, n| [reason, n - earlier.fetch(reason, 0)] }.reject { |_, n| n.zero? }]
+      # Turns stage results into counts for record.
+      module Adapters
+        module_function
+
+        def dedupe_counts(dedupe)
+          { in: dedupe.considered, dropped: dedupe.drops.map(&:reason).tally,
+            set_aside: dedupe.set_aside.size, out: dedupe.proposals.size }
         end
-      end
 
-      private_class_method :add, :difference
+        def tested_counts(report)
+          results = report.results
+          used = results.count(&:used?)
+          refused = results.count(&:refusal)
+          dropped = { never_used: results.size - used - refused, hypopg_refused: refused }.reject { |_, n| n.zero? }
+          { in: results.size, dropped:, out: used }
+        end
+
+        def tested_totals(report) = { hypothetical_explains: report.results.sum { it.plans.size } }
+
+        def round_counts(counts, since, report)
+          tested = tested_counts(report)
+          { in: 0, added: { llm: counts[:in] - since[:in] },
+            dropped: drops_since(counts[:dropped], since[:dropped]).merge(tested[:dropped]),
+            set_aside: counts[:set_aside] - since[:set_aside], out: tested[:out] }
+        end
+
+        # Each reason's drops since the earlier ones, leaving out a reason
+        # with none.
+        def drops_since(drops, earlier)
+          drops.to_h { |reason, n| [reason, n - earlier.fetch(reason, 0)] }.reject { |_, n| n.zero? }
+        end
+
+        # since, if it's counts as dedupe_counts gives them.
+        def since(since)
+          return since if since.is_a?(Hash) && since.keys.sort == %i[dropped in out set_aside] &&
+                          %i[in set_aside out].all? { count?(since[it]) } && drops?(since[:dropped])
+
+          raise Error, "since must be the counts an earlier record_dedupe or record_llm_round returned"
+        end
+
+        def drops?(drops) = drops.is_a?(Hash) && drops.all? { |reason, n| reason.is_a?(Symbol) && count?(n) }
+
+        def count?(count) = count.is_a?(Integer) && count >= 0
+      end
 
       # Checks what callers pass in, which has Symbol names, and gives it
       # back with String ones, as the entry keeps it.
@@ -160,7 +215,9 @@ module Quaack
         end
 
         def stage(stage)
-          return stage if stage.instance_of?(String) && Protocol::Burndown::STAGES.include?(stage)
+          # The protocol's own String goes in the entry, never the caller's.
+          index = Protocol::Burndown::STAGES.index(stage)
+          return Protocol::Burndown::STAGES[index] if index
 
           raise Error, "the stage must be one of the README 15b stages"
         end
@@ -186,7 +243,7 @@ module Quaack
             given = counts.fetch(field) { default(stage, field) }
             [field, BREAKDOWNS.include?(field) ? breakdown(given, field) : count(given, field)]
           end
-          return record if Entry.adds_up?(record)
+          return record if Protocol::Burndown.adds_up?(record)
 
           raise Error, "a #{stage} record's in + added - dropped - set_aside must equal out"
         end
@@ -215,11 +272,6 @@ module Quaack
       module Entry
         module_function
 
-        def adds_up?(record)
-          came = record["in"] + record["added"].values.sum
-          came - record["dropped"].values.sum - record["set_aside"] == record["out"]
-        end
-
         def add_record(burndown, stage, search, record)
           searches = burndown["stages"][stage] ||= {}
           searches[search] = searches.key?(search) ? add_records(searches[search], record) : record
@@ -233,37 +285,16 @@ module Quaack
 
         def add_breakdowns(old, new) = old.merge(new) { |_, a, b| a + b }
 
-        # Whether data is a whole burndown: stages and totals, every stage
-        # one of STAGES, every name a lowercase word, every count an Integer
-        # of zero or more, and every record adding up.
+        # Whether data is a whole burndown, stages and totals and nothing
+        # else. Protocol::Burndown.valid? is the check, the same one egress
+        # makes.
         def burndown?(data)
-          data.instance_of?(Hash) && data.keys.sort == %w[stages totals] &&
-            names?(data["totals"]) { |count| count?(count) } &&
-            data["stages"].instance_of?(Hash) &&
-            data["stages"].all? do |stage, searches|
-              Protocol::Burndown::STAGES.include?(stage) && names?(searches) { |r| record?(r) }
-            end
+          data.is_a?(Hash) && data.keys.sort == %w[stages totals] &&
+            Protocol::Burndown.valid?(stages: data["stages"], totals: data["totals"])
         end
-
-        def record?(record)
-          record.instance_of?(Hash) && record.keys.sort == FIELDS.sort &&
-            COUNTS.all? { |field| count?(record[field]) } &&
-            BREAKDOWNS.all? { |field| names?(record[field]) { |count| count?(count) } } &&
-            adds_up?(record)
-        end
-
-        # Whether hash is a Hash whose keys are lowercase-word Strings and
-        # whose values pass the block.
-        def names?(hash, &)
-          hash.instance_of?(Hash) && hash.all? do |name, value|
-            name.instance_of?(String) && Protocol::Burndown::NAME.match?(name) && yield(value)
-          end
-        end
-
-        def count?(count) = count.instance_of?(Integer) && count >= 0
       end
 
-      private_constant :Input, :Entry
+      private_constant :Input, :Entry, :Adapters
     end
   end
 end

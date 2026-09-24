@@ -30,15 +30,14 @@ module Quaack
       # started and eight random hex characters, never anything from the
       # operator's inputs.
       run: %i[run_id].freeze,
-      # The README 15b burndown. Its values are nested Hashes, and they go
-      # out unchanged, like every field's. That's safe only because
-      # Quaack::Enclave::Burndown.message builds them from the governed
-      # store's burndown entry, and Burndown checks that entry every time
-      # it's read or written: every count is an Integer and every key is a
-      # stage from Protocol::Burndown::STAGES or a lowercase word the
-      # enclave script named, never a value it read. stages maps each stage
-      # to its searches and each search to its counts. totals maps each work
-      # total to its count.
+      # The README 15b burndown. Its values are nested Hashes, so unlike
+      # every other field, they're checked on the way out: the egress
+      # function sends them only if Protocol::Burndown.valid? passes, so
+      # every count is an Integer and every key is a stage from
+      # Protocol::Burndown::STAGES, a record field, or a lowercase word.
+      # The enclave's store makes the same check on its burndown entry.
+      # stages maps each stage to its searches and each search to its
+      # counts. totals maps each work total to its count.
       burndown: %i[stages totals].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.

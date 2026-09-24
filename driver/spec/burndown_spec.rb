@@ -37,6 +37,13 @@ RSpec.describe Quaack::Driver::Burndown do
     expect(burndown.llm_calls).to eq({})
   end
 
+  it "counts a step given as a String subclass under the protocol's own String" do
+    burndown.llm_call(Class.new(String).new("6a"))
+
+    expect(burndown.llm_calls.keys.map(&:class)).to eq([String])
+    expect(burndown.llm_calls.keys.first).to equal(Quaack::Protocol::Burndown::LLM_STEPS[2])
+  end
+
   it "hands out a frozen copy, so the counts change only through llm_call" do
     burndown.llm_call("6a")
     calls = burndown.llm_calls

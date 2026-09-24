@@ -5,6 +5,7 @@ require "tmpdir"
 require "quaack/enclave/burndown"
 require "quaack/enclave/dedupe"
 require "quaack/enclave/egress"
+require "quaack/enclave/single_candidate_test"
 
 # Stands in for a real production value. It must never get into the
 # burndown, and never show up in an error from it.
@@ -154,6 +155,12 @@ RSpec.describe Quaack::Enclave::Burndown do
         expect_refused(/stage/) { record("5a-3\n", in: 0, out: 0) }
       end
 
+      it "stores a stage given as a String subclass as the protocol's own String" do
+        record(Class.new(String).new("5a-3"), in: 1, out: 1)
+
+        expect(described_class.read(store)["stages"].keys).to eq(["5a-3"])
+      end
+
       it "refuses a search that isn't a Symbol naming a lowercase word, without quoting it" do
         expect_refused(/search/) { record("5a-3", "original", in: 0, out: 0) }
         expect_refused(/search/) { record("5a-3", :"#{BURNDOWN_SENTINEL}@x.com", in: 0, out: 0) }
@@ -299,18 +306,67 @@ RSpec.describe Quaack::Enclave::Burndown do
       expect(store.entry?("burndown")).to be(false)
     end
 
-    it "records only what later filter calls added, given the counts an earlier record returned" do
+    it "records only 5a-3, so it takes no stage and no since" do
       mechanical
-      earlier = described_class.record_dedupe(store, dedupe, search: :rewrite1)
-      dedupe.filter([candidate(["id"], sources: [:llm]), candidate(%w[id note]),
-                     candidate(["note"], access_method: :gist)])
-      described_class.record_dedupe(store, dedupe, stage: "5a-5", search: :rewrite1, since: earlier)
+      expect { described_class.record_dedupe(store, dedupe, search: :original, stage: "5a-5") }
+        .to raise_error(ArgumentError, /unknown keyword: :stage/)
+      expect { described_class.record_dedupe(store, dedupe, search: :original, since: {}) }
+        .to raise_error(ArgumentError, /unknown keyword: :since/)
+      expect(store.entry?("burndown")).to be(false)
+    end
 
-      stages = described_class.read(store)["stages"]
-      expect(stages.dig("5a-3", "rewrite1", "in")).to eq(7)
-      expect(stages.dig("5a-5", "rewrite1")).to eq(
-        "in" => 3, "added" => {}, "dropped" => { "duplicate" => 1 }, "set_aside" => 1, "out" => 1, "extra" => {}
+    it "returns the counts it recorded, for a later LLM round's since" do
+      mechanical
+
+      expect(described_class.record_dedupe(store, dedupe, search: :original)).to eq(
+        in: 7, dropped: { covered_by_existing: 1, duplicate: 1, partial_not_low_cardinality: 1 }, set_aside: 1, out: 3
       )
+    end
+  end
+
+  describe ".record_llm_round, before it looks at the report" do
+    let(:report) { Quaack::Enclave::SingleCandidateTest::Report.new(baseline: nil, results: []) }
+    let(:since) { { in: 0, dropped: {}, set_aside: 0, out: 0 } }
+    let(:dedupe) do
+      orders = Quaack::Enclave::TableName.new(schema: "public", name: "orders")
+      table = Quaack::Enclave::TableStatistics.new(name: orders, reltuples: 1, columns: {}, column_names: ["id"],
+                                                   indexes: {})
+      Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]), low_cardinality: [])
+    end
+
+    def round(stage: "5a-5", since: self.since)
+      described_class.record_llm_round(store, stage:, search: :original, dedupe:, since:, report:)
+    end
+
+    it "records an empty round as adding nothing" do
+      round
+
+      expect(described_class.read(store).dig("stages", "5a-5", "original")).to eq(
+        "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0, "extra" => {}
+      )
+    end
+
+    it "refuses any stage but 5a-5 or 5a-6" do
+      round(stage: "5a-6")
+      %w[5a-3 5a-4 step11].each { |stage| expect_refused(/5a-5 or 5a-6/) { round(stage:) } }
+      expect(described_class.read(store)["stages"].keys).to eq(["5a-6"])
+    end
+
+    it "refuses a since that isn't the counts an earlier record returned, as Burndown::Error" do
+      [
+        { "in" => 0, "dropped" => {}, "set_aside" => 0, "out" => 0 },
+        since.except(:out),
+        since.merge(in: BURNDOWN_SENTINEL),
+        since.merge(dropped: { duplicate: -1 }),
+        since.merge(dropped: [BURNDOWN_SENTINEL]),
+        since.merge(dropped: { "duplicate" => 0 }),
+        since.merge(rows: BURNDOWN_SENTINEL),
+        nil,
+        BURNDOWN_SENTINEL
+      ].each do |bad|
+        expect_refused(/since/) { round(since: bad) }
+      end
+      expect(store.entry?("burndown")).to be(false)
     end
   end
 
