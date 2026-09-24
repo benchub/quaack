@@ -54,6 +54,12 @@ module Quaack
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.
     #
+    # What it doesn't catch, tracked in 20260923-35: a STABLE function
+    # that reads tables outside the original's set, such as table_to_xml
+    # or a STABLE SQL function, is accepted. The rows it reads stay in the
+    # enclave. The check also trusts provolatile, so a function mislabeled
+    # STABLE isn't caught.
+    #
     # Every failure raises Error, with the rule and a message naming only
     # the rule and shape-class names: relations, schemas, functions, node
     # types, and placeholder numbers. It never quotes the candidate, and it

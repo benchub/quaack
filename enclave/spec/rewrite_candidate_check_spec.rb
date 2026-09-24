@@ -177,6 +177,16 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         .to rejected("unknown_relation", "unknown_relation: public.nowhere isn't a relation the original uses")
     end
 
+    it "reads the relkind of the relation in its own schema, not another of the same name" do
+      conn.exec("CREATE VIEW sales.orders AS SELECT id FROM public.orders")
+      both = described_class::Original.new(relations: [table_name("public", "orders"), table_name("sales", "orders")],
+                                           placeholders: 0)
+
+      expect(check("SELECT id FROM public.orders", original: both).sql).to eq("SELECT id FROM public.orders")
+      expect { check("SELECT id FROM sales.orders", original: both) }
+        .to rejected("not_a_table", "not_a_table: sales.orders has relkind v, not r")
+    end
+
     it "refuses a relation the original names that doesn't exist" do
       missing = described_class::Original.new(relations: [table_name("public", "gone")], placeholders: 0)
       expect { check("SELECT 1 FROM public.gone", original: missing) }
@@ -238,6 +248,11 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
   end
 
   describe "the order of the checks" do
+    it "checks supported SQL before placeholders" do
+      expect { check("SELECT $9 FROM orders FOR UPDATE") }
+        .to rejected("unsupported_construct", "unsupported_construct: LockingClause")
+    end
+
     it "checks placeholders before relations, and relations before volatility" do
       expect { check("SELECT random(), $7 FROM public.nowhere") }.to rejected("bad_placeholder")
       expect { check("SELECT random() FROM public.nowhere") }.to rejected("unknown_relation")
