@@ -93,14 +93,7 @@ Build the slow, worst-case, and typical literal sets and keep them in the govern
   - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
   - **`LIKE` and any other operator:** use the slow literal in all three sets.
 
-### 20260922-22. 3f PII and low-cardinality classification.
-
-Classify each column as PII or not, using a configured list and a high-cardinality text heuristic. Mark low-cardinality columns (fewer than 50 distinct values, not PII). Decide which derived scalars and MCV values may leave.
-
-- **Depends on:** 20260922-19.
-- **README:** 3f.
-- **Status:** todo
-- **Decided:** The PII list is a set of `schema.table.column` globs, such as `*.users.email`, in the `quaacks` config file on the jump server. A text column is high-cardinality when it has 50 or more distinct values, the same line 3f uses for low-cardinality. The config can change the threshold.
+### 20260922-22. 3f PII and low-cardinality classification. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-23. 3g redaction. Done, see BACKLOG-COMPLETE.md.
 
@@ -184,6 +177,7 @@ Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order th
 - **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
 - **README:** 5a.
 - **Status:** todo
+- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. That will need a whitelist type. Neither is wired up yet.
 
 ## Steps 6 and 7: Rewrite candidates.
 
@@ -1121,13 +1115,24 @@ Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-1
 Findings from the build and reviews of 20260922-19:
 - **pg_stats and pg_stats_ext silently hide columns the operator can't SELECT,** so a role with limited privileges gets missing statistics with no error. Detect this and refuse it, or record it.
 - **Values and names aren't converted to UTF-8,** unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
-- **Confirm the name `few_distinct`** before 20260922-22 (3f) uses it. 3f has to take out PII columns to get the low-cardinality set.
+- **Resolved:** 20260922-22 removed `few_distinct`, and replaced it with `PiiClassification#low_cardinality`.
 - **The pg_stats inherited-filter mutant is killed only by luck:** without the filter, row order decides which duplicate wins.
 - **A column type with a delimiter other than a comma (such as `box`)** would make PgArray raise and abort 3c. That's rare, so list it as unsupported in v1 or skip it.
 
 - **Depends on:** 20260922-19.
 - **Came from:** The build and reviews of 20260922-19.
 - **README:** 3c.
+- **Status:** todo
+
+### 20260924-27. 3f classification loose ends.
+
+Findings from the build and reviews of 20260922-22:
+- **text[], json, and jsonb columns aren't text-like for the heuristic,** so their MCV frequencies leave unless a glob names them. Their values never leave. The reviewer judged this low risk: a frequency vector over a large domain doesn't re-identify anyone. Decide whether they should fail closed as PII anyway.
+- **Expression-index and extended-statistics MCVs are left out of the projection entirely.** If 5a-5 needs them, they'll need rules of their own.
+
+- **Depends on:** 20260922-22.
+- **Came from:** The build and reviews of 20260922-22.
+- **README:** 3f.
 - **Status:** todo
 
 ## After version 1.
