@@ -448,6 +448,18 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(shapes.join).not_to include("SENTINEL")
     end
 
+    it "gives a typed CYCLE mark a string placeholder under its cast" do
+      {
+        "DATE 'SENTINEL_A' DEFAULT DATE 'SENTINEL_B'" => "TO '$4'::date DEFAULT '$5'::date",
+        "int4 '424242' DEFAULT int4 '434343'" => "TO '$4'::int4 DEFAULT '$5'::int4",
+        "interval '424242' day DEFAULT interval '434343' day" => "TO '$4'::interval day DEFAULT '$5'::interval day"
+      }.each do |marks, shape|
+        shapes = in_child(recursive("CYCLE n SET c TO #{marks} USING p")).map(&:first)
+        expect(shapes.first).to include(shape)
+        expect(shapes.join).not_to match(/SENTINEL|424242|434343/)
+      end
+    end
+
     it "handles a SEARCH clause" do
       shapes = in_child(recursive("SEARCH DEPTH FIRST BY n SET s")).map(&:first)
       expect(shapes.first).to include("SEARCH DEPTH FIRST BY n SET s")
@@ -539,6 +551,14 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     it "splits NOT, and takes IS TRUE and subquery tests, inside an atom" do
       sql = where("coalesce(NOT o.active, (o.status = 1) IS TRUE, EXISTS (SELECT 1), false)")
       expect(shapes(sql).drop(1)).to eq(["o.active", "o.status = $1 IS TRUE", "o.status = $1", "EXISTS (SELECT $2)"])
+    end
+
+    it "takes LIKE, BETWEEN, SIMILAR TO, IS DISTINCT FROM, and IN inside an atom" do
+      sql = where("coalesce(o.note LIKE 'a', o.total BETWEEN 1 AND 2, o.note SIMILAR TO 'b', " \
+                  "o.total IS DISTINCT FROM 3, o.total IN (4), false)")
+      expect(shapes(sql).drop(1))
+        .to eq(["o.note LIKE $1", "o.total BETWEEN $2 AND $3", "o.note SIMILAR TO $4",
+                "o.total IS DISTINCT FROM $5", "o.total IN ($6)"])
     end
 
     it "takes IS NULL, IN (SELECT ...), and ALL tests inside an atom" do

@@ -282,8 +282,11 @@ module Quaack
 
         # A constant where the deparser needs a literal: a string holding its
         # placeholder, or the constant itself if the parser made it.
+        # A typed literal, such as DATE 'x', keeps its cast around the string.
         def literal(node)
-          return node if Literals.made?(node.a_const)
+          cast = node.type_cast
+          cast.arg = literal(cast.arg) if cast
+          return node if cast || Literals.made?(node.a_const)
 
           text = "$#{@numbers.fetch(node.a_const.location, 0)}"
           PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: text)))
