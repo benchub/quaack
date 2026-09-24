@@ -46,6 +46,8 @@ module FilterFakes
   end
 end
 
+RSpec::Matchers.define_negated_matcher :not_output, :output
+
 RSpec.describe Quaack::Enclave::ErrorFilter do
   let(:filter) { described_class }
 
@@ -85,7 +87,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
     end
 
     it "takes steps named the way the README and the subcommands name them" do
-      %w[3f 5a-1 10b intake qualify_relations].each do |step|
+      ["3f", "5a-1", "10b", "intake", "qualify_relations", "a" * 63].each do |step|
         expect(filter.to_egress(RuntimeError.new, step:)).to eq(line(step:, rule: "internal_error"))
       end
     end
@@ -120,9 +122,24 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       expect(filter.to_egress(error, step: "3f")).to eq(line(step: "3f", rule: "internal_error", sqlstate: "23505"))
     end
 
+    it "keeps the step when asking for the rule, SQLSTATE, or result raises something that isn't a StandardError" do
+      cases = {
+        rule: [{ sqlstate: "23505" }, line(step: "3f", rule: "internal_error", sqlstate: "23505")],
+        sqlstate: [{ rule: "r" }, line(step: "3f", rule: "r")],
+        # With no sqlstate method answer, the filter goes on to ask for the result.
+        result: [{ rule: "r" }, line(step: "3f", rule: "r")]
+      }
+      cases.each do |method, (fields, expected)|
+        error = FilterFakes::RuledError.new(**fields)
+        error.define_singleton_method(method) { raise NoMemoryError, ERROR_SENTINEL }
+
+        expect(raised { filter.to_egress(error, step: "3f") }).to eq(expected), "for #{method}"
+      end
+    end
+
     it "sends internal_error for a rule that isn't a short lowercase identifier" do
       tricky = Class.new(String) { def to_s = ERROR_SENTINEL }
-      [ERROR_SENTINEL, :"Unique-Violation", "unique_violation\n", "", "_rule", "9rule", "a" * 64,
+      [ERROR_SENTINEL, :"Unique-Violation", "unique-violation", "unique_violation\n", "", "_rule", "9rule", "a" * 64,
        "rule\xFF".b, "rule".encode("UTF-16LE"), tricky.new("tricky_rule"), 42, nil, [:rule]].each do |rule|
         out = filter.to_egress(FilterFakes::RuledError.new(rule:), step: "3f")
 
@@ -150,6 +167,13 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
     it "reads the SQLSTATE from a PG-style error's result" do
       expect(filter.to_egress(FilterFakes::ResultError.new(FilterFakes::FakeResult.new("40P01")), step: "13"))
         .to eq(line(step: "13", rule: "internal_error", sqlstate: "40P01"))
+    end
+
+    it "takes the error's own sqlstate over its result's" do
+      error = FilterFakes::ResultError.new(FilterFakes::FakeResult.new("40P01"))
+      def error.sqlstate = "23505"
+
+      expect(filter.to_egress(error, step: "13")).to eq(line(step: "13", rule: "internal_error", sqlstate: "23505"))
     end
 
     it "drops a bad SQLSTATE from a PG-style error's result, or a result that isn't there" do
@@ -200,6 +224,14 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
         expect(filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "3f")).to eq(described_class::FALLBACK)
       end
+
+      it "sends the fallback line when the egress function raises something that isn't a StandardError" do
+        allow(Quaack::Enclave::Egress).to receive(:serialize).and_raise(NoMemoryError, ERROR_SENTINEL)
+
+        # RSpec lets a NoMemoryError end the run, so raised turns an escape into a plain failure.
+        expect(raised { filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "3f") })
+          .to eq(described_class::FALLBACK)
+      end
     end
   end
 
@@ -221,8 +253,6 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         "running out of memory" => -> { raise NoMemoryError, ERROR_SENTINEL },
         "a load error" => -> { require "quaack/enclave/#{ERROR_SENTINEL}" },
         "a script error" => -> { raise NotImplementedError, ERROR_SENTINEL },
-        "an interrupt" => -> { raise Interrupt, ERROR_SENTINEL },
-        "a signal" => -> { raise SignalException, "TERM" },
         "an egress error" => -> { raise Quaack::Enclave::Egress::Error, ERROR_SENTINEL },
         "a loud error" => -> { raise FilterFakes::LoudError }
       }
@@ -256,12 +286,53 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       expect(out.string).to eq("")
     end
 
+    it "writes one filtered error line for a signal, then raises it again so the process still dies" do
+      signals = { "an interrupt" => Interrupt.new(ERROR_SENTINEL), "a signal" => SignalException.new("TERM") }
+      signals.each do |name, signal|
+        out = StringIO.new
+
+        expect { filter.guard(step: "3f", out:) { raise signal } }
+          .to raise_error(be(signal)).and(not_output.to_stderr), "for #{name}"
+        expect(out.string).to eq("#{line(step: "3f", rule: "internal_error")}\n"), "for #{name}"
+      end
+    end
+
+    it "still returns a nonzero status when writing the error line raises something that isn't a StandardError" do
+      out = Object.new
+      def out.write(*) = raise(NoMemoryError)
+
+      # RSpec lets a NoMemoryError end the run, so raised turns an escape into a plain failure.
+      expect(raised { filter.guard(step: "3f", out:) { raise ERROR_SENTINEL } }).to eq(described_class::EX_SOFTWARE)
+    end
+
     it "still returns a nonzero status when it can't write the error line" do
       closed = StringIO.new.tap(&:close)
       status = nil
 
       expect { status = filter.guard(step: "3f", out: closed) { raise ERROR_SENTINEL } }.not_to output.to_stderr
       expect(status).to eq(described_class::EX_SOFTWARE)
+    end
+  end
+
+  describe "a SIGTERM inside a looped guard" do
+    # The child sends itself SIGTERM in the first of three guarded steps.
+    def looped_child
+      run_ruby("-I", File.join(GEM_ROOT, "lib"), "-r", "quaack/enclave/error_filter", "-e", <<~RUBY)
+        3.times do |i|
+          Quaack::Enclave::ErrorFilter.guard(step: "loop") do
+            Process.kill("TERM", Process.pid) if i.zero?
+            sleep 5
+          end
+        end
+        print "survived"
+      RUBY
+    end
+
+    it "writes exactly one error line and ends the process with the signal" do
+      out, _err, status = looped_child
+
+      expect(out).to eq("#{line(step: "loop", rule: "internal_error")}\n")
+      expect(status.termsig).to eq(Signal.list.fetch("TERM"))
     end
   end
 

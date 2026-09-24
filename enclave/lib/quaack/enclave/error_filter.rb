@@ -60,20 +60,24 @@ module Quaack
 
       # Runs the block and returns its value. If it raises anything, even a
       # stack overflow, a LoadError, or an Interrupt, it writes the one
-      # filtered error line to out and returns EX_SOFTWARE. Nothing goes to
-      # stderr.
+      # filtered error line to out and returns EX_SOFTWARE, except for a
+      # signal, below. Nothing goes to stderr.
       #
       # It lets SystemExit pass, since exit is how a step chooses its own
-      # status. It catches every other SignalException, not just Interrupt.
-      # Left alone, Ruby would kill the process with the signal and the
-      # driver would get no error line, and a SIGTERM or a SIGHUP from a
-      # dropped ssh session is as much a failed step as anything else.
+      # status. A SignalException, such as an Interrupt or the SIGTERM or
+      # SIGHUP from a dropped ssh session, gets its error line, so the driver
+      # hears the step failed, and is then raised again. Ruby then ends the
+      # process with that signal, as the sender meant, rather than letting a
+      # caller's loop carry on to the next step. With stderr silenced, Ruby
+      # prints nothing for it.
       def guard(step:, out: $stdout)
         yield
       rescue SystemExit
         raise
       rescue Exception => e # rubocop:disable Lint/RescueException
         write(out, to_egress(e, step:))
+        raise if e.is_a?(SignalException)
+
         EX_SOFTWARE
       end
 
@@ -91,6 +95,11 @@ module Quaack
       # Gives connection, such as a PG::Connection, a notice receiver that
       # drops every NOTICE and WARNING, since a RAISE NOTICE can print a row
       # value. Returns the connection.
+      #
+      # The pg gem (1.6.3) forgets the receiver when the connection is reset,
+      # so call this again after every conn.reset, or a later notice goes to
+      # stderr. A spec pins that. It also has to be called on each new
+      # connection: it can't reach connections it isn't given.
       def drop_notices(connection)
         connection.set_notice_receiver { |_result| nil }
         connection

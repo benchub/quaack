@@ -3,6 +3,7 @@
 require "json"
 require "stringio"
 require "quaack/enclave/error_filter"
+require "quaack/enclave/volatility_check"
 
 # Stands in for a real production value in a Postgres row or notice. It must
 # never show up in anything the error filter writes or returns.
@@ -65,6 +66,17 @@ RSpec.describe "error filtering against real Postgres" do
     expect(filter.to_egress(error, step: "2")).to eq(line(step: "2", rule: "internal_error"))
   end
 
+  it "sends a real VolatilityCheck::Error with its rule" do
+    error = begin
+      Quaack::Enclave::VolatilityCheck.check("SELECT random()", nil, conn)
+    rescue Quaack::Enclave::VolatilityCheck::Error => e
+      e
+    end
+    expect(error.message).to include("pg_catalog.random")
+
+    expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "volatile_function"))
+  end
+
   describe ".drop_notices" do
     before do
       conn.exec(<<~SQL)
@@ -79,16 +91,34 @@ RSpec.describe "error filtering against real Postgres" do
 
     # A child process connects and calls the function, so libpq's default
     # notice handling, which writes to the process's stderr, can be seen.
-    def noisy_child(drop:)
+    # before_call runs just before the call, for a reset and any second drop.
+    def noisy_child(drop:, before_call: "")
       run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, JSON.generate(test_database.connection_params))
         require "json"
         require "pg"
         require "quaack/enclave/error_filter"
         conn = PG.connect(**JSON.parse(ARGV[0], symbolize_names: true))
         #{"Quaack::Enclave::ErrorFilter.drop_notices(conn)" if drop}
+        #{before_call}
         print conn.exec("SELECT filter_notice()").getvalue(0, 0)
         conn.close
       RUBY
+    end
+
+    # The documented limit: the pg gem forgets the receiver on reset.
+    it "is lost when the connection is reset, as documented" do
+      _out, err, status = noisy_child(drop: true, before_call: "conn.reset")
+
+      expect(status).to be_success
+      expect(err).to include("notice #{PG_ERROR_SENTINEL}")
+    end
+
+    it "drops every notice again when it's called again after a reset" do
+      out, err, status = noisy_child(drop: true, before_call: "conn.reset; Quaack::Enclave::ErrorFilter.drop_notices(conn)")
+
+      expect(status).to be_success, "stderr was #{err}"
+      expect(out).to eq("1")
+      expect(err).to eq("")
     end
 
     it "sees the notices on stderr without it, so the check works" do
