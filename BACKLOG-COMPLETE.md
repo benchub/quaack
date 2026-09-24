@@ -353,3 +353,28 @@ Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build
 - **README:** 5a-3.
 - **Status:** done
 - **Landed:** Merged into `main` after a build, a review, a fix round, and a second review. The column side may sit under casts and COLLATE. Typmods must be integer constants. Operators must be comparisons (`= <> < <= > >= ~~ !~~ ~~* !~~*`), and a schema-qualified operator counts only from pg_catalog. Real generator-two output on varchar columns survives end to end. The second review found no blockers. Its findings went into 20260923-36.
+
+### 20260922-46. 9a, 9b, and 9e arena transaction runner.
+
+Open a transaction on arena with `statement_timeout`, load a fixture, run queries, and always roll back.
+
+- **Depends on:** 20260922-27.
+- **README:** 9a, 9b, and 9e.
+- **Status:** done
+- **Built early:** built before 20260922-27, against the test harness. The main session chose the defaults: a 10s `SET LOCAL statement_timeout`, FixtureRows plus raw step-10 INSERTs as inputs, and results kept as plain data inside the enclave.
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review. `ArenaRunner.new(conn).with_fixture(rows, inserts:) { |tx| tx.query(sql) }` always rolls back. It drops Postgres notices while it runs and restores the caller's receiver afterward. A pg_query StatementCheck lets through exactly one INSERT for inserts and one SELECT for queries, and refuses everything else before it runs. Errors carry a fixed message, rule, SQLSTATE, step, and index, with `cause: nil`. The first review found NOTICE text leaking fixture values to stderr, and `COMMIT AND CHAIN` getting past the rollback. The fix round fixed both. The second review found no blockers. Its findings became 20260923-37.
+
+### 20260922-8. Error filtering.
+
+Send every enclave error through the egress function, including Postgres errors and stack traces. A unique-violation message, for example, can contain a real key value. Errors should still say which step and which rule failed.
+
+- **Depends on:** 20260922-7.
+- **README:** Where QUAACK runs.
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review.
+  - `ErrorFilter.to_egress(exception, step:)` sends only the step, a rule (the exception's own rule if it's identifier-shaped, otherwise `internal_error`), and a 5-character SQLSTATE. It never reads the message, backtrace, class, or cause, and it never raises.
+  - `guard(step:, out:)` writes one line for anything raised, and re-raises signals after writing.
+  - `silence_stderr!` points fd 2 at /dev/null.
+  - `drop_notices(conn)` drops libpq notices. Callers must call it again after `conn.reset`.
+  - The main session chose to let step names match `/\A[a-z0-9][a-z0-9_-]{0,62}\z/`, since steps such as `5a-1` start with a digit or contain a hyphen.
+  - The first review found that SIGTERM inside a looped guard didn't end the process. The fix round fixed that. The second review found no blockers. Its findings became 20260923-38.

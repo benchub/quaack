@@ -27,6 +27,15 @@ Build the stateless enclave script: a subcommand dispatcher that reads from the 
 
 - **Depends on:** 20260922-3, 20260922-7, 20260922-8.
 - **README:** Where QUAACK runs.
+- **Note (from the reviews of 20260922-8 and 20260922-46):** use `ErrorFilter` (20260922-8) this way:
+  - Call `ErrorFilter.silence_stderr!` first.
+  - Run the dispatcher inside a single top-level `ErrorFilter.guard`, since nested guards write two lines for one signal.
+  - Call `ErrorFilter.drop_notices` on every connection, including production and racetrack, and again after any `conn.reset`.
+  - The current CLI prints USAGE to stderr, which will be silenced, so it has to go through egress instead.
+  - An error line written after a partial stdout write lands on the same line.
+  - A process killed by a signal dies with the signal, so the driver should treat a signal death as a failure and use the error line it already got.
+  - Merge the arena runner's local notice receiver with `drop_notices`.
+  - Consider `conn.cancel` or a `statement_timeout` when SIGTERM arrives mid-query.
 - **Status:** todo
 - **Note (from the review of 20260922-46):** The enclave's stderr goes over ssh to the laptop, so it's a path around egress. The CLI must control stderr as well as stdout. That covers uncaught exceptions and backtraces, Ruby warnings, and libpq NOTICE and WARNING output on every connection, including production. A PL/pgSQL `RAISE NOTICE` in a stable function can print a row value. Install a notice receiver that drops notices, and send anything else on stderr through egress or discard it.
 - **Note:** The static boundary check (20260923-7) flags `require` or `require_relative` of a computed path in the enclave, such as `require_relative "steps/#{name}"` or requiring every file in a directory. So the dispatcher lists its requires by hand and maps subcommands through a table or `public_send`, which is still allowed. That also keeps argv from choosing which file gets loaded.
@@ -55,13 +64,7 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 
 ### 20260922-7. Egress function and whitelist. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-8. Error filtering.
-
-Send every enclave error through the egress function, including Postgres errors and stack traces. A unique-violation message, for example, can contain a real key value. Errors should still say which step and which rule failed.
-
-- **Depends on:** 20260922-7.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260922-8. Error filtering. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-9. Leak tests.
 
@@ -78,6 +81,7 @@ Parse each rewrite candidate with pg_query. Accept exactly one `SELECT`. Reject 
 - **Depends on:** 20260922-1, 20260922-20.
 - **README:** What goes into the enclave.
 - **Note (from the review of 20260922-20):** Run the 3a relation check on rewrite candidates too. Reject views, and relations the original query doesn't use, because a view's body can call a volatile function that the 3d check never sees.
+- **Note (from the review of 20260922-46):** The arena runner relies on this check to refuse function calls with side effects that persist or change the session. Examples are `set_config` (which can turn off `statement_timeout`), session-level `pg_advisory_lock` (it survives ROLLBACK), and `lo_import`. The 3d volatility check refuses all of them. Test that it does, and call `SupportedSql.check!` (20260923-33) on every candidate.
 - **Status:** todo
 
 ### 20260922-11. Inbound check for index DDL.
@@ -98,6 +102,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 - **Depends on:** 20260922-1, 20260922-18.
 - **README:** What goes into the enclave.
+- **Note (from the review of 20260922-46):** The arena runner accepts any single InsertStmt, including `WITH ... INSERT`, `ON CONFLICT`, and `RETURNING`. This check is the real guard. It must refuse those forms, plus `set_config`, advisory locks, and any function that isn't immutable.
 - **Status:** todo
 - **Decided:** A plain insert is `INSERT INTO <subset table> (<columns>) VALUES (...), ...`. The values can be constants, casts, `DEFAULT`, and calls to immutable functions that pass the 3d volatility check. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, `WITH`, `OVERRIDING`, and any function that isn't immutable.
 
@@ -109,6 +114,7 @@ Read the three operator inputs from the governed store (query text, `EXPLAIN (AN
 
 - **Depends on:** 20260922-3, 20260922-4.
 - **README:** Step 1.
+- **Note (from 20260923-33):** Call `SupportedSql.check!` on the input query, so unsupported constructs are refused at intake.
 - **Status:** todo
 - **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
 
@@ -366,13 +372,7 @@ Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row p
 - **Status:** todo
 - **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
 
-### 20260922-46. 9a, 9b, and 9e arena transaction runner.
-
-Open a transaction on arena with `statement_timeout`, load a fixture, run queries, and always roll back.
-
-- **Depends on:** 20260922-27.
-- **README:** 9a, 9b, and 9e.
-- **Status:** todo
+### 20260922-46. 9a, 9b, and 9e arena transaction runner. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-47. 9d result comparator.
 
@@ -873,6 +873,34 @@ Findings from the reviews of 20260922-32 and 20260923-31:
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
 - **README:** 5a-3.
+- **Status:** todo
+
+### 20260923-37. Arena runner loose ends.
+
+Minor findings from the second review of 20260922-46:
+- **Every 57014 is reported as `statement_timeout`,** including a self-cancel or an operator cancel. Name the rule `statement_canceled`, or document it.
+- **A non-StandardError from the block, followed by a failed rollback, loses the primary error.** Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
+- **Which error wins changes with check order.** Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
+- **pg_query uses the PG17 grammar and the server is PG18,** so PG18-only SQL fails as `statement_unparsable`. That's fail-closed.
+
+- **Depends on:** 20260922-46.
+- **Came from:** Second review of 20260922-46.
+- **README:** Step 9.
+- **Status:** todo
+
+### 20260923-38. Error filtering loose ends.
+
+Findings from both reviews of 20260922-8:
+- **A signal that arrives while `guard` is already reporting an error gets swallowed.** The `rescue Exception` clauses in `write`, `ask`, and `to_egress` catch an asynchronous SignalException, so `guard` returns 70 and a caller's loop carries on. Re-raise SignalException in those clauses too.
+- **Nothing tests that `write` flushes.** Deleting `out.flush` stays green.
+- **No spec combines `silence_stderr!` with a re-raised signal.**
+- **Most enclave error classes have no `rule` method,** so they go out as `internal_error`. Add rules to `RelationQualifier::Error` and `Store::Error`, and to the ArgumentErrors that stand in for a rule, such as those in PredicateAtoms and IndexCandidate.
+- **Question for the user:** Should rule names be a closed list in the protocol gem, so every new rule is a reviewed change like the whitelist? Today any identifier-shaped word passes, so an error class that copied a one-word value into `rule` would send it.
+- **Operators get no detail beyond the rule.** A rule-to-text table on the driver side would give them a readable message without changing the whitelist.
+
+- **Depends on:** 20260922-8.
+- **Came from:** Both reviews of 20260922-8.
+- **README:** Trust boundary.
 - **Status:** todo
 
 ## After version 1.
