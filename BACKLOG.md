@@ -77,6 +77,7 @@ Parse each rewrite candidate with pg_query. Accept exactly one `SELECT`. Reject 
 
 - **Depends on:** 20260922-1, 20260922-20.
 - **README:** What goes into the enclave.
+- **Note (from the review of 20260922-20):** Run the 3a relation check on rewrite candidates too. Reject views, and relations the original query doesn't use, because a view's body can call a volatile function that the 3d check never sees.
 - **Status:** todo
 
 ### 20260922-11. Inbound check for index DDL.
@@ -159,14 +160,7 @@ Pull planner statistics (including extended statistics), index definitions, and 
 - **README:** 3c.
 - **Status:** todo
 
-### 20260922-20. 3d volatility check.
-
-Check `provolatile` for every function in the query, including the select list. Abort and name any volatile function. Reusable for rewrite candidates.
-
-- **Depends on:** 20260922-14.
-- **README:** 3d.
-- **Status:** todo
-- **Decided:** Yes. Resolve each operator's `oprcode` and each cast's `castfunc` in `pg_catalog`, and abort if any of them is volatile.
+### 20260922-20. 3d volatility check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-21. 3e literal set.
 
@@ -864,6 +858,24 @@ Minor findings from the second review of 20260923-32:
 - **Depends on:** 20260923-32.
 - **Came from:** Second review of 20260923-32.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-35. Volatility check loose ends.
+
+Findings from the reviews of 20260922-20:
+- **Domain CHECK constraints aren't checked.** A domain whose CHECK calls a volatile function passes. That's realistic, because a validator function is VOLATILE unless someone marks it otherwise.
+- **Attribute notation isn't checked.** `t.f` and `(t).f`, which call a function, are missed.
+- **One volatile cast to a common type poisons every cast to it.** For example, `CREATE CAST (x AS int)` with a volatile function makes every `::int` abort. None of the catalogs checked have one.
+- **TABLESAMPLE always aborts,** because the `system` and `bernoulli` methods are volatile. The allowlist (20260923-33) will refuse TABLESAMPLE anyway.
+- **Surviving mutants:**
+  - Three `quote_ident` columns aren't pinned: `OPERATOR_SQL` `f.proname`, and `CAST_SQL` `named.nspname` and `fn.nspname`.
+  - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
+- **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
+- **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
+
+- **Depends on:** 20260922-20.
+- **Came from:** Both reviews of 20260922-20, and the tests-only review.
+- **README:** 3d.
 - **Status:** todo
 
 ## After version 1.
