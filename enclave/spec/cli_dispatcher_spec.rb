@@ -262,6 +262,21 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(out.string).to eq(error_line("start", "step_rule"))
     end
 
+    it "checks the arguments, required options, and stdin before it makes the run" do
+      blocked = File.join(base, "file").tap { File.write(it, "") }
+      steps = { "start" => step_class.new(handler: recorder, new_run: true, input: true,
+                                          options: { "query" => :value }, required: ["query"]) }
+      { %w[start --bogus] => ["{}", "usage"], %w[start] => ["{}", "usage"],
+        %w[start --query q] => ["[]", "bad_input"] }.each do |argv, (stdin, rule)|
+        out.truncate(0) && out.rewind
+        cli = cli_class.new(steps:, stdin: StringIO.new(stdin), out:, store_base: File.join(blocked, "runs"))
+
+        expect(cli.run(argv)).to eq(64), argv.inspect
+        expect(out.string).to eq(error_line("start", rule)), argv.inspect
+      end
+      expect(calls).to eq([])
+    end
+
     it "takes no --run" do
       steps = { "start" => step_class.new(handler: recorder, new_run: true) }
 

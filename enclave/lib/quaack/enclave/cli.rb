@@ -45,13 +45,16 @@ module Quaack
       # Store for --run if the step needs a run (run: true), a new run's
       # Store if the step starts one (new_run: true), and nil otherwise.
       # options maps each option the step declares, as its name without the
-      # dashes, to :value or :flag (see Arguments).
+      # dashes, to :value or :flag (see Arguments). required names the
+      # options a call must give.
       #
-      # A new run is deleted again unless the call succeeds all the way
-      # through its done line, so a failed call leaves no run behind, and
-      # none that holds inputs the step went on to refuse.
-      Step = Data.define(:handler, :input, :run, :new_run, :options) do
-        def initialize(handler:, input: false, run: false, new_run: false, options: {})
+      # A new run is made only once argv and stdin have been read and
+      # checked, so a usage or bad_input refusal never makes one. It's
+      # deleted again unless the call succeeds all the way through its done
+      # line, so a failed call leaves no run behind, and none that holds
+      # inputs the step went on to refuse.
+      Step = Data.define(:handler, :input, :run, :new_run, :options, :required) do
+        def initialize(handler:, input: false, run: false, new_run: false, options: {}, required: [])
           raise ArgumentError, "a step can't both start a run and open one" if run && new_run
 
           super
@@ -63,7 +66,8 @@ module Quaack
       # from argv or a directory listing, so argv can't pick a file to load.
       STEPS = {
         "version" => Step.new(handler: Steps::Version),
-        "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS)
+        "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS,
+                             required: Steps::Intake::REQUIRED)
       }.freeze
 
       # Other names for a subcommand.
@@ -131,7 +135,9 @@ module Quaack
       def run_step(step, step_name, args)
         raise Refused, "usage" unless step
 
-        with_new_run(step) { |new_store| write(dispatch(step, args, new_store)) }
+        arguments = Arguments.parse(step, args)
+        input = Input.read(@stdin) if step.input
+        with_new_run(step) { |new_store| write(dispatch(step, arguments, input, new_store)) }
         EX_OK
       rescue Refused => e
         write("#{ErrorFilter.to_egress(e, step: step_name)}\n")
@@ -163,9 +169,7 @@ module Quaack
 
       # Runs step and returns its output, every line of it. new_store is the
       # run with_new_run started, if any.
-      def dispatch(step, args, new_store)
-        arguments = Arguments.parse(step, args)
-        input = Input.read(@stdin) if step.input
+      def dispatch(step, arguments, input, new_store)
         store = step.run ? open_store(arguments.run_id) : new_store
         messages = call_step(step, input:, store:, options: arguments.options)
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)

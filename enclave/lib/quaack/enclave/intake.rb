@@ -15,8 +15,8 @@ module Quaack
     # - server: bad_server.
     # - clock_anchor, from --captured-at: bad_captured_at (see ClockAnchor).
     # - query, from its file: query_unreadable, query_too_large,
-    #   query_not_text, query_unparsable, query_not_one_statement, or
-    #   unsupported_construct (see Query).
+    #   query_not_text, query_unparsable, query_not_one_statement,
+    #   unsupported_construct, or query_has_parameters (see Query).
     # - plan, from its file: plan_unreadable, plan_too_large,
     #   plan_not_json, plan_bad_shape, plan_not_analyzed, or
     #   plan_no_buffers (see Plan).

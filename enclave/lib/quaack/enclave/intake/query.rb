@@ -19,18 +19,35 @@ module Quaack
       #    statement.
       # 4. unsupported_construct: SupportedSql refuses it. That also refuses
       #    anything but SELECT, SELECT INTO, and locking clauses.
+      # 5. query_has_parameters: it has a $n parameter, as a query copied
+      #    from pg_stat_statements does. It can't be replayed without the
+      #    values, and 3g uses $n for its own placeholders.
+      #
+      # One leading byte order mark, which some editors write, is dropped
+      # first, since pg_query can't parse it.
       module Query
+        BOM = "﻿"
+
         module_function
 
         def check(bytes)
           text = bytes.dup.force_encoding(Encoding::UTF_8)
           raise Error, "query_not_text" unless text.valid_encoding? && !text.include?("\0")
 
+          text = text.delete_prefix(BOM)
           parse = parse(text)
           raise Error, "query_not_one_statement" unless parse.tree.stmts.size == 1
 
           supported!(parse)
+          raise Error, "query_has_parameters" if parameters?(parse)
+
           text
+        end
+
+        def parameters?(parse)
+          found = false
+          parse.walk! { |_parent, _field, node, _location| found ||= node.is_a?(PgQuery::ParamRef) }
+          found
         end
 
         def parse(text)

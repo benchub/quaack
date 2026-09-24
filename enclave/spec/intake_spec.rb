@@ -170,6 +170,19 @@ RSpec.describe "quaacks intake" do
       expect(out.string).to eq(error_line("usage"))
       expect(runs).to eq([])
     end
+
+    # A base under a regular file can't be made, so a run made before the
+    # arguments were checked would fail as internal_error instead.
+    it "checks its arguments before it makes a run" do
+      blocked = File.join(file("not-a-directory", ""), "runs")
+      [%w[--bogus], %w[--query q --plan p], %W[--query #{query_file} --plan #{plan_file} --server]].each do |args|
+        out.truncate(0) && out.rewind
+        cli = Quaack::Enclave::CLI.new(stdin: StringIO.new, out:, store_base: blocked)
+
+        expect(cli.run(["intake", *args])).to eq(64), args.inspect
+        expect(out.string).to eq(error_line("usage")), args.inspect
+      end
+    end
   end
 
   describe "the server name" do
@@ -188,10 +201,40 @@ RSpec.describe "quaacks intake" do
        "2026-02-30T00:00:00Z", "2026-13-01T00:00:00Z", "2026-09-23T24:00:00Z", "2026-09-23T23:60:00Z",
        "2026-09-23T23:59:60Z", "2026-09-23T22:15:00+24:00", "2026-09-23T22:15:00+02:60",
        "2026-09-23T22:15:00+0200", "2026-09-23T22:15:00.Z", "now", "", " 2026-09-23T22:15:00Z",
-       "2026-09-23T22:15:00Z\n", INTAKE_SENTINEL].each do |time|
+       "2026-09-23T22:15:00Z\n", "2026-09-23T22:15:00\xffZ", "2026-09-23\xffT22:15:00Z",
+       INTAKE_SENTINEL].each do |time|
         out.truncate(0) && out.rewind
         expect_refused("bad_captured_at", intake_with(extra: ["--captured-at", time]), time.inspect)
       end
+    end
+
+    # Postgres can't hold a year past 9999 or before 1 AD as written, and
+    # a plan from before 1970 or from the future is a mistake.
+    it "refuses a time before 1970, in UTC, as bad_captured_at" do
+      ["1969-12-31T23:59:59.999999Z", "1970-01-01T00:30:00+01:00", "0000-01-01T00:00:00+01:00",
+       "0001-01-01T00:00:00Z"].each do |time|
+        out.truncate(0) && out.rewind
+        expect_refused("bad_captured_at", intake_with(extra: ["--captured-at", time]), time)
+      end
+
+      ["1970-01-01T00:00:00Z", "1970-01-01T01:00:00+01:00"].each do |time|
+        FileUtils.rm_rf(base)
+        expect(intake_with(extra: ["--captured-at", time])).to eq(0), time
+        expect(only_run.read("clock_anchor")).to eq("1970-01-01T00:00:00.000000Z")
+      end
+    end
+
+    it "refuses a time more than one day after intake as bad_captured_at" do
+      iso = ->(time) { time.utc.strftime("%Y-%m-%dT%H:%M:%S.%6NZ") }
+      [iso.call(Time.now + 86_400 + 60), "9999-12-31T23:00:00Z", "9999-12-31T23:00:00-05:00"].each do |time|
+        out.truncate(0) && out.rewind
+        expect_refused("bad_captured_at", intake_with(extra: ["--captured-at", time]), time)
+      end
+
+      near = iso.call(Time.now + 86_400 - 60)
+      FileUtils.rm_rf(base)
+      expect(intake_with(extra: ["--captured-at", near])).to eq(0)
+      expect(only_run.read("clock_anchor")).to eq(near)
     end
   end
 
@@ -241,6 +284,21 @@ RSpec.describe "quaacks intake" do
       refuses_query("SELECT 1\0; SELECT '#{INTAKE_SENTINEL}'", "query_not_text")
     end
 
+    it "strips one leading byte order mark, and keeps the rest as given" do
+      expect(intake_with(query: file("q.sql", "﻿#{query_text}"))).to eq(0)
+      expect(only_run.read("query")).to eq(query_text)
+
+      FileUtils.rm_rf(base)
+      refuses_query("﻿﻿#{query_text}", "query_unparsable")
+    end
+
+    it "refuses a query with $n parameters as query_has_parameters" do
+      ["SELECT c.id FROM public.customers c WHERE c.email = $1 AND c.name = '#{INTAKE_SENTINEL}'",
+       "SELECT '#{INTAKE_SENTINEL}' FROM t WHERE a IN (SELECT b FROM u WHERE c = $2)"].each do |sql|
+        refuses_query(sql, "query_has_parameters")
+      end
+    end
+
     it "refuses text pg_query can't parse as query_unparsable" do
       refuses_query("SELECT '#{INTAKE_SENTINEL}' FROM WHERE", "query_unparsable")
       refuses_query("SELECT '#{INTAKE_SENTINEL}", "query_unparsable")
@@ -283,6 +341,14 @@ RSpec.describe "quaacks intake" do
        [entry.merge("Settings" => { "search_path" => [INTAKE_SENTINEL] })], INTAKE_SENTINEL, 1, nil].each do |bad|
         refuses_plan(JSON.generate(bad), "plan_bad_shape")
       end
+    end
+
+    it "strips one leading byte order mark from the plan" do
+      expect(intake_with(plan: file("plan.json", "﻿#{plan_text}"))).to eq(0)
+      expect(only_run.read("plan")).to eq(plan)
+
+      FileUtils.rm_rf(base)
+      refuses_plan("﻿﻿#{plan_text}", "plan_not_json")
     end
 
     it "refuses a plan without ANALYZE as plan_not_analyzed" do

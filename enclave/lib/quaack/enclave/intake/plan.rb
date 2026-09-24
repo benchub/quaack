@@ -23,7 +23,11 @@ module Quaack
       # 4. plan_no_buffers: the root plan node has none of the block
       #    counters BUFFERS writes. Without ANALYZE, BUFFERS writes them only
       #    under "Planning", but that's already refused above.
+      #
+      # One leading byte order mark, which some editors write, is dropped
+      # first, since JSON refuses it.
       module Plan
+        BOM = "﻿"
         BUFFER_COUNTERS = %w[Shared Local Temp].product(%w[Hit Read Dirtied Written])
                                                .map { |kind, what| "#{kind} #{what} Blocks" }.freeze
         ANALYZE_KEYS = ["Actual Rows", "Actual Total Time"].freeze
@@ -31,7 +35,7 @@ module Quaack
         module_function
 
         def check(bytes)
-          plan = parse(bytes.dup.force_encoding(Encoding::UTF_8))
+          plan = parse(bytes.dup.force_encoding(Encoding::UTF_8).delete_prefix(BOM))
           raise Error, "plan_bad_shape" unless shaped?(plan)
 
           root = plan[0]["Plan"]

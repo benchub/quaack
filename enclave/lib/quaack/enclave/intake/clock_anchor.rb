@@ -20,11 +20,27 @@ module Quaack
                 T(?<hour>\d\d):(?<minute>\d\d):(?<second>\d\d)(?:\.(?<fraction>\d{1,9}))?
                 (?<zone>Z|[+-](?<zone_hour>\d\d):(?<zone_minute>\d\d))\z/x
 
+        # The earliest time --captured-at may give.
+        EARLIEST = Time.utc(1970).freeze
+        # How far past the moment of intake --captured-at may be, in
+        # seconds, for a jump server whose clock runs a little slow. A plan
+        # can't have run any later than that.
+        FUTURE_SLACK = 86_400
+
         module_function
 
-        def from(captured_at)
-          time = captured_at.nil? ? Time.now : parse(captured_at)
+        def from(captured_at, now: Time.now)
+          time = captured_at.nil? ? now : bounded(parse(captured_at), now)
           time.utc.strftime("%Y-%m-%dT%H:%M:%S.%6NZ")
+        end
+
+        # Raises Error with bad_captured_at for a time before 1970, or more
+        # than FUTURE_SLACK after now. That also keeps the year within what
+        # Postgres writes as four digits.
+        def bounded(time, now)
+          raise Error, "bad_captured_at" if time < EARLIEST || time > now + FUTURE_SLACK
+
+          time
         end
 
         # Raises Error with bad_captured_at for anything but FORM, or for a
