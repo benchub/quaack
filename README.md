@@ -171,6 +171,21 @@ Build the literal set that later steps test against. It has three literals:
 
 This literal set is value-class data, so it stays in the governed store. QUAACK runs these values on the racetrack and in arena. No LLM ever sees them.
 
+Each set is keyed by the 3g placeholder numbers, in the same form as the placeholder map, so any set binds the same way the slow values do. Values come from the step 3c statistics for the column each placeholder is compared with, picked by operator:
+
+- **Equality (`=`):** the worst case is the top MCV, and the typical value is the middle histogram bound.
+- **Ranges (`<`, `<=`, `>`, `>=`):** the worst case is the histogram bound that selects the most rows: the last bound for `<` and `<=`, and the first for `>` and `>=`. The typical value is the middle bound. For `BETWEEN`, the worst case is the first and last bounds, and the typical value is the middle bucket: the middle bound and the one after it.
+- **`IN` lists and `= ANY`:** the list keeps its length. In the worst case, each element takes the next most common value. In the typical set, the elements take consecutive bounds around the middle.
+- **`LIKE` and any other operator,** including `<>`, `NOT IN`, and `NOT BETWEEN`: the slow literal in all three sets.
+
+A picked value keeps the placeholder's declared type. A number placeholder widens to `bigint` or `numeric` when the value needs it, such as `20` against a numeric column.
+
+When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
+
+- A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
+- A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
+- A placeholder that 3g shares between expressions, since it can feed more than one place.
+
 ### 3f. PII classification.
 
 Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.

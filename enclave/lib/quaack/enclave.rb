@@ -31,6 +31,7 @@ require_relative "enclave/schema_dump"
 require_relative "enclave/planner_statistics"
 require_relative "enclave/pii_classification"
 require_relative "enclave/redaction"
+require_relative "enclave/literal_set"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
