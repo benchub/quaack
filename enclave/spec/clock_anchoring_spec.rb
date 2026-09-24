@@ -11,6 +11,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
   def path(search_path) = { "search_path" => search_path }
 
+  def restore(sql, result) = described_class.restore(sql, result.replacements, result.added_names)
+
   def anchor_error(rule)
     raise_error(described_class::Error, /\A#{rule}: /) { |error| expect(error.rule).to eq(rule) }
   end
@@ -34,8 +36,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
       "localtime(4)" => "quaack.clock_anchor()::pg_catalog.time(4)"
     }.each do |original, anchored|
       it "turns #{original} into #{anchored}" do
-        result = anchor("SELECT #{original} FROM public.orders")
-        expect(result.sql).to eq(deparse("SELECT #{anchored} FROM public.orders"))
+        result = anchor("SELECT #{original} AS x FROM public.orders")
+        expect(result.sql).to eq(deparse("SELECT #{anchored} AS x FROM public.orders"))
         expect(result.parse.query).to eq(result.sql)
         expect(result.replacements.map(&:anchored)).to eq([deparse("SELECT #{anchored}").delete_prefix("SELECT ")])
       end
@@ -82,9 +84,97 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "keeps a cast the query already had around a replaced function" do
       result = anchor("SELECT now()::date, CURRENT_DATE::date, CURRENT_TIMESTAMP::pg_catalog.date")
-      expect(result.sql).to eq(deparse("SELECT quaack.clock_anchor()::date, " \
-                                       "quaack.clock_anchor()::pg_catalog.date::date, " \
-                                       "quaack.clock_anchor()::pg_catalog.date"))
+      expect(result.sql).to eq(deparse("SELECT quaack.clock_anchor()::date AS now, " \
+                                       "quaack.clock_anchor()::pg_catalog.date::date AS current_date, " \
+                                       "quaack.clock_anchor()::pg_catalog.date AS current_timestamp"))
+    end
+  end
+
+  # Postgres names an output column that has no AS after the function it
+  # calls, looking through casts, CASE's ELSE, COLLATE, and a scalar
+  # subquery's column. A later reference to that name, by an outer query
+  # or by ORDER BY or GROUP BY, must still find it, so anchor names the
+  # column what Postgres named the original.
+  describe "the names Postgres gives the anchored columns" do
+    {
+      "now()" => "now", "pg_catalog.now()" => "now", "transaction_timestamp()" => "transaction_timestamp",
+      "statement_timestamp()" => "statement_timestamp", "CURRENT_TIMESTAMP" => "current_timestamp",
+      "current_timestamp(2)" => "current_timestamp", "CURRENT_DATE" => "current_date",
+      "LOCALTIMESTAMP" => "localtimestamp", "localtimestamp(1)" => "localtimestamp", "LOCALTIME" => "localtime",
+      "localtime(3)" => "localtime", "now()::date" => "now", "CURRENT_DATE::text" => "current_date",
+      "now() COLLATE \"C\"" => "now", "CASE WHEN true THEN 1 ELSE now() END" => "now",
+      "(SELECT now())" => nil
+    }.each do |expression, name|
+      it "keeps the name #{name.inspect} for #{expression}" do
+        result = anchor("SELECT #{expression} FROM public.orders")
+        target = result.parse.tree.stmts.first.stmt.select_stmt.target_list.first.res_target
+        expect(target.name).to eq(name.to_s)
+      end
+    end
+
+    it "names a scalar subquery's own column, which is where the outer name comes from" do
+      result = anchor("SELECT (SELECT now())")
+      expect(result.sql).to eq(deparse("SELECT (SELECT quaack.clock_anchor() AS now)"))
+    end
+
+    it "leaves a name that doesn't come from a replaced function" do
+      sql = "SELECT now() + interval '1 day', now() AS t, date_trunc('day', now()), " \
+            "CASE WHEN now() > created_at THEN 1 END, CURRENT_DATE - 1, now() IS NULL FROM public.orders"
+      result = anchor(sql)
+      expect(result.parse.tree.stmts.first.stmt.select_stmt.target_list.map { |t| t.res_target.name })
+        .to eq(["", "t", "", "", "", ""])
+      expect(result.added_names).to eq([])
+    end
+
+    it "names every column the query's subqueries, CTEs, and set operations have" do
+      sql = "WITH w AS (SELECT now()) SELECT s.now, w.now FROM (SELECT CURRENT_DATE UNION SELECT CURRENT_DATE) " \
+            "s(now), w"
+      expected = "WITH w AS (SELECT quaack.clock_anchor() AS now) SELECT s.now, w.now FROM " \
+                 "(SELECT quaack.clock_anchor()::pg_catalog.date AS current_date UNION " \
+                 "SELECT quaack.clock_anchor()::pg_catalog.date AS current_date) s(now), w"
+      expect(anchor(sql).sql).to eq(deparse(expected))
+    end
+
+    it "names a function in FROM that has no alias after the function" do
+      sql = "SELECT now.now FROM now(), pg_catalog.statement_timestamp() WITH ORDINALITY, now() AS t"
+      expected = "SELECT now.now FROM quaack.clock_anchor() AS now, " \
+                 "quaack.clock_anchor() WITH ORDINALITY AS statement_timestamp, quaack.clock_anchor() AS t"
+      expect(anchor(sql).sql).to eq(deparse(expected))
+    end
+
+    it "records each name it added, by its place among the columns and FROM functions" do
+      result = anchor("SELECT 1, now(), now() AS t FROM now(), (SELECT CURRENT_DATE) s")
+      expect(result.added_names).to eq(
+        [
+          described_class::AddedName.new(slot: 1, name: "now"),
+          described_class::AddedName.new(slot: 3, name: "now"),
+          described_class::AddedName.new(slot: 4, name: "current_date")
+        ]
+      )
+    end
+
+    it "restores the query without the names it added" do
+      [
+        "SELECT now(), CURRENT_DATE, LOCALTIMESTAMP ORDER BY now",
+        "SELECT s.now FROM (SELECT now()) s",
+        "SELECT now.now FROM now(), now() WITH ORDINALITY AS t",
+        "SELECT (SELECT now()), now() AS now GROUP BY now"
+      ].each do |sql|
+        result = anchor(sql)
+        expect(restore(result.sql, result)).to eq(deparse(sql))
+      end
+    end
+
+    it "refuses to restore when a name it added isn't there" do
+      result = anchor("SELECT now()")
+      expect { restore("SELECT quaack.clock_anchor() AS t", result) }
+        .to raise_error(described_class::Error, "restore_mismatch: the SQL's names don't match the ones anchor added")
+      far = result.with(added_names: [described_class::AddedName.new(slot: 5, name: "now")])
+      expect { restore("SELECT quaack.clock_anchor() AS now", far) }
+        .to raise_error(described_class::Error, "restore_mismatch: the SQL's names don't match the ones anchor added")
+      from = anchor("SELECT 1 FROM now()")
+      expect { restore("SELECT 1 FROM quaack.clock_anchor() AS now(x)", from) }
+        .to raise_error(described_class::Error, "restore_mismatch: the SQL's names don't match the ones anchor added")
     end
   end
 
@@ -104,7 +194,10 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "is plain strings, so it can travel as shape" do
       result = anchor("SELECT now(), current_timestamp(1)")
-      expect(result.replacements.flat_map(&:to_h).flat_map(&:values)).to all(be_a(String))
+      values = (result.replacements + result.added_names).flat_map { |record| record.to_h.values }
+      expect(values.length).to eq(8)
+      expect(values.grep(String).length).to eq(6)
+      expect(values.grep(Integer).length).to eq(2)
     end
   end
 
@@ -148,8 +241,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     it "leaves a clock_anchor() in any schema but quaack, and doesn't refuse it" do
       sql = "SELECT public.clock_anchor(), now()"
       result = anchor(sql)
-      expect(result.sql).to eq(deparse("SELECT public.clock_anchor(), quaack.clock_anchor()"))
-      expect(described_class.restore(result.sql, result.replacements)).to eq(deparse(sql))
+      expect(result.sql).to eq(deparse("SELECT public.clock_anchor(), quaack.clock_anchor() AS now"))
+      expect(restore(result.sql, result)).to eq(deparse(sql))
     end
   end
 
@@ -158,7 +251,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "replaces an unqualified call when pg_catalog comes first, as it does when the path doesn't list it" do
       [nil, {}, path('"$user", public'), path("pg_catalog, public"), path("public")].each do |settings|
-        expect(anchor(sql, settings).sql).to eq(deparse("SELECT quaack.clock_anchor() FROM public.orders"))
+        expect(anchor(sql, settings).sql).to eq(deparse("SELECT quaack.clock_anchor() AS now FROM public.orders"))
       end
     end
 
@@ -186,33 +279,34 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     ].each do |sql|
       it "puts the original functions back in #{sql[0, 50]}..." do
         result = anchor(sql)
-        expect(described_class.restore(result.sql, result.replacements)).to eq(deparse(sql))
+        expect(restore(result.sql, result)).to eq(deparse(sql))
       end
     end
 
     it "works on SQL that changed elsewhere since, such as literals turned into placeholders" do
       result = anchor("SELECT id FROM public.orders WHERE status = 'open' AND created_at > CURRENT_DATE - 7")
       changed = result.sql.sub("'open'", "$1").sub("7", "$2")
-      expect(described_class.restore(changed, result.replacements))
+      expect(restore(changed, result))
         .to eq(deparse("SELECT id FROM public.orders WHERE status = $1 AND created_at > CURRENT_DATE - $2"))
     end
 
     it "refuses when the SQL has fewer anchors than the record" do
       result = anchor("SELECT now(), CURRENT_DATE")
-      expect { described_class.restore("SELECT quaack.clock_anchor()", result.replacements) }
-        .to anchor_error("restore_mismatch")
+      expect { restore("SELECT quaack.clock_anchor()", result) }
+        .to raise_error(described_class::Error,
+                        "restore_mismatch: the SQL has fewer clock anchors than the replacements")
     end
 
     it "refuses when the SQL has more anchors than the record" do
       result = anchor("SELECT now()")
-      expect { described_class.restore("SELECT quaack.clock_anchor(), quaack.clock_anchor()", result.replacements) }
+      expect { restore("SELECT quaack.clock_anchor(), quaack.clock_anchor()", result) }
         .to anchor_error("restore_mismatch")
     end
 
     it "refuses when an anchor doesn't match the one the record has in its place" do
       result = anchor("SELECT CURRENT_DATE")
       ["SELECT quaack.clock_anchor()", "SELECT quaack.clock_anchor()::pg_catalog.timestamp"].each do |sql|
-        expect { described_class.restore(sql, result.replacements) }
+        expect { restore(sql, result) }
           .to raise_error(described_class::Error,
                           "restore_mismatch: the SQL's clock anchors don't match the replacements")
       end
@@ -221,7 +315,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     it "refuses SQL the deparser would change once the originals are back" do
       now = described_class::Replacement.new(original: "now()", anchored: "quaack.clock_anchor()")
       sql = "SELECT (quaack.clock_anchor() IS NOT DISTINCT FROM quaack.clock_anchor()) IS TRUE"
-      expect { described_class.restore(sql, [now, now]) }
+      expect { described_class.restore(sql, [now, now], []) }
         .to raise_error(Quaack::Enclave::Deparse::Error) { |error| expect(error.rule).to eq("deparse_mismatch") }
     end
   end
@@ -266,8 +360,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
         error_of { anchor("SELECT now() WHERE '#{sentinel}' = ('#{sentinel}'") },
         error_of { anchor("SELECT now() WHERE x = '#{sentinel}'", path("public, pg_catalog")) },
         error_of { anchor("SELECT quaack.clock_anchor() WHERE x = '#{sentinel}'") },
-        error_of { described_class.restore("SELECT quaack.clock_anchor() WHERE x = '#{sentinel}'", []) },
-        error_of { described_class.restore("SELECT '#{sentinel}' WHERE (", []) }
+        error_of { described_class.restore("SELECT quaack.clock_anchor() WHERE x = '#{sentinel}'", [], []) },
+        error_of { described_class.restore("SELECT '#{sentinel}' WHERE (", [], []) }
       ]
       expect(errors.map(&:rule)).to eq(%w[parse_error clock_function_search_path clock_anchor_in_query
                                           restore_mismatch parse_error])

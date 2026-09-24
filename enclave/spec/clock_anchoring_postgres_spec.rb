@@ -115,6 +115,91 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     end
   end
 
+  # Postgres names a column or FROM function that has no alias after the
+  # function it calls, and anchoring must not change that name.
+  describe "the names Postgres makes up" do
+    before { stand_in("SELECT pg_catalog.now()") }
+
+    # The original and the anchored query, run in one transaction, so
+    # now() and the stand-in agree.
+    def both(sql)
+      anchored = anchor(sql).sql
+      conn.exec("BEGIN")
+      [conn.exec(sql), conn.exec(anchored)]
+    ensure
+      conn.exec("COMMIT")
+    end
+
+    [
+      "SELECT now(), now()::date, now()::text, CURRENT_DATE, CURRENT_DATE::text, LOCALTIMESTAMP, localtime(2), " \
+      "current_timestamp(1), transaction_timestamp(), now() + interval '1 day', " \
+      "CASE WHEN true THEN NULL ELSE now() END, CASE WHEN true THEN now() END, now()::date::text, " \
+      "CURRENT_DATE::text COLLATE \"C\", (now())::date, now() IS NULL, coalesce(now(), now())",
+      "SELECT (SELECT now()), (SELECT CURRENT_DATE UNION SELECT CURRENT_DATE), ARRAY(SELECT now()), " \
+      "EXISTS (SELECT now()), (SELECT (SELECT LOCALTIME))",
+      "SELECT * FROM now()", "SELECT * FROM now() WITH ORDINALITY", "SELECT * FROM pg_catalog.now() AS t",
+      "SELECT * FROM (SELECT now(), CURRENT_DATE) s", "WITH w AS (SELECT LOCALTIMESTAMP) SELECT * FROM w"
+    ].each do |sql|
+      it "keeps every column name of #{sql[0, 60]}..." do
+        original, anchored = both(sql)
+        expect(anchored.fields).to eq(original.fields)
+        expect(anchored.values).to eq(original.values)
+      end
+    end
+
+    [
+      ["SELECT s.now FROM (SELECT now()) s", 1],
+      ["WITH w AS (SELECT now()) SELECT w.now FROM w", 1],
+      ["SELECT now() ORDER BY now", 1],
+      ["SELECT s.current_date FROM (SELECT CURRENT_DATE) s", 1],
+      ["SELECT s.localtimestamp FROM (SELECT LOCALTIMESTAMP) s", 1],
+      ["SELECT now.now FROM now()", 1],
+      ["SELECT x.now FROM (SELECT (SELECT now())) x", 1]
+    ].each do |sql, rows|
+      it "still finds the name in #{sql}" do
+        original, anchored = both(sql)
+        expect(anchored.values).to eq(original.values)
+        expect(anchored.ntuples).to eq(rows)
+      end
+    end
+
+    # A table column named now would take over ORDER BY now or GROUP BY
+    # now, if the output column were no longer named now.
+    context "with a table that has a column named now" do
+      before do
+        conn.exec("CREATE TABLE public.ev (id int, now int)")
+        conn.exec("INSERT INTO public.ev VALUES (1, 1), (2, 2)")
+      end
+
+      it "orders by the output column, not the table's" do
+        %w[now()::date now() CURRENT_DATE].each do |expression|
+          name = expression == "CURRENT_DATE" ? %("current_date") : "now"
+          sql = "SELECT id, #{expression} FROM public.ev ORDER BY #{name}, id DESC"
+          original, anchored = both(sql)
+          expect(anchored.column_values(0)).to eq(%w[2 1])
+          expect(anchored.values).to eq(original.values)
+        end
+      end
+
+      # GROUP BY looks for a table's column first, so it groups by ev.now
+      # either way.
+      it "groups by the table's column, as the original does" do
+        original, anchored = both("SELECT now()::date, count(*) FROM public.ev GROUP BY now")
+        expect(anchored.column_values(1)).to eq(%w[1 1])
+        expect(anchored.values).to eq(original.values)
+      end
+    end
+
+    it "groups by the output column when no table has a column of that name" do
+      %w[now() now()::date CURRENT_DATE].each do |expression|
+        name = expression == "CURRENT_DATE" ? %("current_date") : "now"
+        original, anchored = both("SELECT #{expression}, count(*) FROM public.customers GROUP BY #{name}")
+        expect(anchored.column_values(1)).to eq(["2000"])
+        expect(anchored.values).to eq(original.values)
+      end
+    end
+  end
+
   describe "a user function named now" do
     before do
       stand_in("SELECT '2026-03-17 03:04:05+00'::timestamptz")

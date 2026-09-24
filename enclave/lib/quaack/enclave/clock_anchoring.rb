@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "anchored_names"
+require_relative "clock_functions"
 require_relative "deparse"
 require_relative "node_rewrite"
 require_relative "relation_qualifier"
@@ -16,7 +18,8 @@ module Quaack
     #   result.sql           # => "SELECT ... WHERE created_at > quaack.clock_anchor()::pg_catalog.date - 7"
     #   result.replacements  # => [Replacement(original: "current_date",
     #                        #                 anchored: "quaack.clock_anchor()::pg_catalog.date")]
-    #   ClockAnchoring.restore(result.sql, result.replacements)
+    #   result.added_names   # => [] here; see below
+    #   ClockAnchoring.restore(result.sql, result.replacements, result.added_names)
     #   # => "SELECT ... WHERE created_at > current_date - 7"
     #
     # The inputs are the query, qualified by RelationQualifier, and the
@@ -68,6 +71,15 @@ module Quaack
     # in the SQL don't match the list one for one, restore raises Error
     # (rule restore_mismatch).
     #
+    # Names. Postgres names an output column with no AS, and a FROM
+    # function with no alias, after the function, so anchoring would
+    # rename them: now() is "now", but quaack.clock_anchor() is
+    # "clock_anchor". AnchoredNames writes the original name in wherever
+    # it changed, and added_names records each one by its slot, so
+    # restore takes them off again. It raises restore_mismatch when a
+    # slot doesn't carry the name that was added there. The names are
+    # function and keyword names, so they're shape too.
+    #
     # SQL comes out of Deparse.faithfully, so a deparse that changes the
     # query raises Deparse::Error. The query must use only what
     # SupportedSql lists, or SupportedSql::Error is raised. Error messages
@@ -84,41 +96,43 @@ module Quaack
         end
       end
 
-      Result = Data.define(:sql, :parse, :replacements)
+      Result = Data.define(:sql, :parse, :replacements, :added_names)
+      AddedName = AnchoredNames::Added
       Replacement = Data.define(:original, :anchored)
 
-      ANCHOR = "quaack.clock_anchor()"
+      ANCHOR = ClockFunctions::ANCHOR
       ANCHOR_NAME = %w[quaack clock_anchor].freeze
-      FUNCTIONS = %w[now transaction_timestamp statement_timestamp].freeze
-
-      # Each SQL-value function replaced, and the cast that keeps its type,
-      # if it needs one.
-      SQL_VALUE_CASTS = {
-        SVFOP_CURRENT_TIMESTAMP: nil, SVFOP_CURRENT_TIMESTAMP_N: "pg_catalog.timestamptz",
-        SVFOP_CURRENT_DATE: "pg_catalog.date",
-        SVFOP_LOCALTIMESTAMP: "pg_catalog.timestamp", SVFOP_LOCALTIMESTAMP_N: "pg_catalog.timestamp",
-        SVFOP_LOCALTIME: "pg_catalog.time", SVFOP_LOCALTIME_N: "pg_catalog.time"
-      }.freeze
-
-      PRECISION_OPS = %i[SVFOP_CURRENT_TIMESTAMP_N SVFOP_LOCALTIMESTAMP_N SVFOP_LOCALTIME_N].freeze
 
       module_function
 
       def anchor(sql, settings)
         tree = parse(sql).tap { |result| SupportedSql.check!(result) }.tree
+        names = AnchoredNames.implicit_names(tree)
         originals = anchor_tree(tree)
         check_search_path!(settings) if originals.any? { |node| unqualified_call?(node) }
-        anchored = Deparse.faithful_parse(tree)
-        Result.new(sql: anchored.query, parse: anchored, replacements: originals.map { |node| record(node) })
+        result(tree, originals, AnchoredNames.keep(tree, names))
       end
 
-      def restore(sql, replacements)
+      def result(tree, originals, added_names)
+        anchored = Deparse.faithful_parse(tree)
+        Result.new(sql: anchored.query, parse: anchored, replacements: originals.map { |node| record(node) },
+                   added_names:)
+      end
+
+      def restore(sql, replacements, added_names)
         tree = parse(sql).tree
         pending = replacements.map { |r| [comparable(expression(r.anchored)), r.original] }
         NodeRewrite.each(tree) { |node| restored_node(node, pending) }
         mismatch!("the SQL has fewer clock anchors than the replacements") if pending.any?
+        strip_names(tree, added_names)
 
         Deparse.faithfully(tree)
+      end
+
+      def strip_names(tree, added_names)
+        AnchoredNames.strip(tree, added_names)
+      rescue AnchoredNames::Mismatch
+        mismatch!("the SQL's names don't match the ones anchor added")
       end
 
       def parse(sql)
@@ -138,7 +152,7 @@ module Quaack
       def anchored_node(node)
         raise Error.new("clock_anchor_in_query", "the query already calls #{ANCHOR}") if anchor_call?(node)
 
-        sql = anchored_sql(node)
+        sql = ClockFunctions.anchored_sql(node)
         sql && expression(sql)
       end
 
@@ -157,36 +171,6 @@ module Quaack
       end
 
       def mismatch!(detail) = raise(Error.new("restore_mismatch", detail))
-
-      # The anchored expression's SQL for a node anchor replaces, or nil.
-      def anchored_sql(node)
-        case node.node
-        when :func_call then ANCHOR if clock_function?(node.func_call)
-        when :sqlvalue_function then sql_value_anchor(node.sqlvalue_function)
-        end
-      end
-
-      def sql_value_anchor(svf)
-        return unless SQL_VALUE_CASTS.key?(svf.op)
-
-        cast = SQL_VALUE_CASTS[svf.op]
-        return ANCHOR unless cast
-
-        precision = PRECISION_OPS.include?(svf.op) ? "(#{Integer(svf.typmod)})" : ""
-        "#{ANCHOR}::#{cast}#{precision}"
-      end
-
-      def clock_function?(func)
-        names = name_parts(func)
-        plain_call?(func) && FUNCTIONS.include?(names.last) && [1, 2].include?(names.length) &&
-          (names.length == 1 || names.first == "pg_catalog")
-      end
-
-      # No arguments, so no DISTINCT or VARIADIC either, which need one. A
-      # call with no arguments has an ORDER BY only from WITHIN GROUP.
-      def plain_call?(func)
-        func.args.empty? && func.agg_order.empty? && func.agg_filter.nil? && func.over.nil? && !func.agg_star
-      end
 
       def unqualified_call?(node) = node.func_call&.funcname&.length == 1
 
