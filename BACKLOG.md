@@ -749,18 +749,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 
 ### 20260923-33. Fail closed on unsupported SQL constructs. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-34. Governed store loose ends.
-
-Minor findings from the second review of 20260923-32:
-- **`Store.open` and `#teardown` still let a raw `SystemCallError` out of `PrivateFiles.lstat`.** For example, after `File.chmod(0, base)`, both raise `Errno::EACCES` naming `<base>/<run_id>`. A base that's a regular file gives `Errno::ENOTDIR`. Nothing below the run directory is named, so nothing leaks, but the class promises `Store::Error`.
-- **The 4 MB-thread test pins `MAX_DEPTH` loosely on macOS.** A value of 6,000 still passes there, though it would likely fail on aarch64 Linux.
-- **Reading an entry that's a FIFO blocks forever.** Only the owner can plant one, so this is informational.
-
-- **Depends on:** 20260923-32.
-- **Came from:** Second review of 20260923-32.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Note (from the review of 20260922-66):** A symlinked store base (`~/.quaack/runs`) is followed by create, open, and teardown. Decide whether to refuse it.
+### 20260923-34. Governed store loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-35. Volatility check loose ends.
 
@@ -1100,6 +1089,19 @@ Findings from the reviews of 20260922-66:
 
 - **Depends on:** 20260922-66.
 - **Came from:** The reviews of 20260922-66.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-18. Governed store loose ends, part two.
+
+Minor findings from the second review of 20260923-34:
+- **Nothing tests that create makes nothing through a linked `~/.quaack`.** In `Store.create`, replacing the first `in_base(...) { PrivateFiles.make_directories(base) }` with a plain call survives: the second check still raises BadBase, but `target/runs` gets created. Add a store case where the parent is linked and the target has no `runs`, and assert the target stays empty.
+- **The pre-open lstat's condition isn't pinned.** `unless File.lstat(file).file?` → `if File.lstat(file).directory?` survives. Stub `File.lstat` to return a FIFO's stat for a real regular-file entry, and expect a refusal. Also fix the `PrivateFiles.read` comment, which says no test can tell the lstat is there.
+- **`Store::BaseChecks` is a public constant.** Its methods are private, but it could be `private_constant`.
+- **A base directly under macOS `/tmp` is refused,** because `/tmp` is a symlink. Only a custom test base can hit this. `standalone_require_spec` falls back to `/tmp` when `TMPDIR` is unset.
+
+- **Depends on:** 20260923-34.
+- **Came from:** Second review of 20260923-34.
 - **README:** Where QUAACK runs.
 - **Status:** todo
 
