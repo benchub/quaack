@@ -46,7 +46,6 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
         WHERE o.status IN ('a', 'b') AND o.total_cents BETWEEN 1 AND 10 AND c.email LIKE '%x'
           AND c.email NOT ILIKE 'y%' AND o.status IS DISTINCT FROM 'z' AND o.id = ANY ('{1,2}'::bigint[])
           AND o.customer_id IN (SELECT id FROM customers) AND o.created_at > now() - interval '1 day'
-          AND o.status SIMILAR TO 'a%'
         ORDER BY o.created_at DESC
         LIMIT 10
       SQL
@@ -97,7 +96,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       "an EXISTS subquery" => "SELECT 1 WHERE EXISTS (SELECT 1 WHERE random() > 0.5)",
       "LATERAL" => "SELECT * FROM orders o, LATERAL (SELECT random() + o.id) l",
       "a function in FROM" => "SELECT * FROM random() r",
-      "ROWS FROM" => "SELECT * FROM ROWS FROM (generate_series(1, 2), random()) r",
+      "ROWS FROM" => "SELECT * FROM ROWS FROM (random()) r",
       "a FROM function's argument" => "SELECT * FROM generate_series(1, (random() * 3)::int) g",
       "an aggregate's argument" => "SELECT sum(random()) FROM orders",
       "an aggregate's FILTER" => "SELECT count(*) FILTER (WHERE random() > 0.5) FROM orders",
@@ -115,11 +114,9 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       end
     end
 
-    it "aborts on TABLESAMPLE, whose sampling methods are volatile" do
-      expect { check("SELECT id FROM orders TABLESAMPLE system (10)") }
-        .to volatile_error("function pg_catalog.system is volatile")
+    it "refuses TABLESAMPLE, which isn't on the supported list" do
       expect { check("SELECT id FROM orders TABLESAMPLE bernoulli (10) REPEATABLE (1)") }
-        .to volatile_error("function pg_catalog.bernoulli is volatile")
+        .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: RangeTableSample")
     end
   end
 
@@ -441,7 +438,6 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       "IN (subquery)" => ["=", "SELECT 1 WHERE 1 IN (SELECT 1)"],
       "= ANY (subquery)" => ["=", "SELECT 1 WHERE 1 = ANY (SELECT 1)"],
       "> ALL (subquery)" => [">", "SELECT 1 WHERE 1 > ALL (SELECT 1)"],
-      "a row comparison with a subquery" => ["<", "SELECT 1 WHERE (1, 2) < (SELECT 1, 2)"],
       "BETWEEN's lower bound" => [">=", "SELECT 1 WHERE 1 BETWEEN 0 AND 2"],
       "BETWEEN's upper bound" => ["<=", "SELECT 1 WHERE 1 BETWEEN 0 AND 2"],
       "BETWEEN SYMMETRIC" => ["<=", "SELECT 1 WHERE 1 BETWEEN SYMMETRIC 2 AND 0"],
@@ -475,8 +471,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
     {
       "LIKE" => ["~~", "SELECT 'x' LIKE 'y'"],
       "NOT LIKE" => ["!~~", "SELECT 'x' NOT LIKE 'y'"],
-      "ILIKE" => ["~~*", "SELECT 'x' ILIKE 'y'"],
-      "SIMILAR TO" => ["~", "SELECT 'x' SIMILAR TO 'y'"]
+      "ILIKE" => ["~~*", "SELECT 'x' ILIKE 'y'"]
     }.each do |syntax, (op, sql)|
       it "aborts on #{syntax}, which calls #{op}" do
         function("a.op_text(x text, y text)", "VOLATILE", returns: "boolean", body: "SELECT true")
@@ -575,6 +570,21 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
       expect(check(clean)).to be_nil
       expect { check(volatile) }.to volatile_error("function pg_catalog.random is volatile")
+    end
+  end
+
+  describe "SQL outside the supported list" do
+    # Each would pass without the check.
+    {
+      "ROW" => ["SELECT ROW(1, 2)", "RowExpr"],
+      "a row comparison with a subquery" => ["SELECT 1 WHERE (1, 2) < (SELECT 1, 2)", "RowExpr"],
+      "SIMILAR TO" => ["SELECT 'x' SIMILAR TO 'y'", "A_Expr AEXPR_SIMILAR"],
+      "an UPDATE" => ["UPDATE orders SET status = 'x'", "UpdateStmt"]
+    }.each do |construct, (sql, detail)|
+      it "refuses #{construct} before reading the catalog" do
+        expect { described_class.check(sql, nil, nil) }
+          .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
+      end
     end
   end
 
