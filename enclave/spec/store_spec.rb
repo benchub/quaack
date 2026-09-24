@@ -546,4 +546,92 @@ RSpec.describe Quaack::Enclave::Store do
       expect(Dir.children(outside)).to eq(["keep.json"])
     end
   end
+
+  # Teardown by run ID, for `quaacks teardown`, which must also work on a
+  # run whose directory is already gone.
+  describe ".teardown" do
+    def plant_run_path(name)
+      FileUtils.mkdir_p(base)
+      File.join(base, name)
+    end
+
+    it "deletes the named run's directory and everything in it, leaves other runs, and returns :deleted" do
+      store.write("literals", [STORE_SENTINEL])
+      other = described_class.create(base:)
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(base)).to eq([other.run_id])
+    end
+
+    it "returns :already_gone for a well-formed run ID with nothing there, even with no base" do
+      store.teardown
+      missing = File.join(@tmp, "missing")
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(described_class.teardown(store.run_id, base: missing)).to eq(:already_gone)
+      expect(File.exist?(missing)).to be(false)
+    end
+
+    it "refuses a run ID that isn't in the RUN_ID form, and deletes nothing, in the base or outside it" do
+      target = File.join(@tmp, "20260923T221500Z-0a1b2c3d")
+      Dir.mkdir(target, 0o700)
+      ["../20260923T221500Z-0a1b2c3d", "..", ".", "", "/tmp", STORE_SENTINEL, "#{store.run_id}/", nil, 1,
+       store.run_id.to_sym].each do |bad|
+        expect_store_error(/\Arun ID isn't in the form/) { described_class.teardown(bad, base:) }
+      end
+      expect(File.directory?(target)).to be(true)
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "refuses a run path that's a symlink, a file, or a directory not mode 0700, and leaves it" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside, 0o700)
+      File.write(File.join(outside, "#{STORE_SENTINEL}.json"), "[]")
+      linked = plant_run_path("20260923T221500Z-00000001").tap { File.symlink(outside, it) }
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, STORE_SENTINEL) }
+      loose = plant_run_path("20260923T221500Z-00000003").tap { Dir.mkdir(it) && File.chmod(0o755, it) }
+
+      [linked, file, loose].each do |path|
+        run_id = File.basename(path)
+        expect_store_error(/\Arun #{run_id} has /) { described_class.teardown(run_id, base:) }
+      end
+      expect(File.symlink?(linked)).to be(true)
+      expect(Dir.children(outside)).to eq(["#{STORE_SENTINEL}.json"])
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+      expect(File.directory?(loose)).to be(true)
+    end
+
+    it "refuses a run directory owned by someone else, and leaves it" do
+      expect_store_error(/owned by uid/) do
+        described_class.teardown(store.run_id, base:, current_uid: Process.euid + 1)
+      end
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "raises Store::Error, naming only the run, when it can't delete the directory" do
+      locked = File.join(store.path, "locked")
+      Dir.mkdir(locked)
+      File.write(File.join(locked, "#{STORE_SENTINEL}.json"), "[]")
+      File.chmod(0o500, locked)
+
+      expect_store_error(/\Acouldn't delete the directory of run #{store.run_id}\z/) do
+        described_class.teardown(store.run_id, base:)
+      end
+    ensure
+      File.chmod(0o700, locked)
+    end
+
+    it "doesn't follow a symlink out of the run directory" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside)
+      File.write(File.join(outside, "keep.json"), "[]")
+      File.symlink(outside, File.join(store.path, "linked"))
+      File.symlink(File.join(outside, "keep.json"), File.join(store.path, "keep.json"))
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+  end
 end

@@ -60,21 +60,44 @@ module Quaack
         raise Error, "couldn't make the base directory #{base}", cause: nil
       end
 
-      # Opens a run an earlier call started. The run ID usually comes from
-      # argv, so it must be exactly in the RUN_ID form before it goes into a
-      # path. The run directory must be a real directory, not a symlink,
+      # Opens a run an earlier call started. The run directory must be a real directory, not a symlink,
       # mode 0700, and owned by the current user. current_uid is there for
       # tests.
       def self.open(run_id, base: default_base, current_uid: Process.euid)
-        unless run_id.is_a?(String) && RUN_ID.match?(run_id)
-          raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
-        end
-
-        path = File.join(base, run_id)
+        path = run_path(run_id, base)
         problem = directory_problem(PrivateFiles.lstat(path), current_uid)
         raise Error, "run #{run_id} #{problem}" if problem
 
         new(run_id, path)
+      end
+
+      # Deletes the run's directory by run ID, for `quaacks teardown`. It
+      # returns :deleted, or :already_gone if nothing is at the run's path,
+      # so a second teardown of a run succeeds too. The run ID is checked as
+      # open checks it, so it can't name a path outside base. Anything else
+      # at the run's path must be a run directory open would open, or it's
+      # left alone: never a symlink, which could point out of the store. A
+      # symlink inside the run directory is removed, not followed.
+      def self.teardown(run_id, base: default_base, current_uid: Process.euid)
+        path = run_path(run_id, base)
+        stat = PrivateFiles.lstat(path)
+        return :already_gone unless stat
+
+        problem = directory_problem(stat, current_uid)
+        raise Error, "run #{run_id} #{problem}" if problem
+
+        new(run_id, path).teardown
+        :deleted
+      end
+
+      # The run ID usually comes from argv, so it must be exactly in the
+      # RUN_ID form before it goes into a path.
+      def self.run_path(run_id, base)
+        unless run_id.is_a?(String) && RUN_ID.match?(run_id)
+          raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
+        end
+
+        File.join(base, run_id)
       end
 
       # What's wrong with a run directory, given its lstat, or nil if
@@ -91,7 +114,7 @@ module Quaack
         "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
       end
 
-      private_class_method :make_base, :directory_problem, :new
+      private_class_method :make_base, :run_path, :directory_problem, :new
 
       attr_reader :run_id, :path
 
