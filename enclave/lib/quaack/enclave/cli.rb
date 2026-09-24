@@ -77,13 +77,14 @@ module Quaack
       def self.claim_stdout!
         out = STDOUT.dup # rubocop:disable Style/GlobalStdStream
         STDOUT.reopen(File::NULL, "w") # rubocop:disable Style/GlobalStdStream
-        $stdout = STDOUT # rubocop:disable Style/GlobalStdStream
+        $stdout = STDOUT
         out.sync = true
         out
       end
 
-      # steps and store_base are there for tests.
-      def initialize(steps: STEPS, stdin: $stdin, out: $stdout, store_base: Store.default_base)
+      # steps and store_base are there for tests. A nil store_base means
+      # Store.default_base, looked up only when a step needs a run.
+      def initialize(steps: STEPS, stdin: $stdin, out: $stdout, store_base: nil)
         @steps = steps
         @stdin = stdin
         @out = Output.new(out)
@@ -97,18 +98,20 @@ module Quaack
         name = ALIASES.fetch(argv.first, argv.first)
         step = @steps[name]
         step_name = step ? name : CLI_STEP
-        ErrorFilter.guard(step: step_name, out: @out) do
-          raise Refused, "usage" unless step
-
-          write(dispatch(step, argv.drop(1)))
-          EX_OK
-        rescue Refused => e
-          write("#{ErrorFilter.to_egress(e, step: step_name)}\n")
-          EX_USAGE
-        end
+        ErrorFilter.guard(step: step_name, out: @out) { run_step(step, step_name, argv.drop(1)) }
       end
 
       private
+
+      def run_step(step, step_name, args)
+        raise Refused, "usage" unless step
+
+        write(dispatch(step, args))
+        EX_OK
+      rescue Refused => e
+        write("#{ErrorFilter.to_egress(e, step: step_name)}\n")
+        EX_USAGE
+      end
 
       # Runs step and returns its output, every line of it.
       def dispatch(step, args)
@@ -121,13 +124,13 @@ module Quaack
         messages.filter_map { Egress.serialize(it) }.map { "#{it}\n" }.join
       end
 
-      # The run ID's form is checked first, so a malformed one is usage and
-      # a well-formed one with no usable run is bad_run.
+      # The run ID's form is checked first, so a missing (nil) or malformed
+      # one is usage, and a well-formed one with no usable run is bad_run.
       def open_store(run_id)
         raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
 
         begin
-          Store.open(run_id, base: @store_base)
+          Store.open(run_id, base: @store_base || Store.default_base)
         rescue Store::Error
           raise Refused, "bad_run", cause: nil
         end

@@ -15,9 +15,7 @@ module Quaack
         end
 
         def write(text)
-          return 0 if text.empty?
-
-          text ="\n#{text}" unless @at_line_start
+          text = "\n#{text}" unless @at_line_start
           @at_line_start = false
           @io.write(text)
           @at_line_start = text.end_with?("\n")

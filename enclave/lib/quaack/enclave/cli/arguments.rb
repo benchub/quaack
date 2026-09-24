@@ -9,29 +9,24 @@ module Quaack
       # option the step declares: `--name value` for a :value option,
       # `--name` alone for a :flag, and `--run <run ID>` for a step that
       # needs a run. Anything else, a repeated option, or a missing value
-      # is refused as usage. Values come back as given; steps check them.
+      # is refused as usage. Values come back as given, and run_id is nil
+      # if there's no --run; the CLI and the steps check them.
       Arguments = Data.define(:options, :run_id) do
         def self.parse(step, args)
+          declared = step.run ? { **step.options, "run" => :value } : step.options
           args = args.dup
           options = {}
-          run_id = nil
           until args.empty?
             name = option_name(args.shift)
-            if name == "run" && step.run && run_id.nil?
-              run_id = value(args)
-            else
-              options[name] = option(step, name, options, args)
-            end
+            options[name] = option(declared, name, options, args)
           end
-          raise Refused, "usage" if step.run && run_id.nil?
-
-          new(options:, run_id:)
+          new(options: options.except("run"), run_id: options["run"])
         end
 
         def self.option_name(arg) = arg.start_with?("--") ? arg.delete_prefix("--") : raise(Refused, "usage")
 
-        def self.option(step, name, options, args)
-          kind = step.options[name]
+        def self.option(declared, name, options, args)
+          kind = declared[name]
           raise Refused, "usage" if kind.nil? || options.key?(name)
 
           kind == :flag || value(args)

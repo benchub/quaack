@@ -37,7 +37,8 @@ RSpec.describe Quaack::Enclave::CLI do
 
   describe "dispatch" do
     it "runs the named step and prints each message it returns as one egress line" do
-      steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "a" }, { type: :version, version: "b" }])) }
+      steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "a" },
+                                                            { type: :version, version: "b" }])) }
 
       expect(cli(steps).run(["echo"])).to eq(0)
       expect(out.string).to eq(line(type: "version", version: "a") + line(type: "version", version: "b"))
@@ -60,7 +61,7 @@ RSpec.describe Quaack::Enclave::CLI do
 
     it "prints only the error line when any message can't be written, not the ones before it" do
       steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "1" },
-                                                    { type: :version, version: Object.new }])) }
+                                                            { type: :version, version: Object.new }])) }
 
       expect(cli(steps).run(["echo"])).to eq(70)
       expect(out.string).to eq(error_line("echo", "internal_error"))
@@ -111,7 +112,7 @@ RSpec.describe Quaack::Enclave::CLI do
 
     it "refuses an unknown, repeated, or valueless option, or a bare argument, as usage" do
       [["--#{CLI_SENTINEL}"], %w[--keep --keep], %w[--server a --server b], ["--server"], [CLI_SENTINEL],
-       ["--keep", CLI_SENTINEL], ["--run", "20260923T221500Z-0a1b2c3d"]].each do |args|
+       ["--keep", CLI_SENTINEL], ["--run", "20260923T221500Z-0a1b2c3d"], ["keep"], %w[server x]].each do |args|
         out.truncate(0) && out.rewind
         expect(cli(steps).run(["echo", *args])).to eq(64), "args #{args.inspect}"
         expect(out.string).to eq(error_line("echo", "usage")), "args #{args.inspect}"
@@ -131,6 +132,7 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(calls[0][:store]).to be_a(Quaack::Enclave::Store)
       expect(calls[0][:store].run_id).to eq(store.run_id)
       expect(calls[0][:store].path).to eq(store.path)
+      expect(calls[0][:options]).to eq({})
     end
 
     it "refuses a missing or malformed run ID as usage" do
@@ -174,10 +176,10 @@ RSpec.describe Quaack::Enclave::CLI do
       depth = Quaack::Enclave::PlainData::MAX_DEPTH
       nest = ->(levels, inner) { ('{"a":' * (levels - 1)) + inner + ("}" * (levels - 1)) }
 
-      [nest.(depth, "[]"), nest.(depth, "[1]")].each do |text|
+      [nest.call(depth, "[]"), nest.call(depth, "[1]")].each do |text|
         expect(cli(steps, stdin: StringIO.new(text)).run(["echo"])).to eq(0)
       end
-      [nest.(depth + 1, "[]"), nest.(depth + 1, "[1]")].each do |text|
+      [nest.call(depth + 1, "[]"), nest.call(depth + 1, "[1]")].each do |text|
         out.truncate(0) && out.rewind
         expect(cli(steps, stdin: StringIO.new(text)).run(["echo"])).to eq(64)
         expect(out.string).to eq(error_line("echo", "bad_input"))
@@ -241,6 +243,25 @@ RSpec.describe Quaack::Enclave::CLI do
 
       expect(cli_class.new(steps:, stdin: StringIO.new, out: flaky, store_base: base).run(["echo"])).to eq(70)
       expect(flaky.string).to eq(%({"typ\n#{error_line("echo", "internal_error")}))
+    end
+
+    # Its first flush raises, after the write before it finished.
+    let(:flush_fails) do
+      Class.new(StringIO) do
+        def flush
+          return super unless @failed.nil?
+
+          @failed = true
+          raise IOError, "flush failed"
+        end
+      end.new
+    end
+
+    it "adds no blank line when the write before the error finished" do
+      steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "1" }])) }
+
+      expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["echo"])).to eq(70)
+      expect(flush_fails.string).to eq(line(type: "version", version: "1") + error_line("echo", "internal_error"))
     end
   end
 end

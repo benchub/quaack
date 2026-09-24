@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "json"
+require "tmpdir"
+require "quaack/enclave/store"
 require "quaack/enclave/version"
 
 # Runs exe/quaacks the way the jump server does, in its own process, and
@@ -38,12 +40,13 @@ RSpec.describe "quaacks executable" do
   describe "CLI.main with a test step" do
     let(:sentinel) { "sentinel-4d81e2-ssn" }
 
-    def main(step_body, argv: ["probe"], input: false, stdin: "")
-      run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, *argv, stdin_data: stdin)
+    # step holds the Step's input: and run: settings.
+    def main(step_body, argv: ["probe"], stdin: "", env: {}, **step)
+      Open3.capture3(env, RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, *argv, stdin_data: stdin)
         require "quaack/enclave"
         cli = Quaack::Enclave::CLI
         handler = ->(**inputs) { #{step_body} }
-        exit cli.main(ARGV, steps: { "probe" => cli::Step.new(handler:, input: #{input}) })
+        exit cli.main(ARGV, steps: { "probe" => cli::Step.new(handler:, **#{step.inspect}) })
       RUBY
     end
 
@@ -96,8 +99,19 @@ RSpec.describe "quaacks executable" do
       expect(status.exitstatus).to eq(0)
     end
 
+    it "opens a run under the default base, ~/.quaack/runs" do
+      Dir.mktmpdir("quaack-home") do |home|
+        store = Quaack::Enclave::Store.create(base: File.join(home, ".quaack", "runs"))
+        out, err, status = main("[{ type: :version, version: inputs[:store].run_id }]",
+                                argv: ["probe", "--run", store.run_id], run: true, env: { "HOME" => home })
+
+        expect(out).to eq(%({"type":"version","version":"#{store.run_id}"}\n)), "stderr was #{err}"
+        expect(status.exitstatus).to eq(0)
+      end
+    end
+
     it "sends a signal's error line and then dies by the signal" do
-      out, err, status = main(%(Process.kill(:TERM, Process.pid); sleep 5; [{ type: :version, version: "#{sentinel}" }]))
+      out, err, status = main(%(Process.kill(:TERM, Process.pid); sleep 5; [{ type: :version, version: "1" }]))
 
       expect(out).to eq(error_line("internal_error"))
       expect(err).to eq("")
