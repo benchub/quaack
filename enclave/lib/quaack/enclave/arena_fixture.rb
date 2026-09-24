@@ -39,6 +39,10 @@ module Quaack
         statement_unparsable: "a statement for the arena transaction couldn't be parsed",
         begin_failed: "the arena transaction couldn't start",
         fixture_load_failed: "a fixture row failed to load in the arena transaction",
+        # Raised by ResultComparison.compare_in_both_orders, not the runner
+        # itself, for a failure in its reverse load. index is the row's
+        # position in the fixture as given, not in the reversed list.
+        reverse_load_failed: "a fixture row failed to load when the fixture was loaded in reverse",
         insert_failed: "an INSERT statement failed in the arena transaction",
         query_failed: "a query failed in the arena transaction",
         statement_timeout: "a statement in the arena transaction hit statement_timeout",

@@ -251,13 +251,7 @@ If any LLM candidate went unused or lost to a simpler mechanical candidate, send
 - **Status:** todo
 - **Open questions:** How do we decide "helped less than a simpler mechanical candidate"? Simpler by column count, size, or both?
 
-### 20260922-35. 5a-7 combination and ranking.
-
-Combine candidates greedily up to three indexes. Rank by worst-case cost reduction across literals, and break ties by size. Keep the top three plus the best combination if it wins. Each kept entry carries DDL, size, costs per literal, canonical plan, and partial-index tag.
-
-- **Depends on:** 20260922-29.
-- **README:** 5a-7.
-- **Status:** todo
+### 20260922-35. 5a-7 combination and ranking. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-36. Step 5 orchestration.
 
@@ -341,6 +335,7 @@ Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row p
 
 - **Depends on:** 20260922-44, 20260922-18.
 - **README:** Step 9.
+- **Note (from 20260924-5):** 9d reverses each run of consecutive same-table rows. So every table's rows must be contiguous in the fixture, or the reverse load does nothing. Tables with self-referencing FKs fail the reverse load (see 20260924-9).
 - **Status:** todo
 - **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
 
@@ -956,14 +951,7 @@ Before deparsing, wrap the operand in an explicit parenthesis node, or post-proc
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse.
-
-High priority. A rewrite that drops a secondary sort key below the top level matches by luck, because fixtures load in id order and small sorts keep input order. Examples are a subquery `ORDER BY grp, id LIMIT 2` becoming `ORDER BY grp LIMIT 2`, and a LATERAL top-1 that drops `, id`. That's a realistic LLM mistake, and README 9d only covers the top level. Run each 9d comparison a second time with the same fixture loaded in reverse physical order, and require both runs to match. This also covers the DISTINCT and GROUP BY representative gaps and the multiset collation gap that the reviews of 20260923-54 documented. It belongs in step 9 orchestration (20260922-49) or ArenaRunner. Decide which, and update README 9d.
-
-- **Depends on:** 20260922-47.
-- **Came from:** Second review of 20260923-54.
-- **README:** 9d.
-- **Status:** todo
+### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-6. Narrow the 9d fail-closed rule for top-N queries.
 
@@ -999,6 +987,33 @@ Findings from the second review of 20260922-61:
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
 - **README:** 15b.
+- **Status:** todo
+
+### 20260924-9. Load-order loose ends.
+
+Findings from both reviews of 20260924-5:
+- **A surviving mutant hides a relabeling bug.** Changing `raise unless positions && e.rule == :fixture_load_failed` to `raise unless positions` stays green. With that change, a query failure in the reverse run would be relabeled `reverse_load_failed` and given the wrong index. Add a test where only the reverse run hits `query_failed`, and check that the rule stays `query_failed`.
+- **A symmetric middle pick survives.** In an odd-sized tie group with the pick exactly in the middle (`OFFSET 1 LIMIT 1` over three ties), the pick is the same in both orders. So is a rare top-N heapsort pick. A third order, such as rotating each table's run by one, would catch both.
+- **Self-referencing foreign keys always fail the reverse load**, as `reverse_load_failed`. That fails closed, but it discards every candidate for fixtures with tree-shaped tables. Keep such tables in forward order, or reverse them level by level, using a catalog lookup of self-referencing FKs.
+- **Partitioned tables are scanned in a fixed partition order**, so the reverse load only flips rows within each partition. 3a (20260922-17) refuses partitioned tables, so today this is moot. Revisit it if 3a starts allowing them.
+- **README 9d wording:** name the hash-order and heap-sort gaps, and soften "a small sort keeps its input order for ties."
+- **Deferrable constraints** would allow any load order, but production FKs usually aren't deferrable. This is only a note.
+
+- **Depends on:** 20260924-5.
+- **Came from:** Both reviews of 20260924-5.
+- **README:** 9d.
+- **Status:** todo
+
+### 20260924-10. 5a-7 loose ends.
+
+Findings from the reviews of 20260922-35:
+- **Duplicate candidates in `results`** can make `top` list the same index twice. 5a-3 dedupes within a search, so this can't happen in 5a-7's own flow. Step 8's caller should dedupe first.
+- **`rank` checks the literal-set names against the baseline, but not the values.** It's a documented precondition, but a caller who passes different values under the same names would compare against the wrong baseline.
+- **The greedy search never drops an index once added.** A smarter search could find `[a, c]` where the greedy keeps `[b, a]`. It follows the README's greedy rule, so change it only if someone wants that.
+
+- **Depends on:** 20260922-35.
+- **Came from:** The reviews of 20260922-35.
+- **README:** 5a-7.
 - **Status:** todo
 
 ## After version 1.

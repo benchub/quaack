@@ -603,3 +603,34 @@ Record per-stage counts (in, added, dropped by reason, out) in the governed stor
   - The driver's `Burndown` counts LLM calls by step.
   - The whitelist gained `burndown: [stages, totals]`.
   - The second review found no blockers. Its findings became 20260924-8.
+
+### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse.
+
+High priority. A rewrite that drops a secondary sort key below the top level matches by luck, because fixtures load in id order and small sorts keep input order. Examples are a subquery `ORDER BY grp, id LIMIT 2` becoming `ORDER BY grp LIMIT 2`, and a LATERAL top-1 that drops `, id`. That's a realistic LLM mistake, and README 9d only covers the top level. Run each 9d comparison a second time with the same fixture loaded in reverse physical order, and require both runs to match. This also covers the DISTINCT and GROUP BY representative gaps and the multiset collation gap that the reviews of 20260923-54 documented. It belongs in step 9 orchestration (20260922-49) or ArenaRunner. Decide which, and update README 9d.
+
+- **Depends on:** 20260922-47.
+- **Came from:** Second review of 20260923-54.
+- **README:** 9d.
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review.
+  - `ResultComparison.compare_in_both_orders(runner, rows, original:, candidate:, inserts: [])` runs 9d twice, once with the fixture loaded forward and once reversed within each same-table run, and both runs must match.
+  - The verdict records `load_order`. Raw inserts aren't reversed.
+  - Both runs use `ArenaRunner#with_fixture(index_scans: false)`, which turns off index, index-only, and bitmap scans with SET LOCAL, so an index can't return ties in a fixed order.
+  - A reverse-only load failure is `reverse_load_failed`.
+  - In the second review, randomized probes found 15 survivors in about 1,900 wrong candidates. Its findings became 20260924-9.
+
+### 20260922-35. 5a-7 combination and ranking.
+
+Combine candidates greedily up to three indexes. Rank by worst-case cost reduction across literals, and break ties by size. Keep the top three plus the best combination if it wins. Each kept entry carries DDL, size, costs per literal, canonical plan, and partial-index tag.
+
+- **Depends on:** 20260922-29.
+- **README:** 5a-7.
+- **Status:** done
+- **Defaults the main session chose (the user was away):**
+  - Reduction is `1 − after/before` per literal set, and the worst case is the minimum across sets.
+  - Rank by worst case, highest first. Break ties by size, smallest first, then by DDL.
+  - Combine greedily from the best single index. Keep an added partner only when the worst case strictly improves and every index gets used. Stop at three indexes.
+- **Landed:** Merged into `main` after a build, a review, a fix round, a second review, a tests-only round, and a tests-only review.
+  - `IndexRanking.rank(conn, query:, literal_sets:, baseline:, results:)` returns `Ranking(top:, combination:)`. Each entry carries the DDL, the size, the cost before and after for each literal set, `used`, the canonical plans, and `partial`. Inspect leaves out the DDL.
+  - 5a-4's runner became a public `SingleCandidateTest::Session`, with `measure(candidates)` for several hypothetical indexes at once. All of 5a-4's safety moved over with it (the reviewers checked 28 mutants). Every measure resets HypoPG, and a closed session refuses to measure.
+  - Leftover findings became 20260924-10.
