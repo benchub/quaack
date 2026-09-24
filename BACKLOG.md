@@ -862,6 +862,21 @@ Split out of 20260922-3. The work so far is on branch `task/20260922-3`. Build o
 - **README:** Where QUAACK runs.
 - **Status:** todo
 
+### 20260923-33. Fail closed on unsupported SQL constructs.
+
+The user decided that enclave code that walks SQL supports an explicit list of constructs and refuses everything else. That covers predicate atoms, relation qualification, the volatility check, and the inbound checks (20260922-10, 11, and 12). The reviews of 20260922-43, 20260922-14, and 20260922-20 kept finding bugs in rare constructs, such as JSON_TABLE, XMLTABLE, typed CYCLE marks, TABLESAMPLE, and ordered-set aggregates. Specs like "no literal survives" covered the whole grammar, so each review found more.
+- Define one shared allowlist of pg_query node types, and of the fields within them where it matters, in the enclave gem. Start with the common constructs: SELECT, joins, CTEs (not CYCLE or SEARCH), subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL.
+- Before any walker runs, check the parse against the allowlist. Abort on anything else with the rule `unsupported_construct`, naming the node type. That's shape, and it holds no literals.
+- Then decide which special-case code for refused constructs can go, such as the JSON_TABLE path swap, CYCLE marks, and XMLROOT keywords. Drop code that's no longer reachable.
+- Update README "What goes into the enclave" and step 1 to say that queries using constructs outside the list are refused.
+- Review this against the supported list, not the whole grammar. Correctness findings still block landing, since the user kept review severity strict.
+
+- **Depends on:** 20260922-14, 20260922-43, and 20260922-20.
+- **Came from:** The user's decision after the reviews of 20260922-43, 20260923-29, and 20260922-20.
+- **README:** What goes into the enclave, step 1, and step 9.
+- **Status:** todo
+- **Open questions:** Which constructs make the first list? Check them against a sample of real slow queries if the user can provide one.
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
