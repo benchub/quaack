@@ -25,6 +25,11 @@ module Quaack
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
+      # The run `quaacks intake` started, for the driver to name in each
+      # later call. run_id is only ever a Store run ID: the UTC time the run
+      # started and eight random hex characters, never anything from the
+      # operator's inputs.
+      run: %i[run_id].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
