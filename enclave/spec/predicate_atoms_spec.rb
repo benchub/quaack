@@ -72,11 +72,11 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
 
     it "classifies what fits no family as other" do
       sql = where("o.active AND o.status < ALL('{1}') AND o.status = ANY(ARRAY[o.id]) AND o.tags @> '{x}' " \
-                  "AND o.note SIMILAR TO 'a%' AND o.status = o.id AND o.active IS TRUE AND lower(o.note) " \
+                  "AND o.status = o.id AND o.active IS TRUE AND lower(o.note) " \
                   "AND 1 = 2 AND $1::int IS NULL AND o.status <> o.id")
       expect(kinds(sql))
         .to eq([[:other, nil, false], [:other, "< ALL", false], [:other, "= ANY", false], [:other, "@>", false],
-                [:other, "SIMILAR TO", false], [:other, "=", false], [:other, "IS TRUE", false],
+                [:other, "=", false], [:other, "IS TRUE", false],
                 [:other, nil, false], [:other, "=", false], [:other, "IS NULL", false], [:other, "<>", false]])
     end
 
@@ -380,7 +380,8 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
   describe "constants the deparser needs as literals" do
     # A crash in pg_query's deparser kills the process, so these run in a
     # child process, where a crash is a failed example. The child prints
-    # each atom's shape and the query with that atom replaced by TRUE.
+    # each atom's shape and the query with that atom replaced by TRUE, or
+    # the message SupportedSql refused it with.
     def in_child(sql)
       out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", child_code(sql))
       expect(status).to be_success, "child failed (#{status.inspect}):\n#{err}"
@@ -394,34 +395,13 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
         atoms = Quaack::Enclave::PredicateAtoms
         name = ->(n) { Quaack::Enclave::TableName.new(schema: "public", name: n) }
         parse = PgQuery.parse(#{sql.inspect})
-        found = atoms.extract(parse, column_names: { name["orders"] => %w[id status note], name["customers"] => %w[id] })
-        puts JSON.generate(found.map { |a| [a.shape, atoms.with_true(parse, a)] })
+        begin
+          found = atoms.extract(parse, column_names: { name["orders"] => %w[id status note], name["customers"] => %w[id] })
+          puts JSON.generate(found.map { |a| [a.shape, atoms.with_true(parse, a)] })
+        rescue Quaack::Enclave::SupportedSql::Error => e
+          puts JSON.generate({ "refused" => e.message })
+        end
       RUBY
-    end
-
-    it "gives a JSON_TABLE path a string placeholder, since the deparser can't take a parameter there" do
-      sql = "SELECT 1 FROM public.customers c WHERE EXISTS (SELECT 1 FROM " \
-            "JSON_TABLE('[]', '$.SENTINEL_ROW[*]' COLUMNS (x int PATH '$.SENTINEL_COL')) jt WHERE jt.x = c.id)"
-      shapes = in_child(sql).map(&:first)
-      expect(shapes.first).to include("'$4'").and include("'$5'")
-      expect(shapes.join).not_to include("SENTINEL")
-      expect(shapes.last).to eq("jt.x = c.id")
-    end
-
-    it "does the same for a NESTED PATH" do
-      sql = "SELECT 1 FROM public.customers c WHERE (SELECT jt.y FROM JSON_TABLE('[]', '$' COLUMNS " \
-            "(NESTED PATH '$.SENTINEL_NESTED' COLUMNS (y int PATH '$'))) jt) = c.id"
-      result = in_child(sql)
-      expect(result.size).to eq(1)
-      expect(result.first.first).not_to include("SENTINEL")
-      expect(result.first.last).to eq("SELECT 1 FROM public.customers c WHERE true")
-    end
-
-    it "keeps normalize's and IS NORMALIZED's normal form, which is a keyword, not a value" do
-      sql = "SELECT 1 FROM public.orders o WHERE normalize(o.note || 'SENTINEL', NFC) = 'SENTINEL' " \
-            "AND (o.note || 'SENTINEL') IS NFKD NORMALIZED"
-      expect(in_child(sql).map(&:first))
-        .to eq(["normalize (o.note || $2, NFC) = $3", "o.note || $4 IS NFKD NORMALIZED"])
     end
 
     it "redacts the second argument of normalize called as a plain function" do
@@ -431,74 +411,90 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(shapes).to eq(["pg_catalog.\"normalize\"(o.note, $2) = $3", "pg_catalog.is_normalized(o.note, $4)"])
     end
 
-    def recursive(clause)
+    # EXTRACT's field is a keyword, which the grammar also takes as a
+    # string, in any case.
+    it "keeps EXTRACT's field when it's one of Postgres's field names" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT(epoch FROM o.created_at) > 5 " \
+            "AND EXTRACT('ISODOW' FROM o.created_at) = 6 AND extract(Timezone_Hour FROM o.created_at) = 7"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ('epoch' FROM o.created_at) > $2", "extract ('ISODOW' FROM o.created_at) = $3",
+                            "extract ('timezone_hour' FROM o.created_at) = $4"])
+      shapes.each { |shape| expect { PgQuery.parse("SELECT #{shape}") }.not_to raise_error }
+    end
+
+    it "redacts a field name that's a string argument of another SQL-syntax function" do
+      sql = "SELECT 1 FROM public.orders o WHERE substring('second' FROM 2) = o.note " \
+            "AND position(o.note IN 'year') > 0 AND trim(both o.note FROM 'hour') = 'a'"
+      expect(in_child(sql).map(&:first))
+        .to eq(["SUBSTRING($2 FROM $3) = o.note", "POSITION(o.note IN $4) > $5", "TRIM (BOTH o.note FROM $6) = $7"])
+    end
+
+    it "redacts EXTRACT's field when it isn't a field name, and extract's called as a plain function" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT('SENTINEL' FROM o.created_at) > 5 " \
+            "AND pg_catalog.extract('epoch', o.created_at) > 6"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ($2 FROM o.created_at) > $3", "pg_catalog.\"extract\"($4, o.created_at) > $5"])
+      expect(shapes.join).not_to include("SENTINEL")
+    end
+
+    recursive = lambda do |clause|
       "SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL " \
         "SELECT n + 1 FROM t) #{clause} SELECT 1 FROM t WHERE t.n = o.id)"
     end
 
-    it "keeps the marks a CYCLE clause gets when TO and DEFAULT aren't written, since the parser made them" do
-      shapes = in_child(recursive("CYCLE n SET c USING p")).map(&:first)
-      expect(shapes.first).to include("CYCLE n SET c TO true DEFAULT false USING p")
-      expect(shapes.last).to eq("t.n = o.id")
-    end
-
-    it "gives written CYCLE marks string placeholders, since the deparser needs literals there" do
-      shapes = in_child(recursive("CYCLE n SET c TO 'SENTINEL_TO' DEFAULT 'SENTINEL_DEF' USING p")).map(&:first)
-      expect(shapes.first).to include("CYCLE n SET c TO '$4' DEFAULT '$5' USING p")
-      expect(shapes.join).not_to include("SENTINEL")
-    end
-
-    it "gives a typed CYCLE mark a string placeholder under its cast" do
-      {
-        "DATE 'SENTINEL_A' DEFAULT DATE 'SENTINEL_B'" => "TO '$4'::date DEFAULT '$5'::date",
-        "int4 '424242' DEFAULT int4 '434343'" => "TO '$4'::int4 DEFAULT '$5'::int4",
-        "interval '424242' day DEFAULT interval '434343' day" => "TO '$4'::interval day DEFAULT '$5'::interval day"
-      }.each do |marks, shape|
-        shapes = in_child(recursive("CYCLE n SET c TO #{marks} USING p")).map(&:first)
-        expect(shapes.first).to include(shape)
-        expect(shapes.join).not_to match(/SENTINEL|424242|434343/)
+    # These had their own handling until 20260923-33 refused them (see
+    # SupportedSql). They still run in a child, so a broken check shows up
+    # as a failed example, not a deparser crash.
+    {
+      "a JSON_TABLE path" => ["SELECT 1 FROM public.customers c WHERE EXISTS (SELECT 1 FROM " \
+                              "JSON_TABLE('[]', '$.SENTINEL_ROW[*]' COLUMNS (x int PATH '$.SENTINEL_COL')) jt " \
+                              "WHERE jt.x = c.id)", "JsonTable"],
+      "a NESTED PATH" => ["SELECT 1 FROM public.customers c WHERE (SELECT jt.y FROM JSON_TABLE('[]', '$' COLUMNS " \
+                          "(NESTED PATH '$.SENTINEL_NESTED' COLUMNS (y int PATH '$'))) jt) = c.id", "JsonTable"],
+      "normalize's normal form" => ["SELECT 1 FROM public.orders o WHERE normalize(o.note || 'SENTINEL', NFC) = 'x'",
+                                    "FuncCall pg_catalog.normalize written in SQL syntax"],
+      "IS NORMALIZED" => ["SELECT 1 FROM public.orders o WHERE (o.note || 'SENTINEL') IS NFKD NORMALIZED",
+                          "FuncCall pg_catalog.is_normalized written in SQL syntax"],
+      "CYCLE marks the parser made" => [recursive.call("CYCLE n SET c USING p"), "CTECycleClause"],
+      "written CYCLE marks" => [recursive.call("CYCLE n SET c TO 'SENTINEL_TO' DEFAULT 'SENTINEL_DEF' USING p"),
+                                "CTECycleClause"],
+      "typed CYCLE marks" => [recursive.call("CYCLE n SET c TO DATE 'SENTINEL_A' DEFAULT DATE 'SENTINEL_B' USING p"),
+                              "CTECycleClause"],
+      "a SEARCH clause" => [recursive.call("SEARCH DEPTH FIRST BY n SET s"), "CTESearchClause"],
+      "XMLROOT" => ["SELECT 1 FROM public.orders o WHERE xmlroot(o.note::xml, version 'SENTINEL', standalone yes) " \
+                    "IS NULL", "XmlExpr"]
+    }.each do |construct, (sql, detail)|
+      it "refuses #{construct}, naming only #{detail}" do
+        expect(in_child(sql)).to eq("refused" => "unsupported_construct: #{detail}")
       end
     end
 
-    it "handles a SEARCH clause" do
-      shapes = in_child(recursive("SEARCH DEPTH FIRST BY n SET s")).map(&:first)
-      expect(shapes.first).to include("SEARCH DEPTH FIRST BY n SET s")
-    end
-
-    it "keeps XMLROOT's keyword arguments, and redacts a written version" do
-      sql = "SELECT 1 FROM public.orders o WHERE xmlroot(o.note::xml, version no value, standalone no value) IS NULL " \
-            "AND xmlroot(o.note::xml, version 'SENTINEL', standalone yes) IS NULL"
-      expect(in_child(sql).map(&:first))
-        .to eq(["xmlroot(o.note::xml, version no value, standalone no value) IS NULL",
-                "xmlroot(o.note::xml, version $2, standalone yes) IS NULL"])
+    # FETCH FIRST ROWS ONLY with no count gets a 1 the parser made, which
+    # isn't text from the query, so it stays, and doesn't take a number.
+    it "keeps a constant the parser made" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXISTS (SELECT 1 FROM public.items i WHERE i.qty = 5 " \
+            "ORDER BY i.id FETCH FIRST ROWS ONLY) AND o.status = 7"
+      expect(extract(sql).map(&:shape))
+        .to eq(["EXISTS (SELECT $2 FROM public.items i WHERE i.qty = $3 ORDER BY i.id LIMIT 1)", "i.qty = $3",
+                "o.status = $4"])
     end
   end
 
   describe "FROM items" do
     def placed(sql) = extract(sql).map { |a| [a.kind, a.columns.map { |c| [c.refname, c.name] }] }
 
-    it "reads the table under TABLESAMPLE" do
-      expect(placed("SELECT 1 FROM public.orders o TABLESAMPLE bernoulli(10) WHERE o.status = 1"))
-        .to eq([[:equality, [%w[o status]]]])
-      sql = "SELECT 1 FROM public.customers c WHERE EXISTS (SELECT 1 FROM public.items i TABLESAMPLE system(1) " \
-            "WHERE id = c.id)"
-      expect(placed(sql).last).to eq([:join, [%w[i id], %w[c id]]])
-    end
-
     it "treats any other FROM item as a relation with unknown columns, so a column doesn't resolve past it" do
       [
-        "EXISTS (SELECT 1 FROM XMLTABLE('/a' PASSING '<a/>' COLUMNS x int PATH 'b') xt WHERE id = 1)",
-        "EXISTS (SELECT 1 FROM JSON_TABLE('[]', '$' COLUMNS (x int PATH '$')) jt WHERE id = 1)",
+        "EXISTS (SELECT 1 FROM generate_series(1, 2) WHERE id = 1)",
         "EXISTS (SELECT 1 FROM (SELECT 1 AS x) WHERE id = 1)"
       ].each do |predicate|
         expect(placed(where(predicate)).last).to eq([:equality, [[nil, "id"]]]), predicate
       end
     end
 
-    it "names an XMLTABLE or JSON_TABLE by its alias" do
-      sql = "SELECT 1 FROM public.orders o, XMLTABLE('/a' PASSING '<a/>' COLUMNS x int PATH 'b') xt " \
-            "WHERE xt.x = o.id"
-      expect(placed(sql)).to eq([[:join, [%w[xt x], %w[o id]]]])
+    it "names a function in FROM by its alias" do
+      sql = "SELECT 1 FROM public.orders o, generate_series(1, 2) AS g(x) WHERE g.x = o.id"
+      expect(placed(sql)).to eq([[:join, [%w[g x], %w[o id]]]])
     end
 
     it "lets a function in FROM see the FROM it's in, since Postgres makes it LATERAL" do
@@ -523,7 +519,7 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     end
 
     it "skips a star, which names no one column" do
-      atoms = extract(where("ROW(o.*) IS NULL"))
+      atoms = extract(where("o.* IS NULL"))
       expect(atoms.map { |a| [a.kind, a.columns] }).to eq([[:null_test, []]])
     end
   end
@@ -553,12 +549,11 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(shapes(sql).drop(1)).to eq(["o.active", "o.status = $1 IS TRUE", "o.status = $1", "EXISTS (SELECT $2)"])
     end
 
-    it "takes LIKE, BETWEEN, SIMILAR TO, IS DISTINCT FROM, and IN inside an atom" do
-      sql = where("coalesce(o.note LIKE 'a', o.total BETWEEN 1 AND 2, o.note SIMILAR TO 'b', " \
+    it "takes LIKE, BETWEEN, IS DISTINCT FROM, and IN inside an atom" do
+      sql = where("coalesce(o.note LIKE 'a', o.total BETWEEN 1 AND 2, " \
                   "o.total IS DISTINCT FROM 3, o.total IN (4), false)")
       expect(shapes(sql).drop(1))
-        .to eq(["o.note LIKE $1", "o.total BETWEEN $2 AND $3", "o.note SIMILAR TO $4",
-                "o.total IS DISTINCT FROM $5", "o.total IN ($6)"])
+        .to eq(["o.note LIKE $1", "o.total BETWEEN $2 AND $3", "o.total IS DISTINCT FROM $4", "o.total IN ($5)"])
     end
 
     it "takes IS NULL, IN (SELECT ...), and ALL tests inside an atom" do
@@ -598,15 +593,31 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     end
   end
 
+  describe "SQL outside the supported list" do
+    # Each would give atoms without the check.
+    {
+      "SIMILAR TO" => ["SELECT 1 FROM public.orders o WHERE o.note SIMILAR TO 'a%'", "A_Expr AEXPR_SIMILAR"],
+      "TABLESAMPLE" => ["SELECT 1 FROM public.orders o TABLESAMPLE system (1) WHERE o.id = 1", "RangeTableSample"],
+      "ROW" => ["SELECT 1 FROM public.orders o WHERE ROW(o.id) IS NULL", "RowExpr"]
+    }.each do |construct, (sql, detail)|
+      it "refuses #{construct}" do
+        expect { extract(sql) }
+          .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
+      end
+    end
+  end
+
   describe "input" do
     it "takes only a pg_query parse of one SELECT, and never quotes the SQL" do
       [
-        ["SELECT 'SECRET'", "expected a pg_query parse result"],
-        [PgQuery.parse("SELECT 'SECRET'; SELECT 2"), "expected exactly one statement"],
-        [PgQuery.parse("UPDATE public.orders SET note = 'SECRET'"), "predicate atoms take only a SELECT"]
-      ].each do |input, message|
+        ["SELECT 'SECRET'", ArgumentError, "expected a pg_query parse result"],
+        [PgQuery.parse("SELECT 'SECRET'; SELECT 2"), Quaack::Enclave::SupportedSql::Error,
+         "unsupported_construct: ParseResult with 2 statements, not one"],
+        [PgQuery.parse("UPDATE public.orders SET note = 'SECRET'"), Quaack::Enclave::SupportedSql::Error,
+         "unsupported_construct: UpdateStmt"]
+      ].each do |input, error, message|
         expect { described_class.extract(input, column_names:) }
-          .to raise_error(ArgumentError, message) { |e| expect(e.message).not_to include("SECRET") }
+          .to raise_error(error, message) { |e| expect(e.message).not_to include("SECRET") }
       end
     end
 

@@ -310,63 +310,30 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
 
       expect(qualify(sql, settings).sql).to eq(deparse(sql))
     end
-
-    it "still qualifies the relations inside a data-modifying CTE" do
-      sql = "WITH gone AS (DELETE FROM widgets RETURNING home) SELECT home FROM gone"
-
-      expect(qualify(sql, settings).sql)
-        .to eq(deparse("WITH gone AS (DELETE FROM a.widgets RETURNING home) SELECT home FROM gone"))
-    end
   end
 
-  describe "names that aren't looked up in the search path" do
-    before { widgets_in("a", "b") }
-
-    let(:settings) { settings_for("b, a") }
-
-    # The names after FOR UPDATE OF are FROM items, not relations, and
-    # Postgres rejects a qualified one.
-    it "leaves a locking clause's names alone, and Postgres takes the result" do
-      ["SELECT * FROM widgets w FOR UPDATE OF w",
-       "SELECT * FROM widgets FOR UPDATE OF widgets SKIP LOCKED"].each do |sql|
-        qualified = qualify(sql, settings).sql
-
-        expect(qualified).to eq(deparse(sql.sub("FROM widgets", "FROM b.widgets")))
-        expect(conn.exec(qualified).column_values(0)).to eq(["b"])
+  describe "SQL outside the supported list" do
+    # Each would qualify fine without the check. The DML and locking
+    # clauses here had their own handling until 20260923-33 refused them.
+    {
+      "TABLESAMPLE" => ["SELECT * FROM public.orders TABLESAMPLE system (1)", "RangeTableSample"],
+      "a DELETE" => ["DELETE FROM public.orders", "DeleteStmt"],
+      "a data-modifying CTE" => ["WITH gone AS (DELETE FROM widgets RETURNING home) SELECT home FROM gone",
+                                 "DeleteStmt"],
+      "a DELETE whose target a CTE names" => ["WITH widgets AS (SELECT 1) DELETE FROM widgets", "DeleteStmt"],
+      "an INSERT" => ["WITH widgets AS (SELECT 'z'::text) INSERT INTO widgets (home) SELECT * FROM widgets",
+                      "InsertStmt"],
+      "an UPDATE" => ["WITH widgets AS (SELECT 1) UPDATE widgets SET home = 'y'", "UpdateStmt"],
+      "a MERGE" => ["MERGE INTO widgets t USING widgets s ON t.home = s.home WHEN NOT MATCHED THEN DO NOTHING",
+                    "MergeStmt"],
+      "FOR UPDATE" => ["SELECT * FROM public.orders FOR UPDATE", "LockingClause"],
+      "FOR UPDATE OF" => ["SELECT * FROM widgets w FOR UPDATE OF w", "LockingClause"],
+      "FOR UPDATE OF ... SKIP LOCKED" => ["SELECT * FROM widgets FOR UPDATE OF widgets SKIP LOCKED", "LockingClause"]
+    }.each do |construct, (sql, detail)|
+      it "refuses #{construct} before reading the catalog" do
+        expect { qualify(sql, connection: nil) }
+          .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
       end
-    end
-
-    # These run under the test's own search_path, to show what Postgres
-    # does with the original, and then check the rewrite matches.
-    def under_path(path)
-      conn.exec("SET search_path = #{path}")
-      yield
-    ensure
-      conn.exec("RESET search_path")
-    end
-
-    it "qualifies a DELETE's target even when a CTE has its name" do
-      sql = "WITH widgets AS (SELECT 1) DELETE FROM widgets"
-      under_path("b, a") { conn.exec(sql) }
-      expect(conn.exec("SELECT count(*) FROM b.widgets").getvalue(0, 0)).to eq("0")
-
-      expect(qualify(sql, settings).sql).to eq(deparse("WITH widgets AS (SELECT 1) DELETE FROM b.widgets"))
-    end
-
-    it "qualifies an INSERT's target but not a CTE of the same name in its source" do
-      sql = "WITH widgets AS (SELECT 'z'::text) INSERT INTO widgets (home) SELECT * FROM widgets"
-
-      expect(qualify(sql, settings).sql)
-        .to eq(deparse("WITH widgets AS (SELECT 'z'::text) INSERT INTO b.widgets (home) SELECT * FROM widgets"))
-    end
-
-    it "qualifies UPDATE and MERGE targets even when a CTE has their name" do
-      update = "WITH widgets AS (SELECT 1) UPDATE widgets SET home = 'y'"
-      merge = "WITH widgets AS (SELECT 'q'::text AS home) MERGE INTO widgets t USING widgets s ON t.home = s.home " \
-              "WHEN NOT MATCHED THEN INSERT VALUES (s.home)"
-
-      expect(qualify(update, settings).sql).to eq(deparse(update.sub("UPDATE widgets", "UPDATE b.widgets")))
-      expect(qualify(merge, settings).sql).to eq(deparse(merge.sub("INTO widgets", "INTO b.widgets")))
     end
   end
 

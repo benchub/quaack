@@ -378,3 +378,109 @@ Send every enclave error through the egress function, including Postgres errors 
   - `drop_notices(conn)` drops libpq notices. Callers must call it again after `conn.reset`.
   - The main session chose to let step names match `/\A[a-z0-9][a-z0-9_-]{0,62}\z/`, since steps such as `5a-1` start with a digit or contain a hyphen.
   - The first review found that SIGTERM inside a looped guard didn't end the process. The fix round fixed that. The second review found no blockers. Its findings became 20260923-38.
+
+### 20260923-33. Fail closed on unsupported SQL constructs.
+
+The user decided that enclave code that walks SQL supports an explicit list of constructs and refuses everything else. That covers predicate atoms, relation qualification, the volatility check, and the inbound checks (20260922-10, 11, and 12). The reviews of 20260922-43, 20260922-14, and 20260922-20 kept finding bugs in rare constructs, such as JSON_TABLE, XMLTABLE, typed CYCLE marks, TABLESAMPLE, and ordered-set aggregates. Specs like "no literal survives" covered the whole grammar, so each review found more.
+- Define one shared allowlist of pg_query node types, and of the fields within them where it matters, in the enclave gem. Start with the common constructs: SELECT, joins, CTEs (not CYCLE or SEARCH), subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL.
+- Before any walker runs, check the parse against the allowlist. Abort on anything else with the rule `unsupported_construct`, naming the node type. That's shape, and it holds no literals.
+- **Constructs outside the list are refused in version 1.** Supporting each one becomes its own task under "After version 1", which the main session adds when this task defines the list. Group them by family, such as JSON_TABLE and the JSON functions, XMLTABLE and the XML functions, CTE CYCLE and SEARCH, and TABLESAMPLE. The user decided this. Special-case code already written for refused constructs, such as the JSON_TABLE path swap, CYCLE marks, and XMLROOT keywords, can stay if its tests still reach it. The after-v1 task for that construct decides whether to enable it or remove it.
+- Update README "What goes into the enclave" and step 1 to say that queries using constructs outside the list are refused.
+- Review this against the supported list, not the whole grammar. Correctness findings still block landing, since the user kept review severity strict.
+
+- **Depends on:** 20260922-14, 20260922-43, and 20260922-20.
+- **Came from:** The user's decision after the reviews of 20260922-43, 20260923-29, and 20260922-20.
+- **README:** What goes into the enclave, step 1, and step 9.
+- **Status:** done
+- **Decided (by the user):** Use the default list: SELECT, joins, CTEs without CYCLE or SEARCH, subqueries, CASE, aggregates, window functions, the usual operators, casts, IN, ANY, LIKE, BETWEEN, and IS NULL. There are no sample queries to check it against.
+
+### 20260923-34. Governed store loose ends.
+
+Minor findings from the second review of 20260923-32:
+- **`Store.open` and `#teardown` still let a raw `SystemCallError` out of `PrivateFiles.lstat`.** For example, after `File.chmod(0, base)`, both raise `Errno::EACCES` naming `<base>/<run_id>`. A base that's a regular file gives `Errno::ENOTDIR`. Nothing below the run directory is named, so nothing leaks, but the class promises `Store::Error`.
+- **The 4 MB-thread test pins `MAX_DEPTH` loosely on macOS.** A value of 6,000 still passes there, though it would likely fail on aarch64 Linux.
+- **Reading an entry that's a FIFO blocks forever.** Only the owner can plant one, so this is informational.
+
+- **Depends on:** 20260923-32.
+- **Came from:** Second review of 20260923-32.
+- **README:** Where QUAACK runs.
+- **Status:** done
+
+### 20260923-35. Volatility check loose ends.
+
+Findings from the reviews of 20260922-20:
+- **Domain CHECK constraints aren't checked.** A domain whose CHECK calls a volatile function passes. That's realistic, because a validator function is VOLATILE unless someone marks it otherwise.
+- **Attribute notation isn't checked.** `t.f` and `(t).f`, which call a function, are missed.
+- **One volatile cast to a common type poisons every cast to it.** For example, `CREATE CAST (x AS int)` with a volatile function makes every `::int` abort. None of the catalogs checked have one.
+- **TABLESAMPLE always aborts,** because the `system` and `bernoulli` methods are volatile. The allowlist (20260923-33) will refuse TABLESAMPLE anyway.
+- **Surviving mutants:**
+  - Three `quote_ident` columns aren't pinned: `OPERATOR_SQL` `f.proname`, and `CAST_SQL` `named.nspname` and `fn.nspname`.
+  - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
+- **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
+- **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
+
+- **Depends on:** 20260922-20.
+- **Came from:** Both reviews of 20260922-20, and the tests-only review.
+- **README:** 3d.
+- **Status:** done
+
+### 20260923-36. 5a-3 loose ends.
+
+Findings from the reviews of 20260922-32 and 20260923-31:
+- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for every index on a partitioned table's parent (`ON ONLY`), for any index `WITH (fillfactor=...)` or `WITH (deduplicate_items=off)`, and for unique indexes with `NULLS NOT DISTINCT`. So a candidate identical to one of them is proposed and tested as if it were new, and 15a won't report it as a duplicate. None of these options changes which queries the index can serve.
+- **`IndexCandidate` accepts a predicate whose deparse doesn't parse again.** For example, `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`. Dedupe drops it, but other consumers would raise. `IndexSql.normalize_predicate` should re-parse its output.
+- **Array bounds on a cast aren't checked,** as in `status::text[12345] IS NULL`. It's the same class as the integer typmods the user accepted, but the doc comment doesn't say so.
+- **Dead or defensive code:** `left = unwrap(node.lexpr)` in `column_comparison?` is redundant, and the `A_Const` check in `plain_type?` can't be reached through Dedupe.
+- **README 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
+- **Open question for the user:** the rule drops every partial that uses a column that isn't low-cardinality, including partials with no literal at all, like `WHERE deleted_at IS NULL`. Those carry no PII risk and are common. Should they get an exception?
+
+- **Depends on:** 20260923-31.
+- **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
+- **README:** 5a-3.
+- **Status:** done
+
+### 20260923-37. Arena runner loose ends.
+
+Minor findings from the second review of 20260922-46:
+- **Every 57014 is reported as `statement_timeout`,** including a self-cancel or an operator cancel. Name the rule `statement_canceled`, or document it.
+- **A non-StandardError from the block, followed by a failed rollback, loses the primary error.** Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
+- **Which error wins changes with check order.** Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
+- **pg_query uses the PG17 grammar and the server is PG18,** so PG18-only SQL fails as `statement_unparsable`. That's fail-closed.
+
+- **Depends on:** 20260922-46.
+- **Came from:** Second review of 20260922-46.
+- **README:** Step 9.
+- **Status:** done
+
+### 20260923-38. Error filtering loose ends.
+
+Findings from both reviews of 20260922-8:
+- **A signal that arrives while `guard` is already reporting an error gets swallowed.** The `rescue Exception` clauses in `write`, `ask`, and `to_egress` catch an asynchronous SignalException, so `guard` returns 70 and a caller's loop carries on. Re-raise SignalException in those clauses too.
+- **Nothing tests that `write` flushes.** Deleting `out.flush` stays green.
+- **No spec combines `silence_stderr!` with a re-raised signal.**
+- **Most enclave error classes have no `rule` method,** so they go out as `internal_error`. Add rules to `RelationQualifier::Error` and `Store::Error`, and to the ArgumentErrors that stand in for a rule, such as those in PredicateAtoms and IndexCandidate.
+- **Question for the user:** Should rule names be a closed list in the protocol gem, so every new rule is a reviewed change like the whitelist? Today any identifier-shaped word passes, so an error class that copied a one-word value into `rule` would send it.
+- **Operators get no detail beyond the rule.** A rule-to-text table on the driver side would give them a readable message without changing the whitelist.
+
+- **Depends on:** 20260922-8.
+- **Came from:** Both reviews of 20260922-8.
+- **README:** Trust boundary.
+- **Status:** done
+
+### 20260923-39. Finish 5a-4 single-candidate testing.
+
+This was split out of 20260922-29. The work so far is on branch `task/20260922-29`. Build on that branch, then land both together. Fix what the second review of 20260922-29 found:
+- **`plan_cache_mode = force_generic_plan` makes every plan generic.** Postgres checks the setting before the execution count, so it applies even on a statement's first EXECUTE. The reviewer reproduced it on a session and on a database: the Filter was `(s = $1)`, and both literal sets showed the index as used. Put `SET LOCAL plan_cache_mode = force_custom_plan` back inside the transaction. Test it with the setting on the database, asserting that the literal sets differ and that the Filter holds the literal. Fix the module comment too.
+- **The session-failure SQLSTATE classes are untested.** Dropping any of `08`, `25`, `40`, `53`, `58`, or the `XX001`/`XX002` pattern stays green. Add a table test that raises each one (`RAISE ... USING ERRCODE`) during create and expects `hypopg_failed`.
+- **A lock timeout (`55P03`) during create counts as a refusal.** Consider adding it to the session-failure list.
+
+- **Depends on:** 20260922-29's branch.
+- **Came from:** Second review of 20260922-29.
+- **README:** 5a-4.
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a review, a fix round, a second review, a tests-only round, and a tests-only review.
+  - `SupportedSql.check!` (`enclave/lib/quaack/enclave/supported_sql.rb`) walks every protobuf field and raises `unsupported_construct`, naming only the node type. It's called first by RelationQualifier, VolatilityCheck, GeneratorOne, and PredicateAtoms.
+  - Code that only refused constructs could reach was removed, last present in 6507105. That covered DML targets and locking-clause skips in RelationQualifier, TABLESAMPLE in FunctionCalls, and in PredicateAtoms the JSON_TABLE path swap, CYCLE marks, normal-form keywords, TABLESAMPLE FROM items, and SIMILAR TO. GeneratorOne's own statement checks went too.
+  - EXTRACT's field keyword is kept in shapes when it's a documented field name.
+  - The review ran 60 realistic ORM and reporting queries, and every construct on the list passed.
+  - Support for each refused family became an after-v1 task, 20260923-41 through 20260923-52. The minor findings became 20260923-40.
