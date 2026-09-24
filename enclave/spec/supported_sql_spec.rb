@@ -240,6 +240,29 @@ RSpec.describe Quaack::Enclave::SupportedSql do
   describe "the error" do
     let(:sentinel) { "QUAACK_SENTINEL_3b9d" }
 
+    # Raised while another error is being handled, the error would take
+    # that one as its cause unless it's cleared. A caller's error can
+    # quote SQL.
+    it "has no cause, even when raised in a rescue" do
+      errors = ["SELECT ROW(1)", "SELECT 1 WHERE 'a' SIMILAR TO 'b'"].map do |sql|
+        raise "outer #{sentinel}"
+      rescue RuntimeError
+        begin
+          check(sql)
+          nil
+        rescue described_class::Error => e
+          e
+        end
+      end
+
+      expect(errors.map(&:message))
+        .to eq(["unsupported_construct: RowExpr", "unsupported_construct: A_Expr AEXPR_SIMILAR"])
+      errors.each do |error|
+        expect(error.cause).to be_nil
+        expect(error.full_message).not_to include(sentinel)
+      end
+    end
+
     it "never quotes the query" do
       sqls = [
         "SELECT x FROM t WHERE x SIMILAR TO '#{sentinel}'",

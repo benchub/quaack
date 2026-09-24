@@ -23,6 +23,8 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
   def generate(sql, stats, **limits) = described_class.candidates(PgQuery.parse(sql), stats, **limits)
 
+  def unsupported(detail) = raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
+
   def desc(name, nulls: :first) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction: :desc, nulls:)
 
   def asc(name, nulls: :last) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction: :asc, nulls:)
@@ -119,13 +121,13 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     # SupportedSql's now.
     it "refuses more or fewer than one statement" do
       expect { generate("SELECT 1; SELECT 2", stats) }
-        .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: ParseResult with 2 statements, not one")
-      expect { generate("", stats) }.to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: ParseResult with 0 statements, not one")
+        .to unsupported("ParseResult with 2 statements, not one")
+      expect { generate("", stats) }.to unsupported("ParseResult with 0 statements, not one")
     end
 
     it "refuses a statement that isn't a SELECT" do
       expect { generate("DELETE FROM public.orders WHERE status = 1", stats) }
-        .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: DeleteStmt")
+        .to unsupported("DeleteStmt")
     end
 
     # Each would give candidates without the check.
@@ -136,7 +138,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       "ROW" => ["SELECT 1 FROM public.orders WHERE status = 1 AND ROW(status) IS NOT NULL", "RowExpr"]
     }.each do |construct, (sql, detail)|
       it "refuses #{construct}, which isn't on the supported list" do
-        expect { generate(sql, stats) }.to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
+        expect { generate(sql, stats) }.to unsupported(detail)
       end
     end
 
@@ -178,15 +180,15 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "refuses a data-modifying CTE, even inside a subquery" do
       expect { generate("WITH d AS (DELETE FROM public.orders RETURNING *) SELECT 1 FROM d", stats) }
-        .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: DeleteStmt")
+        .to unsupported("DeleteStmt")
       sql = "SELECT 1 FROM public.orders WHERE status IN " \
             "(WITH u AS (UPDATE public.customers SET id = 1 RETURNING id) SELECT id FROM u)"
-      expect { generate(sql, stats) }.to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: UpdateStmt")
+      expect { generate(sql, stats) }.to unsupported("UpdateStmt")
     end
 
     it "refuses SELECT ... INTO" do
       expect { generate("SELECT status INTO public.copy FROM public.orders", stats) }
-        .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: IntoClause")
+        .to unsupported("IntoClause")
     end
 
     it "refuses an unqualified table that a CTE's name doesn't reach" do

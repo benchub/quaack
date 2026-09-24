@@ -198,9 +198,15 @@ module Quaack
       # as do COLLATE names. They're written in the query's own text, like
       # its column names, and say how a value is typed, not what it is.
       #
-      # A constant the parser made, which has no location, isn't a value,
-      # and stays. The parser makes one for a default it fills in, such as
-      # the 1 of FETCH FIRST ROWS ONLY. It's never text from the query.
+      # Some constants aren't values, and stay:
+      # - A constant the parser made, which has no location. The parser
+      #   makes one for a default it fills in, such as the 1 of FETCH FIRST
+      #   ROWS ONLY. It's never text from the query.
+      # - EXTRACT's field, such as the epoch of EXTRACT(epoch FROM x), when
+      #   it's one of the field names Postgres documents, in any case. It's
+      #   a keyword, though the parser stores it as a string, and the query
+      #   can write it as one: EXTRACT('epoch' FROM x). Any other string
+      #   there is redacted like any other constant.
       #
       # The constructs whose constants needed their own handling here, such
       # as JSON_TABLE paths, CYCLE marks, and normalize's normal form, are
@@ -231,7 +237,7 @@ module Quaack
           when PgQuery::A_Const then constants << node.location unless Literals.made?(node)
           when PgQuery::ParamRef then params << node.number
           when PgQuery::TypeName then nil
-          else Tree.children(node).each { |child| collect(child, constants, params) }
+          else Literals.values(node).each { |child| collect(child, constants, params) }
           end
         end
 
@@ -255,6 +261,7 @@ module Quaack
         def replace_fields(message)
           case message
           when PgQuery::TypeName then nil
+          when Literals.method(:extract_field?) then message.args[1] = replace(message.args[1])
           else message.class.descriptor.each { |field| replace_field(message, field) }
           end
         end
@@ -272,6 +279,27 @@ module Quaack
       # The constants that stay as written (see Redaction).
       module Literals
         module_function
+
+        # The fields of EXTRACT that Postgres documents.
+        EXTRACT_FIELDS = %w[
+          century day decade dow doy epoch hour isodow isoyear julian microseconds millennium milliseconds minute
+          month quarter second timezone timezone_hour timezone_minute week year
+        ].to_set.freeze
+
+        # A message's field values, without an EXTRACT field.
+        def values(node) = extract_field?(node) ? [node.args[1]] : Tree.children(node)
+
+        # EXTRACT(field FROM x), written in SQL syntax, with a field Postgres
+        # documents.
+        def extract_field?(node)
+          node.is_a?(PgQuery::FuncCall) && node.funcformat == :COERCE_SQL_SYNTAX && node.args.size == 2 &&
+            node.funcname.map { |part| part.string.sval } == %w[pg_catalog extract] && field_name?(node.args[0])
+        end
+
+        def field_name?(arg)
+          text = arg.a_const&.sval
+          !text.nil? && EXTRACT_FIELDS.include?(text.sval.downcase)
+        end
 
         # A constant the parser made, not one written in the query, such as
         # the 1 of FETCH FIRST ROWS ONLY. Only these have no location.
@@ -308,7 +336,9 @@ module Quaack
 
         private
 
-        def alias_name(item) = (item.alias&.aliasname if item.respond_to?(:alias))
+        # The item is a subquery or a function, since SupportedSql refuses
+        # every other kind.
+        def alias_name(item) = item.alias&.aliasname
 
         # A join adds its inputs, and its alias if it has one.
         def join_rels(join, level)

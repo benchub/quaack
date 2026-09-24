@@ -52,8 +52,11 @@ module Quaack
     # - GROUPING SETS, ROLLUP, CUBE, and GROUPING().
     # - The XML and the SQL/JSON functions and predicates.
     # - SIMILAR TO.
-    # - Field selection, such as (t).x or (f(x)).*, which can call a
-    #   function the volatility check doesn't see.
+    # - Field selection written with parentheses, such as (t).x or
+    #   (f(x)).*, which can call a function the volatility check doesn't
+    #   see. The same call written as t.f parses as a plain column
+    #   reference, so the list can't tell it from a column, and it isn't
+    #   refused here (see 20260923-35).
     # - SQL-syntax functions not in the list, such as normalize, IS
     #   NORMALIZED, SYSTEM_USER, and COLLATION FOR.
     # - Everything else pg_query can parse, such as DEFAULT and
@@ -111,9 +114,11 @@ module Quaack
       # The functions the parser writes as FuncCalls in SQL syntax rather
       # than as calls, that are supported: extract(field FROM x), overlay,
       # position, substring, the forms of trim, and AT TIME ZONE and AT
-      # LOCAL. Each is an ordinary function with ordinary arguments. Others,
-      # such as normalize(x, NFC), take keywords the walkers would read as
-      # values.
+      # LOCAL. Each takes ordinary arguments, except extract's field, which
+      # the parser stores as a string constant. PredicateAtoms keeps that
+      # field when it's one Postgres documents, and redacts it otherwise.
+      # Others, such as normalize(x, NFC), take keywords the walkers would
+      # read as values.
       SQL_SYNTAX_FUNCTIONS = %w[
         pg_catalog.extract pg_catalog.overlay pg_catalog.position pg_catalog.substring
         pg_catalog.btrim pg_catalog.ltrim pg_catalog.rtrim pg_catalog.timezone
@@ -174,7 +179,7 @@ module Quaack
       def sublink(link) = (link.sub_link_type.to_s unless SUBLINK_TYPES.include?(link.sub_link_type))
 
       # Array subscripts and slices only. Field selection, (t).x, can call
-      # a function.
+      # a function. t.f, a ColumnRef, isn't caught here.
       def indirection(indirection)
         "other than array subscripts" unless indirection.indirection.all?(&:a_indices)
       end

@@ -411,6 +411,25 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(shapes).to eq(["pg_catalog.\"normalize\"(o.note, $2) = $3", "pg_catalog.is_normalized(o.note, $4)"])
     end
 
+    # EXTRACT's field is a keyword, which the grammar also takes as a
+    # string, in any case.
+    it "keeps EXTRACT's field when it's one of Postgres's field names" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT(epoch FROM o.created_at) > 5 " \
+            "AND EXTRACT('ISODOW' FROM o.created_at) = 6 AND extract(Timezone_Hour FROM o.created_at) = 7"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ('epoch' FROM o.created_at) > $2", "extract ('ISODOW' FROM o.created_at) = $3",
+                            "extract ('timezone_hour' FROM o.created_at) = $4"])
+      shapes.each { |shape| expect { PgQuery.parse("SELECT #{shape}") }.not_to raise_error }
+    end
+
+    it "redacts EXTRACT's field when it isn't a field name, and extract's called as a plain function" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT('SENTINEL' FROM o.created_at) > 5 " \
+            "AND pg_catalog.extract('epoch', o.created_at) > 6"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ($2 FROM o.created_at) > $3", "pg_catalog.\"extract\"($4, o.created_at) > $5"])
+      expect(shapes.join).not_to include("SENTINEL")
+    end
+
     recursive = lambda do |clause|
       "SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL " \
         "SELECT n + 1 FROM t) #{clause} SELECT 1 FROM t WHERE t.n = o.id)"
