@@ -45,13 +45,16 @@ module Quaack
     #    that is) that's low-cardinality on the candidate's table. And every
     #    constant must be compared directly with one of those columns, as in
     #    status = 'open', status IN ('a', 'b'), status = ANY('{a,b}'), or
-    #    status BETWEEN 'a' AND 'm', with at most a cast on the constant
+    #    status BETWEEN 'a' AND 'm'. Casts are allowed on the constant and
+    #    on the column, as a plan prints a varchar column,
+    #    (status)::text = 'open'::text, if every type modifier is an integer
     #    (see PredicateCheck.constants_compared_with_columns?). Only a
     #    low-cardinality column's values may leave the enclave, so a
     #    constant anywhere else drops the partial, when unsure:
     #    'ssn' = 'ssn', status = lower('bob@x.com'), lower(status) = 'x',
     #    or a bare true. A predicate with no constants, such as flag or
-    #    status IS NULL, needs only the column check. This comes first,
+    #    status IS NULL, needs only the column check. A stored predicate
+    #    that doesn't parse again is dropped too. This comes first,
     #    because it's the trust-boundary check (README 5a-3): until a
     #    partial passes it, its predicate may hold PII.
     # 2. A candidate covered by an existing index is dropped
@@ -193,6 +196,10 @@ module Quaack
         PredicateCheck.predicate_columns(candidate.predicate).any? do |column|
           !@low_cardinality.include?([candidate.table, column])
         end || !PredicateCheck.constants_compared_with_columns?(candidate.predicate)
+      rescue ArgumentError
+        # The stored predicate doesn't parse again, which pg_query's
+        # deparse can cause. When unsure, drop. The error doesn't quote it.
+        true
       end
 
       def covering_index(candidate, indexes)

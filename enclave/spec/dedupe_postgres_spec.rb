@@ -2,6 +2,8 @@
 
 require "json"
 require "quaack/enclave/dedupe"
+require "quaack/enclave/generator_two"
+require "quaack/enclave/pg_array"
 
 # Checks Dedupe.covers? against the planner. For each case, a real index
 # stands for the existing index, read back through pg_get_indexdef and
@@ -128,5 +130,70 @@ RSpec.describe "Dedupe.covers? against the planner" do
 
       expect(!index.nil? && Quaack::Enclave::Dedupe.covers?(index, cand)).to be(c[:covered])
     end
+  end
+end
+
+# Generator two's partial candidates come from real plan text. A varchar
+# column compared with a literal prints as ((state)::text = 'failed'::text),
+# and generator two keeps the casts. So a partial on a low-cardinality
+# varchar column has to get through Dedupe with them.
+RSpec.describe "Dedupe on generator two's partials from a real plan" do
+  let(:conn) { test_database.connection }
+  let(:tickets) { Quaack::Enclave::TableName.new(schema: "public", name: "tickets") }
+
+  before do
+    conn.exec(<<~SQL)
+      CREATE TABLE tickets (id int, state varchar(20), total int);
+      INSERT INTO tickets
+        SELECT i, CASE WHEN i % 100 = 0 THEN 'failed' WHEN i % 3 = 0 THEN 'shipped' ELSE 'open' END, i % 5000
+        FROM generate_series(1, 100000) AS i;
+      ANALYZE tickets;
+    SQL
+  end
+
+  def pg_stats_row(column)
+    conn.exec_params(<<~SQL, [column]).first
+      SELECT n_distinct, null_frac, correlation, most_common_vals::text AS vals, most_common_freqs::text AS freqs
+      FROM pg_stats WHERE schemaname = 'public' AND tablename = 'tickets' AND attname = $1
+    SQL
+  end
+
+  def column_statistics(column)
+    row = pg_stats_row(column)
+    number = ->(text) { text && Float(text) }
+    array = ->(text) { text && Quaack::Enclave::PgArray.parse(text) }
+    Quaack::Enclave::ColumnStatistics.new(
+      **%w[n_distinct null_frac correlation].to_h { |key| [key.to_sym, number[row[key]]] },
+      most_common_vals: array[row["vals"]], most_common_freqs: array[row["freqs"]]&.map(&number)
+    )
+  end
+
+  def statistics
+    reltuples = Float(conn.exec("SELECT reltuples FROM pg_class WHERE oid = 'tickets'::regclass").getvalue(0, 0))
+    columns = %w[id state total]
+    table = Quaack::Enclave::TableStatistics.new(name: tickets, reltuples:, column_names: columns, indexes: {},
+                                                 columns: columns.to_h { |c| [c, column_statistics(c)] })
+    Quaack::Enclave::Statistics.new(tables: [table])
+  end
+
+  def explain(query)
+    JSON.parse(conn.exec("EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON) #{query}").getvalue(0, 0))
+  end
+
+  it "keeps a partial on a low-cardinality varchar column" do
+    plan = explain("SELECT * FROM tickets WHERE state = 'failed' AND total = 7")
+    expect(plan.first["Plan"]["Filter"]).to include("(state)::text = 'failed'::text")
+    stats = statistics
+    candidates = Quaack::Enclave::GeneratorTwo.candidates(plan, statistics: stats)
+    expect(candidates.filter_map(&:predicate)).to eq(["state::text = 'failed'::text", "total = 7"])
+
+    search = Quaack::Enclave::Dedupe.new(statistics: stats, low_cardinality: [[tickets, "state"]])
+    survivors = search.filter(candidates)
+
+    # total has 5,000 values, so only its partial goes.
+    expect(survivors.filter_map(&:predicate)).to eq(["state::text = 'failed'::text"])
+    expect(survivors).to eq(candidates.reject { |c| c.predicate == "total = 7" })
+    expect(search.drops.map { |d| [d.reason, d.candidate.predicate] })
+      .to eq([[:partial_not_low_cardinality, "total = 7"]])
   end
 end

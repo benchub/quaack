@@ -366,7 +366,20 @@ RSpec.describe Quaack::Enclave::Dedupe do
          "status NOT IN ('open')", "status = ANY('{open,shipped}')", "status = ANY('{open}'::text[])",
          "status = ANY(ARRAY['open', 'shipped'])", "status BETWEEN 'a' AND 'm'", "status LIKE 'op%'",
          "status IS DISTINCT FROM 'open'", "'open' IS DISTINCT FROM status", "status = NULL",
-         "kind = 3 OR NOT status = 'open'"].each do |predicate|
+         "kind = 3 OR NOT status = 'open'", "status <> ALL('{a,b}')", "status IS NOT DISTINCT FROM 'open'",
+         "status ILIKE 'op%'", "status NOT BETWEEN 'a' AND 'm'", "status BETWEEN SYMMETRIC 'm' AND 'a'",
+         "status NOT BETWEEN SYMMETRIC 'm' AND 'a'", "status = 'x'::varchar(10)"].each do |predicate|
+          expect(kept?(predicate)).to be(true), predicate
+        end
+      end
+
+      # A plan prints a varchar column compared with text as
+      # (status)::text = 'open'::text, and generator two keeps the casts.
+      it "keeps a constant compared with a column under casts" do
+        ["status::text = 'open'::text", "(status)::text = ANY('{open,shipped}'::text[])",
+         "status::text ~~ 'op%'::text", "status::text >= 'a'::text", "'open'::text = status::text",
+         "status::varchar(10)::text = 'open'", "status::text BETWEEN 'a' AND 'm'",
+         "status::text IN ('a', 'b')"].each do |predicate|
           expect(kept?(predicate)).to be(true), predicate
         end
       end
@@ -383,19 +396,39 @@ RSpec.describe Quaack::Enclave::Dedupe do
          "status = ANY(ARRAY[lower('a')])", "status IN ('a', lower('b'))", "status BETWEEN lower('a') AND 'm'",
          "(status, kind) = ('a', 'b')", "coalesce(status, 'x') = kind",
          "status = (CASE WHEN flag THEN 'a' ELSE 'b' END)", "NULLIF(status, 'x') IS NULL",
-         "lower(status) BETWEEN 'a' AND 'm'", "status = lower('x')::text"].each do |predicate|
+         "lower(status) BETWEEN 'a' AND 'm'", "status = lower('x')::text",
+         "status = ANY(ARRAY['open', lower('bob@x.com')])", "lower(status)::text = 'x'",
+         "(status || 'a')::text = 'x'", "status = 'x'::mytype('secret')", "status IN ('a'::mytype('secret'))",
+         "status::mytype('secret') = 'x'", "status = ANY(ARRAY['a'::mytype('secret')])",
+         "status::text BETWEEN 'a'::mytype('secret') AND 'm'"].each do |predicate|
           expect(kept?(predicate)).to be(false), predicate
         end
       end
 
+      # pg_query deparses a type modifier that isn't a constant as nothing,
+      # so IndexCandidate stores 'x'::mytype(), which doesn't parse again.
+      it "drops a partial whose stored predicate doesn't parse, without raising or quoting it" do
+        s = search
+        cand = candidate(["customer_id"], predicate: "status = 'quaack-sentinel-p4rse'::mytype(lower('bob'))")
+
+        expect(s.filter([cand])).to eq([])
+        expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality])
+        expect(s.drops.inspect).not_to include("quaack-sentinel")
+      end
+
       it "never shows a dropped constant in the drop record" do
         sentinel = "quaack-sentinel-c0n5t"
-        s = search
-        s.filter([candidate(["customer_id"], predicate: "status = 'open' OR '#{sentinel}' = '#{sentinel}'")])
+        predicates = ["status = 'open' OR '#{sentinel}' = '#{sentinel}'",
+                      "status = ANY(ARRAY['open', lower('#{sentinel}')])",
+                      "status = 'x'::mytype('#{sentinel}')"]
+        predicates.each do |predicate|
+          s = search
+          s.filter([candidate(["customer_id"], predicate:)])
 
-        expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality])
-        expect(s.drops.first.candidate.to_ddl).to include(sentinel)
-        [s.drops.inspect, s.drops.pretty_inspect, s.inspect].each { |text| expect(text).not_to include(sentinel) }
+          expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality]), predicate
+          expect(s.drops.first.candidate.to_ddl).to include(sentinel)
+          [s.drops.inspect, s.drops.pretty_inspect, s.inspect].each { |text| expect(text).not_to include(sentinel) }
+        end
       end
     end
 
