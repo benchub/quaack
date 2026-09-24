@@ -270,7 +270,8 @@ Normalize definitions. Drop candidates covered by an existing index or by an ear
 
 - **Depends on:** 20260922-19, 20260922-22.
 - **README:** 5a-3, step 8.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-32` through a build, a review, a fix round, and a second review, but not landed. The second review found that an array check on the partial filter had a vacuous test, and that generator two's partials on `varchar` columns were always dropped. 20260923-31 finishes the task on top of that branch.
 
 ### 20260922-33. 5a-5 generator three.
 
@@ -370,8 +371,9 @@ Pull every predicate atom out of the parse: equality, range, `LIKE`, `IN`, `IS N
 
 - **Depends on:** 20260922-14, 20260922-23.
 - **README:** Step 9.
-- **Status:** todo
+- **Status:** in progress
 - **Decided:** Extract atoms everywhere, including under `OR`, `NOT`, `CASE`, and in subqueries. The 9c vacuity guard catches any that fixtures can't exercise.
+- **Note:** Built on branch `task/20260922-43`, with a build, a review, a fix round, and a second review, but not landed. The second review found that `extract` raises on a recursive CTE with `CYCLE` inside an atom, and that the explicit `normalize(x, 'lit')` redaction is untested. 20260923-29 finishes it on top of that branch, and 20260923-30 holds the rest.
 
 ### 20260922-44. 9 value pools.
 
@@ -806,6 +808,60 @@ Minor findings from the second review of 20260922-15:
 - **Depends on:** 20260922-15.
 - **Came from:** Second review of 20260922-15, and its builder's notes.
 - **README:** Step 1.
+- **Status:** todo
+
+### 20260923-29. Finish predicate atom extraction.
+
+Split out of 20260922-43, whose branch `task/20260922-43` holds the work so far. Build on that branch, then land both together. Fix what the second review of 20260922-43 found:
+- **A recursive CTE with `CYCLE` inside an atom makes `extract` raise** `PgQuery::ParseError: deparse: unpermitted node type in AexprConst`. The deparser needs `CTECycleClause.cycle_mark_value` and `cycle_mark_default` to be `A_Const`. Keep them, or swap them for string placeholders, the way JSON paths are handled. Repro: `SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM t) CYCLE n SET c USING p SELECT 1 FROM t WHERE t.n = o.id)`.
+- **The explicit `normalize` call isn't tested.** Removing `node.funcformat == :COERCE_SQL_SYNTAX &&` from `Literals.normal_form?` stays green, and then `pg_catalog.normalize(o.note, 'SENTINEL')` keeps its literal. Add a sentinel test.
+- **XMLROOT shapes are wrong.** The `version no value` and `standalone` arguments are keywords that the deparser reads as `A_Const`. Keep them, the way the normal form is kept.
+- **Surviving mutants for nested atoms:**
+  - `null_test` in `boolean?`
+  - `SUBQUERY_TESTS` shrunk (nested `IN (SELECT ...)` and `ALL`)
+  - `EXPRESSIONS.key?` in `boolean_expression?` (`NULLIF`)
+  - the ELSE and the argument of a simple CASE
+  - the unreachable `path_placeholder` branch (drop it)
+
+- **Depends on:** 20260922-43's branch.
+- **Came from:** Second review of 20260922-43.
+- **README:** Step 9.
+- **Status:** todo
+
+### 20260923-30. Predicate atom loose ends.
+
+Findings from both reviews of 20260922-43 that don't block it:
+- **pg_query deparse bugs make `with_true` wrong for a whole query.**
+  - `IS NOT DISTINCT FROM (a AND b)` loses its parentheses, which changes the meaning.
+  - `XMLTABLE ... PASSING CAST(x AS xml)` deparses to invalid SQL.
+  - Add a round-trip guard: after deparsing, reparse and compare the tree with the expected one, and raise if they differ.
+- **NATURAL JOIN gives no atoms.** When both sides are plain tables, compute the common columns, or at least emit a marker that can't be replaced, so the report counts it.
+- **USING atoms can't be replaced.** 9c (20260922-48) has to mark them untested, not skip them silently.
+- **Column resolution is conservative.**
+  - A merged USING column, `(o).status`, and a LATERAL item that sees later FROM items are left unplaced where Postgres resolves them.
+  - It loses precision, but it never places a column wrong.
+- **`with_true` on a recursive CTE's stop condition loops forever.** 9a's `statement_timeout` covers it, but 9c should expect it.
+- **A simple CASE rewritten as searched** evaluates its argument once per WHEN. That's only a problem when the argument is volatile.
+- **Typmods keep their literals,** such as `::foo('x')`. That's the documented choice, but 3g should know.
+- **Wire in qualification.** `extract` assumes a qualified query. Its caller should run `RelationQualifier` (20260922-14) first.
+
+- **Depends on:** 20260923-29.
+- **Came from:** Both reviews of 20260922-43, and its builder's notes.
+- **README:** Step 9 and 9c.
+- **Status:** todo
+
+### 20260923-31. Finish 5a-3 dedupe and filter.
+
+Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build on that branch, then land both together. Fix what the second review of 20260922-32 found:
+- **Vacuous test on the trust-boundary check.** In `predicate_check.rb` `constant?`, changing `elements.all?` to `elements.any?` stays green. With that mutant, `status = ANY(ARRAY['open', lower('bob@x.com')])` keeps its partial. Add a mixed-element array to the drop list.
+- **Generator two's partials on `varchar` columns are always dropped.** Postgres prints `((status)::text = 'open'::text)`, so the predicate has a cast on the column side, and `constants_compared_with_columns?` wants a bare column. Accept a column under casts, but not under any other expression. Test it with real generator two output from a Postgres plan.
+- **Allowed forms no test pins:** `AEXPR_OP_ALL`, `AEXPR_NOT_DISTINCT`, `AEXPR_ILIKE`, `AEXPR_NOT_BETWEEN`, and both SYMMETRIC forms.
+- **Dead code:** the BETWEEN special case in `column_comparison?` can't be reached. Drop it.
+- **Type modifiers in an allowed comparison aren't checked,** as in `status = 'x'::mytype(lower('bob'))`. Check them, or drop anything that isn't an integer constant.
+
+- **Depends on:** 20260922-32's branch.
+- **Came from:** Second review of 20260922-32.
+- **README:** 5a-3.
 - **Status:** todo
 
 ## After version 1.
