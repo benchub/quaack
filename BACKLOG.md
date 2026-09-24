@@ -99,9 +99,10 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 Create arena from `template0` with matching locale settings, load the full schema and extensions, create `clock_anchor()`, keep `VALID` constraints, and disable user triggers only.
 
-- **Depends on:** 20260922-25, 20260922-18, 20260922-24.
+- **Depends on:** 20260922-25, 20260922-18, 20260922-24, 20260924-30.
 - **README:** 4b.
 - **Status:** todo
+- **Note (from the first build attempt):** Waiting on 20260924-30. The plan once it lands: load the dump through the connection with the `\\restrict` and `\\unrestrict` lines removed, as one implicit transaction. Drop the empty `public` schema before loading, since the dump runs `CREATE SCHEMA public`. Map the locale provider (`c` to libc, `i` to ICU_LOCALE, `b` to BUILTIN_LOCALE). Name the database from the run ID, with a COMMENT tag, and on a rerun drop and rebuild a tagged database. Reuse Racetrack's anchor code. Run DISABLE TRIGGER USER on every table. Don't create hypopg. The inventory doesn't record the database encoding, so arena gets the run server's default.
 - **Note (from 20260922-26):** Reuse `Racetrack.create_clock_anchor` and `anchor_literal` for arena, perhaps through a shared module.
 
 ## Step 5: Plan gate and index candidates.
@@ -1133,6 +1134,19 @@ Findings from the build and reviews of 20260922-25:
 - **Depends on:** 20260922-25.
 - **Came from:** The build and reviews of 20260922-25.
 - **README:** Steps 2 and 4.
+- **Status:** todo
+
+### 20260924-30. Include extensions in the 3b schema dump.
+
+pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b loads into arena fails on columns like `public.citext`. Found while building 20260922-27. The user picked this fix on September 24.
+- For each extension in production's `pg_extension` other than plpgsql, pass a quoted `--extension=<name>` to the full dump. pg_dump then emits `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...`.
+- Add each extension's schema to the full dump's namespaces, so `WITH SCHEMA ext` doesn't fail on a schema that doesn't exist.
+- Test with real pg_dump 18 output: citext in public, and pgcrypto in a separate schema `ext`. Load the dump into a fresh template0 database, and check that it succeeds.
+- Known and accepted: CREATE EXTENSION carries no VERSION, so arena gets the run server's default versions.
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build of 20260922-27.
+- **README:** 3b.
 - **Status:** todo
 
 ## After version 1.
