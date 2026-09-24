@@ -232,15 +232,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 - **README:** Step 5.
 - **Status:** todo
 
-### 20260922-29. 5a-4 single-candidate testing.
-
-For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the query once per literal set, and record index use, cost, canonical plan, and `hypopg_relation_size`. Keep results for unused candidates. Must work for the original query and for rewrite candidates.
-
-- **Depends on:** 20260922-26, 20260922-21, 20260922-15, 20260922-23.
-- **README:** 5a-4.
-- **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
-- **Status:** in progress
-- **Note:** This task was built on branch `task/20260922-29` through a build, a review, a fix round, and a second review, but not landed. The second review found that dropping `SET LOCAL plan_cache_mode = force_custom_plan` lets a session or database `force_generic_plan` setting make every plan generic. 20260923-39 finishes it on top of that branch.
+### 20260922-29. 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-30. 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
@@ -881,18 +873,7 @@ Findings from both reviews of 20260922-8:
 - **README:** Trust boundary.
 - **Status:** todo
 
-### 20260923-39. Finish 5a-4 single-candidate testing.
-
-This was split out of 20260922-29. The work so far is on branch `task/20260922-29`. Build on that branch, then land both together. Fix what the second review of 20260922-29 found:
-- **`plan_cache_mode = force_generic_plan` makes every plan generic.** Postgres checks the setting before the execution count, so it applies even on a statement's first EXECUTE. The reviewer reproduced it on a session and on a database: the Filter was `(s = $1)`, and both literal sets showed the index as used. Put `SET LOCAL plan_cache_mode = force_custom_plan` back inside the transaction. Test it with the setting on the database, asserting that the literal sets differ and that the Filter holds the literal. Fix the module comment too.
-- **The session-failure SQLSTATE classes are untested.** Dropping any of `08`, `25`, `40`, `53`, `58`, or the `XX001`/`XX002` pattern stays green. Add a table test that raises each one (`RAISE ... USING ERRCODE`) during create and expects `hypopg_failed`.
-- **A lock timeout (`55P03`) during create counts as a refusal.** Consider adding it to the session-failure list.
-
-- **Depends on:** 20260922-29's branch.
-- **Came from:** Second review of 20260922-29.
-- **README:** 5a-4.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260923-39` with a build, a review, a fix round, and a second review, but not landed. The second review found that hidden real indexes skew the plans, and that deep plans raise a raw `JSON::NestingError`. 20260923-56 finishes it on top of that branch.
+### 20260923-39. Finish 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-40. Allowlist loose ends.
 
@@ -936,20 +917,7 @@ pg_query's deparser can change what a query means. `WHERE (status = $1) IS NOT D
 - **README:** Step 1, and "What goes into the enclave".
 - **Status:** todo
 
-### 20260923-56. Finish 5a-4, second pass.
-
-Split out of 20260923-39. The work so far is on branch `task/20260923-39`, which carries 20260922-29. Build on that branch, then land all three together. Fix what the second review of 20260923-39 found:
-- **A real index hidden with HypoPG skews every plan without warning.** HypoPG keeps hidden indexes per session, and `hypopg_reset()` doesn't clear hidden real ones. In the reproduction, the baseline cost went from 8.31 to 1887.0 and the run returned normally. Refuse when `hypopg_hidden_indexes()` isn't empty, with a new rule such as `indexes_hidden`. Don't unhide them, since that isn't transactional. Add a comment that HypoPG older than 1.4 fails closed.
-- **A plan more than about 48 nodes deep raises a raw `JSON::NestingError`.** A 60-table join chain is enough. Parse EXPLAIN output with `max_nesting: false`, or with a documented cap that gives a clear refusal rule, and test it with a deep plan. This settles the parsing half of the note on 20260922-29. Sending plans through egress is still open.
-- **Surviving mutants:**
-  - Unanchored SQLSTATE class alternatives. Pin them with a refusal code such as `22025` or `42P08` that contains one of the class pairs.
-  - An index-name match on `start_with?("<")`.
-  - The `RELEASE SAVEPOINT` line, which you can delete, or explain why it's there.
-
-- **Depends on:** 20260923-39's branch.
-- **Came from:** Second review of 20260923-39.
-- **README:** 5a-4.
-- **Status:** todo
+### 20260923-56. Finish 5a-4, second pass. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-57. Rewrite candidate check loose ends.
 
@@ -975,6 +943,22 @@ Findings from the reviews of 20260922-4 and 20260923-53:
 - **Depends on:** 20260923-53.
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-1. 5a-4 loose ends.
+
+Minor findings from the second review of 20260923-56:
+- **A result type map breaks the hidden-index check.** With `conn.type_map_for_results = PG::BasicTypeMapForResults.new(conn)`, `getvalue` returns Integer `0`, so `0 != "0"` refuses every run as `indexes_hidden`, and EXPLAIN's json comes back already parsed. Pin a plain type map for the run, or compare with `.to_s`, and add a test.
+- **Empty `literal_sets` is accepted.** Every candidate comes back unused with no error. README says there are always three literal sets, so refuse `{}` as `bad_literal`.
+- **Tests that are missing:**
+  - Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
+  - The exact-cost assertions use single-node plans only. Add one on a join.
+- **`CanonicalPlan` treats any `"<N>…"` index name as hypothetical.** That's in the landed `canonical_plan.rb`, related to 20260923-28. A real index named that way is canonicalized wrong.
+- **The runner depends on step 4 matching production settings.** See the note on 20260922-25.
+
+- **Depends on:** 20260923-56.
+- **Came from:** Second review of 20260923-56.
+- **README:** 5a-4.
 - **Status:** todo
 
 ## After version 1.
