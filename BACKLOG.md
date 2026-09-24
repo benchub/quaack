@@ -253,7 +253,8 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 - **Depends on:** 20260922-26, 20260922-21, 20260922-15, 20260922-23.
 - **README:** 5a-4.
 - **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** This task was built on branch `task/20260922-29` through a build, a review, a fix round, and a second review, but not landed. The second review found that dropping `SET LOCAL plan_cache_mode = force_custom_plan` lets a session or database `force_generic_plan` setting make every plan generic. 20260923-39 finishes it on top of that branch.
 
 ### 20260922-30. 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
@@ -901,6 +902,18 @@ Findings from both reviews of 20260922-8:
 - **Depends on:** 20260922-8.
 - **Came from:** Both reviews of 20260922-8.
 - **README:** Trust boundary.
+- **Status:** todo
+
+### 20260923-39. Finish 5a-4 single-candidate testing.
+
+This was split out of 20260922-29. The work so far is on branch `task/20260922-29`. Build on that branch, then land both together. Fix what the second review of 20260922-29 found:
+- **`plan_cache_mode = force_generic_plan` makes every plan generic.** Postgres checks the setting before the execution count, so it applies even on a statement's first EXECUTE. The reviewer reproduced it on a session and on a database: the Filter was `(s = $1)`, and both literal sets showed the index as used. Put `SET LOCAL plan_cache_mode = force_custom_plan` back inside the transaction. Test it with the setting on the database, asserting that the literal sets differ and that the Filter holds the literal. Fix the module comment too.
+- **The session-failure SQLSTATE classes are untested.** Dropping any of `08`, `25`, `40`, `53`, `58`, or the `XX001`/`XX002` pattern stays green. Add a table test that raises each one (`RAISE ... USING ERRCODE`) during create and expects `hypopg_failed`.
+- **A lock timeout (`55P03`) during create counts as a refusal.** Consider adding it to the session-failure list.
+
+- **Depends on:** 20260922-29's branch.
+- **Came from:** Second review of 20260922-29.
+- **README:** 5a-4.
 - **Status:** todo
 
 ## After version 1.
