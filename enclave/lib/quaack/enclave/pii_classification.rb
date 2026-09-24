@@ -28,8 +28,13 @@ module Quaack
     #   it's text-like (PlannerStatistics's text_columns: text, varchar,
     #   char, name, citext, or a domain over one) and its distinct count is
     #   the threshold or more, or unknown. Unknown text fails closed.
-    # - A column is low-cardinality when it isn't PII and its distinct count
-    #   is known and under the threshold. This is the set Dedupe takes.
+    # - A column is low-cardinality when it isn't PII, its distinct count is
+    #   known and under the threshold, and its pg_stats n_distinct is
+    #   positive. ANALYZE stores a positive count only when the distinct
+    #   values are at most about a tenth of the rows, so each one repeats.
+    #   A negative n_distinct means the values mostly don't repeat, as in a
+    #   small table of emails, so they aren't categories and never leave.
+    #   This is the set Dedupe takes.
     #
     # outbound_statistics is a pure projection of the stored statistics:
     # for each table, in order, its schema and name, and for each column in
@@ -80,6 +85,7 @@ module Quaack
         table["column_names"].map do |column|
           count = stats.column?(column) ? stats.distinct_count(column) : nil
           pii, low = classes(config, name, column, table["text_columns"].include?(column), count)
+          low &&= stats.column(column).n_distinct.positive?
           { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii, "low_cardinality" => low }
         end
       end

@@ -71,16 +71,17 @@ RSpec.describe Quaack::Enclave::Config do
     # Matching ignores case, so a glob can only ever match more columns,
     # which withholds more: the safe way to be wrong.
     it "matches a column against each glob, part by part, ignoring case" do
-      write(%({"pii_columns": ["*.users.email", "billing.*.card_*"]}))
+      write(%({"pii_columns": ["*.users.email", "billing.*.card_*", "public.a+b.c"]}))
       loaded = config.load(path)
       columns = [%w[public users email], %w[app Users EMAIL], %w[billing cards card_number], %w[billing cards card_],
-                 %w[public users emails], %w[public user email], %w[public cards card_number],
-                 %w[billing cards number]]
+                 %w[public a+b c],
+                 %w[public users emails], %w[public users work_email], %w[public user email],
+                 %w[public cards card_number], %w[billing cards number], %w[public aab c]]
 
       matches = columns.map do |schema, name, column|
         loaded.pii_column?(Quaack::Enclave::TableName.new(schema:, name:), column)
       end
-      expect(matches).to eq([true, true, true, true, false, false, false, false])
+      expect(matches).to eq([true] * 5 + [false] * 6)
     end
   end
 

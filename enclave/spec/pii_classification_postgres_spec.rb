@@ -75,7 +75,9 @@ RSpec.describe Quaack::Enclave::PiiClassification do
 
     # 49 and 50 distinct values: n_distinct is the count itself. 40 rows,
     # each different: n_distinct is -1, a fraction of the rows, so the count
-    # is 40, as 5a-1 counts. A column of only NULLs has n_distinct 0, and a
+    # is 40, as 5a-1 counts. That's under 50, so it isn't PII, but a negative
+    # n_distinct means the values don't repeat much, so it isn't
+    # low-cardinality either. A column of only NULLs has n_distinct 0, and a
     # table never analyzed has no pg_stats rows, so neither has a count: a
     # text column is PII, and a number column is neither.
     it "draws the line at 50 distinct values, counting them the way 5a-1 does" do
@@ -95,7 +97,7 @@ RSpec.describe Quaack::Enclave::PiiClassification do
                                            "under_n" => [false, true], "at_n" => [false, false],
                                            "nothing" => [true, false])
       expect(store.read("statistics")["tables"][1]["columns"]["code"]["n_distinct"]).to eq(-1.0)
-      expect(classes(result, small)).to eq("code" => [false, true])
+      expect(classes(result, small)).to eq("code" => [false, false])
       expect(classes(result, fresh)).to eq("note" => [true, false], "n" => [false, false])
     end
 
@@ -145,6 +147,29 @@ RSpec.describe Quaack::Enclave::PiiClassification do
 
       expect(stored["most_common_vals"]).to contain_exactly("NZ", "CA", "FR")
       expect(country.values_at("most_common_freqs", "most_common_vals")).to eq([nil, nil])
+    end
+
+    # A 40-row table of people: one email shared by 10 rows (a family
+    # address, say), the rest unique. Under 50 distinct values, but most of
+    # them are one person's own, so n_distinct is negative and nothing but
+    # the frequencies leaves.
+    it "sends no values from a small table's column whose values mostly don't repeat" do
+      s = LeakCheck::Sentinels.new
+      conn.exec(<<~SQL)
+        CREATE TABLE people (email text);
+        INSERT INTO people SELECT CASE WHEN i <= 10 THEN '#{s.text}' ELSE 'p' || i || '@example.com' END
+        FROM generate_series(1, 40) AS i;
+        ANALYZE people;
+      SQL
+      people = table("public", "people")
+      result = classify([people])
+      stored = store.read("statistics")["tables"].first["columns"]["email"]
+
+      expect(stored["n_distinct"]).to be_negative
+      expect(stored["most_common_vals"]).to eq([s.text])
+      expect(classes(result, people)).to eq("email" => [false, false])
+      expect(outbound(result, people, "email").values_at("most_common_freqs", "most_common_vals")).to eq([[0.25], nil])
+      expect(result.low_cardinality).to eq([])
     end
 
     # accounts.id has no MCV list, since every value is unique, so this
