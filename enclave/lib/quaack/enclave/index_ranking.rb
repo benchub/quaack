@@ -25,7 +25,7 @@ module Quaack
       end
 
       Cost = Data.define(:before, :after) do
-        def reduction = 1 - (after / before)
+        def reduction = after == before ? 0.0 : 1 - (after / before)
       end
 
       # The most indexes in a combination, and the most single entries kept.
@@ -35,6 +35,10 @@ module Quaack
       module_function
 
       def rank(connection, query:, literal_sets:, baseline:, results:)
+        unless [baseline, *results.reject(&:refusal)].all? { |r| r.plans.keys.to_set == literal_sets.keys.to_set }
+          raise ArgumentError, "literal sets must match the baseline's and every result's"
+        end
+
         pool = results.select(&:used?).map { |r| single(r, baseline) }
         singles = ranked(pool)
         combination = combine(connection, query, literal_sets, baseline, pool, singles.first) if pool.size > 1

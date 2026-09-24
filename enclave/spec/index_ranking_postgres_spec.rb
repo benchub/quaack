@@ -245,4 +245,31 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(ranking.combination.to_s).not_to include(sentinel)
     expect(ranking.top.first.pretty_inspect).not_to include(sentinel)
   end
+
+  # With $2 false, the plan is a Result that costs nothing, with or without
+  # the index.
+  it "counts a literal set that costs nothing either way as no reduction" do
+    query = "SELECT * FROM t WHERE a = $1 AND $2::boolean"
+    sets = { slow: %w[5 true], dead: %w[5 false] }
+    report = single_test(query, sets, [on_a])
+    dead = [report.baseline, report.results.first].map { |r| r.plans[:dead].total_cost }
+
+    expect(dead).to eq([0.0, 0.0])
+    expect(described_class::Cost.new(before: dead[0], after: dead[1]).reduction).to eq(0.0)
+    entry = rank(query, sets, report).top.first
+    expect(entry.reductions[:dead]).to eq(0.0)
+    expect(entry.worst_reduction).to eq(0.0)
+  end
+
+  it "refuses literal sets that differ from the baseline's or a result's" do
+    report = single_test(point, point_sets, [on_a, candidate(key: %w[a c])])
+    other = single_test(point, { slow: ["5"] }, [on_a])
+    mismatch = [ArgumentError, "literal sets must match the baseline's and every result's"]
+
+    expect { rank(point, { slow: ["5"] }, report) }.to raise_error(*mismatch)
+    expect { rank(point, point_sets, report, results: [*report.results, *other.results]) }
+      .to raise_error(*mismatch)
+    expect { rank(point, point_sets, other, results: report.results) }.to raise_error(*mismatch)
+    expect(leftovers).to eq(clean)
+  end
 end
