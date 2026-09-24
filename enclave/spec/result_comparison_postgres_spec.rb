@@ -359,12 +359,20 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
       end
 
-      it "refuses an interval column when a tie of three hides a different interval behind a repeat" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "1 day"], [3, 1, "24 hours"])
+      # The odd interval sits after a repeat, and then between repeats, so
+      # checking only the first two rows, or only the first and last, of a
+      # tie misses it in one fixture or the other.
+      [
+        ["1 day", "1 day", "24 hours"],
+        ["1 day", "1 day", "24 hours", "1 day"]
+      ].each do |intervals|
+        it "refuses an interval column when a tie of #{intervals.size} hides a different interval: #{intervals}" do
+          rows = rows_of(%w[id grp iv], *intervals.each_with_index.map { |iv, i| [i + 1, 1, iv] })
 
-        verdict = compare("SELECT iv FROM items ORDER BY grp, id", "SELECT iv FROM #{forward} ORDER BY grp", rows:)
+          verdict = compare("SELECT iv FROM items ORDER BY grp, id", "SELECT iv FROM #{forward} ORDER BY grp", rows:)
 
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+        end
       end
 
       {
@@ -378,7 +386,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
           verdict = compare(original, "SELECT #{column} FROM #{forward} ORDER BY grp", rows:)
 
-          expect(verdict.match?).to be(false)
+          expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
         end
       end
 
