@@ -48,7 +48,7 @@ Everything the enclave script prints goes through the egress function, including
 
 All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pg_query and rejects anything that isn't what it claims to be:
 
-- **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
+- **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see step 1) is refused too. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
 - **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses.
 - **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b.
 
@@ -92,6 +92,8 @@ QUAACK takes three inputs:
 - The production server name the explain plan came from.
 
 The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from 3g.
+
+The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct` and the name of the construct. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that reads the query's parse checks it against the list first, so each one only has to be right for what's on it.
 
 Fully qualify every relation in the query so `search_path` never matters.
 
