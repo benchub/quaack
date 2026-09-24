@@ -119,15 +119,7 @@ Read the three operator inputs from the governed store (query text, `EXPLAIN (AN
 - **Status:** todo
 - **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
 
-### 20260922-14. Fully qualify relations.
-
-Rewrite the query AST so every relation is schema qualified and `search_path` never matters.
-
-- **Depends on:** 20260922-13.
-- **README:** Step 1.
-- **Status:** todo
-- **Decided:** The operator's query should already qualify every relation. If it doesn't, resolve the unqualified names with the `search_path` from the input plan's `SETTINGS`, since that's what the session used when the plan was made.
-- **Decided:** When `SETTINGS` has no `search_path`, assume the default `"$user", public`. Resolve `"$user"` as the connecting role, then `public`, in `pg_catalog`. Abort if a name resolves nowhere.
+### 20260922-14. Fully qualify relations. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-15. Canonical plan form.
 
@@ -787,6 +779,22 @@ Minor findings from the second review of 20260922-7:
 - **Depends on:** 20260922-7.
 - **Came from:** Both reviews of 20260922-7.
 - **README:** Trust boundary.
+- **Status:** todo
+
+### 20260923-27. Qualify relations loose ends.
+
+Findings from both reviews and the builder of 20260922-14:
+- **Other names depend on search_path too.** Unqualified functions, types in casts and column definitions, operators, collations, and text search configurations all resolve through `search_path`. So do relation names in string literals, such as `'t'::regclass`, `nextval('seq')`, and `to_regclass('t')`. None of them are rewritten. This matters for 3d, which looks functions up in `pg_catalog`, and for replaying the query on the racetrack.
+- **`SELECT ... INTO new_table` aborts** because its target resolves nowhere. That's a safe abort, but intake (20260922-13) or the inbound check should reject it with a clear rule.
+- **A multi-statement input is accepted,** and every statement gets qualified. Intake (20260922-13) should accept exactly one statement.
+- **The role used to resolve names.** `"$user"` and the USAGE check use the role QUAACK connects as. If the operator's plan session ran as a different role, resolution could differ. Document this in the operator docs, or take the role as an input.
+- **An empty search_path written by hand** as `""` or all whitespace aborts with "has an empty entry", but Postgres treats it as an empty path. EXPLAIN never writes that form.
+- **The abort message** joins schemas with ", ", so a schema named `weird, schema` looks like two schemas.
+- **Deparse drops formatting.** The output is pg_query's deparse even when nothing changed, so comments and layout are lost.
+
+- **Depends on:** 20260922-14.
+- **Came from:** Both reviews of 20260922-14, and its builder's notes.
+- **README:** Step 1.
 - **Status:** todo
 
 ## After version 1.
