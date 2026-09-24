@@ -14,10 +14,10 @@ module Quaack
     # That's every call the query spells out, anywhere in it, and the
     # operators that syntax calls without spelling them out: IN, ANY and
     # ALL, BETWEEN, LIKE and its kin, IS DISTINCT FROM, NULLIF, a simple
-    # CASE, JOIN USING and NATURAL JOIN, and ORDER BY USING. TABLESAMPLE's
-    # sampling method is a function, so it's a call too. A call with one
-    # argument may be a cast to the type of that name, as in int4(x), so
-    # it's also listed as one.
+    # CASE, JOIN USING and NATURAL JOIN, and ORDER BY USING. A call with
+    # one argument may be a cast to the type of that name, as in int4(x),
+    # so it's also listed as one. The parse should use only what
+    # SupportedSql lists, which VolatilityCheck makes sure of.
     #
     # The SQL-value functions, such as CURRENT_TIMESTAMP, aren't listed,
     # since they're all stable or immutable. Neither is anything Postgres
@@ -46,7 +46,7 @@ module Quaack
       HANDLERS = {
         PgQuery::FuncCall => :function_call, PgQuery::A_Expr => :a_expr, PgQuery::TypeCast => :type_cast,
         PgQuery::SubLink => :sublink, PgQuery::CaseExpr => :simple_case, PgQuery::JoinExpr => :join,
-        PgQuery::SortBy => :sort_by, PgQuery::RangeTableSample => :table_sample
+        PgQuery::SortBy => :sort_by
       }.freeze
 
       module_function
@@ -85,9 +85,7 @@ module Quaack
 
       def type_cast(cast) = [call_to(:cast, cast.type_name.names, nil)]
 
-      # x IN (SELECT ...) has no operator name, and calls =. The raw parse
-      # writes a row compared with a subquery as an A_Expr, so it never has
-      # a ROWCOMPARE_SUBLINK.
+      # x IN (SELECT ...) has no operator name, and calls =.
       def sublink(link)
         case link.sub_link_type
         when :ANY_SUBLINK, :ALL_SUBLINK
@@ -101,10 +99,6 @@ module Quaack
       def join(join) = join.is_natural || join.using_clause.any? ? [equals] : []
 
       def sort_by(sort) = sort.use_op.any? ? [call_to(:operator, sort.use_op, BINARY)] : []
-
-      # The node's method field clashes with Object#method, so it's read by
-      # name.
-      def table_sample(sample) = [call_to(:function, sample["method"], 1)]
 
       def equals = call_to(:operator, ["="], BINARY)
 

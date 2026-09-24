@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "supported_sql"
 require_relative "table_name"
 
 module Quaack
@@ -13,7 +14,8 @@ module Quaack
     #   PredicateAtoms.with_true(parse, atoms[2])  # => the SQL with that atom replaced by TRUE
     #   PredicateAtoms.node(parse, atoms[2])       # => its pg_query node, real constants and all
     #
-    # The parse must be of one SELECT. It should already be schema
+    # The parse must use only what SupportedSql lists, so it's one SELECT.
+    # Anything else raises SupportedSql::Error. It should already be schema
     # qualified, which 20260922-14 will make sure of before this runs. An
     # unqualified relation here is taken to be a CTE, with unknown columns.
     # column_names gives each plain table's columns, keyed by TableName, so
@@ -49,8 +51,8 @@ module Quaack
     # - :in: IN and NOT IN lists, = ANY, and <> ALL.
     # - :null_test: IS NULL and IS NOT NULL.
     # - :other: the rest, such as a boolean column, a function call,
-    #   EXISTS, x IN (SELECT ...), SIMILAR TO, IS TRUE, other operators,
-    #   or two columns of one relation.
+    #   EXISTS, x IN (SELECT ...), IS TRUE, other operators, or two
+    #   columns of one relation.
     # operator names the test in SQL words ("=", "NOT IN", "BETWEEN", "=
     # ANY", "IS NULL"), or is nil for an atom with no operator. negated is
     # true for the negated form (<>, IS DISTINCT FROM, NOT BETWEEN, NOT
@@ -64,12 +66,11 @@ module Quaack
     # of a subquery, CTE, or function in FROM has no table. One that can't
     # be placed has neither: an unqualified column that more than one table
     # has, or none does, or that a relation with unknown columns might have.
-    # Any FROM item but a table or a join, such as a subquery, a function,
-    # XMLTABLE, or JSON_TABLE, is a relation with unknown columns, even with
-    # no alias. TABLESAMPLE is read through to its table. Scoping follows
-    # Postgres: an ON sees only its join's inputs, a subquery in FROM sees
-    # the FROM it's in only when it's LATERAL, and a function, XMLTABLE, or
-    # JSON_TABLE always does, since Postgres makes them LATERAL.
+    # Any FROM item but a table or a join, such as a subquery or a
+    # function, is a relation with unknown columns, even with no alias.
+    # Scoping follows Postgres: an ON sees only its join's inputs, a
+    # subquery in FROM sees the FROM it's in only when it's LATERAL, and a
+    # function always does, since Postgres makes it LATERAL.
     #
     # Replacing with TRUE. path leads from the parse's tree to the atom's
     # node. with_true copies the tree, puts TRUE there, and deparses it. A
@@ -98,9 +99,8 @@ module Quaack
 
       def select_tree(parse)
         raise ArgumentError, "expected a pg_query parse result" unless parse.is_a?(PgQuery::ParserResult)
-        raise ArgumentError, "expected exactly one statement" unless parse.tree.stmts.size == 1
-        raise ArgumentError, "predicate atoms take only a SELECT" unless parse.tree.stmts.first.stmt.select_stmt
 
+        SupportedSql.check!(parse)
         parse.tree
       end
 
@@ -198,21 +198,13 @@ module Quaack
       # as do COLLATE names. They're written in the query's own text, like
       # its column names, and say how a value is typed, not what it is.
       #
-      # Some constants aren't values, and stay:
-      # - A constant the parser made, which has no location. The parser
-      #   makes one for a default it fills in, such as the TRUE and FALSE
-      #   marks of a CYCLE clause with no TO or DEFAULT, or for a keyword,
-      #   such as XMLROOT's standalone yes or version no value. None of
-      #   them is ever text from the query.
-      # - The normal form of normalize(x, NFC) and x IS NFC NORMALIZED. It
-      #   can only be NFC, NFD, NFKC, or NFKD, so it's a keyword, and the
-      #   deparser takes nothing else there. normalize(x, 'NFC') called as
-      #   a plain function is redacted like any other call.
-      # Where the deparser needs a literal but the query wrote one, the
-      # literal becomes a string holding its placeholder, such as '$3': a
-      # JSON_TABLE path (the row path, a column's PATH, a NESTED PATH) and
-      # a CYCLE clause's written TO and DEFAULT marks. Both can hold
-      # values. A parameter there crashes the deparser, or makes it raise.
+      # A constant the parser made, which has no location, isn't a value,
+      # and stays. The parser makes one for a default it fills in, such as
+      # the 1 of FETCH FIRST ROWS ONLY. It's never text from the query.
+      #
+      # The constructs whose constants needed their own handling here, such
+      # as JSON_TABLE paths, CYCLE marks, and normalize's normal form, are
+      # refused by SupportedSql before this runs.
       class Redaction
         def initialize(tree)
           constants = []
@@ -239,7 +231,7 @@ module Quaack
           when PgQuery::A_Const then constants << node.location unless Literals.made?(node)
           when PgQuery::ParamRef then params << node.number
           when PgQuery::TypeName then nil
-          else Literals.values(node).each { |child| collect(child, constants, params) }
+          else Tree.children(node).each { |child| collect(child, constants, params) }
           end
         end
 
@@ -263,9 +255,6 @@ module Quaack
         def replace_fields(message)
           case message
           when PgQuery::TypeName then nil
-          when PgQuery::JsonTablePathSpec then message.string = literal(message.string)
-          when PgQuery::CTECycleClause then cycle_marks(message)
-          when Literals.method(:normal_form?) then message.args[0] = replace(message.args[0])
           else message.class.descriptor.each { |field| replace_field(message, field) }
           end
         end
@@ -275,46 +264,18 @@ module Quaack
           value.is_a?(PgQuery::Node) ? field.set(message, replace(value)) : replace(value)
         end
 
-        def cycle_marks(clause)
-          clause.cycle_mark_value = literal(clause.cycle_mark_value)
-          clause.cycle_mark_default = literal(clause.cycle_mark_default)
-        end
-
-        # A constant where the deparser needs a literal: a string holding its
-        # placeholder, or the constant itself if the parser made it.
-        # A typed literal, such as DATE 'x', keeps its cast around the string.
-        def literal(node)
-          cast = node.type_cast
-          cast.arg = literal(cast.arg) if cast
-          return node if cast || Literals.made?(node.a_const)
-
-          text = "$#{@numbers.fetch(node.a_const.location, 0)}"
-          PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: text)))
-        end
-
         def placeholder(constant)
           PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: @numbers.fetch(constant.location, 0)))
         end
       end
 
-      # The constants that are syntax and stay as written (see Redaction).
+      # The constants that stay as written (see Redaction).
       module Literals
         module_function
 
-        # A message's field values, without a normal form.
-        def values(node) = normal_form?(node) ? [node.args[0]] : Tree.children(node)
-
-        # A constant the parser made, not one written in the query: a
-        # default it fills in, such as CYCLE's TRUE and FALSE marks, or a
-        # keyword it stores as a constant, such as XMLROOT's standalone.
-        # Only these have no location.
+        # A constant the parser made, not one written in the query, such as
+        # the 1 of FETCH FIRST ROWS ONLY. Only these have no location.
         def made?(constant) = constant.location == -1
-
-        # normalize(x, NFC) or x IS NFC NORMALIZED.
-        def normal_form?(node)
-          node.is_a?(PgQuery::FuncCall) && node.funcformat == :COERCE_SQL_SYNTAX && node.args.size == 2 &&
-            %w[normalize is_normalized].include?(node.funcname.last.string.sval)
-        end
       end
 
       # One relation in a FROM clause, at one query level. columns is nil
@@ -327,14 +288,13 @@ module Quaack
           @column_names = column_names
         end
 
-        # Anything but a table or a join, such as a subquery, a function,
-        # XMLTABLE, or JSON_TABLE, is a relation with unknown columns, named
-        # by its alias if it has one. It still counts without one, so an
+        # Anything but a table or a join, such as a subquery or a function,
+        # is a relation with unknown columns, named by its alias if it has
+        # one. It still counts without one, so an
         # unqualified column stops there instead of resolving outward.
         def rels(item, level)
           if item.join_expr then join_rels(item.join_expr, level)
           elsif item.range_var then [range_rel(item.range_var, level)]
-          elsif item.range_table_sample then rels(item.range_table_sample.relation, level)
           else [derived(alias_name(item.inner), level)]
           end
         end
@@ -450,8 +410,7 @@ module Quaack
         end
 
         # A subquery in FROM sees the FROM it's in only when it's LATERAL.
-        # A function, XMLTABLE, or JSON_TABLE always does: Postgres makes
-        # them LATERAL.
+        # A function always does: Postgres makes it LATERAL.
         def from_subquery(item, path, scopes)
           fields(item, path, item.lateral ? scopes : scopes[0...-1])
         end
@@ -606,14 +565,13 @@ module Quaack
         COMPARISONS = (%w[= <>] + RANGE).freeze
         SUBQUERY_TESTS = %i[EXISTS_SUBLINK ANY_SUBLINK ALL_SUBLINK].freeze
         LIKE = { "~~" => "LIKE", "!~~" => "NOT LIKE", "~~*" => "ILIKE", "!~~*" => "NOT ILIKE" }.freeze
-        SIMILAR = { "~" => "SIMILAR TO", "!~" => "NOT SIMILAR TO" }.freeze
         BOOLEAN_TESTS = { IS_TRUE: "IS TRUE", IS_NOT_TRUE: "IS NOT TRUE", IS_FALSE: "IS FALSE",
                           IS_NOT_FALSE: "IS NOT FALSE", IS_UNKNOWN: "IS UNKNOWN",
                           IS_NOT_UNKNOWN: "IS NOT UNKNOWN" }.freeze
         # How to read each kind of A_Expr. Any other kind is other.
         EXPRESSIONS = {
           AEXPR_OP: :operator, AEXPR_DISTINCT: :distinct, AEXPR_NOT_DISTINCT: :distinct,
-          AEXPR_LIKE: :like, AEXPR_ILIKE: :like, AEXPR_SIMILAR: :similar, AEXPR_IN: :in_list,
+          AEXPR_LIKE: :like, AEXPR_ILIKE: :like, AEXPR_IN: :in_list,
           AEXPR_OP_ANY: :quantified, AEXPR_OP_ALL: :quantified, AEXPR_BETWEEN: :between,
           AEXPR_NOT_BETWEEN: :between, AEXPR_BETWEEN_SYM: :between, AEXPR_NOT_BETWEEN_SYM: :between
         }.freeze
@@ -670,8 +628,6 @@ module Quaack
         end
 
         def like(opname, expr) = one_sided(:like, LIKE.fetch(opname), opname.start_with?("!"), expr)
-
-        def similar(opname, expr) = other(SIMILAR.fetch(opname), [expr.lexpr, expr.rexpr])
 
         def in_list(opname, expr)
           negated = opname == "<>"
