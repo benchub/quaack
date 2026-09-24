@@ -57,6 +57,20 @@ module Quaack
       # back in the locale's encoding, which may not be UTF-8.
       def read(file) = File.open(file, File::RDONLY | File::NOFOLLOW, &:read)
 
+      # What's wrong with a directory that should be private to current_uid,
+      # given its lstat (nil for nothing there), or nil if nothing is.
+      def directory_problem(stat, current_uid)
+        return "has no directory" unless stat
+        return "has a path that isn't a directory" unless stat.directory?
+
+        mode = stat.mode & 0o7777
+        return format("has a directory with mode %<mode>04o, not 0700", mode:) unless mode == 0o700
+
+        return if stat.uid == current_uid
+
+        "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
+      end
+
       # The file's lstat, or nil if there's nothing there.
       def lstat(path)
         File.lstat(path)

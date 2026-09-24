@@ -6,6 +6,7 @@ require "time"
 require "timeout"
 require "tmpdir"
 require "quaack/enclave/store"
+require "quaack/enclave/store/teardown"
 
 # Stands in for a real production value kept in the store. It must never show
 # up in an error message.
@@ -544,6 +545,151 @@ RSpec.describe Quaack::Enclave::Store do
       expect_store_error(/#{store.run_id}.*isn't a directory/) { store.teardown }
       expect(File.symlink?(store.path)).to be(true)
       expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+  end
+
+  # Teardown by run ID, for `quaacks teardown`, which must also work on a
+  # run whose directory is already gone.
+  describe ".teardown" do
+    def plant_run_path(name)
+      FileUtils.mkdir_p(base)
+      File.join(base, name)
+    end
+
+    it "deletes the named run's directory and everything in it, leaves other runs, and returns :deleted" do
+      store.write("literals", [STORE_SENTINEL])
+      other = described_class.create(base:)
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(base)).to eq([other.run_id])
+    end
+
+    it "returns :already_gone for a well-formed run ID with nothing there, even with no base" do
+      store.teardown
+      missing = File.join(@tmp, "missing")
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(described_class.teardown(store.run_id, base: missing)).to eq(:already_gone)
+      expect(File.exist?(missing)).to be(false)
+    end
+
+    it "refuses a run ID that isn't in the RUN_ID form, and deletes nothing, in the base or outside it" do
+      target = File.join(@tmp, "20260923T221500Z-0a1b2c3d")
+      Dir.mkdir(target, 0o700)
+      ["../20260923T221500Z-0a1b2c3d", "..", ".", "", "/tmp", STORE_SENTINEL, "#{store.run_id}/", nil, 1,
+       store.run_id.to_sym].each do |bad|
+        expect_store_error(/\Arun ID isn't in the form/) { described_class.teardown(bad, base:) }
+      end
+      expect(File.directory?(target)).to be(true)
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "refuses a run path that's a symlink, a file, or a directory not mode 0700, and leaves it" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside, 0o700)
+      File.write(File.join(outside, "#{STORE_SENTINEL}.json"), "[]")
+      linked = plant_run_path("20260923T221500Z-00000001").tap { File.symlink(outside, it) }
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, STORE_SENTINEL) }
+      loose = plant_run_path("20260923T221500Z-00000003").tap { Dir.mkdir(it) && File.chmod(0o755, it) }
+
+      [linked, file, loose].each do |path|
+        run_id = File.basename(path)
+        expect_store_error(/\Arun #{run_id} has /) { described_class.teardown(run_id, base:) }
+      end
+      expect(File.symlink?(linked)).to be(true)
+      expect(Dir.children(outside)).to eq(["#{STORE_SENTINEL}.json"])
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+      expect(File.directory?(loose)).to be(true)
+    end
+
+    it "refuses a run directory owned by someone else, and leaves it" do
+      expect_store_error(/owned by uid/) do
+        described_class.teardown(store.run_id, base:, current_uid: Process.euid + 1)
+      end
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "raises Store::Error, naming only the run, when it can't delete the directory" do
+      locked = File.join(store.path, "locked")
+      Dir.mkdir(locked)
+      File.write(File.join(locked, "#{STORE_SENTINEL}.json"), "[]")
+      File.chmod(0o500, locked)
+
+      expect_store_error(/\Acouldn't delete the directory of run #{store.run_id}\z/) do
+        described_class.teardown(store.run_id, base:)
+      end
+    ensure
+      File.chmod(0o700, locked)
+    end
+
+    it "raises BadRun for a run path it refuses, and a Store::Error that isn't one when the delete fails" do
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, "") }
+      expect { described_class.teardown(File.basename(file), base:) }.to raise_error(described_class::BadRun)
+      expect(described_class::BadRun.superclass).to eq(described_class::Error)
+
+      locked = File.join(store.path, "locked").tap { Dir.mkdir(it) }
+      File.write(File.join(locked, "kept.json"), "[]")
+      File.chmod(0o500, locked)
+      expect { described_class.teardown(store.run_id, base:) }.to raise_error(described_class::Error) do |error|
+        expect(error).not_to be_a(described_class::BadRun)
+      end
+    ensure
+      File.chmod(0o700, locked) if locked
+    end
+
+    it "doesn't follow a symlink out of the run directory" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside)
+      File.write(File.join(outside, "keep.json"), "[]")
+      File.symlink(outside, File.join(store.path, "linked"))
+      File.symlink(File.join(outside, "keep.json"), File.join(store.path, "keep.json"))
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+
+    it "refuses a dangling symlink at the run path as BadRun, and leaves it" do
+      dangling = plant_run_path("20260923T221500Z-00000004").tap { File.symlink(File.join(@tmp, "missing"), it) }
+
+      expect { described_class.teardown(File.basename(dangling), base:) }.to raise_error(described_class::BadRun)
+      expect(File.symlink?(dangling)).to be(true)
+    end
+
+    # Another teardown of the same run can delete it partway through this
+    # one. The stand-in rm_r deletes the directory first, as the other
+    # call would, and then runs the real rm_r, which finds it gone.
+    it "returns :already_gone when the run vanishes while it's being deleted" do
+      allow(FileUtils).to receive(:rm_r).and_wrap_original do |rm_r, path, **options|
+        rm_r.call(path)
+        rm_r.call(path, **options)
+      end
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(File.exist?(store.path)).to be(false)
+    end
+
+    it "raises BadBase, naming only the run, when the base is a file or can't be searched" do
+      file = File.join(@tmp, STORE_SENTINEL).tap { File.write(it, STORE_SENTINEL) }
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it) }
+      FileUtils.mkdir_p(File.join(closed, "runs", store.run_id))
+      File.chmod(0o000, closed)
+
+      [file, File.join(closed, "runs")].each do |bad_base|
+        expect_store_error(/\Acouldn't look up run #{store.run_id} in the store's base\z/) do
+          described_class.teardown(store.run_id, base: bad_base)
+        end
+        expect { described_class.teardown(store.run_id, base: bad_base) }.to raise_error(described_class::BadBase)
+      end
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+    ensure
+      File.chmod(0o700, closed)
+    end
+
+    it "keeps the run-path helper private" do
+      expect(described_class.private_methods).to include(:run_path)
+      expect { described_class.run_path(store.run_id, base) }.to raise_error(NoMethodError)
     end
   end
 end
