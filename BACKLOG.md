@@ -88,15 +88,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ## Step 1: Input.
 
-### 20260922-13. Input intake.
-
-Read the three operator inputs from the governed store (query text, `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, and server name) and check that they're well formed.
-
-- **Depends on:** 20260922-3, 20260922-4.
-- **README:** Step 1.
-- **Note (from 20260923-33):** Call `SupportedSql.check!` on the input query, so unsupported constructs are refused at intake.
-- **Status:** todo
-- **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
+### 20260922-13. Input intake. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-14. Fully qualify relations. Done, see BACKLOG-COMPLETE.md.
 
@@ -186,6 +178,7 @@ Replace the listed time functions with `quaack.clock_anchor()` in the AST. Keep 
 
 - **Depends on:** 20260922-14.
 - **README:** 3h.
+- **Note (from 20260922-13):** Intake stores `clock_anchor` as a UTC ISO-8601 string with microseconds, such as `2026-09-24T07:35:44.661129Z`.
 - **Status:** todo
 - **Decided:** `quaacks intake` takes an optional `--captured-at` flag, the time the production plan ran. Without it, the anchor is the time of intake. The run stores the anchor, and `clock_anchor()` returns it.
 
@@ -906,17 +899,7 @@ Split out of 20260922-47. The work so far is on branch `task/20260922-47`. Build
 - **Status:** in progress
 - **Note:** Built on branch `task/20260923-54` through a build, a review, a fix round, a second review, a tests-only round, and a tests-only review, but not landed. The tests-only review found the tie-of-three test still vacuous against a first-versus-last mutant in `hidden_differences?`. 20260924-2 fixes that test, and then both land together.
 
-### 20260923-55. Round-trip guard for deparsed SQL.
-
-pg_query's deparser can change what a query means. `WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)` deparses as `status = $1 IS NOT DISTINCT FROM true AND false`, which returned 0 rows where the original returned 20000. `(ARRAY(SELECT ...))[1]` deparses as `ARRAY(SELECT ...)[1]`, which doesn't parse. `RelationQualifier` (20260922-14) returns deparsed SQL, so both the original query in step 1 and every rewrite candidate that passes 20260922-10 can silently become a different query.
-- After deparsing, reparse the SQL and compare its tree with the tree that was deparsed, ignoring locations. Refuse on a mismatch or a parse failure, with a rule such as `deparse_mismatch` and a fixed message. Put the guard in one shared place and use it in RelationQualifier. It also covers the `with_true` guard in 20260923-30.
-- In 20260922-10, wrap the reparse so a parse failure raises `RewriteCandidateCheck::Error`, not a raw `PgQuery::ParseError`. Also run `SupportedSql` and the placeholder check on `Accepted.parse`, not only on the candidate's own parse.
-- Test with the two repros above against real Postgres, plus the other deparse cases listed in 20260923-30.
-
-- **Depends on:** 20260922-14, 20260922-10.
-- **Came from:** Second review of 20260922-10.
-- **README:** Step 1, and "What goes into the enclave".
-- **Status:** todo
+### 20260923-55. Round-trip guard for deparsed SQL. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-56. Finish 5a-4, second pass. Done, see BACKLOG-COMPLETE.md.
 
@@ -957,6 +940,8 @@ Minor findings from the second review of 20260923-56:
 - **`CanonicalPlan` treats any `"<N>…"` index name as hypothetical.** That's in the landed `canonical_plan.rb`, related to 20260923-28. A real index named that way is canonicalized wrong.
 - **The runner depends on step 4 matching production settings.** See the note on 20260922-25.
 
+- **`to_ddl` can stop the whole run.** Now that the round-trip guard is on `main`, `SingleCandidateTest#create` re-raises a `Deparse::Error` from `candidate.to_ddl`, which stops the whole run. Make it a refusal for that one candidate. It takes a name over 63 bytes, so it's nearly unreachable.
+
 - **Depends on:** 20260923-56.
 - **Came from:** Second review of 20260923-56.
 - **README:** 5a-4.
@@ -972,6 +957,42 @@ Also, from the same review:
 - **Depends on:** 20260923-54's branch.
 - **Came from:** Tests-only review of 20260923-54.
 - **README:** 9d.
+- **Status:** todo
+
+### 20260924-3. Intake loose ends.
+
+Findings from the reviews of 20260922-13:
+- **A hard kill leaves an orphaned partial run.** SIGKILL, an OOM kill, or SIGXFSZ can leave a partial 0700 run directory behind, holding production literals, and print no run ID. Add a sweeper, for example `quaacks teardown --orphans`, or have intake sweep runs older than a day with no finished marker. It fits with 20260922-66.
+- **There are tiny signal windows.** One is between `Store.create` returning and the `begin`. Another is after `with_new_run` returns and before exit, where `done` is printed, then an error line, and the run is kept. The driver treats that run as failed, so it's orphaned.
+- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type once 3a has a connection.
+- **NOFOLLOW covers only the last path component.** That's acceptable under the threat model. Say so in the doc.
+- **Surviving mutant:** `time > now + FUTURE_SLACK` → `>=`. Add a unit test at exactly `now + 86_400` through `ClockAnchor.from(now:)`.
+- **`Step required:` doesn't check that each required name is a declared option.**
+- **README step 1** doesn't list `query_has_parameters` or the `--captured-at` bounds. It also says a refused construct's name is reported, but the `error` whitelist type can't carry it. That's a question for the user: change the README, or add a shape-only detail field?
+
+- **Depends on:** 20260922-13.
+- **Came from:** Both reviews of 20260922-13.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260924-4. Parenthesize what pg_query deparses wrong.
+
+The round-trip guard (20260923-55) now correctly refuses supported constructs that pg_query's deparser prints without needed parentheses, which would change their meaning:
+- `(a OR b) IS NULL`
+- `(a AND b) IS NOT NULL`
+- `(NOT a) IS NULL`
+- `(a AND b) IN (true)`
+- `(a AND b) = ANY(...)`
+- `(a = 1) = ANY(ARRAY[true])`
+- `a IS NOT DISTINCT FROM (b AND c)`
+- `a BETWEEN (b AND c) AND d`
+- `created_at AT TIME ZONE ('UTC' || '')`
+
+Before deparsing, wrap the operand in an explicit parenthesis node, or post-process the SQL, so these round-trip and stop being refused. Keep the guard in place as the check. Also consider fixing shapes, which use `deparse_expr` and so turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`.
+
+- **Depends on:** 20260923-55.
+- **Came from:** The reviews of 20260923-55.
+- **README:** Step 1.
 - **Status:** todo
 
 ## After version 1.
