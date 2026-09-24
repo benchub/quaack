@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "delegate"
+require "pg_query"
+require "tempfile"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/table_name"
 
@@ -66,6 +69,10 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     expect(conn.transaction_status).to eq(0)
     expect(persisted_rows).to eq(0)
   end
+
+  let(:timeout_sql) { "SELECT current_setting('statement_timeout')" }
+
+  def session_timeout = conn.exec("SHOW statement_timeout").getvalue(0, 0)
 
   def run_error(runner = self.runner, rows = [], **, &block)
     block ||= proc {}
@@ -135,16 +142,16 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
   describe "statement_timeout" do
     it "defaults to 10 seconds, set only for the transaction" do
-      inside = runner.with_fixture { |tx| tx.query("SHOW statement_timeout").rows }
+      inside = runner.with_fixture { |tx| tx.query(timeout_sql).rows }
 
       expect(inside).to eq([["10s"]])
-      expect(conn.exec("SHOW statement_timeout").getvalue(0, 0)).to eq("0")
+      expect(session_timeout).to eq("0")
     end
 
     it "takes the timeout in milliseconds" do
       runner = described_class.new(conn, statement_timeout_ms: 250)
 
-      inside = runner.with_fixture { |tx| tx.query("SHOW statement_timeout").rows }
+      inside = runner.with_fixture { |tx| tx.query(timeout_sql).rows }
 
       expect(inside).to eq([["250ms"]])
     end
@@ -207,22 +214,53 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
-    it "refuses a query that holds more than one statement" do
-      error = run_error(runner, [parent(1, "a")]) do |tx|
-        tx.query('SELECT 1; INSERT INTO "Fixture Space".counters DEFAULT VALUES')
+    # The statement check refuses COMMIT and the like before they run, so
+    # this reaches past it to the backstop that checks the transaction is
+    # still open after every statement.
+    it "reports a statement that ended the transaction, as a backstop to the statement check" do
+      # Inside a caller's rescue, so a missing cause: nil would show.
+      error = begin
+        raise sentinel
+      rescue StandardError
+        run_error { runner.__send__(:statement, "COMMIT", [], step: :query, rule: :query_failed, index: 3) }
+      end
+
+      expect([error.rule, error.step, error.index, error.cause]).to eq([:transaction_ended, :query, 3, nil])
+      expect(conn.transaction_status).to eq(0)
+      # SET LOCAL ends with the transaction, even one that was committed.
+      expect(session_timeout).to eq("0")
+    end
+
+    it "refuses a string of several statements in the backstop too" do
+      error = run_error do
+        runner.__send__(:statement, 'SELECT 1; INSERT INTO "Fixture Space".counters DEFAULT VALUES', [],
+                        step: :query, rule: :query_failed, index: 0)
       end
 
       expect([error.rule, error.sqlstate]).to eq([:query_failed, "42601"])
       expect_nothing_persisted
     end
 
-    it "reports a statement that ended the transaction" do
-      error = run_error { |tx| tx.query("COMMIT") }
+    it "keeps the block's own exception when the connection dies and the rollback fails too" do
+      failure = Class.new(StandardError)
 
-      expect([error.rule, error.step, error.index]).to eq([:transaction_ended, :query, 0])
-      expect(conn.transaction_status).to eq(0)
-      # SET LOCAL ends with the transaction, even one that was committed.
-      expect(conn.exec("SHOW statement_timeout").getvalue(0, 0)).to eq("0")
+      expect do
+        runner.with_fixture([parent(1, "a")]) do
+          terminate(conn)
+          raise failure, "from the block"
+        end
+      end.to raise_error(failure, "from the block")
+      expect(persisted_rows).to eq(0)
+    end
+
+    it "keeps the query's own error when the connection dies and the rollback fails too" do
+      error = run_error(runner, [parent(1, "a")]) do |tx|
+        terminate(conn)
+        tx.query("SELECT 1")
+      end
+
+      expect([error.rule, error.step, error.index, error.cause]).to eq([:query_failed, :query, 0, nil])
+      expect(persisted_rows).to eq(0)
     end
 
     it "refuses a query through the transaction after the block has returned" do
@@ -243,7 +281,86 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     end
   end
 
+  # Ends conn's backend from another session, the way a crash or an
+  # operator would.
+  def terminate(victim)
+    pid = victim.backend_pid
+    killer = arena.connect
+    # Waits up to five seconds for the backend to be gone.
+    killer.exec_params("SELECT pg_terminate_backend($1::int, 5000)", [pid])
+  ensure
+    killer&.close
+  end
+
+  describe "a connection that can't start a transaction" do
+    it "reports a closed connection as unusable" do
+      other = arena.connect
+      other.close
+
+      error = run_error(described_class.new(other))
+
+      expect([error.rule, error.step, error.sqlstate,
+              error.cause]).to eq([:connection_unusable, :transaction, nil, nil])
+    end
+
+    # PQTRANS_UNKNOWN is 4: libpq has seen the connection go bad.
+    it "reports a dead connection as unusable" do
+      other = arena.connect
+      terminate(other)
+      begin
+        other.exec("SELECT 1")
+      rescue StandardError
+        nil
+      end
+      expect(other.transaction_status).to eq(4)
+
+      error = run_error(described_class.new(other))
+
+      expect([error.rule, error.step]).to eq(%i[connection_unusable transaction])
+    ensure
+      other&.close
+    end
+
+    # PQTRANS_ACTIVE is 1: a query was sent and its result not yet read.
+    it "reports a connection busy with a query as unusable, and leaves the query alone" do
+      conn.send_query("SELECT 42")
+      expect(conn.transaction_status).to eq(1)
+
+      error = run_error
+
+      expect([error.rule, error.step]).to eq(%i[connection_unusable transaction])
+      expect(conn.get_result.getvalue(0, 0)).to eq("42")
+      conn.get_result
+    end
+  end
+
   describe "a connection already inside a transaction" do
+    it "refuses inside a caller's rescue without taking the caller's exception as its cause" do
+      conn.exec("BEGIN")
+
+      error = begin
+        raise sentinel
+      rescue StandardError
+        run_error
+      end
+
+      expect([error.rule, error.cause]).to eq([:already_in_transaction, nil])
+      conn.exec("ROLLBACK")
+    end
+
+    it "refuses a connection in a failed transaction too" do
+      conn.exec("BEGIN")
+      begin
+        conn.exec("SELECT 1 / 0")
+      rescue StandardError
+        nil
+      end
+      expect(conn.transaction_status).to eq(3)
+
+      expect(run_error.rule).to eq(:already_in_transaction)
+      conn.exec("ROLLBACK")
+    end
+
     it "refuses, and leaves that transaction alone" do
       conn.exec("BEGIN")
       conn.exec('INSERT INTO "Fixture Space".counters DEFAULT VALUES')
@@ -376,6 +493,295 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect_no_sentinel(error)
       end
       expect_sentinel_in_raw(queries.last)
+    end
+  end
+
+  # Only an INSERT may load and only a SELECT may query, so a COMMIT, or a
+  # COMMIT AND CHAIN that would open a new transaction without the timeout,
+  # never runs.
+  describe "the statement check" do
+    let(:refused) do
+      ["COMMIT", "END", "ROLLBACK", "COMMIT AND CHAIN", "SAVEPOINT s", "PREPARE TRANSACTION 'quaack'",
+       "SET statement_timeout = 0", "SHOW statement_timeout",
+       'SELECT 1; INSERT INTO "Fixture Space".counters DEFAULT VALUES', "SELECT 1; SELECT 2",
+       'INSERT INTO "Fixture Space".counters DEFAULT VALUES; INSERT INTO "Fixture Space".counters DEFAULT VALUES',
+       'INSERT INTO "Fixture Space".counters DEFAULT VALUES; COMMIT', ""]
+    end
+
+    it "refuses anything but a single SELECT as a query, before it runs, and the transaction goes on" do
+      refused.each do |sql|
+        seen = runner.with_fixture([parent(1, "a")]) do |tx|
+          error = begin
+            tx.query(sql)
+            nil
+          rescue described_class::Error => e
+            e
+          end
+          [error&.rule, error&.step, error&.index, conn.transaction_status, tx.query(timeout_sql).rows]
+        end
+
+        expect(seen).to eq([:statement_not_allowed, :query, 0, 2, [["10s"]]]), sql
+        expect_nothing_persisted
+        expect(session_timeout).to eq("0")
+      end
+    end
+
+    it "refuses an INSERT as a query" do
+      error = run_error { |tx| tx.query('INSERT INTO "Fixture Space".counters DEFAULT VALUES') }
+
+      expect(error.rule).to eq(:statement_not_allowed)
+      expect_nothing_persisted
+    end
+
+    it "refuses anything but a single INSERT among the inserts, before the transaction starts" do
+      (refused + ["SELECT 1"]).each do |sql|
+        yielded = false
+        inserts = ['INSERT INTO "Fixture Space".counters DEFAULT VALUES', sql]
+
+        error = run_error(runner, [parent(1, "a")], inserts: inserts) { yielded = true }
+
+        expect([error.rule, error.step, error.index, yielded]).to eq([:statement_not_allowed, :insert, 1, false]), sql
+        expect_nothing_persisted
+        expect(session_timeout).to eq("0")
+      end
+    end
+
+    it "accepts an INSERT with a WITH clause and a SELECT with one" do
+      inserts = ['WITH v(id) AS (VALUES (5)) INSERT INTO "Fixture Space".counters (id) SELECT id FROM v']
+
+      rows = runner.with_fixture([], inserts: inserts) do |tx|
+        tx.query('WITH c AS (SELECT id FROM "Fixture Space".counters) SELECT id FROM c').rows
+      end
+
+      expect(rows).to eq([["5"]])
+      expect_nothing_persisted
+    end
+
+    it "reports SQL it can't parse without repeating it" do
+      sql = "SELECT '#{sentinel}' '#{sentinel}'"
+
+      query_error = run_error { |tx| tx.query(sql) }
+      insert_error = run_error(runner, [], inserts: [sql])
+
+      [[query_error, :query], [insert_error, :insert]].each do |error, step|
+        expect([error.rule, error.step, error.index, error.cause]).to eq([:statement_unparsable, step, 0, nil])
+        expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
+      end
+      expect { PgQuery.parse(sql) }.to raise_error(PgQuery::ParseError, /#{sentinel}/)
+    end
+
+    it "refuses a query and an insert that aren't Strings" do
+      expect { runner.with_fixture { |tx| tx.query(:select) } }
+        .to raise_error(ArgumentError, "a query must be a String")
+      [[:insert], "INSERT"].each do |inserts|
+        expect { runner.with_fixture([], inserts: inserts) { raise "not reached" } }
+          .to raise_error(ArgumentError, "inserts must be an Array of Strings"), inserts.inspect
+      end
+      expect_nothing_persisted
+    end
+
+    it "refuses inside a caller's rescue without taking the caller's exception as its cause" do
+      errors = runner.with_fixture do |tx|
+        [proc { tx.query("COMMIT") }, proc { tx.query("SELECT FROM WHERE") }].map do |bad|
+          raise sentinel
+        rescue StandardError
+          begin
+            bad.call
+          rescue described_class::Error => e
+            e
+          end
+        end
+      end
+
+      expect(errors.map { |e| [e.rule, e.cause] }).to eq([[:statement_not_allowed, nil], [:statement_unparsable, nil]])
+    end
+  end
+
+  describe "the fixture itself" do
+    it "refuses rows that aren't FixtureRows before the transaction starts" do
+      [[:junk], [parent(1, "a"), "row"], :junk, {}].each do |rows|
+        yielded = false
+
+        expect { runner.with_fixture(rows) { yielded = true } }
+          .to raise_error(ArgumentError, "rows must be an Array of FixtureRows"), rows.inspect
+        expect(yielded).to be(false)
+        expect_nothing_persisted
+      end
+    end
+  end
+
+  describe "fixture row copies" do
+    it "keeps its own frozen copies of the columns and values" do
+      columns = [+"id", +"Code"]
+      values = [+"1", nil]
+
+      fixture_row = described_class::FixtureRow.new(table: parents, columns: columns, values: values)
+      columns.first << "x"
+      columns << "qty"
+      values.first << "2"
+      values << "3"
+
+      expect([fixture_row.columns, fixture_row.values]).to eq([%w[id Code], ["1", nil]])
+      expect([fixture_row.columns, fixture_row.values, fixture_row.columns.first, fixture_row.values.first])
+        .to all(be_frozen)
+    end
+
+    it "refuses columns or values that aren't Arrays" do
+      expect { described_class::FixtureRow.new(table: parents, columns: "id", values: ["1"]) }
+        .to raise_error(ArgumentError, "fixture row columns must be non-empty Strings")
+      [nil, "1", { "id" => "1" }].each do |values|
+        expect { described_class::FixtureRow.new(table: parents, columns: ["id"], values: values) }
+          .to raise_error(ArgumentError, "a fixture row needs one value per column"), values.inspect
+      end
+    end
+  end
+
+  describe "the transaction handle" do
+    it "refuses after the block inside a caller's rescue without taking its exception as the cause" do
+      kept = nil
+      runner.with_fixture { |tx| kept = tx }
+
+      error = begin
+        raise sentinel
+      rescue StandardError
+        begin
+          kept.query("SELECT 1")
+        rescue described_class::Error => e
+          e
+        end
+      end
+
+      expect([error.rule, error.cause]).to eq([:transaction_closed, nil])
+    end
+  end
+
+  # Postgres notices go to stderr through libpq's default receiver, and the
+  # enclave's stderr reaches the laptop. A notice can carry a real value, as
+  # shout's does here from a table CHECK, a domain CHECK, and a query.
+  describe "notices" do
+    let(:noisy) { Quaack::Enclave::TableName.new(schema: "Fixture Space", name: "noisy") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION "Fixture Space".shout(v text) RETURNS boolean IMMUTABLE LANGUAGE plpgsql AS $$
+          BEGIN RAISE NOTICE 'VAL=%', v; RETURN true; END
+        $$;
+        CREATE DOMAIN "Fixture Space".loud AS text CHECK ("Fixture Space".shout(VALUE));
+        CREATE TABLE "Fixture Space".noisy (id integer PRIMARY KEY, a text CHECK ("Fixture Space".shout(a)),
+                                            b "Fixture Space".loud);
+      SQL
+    end
+
+    def noisy_run
+      rows = [row(noisy, { "id" => "1", "a" => "#{sentinel}-check", "b" => "#{sentinel}-domain" })]
+      runner.with_fixture(rows) do |tx|
+        tx.query(%(SELECT "Fixture Space".shout('#{sentinel}-query')))
+        tx.query('SELECT a, b FROM "Fixture Space".noisy').rows
+      end
+    end
+
+    def shout(word) = conn.exec(%(SELECT "Fixture Space".shout('#{word}')))
+
+    # Everything written to fd 2, where libpq's default receiver writes.
+    def fd2
+      saved = $stderr.dup
+      Tempfile.create("arena-stderr") do |file|
+        $stderr.reopen(file)
+        yield
+        $stderr.flush
+        file.rewind
+        return file.read
+      ensure
+        $stderr.reopen(saved)
+      end
+    end
+
+    it "drops them while it runs, and puts the default receiver back" do
+      loaded = nil
+      written = fd2 do
+        shout("before")
+        loaded = noisy_run
+        shout("after")
+      end
+
+      expect(loaded).to eq([["#{sentinel}-check", "#{sentinel}-domain"]])
+      expect(written).to include("VAL=before").and include("VAL=after")
+      expect(written).not_to include(sentinel)
+      expect(conn.set_notice_receiver { nil }).to be_nil
+    end
+
+    it "drops them while it runs, and puts a caller's receiver back" do
+      heard = []
+      conn.set_notice_receiver { |result| heard << result.error_message }
+
+      shout("before")
+      noisy_run
+      shout("after")
+
+      expect(heard.join).to include("VAL=before").and include("VAL=after")
+      expect(heard.grep(/#{sentinel}/)).to be_empty
+      expect(heard.size).to eq(2)
+    end
+
+    it "puts the receiver back after a failure too" do
+      heard = []
+      conn.set_notice_receiver { |result| heard << result.error_message }
+
+      run_error { |tx| tx.query("SELECT 1 / 0") }
+      shout("after")
+
+      expect(heard.join).to include("VAL=after")
+    end
+  end
+
+  # A connection that fails one chosen call with an error that isn't
+  # Postgres's and that carries the sentinel, the way a driver-level fault
+  # might. It fakes only the edge. Everything else goes to the real
+  # connection.
+  describe "a connection call that fails with some other error" do
+    let(:flaky_class) do
+      Class.new(SimpleDelegator) do
+        def initialize(conn, method, call, message)
+          super(conn)
+          @fail = [method, call]
+          @message = message
+          @calls = Hash.new(0)
+        end
+
+        %i[exec exec_params transaction_status set_notice_receiver].each do |name|
+          define_method(name) do |*args, &block|
+            @calls[name] += 1
+            raise IOError, @message if @fail == [name, @calls[name]]
+
+            __getobj__.public_send(name, *args, &block)
+          end
+        end
+      end
+    end
+
+    def flaky_error(method, call)
+      flaky = flaky_class.new(conn, method, call, sentinel)
+      run_error(described_class.new(flaky), [parent(1, "a"), parent(2, "b")])
+    end
+
+    it "reports each by its phase, with no SQLSTATE and nothing from the error" do
+      cases = {
+        [:transaction_status, 1] => [:connection_unusable, :transaction, nil],
+        [:set_notice_receiver, 1] => [:connection_unusable, :transaction, nil],
+        [:exec, 1] => [:begin_failed, :begin, nil],
+        [:exec, 2] => [:begin_failed, :begin, nil],
+        [:exec_params, 2] => [:fixture_load_failed, :load, 1],
+        [:transaction_status, 2] => [:fixture_load_failed, :load, 0]
+      }
+
+      cases.each do |(method, call), expected|
+        error = flaky_error(method, call)
+
+        seen = [error.rule, error.step, error.index, error.sqlstate, error.cause]
+        expect(seen).to eq([*expected, nil, nil]), [method, call].inspect
+        expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
+        expect_nothing_persisted
+      end
     end
   end
 end
