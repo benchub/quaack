@@ -12,11 +12,11 @@ module Quaack
     # clock with calls to quaack.clock_anchor(), so every run of the query
     # sees the time the production plan ran.
     #
-    #   result = ClockAnchor.anchor("SELECT ... WHERE created_at > CURRENT_DATE - 7", settings)
+    #   result = ClockAnchoring.anchor("SELECT ... WHERE created_at > CURRENT_DATE - 7", settings)
     #   result.sql           # => "SELECT ... WHERE created_at > quaack.clock_anchor()::pg_catalog.date - 7"
     #   result.replacements  # => [Replacement(original: "current_date",
     #                        #                 anchored: "quaack.clock_anchor()::pg_catalog.date")]
-    #   ClockAnchor.restore(result.sql, result.replacements)
+    #   ClockAnchoring.restore(result.sql, result.replacements)
     #   # => "SELECT ... WHERE created_at > current_date - 7"
     #
     # The inputs are the query, qualified by RelationQualifier, and the
@@ -74,7 +74,7 @@ module Quaack
     # never quote the query. A parse error is replaced rather than
     # wrapped, since pg_query's quote the text near the error, which can
     # be a literal.
-    module ClockAnchor
+    module ClockAnchoring
       class Error < StandardError
         attr_reader :rule
 
@@ -182,9 +182,10 @@ module Quaack
           (names.length == 1 || names.first == "pg_catalog")
       end
 
+      # No arguments, so no DISTINCT or VARIADIC either, which need one. A
+      # call with no arguments has an ORDER BY only from WITHIN GROUP.
       def plain_call?(func)
-        [func.args, func.agg_order].all?(&:empty?) && [func.agg_filter, func.over].all?(&:nil?) &&
-          [func.agg_within_group, func.agg_star, func.agg_distinct, func.func_variadic].none?
+        func.args.empty? && func.agg_order.empty? && func.agg_filter.nil? && func.over.nil? && !func.agg_star
       end
 
       def unqualified_call?(node) = node.func_call&.funcname&.length == 1

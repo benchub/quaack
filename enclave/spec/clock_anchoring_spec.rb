@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "quaack/enclave/clock_anchor"
+require "quaack/enclave/clock_anchoring"
 
-# What 3h rewrites, read from the parse alone. clock_anchor_postgres_spec.rb
+# What 3h rewrites, read from the parse alone. clock_anchoring_postgres_spec.rb
 # checks on real Postgres that each rewrite keeps the type and the value.
-RSpec.describe Quaack::Enclave::ClockAnchor do
+RSpec.describe Quaack::Enclave::ClockAnchoring do
   def anchor(sql, settings = nil) = described_class.anchor(sql, settings)
 
   def deparse(sql) = PgQuery.parse(sql).deparse
@@ -127,10 +127,29 @@ RSpec.describe Quaack::Enclave::ClockAnchor do
 
     it "leaves a function of the same name in another schema, or one with arguments" do
       sql = 'SELECT public.now(), a.statement_timestamp(), "NOW"(), now(1), pg_catalog.now(1), ' \
-            "mydb.pg_catalog.now(), public.localtime()"
+            "mydb.pg_catalog.now(), pg_catalog.x.now(), public.localtime()"
       result = anchor(sql)
       expect(result.sql).to eq(deparse(sql))
       expect(result.replacements).to eq([])
+    end
+
+    # Postgres refuses these for now(), which isn't an aggregate or window
+    # function, but the parse has them, so they aren't anchor's to change.
+    # A DISTINCT or VARIADIC call has arguments, so now(1) covers those.
+    ["now() OVER ()", "now() FILTER (WHERE true)", "now(*)", "now() WITHIN GROUP (ORDER BY 1)"].each do |call|
+      it "leaves #{call}, which isn't a plain call" do
+        sql = "SELECT #{call} FROM public.orders"
+        result = anchor(sql)
+        expect(result.sql).to eq(deparse(sql))
+        expect(result.replacements).to eq([])
+      end
+    end
+
+    it "leaves a clock_anchor() in any schema but quaack, and doesn't refuse it" do
+      sql = "SELECT public.clock_anchor(), now()"
+      result = anchor(sql)
+      expect(result.sql).to eq(deparse("SELECT public.clock_anchor(), quaack.clock_anchor()"))
+      expect(described_class.restore(result.sql, result.replacements)).to eq(deparse(sql))
     end
   end
 
@@ -192,8 +211,18 @@ RSpec.describe Quaack::Enclave::ClockAnchor do
 
     it "refuses when an anchor doesn't match the one the record has in its place" do
       result = anchor("SELECT CURRENT_DATE")
-      expect { described_class.restore("SELECT quaack.clock_anchor()", result.replacements) }
-        .to anchor_error("restore_mismatch")
+      ["SELECT quaack.clock_anchor()", "SELECT quaack.clock_anchor()::pg_catalog.timestamp"].each do |sql|
+        expect { described_class.restore(sql, result.replacements) }
+          .to raise_error(described_class::Error,
+                          "restore_mismatch: the SQL's clock anchors don't match the replacements")
+      end
+    end
+
+    it "refuses SQL the deparser would change once the originals are back" do
+      now = described_class::Replacement.new(original: "now()", anchored: "quaack.clock_anchor()")
+      sql = "SELECT (quaack.clock_anchor() IS NOT DISTINCT FROM quaack.clock_anchor()) IS TRUE"
+      expect { described_class.restore(sql, [now, now]) }
+        .to raise_error(Quaack::Enclave::Deparse::Error) { |error| expect(error.rule).to eq("deparse_mismatch") }
     end
   end
 
@@ -209,6 +238,15 @@ RSpec.describe Quaack::Enclave::ClockAnchor do
 
     it "refuses SQL that doesn't parse" do
       expect { anchor("SELECT now( FROM") }.to anchor_error("parse_error")
+    end
+
+    it "refuses an anchored query the deparser would change" do
+      expect { anchor("SELECT (now() IS NOT DISTINCT FROM now()) IS TRUE") }
+        .to raise_error(Quaack::Enclave::Deparse::Error) { |error| expect(error.rule).to eq("deparse_mismatch") }
+    end
+
+    it "refuses a search_path it can't read" do
+      expect { anchor("SELECT now()", path('public, "x')) }.to anchor_error("bad_search_path")
     end
   end
 

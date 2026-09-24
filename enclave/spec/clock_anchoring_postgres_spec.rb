@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 require "json"
-require "quaack/enclave/clock_anchor"
+require "quaack/enclave/clock_anchoring"
 
 # Each replacement has to keep the original's type, precision, and value,
 # or the anchored query means something else. These run both on real
 # Postgres. The test database gets a stand-in quaack.clock_anchor(), since
 # creating the real one is 4a's and 4b's job.
-RSpec.describe Quaack::Enclave::ClockAnchor do
+RSpec.describe Quaack::Enclave::ClockAnchoring do
   let(:conn) { test_database.connection }
 
   def anchor(sql, settings = nil) = described_class.anchor(sql, settings)
