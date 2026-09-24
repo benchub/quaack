@@ -616,6 +616,38 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
+  # pg_query's deparser writes (a OR b) IS NULL as a OR b IS NULL, which
+  # Postgres reads as a OR (b IS NULL). Only rows 4 and 5, whose price is
+  # NULL, meet the first, and only rows 2 and 3 meet the second.
+  describe "a query the deparser would change without the round-trip guard" do
+    let(:grouped) { "(price > 0.15 OR label = 'zz') IS NULL" }
+
+    it "rows differ between the query and its raw deparse" do
+      written = "SELECT id FROM items WHERE #{grouped}"
+      deparsed = PgQuery.deparse(PgQuery.parse(written).tree)
+
+      expect(raw(written, deparsed).map { |rows| rows.flatten.sort }).to eq([%w[4 5], %w[2 3]])
+    end
+
+    it "compares a LIMIT with no ORDER BY against the query's own full result" do
+      original = "SELECT id FROM items WHERE #{grouped} LIMIT 1"
+
+      expect(fields(compare(original, "SELECT id FROM items WHERE price IS NULL LIMIT 1")))
+        .to include(match: true, mode: :subset)
+      expect(fields(compare(original, "SELECT id FROM items WHERE id = 2 LIMIT 1")))
+        .to include(match: false, mode: :subset, rule: :subset)
+    end
+
+    it "compares an ORDER BY against the query's own rows" do
+      original = "SELECT id FROM items WHERE #{grouped} ORDER BY grp"
+
+      expect(fields(compare(original, "SELECT id FROM items WHERE price IS NULL ORDER BY grp")))
+        .to include(match: true, mode: :ordered)
+      expect(fields(compare(original, "SELECT id FROM items WHERE id IN (2, 3) ORDER BY grp")))
+        .to include(match: false, mode: :ordered)
+    end
+  end
+
   describe "values" do
     it "matches float sums that differ only by rounding noise" do
       original = "SELECT sum(price) FROM #{forward}"

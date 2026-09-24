@@ -127,6 +127,38 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
+  # Each builder deparses a changed tree. pg_query's deparser leaves out
+  # parentheses a query needs, so each goes through Deparse's guard.
+  describe "the round-trip guard" do
+    let(:grouped) { "SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id LIMIT 5" }
+
+    it "keeps the parentheses a query needs in every builder" do
+      built = [shape(grouped).without_limit, shape(grouped).with_tiebreaker([1]), shape(grouped).probe]
+
+      expect(built).to eq([
+                            "SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id",
+                            "SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id, 1 LIMIT 5",
+                            "SELECT * FROM (#{grouped}) quaack_probe LIMIT 0"
+                          ])
+    end
+
+    # The deparser writes 't'::boolean as true, which parses to a
+    # different tree.
+    it "refuses a query the deparser would change, in every builder, and keeps none of it" do
+      parsed = described_class::Shape.parse(
+        "SELECT a FROM t WHERE a = '#{sentinel}' AND 't'::boolean ORDER BY a LIMIT 1", :candidate
+      )
+
+      [-> { parsed.without_limit }, -> { parsed.with_tiebreaker([1]) }, -> { parsed.probe }].each do |build|
+        expect(&build).to raise_error(described_class::Error) { |e|
+          expect([e.rule, e.query, e.cause]).to eq([:deparse_mismatch, :candidate, nil])
+          expect(e.message).to eq("pg_query's deparser would change a query for the result comparison")
+          expect(e.inspect).not_to include(sentinel)
+        }
+      end
+    end
+  end
+
   describe "Shape#collation_names" do
     it "lists every COLLATE clause's collation, at any depth" do
       sql = %(SELECT a COLLATE "Ci", b FROM t WHERE b IN (SELECT c COLLATE pg_catalog."C" FROM u) ORDER BY a)

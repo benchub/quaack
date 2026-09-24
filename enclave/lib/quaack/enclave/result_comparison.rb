@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 require_relative "result_comparator"
 require_relative "supported_sql"
 require_relative "result_comparison/tiebreaker"
@@ -156,7 +157,8 @@ module Quaack
 
       RULES = {
         unparsable: "a query for the result comparison couldn't be parsed",
-        not_one_select: "a query for the result comparison isn't exactly one SELECT"
+        not_one_select: "a query for the result comparison isn't exactly one SELECT",
+        deparse_mismatch: "pg_query's deparser would change a query for the result comparison"
       }.freeze
 
       # One query's top level, parsed. Each builder parses the SQL again, so
@@ -201,6 +203,8 @@ module Quaack
           build do |select|
             select.limit_count = nil
             select.limit_offset = nil
+            # So the tree matches the one its SQL parses to, for the guard.
+            select.limit_option = :LIMIT_OPTION_DEFAULT
           end
         end
 
@@ -233,7 +237,9 @@ module Quaack
         def build
           parsed = parse
           yield select_stmt(parsed)
-          PgQuery.deparse(parsed.tree)
+          Deparse.faithfully(parsed.tree)
+        rescue Deparse::Error
+          raise Error.new(:deparse_mismatch, query: @query), cause: nil
         end
 
         def collations(node)
