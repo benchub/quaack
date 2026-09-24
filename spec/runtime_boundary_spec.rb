@@ -67,6 +67,14 @@ RSpec.describe "what each side loads at runtime" do
 
   describe "the driver side" do
     it_behaves_like "a side that loads only what it may",
-                    :driver, "driver", "quaack", "quaack #{Quaack::Driver::VERSION}\n"
+                    :driver, "driver", "quaack", "quaack #{Quaack::Driver::VERSION}\n" do
+      # The LLM client needs the Anthropic SDK, which only the driver may
+      # load. This shows the clean result above covers it.
+      it "loads the anthropic gem from its installed copy" do
+        anthropic = File.join(@report.install.gem_dirs.fetch("anthropic"), "lib", "anthropic.rb")
+
+        expect(@report.runs.fetch("every file under lib/").loaded_features).to include(anthropic)
+      end
+    end
   end
 end
