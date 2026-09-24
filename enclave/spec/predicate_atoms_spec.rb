@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "pg_query"
 require "quaack/enclave/predicate_atoms"
 
@@ -95,6 +96,10 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       atoms = extract(where("lower(o.note) = 'x' AND o.total::int > 1 AND o.note = 'y' AND o.status IS NULL"))
       expect(atoms.map { |a| [a.kind, a.bare] })
         .to eq([[:equality, false], [:range, false], [:equality, true], [:null_test, true]])
+    end
+
+    it "doesn't mark an atom with no column bare" do
+      expect(extract(where("$1::int IS NULL AND 1 = 2")).map(&:bare)).to eq([false, false])
     end
 
     it "marks a join between two plain columns bare" do
@@ -372,6 +377,155 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     end
   end
 
+  describe "constants the deparser needs as literals" do
+    # A crash in pg_query's deparser kills the process, so these run in a
+    # child process, where a crash is a failed example. The child prints
+    # each atom's shape and the query with that atom replaced by TRUE.
+    def in_child(sql)
+      out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", child_code(sql))
+      expect(status).to be_success, "child failed (#{status.inspect}):\n#{err}"
+      JSON.parse(out)
+    end
+
+    def child_code(sql)
+      <<~RUBY
+        require "json"
+        require "quaack/enclave/predicate_atoms"
+        atoms = Quaack::Enclave::PredicateAtoms
+        name = ->(n) { Quaack::Enclave::TableName.new(schema: "public", name: n) }
+        parse = PgQuery.parse(#{sql.inspect})
+        found = atoms.extract(parse, column_names: { name["orders"] => %w[id status note], name["customers"] => %w[id] })
+        puts JSON.generate(found.map { |a| [a.shape, atoms.with_true(parse, a)] })
+      RUBY
+    end
+
+    it "gives a JSON_TABLE path a string placeholder, since the deparser can't take a parameter there" do
+      sql = "SELECT 1 FROM public.customers c WHERE EXISTS (SELECT 1 FROM " \
+            "JSON_TABLE('[]', '$.SENTINEL_ROW[*]' COLUMNS (x int PATH '$.SENTINEL_COL')) jt WHERE jt.x = c.id)"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes.first).to include("'$4'").and include("'$5'")
+      expect(shapes.join).not_to include("SENTINEL")
+      expect(shapes.last).to eq("jt.x = c.id")
+    end
+
+    it "does the same for a NESTED PATH" do
+      sql = "SELECT 1 FROM public.customers c WHERE (SELECT jt.y FROM JSON_TABLE('[]', '$' COLUMNS " \
+            "(NESTED PATH '$.SENTINEL_NESTED' COLUMNS (y int PATH '$'))) jt) = c.id"
+      result = in_child(sql)
+      expect(result.size).to eq(1)
+      expect(result.first.first).not_to include("SENTINEL")
+      expect(result.first.last).to eq("SELECT 1 FROM public.customers c WHERE true")
+    end
+
+    it "keeps normalize's and IS NORMALIZED's normal form, which is a keyword, not a value" do
+      sql = "SELECT 1 FROM public.orders o WHERE normalize(o.note || 'SENTINEL', NFC) = 'SENTINEL' " \
+            "AND (o.note || 'SENTINEL') IS NFKD NORMALIZED"
+      expect(in_child(sql).map(&:first))
+        .to eq(["normalize (o.note || $2, NFC) = $3", "o.note || $4 IS NFKD NORMALIZED"])
+    end
+  end
+
+  describe "FROM items" do
+    def placed(sql) = extract(sql).map { |a| [a.kind, a.columns.map { |c| [c.refname, c.name] }] }
+
+    it "reads the table under TABLESAMPLE" do
+      expect(placed("SELECT 1 FROM public.orders o TABLESAMPLE bernoulli(10) WHERE o.status = 1"))
+        .to eq([[:equality, [%w[o status]]]])
+      sql = "SELECT 1 FROM public.customers c WHERE EXISTS (SELECT 1 FROM public.items i TABLESAMPLE system(1) " \
+            "WHERE id = c.id)"
+      expect(placed(sql).last).to eq([:join, [%w[i id], %w[c id]]])
+    end
+
+    it "treats any other FROM item as a relation with unknown columns, so a column doesn't resolve past it" do
+      [
+        "EXISTS (SELECT 1 FROM XMLTABLE('/a' PASSING '<a/>' COLUMNS x int PATH 'b') xt WHERE id = 1)",
+        "EXISTS (SELECT 1 FROM JSON_TABLE('[]', '$' COLUMNS (x int PATH '$')) jt WHERE id = 1)",
+        "EXISTS (SELECT 1 FROM (SELECT 1 AS x) WHERE id = 1)"
+      ].each do |predicate|
+        expect(placed(where(predicate)).last).to eq([:equality, [[nil, "id"]]]), predicate
+      end
+    end
+
+    it "names an XMLTABLE or JSON_TABLE by its alias" do
+      sql = "SELECT 1 FROM public.orders o, XMLTABLE('/a' PASSING '<a/>' COLUMNS x int PATH 'b') xt " \
+            "WHERE xt.x = o.id"
+      expect(placed(sql)).to eq([[:join, [%w[xt x], %w[o id]]]])
+    end
+
+    it "lets a function in FROM see the FROM it's in, since Postgres makes it LATERAL" do
+      sql = "SELECT 1 FROM public.orders o, unnest(ARRAY(SELECT i.qty FROM public.items i WHERE i.order_id = o.id)) u"
+      expect(placed(sql)).to eq([[:join, [%w[i order_id], %w[o id]]]])
+    end
+
+    it "lets an ON clause see only the join's own inputs" do
+      sql = "SELECT 1 FROM public.customers c2, public.orders o JOIN public.customers c ON c.id = o.customer_id " \
+            "AND region = 'x'"
+      expect(placed(sql).last).to eq([:equality, [%w[c region]]])
+    end
+
+    it "names a join by its alias" do
+      sql = "SELECT 1 FROM (public.orders o JOIN public.customers c ON o.customer_id = c.id) j WHERE j.status = 1"
+      expect(placed(sql).last).to eq([:equality, [%w[j status]]])
+    end
+
+    it "takes the innermost relation when an alias is used at two levels" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXISTS (SELECT 1 FROM public.items o WHERE o.qty = 1)"
+      expect(extract(sql).last.columns).to eq([described_class::Column.new(table: items, refname: "o", name: "qty")])
+    end
+
+    it "skips a star, which names no one column" do
+      atoms = extract(where("ROW(o.*) IS NULL"))
+      expect(atoms.map { |a| [a.kind, a.columns] }).to eq([[:null_test, []]])
+    end
+  end
+
+  describe "atoms inside an atom that doesn't split" do
+    def shapes(sql) = extract(sql).map(&:shape)
+
+    it "takes a CASE's THEN and ELSE results when the CASE is a predicate" do
+      expect(shapes(where("CASE WHEN o.active THEN o.status = 1 ELSE o.status = 2 END")))
+        .to eq(["CASE WHEN o.active THEN o.status = $1 ELSE o.status = $2 END", "o.active", "o.status = $1",
+                "o.status = $2"])
+    end
+
+    it "takes the argument of IS TRUE, IS NOT FALSE, and the like" do
+      expect(shapes(where("(o.status = 1 OR o.note IS NULL) IS NOT FALSE")))
+        .to eq(["(o.status = $1 OR o.note IS NULL) IS NOT FALSE", "o.status = $1", "o.note IS NULL"])
+    end
+
+    it "takes comparisons inside function arguments and COALESCE" do
+      sql = "SELECT 1 FROM public.orders o GROUP BY o.id HAVING bool_or(o.status = 1) AND coalesce(o.total > 2, false)"
+      expect(shapes(sql)).to eq(["bool_or(o.status = $2)", "o.status = $2", "COALESCE(o.total > $3, $4)",
+                                 "o.total > $3"])
+    end
+
+    it "splits NOT, and takes IS TRUE and subquery tests, inside an atom" do
+      sql = where("coalesce(NOT o.active, (o.status = 1) IS TRUE, EXISTS (SELECT 1), false)")
+      expect(shapes(sql).drop(1)).to eq(["o.active", "o.status = $1 IS TRUE", "o.status = $1", "EXISTS (SELECT $2)"])
+    end
+
+    it "goes back to reading only predicate positions after an atom" do
+      expect(shapes(where("o.status = 1 ORDER BY o.total > 5"))).to eq(["o.status = $1"])
+    end
+
+    it "replaces a nested atom with TRUE" do
+      parse = PgQuery.parse(where("coalesce(o.status = 1, false)"))
+      atom = described_class.extract(parse, column_names:).last
+      expect(described_class.with_true(parse,
+                                       atom)).to eq("SELECT o.id FROM public.orders o WHERE COALESCE(true, false)")
+    end
+
+    it "takes atoms nested in a simple CASE's results" do
+      sql = where("CASE o.status WHEN 1 THEN (SELECT 1 FROM public.items i WHERE i.qty = 2) END = 1")
+      expect(shapes(sql).drop(1)).to eq(["o.status = $1", "i.qty = $3"])
+    end
+
+    it "doesn't take comparisons in a select list, even in a subquery inside an atom" do
+      expect(shapes("SELECT o.status = 1 FROM public.orders o")).to eq([])
+      expect(shapes(where("EXISTS (SELECT o.status = 1)"))).to eq(["EXISTS (SELECT o.status = $1)"])
+    end
+  end
+
   describe "input" do
     it "takes only a pg_query parse of one SELECT, and never quotes the SQL" do
       [
@@ -396,10 +550,13 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
   describe "shapes" do
     def shapes(sql) = extract(sql).map(&:shape)
 
-    it "is the atom's SQL with each constant a placeholder, numbered as PgQuery.normalize numbers them" do
+    it "is the atom's SQL with each constant a placeholder, numbered in query text order" do
       sql = where("o.status = 7 AND o.note LIKE 'abc%' AND o.total BETWEEN 1 AND 2")
       expect(shapes(sql)).to eq(["o.status = $1", "o.note LIKE $2", "o.total BETWEEN $3 AND $4"])
-      expect(PgQuery.normalize(sql)).to include("o.status = $1 AND o.note LIKE $2 AND o.total BETWEEN $3 AND $4")
+    end
+
+    it "numbers a CTE's constants first, since the CTE comes first in the text" do
+      expect(shapes("WITH x AS (SELECT 5 AS a) SELECT 1 FROM public.orders o, x WHERE x.a = 7")).to eq(["x.a = $3"])
     end
 
     it "numbers after the query's own parameters, and keeps them" do

@@ -28,8 +28,13 @@ module Quaack
     # NOT are split, and each other expression under them is one atom. NOT
     # isn't part of the atom, so with_true leaves NOT TRUE. A bare constant,
     # such as ON TRUE, isn't an atom, since TRUE can't change it. An atom
-    # can hold more atoms, as EXISTS (...) holds the ones in its WHERE, and
-    # the outer one comes first. A CASE x WHEN v's test is x = v. Each JOIN
+    # can hold more atoms, and the outer one comes first. EXISTS (...) holds
+    # the ones in its WHERE. Inside an atom, each boolean test is an atom
+    # too: a comparison, LIKE, IN, BETWEEN, IS NULL, IS TRUE, or subquery
+    # test, and each AND, OR, and NOT is split. So coalesce(x = 1, false),
+    # (x = 1) IS NOT FALSE, bool_or(x = 1), and a CASE that returns x = 1
+    # each hold the atom x = 1. A select list holds no atoms, even in a
+    # subquery inside an atom. A CASE x WHEN v's test is x = v. Each JOIN
     # ... USING column is one atom too. NATURAL JOIN gives none, since its
     # columns aren't written in the query.
     #
@@ -59,6 +64,12 @@ module Quaack
     # of a subquery, CTE, or function in FROM has no table. One that can't
     # be placed has neither: an unqualified column that more than one table
     # has, or none does, or that a relation with unknown columns might have.
+    # Any FROM item but a table or a join, such as a subquery, a function,
+    # XMLTABLE, or JSON_TABLE, is a relation with unknown columns, even with
+    # no alias. TABLESAMPLE is read through to its table. Scoping follows
+    # Postgres: an ON sees only its join's inputs, a subquery in FROM sees
+    # the FROM it's in only when it's LATERAL, and a function, XMLTABLE, or
+    # JSON_TABLE always does, since Postgres makes them LATERAL.
     #
     # Replacing with TRUE. path leads from the parse's tree to the atom's
     # node. with_true copies the tree, puts TRUE there, and deparses it. A
@@ -174,10 +185,11 @@ module Quaack
       end
 
       # Stands in for 3g (20260922-23) until it lands: each constant becomes
-      # a numbered placeholder, numbered the way PgQuery.normalize numbers
-      # them, in query order after the query's own parameters. 3g's
-      # placeholder map should take over the numbering here, so a shape
-      # names the same $n as the redacted query the driver gets.
+      # a numbered placeholder, numbered in the order the constants appear in
+      # the query's text, after the query's own parameters. That's often,
+      # but not always, how PgQuery.normalize numbers them. 3g's placeholder
+      # map should take over the numbering here, so a shape names the same
+      # $n as the redacted query the driver gets.
       #
       # A constant is any A_Const: numbers, strings, booleans, NULL, bit
       # strings, wherever they sit, including casts, arrays, IN lists, LIKE
@@ -185,6 +197,14 @@ module Quaack
       # (the 12 of varchar(12), or the field mask of interval minute) stay,
       # as do COLLATE names. They're written in the query's own text, like
       # its column names, and say how a value is typed, not what it is.
+      #
+      # Two kinds of constant are syntax the deparser needs as literals. A
+      # JSON_TABLE path (the row path, a column's PATH, a NESTED PATH) can
+      # hold values, so it becomes a string holding its placeholder, such
+      # as '$3'. A parameter there crashes the deparser, and the process
+      # with it. The normal form of normalize(x, NFC) and x IS NFC
+      # NORMALIZED stays: it can only be NFC, NFD, NFKC, or NFKD, so it's a
+      # keyword, not a value, and the deparser takes nothing else there.
       class Redaction
         def initialize(tree)
           constants = []
@@ -211,33 +231,65 @@ module Quaack
           when PgQuery::A_Const then constants << node.location
           when PgQuery::ParamRef then params << node.number
           when PgQuery::TypeName then nil
-          else Tree.children(node).each { |child| collect(child, constants, params) }
+          else Literals.values(node).each { |child| collect(child, constants, params) }
           end
         end
 
         # Replaces each A_Const under the node, in place, and returns it.
         def replace(node)
           case node
-          when PgQuery::Node
-            return placeholder(node.a_const) if node.a_const
-
-            replace(node.inner)
-          when PgQuery::TypeName then nil
+          when PgQuery::Node then return replace_node(node)
           when Google::Protobuf::RepeatedField then node.each_with_index { |n, i| node[i] = replace(n) }
           when Google::Protobuf::MessageExts then replace_fields(node)
           end
           node
         end
 
+        def replace_node(node)
+          return placeholder(node.a_const) if node.a_const
+
+          replace(node.inner)
+          node
+        end
+
         def replace_fields(message)
-          message.class.descriptor.each do |field|
-            value = field.get(message)
-            value.is_a?(PgQuery::Node) ? field.set(message, replace(value)) : replace(value)
+          case message
+          when PgQuery::TypeName then nil
+          when PgQuery::JsonTablePathSpec then message.string = path_placeholder(message.string)
+          when Literals.method(:normal_form?) then message.args[0] = replace(message.args[0])
+          else message.class.descriptor.each { |field| replace_field(message, field) }
           end
+        end
+
+        def replace_field(message, field)
+          value = field.get(message)
+          value.is_a?(PgQuery::Node) ? field.set(message, replace(value)) : replace(value)
+        end
+
+        # A string holding the path's placeholder.
+        def path_placeholder(path)
+          return replace(path) unless path.a_const
+
+          text = "$#{@numbers.fetch(path.a_const.location, 0)}"
+          PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: text)))
         end
 
         def placeholder(constant)
           PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: @numbers.fetch(constant.location, 0)))
+        end
+      end
+
+      # The constants that are syntax and stay as written (see Redaction).
+      module Literals
+        module_function
+
+        # A message's field values, without a normal form.
+        def values(node) = normal_form?(node) ? [node.args[0]] : Tree.children(node)
+
+        # normalize(x, NFC) or x IS NFC NORMALIZED.
+        def normal_form?(node)
+          node.is_a?(PgQuery::FuncCall) && node.funcformat == :COERCE_SQL_SYNTAX && node.args.size == 2 &&
+            %w[normalize is_normalized].include?(node.funcname.last.string.sval)
         end
       end
 
@@ -251,23 +303,36 @@ module Quaack
           @column_names = column_names
         end
 
+        # Anything but a table or a join, such as a subquery, a function,
+        # XMLTABLE, or JSON_TABLE, is a relation with unknown columns, named
+        # by its alias if it has one. It still counts without one, so an
+        # unqualified column stops there instead of resolving outward.
         def rels(item, level)
           if item.join_expr then join_rels(item.join_expr, level)
           elsif item.range_var then [range_rel(item.range_var, level)]
-          else derived((item.range_subselect || item.range_function)&.alias&.aliasname, level)
+          elsif item.range_table_sample then rels(item.range_table_sample.relation, level)
+          else [derived(alias_name(item.inner), level)]
           end
+        end
+
+        # USING (x): x on the one relation on this side that has it.
+        def using_column(name, side)
+          found = side.select { |rel| rel.columns&.include?(name) }
+          rel = found.first if found.one?
+          Column.new(table: rel&.table, refname: rel&.refname, name:)
         end
 
         private
 
+        def alias_name(item) = (item.alias&.aliasname if item.respond_to?(:alias))
+
+        # A join adds its inputs, and its alias if it has one.
         def join_rels(join, level)
-          rels(join.larg, level) + rels(join.rarg, level) + derived(join.alias&.aliasname, level)
+          named = join.alias ? [derived(join.alias.aliasname, level)] : []
+          rels(join.larg, level) + rels(join.rarg, level) + named
         end
 
-        # A subquery, a function, or a join with its own alias.
-        def derived(refname, level)
-          refname ? [Rel.new(level:, refname:, table: nil, aliased: true, columns: nil)] : []
-        end
+        def derived(refname, level) = Rel.new(level:, refname:, table: nil, aliased: true, columns: nil)
 
         # A plain table, or a CTE, whose name has no schema.
         def range_rel(range, level)
@@ -289,12 +354,13 @@ module Quaack
         PREDICATES = { PgQuery::CaseWhen => ["expr"], PgQuery::FuncCall => ["agg_filter"] }.freeze
         # The nodes with their own reading.
         HANDLERS = { PgQuery::SelectStmt => :select, PgQuery::JoinExpr => :join, PgQuery::CaseExpr => :case_expr,
-                     PgQuery::RangeSubselect => :from_subquery, PgQuery::RangeFunction => :from_subquery }.freeze
+                     PgQuery::RangeSubselect => :from_subquery }.freeze
 
         def initialize(frames, redaction)
           @frames = frames
           @redaction = redaction
           @atoms = []
+          @depth = 0
         end
 
         def atoms(tree)
@@ -308,7 +374,8 @@ module Quaack
         # last.
         def walk(node, path, scopes)
           handler = HANDLERS[node.class]
-          if handler then send(handler, node, path, scopes)
+          if @depth.positive? && Syntax.boolean?(node) then predicate(node, path, scopes)
+          elsif handler then send(handler, node, path, scopes)
           elsif node.is_a?(Google::Protobuf::RepeatedField)
             node.each_with_index { |n, i| walk(n, path + [i], scopes) }
           elsif node.is_a?(Google::Protobuf::MessageExts)
@@ -328,35 +395,39 @@ module Quaack
         end
 
         # A WITH doesn't see its own SELECT's FROM. Everything else does.
+        # A SELECT inside an atom starts over: its select list holds no atoms.
         def select(select, path, scopes)
+          depth = @depth
+          @depth = 0
           walk(select.with_clause, path + ["with_clause"], scopes)
           frame = select.from_clause.flat_map { |item| @frames.rels(item, scopes.size) }
           fields(select, path, scopes + [frame], "where_clause", "having_clause", skip: "with_clause")
+        ensure
+          @depth = depth
         end
 
         # A join's ON clause, or each USING column. The join is in the
-        # innermost frame.
+        # innermost frame, and its ON sees only the join's own inputs there.
         def join(join, path, scopes)
-          fields(join, path, scopes, "quals")
           sides = [join.larg, join.rarg].map { |side| @frames.rels(side, scopes.size - 1) }
-          join.using_clause.each_with_index do |node, i|
-            add_using(node.string.sval, sides, path + ["using_clause", i])
-          end
+          fields(join, path, scopes, skip: "quals")
+          predicate(join.quals, path + ["quals"], inputs(scopes, sides)) if join.quals
+          join.using_clause.each_with_index { |node, i| add_using(node, sides, path + ["using_clause", i]) }
         end
 
-        # USING (x): x on the one relation under each side that has it.
-        def add_using(name, sides, path)
-          columns = sides.map do |side|
-            found = side.select { |rel| rel.columns&.include?(name) }
-            rel = found.first if found.one?
-            Column.new(table: rel&.table, refname: rel&.refname, name:)
-          end
-          @atoms << Atom.new(kind: :join, operator: "USING", negated: false, bare: true, columns: columns.freeze,
+        # The scopes with the innermost frame cut down to the join's inputs.
+        def inputs(scopes, sides) = scopes[0...-1] + [sides.flatten(1)]
+
+        def add_using(node, sides, path)
+          name = node.string.sval
+          columns = sides.map { |side| @frames.using_column(name, side) }.freeze
+          @atoms << Atom.new(kind: :join, operator: "USING", negated: false, bare: true, columns:,
                              shape: "USING (#{Redaction.identifier(name)})", path: path.freeze, replaceable: false)
         end
 
-        # A subquery or function in FROM sees the FROM it's in only when
-        # it's LATERAL.
+        # A subquery in FROM sees the FROM it's in only when it's LATERAL.
+        # A function, XMLTABLE, or JSON_TABLE always does: Postgres makes
+        # them LATERAL.
         def from_subquery(item, path, scopes)
           fields(item, path, item.lateral ? scopes : scopes[0...-1])
         end
@@ -385,8 +456,18 @@ module Quaack
             bool.args.each_with_index { |arg, i| predicate(arg, path + ["bool_expr", "args", i], scopes) }
           else
             add_atom(node, path, scopes) unless constant?(node)
-            walk(node, path, scopes)
+            inside_atom { fields(node, path, scopes) }
           end
+        end
+
+        # Inside an atom, each boolean test is a predicate too, such as the
+        # x = 1 in coalesce(x = 1, false), (x = 1) IS NOT FALSE, or a CASE
+        # result. So is anything in a subquery's WHERE, as everywhere.
+        def inside_atom
+          @depth += 1
+          yield
+        ensure
+          @depth -= 1
         end
 
         def constant?(node) = !(node.a_const || node.type_cast&.arg&.a_const).nil?
@@ -498,6 +579,8 @@ module Quaack
         module_function
 
         RANGE = %w[< <= > >=].freeze
+        COMPARISONS = (%w[= <>] + RANGE).freeze
+        SUBQUERY_TESTS = %i[EXISTS_SUBLINK ANY_SUBLINK ALL_SUBLINK].freeze
         LIKE = { "~~" => "LIKE", "!~~" => "NOT LIKE", "~~*" => "ILIKE", "!~~*" => "NOT ILIKE" }.freeze
         SIMILAR = { "~" => "SIMILAR TO", "!~" => "NOT SIMILAR TO" }.freeze
         BOOLEAN_TESTS = { IS_TRUE: "IS TRUE", IS_NOT_TRUE: "IS NOT TRUE", IS_FALSE: "IS FALSE",
@@ -511,10 +594,27 @@ module Quaack
           AEXPR_NOT_BETWEEN: :between, AEXPR_BETWEEN_SYM: :between, AEXPR_NOT_BETWEEN_SYM: :between
         }.freeze
 
+        # Whether the node is a boolean test: AND, OR, NOT, a comparison,
+        # LIKE, IN, BETWEEN, IS NULL, IS TRUE, or a subquery test.
+        def boolean?(node)
+          return false unless node.is_a?(PgQuery::Node)
+          return true if node.bool_expr || node.null_test || node.boolean_test
+          return SUBQUERY_TESTS.include?(node.sub_link.sub_link_type) if node.sub_link
+
+          !node.a_expr.nil? && boolean_expression?(node.a_expr)
+        end
+
+        def boolean_expression?(expr)
+          EXPRESSIONS.key?(expr.kind) && (expr.kind != :AEXPR_OP || COMPARISONS.include?(opname(expr)))
+        end
+
+        def opname(expr) = expr.name.map { |n| n.string.sval }.join(".")
+
         def test(node)
           if node.a_expr then expression(node.a_expr)
           elsif node.null_test then null_test(node.null_test)
-          elsif node.boolean_test then other(BOOLEAN_TESTS.fetch(node.boolean_test.booltesttype), [node])
+          elsif node.boolean_test then other(BOOLEAN_TESTS.fetch(node.boolean_test.booltesttype),
+                                             [node])
           else other(nil, [node])
           end
         end
@@ -527,7 +627,7 @@ module Quaack
         end
 
         def expression(expr)
-          opname = expr.name.map { |n| n.string.sval }.join(".")
+          opname = opname(expr)
           reader = EXPRESSIONS[expr.kind]
           reader ? send(reader, opname, expr) : other(opname, [expr.lexpr, expr.rexpr].compact)
         end
@@ -586,7 +686,8 @@ module Quaack
         end
       end
 
-      private_constant :Tree, :SimpleCase, :Redaction, :Rel, :Frames, :Walker, :Resolver, :ColumnRefs, :Test, :Syntax
+      private_constant :Tree, :SimpleCase, :Literals, :Redaction, :Rel, :Frames, :Walker, :Resolver, :ColumnRefs,
+                       :Test, :Syntax
     end
   end
 end
