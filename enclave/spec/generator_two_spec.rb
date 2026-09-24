@@ -608,6 +608,16 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(expression.unqualified_sql(node)).to eq("status = 'x'::text")
     end
 
+    # pg_query would drop the parentheses, so the predicate would index
+    # different rows. The error has no text of the plan's.
+    it "raises, quoting nothing, rather than give a predicate that means something else" do
+      node = expression.conjuncts("((o.a = 'quaack-sentinel') IS NOT DISTINCT FROM (o.b AND o.c))").first
+      expect { expression.unqualified_sql(node) }.to raise_error(enclave::Deparse::Error) { |e|
+        expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil])
+        expect(e.full_message).not_to include("quaack-sentinel")
+      }
+    end
+
     it "sorts conditions into constant equalities, join equalities, and the rest" do
       scans = enclave.const_get(:PlanNode).new(plan("hash_join_batches").first["Plan"]).subtree
       columns = enclave.const_get(:PlanColumns).new(scans, statistics, nil)
