@@ -362,13 +362,23 @@ RSpec.describe Quaack::Enclave::ResultComparator do
     it "refuses a verdict field that isn't a count, a position, or a known symbol" do
       fields = { match: false, mode: :multiset, rule: :value, expected_rows: 1, actual_rows: 1, row: 0, column: 0 }
       planted = [{ row: sentinel }, { column: sentinel }, { expected_rows: sentinel }, { actual_rows: -1 },
-                 { rule: sentinel.to_sym }, { mode: sentinel.to_sym }, { match: sentinel }]
+                 { rule: sentinel.to_sym }, { mode: sentinel.to_sym }, { match: sentinel },
+                 { load_order: sentinel.to_sym }]
 
       planted.each do |change|
         expect { described_class::Verdict.new(**fields, **change) }
           .to raise_error(ArgumentError) { |e| expect(e.message).not_to include(sentinel) }
       end
       expect(described_class::Verdict.new(**fields).row).to eq(0)
+    end
+
+    it "takes a load order of forward, reverse, or none, and none by default" do
+      fields = { match: false, mode: :multiset, rule: :value, expected_rows: 1, actual_rows: 1, row: 0, column: 0 }
+
+      orders = [nil, :forward, :reverse].map { |load_order| described_class::Verdict.new(**fields, load_order:) }
+      expect(orders.map(&:load_order)).to eq([nil, :forward, :reverse])
+      expect(described_class::Verdict.new(**fields).load_order).to be_nil
+      expect(described_class::Verdict.for(:multiset, :value).load_order).to be_nil
     end
 
     it "keeps row values out of its argument errors" do
