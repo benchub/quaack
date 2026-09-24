@@ -166,7 +166,7 @@ RSpec.describe Quaack::Enclave::Store do
       expect(Dir.children(store.path)).to be_empty
     end
 
-    it "keeps data nested PlainData::MAX_DEPTH deep" do
+    it "keeps Arrays nested PlainData::MAX_DEPTH deep" do
       max = Quaack::Enclave::PlainData::MAX_DEPTH
       store.write("plan", max.times.reduce(1) { |inner, _| [inner] })
 
@@ -176,6 +176,89 @@ RSpec.describe Quaack::Enclave::Store do
       (value = value.first) && (depth += 1) while value.is_a?(Array) && value.size == 1
       expect([depth, value]).to eq([max, 1])
       expect(File.read(File.join(store.path, "plan.json"))).to eq("#{"[" * max}1#{"]" * max}")
+    end
+
+    it "keeps Hashes nested PlainData::MAX_DEPTH deep" do
+      max = Quaack::Enclave::PlainData::MAX_DEPTH
+      store.write("plan", max.times.reduce(1) { |inner, _| { "Plan" => inner } })
+
+      value = store.read("plan")
+      depth = 0
+      (value = value["Plan"]) && (depth += 1) while value.is_a?(Hash) && value.keys == ["Plan"]
+      expect([depth, value]).to eq([max, 1])
+    end
+
+    # Runs code in a fresh Ruby, inside a thread whose stacks are the given
+    # size. The code gets the store's base as ARGV[0] and prints its result.
+    # It runs outside Bundler, as on the jump server, so it gets the json
+    # that ships with Ruby.
+    def in_thread(stack_size, code)
+      script = "require 'quaack/enclave/store'\nputs Thread.new {\n#{code}\n}.value"
+      env = { "RUBY_THREAD_MACHINE_STACK_SIZE" => stack_size.to_s, "RUBY_THREAD_VM_STACK_SIZE" => stack_size.to_s }
+      out, err, status = Bundler.with_unbundled_env do
+        Open3.capture3(env, RbConfig.ruby, "--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-e", script, base)
+      end
+      expect(status).to be_success, "stderr was #{err}"
+      out
+    end
+
+    # Each shape as Ruby code nesting a sentinel MAX_DEPTH deep.
+    let(:deep_code) do
+      max = "Quaack::Enclave::PlainData::MAX_DEPTH"
+      { "Array" => "#{max}.times.reduce(#{STORE_SENTINEL.inspect}) { |x, _| [x] }",
+        "Hash" => "#{max}.times.reduce(#{STORE_SENTINEL.inspect}) { |x, _| { 'Plan' => x } }" }
+    end
+
+    # The jump server's main thread has an 8 MB stack, and JSON needs the
+    # most stack to write nested Hashes. A thread with half that must still
+    # manage MAX_DEPTH, so the cap leaves room to spare.
+    it "keeps Arrays and Hashes nested MAX_DEPTH deep in a thread with a 4 MB stack" do
+      out = in_thread(4 * 1024 * 1024, <<~RUBY)
+        s = Quaack::Enclave::Store.create(base: ARGV[0])
+        { "Array" => #{deep_code["Array"]}, "Hash" => #{deep_code["Hash"]} }.map do |shape, value|
+          s.write(:plan, value)
+          back = s.read(:plan)
+          depth = 0
+          (back = back.is_a?(Array) ? back.first : back["Plan"]) && (depth += 1) until back.is_a?(String)
+          [shape, depth, back == #{STORE_SENTINEL.inspect}].join(" ")
+        end
+      RUBY
+
+      max = Quaack::Enclave::PlainData::MAX_DEPTH
+      expect(out.lines(chomp: true)).to eq(["Array #{max} true", "Hash #{max} true"])
+    end
+
+    # Each runs in its own process: Ruby can crash outright if one thread
+    # runs out of stack a second time.
+    max = Quaack::Enclave::PlainData::MAX_DEPTH
+    leaf = STORE_SENTINEL.to_json
+    arrays = "#{"[" * max}#{leaf}#{"]" * max}"
+    hashes = "#{'{"Plan":' * max}#{leaf}#{"}" * max}"
+    {
+      "writing nested Hashes" =>
+        ["s.write(:plan, #{max}.times.reduce(#{STORE_SENTINEL.inspect}) { |x, _| { 'Plan' => x } })",
+         "couldn't be written as JSON"],
+      "reading nested Arrays" =>
+        ["File.write(File.join(s.path, 'plan.json'), #{arrays.inspect}); s.read(:plan)",
+         "is nested too deep to read"],
+      "reading nested Hashes" =>
+        ["File.write(File.join(s.path, 'plan.json'), #{hashes.inspect}); s.read(:plan)",
+         "is nested too deep to read"]
+    }.each do |name, (attempt, problem)|
+      it "raises Store::Error, not SystemStackError, #{name} in a thread whose stack is too small" do
+        out = in_thread(256 * 1024, <<~RUBY)
+          s = Quaack::Enclave::Store.create(base: ARGV[0])
+          begin
+            #{attempt}
+            "no error"
+          rescue Quaack::Enclave::Store::Error => e
+            [e.class, e.message.sub(s.run_id, "RUN"), e.cause.inspect].join(": ")
+          end
+        RUBY
+
+        expect(out.chomp).to eq("Quaack::Enclave::Store::Error: entry plan in run RUN #{problem}: nil")
+        expect(out).not_to include(STORE_SENTINEL)
+      end
     end
 
     it "raises, writing nothing, for data nested deeper than PlainData::MAX_DEPTH, or that contains itself" do
@@ -207,7 +290,8 @@ RSpec.describe Quaack::Enclave::Store do
       ["a Struct", -> { Struct.new(:ssn).new(STORE_SENTINEL) }],
       ["a String subclass", -> { Class.new(String).new(STORE_SENTINEL) }],
       ["an object as a Hash key", -> { { sentinel_object => 1 } }],
-      ["an object deep in plain data", -> { { "a" => [{ "b" => sentinel_object }] } }]
+      ["an object deep in plain data", -> { { "a" => [{ "b" => sentinel_object }] } }],
+      ["an object between plain values", -> { { "a" => 1, "b" => [1, sentinel_object, 2], "c" => 2 } }]
     ].each do |name, value|
       it "raises, writing nothing and carrying nothing from the data, for #{name}" do
         expect_store_error(/literals.*#{store.run_id}/) { store.write("literals", [instance_exec(&value)]) }

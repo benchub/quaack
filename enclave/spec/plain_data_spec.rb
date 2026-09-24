@@ -47,7 +47,13 @@ RSpec.describe Quaack::Enclave::PlainData do
     ["a String subclass as a Hash key", -> { { string_subclass.new("a") => 1 } }],
     ["a Hash that names a key twice", -> { { :a => 1, "a" => PLAIN_SENTINEL } }],
     ["a nested Hash that names a key twice", -> { [{ "a" => { :b => 1, "b" => 2 } }] }],
-    ["non-plain data deep inside plain data", -> { { "a" => [{ "b" => [sentinel_object] }] } }]
+    ["non-plain data deep inside plain data", -> { { "a" => [{ "b" => [sentinel_object] }] } }],
+    ["an object first in an Array", -> { [sentinel_object, 1, 2] }],
+    ["an object in the middle of an Array", -> { [1, sentinel_object, 2] }],
+    ["an object last in an Array", -> { [1, 2, sentinel_object] }],
+    ["an object first in a Hash", -> { { "a" => sentinel_object, "b" => 1, "c" => 2 } }],
+    ["an object in the middle of a Hash", -> { { "a" => 1, "b" => sentinel_object, "c" => 2 } }],
+    ["an object last in a Hash", -> { { "a" => 1, "b" => 2, "c" => sentinel_object } }]
   ].each do |name, value|
     it "raises NotPlain, carrying nothing from the value, for #{name}" do
       expect_not_plain(instance_exec(&value))
@@ -60,7 +66,8 @@ RSpec.describe Quaack::Enclave::PlainData do
     around { |example| Timeout.timeout(30) { example.run } }
 
     it "takes data nested MAX_DEPTH deep, well above any plan's depth" do
-      expect(max).to be >= 5_000
+      # The deepest real pg_query tree seen is about 1,500 levels.
+      expect(max).to be >= 2_000
       deep = nested(max)
 
       expect(plain.check(deep)).to equal(deep)

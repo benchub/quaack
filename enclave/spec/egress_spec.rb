@@ -213,6 +213,31 @@ RSpec.describe Quaack::Enclave::Egress do
     end
   end
 
+  describe "a value that isn't plain JSON data beside plain ones" do
+    let(:bad) { Object.new.tap { |o| o.define_singleton_method(:to_s) { EGRESS_SENTINEL } } }
+
+    [
+      ["in the first field", ->(bad) { { step: bad, rule: "ok", sqlstate: "23505" } }],
+      ["in a middle field", ->(bad) { { step: "3f", rule: bad, sqlstate: "23505" } }],
+      ["in the last field", ->(bad) { { step: "3f", rule: "ok", sqlstate: bad } }],
+      ["first in an Array", ->(bad) { { step: "3f", rule: [bad, 1, 2] } }],
+      ["in the middle of an Array", ->(bad) { { step: "3f", rule: [1, bad, 2] } }],
+      ["last in an Array", ->(bad) { { step: "3f", rule: [1, 2, bad] } }],
+      ["first in a Hash", ->(bad) { { step: "3f", rule: { "a" => bad, "b" => 1, "c" => 2 } } }],
+      ["in the middle of a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => bad, "c" => 2 } } }],
+      ["last in a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => 2, "c" => bad } } }]
+    ].each do |name, fields|
+      it "raises Egress::Error for one #{name}" do
+        expect { egress.serialize(type: :error, **fields.call(bad)) }
+          .to raise_error(described_class::Error, "a value in this error message can't be written as JSON")
+      end
+    end
+
+    it "the sentinel check itself: the bad value's to_s is the sentinel" do
+      expect(JSON.generate([bad])).to include(EGRESS_SENTINEL)
+    end
+  end
+
   # The jump server runs the enclave outside Bundler, so it gets the json
   # that ships with Ruby, not the newer one in this bundle. The two differ
   # on what they let through, so check the cases that differ against the

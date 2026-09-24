@@ -83,7 +83,10 @@ module Quaack
       end
 
       # Each value must be plain JSON data (see PlainData). JSON writes a
-      # Symbol, value or key, as its name.
+      # Symbol, value or key, as its name. JSON's default nesting limit of 100
+      # stops it long before it could run out of stack (99 levels of Hashes
+      # write fine in a thread asking for a 16 KB stack, on macOS and aarch64
+      # Linux), so there's no SystemStackError to rescue here.
       def write(type, pairs)
         fields = pairs.to_h
         fields.each_value { PlainData.check(it) }

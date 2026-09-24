@@ -14,6 +14,11 @@ module Quaack
     # Hash that names a key twice, once as a Symbol and once as a String,
     # isn't plain either, since JSON would write both under the same name.
     #
+    # It checks classes, not singleton methods. So a plain Array or Hash
+    # given its own to_json passes, and since callers write the original
+    # object, JSON would call that to_json. Doing that takes deliberate
+    # effort, not an honest mistake, so it's outside the threat model.
+    #
     # The walk uses its own stack rather than recursion, so deep data, or
     # data that contains itself, raises NotPlain instead of overflowing the
     # stack.
@@ -22,9 +27,23 @@ module Quaack
       # outside any rescue, so it has no cause.
       class NotPlain < StandardError; end
 
-      # Far deeper than any plan or parse tree QUAACK stores, and shallow
-      # enough that the json that ships with Ruby can write and read it.
-      MAX_DEPTH = 10_000
+      # Deeper than any plan or parse tree QUAACK stores (the deepest real
+      # pg_query tree seen is about 1,500 levels, and a plan adds about two
+      # levels a node), and shallow enough for the json that ships with Ruby
+      # (2.9.1) to write and read. JSON recurses on the machine stack, and
+      # nested Hashes need the most. Measured limits for writing nested
+      # Hashes: about 9,700 levels on the main thread (8 MB stack) on
+      # aarch64 Linux, 12,400 on macOS, and about 1,200 and 1,500 in a thread
+      # with Ruby's default 1 MB stack. Arrays go deeper, and reading goes
+      # deeper still.
+      #
+      # So MAX_DEPTH is safe on the main thread, where the enclave script
+      # runs, and in any thread with a stack of 4 MB or more, which the specs
+      # test. In a smaller thread, JSON can run out of stack before
+      # MAX_DEPTH, and callers turn the SystemStackError into their own
+      # error. That's best effort: Ruby can crash outright if one thread runs
+      # out of stack a second time.
+      MAX_DEPTH = 3_000
 
       SCALARS = [NilClass, TrueClass, FalseClass, Integer, Float, String, Symbol].freeze
 

@@ -143,11 +143,12 @@ module Quaack
       # Data must be plain JSON data (see PlainData), or the json that ships
       # with Ruby would store other objects as their to_s. The error JSON
       # raises can quote the data, so it's left behind. The check already
-      # caps the depth, so JSON needn't.
+      # caps the depth, so JSON needn't. In a thread with a small stack, JSON
+      # can still run out of stack (see PlainData::MAX_DEPTH).
       def generate(name, data)
         PlainData.check(data)
         JSON.generate(data, max_nesting: false)
-      rescue PlainData::NotPlain, JSON::GeneratorError
+      rescue PlainData::NotPlain, JSON::GeneratorError, SystemStackError
         raise Error, "entry #{name} in run #{run_id} couldn't be written as JSON", cause: nil
       end
 
@@ -159,7 +160,11 @@ module Quaack
         text = text.force_encoding(Encoding::UTF_8)
         raise JSON::ParserError unless text.valid_encoding?
 
-        JSON.parse(text, max_nesting: PlainData::MAX_DEPTH)
+        begin
+          JSON.parse(text, max_nesting: PlainData::MAX_DEPTH)
+        rescue SystemStackError
+          raise Error, "entry #{name} in run #{run_id} is nested too deep to read", cause: nil
+        end
       rescue JSON::ParserError
         raise Error, "entry #{name} in run #{run_id} isn't valid JSON", cause: nil
       end
