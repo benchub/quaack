@@ -663,3 +663,35 @@ Build a reusable test helper that runs a step on data with known sentinel values
   - The intake and error_filter specs use it.
 
   The second review found no blockers. Its findings became 20260924-13.
+
+### 20260922-24. 3h clock anchoring.
+
+Replace the listed time functions with `quaack.clock_anchor()` in the AST. Keep a way to put the original functions back for the report.
+
+- **Depends on:** 20260922-14.
+- **README:** 3h.
+- **Note (from 20260922-13):** Intake stores `clock_anchor` as a UTC ISO-8601 string with microseconds, such as `2026-09-24T07:35:44.661129Z`.
+- **Status:** done
+- **Note:** Built on branch `task/20260922-24` through a build, a review, a fix round, and a second review, but not landed. The second review found that anchoring renames implicit output columns and function-in-FROM aliases, which can silently rebind `ORDER BY now`. 20260924-12 finishes it on top of that branch.
+- **Decided:** `quaacks intake` takes an optional `--captured-at` flag, the time the production plan ran. Without it, the anchor is the time of intake. The run stores the anchor, and `clock_anchor()` returns it.
+- **Landed:** Merged into `main` together with 20260924-12, which finished it.
+
+### 20260924-12. Finish 3h clock anchoring.
+
+Split out of 20260922-24. The work so far is on branch `task/20260922-24`. Build on that branch, then land both together. Fix what the second review of 20260922-24 found:
+- **Anchoring changes implicit names.** Postgres names an unaliased `now()` column `now`, and it looks through casts, so `now()::date` is also `now`. `CURRENT_DATE` is `current_date`, and `LOCALTIMESTAMP` is `localtimestamp`. After anchoring, the names become `clock_anchor`, `date`, or `timestamp`. So each of these fails after anchoring:
+  - `SELECT s.now FROM (SELECT now()) s`
+  - `WITH w AS (SELECT now()) SELECT w.now FROM w`
+  - `SELECT now() ORDER BY now`
+  - `SELECT now.now FROM now()`
+
+  The worst case is silent. In `SELECT id, now()::date FROM public.ev ORDER BY now`, where `ev` has a column named `now`, `ORDER BY now` rebinds to the table column and the order changes. Keep the original names: set `ResTarget.name` when it's empty, and add an alias when an unaliased function in FROM is anchored. Make `restore` handle or remove what anchoring added. Test each case on Postgres, including the silent one and `GROUP BY` by name.
+- **Minor:**
+  - `NodeRewrite` has no spec of its own.
+  - The "is plain strings" test passes on an empty list.
+
+- **Depends on:** 20260922-24's branch.
+- **Came from:** Second review of 20260922-24.
+- **README:** 3h.
+- **Status:** done
+- **Landed:** Merged into `main` with 20260922-24 after a review, a fix round, and a second review. The second review found no blockers, and its minor findings went to 20260924-15.
