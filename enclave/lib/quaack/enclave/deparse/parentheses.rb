@@ -43,10 +43,6 @@ module Quaack
       # at both ends, and left as the deparser writes it.
       module Parentheses
         # How tightly each operator binds, loosest first, from gram.y.
-        # gram.y also puts + and -, then * / and %, then ^, above OPERATOR.
-        # They're left at OPERATOR here, since the deparser parenthesizes
-        # every operator's operands that are operators themselves, and
-        # nothing else an operand can be binds between OPERATOR and AT.
         OR = 1
         AND = 2
         NOT = 3
@@ -54,6 +50,9 @@ module Quaack
         COMPARISON = 5  # < > = <= >= <>
         LIKE = 6        # LIKE, ILIKE, IN, and BETWEEN.
         OPERATOR = 8    # Every other operator, and OPERATOR(schema.op).
+        ADD = 9         # + and -
+        MULTIPLY = 10   # * / %
+        POWER = 11      # ^
         AT = 12         # AT TIME ZONE and AT LOCAL.
         COLLATE = 13
         SIGN = 14       # A leading + or -.
@@ -62,10 +61,17 @@ module Quaack
 
         # Which levels gram.y declares %left and %right. The others are
         # %nonassoc.
-        LEFT_ASSOCIATIVE = [OR, AND, OPERATOR, AT, COLLATE, CAST].freeze
+        LEFT_ASSOCIATIVE = [OR, AND, OPERATOR, ADD, MULTIPLY, POWER, AT, COLLATE, CAST].freeze
         RIGHT_ASSOCIATIVE = [NOT, SIGN].freeze
 
-        COMPARISONS = %w[< > = <= >= <>].freeze
+        # The unqualified operators gram.y gives a level of their own. The
+        # deparser parenthesizes every operand of theirs that's itself an
+        # operator, so the levels matter for what ends an operand, such as
+        # the prefix operator at the right of a AT TIME ZONE @ b.
+        OPERATORS = {
+          "<" => COMPARISON, ">" => COMPARISON, "=" => COMPARISON, "<=" => COMPARISON, ">=" => COMPARISON,
+          "<>" => COMPARISON, "+" => ADD, "-" => ADD, "*" => MULTIPLY, "/" => MULTIPLY, "%" => MULTIPLY, "^" => POWER
+        }.freeze
 
         # The operators that ANY and ALL write as LIKE, NOT LIKE, ILIKE,
         # and NOT ILIKE.
@@ -168,7 +174,7 @@ module Quaack
           name = names[0].string.sval
           return LIKE if subquery && LIKE_OPERATORS.include?(name)
 
-          COMPARISONS.include?(name) ? COMPARISON : OPERATOR
+          OPERATORS.fetch(name, OPERATOR)
         end
 
         # Where each node's operands are, and what binds them, for
@@ -180,7 +186,8 @@ module Quaack
           RULES = {
             PgQuery::A_Expr => :a_expr, PgQuery::BoolExpr => :bool_expr, PgQuery::NullTest => :test,
             PgQuery::BooleanTest => :test, PgQuery::CollateClause => :collate, PgQuery::TypeCast => :type_cast,
-            PgQuery::FuncCall => :func_call, PgQuery::SubLink => :sub_link, PgQuery::A_Indirection => :indirection
+            PgQuery::FuncCall => :func_call, PgQuery::SubLink => :sub_link, PgQuery::A_Indirection => :indirection,
+            PgQuery::SelectStmt => :select_stmt
           }.freeze
 
           A_EXPRS = {
@@ -292,6 +299,20 @@ module Quaack
 
             level = link.oper_name.empty? ? LIKE : operator_level(link.oper_name, subquery: true)
             rest(link, "testexpr") && postfix(link.testexpr, level)
+          end
+
+          # FETCH FIRST n ROWS WITH TIES, where n must be a c_expr. The
+          # deparser parenthesizes most of what isn't, but not x IN, ANY,
+          # or ALL (SELECT ...), and it writes a NULL n as ALL, which WITH
+          # TIES can't have. Any other LIMIT takes what a WHERE does.
+          def select_stmt(stmt)
+            rest(stmt, "limit_count")
+            count = stmt.limit_count
+            ends = visit(count)
+            return TIGHT unless stmt.limit_option == :LIMIT_OPTION_WITH_TIES && count&.inner
+
+            wrap(count) if ends != TIGHT || count.a_const&.isnull
+            TIGHT
           end
 
           def indirection(indirection)

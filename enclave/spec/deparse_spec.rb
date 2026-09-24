@@ -164,6 +164,35 @@ RSpec.describe Quaack::Enclave::Deparse do
           "SELECT * FROM t WHERE (a AT TIME ZONE NOT b) IS NULL",
         "SELECT (a AT TIME ZONE (@ b)) AT TIME ZONE 'UTC' FROM t" =>
           "SELECT (a AT TIME ZONE @ b) AT TIME ZONE 'UTC' FROM t",
+        # Each comparison binds at =, each LIKE form is LIKE inside ANY, and
+        # every BETWEEN form parenthesizes its bounds (20260924-4 review).
+        "SELECT * FROM t WHERE (a > b) = ANY(c)" => nil,
+        "SELECT * FROM t WHERE (a <= b) = ANY(c)" => nil,
+        "SELECT * FROM t WHERE (a > b) IN (true)" => nil,
+        "SELECT * FROM t WHERE a LIKE (b NOT LIKE ANY(c))" => nil,
+        "SELECT * FROM t WHERE a LIKE (b ILIKE ANY(c))" => nil,
+        "SELECT * FROM t WHERE a LIKE (b NOT ILIKE ANY(c))" => nil,
+        "SELECT * FROM t WHERE a BETWEEN SYMMETRIC b || c AND (d OR e)" => nil,
+        # A cast of a COLLATE isn't a b_expr, though a cast of a column is.
+        "SELECT * FROM t WHERE a BETWEEN (b COLLATE \"C\")::text AND c" =>
+          "SELECT * FROM t WHERE a BETWEEN (b COLLATE \"C\"::text) AND c",
+        # WITH TIES takes only a c_expr, and the deparser writes a NULL
+        # count as ALL, which WITH TIES can't have.
+        "SELECT a FROM t ORDER BY a FETCH FIRST (b IN (SELECT 1)) ROWS WITH TIES" => nil,
+        "SELECT a FROM t ORDER BY a FETCH FIRST (b = ANY(SELECT 1)) ROWS WITH TIES" =>
+          "SELECT a FROM t ORDER BY a FETCH FIRST (b = ANY (SELECT 1)) ROWS WITH TIES",
+        "SELECT a FROM t ORDER BY a FETCH FIRST (b < ALL (SELECT 1)) ROWS WITH TIES" => nil,
+        "SELECT a FROM t ORDER BY a FETCH FIRST (NULL) ROWS WITH TIES" => nil,
+        # A prefix operator binds looser than + - * / % and ^, so it leaves
+        # AT TIME ZONE open on its right to them.
+        "SELECT (a AT TIME ZONE @ b) + c, (a AT TIME ZONE @ b) - c FROM t" => nil,
+        "SELECT (a AT TIME ZONE @ b) * c, (a AT TIME ZONE @ b) / c, (a AT TIME ZONE @ b) % c FROM t" => nil,
+        "SELECT (a AT TIME ZONE @ b) ^ c FROM t" => nil,
+        # ANY leaves its left operand bare, so it shows each level: + under
+        # * / and %, * under ^, and || under +. Each associates left.
+        "SELECT (a + b) * ANY(c), (a - b) / ANY(c), (a + b) % ANY(c), (a * b) ^ ANY(c) FROM t" => nil,
+        "SELECT (a + b) + ANY(c), (a * b) * ANY(c), (a ^ b) ^ ANY(c), (a || b) + ANY(c) FROM t" =>
+          "SELECT a + b + ANY(c), a * b * ANY(c), a ^ b ^ ANY(c), (a || b) + ANY(c) FROM t",
         # OPERATOR(pg_catalog.=) binds as any other OPERATOR does, not as =.
         "SELECT y OPERATOR(pg_catalog.=) (a IN (SELECT 1)) FROM t" => nil,
         "SELECT ((a OR b))[1], ((-1))[1], ('{1}')[1], ((a IS NULL))[1:2], (EXISTS (SELECT 1))[1] FROM t" =>
@@ -188,7 +217,20 @@ RSpec.describe Quaack::Enclave::Deparse do
         "SELECT * FROM t WHERE a BETWEEN b IS DISTINCT FROM c AND d AND a BETWEEN b::int AND c",
         "SELECT * FROM t WHERE a = ANY(b) AND c NOT IN (SELECT 1) AND lower(d) ILIKE $1",
         "SELECT created_at AT TIME ZONE 'UTC', -a::int, (-1)::int, a COLLATE \"C\" || b FROM t",
-        "SELECT a[1], $1[2], (SELECT b)[1], (a + b)[1], (a::int[])[1] FROM t"
+        "SELECT a[1], $1[2], (SELECT b)[1], (a + b)[1], (a::int[])[1] FROM t",
+        # AT TIME ZONE associates left, the deparser parenthesizes an array
+        # or a subscript it subscripts, a sign is a b_expr, and these are
+        # plain calls, not AT TIME ZONE or POSITION.
+        "SELECT a AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago' FROM t",
+        "SELECT (ARRAY[1, 2])[1], (a[1])[2] FROM t",
+        # || binds as the prefix operator does, so it takes the AT TIME
+        # ZONE, and a NULL count without WITH TIES can be written as ALL.
+        "SELECT (a AT TIME ZONE @ b) || c FROM t",
+        "SELECT a FROM t ORDER BY a FETCH FIRST (b + 1) ROWS WITH TIES",
+        "SELECT a FROM t LIMIT NULL",
+        "SELECT * FROM t WHERE a BETWEEN -b AND c AND position(-a IN b) > 0",
+        "SELECT pg_catalog.timezone('UTC', a || b), pg_catalog.timezone(a IS NULL), " \
+        "pg_catalog.position(a IS NULL, b) FROM t"
       ].each do |sql|
         it "adds none to #{sql}" do
           expect(described_class.faithfully(tree(sql))).to eq(PgQuery.deparse(tree(sql)))
