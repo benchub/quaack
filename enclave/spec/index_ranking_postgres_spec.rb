@@ -161,4 +161,60 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(ranking.combination.candidates).to eq([on_b, on_a])
     expect(ranking.combination.used).to eq(slow: [true, true])
   end
+
+  # Each index helps one branch, and they help in the order of their
+  # tables' sizes. The input lists them smallest first.
+  let(:branches) do
+    "SELECT 1 FROM t WHERE a = $1 UNION ALL SELECT 1 FROM o WHERE x = $2 " \
+      "UNION ALL SELECT 1 FROM w WHERE z = $3 UNION ALL SELECT 1 FROM cu WHERE y = $4"
+  end
+  let(:branch_sets) { { slow: %w[5 5 5 5] } }
+  let(:on_a) { candidate(key: ["a"]) }
+  let(:on_z) { candidate("w", key: ["z"]) }
+
+  it "keeps the top three and combines at most three indexes, picking the best addition each time" do
+    ranking = ranked(branches, branch_sets, [on_y, on_z, on_x, on_a])
+
+    expect(ranking.top.map(&:candidates)).to eq([[on_a], [on_x], [on_z]])
+    expect(ranking.combination.candidates).to eq([on_a, on_x, on_z])
+    expect(ranking.combination.used).to eq(slow: [true, true, true])
+  end
+
+  let(:point) { "SELECT * FROM t WHERE a = $1" }
+  let(:point_sets) { { slow: ["5"], typical: ["70000"] } }
+
+  # The wider index's DDL sorts first, so only size puts it second.
+  it "breaks a tie in the worst case by size, smallest first" do
+    wider = candidate(key: [key("a", :desc), "c"])
+    ranking = ranked(point, point_sets, [wider, on_a])
+
+    expect(ranking.top.map(&:worst_reduction).uniq.size).to eq(1)
+    expect(wider.to_ddl).to be < on_a.to_ddl
+    expect(ranking.top.map(&:candidates)).to eq([[on_a], [wider]])
+    expect(ranking.top.map(&:size)).to eq(ranking.top.map(&:size).sort.uniq)
+  end
+
+  it "breaks a tie in both the worst case and size by DDL, whatever the order given" do
+    descending = candidate(key: [key("a", :desc)])
+    rankings = [[descending, on_a], [on_a, descending]].map { |given| ranked(point, point_sets, given) }
+
+    expect(rankings.map { |r| r.top.map(&:worst_reduction).uniq.size }).to eq([1, 1])
+    expect(rankings.map { |r| r.top.map(&:size).uniq.size }).to eq([1, 1])
+    expect(descending.to_ddl).to be < on_a.to_ddl
+    expect(rankings.map { |r| r.top.map(&:ddl) }).to all(eq([[descending.to_ddl], [on_a.to_ddl]]))
+  end
+
+  # Adding the index on a or the one on c to the one on b lowers the worst
+  # case by the same amount, so DDL decides which pair the greedy step
+  # keeps.
+  it "combines the same way, whatever the order given" do
+    query = "SELECT a FROM t WHERE b = $1 AND a = $2 UNION ALL SELECT a FROM t WHERE b = $3 AND c = $4"
+    sets = { slow: %w[7 7 7 9] }
+    report = single_test(query, sets, [on_b, on_a, candidate(key: ["c"])])
+    rankings = report.results.permutation.map { |results| rank(query, sets, report, results:) }
+
+    expect(rankings.map { |r| r.combination.ddl }).to all(eq([on_b.to_ddl, on_a.to_ddl]))
+    expect(rankings.map { |r| r.top.map(&:ddl) }.uniq.size).to eq(1)
+    expect(rankings.map { |r| r.combination.costs }.uniq.size).to eq(1)
+  end
 end
