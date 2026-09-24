@@ -77,14 +77,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ### 20260922-18. 3b schema dump and subset. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-19. 3c statistics.
-
-Pull planner statistics (including extended statistics), index definitions, and index sizes for the query's tables. Keep them in the governed store as value-class data.
-
-- **Depends on:** 20260922-17.
-- **README:** 3c.
-- **Note (from the review of 20260922-32):** Leave out invalid indexes (`indisvalid = false`), or a failed `CREATE INDEX CONCURRENTLY` counts as covering in 5a-3. Also fill `TableStatistics#indexes`, and the low-cardinality set for 3f, in the shapes `Dedupe` takes.
-- **Status:** todo
+### 20260922-19. 3c statistics. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-20. 3d volatility check. Done, see BACKLOG-COMPLETE.md.
 
@@ -1121,6 +1114,20 @@ Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-1
 - **Depends on:** 20260924-16.
 - **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
 - **README:** 3g.
+- **Status:** todo
+
+### 20260924-26. 3c statistics loose ends.
+
+Findings from the build and reviews of 20260922-19:
+- **pg_stats and pg_stats_ext silently hide columns the operator can't SELECT,** so a role with limited privileges gets missing statistics with no error. Detect this and refuse it, or record it.
+- **Values and names aren't converted to UTF-8,** unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
+- **Confirm the name `few_distinct`** before 20260922-22 (3f) uses it. 3f has to take out PII columns to get the low-cardinality set.
+- **The pg_stats inherited-filter mutant is killed only by luck:** without the filter, row order decides which duplicate wins.
+- **A column type with a delimiter other than a comma (such as `box`)** would make PgArray raise and abort 3c. That's rare, so list it as unsupported in v1 or skip it.
+
+- **Depends on:** 20260922-19.
+- **Came from:** The build and reviews of 20260922-19.
+- **README:** 3c.
 - **Status:** todo
 
 ## After version 1.
