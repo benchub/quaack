@@ -33,10 +33,14 @@ module Quaack
     # with its real value, not with a generic plan. Each EXPLAIN prepares
     # the query afresh, with the extended protocol, which refuses more than
     # one statement. It runs EXPLAIN EXECUTE once and deallocates, so every
-    # plan is a new one that sees the hypothetical index of the moment. (A
-    # prepared statement with no parameters always reuses its first plan,
-    # even with plan_cache_mode = force_custom_plan, so it can't be kept
-    # across candidates.) A value goes into EXECUTE as a quoted literal,
+    # plan is a new one that sees the hypothetical index of the moment. The
+    # run sets plan_cache_mode = force_custom_plan for its transaction,
+    # because the setting matters: under force_generic_plan, which the
+    # session or the database may set, Postgres plans even a statement's
+    # first EXECUTE generically, without the literal. A statement with no
+    # parameters still gets a generic plan, by design, and keeps it for as
+    # long as it's prepared. That's fine, since it's prepared afresh for
+    # each EXPLAIN. A value goes into EXECUTE as a quoted literal,
     # which Postgres reads with the parameter's type, just as it reads a
     # bound text parameter. EXECUTE can't take a bound parameter, since its
     # own parameter types are unknown.
@@ -53,8 +57,9 @@ module Quaack
     # A failure creating the index counts as a refusal unless its SQLSTATE
     # says the session, not the definition, is the problem: a connection
     # error (class 08), a transaction state or rollback (25, 40), a lack of
-    # resources (53), a cancel, timeout, or shutdown (57), a system error
-    # (58), corrupt data (XX001, XX002), or no SQLSTATE at all. Those stop
+    # resources (53), a cancel, timeout, or shutdown (57), a lock timeout
+    # (55P03), a system error (58), corrupt data (XX001, XX002), or no
+    # SQLSTATE at all. Those stop
     # the run with Error(:hypopg_failed). HypoPG reports much of what it
     # refuses, such as a column that doesn't exist, as XX000, so that
     # counts as a refusal.
@@ -131,7 +136,7 @@ module Quaack
 
       # SQLSTATE classes and codes that mean the session failed, not the
       # candidate. See the comment at the top.
-      SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\AXX00[12]\z/
+      SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\A(?:55P03|XX001|XX002)\z/
 
       # libpq's PG_DIAG_SQLSTATE, the field code for an error's SQLSTATE.
       SQLSTATE_FIELD = "C".ord
@@ -209,6 +214,7 @@ module Quaack
 
         def start
           @connection.exec("BEGIN")
+          @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
           @connection.exec("SELECT hypopg_reset()")
         end
 

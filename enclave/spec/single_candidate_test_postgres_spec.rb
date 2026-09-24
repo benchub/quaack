@@ -286,21 +286,78 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
       .to eq(described_class::Refusal.new(rule: :hypopg_refused, sqlstate: "XX000"))
   end
 
-  # A cancel while creating the index isn't HypoPG refusing it, so the
-  # run stops. The candidate's predicate raises query_canceled when HypoPG
-  # reads it.
-  it "stops the run when creating an index fails for a reason that isn't a refusal" do
+  def failing_function(code)
     conn.exec(<<~SQL)
-      CREATE FUNCTION cancelled() RETURNS int IMMUTABLE LANGUAGE plpgsql AS $$
+      CREATE FUNCTION failing() RETURNS int IMMUTABLE LANGUAGE plpgsql AS $$
       BEGIN
-        RAISE EXCEPTION 'cancelled' USING ERRCODE = 'query_canceled';
+        RAISE EXCEPTION 'failing' USING ERRCODE = '#{code}';
       END $$;
     SQL
-    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] },
-                      [candidate(key: ["a"], predicate: "a = cancelled()"), candidate(key: ["a"])])
+  end
 
-    expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: "57014", cause: nil)
-    expect(leftovers).to eq(clean)
+  # A failure while creating the index that says the session, not the
+  # definition, is at fault isn't HypoPG refusing it, so the run stops.
+  # The candidate's predicate raises the SQLSTATE when HypoPG reads it.
+  {
+    "a cancel" => "57014",
+    "a deadlock" => "40P01",
+    "too many connections" => "53300",
+    "an I/O error" => "58030",
+    "corrupt data" => "XX001",
+    "a corrupt index" => "XX002",
+    "an aborted transaction" => "25P02",
+    "a lost connection" => "08006",
+    "a lock timeout" => "55P03"
+  }.each do |what, code|
+    it "stops the run when creating an index fails with #{what} (#{code})" do
+      failing_function(code)
+      error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] },
+                        [candidate(key: ["a"], predicate: "a = failing()"), candidate(key: ["a"])])
+
+      expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: code, cause: nil)
+      expect(leftovers).to eq(clean)
+    end
+  end
+
+  it "records an error in the definition that a function in the predicate raises as refused" do
+    failing_function("22023")
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a"], predicate: "a = failing()")])
+
+    expect(report.results.first.refusal)
+      .to eq(described_class::Refusal.new(rule: :hypopg_refused, sqlstate: "22023"))
+  end
+
+  # Whether the candidate on s was used for each literal set, and the
+  # Filters of the baseline's slow plan and the candidate's worst plan. A
+  # generic plan can't see the literal, so every literal set would plan
+  # alike, and each Filter would read (s = $1).
+  def skewed_summary(connection)
+    report = described_class.run(connection, query: "SELECT * FROM t WHERE s = $1",
+                                             literal_sets: { slow: ["10"], worst: ["0"] },
+                                             candidates: [candidate(key: ["s"])])
+    plans = report.results.first.plans
+    { used: plans.transform_values(&:used), filters: filters(report.baseline.plans[:slow], plans[:worst]) }
+  end
+
+  def filters(*plans) = plans.map { |p| p.raw_plan.first["Plan"]["Filter"] }
+
+  let(:custom_plans) { { used: { slow: true, worst: false }, filters: ["(s = 10)", "(s = 0)"] } }
+
+  it "plans each literal with a custom plan when the session asks for generic plans" do
+    conn.exec("SET plan_cache_mode = force_generic_plan")
+    expect(skewed_summary(conn)).to eq(custom_plans)
+    expect(conn.exec("SHOW plan_cache_mode").getvalue(0, 0)).to eq("force_generic_plan")
+  end
+
+  # test_database is this example's own database, so the setting reaches
+  # no other example.
+  it "plans each literal with a custom plan when the database asks for generic plans" do
+    conn.exec("ALTER DATABASE #{conn.escape_identifier(test_database.name)} SET plan_cache_mode = force_generic_plan")
+    other = test_database.connect
+    expect(other.exec("SHOW plan_cache_mode").getvalue(0, 0)).to eq("force_generic_plan")
+    expect(skewed_summary(other)).to eq(custom_plans)
+  ensure
+    other&.close
   end
 
   it "puts the caller's notice receiver back even when cleanup fails" do
