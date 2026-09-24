@@ -15,8 +15,14 @@ RSpec.describe Quaack::Driver::Transport do
 
   after { FileUtils.rm_rf(dir) }
 
-  def probe(body, **step) = local.new(command: EnclaveCommands.probe(dir, body, **step))
-  def raw(source) = local.new(command: EnclaveCommands.raw(source))
+  # A timeout well short of the default, so a bug that leaves a call
+  # waiting fails the spec rather than hanging it.
+  let(:timeout) { 60 }
+
+  def probe(body, **step) = local.new(command: EnclaveCommands.probe(dir, body, **step), timeout:)
+  def raw(source) = local.new(command: EnclaveCommands.raw(source), timeout:)
+  # The file descriptors this process has open.
+  def open_fds = Dir.children("/dev/fd").size
 
   # The EnclaveError that calling transport raises.
   def failure(transport, subcommand = "probe", **)
@@ -29,7 +35,7 @@ RSpec.describe Quaack::Driver::Transport do
 
   describe "a run that succeeds" do
     it "returns the messages of the real quaacks version step, without the done line" do
-      result = local.new(command: EnclaveCommands.quaacks).call("version")
+      result = local.new(command: EnclaveCommands.quaacks, timeout:).call("version")
 
       expect(result.messages).to eq([{ "type" => "version", "version" => EnclaveCommands.enclave_version }])
     end
@@ -98,8 +104,15 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    it "goes on reading when the run closes its stdin before taking all its input" do
+      step = raw(%(STDIN.close; sleep 0.5; print %({"type":"version","version":"1"}\\n{"type":"done"}\\n)))
+
+      expect(step.call("probe", input: { "a" => "x" * (8 * 1024 * 1024) }).messages)
+        .to eq([{ "type" => "version", "version" => "1" }])
+    end
+
     it "doesn't hang when the step never reads a large input" do
-      result = local.new(command: EnclaveCommands.quaacks).call("version", input: { "a" => "x" * (8 * 1024 * 1024) })
+      result = local.new(command: EnclaveCommands.quaacks, timeout:).call("version", input: { "a" => "x" * (8 * 1024 * 1024) })
 
       expect(result.messages.map { it["type"] }).to eq(["version"])
     end
@@ -142,6 +155,22 @@ RSpec.describe Quaack::Driver::Transport do
 
       expect { caller.join }.to raise_error(Interrupt)
       expect(alive?(Integer(File.read(pid_file)))).to be(false)
+    end
+
+    # A grandchild that keeps the child's stdin open, and never reads it,
+    # could leave a write of a large input blocked after the child ends.
+    # The call returns once the child has, and leaves no thread or pipe
+    # behind.
+    it "returns once the run ends, even if something it started still holds stdin" do
+      grandchild = "exec 3<&0; sleep 8 <&3 >/dev/null 2>&1 & printf '{\"type\":\"done\"}\\n'; exit 0"
+      step = local.new(command: ["sh", "-c", grandchild], timeout: 5)
+      threads = Thread.list.size
+      fds = open_fds
+      result = nil
+
+      expect(elapsed { result = step.call("probe", input: { "a" => "x" * (16 * 1024 * 1024) }) }).to be < 4
+      expect(result.messages).to eq([])
+      expect([Thread.list.size, open_fds]).to eq([threads, fds])
     end
 
     it "kills a run that ignores SIGTERM with SIGKILL" do
@@ -217,7 +246,7 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "treats the CLI refusing the call as usage, exit 64" do
-      error = failure(local.new(command: EnclaveCommands.quaacks), "version", args: { "bogus" => "x" })
+      error = failure(local.new(command: EnclaveCommands.quaacks, timeout:), "version", args: { "bogus" => "x" })
 
       expect([error.step, error.rule, error.sqlstate, error.exit_status]).to eq(["version", "usage", nil, 64])
       expect([error.usage?, error.step_failed?, error.killed?]).to eq([true, false, false])
