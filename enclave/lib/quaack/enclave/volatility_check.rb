@@ -63,9 +63,14 @@ module Quaack
 
       # The volatile functions a call could reach: each one's schema and
       # name, and those of the function it resolved to, which differ only
-      # for an aggregate's support functions.
+      # for an aggregate's support functions. Every name that's an
+      # identifier comes back quoted the way Postgres quotes it, so a
+      # message naming it reads only one way. An operator's name is
+      # symbols, never quoted. A variadic parameter needs at least one
+      # argument, unless it has a default.
       FUNCTION_SQL = <<~SQL
-        SELECT n.nspname, p.proname, vn.nspname, v.proname
+        SELECT pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),
+               pg_catalog.quote_ident(vn.nspname), pg_catalog.quote_ident(v.proname)
         FROM pg_catalog.pg_proc p
         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
         LEFT JOIN pg_catalog.pg_aggregate a ON a.aggfnoid = p.oid
@@ -73,14 +78,15 @@ module Quaack
                                                a.aggdeserialfn, a.aggmtransfn, a.aggminvtransfn, a.aggmfinalfn)
         JOIN pg_catalog.pg_namespace vn ON vn.oid = v.pronamespace
         WHERE n.nspname = ANY ($1::text[]) AND p.proname = $2 AND v.provolatile = 'v'
-          AND ($3::int BETWEEN p.pronargs - p.pronargdefaults AND p.pronargs
-               OR (p.provariadic <> 0 AND $3::int >= p.pronargs - p.pronargdefaults - 1))
+          AND $3::int >= p.pronargs - p.pronargdefaults
+          AND ($3::int <= p.pronargs OR p.provariadic <> 0)
         ORDER BY pg_catalog.array_position($1::text[], n.nspname::text), p.oid, v.oid
         LIMIT 1
       SQL
 
       OPERATOR_SQL = <<~SQL
-        SELECT n.nspname, o.oprname, fn.nspname, f.proname
+        SELECT pg_catalog.quote_ident(n.nspname), o.oprname, pg_catalog.quote_ident(fn.nspname),
+               pg_catalog.quote_ident(f.proname)
         FROM pg_catalog.pg_operator o
         JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace
         JOIN pg_catalog.pg_proc f ON f.oid = o.oprcode
@@ -113,7 +119,8 @@ module Quaack
           SELECT target.named, t.typinput::oid
           FROM target JOIN pg_catalog.pg_type t ON t.oid = target.oid
         )
-        SELECT named.nspname, named.typname, fn.nspname, f.proname
+        SELECT pg_catalog.quote_ident(named.nspname), pg_catalog.quote_ident(named.typname),
+               pg_catalog.quote_ident(fn.nspname), pg_catalog.quote_ident(f.proname)
         FROM called
         JOIN named ON named.oid = called.named
         JOIN pg_catalog.pg_proc f ON f.oid = called.oid

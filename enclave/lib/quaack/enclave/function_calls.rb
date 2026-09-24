@@ -67,8 +67,10 @@ module Quaack
         end
       end
 
+      # An ordered-set or hypothetical-set aggregate's WITHIN GROUP
+      # arguments count toward its pronargs, like its direct ones.
       def function_call(func)
-        count = func.args.size
+        count = func.args.size + (func.agg_within_group ? func.agg_order.size : 0)
         function = call_to(:function, func.funcname, count)
         count == 1 ? [function, call_to(:cast, func.funcname, nil)] : [function]
       end

@@ -145,7 +145,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       function('a."Bump"()', "VOLATILE")
       function("a.bump()", "STABLE")
 
-      expect { check('SELECT a."Bump"()') }.to volatile_error("function a.Bump is volatile")
+      expect { check('SELECT a."Bump"()') }.to volatile_error(%(function a."Bump" is volatile))
       expect(check("SELECT a.Bump()")).to be_nil
     end
   end
@@ -164,6 +164,11 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
     it "searches only the schema a qualified name gives" do
       expect(check("SELECT b.f()", path("a"))).to be_nil
+    end
+
+    it "takes the schema, not the database, from a name that gives both" do
+      expect { check("SELECT b.a.f()", path("b")) }.to volatile_error("function a.f is volatile")
+      expect(check("SELECT a.b.f()", path("a"))).to be_nil
     end
 
     it "names the volatile match in the earliest schema of the path" do
@@ -221,6 +226,22 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       expect { check("SELECT a.f(1, VARIADIC ARRAY[2])") }.to volatile_error("function a.f is volatile")
     end
 
+    it "needs at least one argument for a variadic parameter, as Postgres does" do
+      function("a.f(x int, VARIADIC rest int[])", "VOLATILE")
+
+      expect { conn.exec("SELECT a.f(1)") }.to raise_error(PG::UndefinedFunction)
+      expect(check("SELECT a.f(1)")).to be_nil
+      expect { check("SELECT a.f(1, 2)") }.to volatile_error("function a.f is volatile")
+    end
+
+    it "lets a variadic parameter's default stand in for its arguments" do
+      function("a.f(x int, VARIADIC rest int[] DEFAULT '{}')", "VOLATILE")
+
+      expect(conn.exec("SELECT a.f(1)").getvalue(0, 0)).to eq("1")
+      expect { check("SELECT a.f(1)") }.to volatile_error("function a.f is volatile")
+      expect(check("SELECT a.f()")).to be_nil
+    end
+
     it "counts named arguments" do
       function("a.f(x int, y int)", "VOLATILE")
 
@@ -242,6 +263,11 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       expect(check("SELECT a.steady(total_cents) FROM orders")).to be_nil
     end
 
+    it "doesn't count an ordinary aggregate's ORDER BY as arguments" do
+      expect { check("SELECT a.shaky(total_cents ORDER BY id, status) FROM orders") }
+        .to volatile_error("function a.shaky calls volatile function a.step")
+    end
+
     it "aborts when it's used as a window function" do
       expect { check("SELECT a.shaky(total_cents) OVER () FROM orders") }
         .to volatile_error("function a.shaky calls volatile function a.step")
@@ -253,6 +279,92 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
       expect { check("SELECT a.late(total_cents) FROM orders") }
         .to volatile_error("function a.late calls volatile function a.finish")
+    end
+
+    it "checks its combine function" do
+      function("a.combine(s int, t int)", "VOLATILE", body: "SELECT s + t")
+      conn.exec("CREATE AGGREGATE a.merged(int) (SFUNC = a.calm_step, STYPE = int, COMBINEFUNC = a.combine)")
+
+      expect { check("SELECT a.merged(total_cents) FROM orders") }
+        .to volatile_error("function a.merged calls volatile function a.combine")
+    end
+
+    # A serial function takes internal, which only C functions can, so
+    # these borrow avg(numeric)'s with LANGUAGE internal, which needs the
+    # harness's superuser.
+    {
+      "serial" => ["SERIALFUNC", "numeric_avg_serialize", "(internal)", "bytea"],
+      "deserial" => ["DESERIALFUNC", "numeric_avg_deserialize", "(bytea, internal)", "internal"]
+    }.each do |kind, (option, borrowed, args, returns)|
+      it "checks its #{kind} function" do
+        functions = { "SERIALFUNC" => "pg_catalog.numeric_avg_serialize",
+                      "DESERIALFUNC" => "pg_catalog.numeric_avg_deserialize" }
+        conn.exec("CREATE FUNCTION a.shaky_#{kind}#{args} RETURNS #{returns} LANGUAGE internal VOLATILE " \
+                  "STRICT AS '#{borrowed}'")
+        functions[option] = "a.shaky_#{kind}"
+        conn.exec(<<~SQL)
+          CREATE AGGREGATE a.avg_#{kind}(numeric) (
+            SFUNC = pg_catalog.numeric_avg_accum, STYPE = internal, FINALFUNC = pg_catalog.numeric_avg,
+            COMBINEFUNC = pg_catalog.numeric_avg_combine,
+            SERIALFUNC = #{functions["SERIALFUNC"]}, DESERIALFUNC = #{functions["DESERIALFUNC"]})
+        SQL
+
+        expect { check("SELECT a.avg_#{kind}(total_cents) FROM orders") }
+          .to volatile_error("function a.avg_#{kind} calls volatile function a.shaky_#{kind}")
+      end
+    end
+
+    # The moving-aggregate functions run when it's a window function over
+    # a moving frame.
+    {
+      "forward transition" => ["a.step", "a.calm_step", nil],
+      "inverse transition" => ["a.calm_step", "a.step", nil],
+      "final" => ["a.calm_step", "a.calm_step", "a.finish"]
+    }.each do |kind, (forward, inverse, final)|
+      it "checks its moving-aggregate #{kind} function" do
+        function("a.finish(s int)", "VOLATILE", body: "SELECT s")
+        mfinal = final ? ", MFINALFUNC = #{final}" : ""
+        conn.exec(<<~SQL)
+          CREATE AGGREGATE a.moving(int) (
+            SFUNC = a.calm_step, STYPE = int, INITCOND = '0',
+            MSFUNC = #{forward}, MINVFUNC = #{inverse}, MSTYPE = int, MINITCOND = '0'#{mfinal})
+        SQL
+
+        called = [forward, inverse, final].find { |f| f && f != "a.calm_step" }
+        expect { check("SELECT a.moving(total_cents) OVER (ROWS 2 PRECEDING) FROM orders") }
+          .to volatile_error("function a.moving calls volatile function #{called}")
+      end
+    end
+
+    # An ordered-set aggregate's pronargs counts its direct arguments and
+    # its WITHIN GROUP ones. Its final function takes internal, so it
+    # borrows percentile_disc's with LANGUAGE internal.
+    it "counts an ordered-set aggregate's WITHIN GROUP arguments" do
+      conn.exec("CREATE FUNCTION a.shaky_final(internal, float8, anyelement) RETURNS anyelement " \
+                "LANGUAGE internal VOLATILE AS 'percentile_disc_final'")
+      conn.exec(<<~SQL)
+        CREATE AGGREGATE a.pct(float8 ORDER BY anyelement) (
+          SFUNC = pg_catalog.ordered_set_transition, STYPE = internal,
+          FINALFUNC = a.shaky_final, FINALFUNC_EXTRA)
+      SQL
+      sql = "SELECT a.pct(0.5) WITHIN GROUP (ORDER BY id) FROM orders"
+
+      expect(conn.exec(sql).ntuples).to eq(1)
+      expect { check(sql) }.to volatile_error("function a.pct calls volatile function a.shaky_final")
+    end
+
+    it "counts a hypothetical-set aggregate's WITHIN GROUP arguments" do
+      conn.exec('CREATE FUNCTION a.shaky_rank(internal, VARIADIC "any") RETURNS bigint ' \
+                "LANGUAGE internal VOLATILE AS 'hypothetical_rank_final'")
+      conn.exec(<<~SQL)
+        CREATE AGGREGATE a.hrank(VARIADIC "any" ORDER BY VARIADIC "any") (
+          SFUNC = pg_catalog.ordered_set_transition_multi, STYPE = internal,
+          FINALFUNC = a.shaky_rank, FINALFUNC_EXTRA, HYPOTHETICAL)
+      SQL
+      sql = "SELECT a.hrank(3, 'x') WITHIN GROUP (ORDER BY id, status) FROM orders"
+
+      expect(conn.exec(sql).ntuples).to eq(1)
+      expect { check(sql) }.to volatile_error("function a.hrank calls volatile function a.shaky_rank")
     end
   end
 
@@ -347,6 +459,15 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
         expect(check(sql, path("b"))).to be_nil
         expect { check(sql, path("a")) }.to volatile_error("operator a.#{op} calls volatile function a.#{name}")
       end
+    end
+
+    it "doesn't count = for a searched CASE or a join with ON" do
+      name = operator("=", "VOLATILE")
+
+      expect(check("SELECT CASE WHEN true THEN 1 END", path("a"))).to be_nil
+      expect(check("SELECT * FROM (SELECT 1 AS k) x JOIN (SELECT 1 AS j) y ON true", path("a"))).to be_nil
+      expect { check("SELECT CASE 1 WHEN 2 THEN 3 END", path("a")) }
+        .to volatile_error("operator a.= calls volatile function a.#{name}")
     end
 
     {
@@ -457,6 +578,26 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
   describe "the error" do
     let(:sentinel) { "QUAACK_SENTINEL_5c1e" }
+
+    # Postgres's quote_ident: quoted only when it has to be, with "" for a
+    # quote, so a name with dots, commas, or quotes still reads one way.
+    it "quotes each name the way Postgres would" do
+      odd = conn.quote_ident('we,ird"{x}')
+      conn.exec("CREATE SCHEMA #{odd}")
+      function(%(#{odd}."f{""}"()), "VOLATILE")
+      function('a."select"()', "VOLATILE")
+      function(%(#{odd}.op(x int, y int)), "VOLATILE", returns: "boolean", body: "SELECT true")
+      conn.exec("CREATE OPERATOR #{odd}.%%% (LEFTARG = int, RIGHTARG = int, FUNCTION = #{odd}.op)")
+      conn.exec('CREATE TYPE a."Pair" AS (x int)')
+      function('a."To Pair"(int)', "VOLATILE", returns: 'a."Pair"', body: 'SELECT ROW($1)::a."Pair"')
+      conn.exec('CREATE CAST (int AS a."Pair") WITH FUNCTION a."To Pair"(int)')
+
+      expect { check(%(SELECT #{odd}."f{""}"())) }.to volatile_error(%(function "we,ird""{x}"."f{""}" is volatile))
+      expect { check('SELECT a."select"()') }.to volatile_error(%(function a."select" is volatile))
+      expect { check("SELECT 1 OPERATOR(#{odd}.%%%) 2") }
+        .to volatile_error(%(operator "we,ird""{x}".%%% calls volatile function "we,ird""{x}".op))
+      expect { check('SELECT 1::a."Pair"') }.to volatile_error(%(cast to a."Pair" calls volatile function a."To Pair"))
+    end
 
     it "never quotes the query's literals" do
       function("a.bump(text)", "VOLATILE")
