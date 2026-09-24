@@ -8,6 +8,7 @@ require_relative "enclave/index_candidate"
 require_relative "enclave/statistics"
 require_relative "enclave/generator_one"
 require_relative "enclave/generator_two"
+require_relative "enclave/canonical_plan"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
