@@ -17,7 +17,7 @@ module Quaack
     # - settings: shared_buffers, effective_cache_size, work_mem,
     #   random_page_cost, and jit.
     # - parallel_settings: every setting named for parallel query, plus
-    #   max_worker_processes.
+    #   max_worker_processes and enable_gathermerge.
     # - plan_settings: production's own value of each setting the input
     #   plan's SETTINGS lists, or nil for one production doesn't have. The
     #   plan's values are the operator's session's, so they aren't used.

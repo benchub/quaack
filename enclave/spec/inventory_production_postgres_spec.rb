@@ -64,13 +64,22 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       expect(inventory["settings"]["work_mem"]).to eq(ProductionServer::WORK_MEM)
     end
 
-    it "records every parallel setting, and max_worker_processes, which parallel workers come from" do
-      names = conn.exec("SELECT name FROM pg_settings WHERE name LIKE '%parallel%' ORDER BY name").column_values(0)
+    # Postgres 18's parallel settings, written out rather than found by a
+    # query, so a name the step's own query misses shows up here. That
+    # includes enable_gathermerge and max_worker_processes, which parallel
+    # plans and workers depend on without "parallel" in their names.
+    let(:parallel_settings) do
+      %w[
+        debug_parallel_query enable_gathermerge enable_parallel_append enable_parallel_hash
+        max_parallel_apply_workers_per_subscription max_parallel_maintenance_workers max_parallel_workers
+        max_parallel_workers_per_gather max_worker_processes min_parallel_index_scan_size
+        min_parallel_table_scan_size parallel_leader_participation parallel_setup_cost parallel_tuple_cost
+      ]
+    end
 
-      expect(inventory["parallel_settings"].keys).to eq([*names, "max_worker_processes"].sort)
-      expect(inventory["parallel_settings"]).to eq(inventory["parallel_settings"].keys.to_h { [it, show(it)] })
-      expect(names).to include("max_parallel_workers_per_gather", "parallel_setup_cost", "enable_parallel_hash",
-                               "min_parallel_table_scan_size", "debug_parallel_query")
+    it "records every parallel setting, including enable_gathermerge and max_worker_processes" do
+      expect(inventory["parallel_settings"].keys).to eq(parallel_settings)
+      expect(inventory["parallel_settings"]).to eq(parallel_settings.to_h { [it, show(it)] })
     end
 
     it "records production's own value of each setting the plan's SETTINGS lists, and nil for one it lacks" do

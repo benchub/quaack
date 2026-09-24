@@ -31,10 +31,12 @@ module Quaack
         # Each setting's name and value, as SHOW prints it, for the names in
         # the JSON array $1. A name production doesn't know gets NULL.
         SETTINGS_SQL = "SELECT name, current_setting(name, true) FROM json_array_elements_text($1::json) AS name"
-        # Every setting named for parallel query, plus max_worker_processes,
-        # the pool parallel workers come from.
-        PARALLEL_SQL = "SELECT name, current_setting(name) FROM pg_settings " \
-                       "WHERE name LIKE '%parallel%' OR name = 'max_worker_processes' ORDER BY name"
+        # Every setting named for parallel query, plus two that parallel
+        # plans depend on without the word in their names:
+        # max_worker_processes, the pool parallel workers come from, and
+        # enable_gathermerge, which turns on the Gather Merge node.
+        PARALLEL_SQL = "SELECT name, current_setting(name) FROM pg_settings WHERE name LIKE '%parallel%' " \
+                       "OR name IN ('max_worker_processes', 'enable_gathermerge') ORDER BY name"
         EXTENSIONS_SQL = "SELECT extname, extversion FROM pg_extension ORDER BY extname"
         DATABASE_SQL = "SELECT datname, datcollate, datctype, datlocprovider::text, datlocale, datcollversion " \
                        "FROM pg_database WHERE datname = current_database()"
