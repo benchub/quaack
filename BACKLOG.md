@@ -81,17 +81,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ### 20260922-20. 3d volatility check. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-21. 3e literal set.
-
-Build the slow, worst-case, and typical literal sets and keep them in the governed store.
-
-- **Depends on:** 20260922-14, 20260922-19.
-- **README:** 3e.
-- **Status:** todo
-- **Decided:** Pick values by operator.
-  - **Ranges:** the worst case is the histogram bound that selects the most rows, and the typical value is the middle bound.
-  - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
-  - **`LIKE` and any other operator:** use the slow literal in all three sets.
+### 20260922-21. 3e literal set. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-22. 3f PII and low-cardinality classification. Done, see BACKLOG-COMPLETE.md.
 
@@ -1133,6 +1123,18 @@ Findings from the build and reviews of 20260922-22:
 - **Depends on:** 20260922-22.
 - **Came from:** The build and reviews of 20260922-22.
 - **README:** 3f.
+- **Status:** todo
+
+### 20260924-28. 3e literal set loose ends.
+
+Findings from the build and reviews of 20260922-21:
+- **Django date filters get no worst-case or typical value.** psycopg2 writes datetimes and dates as `'...'::timestamptz` and `'...'::date`, and arrays as `'{..}'::bigint[]`. 3g turns these into `$n::type` cast placeholders, and 3e always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- **3g doesn't store the redacted SQL,** so whatever wires 3e in (step 5 or step 9 orchestration) has to pass it in or store it.
+- **The boolean `t`/`f` check at `literal_set.rb:326` survives mutation.** pg_stats always emits `t` or `f`, so either pin it with a planted bad value or drop it.
+
+- **Depends on:** 20260922-21.
+- **Came from:** The build and reviews of 20260922-21.
+- **README:** 3e.
 - **Status:** todo
 
 ## After version 1.

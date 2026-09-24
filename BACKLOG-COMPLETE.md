@@ -876,3 +876,22 @@ Classify each column as PII or not, using a configured list and a high-cardinali
 - **Decided:** The PII list is a set of `schema.table.column` globs, such as `*.users.email`, in the `quaacks` config file on the jump server. A text column is high-cardinality when it has 50 or more distinct values, the same line 3f uses for low-cardinality. The config can change the threshold.
 - **Decided (user, September 24):** Low-cardinality also requires a positive pg_stats `n_distinct`, meaning the values repeat. So a small table's unique values, such as 40 emails in a 40-row table, never leave.
 - **Landed:** Merged into `main` after a review, a fix round for the user's rule, and a second review. The entry point is `PiiClassification.run(store:, config:)`, and `.load` reads it back. It stores the `classification` entry with the `outbound_statistics` projection, and `Result#low_cardinality` feeds Dedupe. The config gains `pii_columns` globs and `cardinality_threshold`. `few_distinct` was removed from 3c. The leftovers went to 20260924-27.
+
+### 20260922-21. 3e literal set.
+
+Build the slow, worst-case, and typical literal sets and keep them in the governed store.
+
+- **Depends on:** 20260922-14, 20260922-19.
+- **README:** 3e.
+- **Status:** done
+- **Decided:** Pick values by operator.
+  - **Ranges:** the worst case is the histogram bound that selects the most rows, and the typical value is the middle bound.
+  - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
+  - **`LIKE` and any other operator:** use the slow literal in all three sets.
+- **Decided (builder and main session, where the rules were silent):**
+  - For BETWEEN, and for a lower and an upper range on the same column in the same AND, the typical value is the middle histogram bucket, and the worst case is the first and last bounds.
+  - IN elements take distinct MCVs, and consecutive bounds for the typical set.
+  - An `= ANY` array falls back as a whole.
+  - Only plain `=` counts as equality.
+  - `$n::type` cast placeholders keep the slow literal.
+- **Landed:** Merged into `main` after a review, a fix round for the range-pair blocker, and a second review. The entry point is `LiteralSet.run(store:, sql:)`, and `.load` reads it back. It stores `literal_sets` (slow, worst_case, and typical placeholder maps, plus fallback reasons), and any set binds through `Redaction.binding`. The leftovers went to 20260924-28.
