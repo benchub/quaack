@@ -364,6 +364,18 @@ RSpec.describe LeakCheck do
       expect(quaacks.store_base).to eq(File.join(quaacks.home, ".quaack", "runs"))
     end
 
+    it "adds env: to the child's environment, unsetting a variable given as nil, and keeps its own HOME" do
+      ENV["QUAACK_LEAK_CHECK_UNSET"] = "inherited"
+      env = { "PGSERVICE" => "prod", "QUAACK_LEAK_CHECK_UNSET" => nil, "HOME" => "/elsewhere" }
+      outcome = quaacks.run_ruby(<<~RUBY, env:)
+        print [ENV["PGSERVICE"], ENV.key?("QUAACK_LEAK_CHECK_UNSET"), Dir.home].inspect
+      RUBY
+
+      expect(outcome.stdout).to eq(["prod", false, quaacks.home].inspect)
+    ensure
+      ENV.delete("QUAACK_LEAK_CHECK_UNSET")
+    end
+
     it "lists the runs a subcommand left under the store base" do
       query = File.join(quaacks.home, "q.sql").tap { File.write(it, "SELECT 1") }
       plan = File.join(quaacks.home, "p.json").tap do |path|
@@ -409,6 +421,11 @@ RSpec.describe LeakCheck do
 
       expect(install.calls)
         .to eq([[%w[quaacks probe --flag], { env: { "HOME" => stand_in.home }, stdin: "from stdin" }]])
+
+      stand_in.run("probe", env: { "PGSERVICE" => "prod", "PGUSER" => nil, "HOME" => "/elsewhere" })
+      expect(install.calls.last)
+        .to eq([%w[quaacks probe], { env: { "PGSERVICE" => "prod", "PGUSER" => nil, "HOME" => stand_in.home },
+                                     stdin: "" }])
     ensure
       stand_in&.remove
     end

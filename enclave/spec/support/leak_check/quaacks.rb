@@ -52,15 +52,18 @@ module LeakCheck
     def runs = File.directory?(store_base) ? Dir.children(store_base).sort : []
 
     # Runs `quaacks *argv`, with stdin on its stdin, and returns an Outcome.
-    def run(*argv, stdin: "") = outcome(install.run("quaacks", *argv, env: env, stdin:))
+    # env adds to the child's environment, and a nil value unsets a
+    # variable, such as a libpq one this process has. HOME is always the
+    # temporary one.
+    def run(*argv, stdin: "", env: {}) = outcome(install.run("quaacks", *argv, env: child_env(env), stdin:))
 
     # Runs the Ruby source the same way, such as CLI.main with a test step
     # plugged in. The installed gems are on its load path, as for the exe.
     # The script is written into the install's directory and removed after.
-    def run_ruby(source, *argv, stdin: "")
+    def run_ruby(source, *argv, stdin: "", env: {})
       script = File.join(install.dir, "script-#{SecureRandom.hex(4)}.rb")
       File.write(script, source)
-      outcome(install.run_ruby(script, *argv, env: env, stdin:))
+      outcome(install.run_ruby(script, *argv, env: child_env(env), stdin:))
     ensure
       FileUtils.rm_f(script)
     end
@@ -69,7 +72,7 @@ module LeakCheck
 
     private
 
-    def env = { "HOME" => home }
+    def child_env(env) = { **env, "HOME" => home }
 
     def outcome(run)
       Outcome.new(stdout: run.stdout, stderr: run.stderr, status: run.status, loaded_features: run.loaded_features)

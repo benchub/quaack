@@ -9,7 +9,8 @@ module Quaack
     # can print a row value, and libpq's default receiver writes it to
     # stderr, which goes back over ssh. So every connection a step opens goes
     # through register before its first query, and every reset goes through
-    # reset. Opening connections is 20260922-16; this only makes them quiet.
+    # reset. Inventory::Production opens production connections; this only
+    # makes them quiet.
     #
     # It duck types the connection, so this file doesn't need the pg gem.
     module Connections

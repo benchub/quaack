@@ -63,6 +63,7 @@ A rejected input fails with a message that says which rule it broke. The script 
 - Pass or fail results, with the scenario or predicate atom behind each failure.
 - Which predicate atoms step 9c couldn't exercise, identified by their redacted shape.
 - Counts of what each stage added and dropped, for the 15b burndown.
+- Production's major version, and whether step 2 found its instance memory.
 
 Result rows, fixture contents, and literals never come out.
 
@@ -113,6 +114,26 @@ Validate the connection to step 1's production server. Then record the following
 - Every non-default planner GUC listed in the `SETTINGS` section of the input plan.
 - From `pg_database`: `datcollate`, `datctype`, `datlocprovider`, `datlocale`, and `datcollversion`.
 - `default_text_search_config`.
+
+The driver runs `quaacks inventory --run <run ID>`. It connects to the server named at intake with the operator's own libpq setup on the jump server. The host comes from the run, and everything else comes from where libpq looks for it: `PGUSER` and the other `PG` environment variables, a service in `~/.pg_service.conf` named by `PGSERVICE`, and the password in `~/.pgpass`. QUAACK stores no credentials. It reads everything inside one read-only, repeatable read transaction, so it can't write to production. Production must run Postgres 17 or later, since older versions don't have `datlocale`.
+
+For each setting the plan's `SETTINGS` lists, it records production's own current value, not the value in the plan, which came from the operator's session. It records settings the way `SHOW` prints them, such as `128MB`.
+
+The instance memory comes from a command the operator configures, since Postgres can't report it and every cloud provider finds it differently. The command lives in the `quaacks` config file on the jump server, `~/.quaack/config.json`, under the key `memory_command`:
+
+```json
+{ "memory_command": "aws rds describe-db-instances ... {host} ..." }
+```
+
+It's one line of shell. Each `{host}` becomes the production host, quoted as one shell word, and `/bin/sh -c` runs it with no stdin, throwing its stderr away. It must print the memory as a whole number of bytes, or as a whole number and a unit: `kB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, or `TiB`, in any case, with an optional space. Every unit is binary, as in Postgres, so `64GB` is 64 × 1024³ bytes. The command gets 30 seconds, and a timeout stops everything it started.
+
+- With no config file, or no `memory_command` in it, the step records the memory as unknown and carries on. Later steps that need it refuse clearly.
+- A command that fails aborts the step with `memory_command_failed`, one that runs too long with `memory_command_timed_out`, and one whose output isn't a size with `memory_command_bad_output`. The command's output never appears in any message.
+- A config file that's a symlink, isn't a readable regular file, isn't a JSON object, or has a `memory_command` that isn't one non-blank line is refused as `bad_config`, before the step connects.
+
+Failing to connect is `production_connection_failed`. A Postgres error while reading is `production_read_failed`, with its SQLSTATE. Neither error names the host, the user, or the server's message. Nothing is recorded unless the whole step succeeds.
+
+The inventory stays in the governed store. The step prints only its shape: production's major version and whether the memory is known.
 
 ## 3. Schema, statistics, and classification.
 
