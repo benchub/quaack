@@ -23,7 +23,9 @@ require "quaack/enclave/error_filter"
 #   sales.b -> sales.regions -> sales.regions           (a self-reference)
 #   sales.item_notes -> sales.items                     (a child, not a parent)
 #
-# plus sales.unrelated, and other.lonely in a schema nothing touches.
+# plus sales.unrelated, other.lonely in a schema nothing touches, and
+# audit.items and audit.a, which share a query table's name in another
+# schema.
 RSpec.describe Quaack::Enclave::SchemaDump do
   let(:db) { test_database }
   let(:conn) { db.connection }
@@ -62,6 +64,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       CREATE SCHEMA audit;
       CREATE SCHEMA other;
       CREATE TABLE audit.vendors (id int PRIMARY KEY);
+      CREATE TABLE audit.items (id int);
+      CREATE TABLE audit.a (id int);
       CREATE TABLE sales.skus (id int PRIMARY KEY, vendor_id int REFERENCES audit.vendors);
       CREATE TABLE sales.regions (id int PRIMARY KEY, parent_id int REFERENCES sales.regions);
       CREATE TABLE sales.zones (id int PRIMARY KEY);
@@ -97,6 +101,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
 
       expect(result).to be_a(described_class::Result)
       expect(result.tables.map(&:to_s)).to eq(subset.sort)
+      expect(result.tables.map(&:to_s)).not_to include("audit.items", "audit.a")
     end
 
     it "is stored as the pg_dump of just those tables, schema only, with no owners or privileges" do
@@ -107,6 +112,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(stored.keys).to eq(%w[tables ddl])
       expect(stored["tables"]).to eq(subset.sort.map { it.split(".") })
       expect(created_tables(stored["ddl"])).to eq(subset.sort)
+      expect(created_tables(stored["ddl"])).not_to include("audit.items", "audit.a")
       expect(stored["ddl"])
         .to include("ADD CONSTRAINT items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)")
       expect(stored["ddl"]).not_to match(/OWNER TO|GRANT|^COPY |INSERT INTO/)
