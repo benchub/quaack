@@ -234,8 +234,22 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(columns(sql).first(2)).to eq([[[orders, "o", "status"]], [[orders, "o", "status"]]])
     end
 
-    it "lists the tables an atom touches" do
-      sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON o.customer_id = c.id AND o.id = c.id + o.id"
+    it "doesn't let schema and table name a table that has an alias" do
+      # The inner orders is aliased, so public.orders.id is the outer one.
+      sql = "SELECT 1 FROM public.orders WHERE EXISTS (SELECT 1 FROM public.orders o2 " \
+            "WHERE public.orders.id = o2.customer_id)"
+      atom = extract(sql).last
+      expect([atom.kind, atom.columns.map { |c| [c.refname, c.name] }])
+        .to eq([:join, [%w[orders id], %w[o2 customer_id]]])
+    end
+
+    it "doesn't let a CTE see the FROM of the SELECT it belongs to" do
+      sql = "WITH w AS (SELECT 1 FROM public.items i WHERE i.qty = status) SELECT 1 FROM public.orders o, w"
+      expect(columns(sql)).to eq([[[items, "i", "qty"], [nil, nil, "status"]]])
+    end
+
+    it "lists the tables an atom touches, once each" do
+      sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON o.customer_id = c.id AND o.id = c.id + o.status"
       expect(extract(sql).map(&:tables)).to eq([[orders, customers], [orders, customers]])
     end
 
@@ -425,18 +439,24 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
 
   describe "trust boundary" do
     # Every literal position here holds a sentinel. None may reach a shape.
-    let(:sentinels) { %w[SENTINEL_TEXT 424242 31337.5 SENTINEL_LIKE SENTINEL_ARRAY SENTINEL_CAST 777001 SENTINEL_SUB] }
+    let(:sentinels) do
+      %w[SENTINEL_TEXT 424242 31337.5 SENTINEL_LIKE SENTINEL_ARRAY SENTINEL_CAST 777001 SENTINEL_SUB 909090 919191
+         SENTINEL_ELEM SENTINEL_FUNC SENTINEL_LOW SENTINEL_HIGH SENTINEL_ESCAPE SENTINEL_DISTINCT]
+    end
     let(:sql) do
       "SELECT 1 FROM public.orders o JOIN public.customers c ON c.id = o.customer_id AND c.name = 'SENTINEL_TEXT' " \
         "WHERE o.status = 424242 AND o.total > 31337.5 AND o.note LIKE '%SENTINEL_LIKE%' " \
         "AND o.tags = ANY('{SENTINEL_ARRAY}'::text[]) AND o.created_at < 'SENTINEL_CAST'::date + 777001 " \
         "AND o.status IN (SELECT 1 FROM public.items i WHERE i.sku = 'SENTINEL_SUB') " \
-        "AND CASE WHEN o.note = 'SENTINEL_TEXT' THEN o.status ELSE 424242 END = 424242"
+        "AND CASE WHEN o.note = 'SENTINEL_TEXT' THEN o.status ELSE 424242 END = 424242 " \
+        "AND o.status IN (909090, 919191) AND o.tags = ANY(ARRAY['SENTINEL_ELEM']) " \
+        "AND lower(o.note) = lower('SENTINEL_FUNC') AND o.note BETWEEN 'SENTINEL_LOW' AND 'SENTINEL_HIGH' " \
+        "AND o.note LIKE 'x' ESCAPE 'SENTINEL_ESCAPE' AND o.note IS DISTINCT FROM 'SENTINEL_DISTINCT'"
     end
 
     it "never puts a literal in a shape" do
       shapes = extract(sql).map(&:shape)
-      expect(shapes.size).to be >= 8
+      expect(shapes.size).to be >= 14
       sentinels.each { |s| expect(shapes.grep(/#{Regexp.escape(s)}/)).to be_empty, "#{s} leaked into a shape" }
     end
 
