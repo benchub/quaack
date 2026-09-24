@@ -33,6 +33,7 @@ require_relative "enclave/pii_classification"
 require_relative "enclave/redaction"
 require_relative "enclave/literal_set"
 require_relative "enclave/run_server_check"
+require_relative "enclave/racetrack"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
