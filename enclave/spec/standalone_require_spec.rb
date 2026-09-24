@@ -14,6 +14,7 @@ RSpec.describe "requiring one enclave file on its own" do
                 "predicate: 'a > 0', unique: true, sources: [:parse])"
     {
       "quaack/enclave/table_name" => "puts #{table}",
+      "quaack/enclave/egress" => 'print Quaack::Enclave::Egress.serialize(type: :error, step: "3f")',
       "quaack/enclave/index_candidate" =>
         "puts #{candidate}.to_ddl; " \
         "puts Quaack::Enclave::IndexCandidate.from_ddl('CREATE INDEX i ON public.o USING btree (a)', sources: [:x])",

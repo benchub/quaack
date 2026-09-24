@@ -61,17 +61,7 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 
 ## Trust boundary.
 
-### 20260922-7. Egress function and whitelist.
-
-Build the single egress function. It only accepts fields on a whitelist, and it drops anything else entirely rather than scrubbing it. The whitelist lives in one place so every change to it gets reviewed.
-
-- **Depends on:** 20260922-1.
-- **README:** Trust boundary.
-- **Status:** todo
-- **Decided:**
-  - The whitelist is one file in the protocol gem that maps each output type to its allowed field names, such as `column_stats: [table, column, n_distinct, null_frac, correlation, mcv_freqs, low_card_values]` and `error: [step, rule, sqlstate]`. It lists the fields of QUAACK's own output messages, not database columns, so it changes only when QUAACK changes what a step outputs.
-  - The egress function drops any field not on its type's list, and drops any output of an unknown type. There are no field types.
-  - Changes to the whitelist get reviewed through the normal git diff. There's no snapshot test and no CODEOWNERS.
+### 20260922-7. Egress function and whitelist. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-8. Error filtering.
 
@@ -129,24 +119,9 @@ Read the three operator inputs from the governed store (query text, `EXPLAIN (AN
 - **Status:** todo
 - **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
 
-### 20260922-14. Fully qualify relations.
+### 20260922-14. Fully qualify relations. Done, see BACKLOG-COMPLETE.md.
 
-Rewrite the query AST so every relation is schema qualified and `search_path` never matters.
-
-- **Depends on:** 20260922-13.
-- **README:** Step 1.
-- **Status:** todo
-- **Decided:** The operator's query should already qualify every relation. If it doesn't, resolve the unqualified names with the `search_path` from the input plan's `SETTINGS`, since that's what the session used when the plan was made.
-- **Open questions:** `SETTINGS` only lists values that differ from the built-in default, so a plan made under the default `"$user", public` won't show a `search_path`. Confirm that, then decide whether to assume that default or abort and ask for a qualified query.
-
-### 20260922-15. Canonical plan form.
-
-Define the canonical plan: keep node type, relation, index, join type, strategy, quals, and sort keys, and strip costs, row counts, buffers, and aliases. Build the comparison every later step uses.
-
-- **Depends on:** 20260922-1.
-- **README:** Step 1.
-- **Status:** todo
-- **Decided:** Parse each qual with pg_query, replace each alias with the relation it stands for, and compare the pg_query fingerprints, which ignore constants. Two plans that differ only in literal values or alias names compare equal.
+### 20260922-15. Canonical plan form. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 2: Production inventory.
 
@@ -395,8 +370,9 @@ Pull every predicate atom out of the parse: equality, range, `LIKE`, `IN`, `IS N
 
 - **Depends on:** 20260922-14, 20260922-23.
 - **README:** Step 9.
-- **Status:** todo
-- **Open questions:** How do we handle atoms under `OR`, `NOT`, `CASE`, or subqueries?
+- **Status:** in progress
+- **Decided:** Extract atoms everywhere, including under `OR`, `NOT`, `CASE`, and in subqueries. The 9c vacuity guard catches any that fixtures can't exercise.
+- **Note:** Built on branch `task/20260922-43`, with a build, a review, a fix round, and a second review, but not landed. The second review found that `extract` raises on a recursive CTE with `CYCLE` inside an atom, and that the explicit `normalize(x, 'lit')` redaction is untested. 20260923-29 finishes it on top of that branch, and 20260923-30 holds the rest.
 
 ### 20260922-44. 9 value pools.
 
@@ -430,7 +406,7 @@ Compare results using the rules for no `ORDER BY`, a partial `ORDER BY` (add a t
 - **Depends on:** 20260922-46.
 - **README:** 9d.
 - **Status:** todo
-- **Open questions:** What float tolerance?
+- **Decided:** `float4` and `float8` values are equal within a relative 1e-9, with an absolute 1e-12 near zero. Numeric and integer columns compare exactly.
 
 ### 20260922-48. 9c vacuity guard.
 
@@ -784,6 +760,93 @@ Minor findings from the second review of 20260923-7:
 - **Depends on:** 20260923-7.
 - **Came from:** Second review of 20260923-7.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-26. Egress loose ends.
+
+Minor findings from the second review of 20260922-7:
+- **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
+- **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
+- **Deep nesting and cycles raise `SystemStackError`.** A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
+- **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
+
+- **Depends on:** 20260922-7.
+- **Came from:** Both reviews of 20260922-7.
+- **README:** Trust boundary.
+- **Status:** todo
+
+### 20260923-27. Qualify relations loose ends.
+
+Findings from both reviews and the builder of 20260922-14:
+- **Other names depend on search_path too.** Unqualified functions, types in casts and column definitions, operators, collations, and text search configurations all resolve through `search_path`. So do relation names in string literals, such as `'t'::regclass`, `nextval('seq')`, and `to_regclass('t')`. None of them are rewritten. This matters for 3d, which looks functions up in `pg_catalog`, and for replaying the query on the racetrack.
+- **`SELECT ... INTO new_table` aborts** because its target resolves nowhere. That's a safe abort, but intake (20260922-13) or the inbound check should reject it with a clear rule.
+- **A multi-statement input is accepted,** and every statement gets qualified. Intake (20260922-13) should accept exactly one statement.
+- **The role used to resolve names.** `"$user"` and the USAGE check use the role QUAACK connects as. If the operator's plan session ran as a different role, resolution could differ. Document this in the operator docs, or take the role as an input.
+- **An empty search_path written by hand** as `""` or all whitespace aborts with "has an empty entry", but Postgres treats it as an empty path. EXPLAIN never writes that form.
+- **The abort message** joins schemas with ", ", so a schema named `weird, schema` looks like two schemas.
+- **Deparse drops formatting.** The output is pg_query's deparse even when nothing changed, so comments and layout are lost.
+
+- **Depends on:** 20260922-14.
+- **Came from:** Both reviews of 20260922-14, and its builder's notes.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260923-28. Canonical plan loose ends.
+
+Minor findings from the second review of 20260922-15:
+- **`Integer()` reads a leading zero as octal.** A real index named `"<09>fake"` raises `ArgumentError`, and `"<010>fake"` is read as oid 8. Use `Integer(..., 10)`.
+- **A real index whose name starts with `<digits>` is treated as hypothetical.** Without a map, a real `"<123>orders_pkey"` compares equal to `orders_pkey`. It's unlikely, so document it.
+- **Surviving mutants:**
+  - An empty map treated like no map. `hypothetical_indexes: {}` with a `<oid>` index should make the plan not comparable.
+  - The `\A` anchor dropped from `HYPOTHETICAL_INDEX`.
+  - An Array of pairs accepted as the map.
+- **The "two sessions" Postgres spec never gets two oids,** because `hypopg_reset()` runs after the extra index is made. Fix the setup or the comment.
+- **The digest covers a partial predicate's literal.** A short literal could be guessed from the hash. It stays in the enclave today, but any step that sends a canonical form out must know this.
+- **Merge `PlanExpression`'s parse helper with `CanonicalPlan`'s own parse step.**
+
+- **Depends on:** 20260922-15.
+- **Came from:** Second review of 20260922-15, and its builder's notes.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260923-29. Finish predicate atom extraction.
+
+Split out of 20260922-43, whose branch `task/20260922-43` holds the work so far. Build on that branch, then land both together. Fix what the second review of 20260922-43 found:
+- **A recursive CTE with `CYCLE` inside an atom makes `extract` raise** `PgQuery::ParseError: deparse: unpermitted node type in AexprConst`. The deparser needs `CTECycleClause.cycle_mark_value` and `cycle_mark_default` to be `A_Const`. Keep them, or swap them for string placeholders, the way JSON paths are handled. Repro: `SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM t) CYCLE n SET c USING p SELECT 1 FROM t WHERE t.n = o.id)`.
+- **The explicit `normalize` call isn't tested.** Removing `node.funcformat == :COERCE_SQL_SYNTAX &&` from `Literals.normal_form?` stays green, and then `pg_catalog.normalize(o.note, 'SENTINEL')` keeps its literal. Add a sentinel test.
+- **XMLROOT shapes are wrong.** The `version no value` and `standalone` arguments are keywords that the deparser reads as `A_Const`. Keep them, the way the normal form is kept.
+- **Surviving mutants for nested atoms:**
+  - `null_test` in `boolean?`
+  - `SUBQUERY_TESTS` shrunk (nested `IN (SELECT ...)` and `ALL`)
+  - `EXPRESSIONS.key?` in `boolean_expression?` (`NULLIF`)
+  - the ELSE and the argument of a simple CASE
+  - the unreachable `path_placeholder` branch (drop it)
+
+- **Depends on:** 20260922-43's branch.
+- **Came from:** Second review of 20260922-43.
+- **README:** Step 9.
+- **Status:** todo
+
+### 20260923-30. Predicate atom loose ends.
+
+Findings from both reviews of 20260922-43 that don't block it:
+- **pg_query deparse bugs make `with_true` wrong for a whole query.**
+  - `IS NOT DISTINCT FROM (a AND b)` loses its parentheses, which changes the meaning.
+  - `XMLTABLE ... PASSING CAST(x AS xml)` deparses to invalid SQL.
+  - Add a round-trip guard: after deparsing, reparse and compare the tree with the expected one, and raise if they differ.
+- **NATURAL JOIN gives no atoms.** When both sides are plain tables, compute the common columns, or at least emit a marker that can't be replaced, so the report counts it.
+- **USING atoms can't be replaced.** 9c (20260922-48) has to mark them untested, not skip them silently.
+- **Column resolution is conservative.**
+  - A merged USING column, `(o).status`, and a LATERAL item that sees later FROM items are left unplaced where Postgres resolves them.
+  - It loses precision, but it never places a column wrong.
+- **`with_true` on a recursive CTE's stop condition loops forever.** 9a's `statement_timeout` covers it, but 9c should expect it.
+- **A simple CASE rewritten as searched** evaluates its argument once per WHEN. That's only a problem when the argument is volatile.
+- **Typmods keep their literals,** such as `::foo('x')`. That's the documented choice, but 3g should know.
+- **Wire in qualification.** `extract` assumes a qualified query. Its caller should run `RelationQualifier` (20260922-14) first.
+
+- **Depends on:** 20260923-29.
+- **Came from:** Both reviews of 20260922-43, and its builder's notes.
+- **README:** Step 9 and 9c.
 - **Status:** todo
 
 ## After version 1.
