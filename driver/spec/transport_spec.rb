@@ -298,10 +298,10 @@ RSpec.describe Quaack::Driver::Transport do
 
     it "treats a run whose last non-blank line isn't the done line as incomplete, even if that line isn't JSON" do
       [%({"type":"done"}\n{"type":"version","version":"1"}\n), %({"type":"done"}\nnot json\n),
-       %({"type":"done"}\n{"type":"do)].each do |out|
+       %({"type":"done"}\n{"type":"do), %({"type":"done"}\n{"type":"ver\xC3\n).b].each do |out|
         error = failure(raw("print #{out.inspect}"))
 
-        expect([error.rule, error.exit_status]).to eq(["incomplete", 0]), "for #{out}"
+        expect([error.rule, error.exit_status]).to eq(["incomplete", 0]), "for #{out.inspect}"
       end
     end
   end
@@ -417,6 +417,21 @@ RSpec.describe Quaack::Driver::Transport do
 
       expect([error.step, error.rule, error.sqlstate]).to eq([nil, "unexpected_output", nil])
       expect(error.full_message(highlight: false)).not_to include(sentinel)
+    end
+
+    it "drops an error line's field that starts with a valid value and goes on past it" do
+      error = refusal(%({"type":"error","step":"probe #{sentinel}","rule":"usage #{sentinel}",) +
+                      %("sqlstate":"23505#{sentinel}"}))
+
+      expect([error.step, error.rule, error.sqlstate]).to eq([nil, "unexpected_output", nil])
+      expect(error.full_message(highlight: false)).not_to include(sentinel)
+    end
+
+    it "drops an error line's field that isn't a String, even one that would read as valid" do
+      error = refusal(%({"type":"error","step":5,"rule":true,"sqlstate":23505}))
+
+      expect([error.step, error.rule, error.sqlstate]).to eq([nil, "unexpected_output", nil])
+      expect(error.message).to eq("quaacks probe failed: unexpected_output (exit 0)")
     end
   end
 end
