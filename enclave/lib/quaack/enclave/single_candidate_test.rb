@@ -23,6 +23,11 @@ module Quaack
     # placeholders or none. candidates are IndexCandidates, as Dedupe leaves
     # them.
     #
+    # session takes the same arguments but candidates, and yields a Session
+    # whose measure creates several hypothetical indexes at once. 5a-7's
+    # IndexRanking uses it to measure combinations. run is built on it, so
+    # everything below holds for both.
+    #
     # Until 3e literal sets (20260922-21) and 3g redaction (20260922-23)
     # land, literal_sets is a stand-in: a Hash from each set's name to its
     # values, in parameter order. Each value is a String in a valid
@@ -93,9 +98,9 @@ module Quaack
     # Nothing here goes through egress yet.
     module SingleCandidateTest
       # rule is one of :in_transaction, :bad_literal, :indexes_hidden,
-      # :prepare_failed, :explain_failed, :hypopg_failed, or
-      # :cleanup_failed. sqlstate is the
-      # Postgres SQLSTATE, or nil if there wasn't one.
+      # :prepare_failed, :explain_failed, :hypopg_failed, :cleanup_failed,
+      # or :session_closed, for a Session measured after its block ended.
+      # sqlstate is the Postgres SQLSTATE, or nil if there wasn't one.
       class Error < StandardError
         attr_reader :rule, :sqlstate
 
@@ -132,6 +137,22 @@ module Quaack
         def pretty_print(pp) = pp.text(inspect)
       end
 
+      # What a Session measures with several hypothetical indexes present at
+      # once: sizes has each one's hypopg_relation_size, in the order given,
+      # and plans maps each literal set's name to a Measured. A refused
+      # measurement has a refusal, nil sizes, and no plans.
+      Measurement = Data.define(:sizes, :plans, :refusal)
+
+      # Like Plan, but used has one boolean per hypothetical index, in the
+      # order given.
+      Measured = Data.define(:used, :total_cost, :canonical_plan, :raw_plan) do
+        def inspect = "#<data #{self.class} used=#{used}, total_cost=#{total_cost}, raw_plan=<redacted>>"
+
+        alias_method :to_s, :inspect
+
+        def pretty_print(pp) = pp.text(inspect)
+      end
+
       # A candidate HypoPG wouldn't create. rule is :hypopg_refused.
       Refusal = Data.define(:rule, :sqlstate)
 
@@ -151,10 +172,35 @@ module Quaack
       module_function
 
       def run(connection, query:, literal_sets:, candidates:)
+        session(connection, query:, literal_sets:) do |s|
+          baseline = Baseline.new(plans: plans(s.measure([])))
+          Report.new(baseline:, results: candidates.map { |c| result(c, s.measure([c])) }.freeze)
+        end
+      end
+
+      def result(candidate, measured)
+        return Result.new(candidate:, size: nil, plans: {}.freeze, refusal: measured.refusal) if measured.refusal
+
+        Result.new(candidate:, size: measured.sizes.first, plans: plans(measured), refusal: nil)
+      end
+
+      # Plans for one candidate, or for the baseline, which has no index to
+      # use.
+      def plans(measured)
+        measured.plans.transform_values do |p|
+          Plan.new(used: p.used.any?, total_cost: p.total_cost, canonical_plan: p.canonical_plan,
+                   raw_plan: p.raw_plan)
+        end.freeze
+      end
+
+      # Checks the arguments, opens a Session, yields it, and returns what
+      # the block returns. Everything the block does happens inside the
+      # run's transaction, which is rolled back after.
+      def session(connection, query:, literal_sets:, &)
         raise Error, :bad_literal unless literal_sets?(literal_sets)
         raise Error, :in_transaction unless connection.transaction_status.zero?
 
-        Run.new(connection, query, literal_sets, candidates).report
+        Session.new(connection, query, literal_sets).open(&)
       end
 
       def literal_sets?(sets)
@@ -192,6 +238,18 @@ module Quaack
         raise Error, :explain_failed, cause: nil
       end
 
+      def refused(sqlstate)
+        Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
+      end
+
+      # EXECUTE of the prepared statement with these values. With no
+      # values, it takes no parentheses.
+      def execute(connection, values)
+        return STATEMENT if values.empty?
+
+        "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : connection.escape_literal(v) }.join(", ")})"
+      end
+
       def deep_freeze(value)
         case value
         when Hash then value.each_value { |v| deep_freeze(v) }
@@ -200,39 +258,63 @@ module Quaack
         value.freeze
       end
 
-      # One call to run.
-      class Run
-        def initialize(connection, query, literal_sets, candidates)
+      # The safety core that run and 5a-7's IndexRanking share: one
+      # transaction with its SET LOCALs, the hidden-index check, notices
+      # dropped, a fresh prepare for each EXPLAIN, refusals, and cleanup that
+      # keeps the first error. See the comment at the top. session yields
+      # one, and it's good only inside that block: after, measure raises
+      # Error(:session_closed) without touching the database.
+      class Session
+        def initialize(connection, query, literal_sets)
           @connection = connection
           @query = query
           @literal_sets = literal_sets
-          @candidates = candidates
         end
 
-        def report
+        def open(&)
           previous = @connection.set_notice_receiver { nil }
           begin
-            tested
+            within(&)
           ensure
             @connection.set_notice_receiver(&previous)
           end
         end
 
+        # Every candidate's hypothetical index at once, and an EXPLAIN per
+        # literal set. Only these indexes exist while it plans: HypoPG is
+        # reset first, even for none. If HypoPG refuses one, the rest aren't
+        # created, and the Measurement has the Refusal, nil sizes, and no
+        # plans.
+        def measure(candidates)
+          raise Error, :session_closed unless @open
+
+          SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
+          indexes = []
+          candidates.each do |candidate|
+            oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
+            return SingleCandidateTest.refused(sqlstate) if oid.nil?
+
+            indexes << [oid, name, size, candidate]
+          end
+          Measurement.new(sizes: indexes.map { |i| i[2] }.freeze, plans: plans(indexes), refusal: nil)
+        end
+
         private
 
-        # If the run fails and cleanup fails too, the run's error is the
-        # one raised.
-        def tested
+        def within
           failed = true
           SingleCandidateTest.guarded(:explain_failed) { start }
-          baseline = Baseline.new(plans: plans(nil, nil, nil))
-          report = Report.new(baseline:, results: @candidates.map { |c| test(c) }.freeze)
+          @open = true
+          value = yield self
           failed = false
-          report
+          value
         ensure
+          @open = false
           cleanup(failed)
         end
 
+        # If the run fails and cleanup fails too, the run's error is the
+        # one raised.
         def cleanup(failed)
           SingleCandidateTest.guarded(:cleanup_failed) { finish }
         rescue StandardError
@@ -268,17 +350,9 @@ module Quaack
           @prepared = false
         end
 
-        def test(candidate)
-          oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
-          return refused(candidate, sqlstate) if oid.nil?
-
-          Result.new(candidate:, size:, plans: plans(oid, name, candidate), refusal: nil)
-        end
-
         # The new index's oid, name, and size, or, if HypoPG refused it,
         # three nils and the SQLSTATE.
         def create(candidate)
-          @connection.exec("SELECT hypopg_reset()")
           # The savepoint is there for a refused create to roll back to. It's
           # never released: nothing in it writes, and the run's rollback
           # ends every one left open.
@@ -300,14 +374,12 @@ module Quaack
           sqlstate
         end
 
-        def refused(candidate, sqlstate)
-          Result.new(candidate:, size: nil, plans: {}.freeze,
-                     refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
-        end
-
-        def plans(oid, index_name, candidate)
-          identities = oid ? { oid => candidate.to_ddl } : {}
-          @literal_sets.to_h { |set, values| [set, plan(explain(values), index_name, identities)] }.freeze
+        # indexes holds each hypothetical index's oid, name, size, and
+        # candidate.
+        def plans(indexes)
+          identities = indexes.to_h { |oid, _, _, candidate| [oid, candidate.to_ddl] }
+          names = indexes.map { |i| i[1] }
+          @literal_sets.to_h { |set, values| [set, plan(explain(values), names, identities)] }.freeze
         end
 
         def explain(values)
@@ -316,37 +388,29 @@ module Quaack
             @prepared = true
           end
           json = SingleCandidateTest.guarded(:explain_failed) do
-            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute(values)}").getvalue(0, 0)
+            execute = SingleCandidateTest.execute(@connection, values)
+            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute}").getvalue(0, 0)
           end
           SingleCandidateTest.guarded(:cleanup_failed) { deallocate }
           SingleCandidateTest.parse_plan(json)
         end
 
-        # EXECUTE of the prepared statement with these values. With no
-        # values, it takes no parentheses.
-        def execute(values)
-          return STATEMENT if values.empty?
-
-          "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
-        end
-
-        # used is whether any node scans the hypothetical index, by the exact
-        # name HypoPG gave it. Only this candidate's hypothetical index
-        # exists while it plans, since the run resets HypoPG before creating
-        # it. (A hypothetical index that a function the planner folds
-        # creates in the middle of planning doesn't show up in the plan, as
-        # tried on HypoPG 1.4.) But a real index can have a name that looks
-        # like a hypothetical one, such as "<1>x", so matching any name that
-        # starts with "<" would count it.
-        def plan(explain, index_name, identities)
+        # used says, for each hypothetical index, whether any node scans it,
+        # by the exact name HypoPG gave it. Only this measurement's
+        # hypothetical indexes exist while it plans, since measure resets
+        # HypoPG first. (A hypothetical index that a function the planner
+        # folds creates in the middle of planning doesn't show up in the
+        # plan, as tried on HypoPG 1.4.) But a real index can have a name
+        # that looks like a hypothetical one, such as "<1>x", so matching
+        # any name that starts with "<" would count it.
+        def plan(explain, index_names, identities)
           root = explain.first["Plan"]
-          used = !index_name.nil? && PlanNode.new(root).subtree.any? { |node| node["Index Name"] == index_name }
-          Plan.new(used:, total_cost: root["Total Cost"],
-                   canonical_plan: CanonicalPlan.new(explain, hypothetical_indexes: identities), raw_plan: explain)
+          scanned = PlanNode.new(root).subtree.map { |node| node["Index Name"] }
+          Measured.new(used: index_names.map { |name| scanned.include?(name) }.freeze, total_cost: root["Total Cost"],
+                       canonical_plan: CanonicalPlan.new(explain, hypothetical_indexes: identities),
+                       raw_plan: explain)
         end
       end
-
-      private_constant :Run
     end
   end
 end

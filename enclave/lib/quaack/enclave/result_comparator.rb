@@ -85,13 +85,17 @@ module Quaack
       # match is true or false. rule is nil for a match. expected_rows and
       # actual_rows are counts, nil when nothing was counted. For subset,
       # expected_rows is the expected count, not the full result's size. row
-      # and column are zero-based positions, or nil.
-      Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column) do
-        def initialize(**fields)
+      # and column are zero-based positions, or nil. load_order is set only
+      # by ResultComparison.compare_in_both_orders, on a mismatch: :forward
+      # or :reverse, for the fixture load that disproved the candidate. It's
+      # nil otherwise, and by default.
+      Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column, :load_order) do
+        def initialize(load_order: nil, **fields)
+          fields[:load_order] = load_order
           problem, = VERDICT_CHECKS.find { |_, ok| !ok.call(fields) }
           raise ArgumentError, problem if problem
 
-          super
+          super(**fields)
         end
 
         def match? = match
@@ -114,7 +118,9 @@ module Quaack
         "a verdict's counts and positions must be non-negative Integers or nil" => lambda do |f|
           f.values_at(:expected_rows, :actual_rows, :row, :column)
            .all? { |n| n.nil? || (n.is_a?(Integer) && !n.negative?) }
-        end
+        end,
+        "a verdict's load_order must be :forward, :reverse, or nil" =>
+          ->(f) { [nil, :forward, :reverse].include?(f[:load_order]) }
       }.freeze
 
       module_function
