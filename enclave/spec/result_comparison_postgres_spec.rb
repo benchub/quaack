@@ -18,6 +18,8 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       CREATE TYPE pair AS (a integer, b text);
       CREATE TYPE json_pair AS (a integer, b json);
       CREATE TYPE mood_pair AS (a integer, m mood);
+      CREATE TYPE npair AS (a integer, n numeric);
+      CREATE TYPE ipair AS (a integer, i interval);
       CREATE TABLE items (
         id integer PRIMARY KEY,
         grp integer NOT NULL,
@@ -31,7 +33,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         mp mood_pair,
         iv interval,
         c bpchar,
-        na numeric[]
+        na numeric[],
+        np npair,
+        ip ipair
       )
     SQL
   end
@@ -344,6 +348,38 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                           "SELECT iv FROM #{forward} ORDER BY grp LIMIT 1", rows:)
 
         expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses an interval column when only the original has a LIMIT" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+
+        verdict = compare("SELECT iv FROM items ORDER BY grp LIMIT 1",
+                          "SELECT iv FROM items WHERE id = 1 ORDER BY grp", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses an interval column when a tie of three hides a different interval behind a repeat" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "1 day"], [3, 1, "24 hours"])
+
+        verdict = compare("SELECT iv FROM items ORDER BY grp, id", "SELECT iv FROM #{forward} ORDER BY grp", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      {
+        "numeric" => ["np", "(1,1.0)", "(1,1.00)"],
+        "interval" => ["ip", "(1,1 day)", "(1,24 hours)"]
+      }.each do |field, (column, first, second)|
+        it "leaves out a composite with a #{field} field, whose equal values print differently" do
+          rows = rows_of(["id", "grp", column], [1, 1, first], [2, 1, second])
+          original = "SELECT #{column} FROM items ORDER BY grp, id"
+          expect(raw(original, rows:).first.uniq.size).to eq(2)
+
+          verdict = compare(original, "SELECT #{column} FROM #{forward} ORDER BY grp", rows:)
+
+          expect(verdict.match?).to be(false)
+        end
       end
 
       it "refuses an interval column when only the candidate has a LIMIT" do

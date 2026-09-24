@@ -226,11 +226,11 @@ RSpec.describe Quaack::Enclave::ResultComparator do
           .to eq([true, true, true])
       end
 
-      it "keeps leading and inner spaces, and case" do
-        pairs = [["a", " a"], ["a b", "ab"], ["a", "A"]]
+      it "keeps leading and inner spaces, case, and trailing whitespace that isn't a space" do
+        pairs = [["a", " a"], ["a b", "ab"], ["a", "A"], ["a", "a\t"], ["a", "a\n"]]
 
         expect(pairs.map { |l, r| compare(result([bpchar], [[l]]), result([bpchar], [[r]]), mode: :ordered).match? })
-          .to eq([false, false, false])
+          .to eq([false, false, false, false, false])
       end
 
       it "ignores trailing spaces in a multiset too" do
