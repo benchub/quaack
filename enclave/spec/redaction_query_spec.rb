@@ -50,6 +50,33 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(result.placeholder_map.keys).to eq(%w[$1])
   end
 
+  it "redacts a field name that isn't EXTRACT's: in date_part, AT TIME ZONE, or extract called as a function" do
+    result = redact("SELECT date_part('year', o.created_at), o.created_at AT TIME ZONE 'epoch', " \
+                    "pg_catalog.extract('year', o.created_at), position('year' IN o.status) FROM public.orders o")
+    expect(result.placeholder_map.values.map { it["value"] }).to eq(%w[year epoch year year])
+  end
+
+  it "redacts the functions in FROM, LATERAL or not" do
+    result = redact("SELECT g, u FROM generate_series(1, 5) g, unnest(ARRAY['a']) u, " \
+                    "LATERAL generate_series(g, 7) h")
+    expect(result.sql).to eq("SELECT g, u FROM generate_series($1, $2) g, unnest(ARRAY[$3]) u, " \
+                             "LATERAL generate_series(g, $4) h")
+  end
+
+  it "refuses an interval with a field qualifier, which a placeholder can't bind the same way" do
+    ["INTERVAL '1' DAY", "INTERVAL '2' YEAR", "INTERVAL '1 2' DAY TO HOUR"].each do |interval|
+      expect { redact(where("o.created_at - o.created_at < #{interval}")) }
+        .to raise_error(described_class::Error, "interval_field_qualifier")
+    end
+    expect(redact(where("o.a < INTERVAL '1 day' AND o.b < INTERVAL(3) '1.5 s'")).placeholder_map.size).to eq(2)
+  end
+
+  it "types integers written in hex, octal, binary, or with underscores" do
+    map = redact(where("o.a = 0x1F AND o.b = 0o17 AND o.c = 0b101 AND o.d = 1_000 AND o.e = 0xFFFFFFFFFF"))
+          .placeholder_map
+    expect(map.values.map { it["type"] }).to eq(%w[integer integer integer integer bigint])
+  end
+
   it "redacts a string in EXTRACT's place that isn't a field Postgres documents" do
     result = redact("SELECT extract('quaack-sentinel-field' FROM o.created_at) FROM public.orders o")
     expect(result.sql).not_to include("quaack-sentinel")
@@ -85,13 +112,18 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
       sql = where("o.a LIKE 'x%' AND o.b NOT ILIKE '%x' AND o.c LIKE '%x%' AND o.d LIKE 'x' " \
                   "AND o.e LIKE 'x\\%' AND o.f LIKE '_x' AND o.g ~~ 'x_' AND o.h LIKE 'x!%' ESCAPE '!'")
       expect(shapes(sql).values.map { it["pattern"] }.compact)
-        .to eq(%w[trailing_wildcard leading_wildcard both_wildcards no_wildcard no_wildcard leading_wildcard
-                  trailing_wildcard no_wildcard])
+        .to eq([%w[trailing], %w[leading], %w[leading trailing], [], [], %w[leading], %w[trailing], []])
     end
 
-    it "says where each pattern of LIKE ANY has its wildcards" do
-      expect(shapes(where("o.a LIKE ANY (ARRAY['x%', '%y'])")).values.map { it["pattern"] })
-        .to eq(%w[trailing_wildcard leading_wildcard])
+    it "says when a pattern has a wildcard in the middle, and reads an empty pattern" do
+      sql = where("o.a LIKE 'a%b' AND o.b LIKE 'a_b%c' AND o.c LIKE '%a%b%' AND o.d LIKE '' AND o.e LIKE '%'")
+      expect(shapes(sql).values.map { it["pattern"] })
+        .to eq([%w[inner], %w[inner], %w[leading inner trailing], [], %w[leading trailing]])
+    end
+
+    it "says where each pattern of LIKE ANY has its wildcards, and a pattern under a cast" do
+      sql = where("o.a LIKE ANY (ARRAY['x%', '%y']) AND o.b LIKE 'z%'::text")
+      expect(shapes(sql).values.map { it["pattern"] }).to eq([%w[trailing], %w[leading], %w[trailing]])
     end
 
     it "gives no pattern to a constant that isn't a LIKE pattern" do

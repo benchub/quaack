@@ -28,7 +28,8 @@ module Quaack
       # masked as $? if nothing matches, and a NULL element stays NULL.
       #
       # redact returns nil for text the scanner can't read, such as an
-      # unclosed quote, so the caller can drop it. It never raises with the
+      # unclosed quote, and for text with a comment, NUL, or bytes that
+      # aren't UTF-8, so the caller can drop it. It never raises with the
       # text in a message.
       module Expression
         # matches has, for each literal replaced, the numbers of the
@@ -40,13 +41,17 @@ module Quaack
         BOOLEANS = %i[TRUE_P FALSE_P].freeze
         SUBPLANS = %w[InitPlan SubPlan].freeze
         MASK = "$?"
+        # Postgres never prints a comment in a plan, so text with one isn't
+        # Postgres's, and it's dropped rather than copied.
+        COMMENTS = %i[SQL_COMMENT C_COMMENT].freeze
 
         module_function
 
         def redact(text, matcher)
           return nil unless text.is_a?(String) && text.valid_encoding? && !text.include?("\0")
 
-          Scan.new(text, PgQuery.scan(text).first.tokens.to_a, matcher).redacted
+          tokens = PgQuery.scan(text).first.tokens.to_a
+          Scan.new(text, tokens, matcher).redacted unless tokens.any? { |t| COMMENTS.include?(t.token) }
         rescue PgQuery::ScanError
           nil
         end
@@ -154,7 +159,7 @@ module Quaack
             modifiers = []
             array = false
             while (after = after_part(i))
-              found = modifiers(i)
+              found = modifiers(i) || bound(i)
               modifiers.concat(found) if found
               array ||= @sources[i] == "["
               i = after
@@ -197,6 +202,12 @@ module Quaack
           end
 
           def after_word?(index) = index.positive? && word?(index - 1)
+
+          # The index of the 3 of "[3]" at index, as a list, or nil. An array
+          # type's bound is shape, like a modifier.
+          def bound(index)
+            [index + 1] if @sources[index] == "[" && @tokens[index + 1]&.token == :ICONST
+          end
 
           # The index after "[]" or "[3]" at index, or nil.
           def brackets(index)

@@ -20,6 +20,9 @@ module Quaack
           month quarter second timezone timezone_hour timezone_minute week year
         ].to_set.freeze
 
+        # The typmod pg_query gives an interval with no field qualifier.
+        INTERVAL_FULL_RANGE = 0x7FFF
+
         # Deparse allows this depth, so the copy should too.
         DEPTH = Deparse::DEPTH
 
@@ -82,12 +85,36 @@ module Quaack
           return node.tap { visit(node) } unless node.is_a?(PgQuery::Node)
 
           constant = node.a_const
-          return node.tap { visit(node.inner) unless positional?(parent, field, node) } unless constant
+          return node.tap { visit(node.inner) if walked?(parent, field, node) } unless constant
           return node if kept?(parent, field, constant, index)
           return param(constant) if @replacing
 
-          @found[constant.location] = [constant, (parent.type_name if parent.is_a?(PgQuery::TypeCast))]
+          found(constant, (parent.type_name if parent.is_a?(PgQuery::TypeCast)))
           node
+        end
+
+        # Whether the walk goes into a node that isn't a constant: not into
+        # an empty slot, such as a function's missing column definitions in
+        # FROM, or a positional ORDER BY.
+        def walked?(parent, field, node) = !node.node.nil? && !positional?(parent, field, node)
+
+        def found(constant, cast)
+          raise Error, "interval_field_qualifier" if field_qualified?(cast)
+
+          @found[constant.location] = [constant, cast]
+        end
+
+        # An interval cast with a field qualifier, such as INTERVAL '1' DAY.
+        # The qualifier changes how the literal reads: '1' is a day there,
+        # but a bound $1 reads as an interval first, so it's a second, and
+        # then 0 days. PREPARE can't declare the qualifier, and keeping the
+        # literal would let it leave, so the query is refused. A precision
+        # alone, as in INTERVAL(3), reads the same either way.
+        def field_qualified?(cast)
+          return false unless cast && Literal.type_name(cast) == "interval"
+
+          mask = cast.typmods.first&.a_const
+          !mask.nil? && mask.ival&.ival != INTERVAL_FULL_RANGE
         end
 
         # ORDER BY 1 names the first output column, and so do GROUP BY 1 and

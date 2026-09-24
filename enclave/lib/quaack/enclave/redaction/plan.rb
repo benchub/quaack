@@ -25,7 +25,14 @@ module Quaack
       class Plan
         # One place a placeholder was found: the plan node's own fields and
         # the qual that held it.
-        Consumer = Data.define(:fields, :qual)
+        # fields is the raw node, with its literals, so inspect leaves it out.
+        Consumer = Data.define(:fields, :qual) do
+          def inspect = "#<data #{self.class} qual=#{qual.inspect}, fields=<redacted>>"
+
+          alias_method :to_s, :inspect
+
+          def pretty_print(pp) = pp.text(inspect)
+        end
 
         attr_reader :explain, :masked, :dropped
 

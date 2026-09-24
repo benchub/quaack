@@ -190,13 +190,21 @@ RSpec.describe Quaack::Enclave::Redaction do
       "GROUP BY 1 ORDER BY 1",
       "SELECT c.name FROM public.customers c WHERE c.created_at > DATE '2025-01-03' AND c.name IS NOT NULL " \
       "ORDER BY c.name OFFSET 2 LIMIT 5",
-      "SELECT o.id, NULL AS nothing, coalesce(NULL, o.status) FROM public.orders o WHERE o.id < 4 ORDER BY o.id"
+      "SELECT o.id, NULL AS nothing, coalesce(NULL, o.status) FROM public.orders o WHERE o.id < 4 ORDER BY o.id",
+      # Untyped strings that Postgres types as text only because nothing
+      # else types them, and bit strings.
+      "SELECT concat('a', o.status) FROM public.orders o WHERE o.id < 4 ORDER BY o.id",
+      "SELECT jsonb_build_object('k', o.id) FROM public.orders o WHERE o.id < 4 ORDER BY o.id",
+      "SELECT NULL IS NULL, B'101' | B'010', coalesce('a', 'b')",
+      "SELECT g FROM generate_series(1, 5) g, unnest(ARRAY['a']) u, LATERAL generate_series(g, 7) h ORDER BY 1",
+      "SELECT count(*) FROM public.orders o",
+      "SELECT o.id FROM public.orders o WHERE o.status <> 'x' AND o.id < '9' ORDER BY 1"
     ]
 
     def run(binding, name = "quaack_3g")
       conn = test_database.connection
-      conn.exec(binding.prepare_sql(name))
-      conn.exec(binding.execute_sql(name, conn)).values
+      binding.prepare(conn, name)
+      binding.execute(conn, name).values
     ensure
       conn.exec("DEALLOCATE ALL")
     end
@@ -211,13 +219,38 @@ RSpec.describe Quaack::Enclave::Redaction do
       end
     end
 
-    it "binds a rewrite candidate that uses only some of the placeholders" do
-      result = redact("SELECT o.id FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents < 2000")
-      candidate = "SELECT o.id FROM public.orders o WHERE o.total_cents < $2 AND o.status = $1 ORDER BY o.id"
-      expected = rows("SELECT o.id FROM public.orders o WHERE o.total_cents < 2000 AND o.status = 'shipped' " \
-                      "ORDER BY o.id")
-      expect(run(described_class.binding(candidate, result.placeholder_map))).to eq(expected)
-      expect(described_class.binding(candidate, result.placeholder_map).values).to eq(%w[shipped 2000])
+    it "binds a rewrite candidate that leaves out one of the placeholders" do
+      result = redact("SELECT o.id FROM public.orders o WHERE o.id = 5 AND o.status = 'shipped'")
+      candidate = "SELECT o.id FROM public.orders o WHERE o.id = $1"
+      bound = described_class.binding(candidate, result.placeholder_map)
+      expect(bound.types).to eq(%w[integer text])
+      expect(run(bound)).to eq(rows("SELECT o.id FROM public.orders o WHERE o.id = 5"))
+    end
+
+    it "types an untyped placeholder as text only where Postgres can't type it, inside a transaction too" do
+      query = "SELECT concat('x', max(o.status)) FROM public.orders o WHERE o.status = 'shipped'"
+      result = redact(query)
+      bound = described_class.binding(result.query.sql, result.placeholder_map)
+      conn = test_database.connection
+      conn.transaction do
+        expect(bound.prepare(conn, "quaack_tx")).to eq(%w[text unknown])
+        expect(bound.execute(conn, "quaack_tx").values).to eq(rows(query))
+      end
+    end
+
+    it "fails where the literal fails, as a polymorphic function of an untyped string does" do
+      result = described_class.query(PgQuery.parse("SELECT json_agg('x') FROM public.orders o"))
+      bound = described_class.binding(result.sql, result.placeholder_map)
+      expect { bound.prepare(test_database.connection, "quaack_poly") }
+        .to raise_error(described_class::Error) { |e| expect([e.rule, e.sqlstate]).to eq(%w[prepare_failed 42804]) }
+    end
+
+    # The one difference: an untyped string that nothing types reads as
+    # unknown, but a parameter must have a type, so it's text.
+    it "binds an untyped string pg_typeof sees as text, where the literal is unknown" do
+      result = redact("SELECT pg_typeof('a')")
+      expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq([["text"]])
+      expect(rows("SELECT pg_typeof('a')")).to eq([["unknown"]])
     end
 
     it "refuses SQL that isn't one SELECT, or that names a placeholder the map doesn't hold" do
@@ -227,10 +260,34 @@ RSpec.describe Quaack::Enclave::Redaction do
       expect { described_class.binding("SELECT $2", map) }.to raise_error(described_class::Error, "unknown_placeholder")
     end
 
-    it "keeps the values out of inspect" do
+    it "refuses a statement name that isn't a lowercase word" do
+      bound = described_class.binding("SELECT 1", {})
+      expect { bound.prepare(test_database.connection, "q; DROP TABLE public.orders") }.to raise_error(ArgumentError)
+    end
+
+    it "raises an error with no value in it when Postgres refuses a value or the SQL" do
+      map = { "$1" => { "value" => "quaack-sentinel-value", "type" => "integer" } }
+      bound = described_class.binding("SELECT $1 + 1", map)
+      conn = test_database.connection
+      bound.prepare(conn, "quaack_bad")
+      expect { bound.execute(conn, "quaack_bad") }.to raise_error(described_class::Error) { |e|
+        expect([e.message, e.rule, e.sqlstate, e.cause.inspect].join).not_to include("quaack-sentinel")
+        expect(e.rule).to eq("execute_failed")
+        expect(e.sqlstate).to eq("22P02")
+      }
+      broken = described_class.binding("SELECT $1 + 'quaack-sentinel-sql'::integer", map)
+      expect { broken.prepare(conn, "quaack_worse") }.to raise_error(described_class::Error) { |e|
+        expect([e.message, e.cause.inspect].join).not_to include("quaack-sentinel")
+        expect(e.rule).to eq("prepare_failed")
+      }
+    ensure
+      conn&.exec("DEALLOCATE ALL")
+    end
+
+    it "keeps the values out of inspect and out of the PREPARE" do
       map = redact("SELECT o.id FROM public.orders o WHERE o.status = 'quaack-sentinel-bind'").placeholder_map
       bound = described_class.binding("SELECT o.id FROM public.orders o WHERE o.status = $1", map)
-      expect([bound.inspect, bound.to_s, bound.prepare_sql("q")].join).not_to include("quaack-sentinel")
+      expect([bound.inspect, bound.to_s, bound.prepare_sql("q", bound.types)].join).not_to include("quaack-sentinel")
     end
   end
 end

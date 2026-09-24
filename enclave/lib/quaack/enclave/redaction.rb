@@ -15,7 +15,9 @@ module Quaack
     #   result.store(store)         # the placeholder_map and placeholder_shapes entries
     #
     #   Redaction.plan(racetrack_explain, Redaction.placeholder_map(store))
-    #   Redaction.binding(candidate_sql, Redaction.placeholder_map(store)).prepare_sql("q")
+    #   bound = Redaction.binding(candidate_sql, Redaction.placeholder_map(store))
+    #   bound.prepare(connection, "quaack_q")
+    #   bound.execute(connection, "quaack_q")
     #
     # == The query
     #
@@ -37,7 +39,10 @@ module Quaack
     #
     # The query must pass SupportedSql, and must not have $n parameters of
     # its own, which would clash with the placeholders (Error
-    # query_has_parameters). Intake refuses those already.
+    # query_has_parameters). Intake refuses those already. An interval
+    # constant with a field qualifier, such as INTERVAL '1' DAY, is refused
+    # too (Error interval_field_qualifier): the qualifier changes how the
+    # literal reads, and a bound parameter can't carry it.
     #
     # == Plans
     #
@@ -66,17 +71,25 @@ module Quaack
     # value-class and stays in the store. inspect shows neither the map
     # nor any value, and no error quotes one.
     module Redaction
-      # Its message is the rule, and never quotes the query.
+      # Its message is the rule, and the SQLSTATE of a Postgres error, and
+      # never quotes the query or a value.
       class Error < StandardError
-        def rule = message
+        attr_reader :rule, :sqlstate
+
+        def initialize(rule, sqlstate = nil)
+          @rule = rule
+          @sqlstate = sqlstate
+          super(sqlstate ? "#{rule} (SQLSTATE #{sqlstate})" : rule)
+        end
       end
 
       # One placeholder. value is the literal as text, or nil for NULL.
       # type is the literal's type for PREPARE (see Literal.of). shape is
       # its shape annotation: "type", the type class (text, integer,
       # numeric, boolean, datetime, or other, from the constant or its
-      # cast), "pattern" for a LIKE or ILIKE pattern (leading_wildcard,
-      # trailing_wildcard, both_wildcards, or no_wildcard), and "elements"
+      # cast), "pattern" for a LIKE or ILIKE pattern (where it has
+      # wildcards: some of "leading", "inner", and "trailing", in that
+      # order, or [] for none), and "elements"
       # for a member of an IN list or ARRAY[...], or an array literal: the
       # list's length, or the literal's.
       Placeholder = Data.define(:number, :value, :type, :shape) do

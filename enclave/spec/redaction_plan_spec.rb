@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "pg_query"
 require "quaack/enclave/redaction"
 
 RSpec.describe Quaack::Enclave::Redaction, ".plan" do
@@ -97,6 +98,38 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
         .to eq("(t = ANY (ARRAY[$1]::timestamp with time zone[]))")
     end
 
+    it "reads a cast to an array with a bound, and a type named with its schema" do
+      expect(filter("((t = ANY ('{a}'::text[3])) AND (x = 'a'::pg_catalog.varchar(12)))", map(entry("a"))))
+        .to eq("((t = ANY (ARRAY[$1]::text[3])) AND (x = $1::pg_catalog.varchar(12)))")
+    end
+
+    it "doesn't read AT as part of a type's name" do
+      expect(filter("((ts)::date AT (918273645))", {})).to eq("((ts)::date AT ($?))")
+    end
+
+    it "masks a number after a name that isn't a subplan's" do
+      expect(filter("(a = (Other 918273645).col1)", {})).to eq("(a = (Other $?).col1)")
+    end
+
+    it "matches a boolean the query wrote as a string, and bits" do
+      placeholder_map = map(entry("yes"), entry("b101", "bit varying"), entry("x1F", "bit varying"))
+      expect(filter("((a = true) AND (b = B'101'::bit(3)) AND (c = B'00011111'::bit varying))", placeholder_map))
+        .to eq("((a = $1) AND (b = $2::bit(3)) AND (c = $3::bit varying))")
+    end
+
+    it "matches only the placeholder types each kind of literal can be" do
+      placeholder_map = map(entry("5", "boolean"), entry("1", "integer"), entry("b1", "integer"))
+      expect(filter("((a = 5) AND (c = true) AND (d = B'1'))",
+                    placeholder_map)).to eq("((a = $?) AND (c = $?) AND (d = $?))")
+    end
+
+    it "matches a number the query wrote in hex, octal, binary, or with underscores" do
+      placeholder_map = map(entry("0x1F", "integer"), entry("0o17", "integer"), entry("0b101", "integer"),
+                            entry("1_000", "integer"))
+      expect(filter("((a = 31) AND (b = 15) AND (c = 5) AND (d = 1000))", placeholder_map))
+        .to eq("((a = $1) AND (b = $2) AND (c = $3) AND (d = $4))")
+    end
+
     it "masks a whole literal that looks like an array but isn't cast to one" do
       expect(filter("(note = '{4,5}'::text)", map(entry("4"), entry("5")))).to eq("(note = $?::text)")
     end
@@ -144,6 +177,14 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       expect(redact(bad, {}).explain.first["Plan"]).to eq("Node Type" => "Seq Scan")
     end
 
+    it "drops an expression with a comment, or a NUL, or bytes that aren't UTF-8" do
+      result = redact(node("Filter" => "(a = 1) /* quaack-sentinel-comment */", "Join Filter" => "(a = 1) -- x",
+                           "Hash Cond" => "(a = 1)\0'quaack-sentinel-nul'",
+                           "Index Cond" => "(a = '\xFF quaack-sentinel-bytes'::text)"), {})
+      expect(result.explain.first["Plan"]).to eq("Node Type" => "Seq Scan")
+      expect(result.dropped).to eq(4)
+    end
+
     it "drops an expression it can't read, or a whole list with one in it, and counts each" do
       result = redact(node("Filter" => "(email = 'quaack-sentinel-unclosed)", "Output" => ["'a", "o.id"]), {})
       expect(result.explain.first["Plan"]).to eq("Node Type" => "Seq Scan")
@@ -159,6 +200,17 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       expect(top.keys).to contain_exactly("Plan", "Settings", "Planning", "Planning Time", "Execution Time")
       expect(top["Settings"]).to eq("work_mem" => "64kB", "search_path" => "app, public")
       expect(top["Planning"]).to eq(explain.first["Planning"])
+    end
+
+    it "drops a setting, a planning count, or a statement time that isn't the kind it should be" do
+      explain = fixture("sentinel_literals")
+      explain.first["Settings"] = { "work_mem" => ["quaack-sentinel-setting"], "jit" => "off" }
+      explain.first["Planning"] = { "Shared Hit Blocks" => "quaack-sentinel-hits", "Shared Read Blocks" => 2 }
+      explain.first["Planning Time"] = "quaack-sentinel-time"
+      top = redact(explain, {}).explain.first
+      expect(top["Settings"]).to eq("jit" => "off")
+      expect(top["Planning"]).to eq("Shared Read Blocks" => 2)
+      expect(top).not_to have_key("Planning Time")
     end
   end
 
@@ -196,5 +248,28 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     expect { redact(node({}), { "$1" => "quaack-sentinel-map" }) }
       .to raise_error(described_class::Error, "bad_placeholder_map")
     expect { redact(node({}), { "$2" => entry("x") }) }.to raise_error(described_class::Error, "bad_placeholder_map")
+    expect { redact(node({}), map(entry("x", "text"))) }.to raise_error(described_class::Error, "bad_placeholder_map")
+    expect { redact(node({}), map({ "value" => 5, "type" => "integer" })) }
+      .to raise_error(described_class::Error, "bad_placeholder_map")
+    expect { described_class.binding("SELECT 1", { "$1" => "quaack-sentinel-map" }) }
+      .to raise_error(described_class::Error, "bad_placeholder_map")
+  end
+
+  describe "row counts" do
+    it "gives only numbers and a String node type, whatever the raw node holds" do
+      explain = node("Node Type" => ["quaack-sentinel-type"], "Filter" => "(a = 'x'::text)",
+                     "Plan Rows" => "quaack-sentinel-rows", "Actual Rows" => 3.0,
+                     "Actual Loops" => ["quaack-sentinel-loops"])
+      result = described_class.redact(PgQuery.parse("SELECT 1 FROM public.o WHERE a = 'x'"), explain)
+      expect(result.placeholder_shapes["$2"]["rows"])
+        .to eq("status" => "found", "node" => nil, "qual" => "Filter", "estimated_rows" => nil,
+               "actual_rows" => 3.0, "actual_loops" => nil)
+    end
+
+    it "keeps the raw node out of a consumer's inspect" do
+      consumer = described_class.const_get(:Plan)::Consumer.new(fields: { "Filter" => "quaack-sentinel" },
+                                                                qual: "Filter")
+      expect([consumer.inspect, consumer.to_s].join).not_to include("quaack-sentinel")
+    end
   end
 end

@@ -24,8 +24,8 @@ module Quaack
         # The constant's value as text, the way the query wrote it, and the
         # type Postgres gives that literal, for PREPARE: an untyped string
         # (and NULL, whose value is nil) is unknown, so it takes its type
-        # from where it sits, just as the literal did. A bit string is
-        # unknown too, since the type bit alone means bit(1). Its value is
+        # from where it sits, just as the literal did. A bit string is bit
+        # varying, since the type bit alone means bit(1). Its value is
         # pg_query's text, such as b101 or x1F, which bit's input reads.
         def of(constant)
           case constant.val
@@ -33,7 +33,7 @@ module Quaack
           when :ival then [constant.ival.ival.to_s, "integer"]
           when :fval then [constant.fval.fval, float_type(constant.fval.fval)]
           when :boolval then [constant.boolval.boolval.to_s, "boolean"]
-          when :bsval then [constant.bsval.bsval, "unknown"]
+          when :bsval then [constant.bsval.bsval, "bit varying"]
           else [nil, "unknown"]
           end
         end
@@ -70,19 +70,18 @@ module Quaack
         end
 
         # The type class of a cast's type. An array's is its element's.
-        def type_class(type_name)
-          TYPE_CLASSES.fetch(type_name.names.last&.string&.sval.to_s, "other")
-        end
+        def type_class(type_name) = TYPE_CLASSES.fetch(type_name(type_name), "other")
+
+        # The last part of a type's name, such as int4 for pg_catalog.int4.
+        def type_name(type_name) = type_name.names.last&.string&.sval.to_s
 
         # Where a LIKE pattern has its wildcards, % and _, reading escape as
-        # the escape character ("" for none).
+        # the escape character ("" for none): some of leading, inner, and
+        # trailing, in that order, or none.
         def pattern(text, escape)
           wildcards = pattern_wildcards(text, escape)
-          return "no_wildcard" if wildcards.empty?
-
-          { [true, true] => "both_wildcards", [true, false] => "leading_wildcard",
-            [false, true] => "trailing_wildcard", [false, false] => "no_wildcard" }
-            .fetch([wildcards.first, wildcards.last])
+          inner = wildcards[1...-1].to_a.any?
+          [("leading" if wildcards.first), ("inner" if inner), ("trailing" if wildcards.last)].compact.uniq
         end
 
         # One entry per character the pattern matches: true for a wildcard.

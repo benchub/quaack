@@ -24,7 +24,7 @@ module Quaack
       # often match nothing and are masked.
       class Matcher
         NUMBER_TYPES = %w[integer bigint numeric].freeze
-        TYPES = [*NUMBER_TYPES, "boolean", "unknown"].freeze
+        TYPES = [*NUMBER_TYPES, "boolean", "bit varying", "unknown"].freeze
         # The placeholder types a number or a boolean in a plan can match.
         NUMBERS_FROM = ["unknown", *NUMBER_TYPES].freeze
         BOOLEANS_FROM = %w[boolean unknown].freeze
@@ -58,7 +58,7 @@ module Quaack
 
         def boolean?(text, value, type) = BOOLEANS_FROM.include?(type) && boolean(value) == text
 
-        def bits?(text, value, type) = type == "unknown" && bits(value) == bits(text)
+        def bits?(text, value, type) = type == "bit varying" && bits(value) == bits(text)
 
         def same_number?(one, other)
           one = number(one)
