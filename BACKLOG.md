@@ -903,7 +903,8 @@ Split out of 20260922-47. The work so far is on branch `task/20260922-47`. Build
 - **Depends on:** 20260922-47's branch.
 - **Came from:** Second review of 20260922-47.
 - **README:** 9d.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260923-54` through a build, a review, a fix round, a second review, a tests-only round, and a tests-only review, but not landed. The tests-only review found the tie-of-three test still vacuous against a first-versus-last mutant in `hidden_differences?`. 20260924-2 fixes that test, and then both land together.
 
 ### 20260923-55. Round-trip guard for deparsed SQL.
 
@@ -959,6 +960,18 @@ Minor findings from the second review of 20260923-56:
 - **Depends on:** 20260923-56.
 - **Came from:** Second review of 20260923-56.
 - **README:** 5a-4.
+- **Status:** todo
+
+### 20260924-2. Pin hidden_differences? for every row in a tie group.
+
+Split out of 20260923-54. Build on its branch `task/20260923-54`, then land both together. The tests-only review of 20260923-54 found "refuses an interval column when a tie of three hides a different interval behind a repeat" still vacuous. Changing `hidden_differences?` in `result_comparison/tiebreaker.rb` to compare only `rows.first` and `rows.last` survives the whole suite, because the fixture ['1 day', '1 day', '24 hours'] puts the odd value last. Add a fixture with the odd value in the middle, such as ['1 day', '24 hours', '1 day'] or a group of four. It must go red under the first-two, first-and-last, and `all?` mutants.
+
+Also, from the same review:
+- The two composite tests (numeric and interval) should assert `rule: :unsupported_order`, not just `match? == false`.
+
+- **Depends on:** 20260923-54's branch.
+- **Came from:** Tests-only review of 20260923-54.
+- **README:** 9d.
 - **Status:** todo
 
 ## After version 1.
