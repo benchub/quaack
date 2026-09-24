@@ -270,6 +270,19 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     end
   end
 
+  # pg_query's deparser can write SQL that means something else, so a
+  # qualified candidate must parse back to the tree it came from.
+  describe "a candidate pg_query deparses wrong" do
+    it "is refused when it would change meaning, as IS NOT DISTINCT FROM with AND does" do
+      sql = "SELECT id FROM orders WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)"
+      expect { check(sql) }.to rejected("deparse_mismatch")
+    end
+
+    it "is refused, not a raw parse error, when it would deparse to SQL that doesn't parse" do
+      expect { check("SELECT (ARRAY(SELECT id FROM orders))[1]") }.to rejected("deparse_mismatch")
+    end
+  end
+
   describe "the order of the checks" do
     it "checks supported SQL before placeholders" do
       expect { check("SELECT $9 FROM orders FOR UPDATE") }
@@ -321,6 +334,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       "bad_placeholder" => planted(sentinel, extra: ", $8"),
       "unknown_relation" => planted(sentinel, from: "sales.refunds"),
       "not_a_table" => planted(sentinel, from: "sales.item_view"),
+      "deparse_mismatch" => planted(sentinel, tail: " AND ('x' = $1) IS NOT DISTINCT FROM (true AND false)"),
       "volatile_function" => planted(sentinel, extra: ", random()")
     }.each do |rule, sql|
       it "never shows up when it's refused as #{rule}" do
