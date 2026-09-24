@@ -251,7 +251,9 @@ RSpec.describe Quaack::Enclave::Store do
 
     # The jump server's main thread has an 8 MB stack, and JSON needs the
     # most stack to write nested Hashes. A thread with half that must still
-    # manage MAX_DEPTH, so the cap leaves room to spare.
+    # manage MAX_DEPTH, so the cap leaves room to spare. How much room
+    # depends on the platform, so this doesn't pin MAX_DEPTH's value. The
+    # PlainData spec does.
     it "keeps Arrays and Hashes nested MAX_DEPTH deep in a thread with a 4 MB stack" do
       out = in_thread(4 * 1024 * 1024, <<~RUBY)
         s = Quaack::Enclave::Store.create(base: ARGV[0])
