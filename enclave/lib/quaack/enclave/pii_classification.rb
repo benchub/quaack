@@ -83,20 +83,23 @@ module Quaack
         name = TableName.new(schema: table["schema"], name: table["name"])
         stats = statistics.table(name)
         table["column_names"].map do |column|
-          count = stats.column?(column) ? stats.distinct_count(column) : nil
-          pii, low = classes(config, name, column, table["text_columns"].include?(column), count)
-          low &&= stats.column(column).n_distinct.positive?
+          pii, low = classes(config, stats, column, table["text_columns"].include?(column))
           { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii, "low_cardinality" => low }
         end
       end
 
-      # [pii, low_cardinality] for one column. count is its distinct count,
-      # or nil when that's unknown.
-      def classes(config, table, column, text, count)
+      # [pii, low_cardinality] for one column of stats, a TableStatistics.
+      # count is its distinct count, or nil when that's unknown.
+      def classes(config, stats, column, text)
+        count = stats.column?(column) ? stats.distinct_count(column) : nil
         threshold = config.cardinality_threshold
-        pii = config.pii_column?(table, column) || (text && (count.nil? || count >= threshold))
-        [pii, !pii && !count.nil? && count < threshold]
+        pii = config.pii_column?(stats.name, column) || (text && (count.nil? || count >= threshold))
+        [pii, !pii && repeats?(stats, column) && count < threshold]
       end
+
+      # Whether pg_stats has a positive n_distinct for the column, so its
+      # distinct count is known and each value repeats.
+      def repeats?(stats, column) = stats.column?(column) && stats.column(column).n_distinct.positive?
 
       def outbound(data, columns)
         classes = columns.to_h { [[it["schema"], it["table"], it["column"]], it] }

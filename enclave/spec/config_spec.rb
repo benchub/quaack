@@ -81,7 +81,7 @@ RSpec.describe Quaack::Enclave::Config do
       matches = columns.map do |schema, name, column|
         loaded.pii_column?(Quaack::Enclave::TableName.new(schema:, name:), column)
       end
-      expect(matches).to eq([true] * 5 + [false] * 6)
+      expect(matches).to eq(([true] * 5) + ([false] * 6))
     end
   end
 
