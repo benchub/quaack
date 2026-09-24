@@ -9,8 +9,9 @@ require "quaack/enclave/cli"
 require "quaack/enclave/store"
 
 # The production inputs of the fixture below hold these literals. They stand
-# in for real values, which must never leave the enclave. They're lowercase,
-# so a step name or rule that echoed them would still pass as one.
+# in for real values, which must never leave the enclave. They're baked
+# into the plan fixture, so they're fixed rather than made by
+# LeakCheck::Sentinels.
 INTAKE_SENTINELS = %w[quaack-sentinel-email quaack-sentinel-name].freeze
 # One more, planted in each bad input and each path.
 INTAKE_SENTINEL = "sentinel-5b17c0-ssn"
@@ -21,6 +22,9 @@ RSpec.describe "quaacks intake" do
   let(:dir) { Dir.mktmpdir("quaack-intake") }
   let(:base) { File.join(dir, "runs") }
   let(:out) { StringIO.new }
+  let(:sentinels) do
+    LeakCheck::Sentinels.new(extra: { email: INTAKE_SENTINELS[0], name: INTAKE_SENTINELS[1], planted: INTAKE_SENTINEL })
+  end
   # A real EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON), captured from
   # the test harness by fixtures/plans/capture.rb, and its query.
   let(:plan_text) { File.read(File.join(__dir__, "fixtures", "plans", "sentinel_literals.json")) }
@@ -55,12 +59,8 @@ RSpec.describe "quaacks intake" do
   def expect_refused(rule, status, why = nil)
     expect(out.string).to eq(error_line(rule)), why
     expect(status).to eq(70), why
-    expect_no_sentinels(why)
+    expect_no_leaks(sentinels, stdout: out.string, why:)
     expect(runs).to eq([]), why
-  end
-
-  def expect_no_sentinels(why)
-    (INTAKE_SENTINELS + [INTAKE_SENTINEL]).each { |s| expect(out.string).not_to include(s), why }
   end
 
   def refuses_query(text, rule)
@@ -91,10 +91,8 @@ RSpec.describe "quaacks intake" do
       expect(intake_with).to eq(0)
 
       stored = Dir.children(only_run.path).map { File.read(File.join(only_run.path, it)) }.join
-      INTAKE_SENTINELS.each do |sentinel|
-        expect(stored).to include(sentinel)
-        expect(out.string).not_to include(sentinel)
-      end
+      INTAKE_SENTINELS.each { expect(stored).to include(it) }
+      expect_no_leaks(sentinels, stdout: out.string)
     end
 
     it "anchors the clock at the time of intake, in UTC, without --captured-at" do

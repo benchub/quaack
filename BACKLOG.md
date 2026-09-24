@@ -54,13 +54,7 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 
 ### 20260922-8. Error filtering. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-9. Leak tests.
-
-Build a reusable test helper that runs a step on data with known sentinel values and fails if any sentinel shows up in enclave output. Every later enclave task should use it.
-
-- **Depends on:** 20260922-7, 20260922-2.
-- **README:** Trust boundary.
-- **Status:** todo
+### 20260922-9. Leak tests. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
@@ -169,7 +163,8 @@ Replace literals with numbered, shape-preserving placeholders. Annotate each wit
 - **Depends on:** 20260922-13, 20260922-15.
 - **README:** 3g.
 - **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-23` through a build, a review, a fix round, and a second review, but not landed. The second review found that a string like `'1e99999999'` hangs `Rational()` in the matcher. 20260924-11 finishes it on top of that branch.
 - **Decided:** Match each literal in a racetrack plan to the placeholder map by value, after normalizing casts. Replace anything still unmatched with a generic `$?` marker, so no literal leaks, and count the masks for the 15b burndown.
 
 ### 20260922-24. 3h clock anchoring.
@@ -179,7 +174,8 @@ Replace the listed time functions with `quaack.clock_anchor()` in the AST. Keep 
 - **Depends on:** 20260922-14.
 - **README:** 3h.
 - **Note (from 20260922-13):** Intake stores `clock_anchor` as a UTC ISO-8601 string with microseconds, such as `2026-09-24T07:35:44.661129Z`.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-24` through a build, a review, a fix round, and a second review, but not landed. The second review found that anchoring renames implicit output columns and function-in-FROM aliases, which can silently rebind `ORDER BY now`. 20260924-12 finishes it on top of that branch.
 - **Decided:** `quaacks intake` takes an optional `--captured-at` flag, the time the production plan ran. Without it, the anchor is the time of intake. The run stores the anchor, and `clock_anchor()` returns it.
 
 ## Step 4: Run server.
@@ -1014,6 +1010,58 @@ Findings from the reviews of 20260922-35:
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
 - **README:** 5a-7.
+- **Status:** todo
+
+### 20260924-11. Finish 3g redaction.
+
+Split out of 20260922-23. The work so far is on branch `task/20260922-23`. Build on that branch, then land both together. Fix what the second review of 20260922-23 found:
+- **A huge exponent hangs redaction.** `Matcher#number` calls `Rational(text)` on any text that looks like a decimal, with any exponent. `Rational("1e99999999")` doesn't finish in 60 seconds. An untyped string placeholder is `unknown`, which is in `NUMBERS_FROM`, so `WHERE t.s = '1e99999999'` hangs. Cap the exponent and the digit count before converting, or compare some other bounded way. Test it with a timeout.
+- **Bit strings never match real plans.** PG18 prints `B'10110'` as `'10110'::bit varying`, and `X'1F'` as `'00011111'::"bit"`. The matcher never compares a string token with a bit placeholder, so the `bits?` branch never runs for real plans. Match them, and test with real PG18 output.
+- **Surviving mutants:**
+  - The retry-cap guard (`@types[number - 1] == "unknown"`). Test it with a fake connection that repeats 42P18 for the same parameter.
+  - The ESCAPE `uncast`. Test `ESCAPE '!'::text`.
+
+- **Depends on:** 20260922-23's branch.
+- **Came from:** Second review of 20260922-23.
+- **README:** 3g.
+- **Status:** todo
+
+### 20260924-12. Finish 3h clock anchoring.
+
+Split out of 20260922-24. The work so far is on branch `task/20260922-24`. Build on that branch, then land both together. Fix what the second review of 20260922-24 found:
+- **Anchoring changes implicit names.** Postgres names an unaliased `now()` column `now`, and it looks through casts, so `now()::date` is also `now`. `CURRENT_DATE` is `current_date`, and `LOCALTIMESTAMP` is `localtimestamp`. After anchoring, the names become `clock_anchor`, `date`, or `timestamp`. So each of these fails after anchoring:
+  - `SELECT s.now FROM (SELECT now()) s`
+  - `WITH w AS (SELECT now()) SELECT w.now FROM w`
+  - `SELECT now() ORDER BY now`
+  - `SELECT now.now FROM now()`
+
+  The worst case is silent. In `SELECT id, now()::date FROM public.ev ORDER BY now`, where `ev` has a column named `now`, `ORDER BY now` rebinds to the table column and the order changes. Keep the original names: set `ResTarget.name` when it's empty, and add an alias when an unaliased function in FROM is anchored. Make `restore` handle or remove what anchoring added. Test each case on Postgres, including the silent one and `GROUP BY` by name.
+- **Minor:**
+  - `NodeRewrite` has no spec of its own.
+  - The "is plain strings" test passes on an empty list.
+
+- **Depends on:** 20260922-24's branch.
+- **Came from:** Second review of 20260922-24.
+- **README:** 3h.
+- **Status:** todo
+
+### 20260924-13. Leak-test helper loose ends.
+
+Findings from the reviews of 20260922-9:
+- **A Tempfile slips past the IO refusal.** Tempfile is a Delegator, so `is_a?(IO)` is false, and a Tempfile holding a sentinel returns no findings. Refuse Tempfile too. A File nested inside an object is also neither scanned nor refused.
+- **The positive control doesn't plant in Array elements, Hash keys and values, Struct or Data members, or a StringIO's `#string`,** though its comment says it does. The unit specs catch those breaks. Add the plants, or reword the comment.
+- **Surviving mutants:**
+  - `MAX_DEPTH` 24 → 10
+  - case-insensitive `extra:` needles
+  - scanning only the first backtrace line
+  - `MIN_EXTRA` 9 → 4
+  - the `seen` set, which only affects speed
+- **`pg` isn't a runtime dependency of quaacks,** so `LeakCheck::Quaacks` can't run subcommands that connect to Postgres. The first task with such a step (20260922-16) must add `pg` to the quaacks gemspec and to `ENCLAVE_ALLOWED_GEMS`.
+- **The harness schema has no JSON column,** so the fixture can't plant the JSON sentinel in stored rows.
+
+- **Depends on:** 20260922-9.
+- **Came from:** Both reviews of 20260922-9.
+- **README:** Trust boundary.
 - **Status:** todo
 
 ## After version 1.
