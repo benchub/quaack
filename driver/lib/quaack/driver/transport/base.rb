@@ -46,16 +46,13 @@ module Quaack
         def call(subcommand, args: {}, input: nil)
           argv = argv(subcommand, args)
           stdin = stdin(input)
-          run = Child.run(command(argv), env:, stdin:, timeout: @timeout, max_output_bytes: @max_output_bytes)
+          run = Child.run(command(argv), stdin:, timeout: @timeout, max_output_bytes: @max_output_bytes)
           raise Reply.failure(argv.first, run.status, rule: run.limit.name) if run.limit
 
           Result.new(messages: Reply.parse(run.stdout, run.status, subcommand: argv.first))
         end
 
         private
-
-        # What the child's environment adds to the driver's.
-        def env = {}
 
         def positive(value, what)
           return value if value.is_a?(Numeric) && value.positive?

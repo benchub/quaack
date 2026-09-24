@@ -73,16 +73,26 @@ module Quaack
         def parse(stdout, status, subcommand:)
           lines = lines(stdout).filter_map { line(it) }
           messages = lines.grep(Hash)
-          error = messages.find { it["type"] == "error" }
-          raise failure(subcommand, status, error) if error
+          error!(subcommand, status, messages)
           raise failure(subcommand, status) unless status.success? && done?(lines.last)
           raise failure(subcommand, status, rule: "unexpected_output") unless allowed?(lines)
 
           messages[0...-1]
         end
 
-        # stdout's non-blank lines, each as UTF-8 text, or nil for one that
-        # isn't valid UTF-8.
+        # Raises the first error line's EnclaveError, if there's one.
+        def error!(subcommand, status, messages)
+          error = messages.find { it["type"] == "error" }
+          raise failure(subcommand, status, error) if error
+        end
+
+        # How the process ended, for an EnclaveError.
+        def ending(status)
+          { exit_status: status.exitstatus, signal: status.termsig && Signal.signame(status.termsig) }
+        end
+
+        # stdout's non-blank lines, each as UTF-8 text, or :skip for one
+        # that isn't valid UTF-8.
         def lines(stdout)
           stdout.b.split("\n").filter_map do |line|
             next if line.strip.empty?
@@ -145,8 +155,7 @@ module Quaack
 
         def failure(subcommand, status, error = nil, rule: "incomplete")
           fields = error ? error_fields(error) : { rule: }
-          EnclaveError.new(subcommand:, **fields, exit_status: status.exitstatus,
-                                                  signal: status.termsig && Signal.signame(status.termsig))
+          EnclaveError.new(subcommand:, **fields, **ending(status))
         end
 
         def error_fields(error)

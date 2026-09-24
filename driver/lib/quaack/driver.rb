@@ -3,6 +3,7 @@
 require_relative "driver/version"
 require_relative "driver/cli"
 require_relative "driver/burndown"
+require_relative "driver/transport"
 
 module Quaack
   # The driver. It runs on an engineer's laptop, outside the production

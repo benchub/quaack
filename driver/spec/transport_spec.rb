@@ -122,13 +122,25 @@ RSpec.describe Quaack::Driver::Transport do
 
     it "kills a run that takes longer than its timeout, and says so" do
       pid_file = File.join(dir, "pid")
-      step = local.new(command: EnclaveCommands.probe(dir, "File.write(#{pid_file.inspect}, Process.pid.to_s); sleep 30"),
-                       timeout: 1)
+      body = "File.write(#{pid_file.inspect}, Process.pid.to_s); sleep 30"
+      step = local.new(command: EnclaveCommands.probe(dir, body), timeout: 1)
       error = nil
 
       expect(elapsed { error = failure(step) }).to be < 10
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
+      expect(alive?(Integer(File.read(pid_file)))).to be(false)
+    end
+
+    it "kills the run when the driver is interrupted while waiting for it, as by a Ctrl-C" do
+      pid_file = File.join(dir, "pid")
+      step = local.new(command: EnclaveCommands.raw("File.write(#{pid_file.inspect}, Process.pid.to_s); sleep 30"))
+      caller = Thread.new { step.call("probe") }
+      caller.report_on_exception = false
+      Thread.pass until File.exist?(pid_file) && !File.empty?(pid_file)
+      caller.raise(Interrupt)
+
+      expect { caller.join }.to raise_error(Interrupt)
       expect(alive?(Integer(File.read(pid_file)))).to be(false)
     end
 
@@ -141,7 +153,7 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "times out a run that closes its stdout and keeps going" do
-      step = local.new(command: EnclaveCommands.raw("STDOUT.close; sleep 30"), timeout: 0.5)
+      step = local.new(command: EnclaveCommands.raw("STDOUT.reopen(File::NULL); sleep 30"), timeout: 0.5)
       error = nil
 
       expect(elapsed { error = failure(step) }).to be < 10
@@ -149,7 +161,8 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "kills a run that prints more than max_output_bytes, and says so" do
-      step = local.new(command: EnclaveCommands.raw('print "x" * 5000; $stdout.flush; sleep 30'), max_output_bytes: 1000)
+      step = local.new(command: EnclaveCommands.raw('print "x" * 5000; $stdout.flush; sleep 30'),
+                       max_output_bytes: 1000)
       error = nil
 
       expect(elapsed { error = failure(step) }).to be < 10
@@ -382,7 +395,9 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     it "skips a line that isn't valid UTF-8, as it would a cut-off line" do
-      result = raw(%(print "{\\"type\\":\\"version\\",\\"version\\":\\"\\xC3\\"}\\n{\\"type\\":\\"done\\"}\\n")).call("probe")
+      # A version whose value is one byte, 0xC3, the start of a character.
+      line = %({"type":"version","version":"\\xC3"}\\n{"type":"done"}\\n)
+      result = raw("print \"#{line.gsub('"', '\\"')}\"").call("probe")
 
       expect(result.messages).to eq([])
     end

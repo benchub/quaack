@@ -25,19 +25,29 @@ module Quaack
 
         module_function
 
-        # argv is the command and its arguments, env adds to the child's
-        # environment, and stdin is a String or nil. timeout is in seconds.
-        def run(argv, env:, stdin:, timeout:, max_output_bytes:)
+        # argv is the command and its arguments, and stdin is a String or
+        # nil. timeout is in seconds.
+        def run(argv, stdin:, timeout:, max_output_bytes:)
           deadline = now + timeout
           # The [command, argv0] form never goes through a shell, even when
           # argv has only one element.
-          input, output, waiter = Open3.popen2(env, [argv.first, argv.first], *argv.drop(1), err: File::NULL)
+          input, output, waiter = Open3.popen2([argv.first, argv.first], *argv.drop(1), err: File::NULL)
           writer = write(input, stdin)
           stdout, limit = read(output, deadline, max_output_bytes)
-          limit = :timeout if limit.nil? && !waiter.join([deadline - now, 0].max)
+          limit ||= wait(waiter, deadline)
           terminate(waiter) if limit
           Run.new(stdout:, status: waiter.value, limit:)
         ensure
+          clean_up(waiter, writer, output)
+        end
+
+        # nil once the child has ended, or :timeout if it's still running at
+        # the deadline. Its stdout can close before it ends.
+        def wait(waiter, deadline) = (:timeout unless waiter.join([deadline - now, 0].max))
+
+        # Kills the child if it's still running, as when the driver itself
+        # was interrupted, and closes what run opened.
+        def clean_up(waiter, writer, output)
           terminate(waiter) if waiter&.alive?
           writer&.join
           output&.close

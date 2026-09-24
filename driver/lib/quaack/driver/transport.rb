@@ -3,6 +3,7 @@
 require_relative "enclave_error"
 require_relative "transport/base"
 require_relative "transport/local"
+require_relative "transport/ssh"
 
 module Quaack
   module Driver
