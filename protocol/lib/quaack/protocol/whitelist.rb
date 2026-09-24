@@ -1,0 +1,27 @@
+# frozen_string_literal: true
+
+module Quaack
+  module Protocol
+    # The one list of what may leave the production enclave (README, "Trust
+    # boundary"). Each key is a type of message the enclave script prints,
+    # and its value is the only fields that message may carry. The enclave's
+    # egress function sends each message as its type plus these fields, and
+    # drops every other field and every message of a type not listed here.
+    #
+    # These are the fields of QUAACK's own messages, not database columns, so
+    # this changes only when a step changes what it prints. Every field
+    # listed here goes out as is, with no check on its value. So add a field
+    # only if every value it can ever hold is shape-class data, and treat each
+    # change to this file as a change to the trust boundary.
+    WHITELIST = {
+      # Derived statistics for one column, from step 3f. mcv_freqs are the
+      # MCV frequencies without their values. low_card_values are the MCV
+      # values themselves, and 3f sets them only for low-cardinality columns.
+      column_stats: %i[table column n_distinct null_frac correlation mcv_freqs low_card_values].freeze,
+      # A failed step: which step, which rule it broke, and the Postgres
+      # SQLSTATE if there was one. Never the error's message text, which can
+      # hold a real value.
+      error: %i[step rule sqlstate].freeze
+    }.freeze
+  end
+end

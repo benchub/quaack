@@ -1,0 +1,234 @@
+# frozen_string_literal: true
+
+require "json"
+require "quaack/enclave/egress"
+
+# Stands in for a real production value. It must never show up in what
+# Egress.serialize returns, or in anything it raises.
+EGRESS_SENTINEL = "SENTINEL-8f3a2c-orders.email"
+
+RSpec.describe Quaack::Enclave::Egress do
+  let(:egress) { described_class }
+  let(:whitelist) { Quaack::Protocol::WHITELIST }
+
+  def parsed(message) = JSON.parse(egress.serialize(message))
+
+  it "is loaded by quaack/enclave" do
+    out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e",
+                                'require "quaack/enclave"; print Quaack::Enclave::Egress.serialize(type: :error)')
+
+    expect(status).to be_success, "stderr was #{err}"
+    expect(out).to eq('{"type":"error"}')
+  end
+
+  describe "the sentinel check itself" do
+    it "sees the sentinel when it's in an allowed field" do
+      out = egress.serialize(type: :error, step: "3f", rule: EGRESS_SENTINEL)
+
+      expect(out).to include(EGRESS_SENTINEL)
+    end
+  end
+
+  describe "a message of a whitelisted type" do
+    it "keeps an error's allowed fields and drops the rest" do
+      out = egress.serialize(type: :error, step: "3f", rule: "unique_violation", sqlstate: "23505",
+                             message: "Key (email)=(#{EGRESS_SENTINEL}) already exists.",
+                             detail: EGRESS_SENTINEL, backtrace: [EGRESS_SENTINEL])
+
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f", "rule" => "unique_violation",
+                                    "sqlstate" => "23505")
+      expect(out).not_to include(EGRESS_SENTINEL)
+    end
+
+    it "keeps column_stats' allowed fields, values unchanged, and drops the rest" do
+      out = egress.serialize(
+        type: :column_stats, table: "public.orders", column: "status", n_distinct: 4, null_frac: 0.0,
+        correlation: nil, mcv_freqs: [0.5, 0.25], low_card_values: %w[new paid],
+        most_common_vals: [EGRESS_SENTINEL], histogram_bounds: [EGRESS_SENTINEL]
+      )
+
+      expect(JSON.parse(out)).to eq(
+        "type" => "column_stats", "table" => "public.orders", "column" => "status", "n_distinct" => 4,
+        "null_frac" => 0.0, "correlation" => nil, "mcv_freqs" => [0.5, 0.25], "low_card_values" => %w[new paid]
+      )
+      expect(out).not_to include(EGRESS_SENTINEL)
+    end
+
+    it "keeps every field on each type's list, and only those, for every type on the whitelist" do
+      whitelist.each do |type, fields|
+        message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
+        out = egress.serialize(message)
+
+        expect(JSON.parse(out)).to eq({ "type" => type.to_s, **fields.to_h { |f| [f.to_s, "value of #{f}"] } })
+        expect(out).not_to include(EGRESS_SENTINEL)
+      end
+    end
+
+    it "prints type first and then the fields in whitelist order, whatever order they came in" do
+      out = egress.serialize(sqlstate: "23505", rule: "r", step: "s", type: :error)
+
+      expect(out).to eq('{"type":"error","step":"s","rule":"r","sqlstate":"23505"}')
+    end
+
+    it "leaves out an allowed field the message doesn't have, rather than sending null" do
+      expect(parsed(type: :error, step: "3f")).to eq("type" => "error", "step" => "3f")
+    end
+
+    it "sends an allowed field that's present but nil as null" do
+      expect(parsed(type: :error, step: "3f", sqlstate: nil))
+        .to eq("type" => "error", "step" => "3f", "sqlstate" => nil)
+    end
+
+    it "treats String keys and a String type the same as Symbols" do
+      symbols = egress.serialize(type: :error, step: "3f", rule: "r", sqlstate: "23505", detail: EGRESS_SENTINEL)
+      strings = egress.serialize("type" => "error", "step" => "3f", "rule" => "r", "sqlstate" => "23505",
+                                 "detail" => EGRESS_SENTINEL)
+      mixed = egress.serialize(:type => "error", "step" => "3f", :rule => "r", "sqlstate" => "23505",
+                               "detail" => EGRESS_SENTINEL, :message => EGRESS_SENTINEL)
+
+      expect(strings).to eq(symbols)
+      expect(mixed).to eq(symbols)
+      expect(JSON.parse(strings)).to eq("type" => "error", "step" => "3f", "rule" => "r", "sqlstate" => "23505")
+    end
+
+    it "drops keys that are neither Symbols nor Strings, even one whose to_s is a field name" do
+      rule = Object.new
+      def rule.to_s = "rule"
+      out = egress.serialize(type: :error, step: "3f", 1 => EGRESS_SENTINEL, rule => EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f")
+    end
+  end
+
+  describe "a message that isn't of a whitelisted type" do
+    [
+      ["an unknown type", { type: :result_rows, rows: [[EGRESS_SENTINEL]] }],
+      ["an unknown String type", { "type" => "fixture", "contents" => EGRESS_SENTINEL }],
+      ["a type that differs only in case", { type: "Error", step: EGRESS_SENTINEL }],
+      ["no type", { step: "3f", rule: EGRESS_SENTINEL }],
+      ["no type, but a nil key holding a type's name", { nil => :error, step: EGRESS_SENTINEL }],
+      ["a nil type", { type: nil, step: EGRESS_SENTINEL }],
+      ["a type that's neither a Symbol nor a String", { type: [:error], step: EGRESS_SENTINEL }],
+      ["a type named by a field", { type: :step, step: EGRESS_SENTINEL }],
+      ["a String", EGRESS_SENTINEL],
+      ["an Array", [%i[type error], [:step, EGRESS_SENTINEL]]],
+      ["nil", nil]
+    ].each do |name, message|
+      it "sends nothing for #{name}" do
+        expect(egress.serialize(message)).to be_nil
+      end
+    end
+  end
+
+  describe "a message that names a key twice, as a Symbol and as a String" do
+    it "sends nothing when the type is named twice" do
+      expect(egress.serialize(:type => :error, "type" => :column_stats, :step => EGRESS_SENTINEL)).to be_nil
+    end
+
+    it "sends nothing when an allowed field is named twice" do
+      expect(egress.serialize(:type => :error, :step => "3f", "step" => EGRESS_SENTINEL)).to be_nil
+    end
+
+    it "still sends the message when only a dropped field is named twice" do
+      out = egress.serialize(:type => :error, :step => "3f", :detail => EGRESS_SENTINEL, "detail" => EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f")
+    end
+  end
+
+  describe "the type" do
+    it "goes out as the whitelist's own name, not the caller's object" do
+      type = Class.new(String) { def to_json(*) = %("#{EGRESS_SENTINEL}") }.new("error")
+
+      expect(egress.serialize(type: type, step: "3f")).to eq('{"type":"error","step":"3f"}')
+    end
+
+    it "isn't found through to_s, so an object whose to_s is a type's name sends nothing" do
+      type = Object.new
+      def type.to_s = "error"
+
+      expect(egress.serialize(type: type, step: EGRESS_SENTINEL)).to be_nil
+    end
+  end
+
+  it "sends plain data nested in an allowed field as is, with Symbols as their names" do
+    value = { "a" => [1, 2.5, nil, true, false, { b: "x" }], c: :d }
+
+    expect(parsed(type: :error, step: :"3f", rule: value))
+      .to eq("type" => "error", "step" => "3f", "rule" => { "a" => [1, 2.5, nil, true, false, { "b" => "x" }],
+                                                            "c" => "d" })
+  end
+
+  describe "an allowed field whose value isn't plain JSON data" do
+    def sentinel_object(method)
+      Object.new.tap { |o| o.define_singleton_method(method) { |*| %("#{EGRESS_SENTINEL}") } }
+    end
+
+    sentinel_string = Class.new(String) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
+    sentinel_hash = Class.new(Hash) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
+    sentinel_array = Class.new(Array) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
+    [
+      ["invalid UTF-8", -> { "#{EGRESS_SENTINEL}\xFF" }],
+      ["a NaN", -> { Float::NAN }],
+      ["Arrays nested deeper than JSON writes", -> { 200.times.reduce(EGRESS_SENTINEL) { |v, _| [v] } }],
+      ["an exception", -> { RuntimeError.new("Key (email)=(#{EGRESS_SENTINEL}) already exists.") }],
+      ["an object with its own to_s", -> { sentinel_object(:to_s) }],
+      ["an object with its own to_json", -> { sentinel_object(:to_json) }],
+      ["an object with its own to_s, in an Array", -> { [1, sentinel_object(:to_s)] }],
+      ["an object with its own to_s, as a Hash key", -> { { sentinel_object(:to_s) => 1 } }],
+      ["an Integer Hash key", -> { { 1 => EGRESS_SENTINEL } }],
+      ["a Hash that names a key twice", -> { { :a => 1, "a" => EGRESS_SENTINEL } }],
+      ["a String subclass with its own to_json", -> { sentinel_string.new("x") }],
+      ["a Hash subclass with its own to_json", -> { sentinel_hash[a: 1] }],
+      ["an Array subclass with its own to_json", -> { sentinel_array.new([1]) }],
+      ["a Struct", -> { Struct.new(:email).new(EGRESS_SENTINEL) }],
+      ["a Time", -> { Time.at(0) }],
+      ["a Range", -> { EGRESS_SENTINEL..EGRESS_SENTINEL }],
+      ["a Rational", -> { Rational(1, 3) }]
+    ].each do |name, value|
+      it "raises Egress::Error that carries nothing from the message, for #{name}" do
+        error = nil
+        begin
+          egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+        rescue StandardError => e
+          error = e
+        end
+
+        expect(error).to be_a(described_class::Error)
+        expect(error.message).to eq("a value in this error message can't be written as JSON")
+        expect(error.cause).to be_nil
+        [error.message, error.full_message, error.detailed_message, error.inspect].each do |text|
+          expect(text).not_to include(EGRESS_SENTINEL)
+        end
+        expect(error.instance_variables).to be_empty
+      end
+    end
+  end
+
+  # The jump server runs the enclave outside Bundler, so it gets the json
+  # that ships with Ruby, not the newer one in this bundle. The two differ
+  # on what they let through, so check the cases that differ against the
+  # shipped one too.
+  it "treats non-plain data the same with the json that ships with Ruby" do
+    script = <<~RUBY
+      require "quaack/enclave/egress"
+      key = Object.new
+      def key.to_s = "#{EGRESS_SENTINEL}"
+      [{ key => 1 }, [{ key => 1 }], { "a" => { key => 1 } }, { 1 => 2 }, { :a => 1, "a" => 2 },
+       [{ :a => 1, "a" => 2 }], :d, [:d], { "a" => :d }].each do |value|
+        puts Quaack::Enclave::Egress.serialize(type: :error, rule: value)
+      rescue Quaack::Enclave::Egress::Error => e
+        puts e.class
+      end
+      puts $LOADED_FEATURES.grep(%r{/json\\.rb\\z}).first
+    RUBY
+    libs = [GEM_ROOT, File.join(GEM_ROOT, "..", "protocol")].flat_map { |dir| ["-I", File.join(dir, "lib")] }
+    out, err, status = Bundler.with_unbundled_env { run_ruby("--disable-gems", *libs, "-e", script) }
+
+    expect(status).to be_success, "stderr was #{err}"
+    *results, json = out.lines(chomp: true)
+    expect(results).to eq([*["Quaack::Enclave::Egress::Error"] * 6, '{"type":"error","rule":"d"}',
+                           '{"type":"error","rule":["d"]}', '{"type":"error","rule":{"a":"d"}}'])
+    expect(File.realpath(json)).to start_with(File.realpath(RbConfig::CONFIG["rubylibdir"]))
+  end
+end

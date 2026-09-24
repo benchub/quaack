@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "enclave/version"
 require_relative "enclave/cli"
+require_relative "enclave/egress"
 require_relative "enclave/table_name"
 require_relative "enclave/index_candidate"
 require_relative "enclave/statistics"
