@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "find"
 require "json"
 require "stringio"
 require "tmpdir"
@@ -17,8 +18,10 @@ RSpec.describe "quaacks teardown" do
   let(:out) { StringIO.new }
   let(:sentinels) { LeakCheck::Sentinels.new }
 
+  # Opens each directory a test locked, without following symlinks, so
+  # the whole tree can go.
   after do
-    FileUtils.chmod_R("u+rwx", dir)
+    Find.find(dir) { File.chmod(0o700, it) if File.lstat(it).directory? }
     FileUtils.rm_rf(dir)
   end
 
@@ -111,6 +114,63 @@ RSpec.describe "quaacks teardown" do
     expect(teardown("--run", store.run_id)).to eq(70)
     expect(out.string).to eq(error_line("teardown_failed"))
     expect_no_leaks(sentinels, stdout: out.string)
+  end
+
+  it "refuses a dangling symlink at the run path as bad_run, and leaves it" do
+    FileUtils.mkdir_p(base)
+    dangling = File.join(base, "20260923T221500Z-00000004").tap { File.symlink(File.join(dir, sentinels.word), it) }
+
+    expect(teardown("--run", File.basename(dangling))).to eq(70)
+    expect(out.string).to eq(error_line("bad_run"))
+    expect(File.symlink?(dangling)).to be(true)
+  end
+
+  # Two teardowns of one run at once: the stand-in rm_r deletes the run
+  # first, as the other call would, and then runs the real rm_r.
+  it "succeeds as already_gone when the run vanishes while it's being deleted" do
+    store = planted_run
+    allow(FileUtils).to receive(:rm_r).and_wrap_original do |rm_r, path, **options|
+      rm_r.call(path)
+      rm_r.call(path, **options)
+    end
+
+    expect(teardown("--run", store.run_id)).to eq(0)
+    expect(out.string).to eq(teardown_line(store.run_id, "already_gone") + done)
+  end
+
+  it "sends bad_store_base, with no path, when the store base is a file or can't be searched" do
+    store = planted_run
+    file = File.join(dir, sentinels.word).tap { File.write(it, sentinels.text) }
+
+    # The base is a file, and then the base sits under a directory closed
+    # to search.
+    [file, base].each do |bad_base|
+      File.chmod(0o000, dir) if bad_base == base
+      cli_out = StringIO.new
+      cli = Quaack::Enclave::CLI.new(stdin: StringIO.new, out: cli_out, store_base: bad_base)
+      expect(cli.run(["teardown", "--run", store.run_id])).to eq(70), bad_base
+      expect(cli_out.string).to eq(error_line("bad_store_base")), bad_base
+      expect_no_leaks(sentinels, stdout: cli_out.string, why: bad_base)
+    end
+  ensure
+    File.chmod(0o700, dir)
+  end
+
+  # The CLI's error line never reads an error's cause, but a caller that
+  # did would find the Store::Error, which names the run's directory.
+  it "raises each rule's error with no cause" do
+    store = planted_run
+    FileUtils.mkdir_p(base)
+    File.write(File.join(base, "20260923T221500Z-00000002"), "")
+    locked = File.join(store.path, "locked").tap { Dir.mkdir(it) }
+    File.write(File.join(locked, "kept.json"), "[]")
+    File.chmod(0o500, locked)
+    { "20260923T221500Z-00000002" => [base, "bad_run"], store.run_id => [base, "teardown_failed"],
+      "20260923T221500Z-00000003" => [File.join(base, "20260923T221500Z-00000002"), "bad_store_base"] }
+      .each do |run_id, (store_base, rule)|
+      expect { Quaack::Enclave::Steps::Teardown.call(run_id:, store_base:) }
+        .to raise_error(Quaack::Enclave::Steps::Teardown::Error) { |e| expect([e.rule, e.cause]).to eq([rule, nil]) }
+    end
   end
 
   # The way the operator runs it on the jump server, after intake: the

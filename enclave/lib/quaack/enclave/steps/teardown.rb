@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../store"
+require_relative "../store/teardown"
 
 module Quaack
   module Enclave
@@ -23,7 +23,11 @@ module Quaack
       # - bad_run: something is at the run's path, but it isn't a run
       #   directory Store.open would open, such as a symlink, which could
       #   point out of the store. It's left alone.
-      # - teardown_failed: deleting the directory failed partway.
+      # - bad_store_base: it can't look in the store's base, such as one
+      #   that's a file or sits under a directory it can't search.
+      # - teardown_failed: deleting the directory failed partway, and the
+      #   directory is still there. A run another call deleted first is
+      #   already_gone, not a failure.
       module Teardown
         # A failed teardown. It names only its rule, and has no cause, since
         # a Store::Error names the run's directory.
@@ -45,6 +49,8 @@ module Quaack
           [{ type: :teardown, run_id:, store: result, next_step: NEXT_STEP }]
         rescue Store::BadRun
           raise Error, "bad_run", cause: nil
+        rescue Store::BadBase
+          raise Error, "bad_store_base", cause: nil
         rescue Store::Error
           raise Error, "teardown_failed", cause: nil
         end

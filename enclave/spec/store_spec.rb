@@ -6,6 +6,7 @@ require "time"
 require "timeout"
 require "tmpdir"
 require "quaack/enclave/store"
+require "quaack/enclave/store/teardown"
 
 # Stands in for a real production value kept in the store. It must never show
 # up in an error message.
@@ -647,6 +648,48 @@ RSpec.describe Quaack::Enclave::Store do
       expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
       expect(File.exist?(store.path)).to be(false)
       expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+
+    it "refuses a dangling symlink at the run path as BadRun, and leaves it" do
+      dangling = plant_run_path("20260923T221500Z-00000004").tap { File.symlink(File.join(@tmp, "missing"), it) }
+
+      expect { described_class.teardown(File.basename(dangling), base:) }.to raise_error(described_class::BadRun)
+      expect(File.symlink?(dangling)).to be(true)
+    end
+
+    # Another teardown of the same run can delete it partway through this
+    # one. The stand-in rm_r deletes the directory first, as the other
+    # call would, and then runs the real rm_r, which finds it gone.
+    it "returns :already_gone when the run vanishes while it's being deleted" do
+      allow(FileUtils).to receive(:rm_r).and_wrap_original do |rm_r, path, **options|
+        rm_r.call(path)
+        rm_r.call(path, **options)
+      end
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(File.exist?(store.path)).to be(false)
+    end
+
+    it "raises BadBase, naming only the run, when the base is a file or can't be searched" do
+      file = File.join(@tmp, STORE_SENTINEL).tap { File.write(it, STORE_SENTINEL) }
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it) }
+      FileUtils.mkdir_p(File.join(closed, "runs", store.run_id))
+      File.chmod(0o000, closed)
+
+      [file, File.join(closed, "runs")].each do |bad_base|
+        expect_store_error(/\Acouldn't look up run #{store.run_id} in the store's base\z/) do
+          described_class.teardown(store.run_id, base: bad_base)
+        end
+        expect { described_class.teardown(store.run_id, base: bad_base) }.to raise_error(described_class::BadBase)
+      end
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+    ensure
+      File.chmod(0o700, closed)
+    end
+
+    it "keeps the run-path helper private" do
+      expect(described_class.private_methods).to include(:run_path)
+      expect { described_class.run_path(store.run_id, base) }.to raise_error(NoMethodError)
     end
   end
 end

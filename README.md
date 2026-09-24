@@ -81,7 +81,7 @@ Inside the enclave, the enclave script keeps its data in three places:
 
 All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
 
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory and prints a reminder to destroy the run server, which the enclave can't do itself. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a run directory it made.
+When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory and prints a reminder to destroy the run server, which the enclave can't do itself. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user).
 
 ## 1. Input.
 
