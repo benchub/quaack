@@ -66,6 +66,16 @@ module Quaack
         end
 
         def parse(text)
+          object = parse_document(text)
+          raise Refused, "bad_input" unless object.instance_of?(Hash)
+
+          object
+        end
+
+        # Like parse, but for any one JSON document, not only an object.
+        # Intake reads the operator's plan file with it, since EXPLAIN's
+        # JSON is an Array.
+        def parse_document(text)
           # JSON accepts bytes that aren't UTF-8 inside a string.
           raise Refused, "bad_input" unless text.valid_encoding? && !lexical_problem?(text)
 
@@ -79,7 +89,7 @@ module Quaack
           rescue JSON::ParserError, UniqueKeys::Repeated, PlainData::NotPlain
             raise Refused, "bad_input", cause: nil
           end
-          raise Refused, "bad_input" unless object.instance_of?(Hash) && finite?(object)
+          raise Refused, "bad_input" unless finite?(object)
 
           object
         end

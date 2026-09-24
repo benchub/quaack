@@ -1,0 +1,47 @@
+# frozen_string_literal: true
+
+require_relative "intake/error"
+require_relative "intake/operator_file"
+require_relative "intake/clock_anchor"
+require_relative "intake/query"
+require_relative "intake/plan"
+
+module Quaack
+  module Enclave
+    # The checks on step 1's three operator inputs (README, step 1), which
+    # `quaacks intake` runs (see Steps::Intake). Each returns what the run
+    # stores, or raises Intake::Error with the rule the input broke:
+    #
+    # - server: bad_server.
+    # - clock_anchor, from --captured-at: bad_captured_at (see ClockAnchor).
+    # - query, from its file: query_unreadable, query_too_large,
+    #   query_not_text, query_unparsable, query_not_one_statement, or
+    #   unsupported_construct (see Query).
+    # - plan, from its file: plan_unreadable, plan_too_large,
+    #   plan_not_json, plan_bad_shape, plan_not_analyzed, or
+    #   plan_no_buffers (see Plan).
+    #
+    # The files hold production literals, and a path or a server name can
+    # hold anything, so an Error names only its rule, and has no cause.
+    module Intake
+      # A hostname or a service name: letters, digits, dots, hyphens, and
+      # underscores, starting with a letter or digit, at most 253
+      # characters, a DNS name's limit.
+      SERVER = /\A[A-Za-z0-9][A-Za-z0-9._-]{0,252}\z/
+
+      module_function
+
+      def server(name)
+        raise Error, "bad_server" unless name.is_a?(String) && name.ascii_only? && SERVER.match?(name)
+
+        name
+      end
+
+      def clock_anchor(captured_at) = ClockAnchor.from(captured_at)
+
+      def query(path) = Query.check(OperatorFile.read(path, "query"))
+
+      def plan(path) = Plan.check(OperatorFile.read(path, "plan"))
+    end
+  end
+end

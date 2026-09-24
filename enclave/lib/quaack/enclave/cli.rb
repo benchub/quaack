@@ -8,6 +8,7 @@ require_relative "cli/arguments"
 require_relative "cli/input"
 require_relative "cli/output"
 require_relative "steps/version"
+require_relative "steps/intake"
 
 module Quaack
   module Enclave
@@ -61,7 +62,8 @@ module Quaack
       # and add one line here. The requires are written out, never built
       # from argv or a directory listing, so argv can't pick a file to load.
       STEPS = {
-        "version" => Step.new(handler: Steps::Version)
+        "version" => Step.new(handler: Steps::Version),
+        "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS)
       }.freeze
 
       # Other names for a subcommand.
@@ -148,13 +150,15 @@ module Quaack
         begin
           yield store
         rescue Exception # rubocop:disable Lint/RescueException
-          begin
-            store.teardown
-          rescue Store::Error
-            nil
-          end
+          delete_run(store)
           raise
         end
+      end
+
+      def delete_run(store)
+        store.teardown
+      rescue Store::Error
+        nil
       end
 
       # Runs step and returns its output, every line of it. new_store is the
