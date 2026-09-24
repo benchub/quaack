@@ -24,7 +24,7 @@ RSpec.describe Quaack::Enclave::Deparse do
   # The kind of SQL ORMs and reports send, including spellings the
   # deparser rewrites without changing the tree: != for <>, CAST for ::,
   # extra parentheses and whitespace, and lower-case keywords.
-  COMMON = [
+  common = [
     "SELECT * FROM public.users WHERE id = $1 LIMIT 1",
     'SELECT "users".* FROM "public"."users" WHERE "users"."email" = $1 LIMIT $2',
     "SELECT count(*) FROM public.orders WHERE created_at > now() - interval '1 day'",
@@ -58,8 +58,9 @@ RSpec.describe Quaack::Enclave::Deparse do
   # Each of pg_query's deparse bugs that 20260923-30 and 20260923-55 found.
   # The first changes the query's meaning. The rest deparse to SQL that
   # doesn't parse.
-  REPROS = {
-    "IS NOT DISTINCT FROM with AND" => "SELECT * FROM public.t WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)",
+  repros = {
+    "IS NOT DISTINCT FROM with AND" =>
+      "SELECT * FROM public.t WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)",
     "an ARRAY subquery's subscript" => "SELECT (ARRAY(SELECT 1))[1]",
     "an XMLTABLE PASSING cast" => "SELECT * FROM XMLTABLE('/a' PASSING CAST(x AS xml) COLUMNS a int)",
     "xmlexists" => "SELECT xmlexists('//a' PASSING BY REF (x::xml)) FROM public.t",
@@ -69,7 +70,7 @@ RSpec.describe Quaack::Enclave::Deparse do
   }.freeze
 
   describe ".faithfully" do
-    COMMON.each do |sql|
+    common.each do |sql|
       it "deparses #{sql}" do
         expect(described_class.faithfully(tree(sql))).to eq(PgQuery.deparse(tree(sql)))
       end
@@ -97,14 +98,14 @@ RSpec.describe Quaack::Enclave::Deparse do
       expect(described_class.faithfully(changed)).to eq("SELECT a FROM public.t")
     end
 
-    REPROS.each do |name, sql|
+    repros.each do |name, sql|
       it "refuses #{name}" do
         expect { described_class.faithfully(tree(sql)) }.to refused
       end
     end
 
     it "shows the IS NOT DISTINCT FROM repro parses back as a different query" do
-      deparsed = PgQuery.deparse(tree(REPROS.fetch("IS NOT DISTINCT FROM with AND")))
+      deparsed = PgQuery.deparse(tree(repros.fetch("IS NOT DISTINCT FROM with AND")))
       expect(deparsed).to eq("SELECT * FROM public.t WHERE status = $1 IS NOT DISTINCT FROM true AND false")
       expect(PgQuery.parse(deparsed).tree.stmts[0].stmt.select_stmt.where_clause.node).to eq(:bool_expr)
     end

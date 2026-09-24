@@ -73,28 +73,28 @@ module Quaack
       module_function
 
       def qualify(sql, settings, connection)
-        parse = parse(sql)
-        unqualified = []
-        collect(parse.tree, [], unqualified)
-        path = unqualified.empty? ? [] : search_path(settings, connection)
-        resolved = {}
-        unqualified.each do |range|
-          table = resolved[range.relname] ||= resolve(range.relname, path, connection)
-          range.schemaname = table.schema
-        end
-        qualified = Deparse.faithful_parse(parse.tree)
+        tree = parse(sql).tree
+        resolved = qualify_tree(tree, settings, connection)
+        qualified = Deparse.faithful_parse(tree)
         Result.new(sql: qualified.query, parse: qualified, resolved:)
+      end
+
+      # Names the schema of every unqualified relation in the tree, in
+      # place, and returns what each name resolved to.
+      def qualify_tree(tree, settings, connection)
+        unqualified = []
+        collect(tree, [], unqualified)
+        path = unqualified.empty? ? [] : search_path(settings, connection)
+        unqualified.each_with_object({}) do |range, resolved|
+          range.schemaname = (resolved[range.relname] ||= resolve(range.relname, path, connection)).schema
+        end
       end
 
       # The parse, once SupportedSql has checked it.
       def parse(sql)
-        parse = begin
-          PgQuery.parse(sql)
-        rescue PgQuery::ParseError
-          raise Error, "the query doesn't parse", cause: nil
-        end
-        SupportedSql.check!(parse)
-        parse
+        PgQuery.parse(sql).tap { |parse| SupportedSql.check!(parse) }
+      rescue PgQuery::ParseError
+        raise Error, "the query doesn't parse", cause: nil
       end
 
       # Every RangeVar with no schema that isn't a reference to a CTE in
