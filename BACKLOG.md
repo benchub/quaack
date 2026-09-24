@@ -23,19 +23,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-4. Enclave command-line script. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-5. Driver transport.
-
-Build the driver side of the link: call enclave subcommands over ssh, pass arguments and untrusted inputs, and parse the results. Include a local transport so tests can run the enclave script without ssh.
-
-- **Depends on:** 20260922-4.
-- **README:** Where QUAACK runs.
-- **Note (from the reviews of 20260922-4 and 20260922-8):** The driver's contract for reading `quaacks` output:
-  - Skip blank lines, and lines that aren't JSON.
-  - Treat any run as failed if it printed an error line, exited nonzero, or died by a signal, and discard its other lines. A signal in the middle of a write can leave a cut-off line, and valid-looking lines can come before the error line.
-  - Exit codes are 0 for success, 64 when the CLI refuses a call, and 70 when a step fails. A signal death means the process died by that signal after writing its error line.
-- **Note (from the second review of 20260922-4):** A step can end the process with `exit!(0)`, which prints nothing, so an empty stdout isn't proof of success. 20260923-53 adds a final `done` line to every successful run. Treat a run as failed unless `done` is its last non-blank line. A flush failure can print `done` and then an error line.
-- **Status:** todo
-- **Decided:** Larger inputs go to the enclave script as a JSON document on stdin, piped into `ssh <jump server> quaacks <subcommand>`. The local test transport pipes the same JSON.
+### 20260922-5. Driver transport. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-6. LLM client. Done, see BACKLOG-COMPLETE.md.
 
@@ -499,6 +487,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Came from:** First review of 20260922-1.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note (from 20260922-5):** The driver runs a bare `quaacks` over non-interactive ssh (`ssh -T -o BatchMode=yes -- host 'quaacks ...'`), so `quaacks` must be on PATH for a non-interactive session. The remote login shell must also be POSIX-compatible (bash, sh, or zsh). fish and csh break the Shellwords quoting.
 - **Decided:** The driver builds the `quaacks` and `quaack-protocol` gems locally, copies them to the jump server over ssh, and installs them into a user gem directory there. It checks the installed version before each run. There's no gem server.
 
 ### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
@@ -1112,6 +1101,32 @@ Findings from the reviews of 20260922-17:
 - **Depends on:** 20260922-17.
 - **Came from:** The reviews of 20260922-17.
 - **README:** 3a.
+- **Status:** todo
+
+### 20260924-20. Driver transport loose ends.
+
+Findings from the reviews of 20260922-5:
+- **A timeout doesn't stop the remote `quaacks`.** It kills only the local ssh process. With `-T`, the remote side gets no SIGHUP, and it can keep running queries on the jump server until it next writes. Options: run the remote side under `timeout`, or have the enclave CLI exit when stdin or stdout closes.
+- **Over ssh, a remote quaacks killed by a signal shows up as ssh exit 255,** so `killed?` is false. The error line still decides the rule.
+- **Lexical is skipped when a line starts with whitespace,** so json 2.9.1 and 3.0.2 read ` {"type":"error",/*c*/"rule":"zz"}` differently. Check `line.lstrip`, or run Lexical on every line.
+- **A child that closes stdout and then reads the rest of stdin hangs until the timeout,** because Pump stops writing on stdout EOF.
+- **A grandchild holding stdout makes a call wait out the whole timeout** (3,600s by default) and then report success.
+- **MAX_ARGV_BYTES doesn't bound the escaped ssh remote command.** Shellwords turns a newline into 3 bytes, so a value that passes can exceed Linux's 128 KiB per-argument limit and show up as `incomplete`. Cap the escaped length for Ssh.
+- **Three Pump mutants are caught only by hanging the suite.** Add a per-example timeout to the driver specs.
+- **The timeout test expects under 3s against a 1s timeout,** which could flake on a loaded machine.
+
+- **Depends on:** 20260922-5.
+- **Came from:** The reviews of 20260922-5.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-21. 9d Shape deparses without the round-trip guard.
+
+**High priority. It's a correctness bug in the 9d comparison.** `ResultComparison::Shape#build` in `enclave/lib/quaack/enclave/result_comparison.rb` calls raw `PgQuery.deparse`, with no round-trip guard and no parentheses. It runs on the real 9d path: `without_limit`, `with_tiebreaker`, and `probe`. For example, `Shape.parse("SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id LIMIT 5", nil).without_limit` returns `SELECT id FROM t WHERE a OR b IS NULL ORDER BY id`. That's a different query, and it silently changes what 9d compares. Route it through `Deparse.faithfully` (with the parentheses fix from 20260924-4 once that lands), and refuse cleanly when the guard refuses. Add a PG18 test where the raw deparse would change the rows. Also check for other raw `PgQuery.deparse` or `deparse_expr` calls in the enclave that build SQL to run, and route each one through the guard.
+
+- **Depends on:** 20260922-47, 20260923-55.
+- **Came from:** First review of 20260924-4.
+- **README:** 9d, Step 1.
 - **Status:** todo
 
 ## After version 1.
