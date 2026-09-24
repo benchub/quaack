@@ -98,9 +98,9 @@ module Quaack
     # Nothing here goes through egress yet.
     module SingleCandidateTest
       # rule is one of :in_transaction, :bad_literal, :indexes_hidden,
-      # :prepare_failed, :explain_failed, :hypopg_failed, or
-      # :cleanup_failed. sqlstate is the
-      # Postgres SQLSTATE, or nil if there wasn't one.
+      # :prepare_failed, :explain_failed, :hypopg_failed, :cleanup_failed,
+      # or :session_closed, for a Session measured after its block ended.
+      # sqlstate is the Postgres SQLSTATE, or nil if there wasn't one.
       class Error < StandardError
         attr_reader :rule, :sqlstate
 
@@ -238,6 +238,18 @@ module Quaack
         raise Error, :explain_failed, cause: nil
       end
 
+      def refused(sqlstate)
+        Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
+      end
+
+      # EXECUTE of the prepared statement with these values. With no
+      # values, it takes no parentheses.
+      def execute(connection, values)
+        return STATEMENT if values.empty?
+
+        "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : connection.escape_literal(v) }.join(", ")})"
+      end
+
       def deep_freeze(value)
         case value
         when Hash then value.each_value { |v| deep_freeze(v) }
@@ -250,7 +262,8 @@ module Quaack
       # transaction with its SET LOCALs, the hidden-index check, notices
       # dropped, a fresh prepare for each EXPLAIN, refusals, and cleanup that
       # keeps the first error. See the comment at the top. session yields
-      # one, and it's good only inside that block.
+      # one, and it's good only inside that block: after, measure raises
+      # Error(:session_closed) without touching the database.
       class Session
         def initialize(connection, query, literal_sets)
           @connection = connection
@@ -268,13 +281,18 @@ module Quaack
         end
 
         # Every candidate's hypothetical index at once, and an EXPLAIN per
-        # literal set. If HypoPG refuses one, the rest aren't created, and
-        # the Measurement has the Refusal, nil sizes, and no plans.
+        # literal set. Only these indexes exist while it plans: HypoPG is
+        # reset first, even for none. If HypoPG refuses one, the rest aren't
+        # created, and the Measurement has the Refusal, nil sizes, and no
+        # plans.
         def measure(candidates)
+          raise Error, :session_closed unless @open
+
+          SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
           indexes = []
-          candidates.each_with_index do |candidate, i|
-            oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate, i.zero?) }
-            return refused(sqlstate) if oid.nil?
+          candidates.each do |candidate|
+            oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
+            return SingleCandidateTest.refused(sqlstate) if oid.nil?
 
             indexes << [oid, name, size, candidate]
           end
@@ -286,10 +304,12 @@ module Quaack
         def within
           failed = true
           SingleCandidateTest.guarded(:explain_failed) { start }
+          @open = true
           value = yield self
           failed = false
           value
         ensure
+          @open = false
           cleanup(failed)
         end
 
@@ -331,10 +351,8 @@ module Quaack
         end
 
         # The new index's oid, name, and size, or, if HypoPG refused it,
-        # three nils and the SQLSTATE. The first index of a measurement
-        # resets HypoPG first, so only that measurement's indexes exist.
-        def create(candidate, reset)
-          @connection.exec("SELECT hypopg_reset()") if reset
+        # three nils and the SQLSTATE.
+        def create(candidate)
           # The savepoint is there for a refused create to roll back to. It's
           # never released: nothing in it writes, and the run's rollback
           # ends every one left open.
@@ -356,10 +374,6 @@ module Quaack
           sqlstate
         end
 
-        def refused(sqlstate)
-          Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
-        end
-
         # indexes holds each hypothetical index's oid, name, size, and
         # candidate.
         def plans(indexes)
@@ -374,24 +388,17 @@ module Quaack
             @prepared = true
           end
           json = SingleCandidateTest.guarded(:explain_failed) do
-            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute(values)}").getvalue(0, 0)
+            execute = SingleCandidateTest.execute(@connection, values)
+            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute}").getvalue(0, 0)
           end
           SingleCandidateTest.guarded(:cleanup_failed) { deallocate }
           SingleCandidateTest.parse_plan(json)
         end
 
-        # EXECUTE of the prepared statement with these values. With no
-        # values, it takes no parentheses.
-        def execute(values)
-          return STATEMENT if values.empty?
-
-          "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
-        end
-
         # used says, for each hypothetical index, whether any node scans it,
         # by the exact name HypoPG gave it. Only this measurement's
-        # hypothetical indexes exist while it plans, since the first create
-        # resets HypoPG. (A hypothetical index that a function the planner
+        # hypothetical indexes exist while it plans, since measure resets
+        # HypoPG first. (A hypothetical index that a function the planner
         # folds creates in the middle of planning doesn't show up in the
         # plan, as tried on HypoPG 1.4.) But a real index can have a name
         # that looks like a hypothetical one, such as "<1>x", so matching

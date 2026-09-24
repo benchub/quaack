@@ -555,6 +555,51 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     conn.exec("ROLLBACK")
   end
 
+  def session(query, literal_sets, &) = described_class.session(conn, query:, literal_sets:, &)
+
+  it "measures with no hypothetical index when a session measures none after one" do
+    plans = session("SELECT * FROM t WHERE a = $1", { slow: ["5"] }) do |s|
+      s.measure([candidate(key: ["a"])])
+      s.measure([]).plans
+    end
+
+    expect(index_names(plans[:slow].raw_plan)).to eq([])
+    expect(plans[:slow].used).to eq([])
+  end
+
+  # The wrapper swaps the second hypopg_reset in the transaction, the one
+  # the baseline's measurement runs after start's, for SQL whose error
+  # message quotes the sentinel.
+  it "turns a failure resetting HypoPG before a measurement into an error that quotes nothing" do
+    reset_fails = Class.new(SimpleDelegator) do
+      def exec(sql, *)
+        if sql.include?("hypopg_reset") && !transaction_status.zero? && (@resets = (@resets || 0) + 1) == 2
+          return super("SELECT 'SENTINEL-5a4-7f3c'::int")
+        end
+
+        super
+      end
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: reset_fails.new(conn))
+
+    expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: "22P02", cause: nil)
+    expect(error.full_message).not_to include("SENTINEL")
+    expect(leftovers).to eq(clean)
+  end
+
+  it "refuses to measure after the session's block has ended, without touching the database" do
+    escaped = session("SELECT * FROM t WHERE a = $1", { slow: ["5"] }) { |s| s }
+    error = nil
+    begin
+      escaped.measure([candidate(key: ["a"])])
+    rescue described_class::Error => e
+      error = e
+    end
+
+    expect(error).to have_attributes(rule: :session_closed, sqlstate: nil, cause: nil)
+    expect(leftovers).to eq(clean)
+  end
+
   it "freezes its results" do
     report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a"])])
     result = report.results.first
