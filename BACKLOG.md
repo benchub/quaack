@@ -169,7 +169,8 @@ Replace literals with numbered, shape-preserving placeholders. Annotate each wit
 - **Depends on:** 20260922-13, 20260922-15.
 - **README:** 3g.
 - **Note (from the review of 20260923-32):** Egress uses json's default `max_nesting` of 100, and a plan takes two levels per node. So a redacted or canonical plan more than about 48 nodes deep can't go out. Decide whether to flatten plans, set an explicit `max_nesting` together with a stack rescue, or refuse them with a clear rule.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-23` through a build, a review, a fix round, and a second review, but not landed. The second review found that a string like `'1e99999999'` hangs `Rational()` in the matcher. 20260924-11 finishes it on top of that branch.
 - **Decided:** Match each literal in a racetrack plan to the placeholder map by value, after normalizing casts. Replace anything still unmatched with a generic `$?` marker, so no literal leaks, and count the masks for the 15b burndown.
 
 ### 20260922-24. 3h clock anchoring.
@@ -1014,6 +1015,20 @@ Findings from the reviews of 20260922-35:
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
 - **README:** 5a-7.
+- **Status:** todo
+
+### 20260924-11. Finish 3g redaction.
+
+Split out of 20260922-23. The work so far is on branch `task/20260922-23`. Build on that branch, then land both together. Fix what the second review of 20260922-23 found:
+- **A huge exponent hangs redaction.** `Matcher#number` calls `Rational(text)` on any text that looks like a decimal, with any exponent. `Rational("1e99999999")` doesn't finish in 60 seconds. An untyped string placeholder is `unknown`, which is in `NUMBERS_FROM`, so `WHERE t.s = '1e99999999'` hangs. Cap the exponent and the digit count before converting, or compare some other bounded way. Test it with a timeout.
+- **Bit strings never match real plans.** PG18 prints `B'10110'` as `'10110'::bit varying`, and `X'1F'` as `'00011111'::"bit"`. The matcher never compares a string token with a bit placeholder, so the `bits?` branch never runs for real plans. Match them, and test with real PG18 output.
+- **Surviving mutants:**
+  - The retry-cap guard (`@types[number - 1] == "unknown"`). Test it with a fake connection that repeats 42P18 for the same parameter.
+  - The ESCAPE `uncast`. Test `ESCAPE '!'::text`.
+
+- **Depends on:** 20260922-23's branch.
+- **Came from:** Second review of 20260922-23.
+- **README:** 3g.
 - **Status:** todo
 
 ## After version 1.
