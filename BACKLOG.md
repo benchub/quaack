@@ -874,25 +874,7 @@ Findings from the reviews of 20260922-13:
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260924-4. Parenthesize what pg_query deparses wrong.
-
-The round-trip guard (20260923-55) now correctly refuses supported constructs that pg_query's deparser prints without needed parentheses, which would change their meaning:
-- `(a OR b) IS NULL`
-- `(a AND b) IS NOT NULL`
-- `(NOT a) IS NULL`
-- `(a AND b) IN (true)`
-- `(a AND b) = ANY(...)`
-- `(a = 1) = ANY(ARRAY[true])`
-- `a IS NOT DISTINCT FROM (b AND c)`
-- `a BETWEEN (b AND c) AND d`
-- `created_at AT TIME ZONE ('UTC' || '')`
-
-Before deparsing, wrap the operand in an explicit parenthesis node, or post-process the SQL, so these round-trip and stop being refused. Keep the guard in place as the check. Also consider fixing shapes, which use `deparse_expr` and so turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`.
-
-- **Depends on:** 20260923-55.
-- **Came from:** The reviews of 20260923-55.
-- **README:** Step 1.
-- **Status:** todo
+### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
@@ -1137,6 +1119,21 @@ Findings from the build and reviews of 20260922-18:
 - **Depends on:** 20260922-18.
 - **Came from:** The build and reviews of 20260922-18.
 - **README:** 3b.
+- **Status:** todo
+
+### 20260924-23. Deparse loose ends.
+
+Findings from the build and reviews of 20260924-4:
+- **`'t'::boolean` and `'f'::boolean` are still refused.** The deparser prints them as `true` and `false`, which parse to a different tree.
+- **Shapes turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`,** because `deparse_expr` strips every `SELECT WHERE `.
+- **Very deep queries raise RuntimeError instead of deparse_mismatch.** The wrappers can push a tree past pg_query's encode limit of 1,000, for example `(e OR b) IS TRUE` nested 150 times. It fails closed as `internal_error`, but callers that rescue only `Deparse::Error` (generator two, index SQL, relations, and the rewrite candidate check) abort instead of skipping. Rescue the encode error in `faithful_parse`, and raise `Error`.
+- **Stale comments:** `predicate_atoms.rb` lines 82–89, `index_candidate.rb` lines 52–55, and `deparse.rb` lines 15–21, which don't mention Parentheses.
+- **Four mutants refuse rare SQL without a test noticing:** the `b_expr` edits at `parentheses.rb` line 156 (three variants), and `operator_level(..., subquery: true)` at line 300. Pin them if it's cheap.
+- **The deparse_spec matrix adds about 20s** to the enclave suite.
+
+- **Depends on:** 20260924-4.
+- **Came from:** The build and reviews of 20260924-4.
+- **README:** Step 1.
 - **Status:** todo
 
 ## After version 1.
