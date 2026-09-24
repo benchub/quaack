@@ -44,7 +44,8 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     end
 
     it "never matches a NULL placeholder" do
-      expect(filter("((a = 'x'::text) AND (b = 5))", map(entry(nil), entry("x")))).to eq("((a = $2::text) AND (b = $?))")
+      expect(filter("((a = 'x'::text) AND (b = 5))",
+                    map(entry(nil), entry("x")))).to eq("((a = $2::text) AND (b = $?))")
     end
 
     it "doesn't match a string to a different string that reads as the same number" do
@@ -138,6 +139,7 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
 
     it "drops a known field whose value isn't the kind it should be" do
       bad = node("Plan Rows" => "quaack-sentinel-rows", "Relation Name" => ["x"], "Output" => "o.id",
+                 "Disabled" => "no",
                  "Filter" => ["(a = 1)"])
       expect(redact(bad, {}).explain.first["Plan"]).to eq("Node Type" => "Seq Scan")
     end
@@ -193,5 +195,6 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     expect { redact({ "Plan" => {} }, {}) }.to raise_error(ArgumentError, /EXPLAIN/)
     expect { redact(node({}), { "$1" => "quaack-sentinel-map" }) }
       .to raise_error(described_class::Error, "bad_placeholder_map")
+    expect { redact(node({}), { "$2" => entry("x") }) }.to raise_error(described_class::Error, "bad_placeholder_map")
   end
 end

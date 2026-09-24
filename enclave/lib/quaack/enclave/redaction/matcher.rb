@@ -25,6 +25,10 @@ module Quaack
       class Matcher
         NUMBER_TYPES = %w[integer bigint numeric].freeze
         TYPES = [*NUMBER_TYPES, "boolean", "unknown"].freeze
+        # The placeholder types a number or a boolean in a plan can match.
+        NUMBERS_FROM = ["unknown", *NUMBER_TYPES].freeze
+        BOOLEANS_FROM = %w[boolean unknown].freeze
+        MATCHES = { string: :string?, number: :number?, boolean: :boolean?, bits: :bits? }.freeze
         DECIMAL = /\A[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\z/
         TRUE_TEXT = %w[t tr tru true y ye yes on 1].freeze
         FALSE_TEXT = %w[f fa fal fals false n no of off 0].freeze
@@ -33,9 +37,9 @@ module Quaack
         # and the governed store gives it back. Anything else raises
         # Error bad_placeholder_map.
         def initialize(map)
-          raise Error, "bad_placeholder_map" unless map?(map)
-
-          @entries = map.map { |key, entry| [Integer(key[1..]), entry["value"], entry["type"]] }.sort.freeze
+          @entries = Redaction.checked_map(map).map do |key, entry|
+            [Integer(key[1..]), entry["value"], entry["type"]]
+          end.sort.freeze
         end
 
         # The numbers of the placeholders the literal could be, lowest first.
@@ -46,23 +50,15 @@ module Quaack
 
         private
 
-        def map?(map)
-          map.is_a?(Hash) && map.all? do |key, entry|
-            key.is_a?(String) && key.match?(/\A\$[1-9]\d*\z/) && entry.is_a?(Hash) &&
-              entry.keys.sort == %w[type value] && TYPES.include?(entry["type"]) &&
-              (entry["value"].nil? || entry["value"].is_a?(String))
-          end
-        end
+        def match?(kind, text, value, type) = send(MATCHES.fetch(kind), text, value, type)
 
-        def match?(kind, text, value, type)
-          case kind
-          when :string then text == value || (NUMBER_TYPES.include?(type) && same_number?(text, value))
-          when :number then %w[unknown].concat(NUMBER_TYPES).include?(type) && same_number?(text, value)
-          when :boolean then %w[boolean unknown].include?(type) && boolean(value) == text
-          when :bits then type == "unknown" && bits(value) == bits(text)
-          else false
-          end
-        end
+        def string?(text, value, type) = text == value || (NUMBER_TYPES.include?(type) && same_number?(text, value))
+
+        def number?(text, value, type) = NUMBERS_FROM.include?(type) && same_number?(text, value)
+
+        def boolean?(text, value, type) = BOOLEANS_FROM.include?(type) && boolean(value) == text
+
+        def bits?(text, value, type) = type == "unknown" && bits(value) == bits(text)
 
         def same_number?(one, other)
           one = number(one)
@@ -87,7 +83,11 @@ module Quaack
           body = text.delete("'")
           case body[0]&.downcase
           when "b" then body[1..] if body[1..].match?(/\A[01]*\z/)
-          when "x" then body[1..].chars.map { |c| Integer(c, 16).to_s(2).rjust(4, "0") }.join if body[1..].match?(/\A\h*\z/)
+          when "x" then if body[1..].match?(/\A\h*\z/)
+                          body[1..].chars.map do |c|
+                            Integer(c, 16).to_s(2).rjust(4, "0")
+                          end.join
+                        end
           end
         end
       end

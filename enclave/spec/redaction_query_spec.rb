@@ -29,7 +29,8 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
 
   it "types a negative number, a big integer, and a big number the way Postgres types the literal" do
     map = redact(where("o.id = -5 AND o.id = 12345678901 AND o.id = 123456789012345678901234")).placeholder_map
-    expect(map.values).to eq([{ "value" => "-5", "type" => "integer" }, { "value" => "12345678901", "type" => "bigint" },
+    expect(map.values).to eq([{ "value" => "-5", "type" => "integer" },
+                              { "value" => "12345678901", "type" => "bigint" },
                               { "value" => "123456789012345678901234", "type" => "numeric" }])
   end
 
@@ -47,6 +48,12 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(result.sql).to eq("SELECT DISTINCT ON (1) o.status, extract ('epoch' FROM o.created_at), count(*) " \
                              "FROM public.orders o WHERE o.id = $1 GROUP BY 1, 2 ORDER BY 1, 2 LIMIT 1")
     expect(result.placeholder_map.keys).to eq(%w[$1])
+  end
+
+  it "redacts a string in EXTRACT's place that isn't a field Postgres documents" do
+    result = redact("SELECT extract('quaack-sentinel-field' FROM o.created_at) FROM public.orders o")
+    expect(result.sql).not_to include("quaack-sentinel")
+    expect(result.placeholder_map.values.map { it["value"] }).to eq(["quaack-sentinel-field"])
   end
 
   it "redacts a constant in an ORDER BY or GROUP BY expression, which isn't positional" do
@@ -80,6 +87,11 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
       expect(shapes(sql).values.map { it["pattern"] }.compact)
         .to eq(%w[trailing_wildcard leading_wildcard both_wildcards no_wildcard no_wildcard leading_wildcard
                   trailing_wildcard no_wildcard])
+    end
+
+    it "says where each pattern of LIKE ANY has its wildcards" do
+      expect(shapes(where("o.a LIKE ANY (ARRAY['x%', '%y'])")).values.map { it["pattern"] })
+        .to eq(%w[trailing_wildcard leading_wildcard])
     end
 
     it "gives no pattern to a constant that isn't a LIKE pattern" do

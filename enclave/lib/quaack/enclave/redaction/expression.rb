@@ -31,26 +31,22 @@ module Quaack
       # unclosed quote, so the caller can drop it. It never raises with the
       # text in a message.
       module Expression
+        # matches has, for each literal replaced, the numbers of the
+        # placeholders it matched (see Matcher#candidates), empty for a
+        # mask.
         Redacted = Data.define(:text, :masked, :matches)
 
         LITERALS = %i[SCONST USCONST ICONST FCONST BCONST XCONST].freeze
         BOOLEANS = %i[TRUE_P FALSE_P].freeze
         SUBPLANS = %w[InitPlan SubPlan].freeze
-        # The keywords a type's name can hold, such as character varying and
-        # double precision. AT isn't one: it starts AT TIME ZONE.
-        TYPE_WORDS = %i[UNRESERVED_KEYWORD COL_NAME_KEYWORD].freeze
         MASK = "$?"
 
         module_function
 
-        # matches has, for each literal replaced, the numbers of the
-        # placeholders it matched (see Matcher#candidates), empty for a
-        # mask.
         def redact(text, matcher)
           return nil unless text.is_a?(String) && text.valid_encoding? && !text.include?("\0")
 
-          tokens = PgQuery.scan(text).first.tokens.to_a
-          Scan.new(text, tokens, matcher).redacted
+          Scan.new(text, PgQuery.scan(text).first.tokens.to_a, matcher).redacted
         rescue PgQuery::ScanError
           nil
         end
@@ -60,10 +56,11 @@ module Quaack
           def initialize(text, tokens, matcher)
             @text = text
             @tokens = tokens
+            @sources = tokens.map { |token| text.byteslice(token.start...token.end) }
+            @cast = Cast.new(tokens, @sources)
             @matcher = matcher
             @masked = 0
             @matches = []
-            @skipped = typmods
           end
 
           def redacted
@@ -77,7 +74,7 @@ module Quaack
               last = token.end
             end
             out << @text.byteslice(last..)
-            Redacted.new(text: out.force_encoding(Encoding::UTF_8), masked: @masked, matches: @matches.freeze)
+            Redacted.new(text: out, masked: @masked, matches: @matches.freeze)
           end
 
           private
@@ -85,16 +82,14 @@ module Quaack
           # What a token becomes, or nil if it stays.
           def replacement(token, index)
             if LITERALS.include?(token.token)
-              literal(token, index) unless @skipped.include?(index) || subplan_number?(index)
+              literal(token, index) unless @cast.modifier?(index) || subplan_number?(index)
             elsif BOOLEANS.include?(token.token) && !after_is?(index)
               placeholder([:boolean, token.token == :TRUE_P ? "true" : "false"])
             end
           end
 
-          def source(token) = @text.byteslice(token.start...token.end)
-
           def subplan_number?(index)
-            index.positive? && @tokens[index - 1].token == :IDENT && SUBPLANS.include?(source(@tokens[index - 1]))
+            index.positive? && @tokens[index - 1].token == :IDENT && SUBPLANS.include?(@sources[index - 1])
           end
 
           # IS TRUE, IS NOT TRUE, and the like.
@@ -104,19 +99,14 @@ module Quaack
           end
 
           def literal(token, index)
-            value = Value.read(token.token, source(token))
-            return placeholder(nil) unless value
-            return placeholder(value) unless value.first == :string && array_cast?(index)
+            value = Value.read(token.token, @sources[index])
+            return placeholder(value) unless value&.first == :string && @cast.array?(index + 1)
 
             numbers = @matcher.candidates(value)
-            return use(numbers) unless numbers.empty?
-
-            array(value.last)
+            numbers.empty? ? array(value.last) : use(numbers)
           end
 
-          def placeholder(value)
-            use(value ? @matcher.candidates(value) : [])
-          end
+          def placeholder(value) = use(value ? @matcher.candidates(value) : [])
 
           def use(numbers)
             @matches << numbers
@@ -132,70 +122,88 @@ module Quaack
           rescue ArgumentError
             placeholder(nil)
           end
+        end
 
-          # Whether the token at index is followed by a cast to an array type.
-          def array_cast?(index)
-            return false unless @tokens[index + 1]&.token == :TYPECAST
+        # The types of an expression's casts.
+        class Cast
+          # The keywords a type's name can hold, such as character varying and
+          # double precision. AT isn't one: it starts AT TIME ZONE.
+          TYPE_WORDS = %i[UNRESERVED_KEYWORD COL_NAME_KEYWORD].freeze
+          WITH = %i[WITH WITHOUT WITH_LA].freeze
 
-            cast = cast_after(index + 1)
-            cast[:array]
+          def initialize(tokens, sources)
+            @tokens = tokens
+            @sources = sources
+            casts = tokens.each_index.select { |i| tokens[i].token == :TYPECAST }.map { |i| [i, read(i)] }
+            @modifiers = casts.flat_map { |_i, (modifiers, _array)| modifiers }.to_set
+            @arrays = casts.filter_map { |i, (_modifiers, array)| i if array }.to_set
           end
 
-          # The indexes of every cast's type modifiers.
-          def typmods
-            @tokens.each_index.select { |i| @tokens[i].token == :TYPECAST }.flat_map { |i| cast_after(i)[:typmods] }
-          end
+          # Whether the token at index is one of a cast's type modifiers.
+          def modifier?(index) = @modifiers.include?(index)
 
-          # Reads the type after the :: at index: its words, any type
-          # modifiers, and any [].
-          def cast_after(index)
+          # Whether the token at index is a :: to an array type.
+          def array?(index) = @arrays.include?(index)
+
+          private
+
+          # The type after the :: at index: the indexes of its modifiers, and
+          # whether it ends in [].
+          def read(index)
             i = index + 1
-            typmods = []
+            modifiers = []
             array = false
-            loop do
-              if type_word?(i) then i += 1
-              elsif (modifiers = modifiers(i)) then typmods.concat(modifiers)
-                                                   i = modifiers.last + 2
-              elsif bracket?(i) then array = true
-                                     i = @tokens[i + 1].token == :ICONST ? i + 3 : i + 2
-              else break
-              end
+            while (after = after_part(i))
+              found = modifiers(i)
+              modifiers.concat(found) if found
+              array ||= @sources[i] == "["
+              i = after
             end
-            { typmods:, array: }
+            [modifiers, array]
           end
 
-          def type_word?(index)
+          # The index after the part of a type's name at index, or nil if
+          # the type ended before it.
+          def after_part(index)
+            return index + 1 if word?(index)
+
+            found = modifiers(index)
+            found ? found.last + 2 : brackets(index)
+          end
+
+          def word?(index)
             token = @tokens[index]
             return false unless token
+            return true if token.token == :IDENT || @sources[index] == "."
+            return @tokens[index + 1]&.token == :TIME if WITH.include?(token.token)
 
-            token.token == :IDENT || token.token == :ASCII_46 ||
-              (TYPE_WORDS.include?(token.keyword_kind) && token.token != :AT) ||
-              (%i[WITH WITHOUT WITH_LA].include?(token.token) && @tokens[index + 1]&.token == :TIME)
+            TYPE_WORDS.include?(token.keyword_kind) && token.token != :AT
           end
 
-          # The integers of "(12)" or "(10, 2)" at index, or nil.
+          # The indexes of the integers of "(12)" or "(10, 2)" right after a
+          # type's name at index, or nil.
           def modifiers(index)
-            return nil unless @tokens[index]&.token == :ASCII_40 && index.positive? && type_word?(index - 1)
+            return nil unless @sources[index] == "(" && after_word?(index)
 
             found = []
             i = index + 1
-            loop do
-              return nil unless @tokens[i]&.token == :ICONST
-
+            while @tokens[i]&.token == :ICONST
               found << i
-              i += 1
-              return found if @tokens[i]&.token == :ASCII_41
-              return nil unless @tokens[i]&.token == :ASCII_44
+              return found if @sources[i + 1] == ")"
+              break unless @sources[i + 1] == ","
 
-              i += 1
+              i += 2
             end
           end
 
-          def bracket?(index)
-            return false unless @tokens[index]&.token == :ASCII_91
+          def after_word?(index) = index.positive? && word?(index - 1)
+
+          # The index after "[]" or "[3]" at index, or nil.
+          def brackets(index)
+            return nil unless @sources[index] == "["
 
             closing = @tokens[index + 1]&.token == :ICONST ? index + 2 : index + 1
-            @tokens[closing]&.token == :ASCII_93
+            closing + 1 if @sources[closing] == "]"
           end
         end
 
@@ -214,14 +222,15 @@ module Quaack
 
           def constant(source)
             stmts = PgQuery.parse("SELECT #{source}").tree.stmts
-            target = stmts.first.stmt.select_stmt&.target_list&.first if stmts.size == 1
-            target&.res_target&.val&.a_const
+            select = stmts.first.stmt.select_stmt if stmts.size == 1
+            target = select.target_list.first&.res_target if select
+            target&.val&.a_const
           rescue PgQuery::ParseError
             nil
           end
         end
 
-        private_constant :Scan, :Value
+        private_constant :Scan, :Cast, :Value
       end
 
       private_constant :Expression

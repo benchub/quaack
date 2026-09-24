@@ -8,10 +8,18 @@ module Quaack
     # and every LLM call get, and the placeholder map, which stays in the
     # governed store.
     #
-    #   Redaction.query(qualified.parse)
-    #   # => RedactedQuery(sql: "SELECT ... WHERE o.status = $1 ...", placeholders: [Placeholder, ...])
+    #   result = Redaction.redact(qualified.parse, explain)   # the step 1 plan
+    #   result.query.sql            # "SELECT ... WHERE o.status = $1 ..."
+    #   result.plan.explain         # the plan, with $n where its literals were
+    #   result.placeholder_shapes   # {"$1" => {"type" => "text", "rows" => {...}}}
+    #   result.store(store)         # the placeholder_map and placeholder_shapes entries
     #
-    # Query redaction replaces each constant in the query's parse (every
+    #   Redaction.plan(racetrack_explain, Redaction.placeholder_map(store))
+    #   Redaction.binding(candidate_sql, Redaction.placeholder_map(store)).prepare_sql("q")
+    #
+    # == The query
+    #
+    # Redaction.query replaces each constant in the query's parse (every
     # A_Const, cast or not, NULL included) with $n, numbered in the order
     # the constants appear in the text, and deparses the result with
     # Deparse.faithfully, so a query pg_query would deparse as something
@@ -31,10 +39,32 @@ module Quaack
     # its own, which would clash with the placeholders (Error
     # query_has_parameters). Intake refuses those already.
     #
-    # Trust boundary: RedactedQuery#sql and #placeholder_shapes are
-    # shape-class. #placeholder_map holds the literals, so it's value-class
-    # and stays in the store. inspect shows neither the map nor any
-    # Placeholder's value.
+    # == Plans
+    #
+    # Redaction.plan builds a new plan from a whitelist of EXPLAIN's fields
+    # (see Plan), with each literal in an expression replaced with the
+    # placeholder whose value it matches, after its cast is set aside
+    # (see Matcher), or with $? when none does. The same map redacts the
+    # step 1 plan and every racetrack plan. masked counts the $? masks, for
+    # the 15b burndown. dropped counts known fields left out because they
+    # couldn't be read.
+    #
+    # == Row counts
+    #
+    # Redaction.redact also gives each placeholder's shape a "rows" entry,
+    # from the step 1 plan node that consumes it: the node whose qual
+    # (Filter, Index Cond, Join Filter, Hash Cond, and the like) holds a
+    # literal that matches it. "status" is "found", with the node's type,
+    # the qual, and its estimated rows, actual rows, and loops; "none",
+    # when no qual holds it, as when Postgres folded it or it's a LIMIT; or
+    # "ambiguous", when quals of more than one node hold it. A value two
+    # placeholders share matches both, so each gets the rows only if every
+    # literal with that value is in one node.
+    #
+    # Trust boundary: the redacted query and plan and the shapes are
+    # shape-class. The placeholder map holds the literals, so it's
+    # value-class and stays in the store. inspect shows neither the map
+    # nor any value, and no error quotes one.
     module Redaction
       # Its message is the rule, and never quotes the query.
       class Error < StandardError
@@ -73,11 +103,37 @@ module Quaack
 
       RedactedPlan = Data.define(:explain, :masked, :dropped)
 
+      # The whole of 3g for the step 1 inputs.
+      Redacted = Data.define(:query, :plan, :placeholder_map, :placeholder_shapes) do
+        # Writes the two store entries: placeholder_map, which never leaves
+        # the enclave, and placeholder_shapes, which may.
+        def store(store)
+          store.write("placeholder_map", placeholder_map)
+          store.write("placeholder_shapes", placeholder_shapes)
+          nil
+        end
+
+        def inspect = "#<data #{self.class} query=#{query.inspect}, placeholder_map=<redacted>>"
+
+        alias_method :to_s, :inspect
+
+        def pretty_print(pp) = pp.text(inspect)
+      end
+
       module_function
 
-      def plan(explain, placeholder_map)
-        redacted = Plan.new(explain, Matcher.new(placeholder_map))
-        RedactedPlan.new(explain: redacted.explain, masked: redacted.masked, dropped: redacted.dropped)
+      def redact(parse, explain)
+        query = query(parse)
+        plan = Plan.new(explain, Matcher.new(query.placeholder_map))
+        Redacted.new(query:, plan: redacted_plan(plan), placeholder_map: query.placeholder_map,
+                     placeholder_shapes: annotated(query.placeholders, plan.consumers))
+      end
+
+      # Each placeholder's shape, with its row counts.
+      def annotated(placeholders, consumers)
+        placeholders.to_h do |p|
+          ["$#{p.number}", p.shape.merge("rows" => Rows.of(consumers.fetch(p.number, []))).freeze]
+        end
       end
 
       def query(parse)
@@ -85,6 +141,37 @@ module Quaack
         sql = Deparse.faithfully(redacted.tree)
         RedactedQuery.new(sql:, placeholders: redacted.placeholders)
       end
+
+      # explain is the parsed JSON of EXPLAIN (FORMAT JSON), with or without
+      # ANALYZE. placeholder_map is RedactedQuery#placeholder_map, or what
+      # the store gives back.
+      def plan(explain, placeholder_map) = redacted_plan(Plan.new(explain, Matcher.new(placeholder_map)))
+
+      def redacted_plan(plan) = RedactedPlan.new(explain: plan.explain, masked: plan.masked, dropped: plan.dropped)
+
+      # The run's placeholder map, from the store. A stored entry that isn't
+      # a placeholder map raises Error bad_placeholder_map.
+      def placeholder_map(store) = checked_map(store.read("placeholder_map"))
+
+      # The map, if it's a placeholder map: "$1" through "$N", each with a
+      # String or nil value and a type Literal.of gives. Anything else
+      # raises Error bad_placeholder_map.
+      def checked_map(map)
+        numbered = map.is_a?(Hash) && map.keys.sort_by { it.to_s.delete_prefix("$").to_i } ==
+                                      (1..map.size).map { "$#{it}" }
+        raise Error, "bad_placeholder_map" unless numbered && map.each_value.all? { |entry| entry?(entry) }
+
+        map
+      end
+
+      def entry?(entry)
+        entry.is_a?(Hash) && entry.keys.sort == %w[type value] && Matcher::TYPES.include?(entry["type"]) &&
+          (entry["value"].nil? || entry["value"].is_a?(String))
+      end
+
+      # The SQL and the literals the runners need to run a query written with
+      # the placeholders (see Binding).
+      def binding(sql, placeholder_map) = Bind.for(sql, checked_map(placeholder_map))
     end
   end
 end
@@ -92,3 +179,5 @@ end
 require_relative "redaction/query"
 require_relative "redaction/matcher"
 require_relative "redaction/plan"
+require_relative "redaction/rows"
+require_relative "redaction/binding"
