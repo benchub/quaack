@@ -26,18 +26,28 @@ module Quaack
     #
     # Values of allowed fields go out unchanged: there are no field types.
     # So the whitelist must list only fields whose values are always
-    # shape-class data.
+    # shape-class data. A value must be plain JSON data, though: nil, true,
+    # false, an Integer, a Float, a String, a Symbol (sent as its name), or
+    # an Array or Hash of those, with String or Symbol keys. Anything else,
+    # such as an exception, a Struct, a Time, or a subclass of String, could
+    # carry a real value out through its to_s or to_json.
     #
-    # If an allowed value can't be written as JSON, such as invalid UTF-8
-    # or a NaN, it raises Egress::Error. The error names only the type,
-    # which is on the whitelist, and has no cause, so nothing from the
-    # message rides along with it.
+    # For a value that isn't plain JSON data, or that JSON can't write, such
+    # as invalid UTF-8 or a NaN, it raises Egress::Error. The error names
+    # only the type, which is on the whitelist, and has no cause, so
+    # nothing from the message rides along with it.
     module Egress
       class Error < StandardError; end
 
+      # Raised inside write for a value that isn't plain JSON data.
+      class NotPlain < StandardError; end
+      private_constant :NotPlain
+
       # The whitelist with String names, so Symbol and String keys match the
-      # same way without turning arbitrary Strings into Symbols.
-      FIELDS = Protocol::WHITELIST.to_h { |type, fields| [type.name, fields.map(&:name).freeze] }.freeze
+      # same way without turning arbitrary Strings into Symbols. Each type
+      # maps to its own name and its fields, so what goes out as the type is
+      # always the whitelist's String, never the caller's object.
+      TYPES = Protocol::WHITELIST.to_h { |type, fields| [type.name, [type.name, fields.map(&:name)].freeze] }.freeze
 
       # Marks a name given both as a Symbol and as a String. No message has
       # it as a key, so looking it up finds nothing.
@@ -49,8 +59,7 @@ module Quaack
         return unless message.is_a?(Hash)
 
         keys = keys_by_name(message)
-        type = type_name(message, keys)
-        fields = FIELDS[type]
+        type, fields = TYPES[type_name(message, keys)]
         return if fields.nil? || fields.any? { |f| keys[f].equal?(TWICE) }
 
         write(type, fields.filter_map { |f| [f, message[keys[f]]] if keys.key?(f) })
@@ -77,9 +86,39 @@ module Quaack
       end
 
       def write(type, pairs)
-        JSON.generate({ "type" => type, **pairs.to_h })
-      rescue JSON::GeneratorError, EncodingError
+        JSON.generate({ "type" => type, **pairs.to_h { |f, value| [f, plain(value)] } })
+      rescue NotPlain, JSON::JSONError
         raise Error, "a value in this #{type} message can't be written as JSON", cause: nil
+      end
+
+      # A copy of value with Symbols as their names, or NotPlain if it holds
+      # anything but JSON's own kinds of data. Subclasses don't count, since
+      # they can bring their own to_s or to_json. Neither does a Hash with a
+      # key that isn't a String or Symbol, or that names a key twice. The
+      # json that ships with Ruby would write such a key with its to_s.
+      def plain(value)
+        case value
+        when nil, true, false, Integer, Float then value
+        when Symbol then value.name
+        else plain_container(value)
+        end
+      end
+
+      def plain_container(value)
+        klass = value.class
+        return value if klass == String
+        return value.map { |v| plain(v) } if klass == Array
+        raise NotPlain unless klass == Hash
+
+        plain_hash(value)
+      end
+
+      def plain_hash(value)
+        value.each_with_object({}) do |(key, v), copy|
+          raise NotPlain unless [String, Symbol].include?(key.class) && !copy.key?(key.to_s)
+
+          copy[key.to_s] = plain(v)
+        end
       end
     end
   end

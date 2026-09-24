@@ -136,15 +136,60 @@ RSpec.describe Quaack::Enclave::Egress do
     end
   end
 
-  describe "an allowed field whose value can't be written as JSON" do
+  describe "the type" do
+    it "goes out as the whitelist's own name, not the caller's object" do
+      type = Class.new(String) { def to_json(*) = %("#{EGRESS_SENTINEL}") }.new("error")
+
+      expect(egress.serialize(type: type, step: "3f")).to eq('{"type":"error","step":"3f"}')
+    end
+
+    it "isn't found through to_s, so an object whose to_s is a type's name sends nothing" do
+      type = Object.new
+      def type.to_s = "error"
+
+      expect(egress.serialize(type: type, step: EGRESS_SENTINEL)).to be_nil
+    end
+  end
+
+  it "sends plain data nested in an allowed field as is, with Symbols as their names" do
+    value = { "a" => [1, 2.5, nil, true, false, { b: "x" }], c: :d }
+
+    expect(parsed(type: :error, step: :"3f", rule: value))
+      .to eq("type" => "error", "step" => "3f", "rule" => { "a" => [1, 2.5, nil, true, false, { "b" => "x" }],
+                                                            "c" => "d" })
+  end
+
+  describe "an allowed field whose value isn't plain JSON data" do
+    def sentinel_object(method)
+      Object.new.tap { |o| o.define_singleton_method(method) { |*| %("#{EGRESS_SENTINEL}") } }
+    end
+
+    sentinel_string = Class.new(String) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
+    sentinel_hash = Class.new(Hash) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
+    sentinel_array = Class.new(Array) { def to_json(*) = %("#{EGRESS_SENTINEL}") }
     [
-      ["invalid UTF-8", "#{EGRESS_SENTINEL}\xFF"],
-      ["a NaN", Float::NAN]
+      ["invalid UTF-8", -> { "#{EGRESS_SENTINEL}\xFF" }],
+      ["a NaN", -> { Float::NAN }],
+      ["Arrays nested deeper than JSON writes", -> { 200.times.reduce(EGRESS_SENTINEL) { |v, _| [v] } }],
+      ["an exception", -> { RuntimeError.new("Key (email)=(#{EGRESS_SENTINEL}) already exists.") }],
+      ["an object with its own to_s", -> { sentinel_object(:to_s) }],
+      ["an object with its own to_json", -> { sentinel_object(:to_json) }],
+      ["an object with its own to_s, in an Array", -> { [1, sentinel_object(:to_s)] }],
+      ["an object with its own to_s, as a Hash key", -> { { sentinel_object(:to_s) => 1 } }],
+      ["an Integer Hash key", -> { { 1 => EGRESS_SENTINEL } }],
+      ["a Hash that names a key twice", -> { { :a => 1, "a" => EGRESS_SENTINEL } }],
+      ["a String subclass with its own to_json", -> { sentinel_string.new("x") }],
+      ["a Hash subclass with its own to_json", -> { sentinel_hash[a: 1] }],
+      ["an Array subclass with its own to_json", -> { sentinel_array.new([1]) }],
+      ["a Struct", -> { Struct.new(:email).new(EGRESS_SENTINEL) }],
+      ["a Time", -> { Time.at(0) }],
+      ["a Range", -> { EGRESS_SENTINEL..EGRESS_SENTINEL }],
+      ["a Rational", -> { Rational(1, 3) }]
     ].each do |name, value|
       it "raises Egress::Error that carries nothing from the message, for #{name}" do
         error = nil
         begin
-          egress.serialize(type: :error, step: "3f", rule: value, detail: EGRESS_SENTINEL)
+          egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
         rescue StandardError => e
           error = e
         end
@@ -158,5 +203,32 @@ RSpec.describe Quaack::Enclave::Egress do
         expect(error.instance_variables).to be_empty
       end
     end
+  end
+
+  # The jump server runs the enclave outside Bundler, so it gets the json
+  # that ships with Ruby, not the newer one in this bundle. The two differ
+  # on what they let through, so check the cases that differ against the
+  # shipped one too.
+  it "treats non-plain data the same with the json that ships with Ruby" do
+    script = <<~RUBY
+      require "quaack/enclave/egress"
+      key = Object.new
+      def key.to_s = "#{EGRESS_SENTINEL}"
+      [{ key => 1 }, [{ key => 1 }], { "a" => { key => 1 } }, { 1 => 2 }, { :a => 1, "a" => 2 },
+       [{ :a => 1, "a" => 2 }], :d, [:d], { "a" => :d }].each do |value|
+        puts Quaack::Enclave::Egress.serialize(type: :error, rule: value)
+      rescue Quaack::Enclave::Egress::Error => e
+        puts e.class
+      end
+      puts $LOADED_FEATURES.grep(%r{/json\\.rb\\z}).first
+    RUBY
+    libs = [GEM_ROOT, File.join(GEM_ROOT, "..", "protocol")].flat_map { |dir| ["-I", File.join(dir, "lib")] }
+    out, err, status = Bundler.with_unbundled_env { run_ruby("--disable-gems", *libs, "-e", script) }
+
+    expect(status).to be_success, "stderr was #{err}"
+    *results, json = out.lines(chomp: true)
+    expect(results).to eq([*["Quaack::Enclave::Egress::Error"] * 6, '{"type":"error","rule":"d"}',
+                           '{"type":"error","rule":["d"]}', '{"type":"error","rule":{"a":"d"}}'])
+    expect(File.realpath(json)).to start_with(File.realpath(RbConfig::CONFIG["rubylibdir"]))
   end
 end
