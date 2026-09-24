@@ -17,6 +17,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       CREATE TYPE mood AS ENUM ('sad', 'happy');
       CREATE TYPE pair AS (a integer, b text);
       CREATE TYPE json_pair AS (a integer, b json);
+      CREATE TYPE mood_pair AS (a integer, m mood);
       CREATE TABLE items (
         id integer PRIMARY KEY,
         grp integer NOT NULL,
@@ -26,7 +27,11 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         doc json,
         m mood,
         p pair,
-        jp json_pair
+        jp json_pair,
+        mp mood_pair,
+        iv interval,
+        c bpchar,
+        na numeric[]
       )
     SQL
   end
@@ -213,6 +218,13 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect_refused(original, candidate, four)
       end
 
+      it "refuses before the candidate runs" do
+        failing = "SELECT id, grp / (id - id) AS grp FROM items ORDER BY grp LIMIT 2"
+        expect { raw(failing, rows: four) }.to raise_error(Quaack::Enclave::ArenaRunner::Error)
+
+        expect_refused("SELECT id, grp FROM items ORDER BY grp LIMIT 2", failing, four)
+      end
+
       it "refuses a DISTINCT ON whose pick is a tie" do
         rows = rows_of(%w[id grp price], [1, 1, 1], [2, 1, 2], [3, 1, 1])
 
@@ -286,15 +298,171 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
       end
 
-      it "leaves out a composite with a field btree can't order" do
+      it "leaves out a composite with a field btree can't order, which ORDER BY would refuse" do
+        expect { conn.exec("SELECT NULL::json_pair ORDER BY 1") }.to raise_error(PG::UndefinedFunction)
         rows = rows_of(%w[id grp jp], [1, 1, %((1,"{}"))], [2, 1, %((2,"[]"))])
         sql = "SELECT jp, id FROM #{forward} ORDER BY grp"
 
         expect(compare(sql, "SELECT jp, id FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)
       end
 
-      it "the check catches a composite that ORDER BY can't sort" do
-        expect { conn.exec("SELECT NULL::json_pair ORDER BY 1") }.to raise_error(PG::UndefinedFunction)
+      it "puts a composite with an enum field in the tiebreaker" do
+        rows = rows_of(%w[id grp mp], [1, 1, "(1,sad)"], [2, 1, "(1,happy)"])
+        original = "SELECT mp FROM items ORDER BY mp"
+        candidate = "SELECT mp FROM #{forward} ORDER BY grp"
+        expect(raw(original, candidate, rows:).uniq.size).to eq(1)
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+
+      it "reads past a composite's dropped field" do
+        conn.exec("ALTER TYPE pair ADD ATTRIBUTE gone json; ALTER TYPE pair DROP ATTRIBUTE gone")
+        rows = rows_of(%w[id grp p], [1, 1, "(1,a)"], [2, 1, "(1,b)"])
+
+        expect(fields(compare("SELECT p FROM items ORDER BY p", "SELECT p FROM #{forward} ORDER BY grp", rows:)))
+          .to include(match: false, rule: :value)
+      end
+    end
+
+    # btree calls these values equal, but they print differently, so a
+    # tiebreaker can't split them and the comparator would see them differ.
+    describe "types whose equal values print differently" do
+      it "refuses an interval column in a tie, since the tie can come back either way" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+        original = "SELECT iv FROM items ORDER BY grp, id"
+        candidate = "SELECT iv FROM #{forward} ORDER BY grp"
+        forward_rows, reversed_rows = raw(candidate, "SELECT iv FROM #{reversed} ORDER BY grp", rows:)
+        expect([forward_rows == raw(original, rows:).first, forward_rows == reversed_rows]).to eq([true, false])
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses an interval column under a LIMIT" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+
+        verdict = compare("SELECT iv FROM items ORDER BY grp, id LIMIT 1",
+                          "SELECT iv FROM #{forward} ORDER BY grp LIMIT 1", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses an interval column when only the candidate has a LIMIT" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+
+        verdict = compare("SELECT iv FROM items WHERE id = 1 ORDER BY grp",
+                          "SELECT iv FROM #{forward} ORDER BY grp LIMIT 1", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "still compares an interval column when no tie holds different intervals" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+        original = "SELECT id, iv FROM #{forward} ORDER BY grp"
+
+        expect(compare(original, "SELECT id, iv FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)
+        expect(fields(compare(original, "SELECT id, iv FROM items ORDER BY id DESC", rows:)))
+          .to include(match: false, rule: :value)
+      end
+
+      it "refuses a numeric array in a tie, since {1.0} and {1.00} are equal" do
+        rows = rows_of(%w[id grp na], [1, 1, "{1.0}"], [2, 1, "{1.00}"])
+
+        verdict = compare("SELECT na FROM items ORDER BY grp, id", "SELECT na FROM #{forward} ORDER BY grp", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses a numrange in a tie, since [1.0,2) and [1.00,2) are equal" do
+        rows = rows_of(%w[id grp amount], [1, 1, "1.0"], [2, 1, "1.00"])
+        original = "SELECT numrange(amount, 2) AS r FROM items ORDER BY grp, id"
+        expect(raw(original, rows:).first.uniq.size).to eq(2)
+
+        verdict = compare(original, "SELECT numrange(amount, 2) AS r FROM #{forward} ORDER BY grp", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "matches bpchar values that differ only in trailing spaces, whichever way the tie comes back" do
+        rows = rows_of(%w[id grp c], [1, 1, "a"], [2, 1, "a  "])
+        expect(raw("SELECT c FROM items ORDER BY id", rows:)).to eq([[["a"], ["a  "]]])
+        original = "SELECT c FROM items ORDER BY grp, id LIMIT 1"
+
+        verdicts = [forward, reversed].map do |from|
+          compare(original, "SELECT c FROM #{from} ORDER BY grp LIMIT 1", rows:)
+        end
+
+        expect(verdicts.map(&:match?)).to eq([true, true])
+      end
+    end
+
+    describe "a nondeterministic collation" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE COLLATION loose (provider = icu, locale = 'und-u-ks-level2', deterministic = false)
+        SQL
+      end
+
+      let(:words) { Quaack::Enclave::TableName.new(schema: "public", name: "words") }
+
+      def word_rows(column)
+        [[1, "a"], [2, "A"]].map do |id, value|
+          Quaack::Enclave::ArenaRunner::FixtureRow.new(table: words, columns: ["id", "grp", column],
+                                                       values: [id.to_s, "1", value])
+        end
+      end
+
+      it "refuses when a column uses one" do
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text COLLATE loose)")
+        rows = word_rows("w")
+        candidate = "SELECT w FROM (SELECT * FROM words ORDER BY id OFFSET 0) s ORDER BY grp LIMIT 1"
+        expect(raw(candidate, "SELECT w FROM words ORDER BY grp, id LIMIT 1", rows:).uniq.size).to eq(1)
+
+        verdict = compare("SELECT w FROM words ORDER BY grp, id LIMIT 1", candidate, rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      it "refuses when the query names one" do
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
+        original = "SELECT w COLLATE loose AS w FROM words ORDER BY grp, id LIMIT 1"
+        candidate = "SELECT w COLLATE loose AS w FROM words ORDER BY grp LIMIT 1"
+
+        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+      end
+
+      it "refuses when only the candidate names one" do
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
+        original = "SELECT w FROM words ORDER BY grp, id LIMIT 1"
+        candidate = "SELECT w COLLATE loose AS w FROM words ORDER BY grp LIMIT 1"
+
+        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+      end
+
+      it "refuses when a domain uses one" do
+        conn.exec("CREATE DOMAIN loose_text AS text COLLATE loose")
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
+        original = "SELECT w::loose_text AS w FROM words ORDER BY grp, id LIMIT 1"
+        candidate = "SELECT w::loose_text AS w FROM words ORDER BY grp LIMIT 1"
+
+        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+      end
+
+      it "refuses when the query names one whose name needs quoting" do
+        conn.exec(<<~SQL)
+          CREATE COLLATION "it's loose" (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
+          CREATE TABLE words (id integer, grp integer, w text)
+        SQL
+        original = %(SELECT w COLLATE "it's loose" AS w FROM words ORDER BY grp, id LIMIT 1)
+        candidate = %(SELECT w COLLATE "it's loose" AS w FROM words ORDER BY grp LIMIT 1)
+
+        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+      end
+
+      it "doesn't refuse when one only exists" do
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
+        sql = "SELECT id, w FROM words ORDER BY grp, id"
+
+        expect(compare(sql, sql, rows: word_rows("w")).match?).to be(true)
       end
     end
 
@@ -320,7 +488,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
-  describe "ORDERABLE_TYPES" do
+  describe "Tiebreaker::ORDERABLE_TYPES" do
     # Whether ORDER BY works on a column of the type, which is what the
     # tiebreaker needs. varchar and cidr sort through text and inet, so
     # they have no btree operator class of their own.
@@ -333,7 +501,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
 
     it "names each type by its name and array in the catalog" do
-      listed = described_class::ORDERABLE_TYPES.map { |name, (oid, array)| [name.to_s, oid.to_s, array.to_s] }
+      listed = described_class::Tiebreaker::ORDERABLE_TYPES.map { |name, (oid, array)| [name.to_s, oid.to_s, array.to_s] }
       catalog = listed.map do |_, oid, _|
         conn.exec_params("SELECT typname, oid, typarray FROM pg_type WHERE oid = $1", [oid]).values.first
       end
@@ -342,7 +510,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
 
     it "lists only types, and arrays of them, that ORDER BY can sort" do
-      expect(described_class::ORDERABLE_OIDS.reject { |oid| orderable?(oid) }).to eq([])
+      expect(described_class::Tiebreaker::ORDERABLE_OIDS.reject { |oid| orderable?(oid) }).to eq([])
     end
 
     it "the check catches a type ORDER BY can't sort" do

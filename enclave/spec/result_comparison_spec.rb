@@ -91,10 +91,51 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
-  describe "tiebreaker_positions" do
-    it "gives the 1-based positions of the columns whose types btree can order" do
-      # int4, json, text, xml, float8[], point, numeric
-      expect(described_class.tiebreaker_positions([23, 114, 25, 142, 1022, 600, 1700])).to eq([1, 3, 5, 7])
+  describe "Tiebreaker.positions" do
+    it "gives the 1-based positions of the columns btree orders and the comparator reads faithfully" do
+      # int4, json, text, xml, int4[], point, numeric, float8, bpchar
+      expect(described_class::Tiebreaker.positions([23, 114, 25, 142, 1007, 600, 1700, 701, 1042]))
+        .to eq([1, 3, 5, 7, 8, 9])
+    end
+
+    # Each prints btree-equal values differently: '1 day' and '24 hours',
+    # {"a": 1.0} and {"a": 1.00}, or an element's scale or padding.
+    it "leaves out interval, jsonb, and arrays of numeric, floats, bpchar, interval, or jsonb" do
+      expect(described_class::Tiebreaker.positions([1186, 3802, 1231, 1021, 1022, 1014, 1187, 3807])).to eq([])
+    end
+
+    it "adds the catalog's orderable types" do
+      expect(described_class::Tiebreaker.positions([99_999, 114, 23], [99_999])).to eq([1, 3])
+    end
+  end
+
+  describe "Shape#cut?" do
+    {
+      "SELECT a FROM t ORDER BY a" => false,
+      "SELECT a FROM (SELECT a FROM t ORDER BY a LIMIT 1) s ORDER BY a" => false,
+      "SELECT a FROM t ORDER BY a LIMIT 1" => true,
+      "SELECT a FROM t ORDER BY a OFFSET 1" => true,
+      "SELECT DISTINCT ON (a) a, b FROM t ORDER BY a" => true,
+      "SELECT DISTINCT a FROM t ORDER BY a" => true,
+      "SELECT a FROM t UNION SELECT a FROM u ORDER BY 1" => true,
+      "SELECT a FROM t EXCEPT SELECT a FROM u ORDER BY 1" => true,
+      "SELECT a FROM t UNION ALL SELECT a FROM u ORDER BY 1" => false
+    }.each do |sql, cut|
+      it "is #{cut} for #{sql}" do
+        expect(shape(sql).cut?).to eq(cut)
+      end
+    end
+  end
+
+  describe "Shape#collation_names" do
+    it "lists every COLLATE clause's collation, at any depth" do
+      sql = %(SELECT a COLLATE "Ci", b FROM t WHERE b IN (SELECT c COLLATE pg_catalog."C" FROM u) ORDER BY a)
+
+      expect(shape(sql).collation_names).to eq(%w[Ci C])
+    end
+
+    it "is empty with no COLLATE clause" do
+      expect(shape("SELECT a FROM t ORDER BY a").collation_names).to eq([])
     end
   end
 

@@ -216,6 +216,34 @@ RSpec.describe Quaack::Enclave::ResultComparator do
       expect(verdict.rule).to eq(:value)
     end
 
+    describe "bpchar" do
+      def bpchar = 1042
+
+      it "ignores trailing spaces, as bpchar's own equality does" do
+        pairs = [["a", "a  "], ["a  ", "a"], ["", "  "]]
+
+        expect(pairs.map { |l, r| compare(result([bpchar], [[l]]), result([bpchar], [[r]]), mode: :ordered).match? })
+          .to eq([true, true, true])
+      end
+
+      it "keeps leading and inner spaces, and case" do
+        pairs = [["a", " a"], ["a b", "ab"], ["a", "A"]]
+
+        expect(pairs.map { |l, r| compare(result([bpchar], [[l]]), result([bpchar], [[r]]), mode: :ordered).match? })
+          .to eq([false, false, false])
+      end
+
+      it "ignores trailing spaces in a multiset too" do
+        verdict = compare(result([bpchar], [["a"], ["b "]]), result([bpchar], [["b"], ["a  "]]))
+
+        expect(verdict.match?).to be(true)
+      end
+
+      it "keeps trailing spaces in text" do
+        expect(compare(result([text], [["a"]]), result([text], [["a "]]), mode: :ordered).match?).to be(false)
+      end
+    end
+
     describe "numeric" do
       def numerics_equal?(expected, actual)
         compare(result([numeric], [[expected]]), result([numeric], [[actual]]), mode: :ordered).match?

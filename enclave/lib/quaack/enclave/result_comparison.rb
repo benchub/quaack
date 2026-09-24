@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "result_comparator"
 require_relative "supported_sql"
+require_relative "result_comparison/tiebreaker"
 
 module Quaack
   module Enclave
@@ -43,18 +44,42 @@ module Quaack
     #   first and last rows of a tie in T order, so a candidate could widen
     #   the tie at the cut with a row between those and match both runs.
     #
-    #   When the multisets are equal, the two runs are sound. With no cut
-    #   the original's rows are fixed. With a cut, each tie group the cut
+    #   The principle. A column goes in the tiebreaker only if values btree
+    #   calls equal are always equal to the comparator too (see Tiebreaker::UNFAITHFUL).
+    #   Then rows the tiebreaker leaves tied look the same to the
+    #   comparator, on every tiebreaker column.
+    #
+    #   When every output column is in the tiebreaker and the original's T
+    #   and T' multisets are equal, the two runs are sound. With no cut the
+    #   original's rows are fixed. With a cut, each tie group the cut
     #   passes through gives the same rows in T and T', and a group's rows
-    #   sorted in T order can only do that if they're all equal on every
-    #   tiebreaker column. So the original's answer doesn't depend on how
-    #   its ties break. A candidate matching both runs has the same rows
-    #   before the cut, in order. Any rows it ties with the ones at the cut
-    #   come out first in T and last in T', and both runs show the
-    #   original's rows there, so those rows are equal to the original's on
-    #   every tiebreaker column too. Two rows the original orders but the
-    #   candidate leaves tied stay put in the original and swap places in
-    #   the candidate between the runs, so one run mismatches.
+    #   sorted in T order can only do that if they're all btree-equal on
+    #   every tiebreaker column, so equal to the comparator. So the
+    #   original's answer doesn't depend on how its ties break. A candidate
+    #   matching both runs has the same rows before the cut, in order. Any
+    #   rows it ties with the ones at the cut come out first in T and last
+    #   in T', and both runs show the original's rows there, so those rows
+    #   are equal to the original's too. Two rows the original orders but
+    #   the candidate leaves tied stay put in the original and swap places
+    #   in the candidate between the runs, so one run mismatches, unless
+    #   the comparator can't tell them apart anyway.
+    #
+    #   When some output column is left out of the tiebreaker, rows equal on
+    #   every other column can't be split, and can differ in that column.
+    #   So it's unsupported_order when:
+    #   - the original or the candidate has a cut at its top level (a
+    #     LIMIT, an OFFSET, DISTINCT, DISTINCT ON, or a set operation
+    #     without ALL), since the cut can keep either of those rows, or
+    #   - the original's T run has two rows equal on every tiebreaker
+    #     column that differ in a left-out one, since they can come back in
+    #     either order.
+    #   Otherwise a left-out column's value follows from the tiebreaker
+    #   columns in the original's rows, and the argument above holds.
+    #
+    #   A nondeterministic collation breaks the principle for text, and a
+    #   result can't say which columns use one. So it's unsupported_order
+    #   whenever a column or domain in the database uses one, or a COLLATE
+    #   clause in either query names one.
     # - LIMIT or OFFSET with no ORDER BY: subset. Any rows are a valid
     #   answer. Run the original as written for the expected row count,
     #   which Postgres works out whatever the LIMIT expression is. Run it
@@ -69,26 +94,29 @@ module Quaack
     # When the original has an ORDER BY and the candidate has none at its
     # top level, that's a candidate_unordered mismatch, with nothing run.
     #
-    # The tiebreaker leaves out any column btree can't order, such as json,
-    # xml, or point, since ORDER BY on one is an error, and one error ends
-    # the arena transaction. It keeps the built-in types in ORDERABLE_TYPES,
-    # plus the enums, ranges, and composites of orderable fields that the
+    # The tiebreaker also leaves out any column btree can't order, such as
+    # json, xml, or point, since ORDER BY on one is an error, and one error
+    # ends the arena transaction. It keeps the built-in types in
+    # Tiebreaker::TIEBREAKER_OIDS, plus the enums, ranges, arrays, and composites the
     # catalog lookup finds (CATALOG_ORDERABLE_SQL). A domain reports its
-    # base type, so it's covered by that type. Anything else, such as
-    # extension types, nested composites, and composites with a json
-    # field, is left out. That leaves a window both ways. Rows that tie on
-    # every column the tiebreaker has, and differ only in one it left out,
-    # don't swap between the two runs. So a candidate that leaves such rows
-    # tied where the original orders them can still match, and a good
-    # candidate can mismatch when those rows come back in either order.
+    # base type, so it's covered by that type.
     #
-    # DISTINCT, DISTINCT ON, and set operations (UNION, INTERSECT, EXCEPT)
-    # need nothing more. Their top-level ORDER BY and LIMIT are read the
-    # same way. Known ways to discard a good candidate, all toward
-    # mismatch:
+    # Gaps that remain, where a bad candidate can still match:
+    # - Nondeterminism below the top level. A LIMIT, DISTINCT, GROUP BY, or
+    #   UNION inside a subquery or CTE, in either query, can keep any of
+    #   several rows, or any representative of values btree calls equal,
+    #   such as '1 day' for '24 hours'. So can a top-level DISTINCT or
+    #   GROUP BY over such a column in a query with no ORDER BY. The fixture
+    #   shows only the one Postgres picked.
+    # - A nondeterministic collation outside the ordered mode, where no
+    #   tiebreaker runs but a DISTINCT or GROUP BY can still pick either
+    #   of 'a' and 'A'.
+    #
+    # Known ways to discard a good candidate, all toward mismatch:
     #
     # - A LIMIT inside a subquery, or DISTINCT ON with no ORDER BY, picks
     #   rows Postgres is free to vary.
+    # - Every unsupported_order refusal above.
     # - A candidate whose ORDER BY adds its own keys, such as ORDER BY a, id
     #   for ORDER BY a, orders ties its own way before the tiebreaker.
     # - Floats within tolerance of each other can sort either way in the
@@ -119,40 +147,6 @@ module Quaack
         not_one_select: "a query for the result comparison isn't exactly one SELECT"
       }.freeze
 
-      # Built-in types that ORDER BY can sort, and their arrays, as [oid,
-      # array oid]. result_comparison_postgres_spec.rb checks each one
-      # against Postgres.
-      ORDERABLE_TYPES = {
-        bool: [16, 1000], bytea: [17, 1001], char: [18, 1002], name: [19, 1003], int8: [20, 1016],
-        int2: [21, 1005], int4: [23, 1007], text: [25, 1009], oid: [26, 1028], tid: [27, 1010],
-        float4: [700, 1021], float8: [701, 1022], money: [790, 791], macaddr8: [774, 775],
-        macaddr: [829, 1040], cidr: [650, 651], inet: [869, 1041], bpchar: [1042, 1014],
-        varchar: [1043, 1015], date: [1082, 1182], time: [1083, 1183], timestamp: [1114, 1115],
-        timestamptz: [1184, 1185], interval: [1186, 1187], timetz: [1266, 1270], bit: [1560, 1561],
-        varbit: [1562, 1563], numeric: [1700, 1231], uuid: [2950, 2951], pg_lsn: [3220, 3221],
-        tsvector: [3614, 3643], tsquery: [3615, 3645], jsonb: [3802, 3807]
-      }.freeze
-      ORDERABLE_OIDS = ORDERABLE_TYPES.values.flatten.to_set.freeze
-
-      # Which of the result's other types (%<types>s) ORDER BY can sort,
-      # from the catalog: enums, ranges, arrays of either, and composites
-      # whose fields are all ORDERABLE_OIDS (%<known>s), enums, or ranges.
-      # Postgres sorts those through its polymorphic btree operator
-      # classes. A domain needs nothing here, since a result reports its
-      # base type. A composite with any other field, such as json, another
-      # composite, or a domain, is left out, and so is an array of one.
-      CATALOG_ORDERABLE_SQL = <<~SQL
-        SELECT t.oid::int
-        FROM pg_type t
-        LEFT JOIN pg_type e ON e.oid = t.typelem AND t.typsubscript = 'array_subscript_handler'::regproc
-        WHERE t.oid IN (%<types>s)
-          AND (t.typtype IN ('e', 'r') OR e.typtype IN ('e', 'r')
-            OR (t.typtype = 'c' AND NOT EXISTS (
-              SELECT FROM pg_attribute a JOIN pg_type f ON f.oid = a.atttypid
-              WHERE a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped
-                AND NOT (f.oid IN (%<known>s) OR f.typtype IN ('e', 'r')))))
-      SQL
-
       # One query's top level, parsed. Each builder parses the SQL again, so
       # none changes another's tree.
       class Shape
@@ -177,6 +171,19 @@ module Quaack
         end
 
         def ordered? = !select_stmt(parse).sort_clause.empty?
+
+        # Whether the top level keeps only some of its rows: a LIMIT, an
+        # OFFSET, DISTINCT or DISTINCT ON, or a UNION, INTERSECT, or EXCEPT
+        # without ALL. Each can keep either of two rows btree calls equal.
+        def cut?
+          select = select_stmt(parse)
+          set_dedup = select.op != :SETOP_NONE && !select.all
+          !!(select.limit_count || select.limit_offset || !select.distinct_clause.empty? || set_dedup)
+        end
+
+        # The collation each COLLATE clause names, anywhere in the query,
+        # without its schema.
+        def collation_names = collations(parse.tree.to_h)
 
         def without_limit
           build do |select|
@@ -217,6 +224,16 @@ module Quaack
           PgQuery.deparse(parsed.tree)
         end
 
+        def collations(node)
+          case node
+          when Hash
+            own = node[:collate_clause] ? [node[:collate_clause][:collname].last[:string][:sval]] : []
+            own + node.values.flat_map { |value| collations(value) }
+          when Array then node.flat_map { |value| collations(value) }
+          else []
+          end
+        end
+
         def position_sort(position, descending)
           constant = PgQuery::Node.new(a_const: PgQuery::A_Const.new(ival: PgQuery::Integer.new(ival: position)))
           direction, nulls = descending ? %i[SORTBY_DESC SORTBY_NULLS_FIRST] : %i[SORTBY_DEFAULT SORTBY_NULLS_DEFAULT]
@@ -255,14 +272,36 @@ module Quaack
         shape = ResultComparator.shape_mismatch(original_probe, transaction.query(candidate_shape.probe), :ordered, {})
         return shape if shape
 
-        positions = tiebreaker_positions(original_probe.types, catalog_orderable(transaction, original_probe.types))
-        originals = [false, true].map do |descending|
-          transaction.query(original_shape.with_tiebreaker(positions, descending:))
-        end
-        return ResultComparator::Verdict.for(:ordered, :unsupported_order) unless ties_uncut?(*originals)
+        positions = checked_positions(transaction, original_shape, candidate_shape, original_probe.types)
+        return refused unless positions
+
+        originals = both_ways(transaction, original_shape, positions)
+        return refused unless ties_uncut?(*originals) && ties_faithful?(originals.first, positions)
 
         tiebroken(transaction, originals, candidate_shape, positions)
       end
+
+      def both_ways(transaction, shape, positions)
+        [false, true].map { |descending| transaction.query(shape.with_tiebreaker(positions, descending:)) }
+      end
+
+      def refused = ResultComparator::Verdict.for(:ordered, :unsupported_order)
+
+      # The tiebreaker positions, or nil when the comparison must refuse
+      # before running anything more: a nondeterministic collation, or a
+      # column left out of the tiebreaker in a query with a cut.
+      def checked_positions(transaction, original_shape, candidate_shape, types)
+        shapes = [original_shape, candidate_shape]
+        return if Tiebreaker.nondeterministic_collation?(transaction, shapes.flat_map(&:collation_names))
+
+        positions = Tiebreaker.positions(types, Tiebreaker.catalog_orderable(transaction, types))
+        positions if positions.size == types.size || shapes.none?(&:cut?)
+      end
+
+      # Whether rows the tiebreaker leaves tied are equal in every column,
+      # as far as the original's result shows. It always holds when every
+      # column is in the tiebreaker.
+      def ties_faithful?(result, positions) = !Tiebreaker.hidden_differences?(result, positions)
 
       # Whether the original returns the same rows whichever way its ties
       # break, as far as the two tiebreaker runs show.
@@ -278,25 +317,6 @@ module Quaack
           return verdict unless verdict.match?
         end
         verdict
-      end
-
-      # The type OIDs among types, beyond ORDERABLE_OIDS, that the catalog
-      # says ORDER BY can sort (see CATALOG_ORDERABLE_SQL). None are looked
-      # up when every type is already known. types come from a Result's
-      # ftype, so they're Integers and safe to put in the SQL.
-      def catalog_orderable(transaction, types)
-        unknown = types.reject { |oid| ORDERABLE_OIDS.include?(oid) }.uniq
-        return [] if unknown.empty?
-
-        sql = format(CATALOG_ORDERABLE_SQL, types: unknown.join(", "), known: ORDERABLE_OIDS.to_a.join(", "))
-        transaction.query(sql).rows.map { |(oid)| Integer(oid) }
-      end
-
-      # The 1-based positions of the columns whose types are in
-      # ORDERABLE_OIDS or catalog_orderable.
-      def tiebreaker_positions(types, catalog_orderable = [])
-        types.each_index.select { |i| ORDERABLE_OIDS.include?(types[i]) || catalog_orderable.include?(types[i]) }
-             .map { |i| i + 1 }
       end
     end
   end

@@ -35,6 +35,7 @@ module Quaack
     #   equals 0.
     # - numeric: equal by value, exactly, so 1.0 equals 1.00. NaN and the
     #   infinities equal only themselves.
+    # - bpchar: equal ignoring trailing spaces, as bpchar's own equality is.
     # - Everything else: exact text. That includes arrays and composites
     #   that hold floats or numerics, so float noise inside one, or a
     #   numeric's printed scale, is a mismatch. That limitation can only
@@ -77,6 +78,7 @@ module Quaack
 
       FLOAT_TYPES = [700, 701].freeze
       NUMERIC_TYPE = 1700
+      BPCHAR_TYPE = 1042
       RELATIVE_TOLERANCE = 1e-9
       ABSOLUTE_TOLERANCE = 1e-12
 
@@ -184,9 +186,8 @@ module Quaack
         def equal?(type, left, right)
           return left.nil? && right.nil? if left.nil? || right.nil?
           return floats_equal?(parse_float(left), parse_float(right)) if FLOAT_TYPES.include?(type)
-          return numeric_text(left) == numeric_text(right) if type == NUMERIC_TYPE
 
-          left == right
+          canonical(type, left) == canonical(type, right)
         end
 
         def key(types, row) = types.each_index.map { |i| value_key(types[i], row[i]) }
@@ -194,9 +195,19 @@ module Quaack
         def value_key(type, value)
           return "null" if value.nil?
           return "f:#{float_key(parse_float(value))}" if FLOAT_TYPES.include?(type)
-          return "n:#{numeric_text(value)}" if type == NUMERIC_TYPE
 
-          "t:#{value}"
+          "t:#{canonical(type, value)}"
+        end
+
+        # The text that equal values of the type share: numeric without its
+        # scale's trailing zeros, bpchar without trailing spaces (which
+        # bpchar's own equality ignores), and anything else as it is.
+        def canonical(type, text)
+          case type
+          when NUMERIC_TYPE then numeric_text(text)
+          when BPCHAR_TYPE then text.sub(/ +\z/, "")
+          else text
+          end
         end
 
         SPECIAL_FLOATS = { "NaN" => Float::NAN, "Infinity" => Float::INFINITY, "-Infinity" => -Float::INFINITY }.freeze
