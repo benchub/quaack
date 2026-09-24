@@ -69,7 +69,9 @@ module Quaack
     # back. A hypothetical index the caller made earlier is gone afterward.
     # The transaction also sets hypopg.enabled = on, since with it off,
     # HypoPG still creates and sizes each index but the planner never sees
-    # it, so every candidate would look unused. If the run fails and
+    # it, so every candidate would look unused. The run refuses, with
+    # Error(:indexes_hidden), while HypoPG hides any real index in the
+    # session, since every plan would skip it. If the run fails and
     # cleanup fails too, the run's error is the one raised. Postgres
     # notices are dropped during the run, since a notice can quote a
     # literal, and the caller's notice receiver is put back after, even if
@@ -90,8 +92,9 @@ module Quaack
     # - Value-class: Plan#raw_plan, which holds the literals.
     # Nothing here goes through egress yet.
     module SingleCandidateTest
-      # rule is one of :in_transaction, :bad_literal, :prepare_failed,
-      # :explain_failed, :hypopg_failed, or :cleanup_failed. sqlstate is the
+      # rule is one of :in_transaction, :bad_literal, :indexes_hidden,
+      # :prepare_failed, :explain_failed, :hypopg_failed, or
+      # :cleanup_failed. sqlstate is the
       # Postgres SQLSTATE, or nil if there wasn't one.
       class Error < StandardError
         attr_reader :rule, :sqlstate
@@ -180,6 +183,15 @@ module Quaack
         raise Error.new(rule, sqlstate(e)), cause: nil
       end
 
+      # The parsed EXPLAIN JSON, deep-frozen. A deep plan nests past JSON's
+      # default limit of 100, since each node takes two levels, so there's
+      # no limit. Unreadable output is an Error that quotes none of it.
+      def parse_plan(json)
+        deep_freeze(JSON.parse(json, max_nesting: false))
+      rescue JSON::ParserError
+        raise Error, :explain_failed, cause: nil
+      end
+
       def deep_freeze(value)
         case value
         when Hash then value.each_value { |v| deep_freeze(v) }
@@ -232,6 +244,17 @@ module Quaack
           @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
           @connection.exec("SET LOCAL hypopg.enabled = on")
           @connection.exec("SELECT hypopg_reset()")
+          raise Error, :indexes_hidden if hidden_indexes?
+        end
+
+        # HypoPG keeps real indexes hidden with hypopg_hide_index for the
+        # session, and hypopg_reset doesn't unhide them, so the baseline and
+        # every candidate would plan without them. They aren't unhidden
+        # here, since that isn't transactional and the caller hid them.
+        # HypoPG before 1.4 has no hypopg_hidden_indexes, so the run fails
+        # closed there, as explain_failed with 42883.
+        def hidden_indexes?
+          @connection.exec("SELECT count(*) FROM hypopg_hidden_indexes()").getvalue(0, 0) != "0"
         end
 
         def finish
@@ -256,9 +279,11 @@ module Quaack
         # three nils and the SQLSTATE.
         def create(candidate)
           @connection.exec("SELECT hypopg_reset()")
+          # The savepoint is there for a refused create to roll back to. It's
+          # never released: nothing in it writes, and the run's rollback
+          # ends every one left open.
           @connection.exec("SAVEPOINT #{STATEMENT}")
           created = @connection.exec_params(CREATE_SQL, [candidate.to_ddl])
-          @connection.exec("RELEASE SAVEPOINT #{STATEMENT}")
           [Integer(created.getvalue(0, 0)), created.getvalue(0, 1), Integer(created.getvalue(0, 2))]
         rescue StandardError => e
           raise unless SingleCandidateTest.postgres_error?(e)
@@ -294,7 +319,7 @@ module Quaack
             @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute(values)}").getvalue(0, 0)
           end
           SingleCandidateTest.guarded(:cleanup_failed) { deallocate }
-          SingleCandidateTest.deep_freeze(JSON.parse(json))
+          SingleCandidateTest.parse_plan(json)
         end
 
         # EXECUTE of the prepared statement with these values. With no
@@ -305,18 +330,19 @@ module Quaack
           "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
         end
 
+        # used is whether any node scans the hypothetical index, by the name
+        # HypoPG gave it. Only this candidate's hypothetical index exists
+        # while it plans, since the run resets HypoPG before creating it. (A
+        # hypothetical index that a function the planner folds creates in
+        # the middle of planning doesn't show up in the plan, as tried on
+        # HypoPG 1.4.) So no test can tell this from matching any
+        # hypothetical index, but the exact name keeps it from depending on
+        # that.
         def plan(explain, index_name, identities)
           root = explain.first["Plan"]
-          Plan.new(used: !index_name.nil? && uses?(PlanNode.new(root), index_name),
-                   total_cost: root["Total Cost"],
-                   canonical_plan: CanonicalPlan.new(explain, hypothetical_indexes: identities),
-                   raw_plan: explain)
-        end
-
-        # Whether any node scans the hypothetical index, by the name HypoPG
-        # gave it.
-        def uses?(root, index_name)
-          root.subtree.any? { |node| node["Index Name"] == index_name }
+          used = !index_name.nil? && PlanNode.new(root).subtree.any? { |node| node["Index Name"] == index_name }
+          Plan.new(used:, total_cost: root["Total Cost"],
+                   canonical_plan: CanonicalPlan.new(explain, hypothetical_indexes: identities), raw_plan: explain)
         end
       end
 

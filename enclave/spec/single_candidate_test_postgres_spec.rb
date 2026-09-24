@@ -320,12 +320,57 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     end
   end
 
-  it "records an error in the definition that a function in the predicate raises as refused" do
-    failing_function("22023")
-    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a"], predicate: "a = failing()")])
+  # 22025 and 42P08 hold 25 and 08 past their start, so they tell whether
+  # the session-failure classes are matched only at the start.
+  %w[22023 22025 42P08].each do |code|
+    it "records an error in the definition that a function in the predicate raises (#{code}) as refused" do
+      failing_function(code)
+      report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] },
+                   [candidate(key: ["a"], predicate: "a = failing()")])
 
-    expect(report.results.first.refusal)
-      .to eq(described_class::Refusal.new(rule: :hypopg_refused, sqlstate: "22023"))
+      expect(report.results.first.refusal)
+        .to eq(described_class::Refusal.new(rule: :hypopg_refused, sqlstate: code))
+    end
+  end
+
+  # HypoPG keeps hidden real indexes for the session, and hypopg_reset
+  # doesn't unhide them, so the baseline and every candidate would plan
+  # without the index.
+  it "refuses to run while HypoPG hides an index, and leaves it hidden" do
+    conn.exec("CREATE INDEX t_a_real ON t (a)")
+    conn.exec("SELECT hypopg_hide_index('t_a_real'::regclass)")
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["b"])])
+
+    expect(error).to have_attributes(rule: :indexes_hidden, sqlstate: nil, cause: nil, message: "indexes_hidden")
+    expect(conn.exec("SELECT count(*) FROM hypopg_hidden_indexes()").getvalue(0, 0)).to eq("1")
+    expect(leftovers).to eq(clean)
+  end
+
+  it "plans a join deeper than JSON's default nesting limit" do
+    joins = (1...60).map { |i| "JOIN public.t t#{i} ON t#{i}.a = t#{i - 1}.b" }.join(" ")
+    report = run("SELECT t0.c FROM public.t t0 #{joins} WHERE t0.a = $1", { slow: ["5"] }, [candidate(key: ["a"])])
+    plan = report.results.first.plans[:slow]
+
+    expect(plan.used).to be(true)
+    expect(plan.total_cost).to be_a(Float).and(be_positive)
+    expect(plan.canonical_plan).to be_comparable
+    expect(plan.canonical_plan).not_to be_matches(report.baseline.plans[:slow].canonical_plan)
+    expect(plan.raw_plan).to be_frozen
+  end
+
+  it "turns EXPLAIN output that isn't JSON into an error" do
+    garbled = Class.new(SimpleDelegator) do
+      def exec(sql, *)
+        return Struct.new(:text) { def getvalue(*) = text }.new("[{SENTINEL-5a4-7f3c") if sql.start_with?("EXPLAIN")
+
+        super
+      end
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: garbled.new(conn))
+
+    expect(error).to have_attributes(rule: :explain_failed, sqlstate: nil, cause: nil)
+    expect(error.full_message).not_to include("SENTINEL")
+    expect(leftovers).to eq(clean)
   end
 
   # Whether the candidate on s was used for each literal set, and the
