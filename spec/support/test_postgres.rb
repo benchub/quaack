@@ -227,10 +227,10 @@ module TestPostgres
     true
   end
 
-  def start_container
+  def start_container(settings = SERVER_SETTINGS)
     docker("run", "-d", "--label", "#{LABEL}=1", "--label", "#{OWNER_LABEL}=#{Process.pid}",
            "--tmpfs", "/var/lib/postgresql", "-e", "POSTGRES_PASSWORD=#{PASSWORD}",
-           "-p", "127.0.0.1::5432", image_tag, *SERVER_SETTINGS.flat_map { |s| ["-c", s] })
+           "-p", "127.0.0.1::5432", image_tag, *settings.flat_map { |s| ["-c", s] })
   end
 
   # A launch that fails isn't tried again. Every later example gets the same
@@ -263,6 +263,22 @@ module TestPostgres
   def remove_at_exit(id)
     owner = Process.pid
     at_exit { docker("rm", "-f", "-v", id) if Process.pid == owner }
+  end
+
+  # A server of its own, started with settings in place of SERVER_SETTINGS,
+  # for the rare spec that needs a server-wide setting the shared server
+  # can't change, such as autovacuum: a -c setting outranks ALTER SYSTEM.
+  # It has no templates, so use its admin connection. The spec removes it
+  # with remove_server, in an ensure. One a crash leaves behind carries
+  # LABEL, so the next run removes it.
+  def extra_server(settings)
+    server
+    Server.new(start_container(settings)).tap(&:wait_until_ready)
+  end
+
+  def remove_server(extra)
+    extra.admin.close
+    docker("rm", "-f", "-v", extra.container_id)
   end
 
   def create_database = server.create_database(RACETRACK_TEMPLATE)

@@ -110,6 +110,7 @@ Validate the connection to step 1's production server. Then record the following
 - Installed extensions.
 - Instance memory.
 - `shared_buffers`, `effective_cache_size`, `work_mem`, `random_page_cost`, and `jit`.
+- `TimeZone`, `DateStyle`, `IntervalStyle`, and `default_statistics_target`, which change plans or how a literal is read, but which `SETTINGS` never lists.
 - Every parallel setting.
 - Every non-default planner GUC listed in the `SETTINGS` section of the input plan.
 - From `pg_database`: `datcollate`, `datctype`, `datlocprovider`, `datlocale`, and `datcollversion`.
@@ -249,6 +250,10 @@ The operator builds one server for each run of QUAACK. It must meet all of these
 - No background jobs, and autovacuum turned off. A background `ANALYZE` would change the statistics partway through the run.
 
 Verify every requirement. If any check fails, abort and name the check that failed.
+
+The checks compare the run server with step 2's inventory. A planner setting is any setting `EXPLAIN`'s `SETTINGS` would list, any Query Tuning setting, and `TimeZone`, `DateStyle`, and `IntervalStyle`. Production's value of one is the value step 2 recorded, if it recorded one. Otherwise it's the built-in default, since `SETTINGS` lists every setting that differs from it. The database's name can differ from production's. For quiet, `pg_stat_activity` must show no client other than QUAACK, and if pg_cron is loaded, it must run its jobs from this database and have none active. Schedulers outside Postgres, such as a cron job on another host that connects later, are the operator's to turn off. The error names only the check, such as `run_server_guc_mismatch`.
+
+Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since step 2 doesn't record them.
 
 ### 4a. Racetrack.
 
