@@ -354,14 +354,16 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
     end
 
     it "counts a hypothetical-set aggregate's WITHIN GROUP arguments" do
-      conn.exec('CREATE FUNCTION a.shaky_rank(internal, VARIADIC "any") RETURNS bigint ' \
+      # Not variadic, so its pronargs, 2, matches only when the WITHIN GROUP
+      # argument counts.
+      conn.exec("CREATE FUNCTION a.shaky_rank(internal, bigint, bigint) RETURNS bigint " \
                 "LANGUAGE internal VOLATILE AS 'hypothetical_rank_final'")
       conn.exec(<<~SQL)
-        CREATE AGGREGATE a.hrank(VARIADIC "any" ORDER BY VARIADIC "any") (
+        CREATE AGGREGATE a.hrank(bigint ORDER BY bigint) (
           SFUNC = pg_catalog.ordered_set_transition_multi, STYPE = internal,
           FINALFUNC = a.shaky_rank, FINALFUNC_EXTRA, HYPOTHETICAL)
       SQL
-      sql = "SELECT a.hrank(3, 'x') WITHIN GROUP (ORDER BY id, status) FROM orders"
+      sql = "SELECT a.hrank(3) WITHIN GROUP (ORDER BY id) FROM orders"
 
       expect(conn.exec(sql).ntuples).to eq(1)
       expect { check(sql) }.to volatile_error("function a.hrank calls volatile function a.shaky_rank")
