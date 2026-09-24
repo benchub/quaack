@@ -5,6 +5,7 @@ require_relative "../deparse"
 require_relative "../supported_sql"
 require_relative "literal"
 require_relative "surroundings"
+require_relative "sharing"
 
 module Quaack
   module Enclave
@@ -36,7 +37,7 @@ module Quaack
           @found = {}
           @tree = copy(parse.tree)
           replace
-          @placeholders = @numbers.map { |location, number| placeholder(location, number) }.freeze
+          @placeholders = @representatives.map { |location| placeholder(location, @numbers.fetch(location)) }.freeze
         end
 
         private
@@ -44,10 +45,21 @@ module Quaack
         # Numbers each constant the first walk finds by its place in the
         # text, then walks again to replace them.
         def replace
+          @notes = []
           visit(@tree)
-          @numbers = @found.keys.sort.each_with_index.to_h { |location, i| [location, i + 1] }
+          @numbers = numbers
           @replacing = true
           visit(@tree)
+        end
+
+        # Each constant's number: its representative's place in the text,
+        # among the representatives (see Sharing).
+        def numbers
+          sharing = Sharing.new(@found)
+          @notes.each { sharing.note(it) }
+          @representatives = @found.keys.select { sharing.representative(it) == it }.sort
+          ranks = @representatives.each_with_index.to_h { |location, i| [location, i + 1] }
+          @found.keys.to_h { [it, ranks.fetch(sharing.representative(it))] }
         end
 
         def parameters?(parse)
@@ -65,7 +77,10 @@ module Quaack
         def visit(message)
           return if message.is_a?(PgQuery::TypeName)
 
-          @surroundings.note(message) unless @replacing
+          unless @replacing
+            @surroundings.note(message)
+            @notes << message if message.is_a?(PgQuery::SelectStmt) || message.is_a?(PgQuery::FuncCall)
+          end
           message.class.descriptor.each { |field| visit_field(message, field) if field.type == :message }
         end
 

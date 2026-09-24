@@ -77,6 +77,10 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(map["$1"]["type"]).to eq("numeric")
   end
 
+  it "gives a big integer the integer class" do
+    expect(shapes(where("o.a = 5000000000"))["$1"]["type"]).to eq("integer")
+  end
+
   it "types integers written in hex, octal, binary, or with underscores" do
     map = redact(where("o.a = 0x1F AND o.b = 0o17 AND o.c = 0b101 AND o.d = 1_000 AND o.e = 0xFFFFFFFFFF"))
           .placeholder_map
@@ -103,6 +107,60 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(result.sql.gsub(/\$\d+/, "")).not_to match(/'|\d|NULL/)
     expect(result.placeholder_map.size).to eq(10)
     expect(result.placeholder_map["$5"]).to eq("value" => nil, "type" => "unknown")
+  end
+
+  describe "expressions Postgres requires to match" do
+    it "gives a GROUP BY expression the same placeholders in the select list, HAVING, and ORDER BY" do
+      result = redact("SELECT date_trunc('day', o.created_at), count(*) FROM public.orders o WHERE o.id > 1 " \
+                      "GROUP BY date_trunc('day', o.created_at) " \
+                      "HAVING date_trunc('day', o.created_at) > '2020-01-01' ORDER BY date_trunc('day', o.created_at)")
+      expect(result.sql).to eq("SELECT date_trunc($1, o.created_at), count(*) FROM public.orders o WHERE o.id > $2 " \
+                               "GROUP BY date_trunc($1, o.created_at) HAVING date_trunc($1, o.created_at) > $3 " \
+                               "ORDER BY date_trunc($1, o.created_at)")
+      expect(result.placeholder_map.values.map { it["value"] }).to eq(%w[day 1 2020-01-01])
+    end
+
+    it "shares inside a larger expression and a window, and not with a different literal or elsewhere" do
+      result = redact("SELECT upper(o.status || '-x'), rank() OVER (ORDER BY o.status || '-x'), o.status || '-y' " \
+                      "FROM public.orders o WHERE o.note = '-x' GROUP BY o.status || '-x', o.status || '-y'")
+      expect(result.sql).to eq("SELECT upper(o.status || $1), rank() OVER (ORDER BY o.status || $1), " \
+                               "o.status || $2 FROM public.orders o WHERE o.note = $3 " \
+                               "GROUP BY o.status || $1, o.status || $2")
+    end
+
+    it "shares between DISTINCT ON, SELECT DISTINCT, or an aggregate's DISTINCT, and its ORDER BY" do
+      expect(redact("SELECT DISTINCT ON (o.status || 'a') o.id FROM public.orders o " \
+                    "ORDER BY o.status || 'a', o.id").sql)
+        .to eq("SELECT DISTINCT ON (o.status || $1) o.id FROM public.orders o ORDER BY o.status || $1, o.id")
+      expect(redact("SELECT DISTINCT o.status || 'a' FROM public.orders o ORDER BY o.status || 'a'").sql)
+        .to eq("SELECT DISTINCT o.status || $1 FROM public.orders o ORDER BY o.status || $1")
+      expect(redact("SELECT string_agg(DISTINCT o.status || 'a', ',' ORDER BY o.status || 'a') " \
+                    "FROM public.orders o").sql)
+        .to eq("SELECT string_agg(DISTINCT o.status || $1, $2 ORDER BY o.status || $1) FROM public.orders o")
+    end
+
+    it "doesn't share with a subquery, but does with the expression IN tests" do
+      result = redact("SELECT o.status || 'a', (SELECT count(*) FROM public.orders o WHERE o.status || 'a' = 'z') " \
+                      "FROM public.orders o GROUP BY o.status || 'a' " \
+                      "HAVING o.status || 'a' IN (SELECT c.name FROM public.customers c)")
+      expect(result.sql).to eq("SELECT o.status || $1, (SELECT count(*) FROM public.orders o " \
+                               "WHERE (o.status || $2) = $3) FROM public.orders o GROUP BY o.status || $1 " \
+                               "HAVING o.status || $1 IN (SELECT c.name FROM public.customers c)")
+    end
+
+    it "doesn't share a positional GROUP BY's constant with a constant after it" do
+      expect(redact("SELECT o.status FROM public.orders o GROUP BY 1 HAVING 1 = 1").sql)
+        .to eq("SELECT o.status FROM public.orders o GROUP BY 1 HAVING $1 = $2")
+    end
+
+    it "keeps one placeholder per occurrence where Postgres doesn't require a match" do
+      expect(redact("SELECT string_agg(o.status || 'a', ',' ORDER BY o.status || 'a') FROM public.orders o").sql)
+        .to eq("SELECT string_agg(o.status || $1, $2 ORDER BY o.status || $3) FROM public.orders o")
+      expect(redact("SELECT o.status || 'a' FROM public.orders o ORDER BY o.status || 'a'").sql)
+        .to eq("SELECT o.status || $1 FROM public.orders o ORDER BY o.status || $2")
+      expect(redact("SELECT o.status || 'a' FROM public.orders o WHERE o.status || 'a' <> '' GROUP BY o.status").sql)
+        .to eq("SELECT o.status || $1 FROM public.orders o WHERE (o.status || $2) <> $3 GROUP BY o.status")
+    end
   end
 
   describe "shapes" do

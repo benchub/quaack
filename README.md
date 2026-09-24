@@ -162,6 +162,13 @@ This step also marks each column as **low-cardinality** or not. A column is low-
 Produce a redacted query and a redacted production plan. These redacted versions are what the driver gets, and what every LLM call uses.
 
 - Replace each literal with a numbered placeholder. The placeholder keeps the literal's shape, such as a leading versus trailing wildcard, or a numeric versus text type.
+- Give each literal its own placeholder, except where Postgres requires two expressions to match. There, equal literals in the same places of the same expression share one placeholder, because Postgres compares the expressions after binding and won't treat `$1` and `$2` as equal. These are the places:
+  - A GROUP BY expression and the same expression in the select list, HAVING, or ORDER BY.
+  - DISTINCT ON and ORDER BY.
+  - SELECT DISTINCT and ORDER BY.
+  - An aggregate's DISTINCT arguments and its ORDER BY.
+
+  A shared placeholder gets its row counts the same way as any other. When the quals of more than one node hold it, its row counts are marked ambiguous.
 - Annotate each placeholder with two row counts from the step 1 plan, taken at the node that consumes it: the planner's estimated rows and the actual rows.
 - Strip literal values out of the plan's quals the same way.
 

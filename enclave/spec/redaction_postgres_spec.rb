@@ -73,6 +73,14 @@ RSpec.describe Quaack::Enclave::Redaction do
     expect(leaked(planted, sentinels(query))).to eq(["quaack-sentinel-join"])
   end
 
+  it "matches a number written with a point and no digits after it" do
+    query = "SELECT o.id FROM public.orders o WHERE o.status = '918273.e5' OR o.total_cents::numeric = 918273.e5"
+    result = redact(query, settings: ["enable_indexscan = off", "enable_bitmapscan = off"])
+    expect(result.plan.explain.first["Plan"]["Filter"])
+      .to eq("((o.status = $1::text) OR ((o.total_cents)::numeric = $2::numeric))")
+    expect(result.plan.masked).to eq(0)
+  end
+
   it "masks a timestamp Postgres printed in its own format, and finds no consumer for it" do
     result = redact("SELECT o.id FROM public.orders o WHERE o.created_at > '2031-07-19'",
                     settings: ["enable_indexscan = off", "enable_bitmapscan = off"])
@@ -159,6 +167,16 @@ RSpec.describe Quaack::Enclave::Redaction do
                     "actual_rows" => inner["Actual Rows"])
     end
 
+    it "annotates a shared placeholder from the one qual that holds it, wherever else it's written" do
+      query = "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY o.status || '-x' " \
+              "HAVING (o.status || '-x') <> 'x'"
+      result = redact(query)
+      plan = JSON.generate(result.plan.explain)
+      expect(plan).to include('"Group Key":["(o.status || $1::text)"]', "((o.status || $1::text) <> $2::text)")
+      expect(result.placeholder_shapes["$1"]["rows"]).to include("status" => "found", "qual" => "Filter")
+      expect(result.plan.masked).to eq(0)
+    end
+
     it "calls it ambiguous when a value is in more than one node" do
       query = "SELECT o.id FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
               "WHERE o.customer_id = 5 AND c.id = 5"
@@ -226,6 +244,7 @@ RSpec.describe Quaack::Enclave::Redaction do
       "SELECT NULL IS NULL, B'101' | B'010', coalesce('a', 'b')",
       "SELECT g FROM generate_series(1, 5) g, unnest(ARRAY['a']) u, LATERAL generate_series(g, 7) h ORDER BY 1",
       "SELECT count(*) FROM public.orders o",
+      "SELECT concat('a', 'b')",
       "SELECT o.id FROM public.orders o WHERE o.status <> 'x' AND o.id < '9' ORDER BY 1"
     ]
 
@@ -247,6 +266,35 @@ RSpec.describe Quaack::Enclave::Redaction do
       end
     end
 
+    [
+      "SELECT date_trunc('day', o.created_at), count(*) FROM public.orders o " \
+      "GROUP BY date_trunc('day', o.created_at) HAVING count(*) > 1 ORDER BY date_trunc('day', o.created_at)",
+      "SELECT o.status || '-x', count(*) FROM public.orders o GROUP BY o.status || '-x' " \
+      "HAVING (o.status || '-x') <> 'x' ORDER BY o.status || '-x'",
+      "SELECT DISTINCT ON (o.status || 'a') o.id FROM public.orders o ORDER BY o.status || 'a', o.id",
+      "SELECT DISTINCT o.status || 'a' FROM public.orders o ORDER BY o.status || 'a'",
+      "SELECT string_agg(DISTINCT o.status || 'a', ',' ORDER BY o.status || 'a') FROM public.orders o",
+      "SELECT rank() OVER (ORDER BY o.status || 'a') FROM public.orders o GROUP BY o.status || 'a' ORDER BY 1",
+      # The GROUP BY and HAVING sentinel query, which returns no rows.
+      "SELECT o.status || 'quaack-sentinel-group', count(*) FROM public.orders o " \
+      "GROUP BY o.status || 'quaack-sentinel-group' HAVING count(*) > 918273603"
+    ].each do |query|
+      it "binds expressions Postgres requires to match, with the original's rows: #{query[0, 60]}" do
+        result = redact(query)
+        expect(run(described_class.binding(result.query.sql, result.placeholder_map))).to eq(rows(query))
+      end
+    end
+
+    it "types each number the way Postgres types the literal" do
+      literals = %w[2147483647 2147483648 9223372036854775807 9223372036854775808 -9223372036854775808
+                    -9223372036854775809 1_000_000_000_000 0x7FFFFFFFFFFFFFFF 0x8000000000000000 1.5 5000000000] +
+                 ["#{"0" * 90}5000000000"]
+      literals.each do |literal|
+        map = described_class.query(PgQuery.parse("SELECT #{literal}")).placeholder_map
+        expect(map["$1"]["type"]).to eq(rows("SELECT pg_typeof(#{literal})::text").first.first), literal
+      end
+    end
+
     it "binds a rewrite candidate that leaves out one of the placeholders" do
       result = redact("SELECT o.id FROM public.orders o WHERE o.id = 5 AND o.status = 'shipped'")
       candidate = "SELECT o.id FROM public.orders o WHERE o.id = $1"
@@ -263,6 +311,9 @@ RSpec.describe Quaack::Enclave::Redaction do
       conn.transaction do
         expect(bound.prepare(conn, "quaack_tx")).to eq(%w[text unknown])
         expect(bound.execute(conn, "quaack_tx").values).to eq(rows(query))
+        expect { conn.exec("ROLLBACK TO SAVEPOINT quaack_prepare") }
+          .to raise_error(PG::Error) { |e| expect(e.result.error_field(PG::PG_DIAG_SQLSTATE)).to eq("3B001") }
+        conn.exec("ROLLBACK")
       end
     end
 
@@ -286,6 +337,16 @@ RSpec.describe Quaack::Enclave::Redaction do
       expect { described_class.binding("SELECT $1; DROP TABLE public.orders", map) }
         .to raise_error(described_class::Error, "not_one_select")
       expect { described_class.binding("SELECT $2", map) }.to raise_error(described_class::Error, "unknown_placeholder")
+      expect { described_class.binding("DELETE FROM public.orders WHERE id = $1", map) }
+        .to raise_error(described_class::Error, "not_one_select")
+    end
+
+    it "refuses what SupportedSql refuses, such as a data-modifying CTE or FOR UPDATE" do
+      map = redact("SELECT o.id FROM public.orders o WHERE o.id = 5").placeholder_map
+      ["WITH d AS (DELETE FROM public.orders WHERE id = $1 RETURNING id) SELECT id FROM d",
+       "SELECT o.id FROM public.orders o WHERE o.id = $1 FOR UPDATE"].each do |sql|
+        expect { described_class.binding(sql, map) }.to raise_error(described_class::Error, "unsupported_construct")
+      end
     end
 
     it "refuses a statement name that isn't a lowercase word" do

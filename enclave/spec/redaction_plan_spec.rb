@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "json"
 require "timeout"
 require "pg_query"
@@ -137,16 +138,43 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     end
 
     describe "a number too big to read" do
+      # Ruby can't interrupt a huge power of ten, so this runs in a child
+      # process that's killed if it takes too long.
       it "matches no placeholder, and doesn't hang, whichever side holds it" do
-        Timeout.timeout(5) do
-          expect(filter("((s = '1e99999999'::text) AND (id = 5))", map(entry("1e99999999"), entry("5", "integer"))))
-            .to eq("((s = $1::text) AND (id = $2))")
-          expect(filter("((x = '1e99999999'::numeric) AND (y = 1e99999999))", map(entry("5", "integer"))))
-            .to eq("((x = $?::numeric) AND (y = $?))")
-          expect(filter("((x = '1E-99999999'::numeric) AND (y = 5))",
-                        map(entry("5", "integer"), entry("1e-99999999", "numeric"))))
-            .to eq("((x = $?::numeric) AND (y = $1))")
-        end
+        code = <<~RUBY
+          require "quaack/enclave/redaction"
+          def filter(text, map)
+            explain = [{ "Plan" => { "Node Type" => "Seq Scan", "Filter" => text } }]
+            puts Quaack::Enclave::Redaction.plan(explain, map).explain.first["Plan"]["Filter"]
+          end
+          def entry(value, type = "unknown") = { "value" => value, "type" => type }
+          filter("((s = '1e99999999'::text) AND (id = 5))", { "$1" => entry("1e99999999"), "$2" => entry("5", "integer") })
+          filter("((x = '1e99999999'::numeric) AND (y = 1e99999999))", { "$1" => entry("5", "integer") })
+          filter("((x = '1E-99999999'::numeric) AND (y = 5))",
+                 { "$1" => entry("5", "integer"), "$2" => entry("1e-99999999", "numeric") })
+        RUBY
+        expect(in_child(code, seconds: 10).lines.map(&:chomp))
+          .to eq(["((s = $1::text) AND (id = $2))", "((x = $?::numeric) AND (y = $?))",
+                  "((x = $?::numeric) AND (y = $1))"])
+      end
+
+      it "reads a number of up to 100 characters, and no longer" do
+        expect(filter("((x = 5) AND (y = 6))", map(entry("#{"0" * 99}5"), entry("#{"0" * 100}6"))))
+          .to eq("((x = $1) AND (y = $?))")
+      end
+
+      it "reads a bigint the query wrote in hex against the number Postgres printed quoted" do
+        expect(filter("(x = '5000000000'::bigint)", map(entry("0x12A05F200", "bigint")))).to eq("(x = $1::bigint)")
+      end
+
+      it "reads a hex number with a plus sign" do
+        expect(filter("(x = 31)", map(entry("+0x1F")))).to eq("(x = $1)")
+      end
+
+      it "reads exponents with a capital E and a sign, and a leading sign" do
+        expect(filter("((a = '1000'::numeric) AND (b = '0.001'::numeric) AND (c = '-1.50'::numeric))",
+                      map(entry("1E3", "numeric"), entry("1e-3", "numeric"), entry("-1.5", "numeric"))))
+          .to eq("((a = $1::numeric) AND (b = $2::numeric) AND (c = $3::numeric))")
       end
 
       # Ruby reads a long run of digits in time that grows with its square:
@@ -183,6 +211,25 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
 
       it "reads a number the query wrote with spaces around it" do
         expect(filter("(x = 5)", map(entry(" 5 ")))).to eq("(x = $1)")
+      end
+
+      it "reads every number form Postgres takes, a point with no digits after it included" do
+        forms = { "5.e3" => "5000", "-12.E-2" => "-0.12", ".5" => "0.5", "5." => "5", "+0.e+0" => "0", "1.5e1" => "15" }
+        forms.each do |form, value|
+          expect(filter("(x = '#{value}'::numeric)", map(entry(form, "numeric")))).to eq("(x = $1::numeric)")
+          next if form.start_with?("-") # Postgres quotes a negative number
+
+          expect(filter("(x = #{form.delete_prefix("+")})", map(entry(value, "numeric")))).to eq("(x = $1)")
+        end
+      end
+
+      it "never raises on a text that looks like a number, whichever side holds it" do
+        texts = ["", "+", "-"].product(["", "0", "5", "12"], ["", "."], ["", "3", "25"], ["", "e3", "E-2", "e+0"])
+                              .map(&:join).grep(/\d/)
+        texts.each do |text|
+          expect { filter("((x = '#{text}'::numeric) AND (y = 7))", map(entry(text), entry(text, "numeric"))) }
+            .not_to raise_error
+        end
       end
 
       it "still matches a number with a modest exponent" do
@@ -316,6 +363,26 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     end
   end
 
+  it "counts the mask of an array literal it can't read" do
+    result = redact(node("Filter" => "(t = ANY ('{a'::text[]))"), map(entry("a")))
+    expect([result.explain.first["Plan"]["Filter"], result.masked]).to eq(["(t = ANY ($?::text[]))", 1])
+  end
+
+  it "reads every word Postgres takes for a boolean, in any case and with spaces" do
+    %w[t tr tru true y ye yes on 1].each do |word|
+      expect(filter("(a = true)", map(entry(" #{word.upcase} ")))).to eq("(a = $1)")
+    end
+    %w[f fa fal fals false n no of off 0].each do |word|
+      expect(filter("(a = false)", map(entry(" #{word.upcase} ")))).to eq("(a = $1)")
+    end
+  end
+
+  it "writes the lowest placeholder a number or a boolean matches, whatever order the map is in" do
+    placeholder_map = { "$2" => entry("5", "integer"), "$1" => entry("5", "integer") }
+    expect(filter("(a = 5)", placeholder_map)).to eq("(a = $1)")
+    expect(filter("(a = true)", { "$2" => entry("true", "boolean"), "$1" => entry("t") })).to eq("(a = $1)")
+  end
+
   it "redacts a plan thousands of nodes deep" do
     deep = { "Node Type" => "Seq Scan", "Filter" => "(email = 'quaack-sentinel-deep'::text)" }
     3_000.times { deep = { "Node Type" => "Limit", "Plans" => [deep] } }
@@ -336,6 +403,30 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       .to raise_error(described_class::Error, "bad_placeholder_map")
   end
 
+  # Runs Ruby code in a child process with the enclave's lib on the load
+  # path, and gives its output, or fails if it runs past seconds.
+  def in_child(code, seconds:)
+    reader, writer = IO.pipe
+    pid = Process.spawn(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", code, out: writer,
+                                                                                              err: File::NULL)
+    writer.close
+    finished_within(pid, seconds)
+    reader.read
+  ensure
+    reader&.close
+  end
+
+  def finished_within(pid, seconds)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+    sleep(0.05) until Process.waitpid(pid,
+                                      Process::WNOHANG) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    return if $CHILD_STATUS&.pid == pid
+
+    Process.kill(:KILL, pid)
+    Process.waitpid(pid)
+    raise "the child ran past #{seconds} seconds"
+  end
+
   describe "binding" do
     # A fake connection at the edge that says it can't type $1 however
     # it's declared.
@@ -350,6 +441,46 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
         define_method(:transaction_status) { 0 }
         define_method(:exec) { |_sql| raise error_class }
       end.new
+    end
+
+    # A fake connection that records each statement and answers each with
+    # the error that raise_error builds.
+    def failing(&raise_error)
+      Class.new do
+        attr_reader :statements
+
+        define_method(:transaction_status) { 0 }
+        define_method(:exec) do |sql|
+          (@statements ||= []) << sql
+          raise_error.call
+        end
+      end.new
+    end
+
+    def postgres_error(sqlstate, message)
+      Class.new(StandardError) do
+        define_method(:result) do
+          Struct.new(:fields) { def error_field(code) = fields[code] }.new({ "C".ord => sqlstate, "M".ord => message })
+        end
+      end.new
+    end
+
+    it "lets an error that isn't Postgres's through as it is" do
+      bound = described_class.binding("SELECT $1", { "$1" => entry("x") })
+      expect { bound.prepare(failing { raise ArgumentError, "not postgres" }, "quaack_other") }
+        .to raise_error(ArgumentError, "not postgres")
+    end
+
+    it "retypes only for SQLSTATE 42P18, and only for its exact message" do
+      bound = described_class.binding("SELECT $1", { "$1" => entry("x") })
+      [["42804", "could not determine data type of parameter $1"],
+       ["42P18", "could not determine data type of parameter $1 or so"],
+       ["42P18", "so could not determine data type of parameter $1"]].each do |sqlstate, message|
+        connection = failing { raise postgres_error(sqlstate, message) }
+        expect { bound.prepare(connection, "quaack_once") }
+          .to raise_error(described_class::Error) { |e| expect(e.sqlstate).to eq(sqlstate) }
+        expect(connection.statements.size).to eq(1)
+      end
     end
 
     it "stops retyping a parameter it has already made text" do

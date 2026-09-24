@@ -54,6 +54,14 @@ module Quaack
     # the 15b burndown. dropped counts known fields left out because they
     # couldn't be read.
     #
+    # == Expressions that must match
+    #
+    # Each constant gets its own placeholder, except where Postgres requires
+    # two expressions to be the same, as a GROUP BY expression and the same
+    # expression in the select list must be. There, equal constants in the
+    # same places share one placeholder (see Sharing for the list), and
+    # the map holds it once. It's numbered where its first constant sits.
+    #
     # == Row counts
     #
     # Redaction.redact also gives each placeholder's shape a "rows" entry,

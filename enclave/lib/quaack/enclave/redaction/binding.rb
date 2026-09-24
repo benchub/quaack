@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "../supported_sql"
 
 module Quaack
   module Enclave
@@ -69,8 +70,9 @@ module Quaack
       end
 
       # Builds a Binding. The SQL must be exactly one SELECT (Error
-      # not_one_select), and each $n in it must be in the map (Error
-      # unknown_placeholder).
+      # not_one_select), use only what SupportedSql lists (Error
+      # unsupported_construct), and each $n in it must be in the map
+      # (Error unknown_placeholder).
       module Bind
         # libpq's PG_DIAG_SQLSTATE and PG_DIAG_MESSAGE_PRIMARY field codes.
         SQLSTATE = "C".ord
@@ -99,9 +101,19 @@ module Quaack
           stmts = parse.tree.stmts
           raise Error, "not_one_select" unless stmts.size == 1 && stmts.first.stmt.select_stmt
 
-          parse
+          supported!(parse)
         rescue PgQuery::ParseError
           raise Error, "not_one_select", cause: nil
+        end
+
+        # SupportedSql's refusals, such as a data-modifying CTE or FOR
+        # UPDATE, as Error unsupported_construct. The message names only
+        # the construct, which is shape, but it's left behind all the same.
+        def supported!(parse)
+          SupportedSql.check!(parse)
+          parse
+        rescue SupportedSql::Error
+          raise Error, "unsupported_construct", cause: nil
         end
 
         def numbers(parse)
@@ -166,11 +178,18 @@ module Quaack
         end
 
         def failed(error)
-          Bind.guarded("prepare_failed") { @connection.exec("ROLLBACK TO SAVEPOINT #{SAVEPOINT}") } if @savepoint
+          Bind.guarded("prepare_failed") { roll_back } if @savepoint
           number = Bind.untyped_parameter(error)
           return number if number && @types[number - 1] == "unknown"
 
           raise Error.new("prepare_failed", Bind.sqlstate(error)), cause: nil
+        end
+
+        # ROLLBACK TO keeps the savepoint, so it's released too, or the next
+        # try's savepoint would nest inside it and outlive the prepare.
+        def roll_back
+          @connection.exec("ROLLBACK TO SAVEPOINT #{SAVEPOINT}")
+          @connection.exec("RELEASE SAVEPOINT #{SAVEPOINT}")
         end
 
         def retype(number)

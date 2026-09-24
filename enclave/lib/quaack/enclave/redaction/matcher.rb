@@ -35,7 +35,9 @@ module Quaack
         # The placeholder types a number or a boolean in a plan can match.
         NUMBERS_FROM = ["unknown", *NUMBER_TYPES].freeze
         BOOLEANS_FROM = %w[boolean unknown].freeze
-        DECIMAL = /\A[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE]([+-]?\d+))?\z/
+        # A decimal number as Postgres reads one: its sign, its digits
+        # before and after the point, and its exponent.
+        DECIMAL = /\A([+-]?)(?:(\d+)\.?(\d*)|\.(\d+))(?:[eE]([+-]?\d+))?\z/
         MAX_NUMBER = 100
         MAX_EXPONENT = 1_000
         TRUE_TEXT = %w[t tr tru true y ye yes on 1].freeze
@@ -93,9 +95,16 @@ module Quaack
           Rational(found) if found
         end
 
+        # Built from its parts rather than with Rational(String), which
+        # refuses some forms Postgres takes, such as 5.e3, and quotes the
+        # text when it does.
         def decimal(text)
-          exponent = DECIMAL.match(text)&.[](1)
-          Rational(text) if DECIMAL.match?(text) && exponent.to_i.abs <= MAX_EXPONENT
+          sign, whole, fraction, bare_fraction, exponent = DECIMAL.match(text)&.captures
+          return nil if sign.nil? || exponent.to_i.abs > MAX_EXPONENT
+
+          fraction = bare_fraction || fraction
+          value = Rational(Integer("#{sign}#{whole}#{fraction}", 10), 10**fraction.length)
+          value * (Rational(10)**exponent.to_i)
         end
 
         def boolean(text)
