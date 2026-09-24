@@ -89,9 +89,11 @@ module Quaack
         raise Error, "bad_config" unless @memory_command.nil? || one_line?(@memory_command)
 
         @pii_columns = object.fetch("pii_columns", []).freeze
-        @pii_globs = globs(@pii_columns)
+        raise Error, "bad_config" unless @pii_columns.instance_of?(Array)
+
+        @pii_globs = @pii_columns.map { glob(it) }
         @cardinality_threshold = object.fetch("cardinality_threshold", DEFAULT_CARDINALITY_THRESHOLD)
-        raise Error, "bad_config" unless @cardinality_threshold.instance_of?(Integer) && @cardinality_threshold.positive?
+        raise Error, "bad_config" unless positive_integer?(@cardinality_threshold)
       end
 
       # Whether a glob in pii_columns matches the column. table is a TableName.
@@ -102,16 +104,17 @@ module Quaack
 
       private
 
-      def globs(list)
-        raise Error, "bad_config" unless list.instance_of?(Array)
+      # One glob's three parts, each as a Regexp.
+      def glob(text)
+        raise Error, "bad_config" unless text.instance_of?(String) && !NOT_ONE_LINE.match?(text)
 
-        list.map do |glob|
-          parts = glob.split(".", -1) if glob.instance_of?(String) && !NOT_ONE_LINE.match?(glob)
-          raise Error, "bad_config" unless parts&.size == 3 && parts.none?(&:empty?)
+        parts = text.split(".", -1)
+        raise Error, "bad_config" unless parts.size == 3 && parts.none?(&:empty?)
 
-          parts.map { |part| /\A#{part.split("*", -1).map { Regexp.escape(it) }.join(".*")}\z/mi }
-        end
+        parts.map { |part| /\A#{part.split("*", -1).map { Regexp.escape(it) }.join(".*")}\z/mi }
       end
+
+      def positive_integer?(value) = value.instance_of?(Integer) && value.positive?
 
       def one_line?(command) = command.instance_of?(String) && !NOT_ONE_LINE.match?(command) && command.match?(/\S/)
     end

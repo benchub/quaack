@@ -73,18 +73,14 @@ RSpec.describe Quaack::Enclave::Config do
     it "matches a column against each glob, part by part, ignoring case" do
       write(%({"pii_columns": ["*.users.email", "billing.*.card_*"]}))
       loaded = config.load(path)
-      table = ->(schema, name) { Quaack::Enclave::TableName.new(schema:, name:) }
+      columns = [%w[public users email], %w[app Users EMAIL], %w[billing cards card_number], %w[billing cards card_],
+                 %w[public users emails], %w[public user email], %w[public cards card_number],
+                 %w[billing cards number]]
 
-      expect([
-        loaded.pii_column?(users, "email"),
-        loaded.pii_column?(table.("app", "Users"), "EMAIL"),
-        loaded.pii_column?(table.("billing", "cards"), "card_number"),
-        loaded.pii_column?(table.("billing", "cards"), "card_"),
-        loaded.pii_column?(users, "emails"),
-        loaded.pii_column?(table.("public", "user"), "email"),
-        loaded.pii_column?(table.("public", "cards"), "card_number"),
-        loaded.pii_column?(table.("billing", "cards"), "number")
-      ]).to eq([true, true, true, true, false, false, false, false])
+      matches = columns.map do |schema, name, column|
+        loaded.pii_column?(Quaack::Enclave::TableName.new(schema:, name:), column)
+      end
+      expect(matches).to eq([true, true, true, true, false, false, false, false])
     end
   end
 

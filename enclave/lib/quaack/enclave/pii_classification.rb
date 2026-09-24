@@ -13,7 +13,8 @@ module Quaack
     # to egress.
     #
     #   result = PiiClassification.run(store:, config: Config.load)
-    #   result.columns              # => [Column(table: public.users, name: "email", pii: true, low_cardinality: false), ...]
+    #   result.columns              # => [Column(table: public.users, name: "email", pii: true,
+    #                               #            low_cardinality: false), ...]
     #   result.low_cardinality      # => [[TableName(public.users), "status"]], Dedupe's low_cardinality
     #   result.outbound_statistics  # => { "tables" => [...] }, what may leave, as plain JSON data
     #   PiiClassification.load(store) # => the same Result, rebuilt from the store
@@ -76,14 +77,19 @@ module Quaack
       def classify_table(table, statistics, config)
         name = TableName.new(schema: table["schema"], name: table["name"])
         stats = statistics.table(name)
-        threshold = config.cardinality_threshold
         table["column_names"].map do |column|
           count = stats.column?(column) ? stats.distinct_count(column) : nil
-          text = table["text_columns"].include?(column)
-          pii = config.pii_column?(name, column) || (text && (count.nil? || count >= threshold))
-          { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii,
-            "low_cardinality" => !pii && !count.nil? && count < threshold }
+          pii, low = classes(config, name, column, table["text_columns"].include?(column), count)
+          { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii, "low_cardinality" => low }
         end
+      end
+
+      # [pii, low_cardinality] for one column. count is its distinct count,
+      # or nil when that's unknown.
+      def classes(config, table, column, text, count)
+        threshold = config.cardinality_threshold
+        pii = config.pii_column?(table, column) || (text && (count.nil? || count >= threshold))
+        [pii, !pii && !count.nil? && count < threshold]
       end
 
       def outbound(data, columns)
