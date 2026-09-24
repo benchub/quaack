@@ -18,4 +18,7 @@ Gem::Specification.new do |spec|
   # Never add the enclave gem here. spec/boundary_spec.rb at the repo root
   # fails if it shows up, directly or transitively.
   spec.add_dependency "quaack-protocol"
+  # The official Anthropic SDK, for the LLM client. Only the driver may
+  # depend on it: every LLM call runs on the laptop, never in the enclave.
+  spec.add_dependency "anthropic", "~> 1.73"
 end
