@@ -32,4 +32,76 @@ RSpec.describe "quaacks executable" do
       expect(status.exitstatus).to eq(64), "argv #{argv.inspect} exited #{status.exitstatus}"
     end
   end
+
+  # CLI.main, the method the exe runs, with a test step plugged into the
+  # steps table. The step's body is Ruby run inside the step.
+  describe "CLI.main with a test step" do
+    let(:sentinel) { "sentinel-4d81e2-ssn" }
+
+    def main(step_body, argv: ["probe"], input: false, stdin: "")
+      run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, *argv, stdin_data: stdin)
+        require "quaack/enclave"
+        cli = Quaack::Enclave::CLI
+        handler = ->(**inputs) { #{step_body} }
+        exit cli.main(ARGV, steps: { "probe" => cli::Step.new(handler:, input: #{input}) })
+      RUBY
+    end
+
+    def error_line(rule) = %({"type":"error","step":"probe","rule":"#{rule}"}\n)
+
+    it "sends nothing a step writes itself, on stdout or stderr, only the messages it returns" do
+      out, err, status = main(<<~RUBY)
+        puts "#{sentinel} puts"; print "#{sentinel} print"; $stdout.write("#{sentinel} write")
+        STDOUT.syswrite("#{sentinel} syswrite"); $stdout.flush
+        system("echo #{sentinel} child; echo #{sentinel} child >&2")
+        warn "#{sentinel} warn"; $stderr.puts "#{sentinel} stderr"; STDERR.syswrite("#{sentinel} fd2")
+        Warning.warn("#{sentinel} warning")
+        [{ type: :version, version: "1" }]
+      RUBY
+
+      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(0)
+    end
+
+    it "sends a step's error as one error line, without its message, and exits 70" do
+      out, err, status = main(%(raise ArgumentError, "#{sentinel}"))
+
+      expect(out).to eq(error_line("internal_error"))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(70)
+    end
+
+    it "drops a field that isn't on the whitelist" do
+      out, err, status = main(%([{ type: :version, version: "1", literal: "#{sentinel}" }]))
+
+      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(0)
+    end
+
+    it "refuses bad stdin as bad_input, without its text, and exits 64" do
+      out, err, status = main("[]", input: true, stdin: %({"sql": "#{sentinel}"))
+
+      expect(out).to eq(error_line("bad_input"))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(64)
+    end
+
+    it "passes the JSON object on stdin to a step that takes input" do
+      out, err, status = main("[{ type: :version, version: inputs[:input].fetch('v') }]",
+                              input: true, stdin: '{"v":"from stdin"}')
+
+      expect(out).to eq(%({"type":"version","version":"from stdin"}\n)), "stderr was #{err}"
+      expect(status.exitstatus).to eq(0)
+    end
+
+    it "sends a signal's error line and then dies by the signal" do
+      out, err, status = main(%(Process.kill(:TERM, Process.pid); sleep 5; [{ type: :version, version: "#{sentinel}" }]))
+
+      expect(out).to eq(error_line("internal_error"))
+      expect(err).to eq("")
+      expect(status.termsig).to eq(Signal.list.fetch("TERM"))
+    end
+  end
 end
