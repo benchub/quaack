@@ -3,6 +3,7 @@
 require "fileutils"
 require "tmpdir"
 require "quaack/enclave/config"
+require "quaack/enclave/table_name"
 
 # The quaacks config file on the jump server, ~/.quaack/config.json (README,
 # step 2). The operator writes it, and it can name anything, so an error
@@ -49,6 +50,44 @@ RSpec.describe Quaack::Enclave::Config do
     expect(config.load(path).memory_command).to be_nil
   end
 
+  describe "the PII columns and the cardinality threshold, for README 3f" do
+    let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
+
+    it "defaults to no PII columns and a threshold of 50" do
+      loaded = config.load(path)
+
+      expect([loaded.pii_columns, loaded.cardinality_threshold]).to eq([[], 50])
+      expect(loaded.pii_column?(users, "email")).to be(false)
+    end
+
+    it "reads the PII globs and the threshold" do
+      write(%({"pii_columns": ["*.users.email", "billing.*.card_*"], "cardinality_threshold": 20}))
+      loaded = config.load(path)
+
+      expect([loaded.pii_columns, loaded.cardinality_threshold]).to eq([%w[*.users.email billing.*.card_*], 20])
+    end
+
+    # * matches any run of characters within one name part, never a dot.
+    # Matching ignores case, so a glob can only ever match more columns,
+    # which withholds more: the safe way to be wrong.
+    it "matches a column against each glob, part by part, ignoring case" do
+      write(%({"pii_columns": ["*.users.email", "billing.*.card_*"]}))
+      loaded = config.load(path)
+      table = ->(schema, name) { Quaack::Enclave::TableName.new(schema:, name:) }
+
+      expect([
+        loaded.pii_column?(users, "email"),
+        loaded.pii_column?(table.("app", "Users"), "EMAIL"),
+        loaded.pii_column?(table.("billing", "cards"), "card_number"),
+        loaded.pii_column?(table.("billing", "cards"), "card_"),
+        loaded.pii_column?(users, "emails"),
+        loaded.pii_column?(table.("public", "user"), "email"),
+        loaded.pii_column?(table.("public", "cards"), "card_number"),
+        loaded.pii_column?(table.("billing", "cards"), "number")
+      ]).to eq([true, true, true, true, false, false, false, false])
+    end
+  end
+
   # Each of these is refused as bad_config.
   {
     "isn't JSON" => "memory_command = echo 1",
@@ -59,7 +98,17 @@ RSpec.describe Quaack::Enclave::Config do
     "has a blank memory command" => %({"memory_command": "  "}),
     "has a memory command on more than one line" => %({"memory_command": "echo 1\\necho 2"}),
     "has a memory command with a carriage return" => %({"memory_command": "echo 1\\recho 2"}),
-    "has a memory command with a NUL" => %({"memory_command": "echo 1\\u0000"})
+    "has a memory command with a NUL" => %({"memory_command": "echo 1\\u0000"}),
+    "has PII columns that aren't a list" => %({"pii_columns": "*.users.email"}),
+    "has a PII glob that isn't a string" => %({"pii_columns": [1]}),
+    "has a PII glob with two parts" => %({"pii_columns": ["users.email"]}),
+    "has a PII glob with four parts" => %({"pii_columns": ["db.public.users.email"]}),
+    "has a PII glob with an empty part" => %({"pii_columns": ["public..email"]}),
+    "has a PII glob on more than one line" => %({"pii_columns": ["*.users.email\\n"]}),
+    "has a threshold that isn't a number" => %({"cardinality_threshold": "50"}),
+    "has a threshold that isn't whole" => %({"cardinality_threshold": 50.5}),
+    "has a threshold of zero" => %({"cardinality_threshold": 0}),
+    "has a negative threshold" => %({"cardinality_threshold": -5})
   }.each do |what, text|
     it "refuses a file that #{what} as bad_config" do
       write(text)
