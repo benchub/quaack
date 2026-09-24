@@ -34,6 +34,9 @@ module Quaack
     #   selects the most rows; > and >=, the first. Typical, the middle one.
     # - col BETWEEN $a AND $b: worst case, the first and last bounds.
     #   Typical, the middle bound and the one after it: the middle bucket.
+    #   A lower (> or >=) and an upper (< or <=) bound on one column, in
+    #   the same AND, as in created_at >= $1 AND created_at < $2, pair up
+    #   the same way. A range on its own keeps the rule above.
     # - col IN ($a, $b, ...) and col = ANY(ARRAY[$a, ...]): the list keeps
     #   its length. Worst case, element i takes the ith most common value.
     #   Typical, the elements take consecutive bounds around the middle.
@@ -162,13 +165,20 @@ module Quaack
         def initialize(parse, column_names)
           @parse = parse
           @feeds = {}
-          counts = Hash.new(0)
-          parse.walk! { |_parent, _field, node, _location| counts[node.number] += 1 if node.is_a?(PgQuery::ParamRef) }
+          @ranges = Hash.new { |hash, key| hash[key] = [] }
           PredicateAtoms.extract(parse, column_names:).each { atom(it) }
-          counts.each { |number, count| @feeds["$#{number}"] = :shared_placeholder if count > 1 }
+          pair_ranges
+          shared.each { @feeds["$#{it}"] = :shared_placeholder }
         end
 
         private
+
+        # The placeholder numbers the query holds more than once.
+        def shared
+          counts = Hash.new(0)
+          @parse.walk! { |_parent, _field, node, _location| counts[node.number] += 1 if node.is_a?(PgQuery::ParamRef) }
+          counts.select { |_number, count| count > 1 }.keys
+        end
 
         def atom(atom)
           return unless %i[equality range in like].include?(atom.kind)
@@ -178,12 +188,32 @@ module Quaack
           return operator(expr) unless PICKED_OPERATORS.include?(atom.operator)
 
           column = atom.columns.first
-          feed(column, sides(expr, atom.operator)) if column&.table
+          feed(column, sides(expr, atom.operator), and_list(atom.path)) if column&.table
         end
 
-        def feed(column, sides)
+        def feed(column, sides, conjunction)
           sides&.each do |number, role, index, count|
             @feeds[number] = Feed.new(table: column.table, column: column.name, role:, index:, count:)
+            @ranges[[conjunction, column.table, column.name]] << number if conjunction && %i[below above].include?(role)
+          end
+        end
+
+        # The path of the AND's argument list the atom is one of, or nil.
+        def and_list(path)
+          return nil unless path.length >= 3 && path[-3] == "bool_expr"
+
+          owner = path[0...-3].reduce(@parse.tree) { |node, step| node[step] }
+          path[0...-1] if owner.bool_expr.boolop == :AND_EXPR
+        end
+
+        # A lower and an upper bound on one column in the same AND, as in
+        # created_at >= $1 AND created_at < $2, take BETWEEN's roles.
+        def pair_ranges
+          @ranges.each_value do |numbers|
+            roles = numbers.map { @feeds[it].role }
+            next unless roles.include?(:below) && roles.include?(:above)
+
+            numbers.each { |n| @feeds[n] = @feeds[n].with(role: @feeds[n].role == :above ? :from : :to) }
           end
         end
 

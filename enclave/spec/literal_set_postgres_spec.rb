@@ -120,8 +120,10 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(values(result, "worst_case")).to eq("$1" => bounds("amount").last, "$2" => bounds("amount").last,
                                                  "$3" => bounds("amount").first, "$4" => bounds("amount").first,
                                                  "$5" => id_bounds.first)
-      expect(values(result, "typical")).to eq(%w[$1 $2 $3 $4].to_h { [it, middle("amount")] }
-                                                .merge("$5" => middle("id")))
+      # The amount bounds pair up, like BETWEEN. The id bound is alone.
+      after = bounds("amount")[(bounds("amount").size / 2) + 1]
+      expect(values(result, "typical")).to eq("$1" => after, "$2" => after, "$3" => middle("amount"),
+                                              "$4" => middle("amount"), "$5" => middle("id"))
       expect(types(result, "worst_case")).to include("$1" => "numeric", "$5" => "integer")
       expect(rows(sql, result.sets["worst_case"])).to eq([["9998"]])
     end
@@ -134,6 +136,37 @@ RSpec.describe Quaack::Enclave::LiteralSet do
 
       expect(rows(sql, result.sets["worst_case"]).first.first.to_i).to eq(counts.max)
       expect(rows(sql, result.sets["typical"]).first.first.to_i).to be < counts.max
+    end
+
+    it "treats a lower and an upper bound on one column in the same AND like BETWEEN" do
+      sql, result = literal_sets("SELECT count(*) FROM public.orders o " \
+                                 "WHERE o.created_at >= '2026-01-05' AND o.created_at < '2026-01-06'")
+      created = pg_stats("orders", "created_at", "histogram_bounds")
+
+      expect(values(result, "worst_case")).to eq("$1" => created.first, "$2" => created.last)
+      expect(values(result,
+                    "typical")).to eq("$1" => created[created.size / 2], "$2" => created[(created.size / 2) + 1])
+      # One bucket of a 100-bucket histogram of 20,000 rows.
+      expect(rows(sql, result.sets["typical"]).first.first.to_i).to be_within(20).of(200)
+      expect(rows(sql, result.sets["worst_case"]).first.first.to_i).to eq(19_999)
+    end
+
+    it "pairs the bounds written either way round, and leaves a range under OR alone" do
+      _, result = literal_sets("SELECT r.id FROM public.readings r WHERE 10 < r.amount AND 30 >= r.amount " \
+                               "AND (r.id > 5 OR r.id < 9)")
+      amount = bounds("amount")
+
+      expect(values(result, "typical")).to eq("$1" => amount[amount.size / 2], "$2" => amount[(amount.size / 2) + 1],
+                                              "$3" => middle("id"), "$4" => middle("id"))
+    end
+
+    it "pairs only a lower and an upper bound on the same column in the same AND" do
+      _, result = literal_sets("SELECT r.id FROM public.readings r WHERE r.amount < 20 AND r.amount <= 30 " \
+                               "AND r.id > 50")
+      _, apart = literal_sets("SELECT r.id FROM public.readings r WHERE CASE WHEN r.amount > 20 THEN r.amount < 30 END")
+
+      expect(values(result, "typical")).to eq("$1" => middle("amount"), "$2" => middle("amount"), "$3" => middle("id"))
+      expect(values(apart, "typical")).to eq("$1" => middle("amount"), "$2" => middle("amount"))
     end
 
     it "falls back to the slow literal in both sets for a column with no histogram" do
