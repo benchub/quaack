@@ -71,7 +71,14 @@ module Quaack
         def pretty_print(pp) = pp.text(inspect)
       end
 
+      RedactedPlan = Data.define(:explain, :masked, :dropped)
+
       module_function
+
+      def plan(explain, placeholder_map)
+        redacted = Plan.new(explain, Matcher.new(placeholder_map))
+        RedactedPlan.new(explain: redacted.explain, masked: redacted.masked, dropped: redacted.dropped)
+      end
 
       def query(parse)
         redacted = Query.new(parse)
@@ -83,3 +90,5 @@ module Quaack
 end
 
 require_relative "redaction/query"
+require_relative "redaction/matcher"
+require_relative "redaction/plan"
