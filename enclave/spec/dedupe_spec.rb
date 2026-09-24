@@ -379,7 +379,8 @@ RSpec.describe Quaack::Enclave::Dedupe do
         ["status::text = 'open'::text", "(status)::text = ANY('{open,shipped}'::text[])",
          "status::text ~~ 'op%'::text", "status::text >= 'a'::text", "'open'::text = status::text",
          "status::varchar(10)::text = 'open'", "status::text BETWEEN 'a' AND 'm'",
-         "status::text IN ('a', 'b')"].each do |predicate|
+         "status::text IN ('a', 'b')", "status::text COLLATE \"C\" = 'a'::text",
+         "(status)::text COLLATE \"C\" ~~ 'a%'::text", "status COLLATE \"C\" IN ('a', 'b')"].each do |predicate|
           expect(kept?(predicate)).to be(true), predicate
         end
       end
@@ -387,6 +388,26 @@ RSpec.describe Quaack::Enclave::Dedupe do
       it "keeps a predicate with no constants at all on low-cardinality columns" do
         ["flag", "status IS NULL", "NOT flag", "status = kind", "flag IS TRUE"].each do |predicate|
           expect(kept?(predicate)).to be(true), predicate
+        end
+      end
+
+      # A plan prints LIKE as ~~, NOT LIKE as !~~, and ILIKE as ~~*.
+      it "keeps the comparison operators, including LIKE as a plan prints it" do
+        ["status::text ~~ 'op%'::text", "status::text !~~ 'op%'::text", "status::text ~~* 'op%'::text",
+         "status::text !~~* 'op%'::text", "status != 'a'", "status <= 'a'", "status < 'a'",
+         "status OPERATOR(pg_catalog.=) 'a'", "status OPERATOR(pg_catalog.~~) 'a%'",
+         "status <> ALL('{a}')", "status >= ANY('{a}')"].each do |predicate|
+          expect(kept?(predicate)).to be(true), predicate
+        end
+      end
+
+      it "drops a constant used with an operator that isn't a comparison" do
+        ["(status || 'bob@x.com') IS NULL", "status || 'bob@x.com' = status", "status = status || 'bob@x.com'",
+         "status = ANY(ARRAY[status || 'bob@x.com'])", "(status + 123456789) IS NOT NULL",
+         "status -> 'bob@x.com' IS NULL", "(status || 'bob@x.com')::boolean", "status @> 'a'",
+         "status @> ANY('{a}')", "status && ALL('{a}')", "status OPERATOR(myschema.=) 'a'",
+         "status = 'a' COLLATE \"C\"", "lower(status) COLLATE \"C\" = 'a'"].each do |predicate|
+          expect(kept?(predicate)).to be(false), predicate
         end
       end
 
@@ -420,7 +441,8 @@ RSpec.describe Quaack::Enclave::Dedupe do
         sentinel = "quaack-sentinel-c0n5t"
         predicates = ["status = 'open' OR '#{sentinel}' = '#{sentinel}'",
                       "status = ANY(ARRAY['open', lower('#{sentinel}')])",
-                      "status = 'x'::mytype('#{sentinel}')"]
+                      "status = 'x'::mytype('#{sentinel}')", "(status || '#{sentinel}') IS NULL",
+                      "status = ANY(ARRAY[status || '#{sentinel}'])"]
         predicates.each do |predicate|
           s = search
           s.filter([candidate(["customer_id"], predicate:)])

@@ -45,7 +45,9 @@ module Quaack
     #    that is) that's low-cardinality on the candidate's table. And every
     #    constant must be compared directly with one of those columns, as in
     #    status = 'open', status IN ('a', 'b'), status = ANY('{a,b}'), or
-    #    status BETWEEN 'a' AND 'm'. Casts are allowed on the constant and
+    #    status BETWEEN 'a' AND 'm', using a comparison operator (=, <>,
+    #    <, <=, >, >=, or LIKE and ILIKE as ~~ and friends), not || or +.
+    #    Casts are allowed on the constant and on the column, and COLLATE
     #    on the column, as a plan prints a varchar column,
     #    (status)::text = 'open'::text, if every type modifier is an integer
     #    (see PredicateCheck.constants_compared_with_columns?). Only a

@@ -37,14 +37,16 @@ module Quaack
       # Whether every constant in the predicate is compared directly with a
       # column reference, in one of the COMPARISONS: status = 'open',
       # 'open' = status, status IN ('a', 'b'), status = ANY('{a,b}'),
-      # status = ANY(ARRAY['a']), status BETWEEN 'a' AND 'm'. Each constant
-      # may be cast, but nothing else may wrap it. The other side must be
-      # the column itself, or the column under casts, as in
-      # status::text = 'open'::text, not an expression on it such as
-      # lower(status). Every cast's type modifiers, on either side, must be
-      # integer constants (varchar(10)), so 'x'::mytype('secret') fails. A
-      # constant anywhere else, such as in a function call ('bob' in
-      # lower('bob')), compared with another constant, or standing alone
+      # status = ANY(ARRAY['a']), status BETWEEN 'a' AND 'm'. An operator
+      # comparison must use one of the COMPARISON_OPERATORS, so
+      # status || 'x' = status fails. Each constant may be cast, but nothing
+      # else may wrap it. The other side must be the column itself, or the
+      # column under casts and COLLATE, as in
+      # status::text COLLATE "C" = 'open'::text, not an expression on it
+      # such as lower(status). Every cast's type modifiers, on either side,
+      # must be integer constants (varchar(10)), so 'x'::mytype('secret')
+      # fails. A constant anywhere else, such as in a function call ('bob'
+      # in lower('bob')), compared with another constant, or standing alone
       # (true), fails. So does a cast's type modifier outside those
       # comparisons (flag::varchar(10)). A predicate with no constants
       # passes.
@@ -58,22 +60,43 @@ module Quaack
         children(node).any? { |child| stray_constant?(child) }
       end
 
+      # The operators AEXPR_OP, AEXPR_OP_ANY, and AEXPR_OP_ALL may use:
+      # comparisons, and LIKE and ILIKE as a plan prints them (~~, !~~, ~~*,
+      # !~~*). The parser reads != as <>. Any other operator, such as ||, +,
+      # ->, or @>, computes a value rather than comparing one, so its
+      # constant isn't compared with the column.
+      COMPARISON_OPERATORS = %w[= <> < <= > >= ~~ !~~ ~~* !~~*].to_set.freeze
+
+      OPERATOR_KINDS = %i[AEXPR_OP AEXPR_OP_ANY AEXPR_OP_ALL].to_set.freeze
+
       def column_comparison?(node)
         return false unless node.is_a?(PgQuery::A_Expr) && COMPARISONS.include?(node.kind)
+        return false unless comparison_operator?(node)
 
         left = unwrap(node.lexpr)
         right = unwrap(node.rexpr)
         column_and_value?(left, right) || column_and_value?(right, left)
       end
 
+      # An operator name may come with a schema, as in
+      # OPERATOR(pg_catalog.=), and then only pg_catalog counts.
+      def comparison_operator?(node)
+        return true unless OPERATOR_KINDS.include?(node.kind)
+
+        *schema, name = node.name.map { |n| unwrap(n).sval }
+        COMPARISON_OPERATORS.include?(name) && [[], ["pg_catalog"]].include?(schema)
+      end
+
       def column_and_value?(column, value) = column?(column) && (constant?(value) || constant_list?(value))
 
-      # A column reference, bare or under casts, as a plan prints a varchar
-      # column compared with text: (status)::text. Any other expression on
-      # it, such as lower(status), isn't one.
+      # A column reference, bare or under casts and COLLATE, as a plan
+      # prints a varchar column compared with text, (status)::text, or with
+      # a collation, (status)::text COLLATE "C". A collation name is shape.
+      # Any other expression on it, such as lower(status), isn't one.
       def column?(node)
         case node = unwrap(node)
         when PgQuery::ColumnRef then true
+        when PgQuery::CollateClause then column?(node.arg)
         when PgQuery::TypeCast then plain_type?(node.type_name) && column?(node.arg)
         else false
         end
