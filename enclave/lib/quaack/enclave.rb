@@ -20,6 +20,8 @@ require_relative "enclave/dedupe"
 require_relative "enclave/single_candidate_test"
 require_relative "enclave/index_ranking"
 require_relative "enclave/arena_runner"
+require_relative "enclave/result_comparator"
+require_relative "enclave/result_comparison"
 require_relative "enclave/supported_sql"
 require_relative "enclave/rewrite_candidate_check"
 
