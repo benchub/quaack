@@ -6,8 +6,12 @@ module Quaack
       # Wraps the CLI's stdout so each line starts on a line of its own. If
       # a write didn't finish, as when it raised partway, the next write
       # starts with a newline, so an error line written after it isn't glued
-      # to a half line. The driver skips blank lines, since a write that
-      # finished just as it raised leaves one.
+      # to a half line. A write that finished just as it raised can leave a
+      # blank line.
+      #
+      # So the driver (20260922-5) must skip blank lines and lines that
+      # aren't JSON, and must treat any run with an error line, or that died
+      # by a signal, as failed, and discard its other lines.
       class Output
         def initialize(io)
           @io = io
@@ -15,6 +19,8 @@ module Quaack
         end
 
         def write(text)
+          return 0 if text.empty?
+
           text = "\n#{text}" unless @at_line_start
           @at_line_start = false
           @io.write(text)

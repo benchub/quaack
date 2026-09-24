@@ -40,10 +40,12 @@ RSpec.describe "quaacks executable" do
   describe "CLI.main with a test step" do
     let(:sentinel) { "sentinel-4d81e2-ssn" }
 
-    # step holds the Step's input: and run: settings.
-    def main(step_body, argv: ["probe"], stdin: "", env: {}, **step)
-      Open3.capture3(env, RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, *argv, stdin_data: stdin)
+    # step holds the Step's input: and run: settings. prelude runs after
+    # the enclave loads and before main.
+    def main(step_body, argv: ["probe"], stdin: "", prelude: "", **step)
+      run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY, *argv, stdin_data: stdin)
         require "quaack/enclave"
+        #{prelude}
         cli = Quaack::Enclave::CLI
         handler = ->(**inputs) { #{step_body} }
         exit cli.main(ARGV, steps: { "probe" => cli::Step.new(handler:, **#{step.inspect}) })
@@ -63,6 +65,37 @@ RSpec.describe "quaacks executable" do
       RUBY
 
       expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(0)
+    end
+
+    it "sends nothing a step writes to $stdout even if $stdout was pointed elsewhere before main" do
+      out, err, status = main(%(puts "#{sentinel}"; $stdout.flush; [{ type: :version, version: "1" }]),
+                              prelude: "$stdout = STDOUT.dup")
+
+      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(err).to eq("")
+      expect(status.exitstatus).to eq(0)
+    end
+
+    it "turns a step's exit or abort, whatever its status, into one error line and exit 70" do
+      [%(abort "#{sentinel}"), "exit 0", "exit 3", "exit", "exit false"].each do |body|
+        out, err, status = main("#{body}; [{ type: :version, version: '1' }]")
+
+        expect(out).to eq(error_line("internal_error")), "#{body} printed #{out.inspect}"
+        expect(err).to eq("")
+        expect(status.exitstatus).to eq(70), "#{body} exited #{status.exitstatus}"
+      end
+    end
+
+    # exit! ends the process at once, skipping every rescue and ensure, so
+    # the CLI can't catch it. It prints nothing, and its status is whatever
+    # the step gave. That's why the driver must treat a run with no result
+    # line as failed.
+    it "can't catch a step's exit!, which ends the process with nothing on stdout" do
+      out, err, status = main("exit!(0)")
+
+      expect(out).to eq("")
       expect(err).to eq("")
       expect(status.exitstatus).to eq(0)
     end
@@ -103,7 +136,8 @@ RSpec.describe "quaacks executable" do
       Dir.mktmpdir("quaack-home") do |home|
         store = Quaack::Enclave::Store.create(base: File.join(home, ".quaack", "runs"))
         out, err, status = main("[{ type: :version, version: inputs[:store].run_id }]",
-                                argv: ["probe", "--run", store.run_id], run: true, env: { "HOME" => home })
+                                argv: ["probe", "--run", store.run_id], run: true,
+                                prelude: "ENV['HOME'] = #{home.inspect}")
 
         expect(out).to eq(%({"type":"version","version":"#{store.run_id}"}\n)), "stderr was #{err}"
         expect(status.exitstatus).to eq(0)

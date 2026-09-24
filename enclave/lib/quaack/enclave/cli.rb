@@ -31,7 +31,8 @@ module Quaack
     # process's output, and Ruby's own warnings all go nowhere.
     #
     # Exit statuses: 0 on success; 64 (EX_USAGE) when the CLI refuses the
-    # call (see Refused); 70 (EX_SOFTWARE) when a step fails; and death by
+    # call (see Refused); 70 (EX_SOFTWARE) when a step fails, including
+    # when it calls exit or abort (see call_step); and death by
     # the signal for a signal, after its error line (see ErrorFilter.guard).
     class CLI
       # One subcommand's step. handler responds to call(input:, store:,
@@ -59,6 +60,9 @@ module Quaack
       # never echoed.
       CLI_STEP = "cli"
 
+      # A step called exit or abort (see call_step).
+      class StepExited < StandardError; end
+
       EX_OK = 0
       # sysexits.h's EX_USAGE.
       EX_USAGE = 64
@@ -73,12 +77,13 @@ module Quaack
       # Points STDOUT, file descriptor 1, at the null device for the rest of
       # the process, and returns a copy of the real stdout, which only the
       # CLI writes to. Ruby opens the copy close-on-exec, so child processes
-      # don't get it either.
+      # don't get it either. Every write to it is flushed at once, by the CLI
+      # and by ErrorFilter.guard, so it needn't be sync.
       def self.claim_stdout!
         out = STDOUT.dup # rubocop:disable Style/GlobalStdStream
         STDOUT.reopen(File::NULL, "w") # rubocop:disable Style/GlobalStdStream
+        # In case something before main pointed $stdout elsewhere.
         $stdout = STDOUT
-        out.sync = true
         out
       end
 
@@ -118,10 +123,22 @@ module Quaack
         arguments = Arguments.parse(step, args)
         input = Input.read(@stdin) if step.input
         store = open_store(arguments.run_id) if step.run
-        messages = step.handler.call(input:, store:, options: arguments.options)
+        messages = call_step(step, input:, store:, options: arguments.options)
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)
 
         messages.filter_map { Egress.serialize(it) }.map { "#{it}\n" }.join
+      end
+
+      # A step ends by returning. ErrorFilter.guard lets SystemExit through,
+      # so an exit or abort in a step, or in a library it calls, would end
+      # the process with a status of its own and no error line, or look like
+      # success. So it's an internal error here. exit! can't be caught: it
+      # skips every rescue and ensure, and ends the process with nothing on
+      # stdout, so the driver must treat a run with no result as failed.
+      def call_step(step, **)
+        step.handler.call(**)
+      rescue SystemExit
+        raise StepExited, "a step called exit", cause: nil
       end
 
       # The run ID's form is checked first, so a missing (nil) or malformed

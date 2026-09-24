@@ -11,6 +11,25 @@ require "quaack/enclave/store"
 # it would pass as a step name if the CLI ever echoed argv.
 CLI_SENTINEL = "sentinel-7f3a9c-ssn"
 
+# Input the json versions differ on: Ruby 3.4's default json (2.9.1), which
+# the jump server loads, takes the last of a repeated key and skips
+# comments, while the bundle's json (3.0.2) refuses both. Input refuses
+# them on both, and the --disable-gems spec below checks that under 2.9.1.
+INPUT_REFUSED_ON_EVERY_JSON = [
+  %({"a": 1, "a": "#{CLI_SENTINEL}"}), %({"a": {"b": 1, "b": "#{CLI_SENTINEL}"}}),
+  %({"a": [{"b": 1, "b": "#{CLI_SENTINEL}"}]}), %(/* #{CLI_SENTINEL} */ {"a": 1}),
+  %({"a": /* #{CLI_SENTINEL} */ 1}), %({"a": 1 // #{CLI_SENTINEL}\n}), %({"a": 1}\n// #{CLI_SENTINEL}\n)
+].freeze
+
+# Input these must accept on every json version: a slash or comment marker
+# inside a string isn't a comment.
+INPUT_ACCEPTED_ON_EVERY_JSON = {
+  %({"sql": "SELECT 1 /* hint */ -- x", "path": "a/b//c"}) =>
+    { "sql" => "SELECT 1 /* hint */ -- x", "path" => "a/b//c" },
+  %({"q": "a \\" /* not a comment */ \\\\", "b": "/"}) => { "q" => %(a " /* not a comment */ \\), "b" => "/" },
+  %({"a": {"b": 1}, "c": {"b": 2}}) => { "a" => { "b" => 1 }, "c" => { "b" => 2 } }
+}.freeze
+
 # Unit tests of the dispatcher. Each plugs test steps into the CLI's steps
 # table, the edge where real steps go, and runs the real CLI.
 RSpec.describe Quaack::Enclave::CLI do
@@ -162,12 +181,48 @@ RSpec.describe Quaack::Enclave::CLI do
     it "refuses stdin that isn't one JSON object as bad_input, without its text" do
       ["", "{", %({"a": "#{CLI_SENTINEL}"), %(["#{CLI_SENTINEL}"]), %("#{CLI_SENTINEL}"), "null",
        %({"a": "#{CLI_SENTINEL}\xff"}), %({"a": "#{CLI_SENTINEL}"} {"b": 1}),
-       %({"a": NaN, "b": "#{CLI_SENTINEL}"})].each do |text|
+       %({"a": NaN, "b": "#{CLI_SENTINEL}"}), *INPUT_REFUSED_ON_EVERY_JSON].each do |text|
         out.truncate(0) && out.rewind
         expect(cli(steps, stdin: StringIO.new(text.b)).run(["echo"])).to eq(64), "stdin #{text.inspect}"
         expect(out.string).to eq(error_line("echo", "bad_input")), "stdin #{text.inspect}"
       end
       expect(calls).to eq([])
+    end
+
+    it "accepts comment markers and slashes inside strings, and a key repeated in different objects" do
+      INPUT_ACCEPTED_ON_EVERY_JSON.each do |text, parsed|
+        calls.clear
+        expect(cli(steps, stdin: StringIO.new(text)).run(["echo"])).to eq(0), "stdin #{text.inspect}"
+        expect(calls).to eq([{ input: parsed, store: nil, options: {} }])
+      end
+    end
+
+    # The jump server runs outside Bundler, so it gets Ruby's default json,
+    # not the bundle's.
+    it "refuses and accepts the same input under Ruby's default json" do
+      script = <<~RUBY
+        require "json"
+        require "stringio"
+        require "quaack/enclave/cli/input"
+        cli = Quaack::Enclave::CLI
+        results = JSON.parse(ARGV[0]).map do |text|
+          cli::Input.read(StringIO.new(text))
+        rescue cli::Refused => e
+          e.rule
+        end
+        puts JSON.generate(results)
+        puts $LOADED_FEATURES.grep(%r{/json\\.rb\\z}).first
+      RUBY
+      cases = [*INPUT_REFUSED_ON_EVERY_JSON, *INPUT_ACCEPTED_ON_EVERY_JSON.keys]
+      out, err, status = Bundler.with_unbundled_env do
+        run_ruby("--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-e", script, JSON.generate(cases))
+      end
+
+      expect(status).to be_success, "stderr was #{err}"
+      results, json = out.lines(chomp: true)
+      expect(File.realpath(json)).to start_with(File.realpath(RbConfig::CONFIG["rubylibdir"]))
+      expect(JSON.parse(results))
+        .to eq([*["bad_input"] * INPUT_REFUSED_ON_EVERY_JSON.size, *INPUT_ACCEPTED_ON_EVERY_JSON.values])
     end
 
     # JSON doesn't count an empty innermost container toward its limit, so
@@ -262,6 +317,33 @@ RSpec.describe Quaack::Enclave::CLI do
 
       expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["echo"])).to eq(70)
       expect(flush_fails.string).to eq(line(type: "version", version: "1") + error_line("echo", "internal_error"))
+    end
+
+    it "adds no blank line when the step printed nothing before the error" do
+      steps = { "echo" => step_class.new(handler: recorder([])) }
+
+      expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["echo"])).to eq(70)
+      expect(flush_fails.string).to eq(error_line("echo", "internal_error"))
+    end
+  end
+
+  describe Quaack::Enclave::CLI::Output do
+    let(:io) { StringIO.new }
+    let(:output) { described_class.new(io) }
+
+    it "starts a write on a new line after one that ended mid-line" do
+      output.write("abc")
+      output.write("x\n")
+
+      expect(io.string).to eq("abc\nx\n")
+    end
+
+    it "adds nothing after a write that ended its line, or one that wrote nothing" do
+      output.write("a\n")
+      output.write("")
+      output.write("b\n")
+
+      expect(io.string).to eq("a\nb\n")
     end
   end
 end
