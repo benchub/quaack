@@ -85,16 +85,7 @@ Check the connection to the production server and record the version, extensions
 
 ### 20260922-17. 3a relations. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-18. 3b schema dump and subset.
-
-Run the full schema-only dump on every namespace the query touches, plus `public`. Build the subset: the query's tables and their FK parent tables.
-
-- **Depends on:** 20260922-17.
-- **README:** 3b.
-- **Status:** todo
-- **Decided:**
-  - Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
-  - Don't parse the dump. Find the subset tables and their FK ancestors from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
+### 20260922-18. 3b schema dump and subset. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-19. 3c statistics.
 
@@ -1127,6 +1118,25 @@ Findings from the reviews of 20260922-5:
 - **Depends on:** 20260922-47, 20260923-55.
 - **Came from:** First review of 20260924-4.
 - **README:** 9d, Step 1.
+- **Status:** todo
+
+### 20260924-22. 3b schema dump loose ends.
+
+Findings from the build and reviews of 20260922-18:
+- **The subset DDL can't restore into an empty arena on its own.** `pg_dump --table` emits no `CREATE SCHEMA`, types, domains, enums, functions used in defaults or CHECKs, or extensions. That matters for 4b and step 10.
+- **A query table that's a partition needs its parent.** Its dump carries `ALTER TABLE ONLY <parent> ATTACH PARTITION`.
+- **The full dump covers only the query's namespaces plus public,** so a cross-schema FK ancestor is in the subset but not in the full dump. That follows the README, but it's worth knowing.
+- **Add `--no-password` (`-w`),** so pg_dump never prompts.
+- **A SQL_ASCII database with non-ASCII names crashes as `internal_error`.** It fails closed. Refuse SQL_ASCII by name, and list it as unsupported in v1.
+- **In EUC_JP or WIN1252 databases, tables aren't in UTF-8 byte order.** Sort in Ruby after transcoding.
+- **Near-miss secret keys aren't refused,** such as `"password "`, `PASSWORD`, or keys holding `=`. Require keys to match `/\A[a-z_]+\z/`.
+- **Untested paths:** the subset dump's lock-wait timeout, a signal-killed pg_dump beyond the message, and an empty conninfo.
+- **A password can hide in a dbname URI.**
+- **Both dumps are held in memory.**
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build and reviews of 20260922-18.
+- **README:** 3b.
 - **Status:** todo
 
 ## After version 1.
