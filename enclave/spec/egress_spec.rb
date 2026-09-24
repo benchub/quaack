@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 require "quaack/enclave/egress"
 
 # Stands in for a real production value. It must never show up in what
@@ -184,12 +185,19 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a Struct", -> { Struct.new(:email).new(EGRESS_SENTINEL) }],
       ["a Time", -> { Time.at(0) }],
       ["a Range", -> { EGRESS_SENTINEL..EGRESS_SENTINEL }],
-      ["a Rational", -> { Rational(1, 3) }]
+      ["a Rational", -> { Rational(1, 3) }],
+      ["a BasicObject", -> { BasicObject.new }],
+      ["Arrays nested 100,000 deep", -> { 100_000.times.reduce(EGRESS_SENTINEL) { |v, _| [v] } }],
+      ["an Array that contains itself", -> { [EGRESS_SENTINEL].tap { |a| a << a } }]
     ].each do |name, value|
       it "raises Egress::Error that carries nothing from the message, for #{name}" do
         error = nil
         begin
-          egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+          # A value that contains itself would loop forever without the
+          # depth cap in PlainData. The timeout makes that a failure.
+          Timeout.timeout(30) do
+            egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+          end
         rescue StandardError => e
           error = e
         end

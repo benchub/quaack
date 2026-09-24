@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "securerandom"
+require_relative "plain_data"
 require_relative "private_files"
 
 module Quaack
@@ -139,21 +140,27 @@ module Quaack
 
       def entry_path(name) = File.join(path, "#{name}.json")
 
-      # The error JSON raises can quote the data, so it's left behind.
+      # Data must be plain JSON data (see PlainData), or the json that ships
+      # with Ruby would store other objects as their to_s. The error JSON
+      # raises can quote the data, so it's left behind. The check already
+      # caps the depth, so JSON needn't.
       def generate(name, data)
+        PlainData.check(data)
         JSON.generate(data, max_nesting: false)
-      rescue JSON::GeneratorError, EncodingError
+      rescue PlainData::NotPlain, JSON::GeneratorError
         raise Error, "entry #{name} in run #{run_id} couldn't be written as JSON", cause: nil
       end
 
-      # The parse error can quote the file, so it's left behind. JSON
-      # accepts bytes that aren't UTF-8 inside a string, so check for them
-      # first.
+      # The file is read as UTF-8 whatever the locale is, and no deeper
+      # than PlainData::MAX_DEPTH, the most write stores. JSON accepts bytes
+      # that aren't UTF-8 inside a string, so check for them first. The
+      # parse error can quote the file, so it's left behind.
       def parse(name, text)
+        text = text.force_encoding(Encoding::UTF_8)
         raise JSON::ParserError unless text.valid_encoding?
 
-        JSON.parse(text, max_nesting: false)
-      rescue JSON::ParserError, EncodingError
+        JSON.parse(text, max_nesting: PlainData::MAX_DEPTH)
+      rescue JSON::ParserError
         raise Error, "entry #{name} in run #{run_id} isn't valid JSON", cause: nil
       end
     end

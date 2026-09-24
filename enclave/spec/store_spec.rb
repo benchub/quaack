@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 require "time"
+require "timeout"
 require "tmpdir"
 require "quaack/enclave/store"
 
@@ -155,8 +156,78 @@ RSpec.describe Quaack::Enclave::Store do
       expect(Dir.children(@tmp)).to eq(["runs"])
     end
 
-    it "rejects an entry name that isn't a String or Symbol" do
-      expect_store_error(/entry name/) { store.write(nil, 1) }
+    it "rejects an entry name that isn't a String or Symbol, even one whose to_s is a good name" do
+      named = Object.new.tap { |o| o.define_singleton_method(:to_s) { "inputs" } }
+
+      [nil, 1, named].each do |name|
+        expect_store_error(/entry name/) { store.write(name, 1) }
+        expect_store_error(/entry name/) { store.read(name) }
+      end
+      expect(Dir.children(store.path)).to be_empty
+    end
+
+    it "keeps data nested PlainData::MAX_DEPTH deep" do
+      max = Quaack::Enclave::PlainData::MAX_DEPTH
+      store.write("plan", max.times.reduce(1) { |inner, _| [inner] })
+
+      # Comparing with eq would recurse too deep, so count the levels.
+      value = store.read("plan")
+      depth = 0
+      (value = value.first) && (depth += 1) while value.is_a?(Array) && value.size == 1
+      expect([depth, value]).to eq([max, 1])
+      expect(File.read(File.join(store.path, "plan.json"))).to eq("#{"[" * max}1#{"]" * max}")
+    end
+
+    it "raises, writing nothing, for data nested deeper than PlainData::MAX_DEPTH, or that contains itself" do
+      loop = [STORE_SENTINEL]
+      loop << loop
+      too_deep = (Quaack::Enclave::PlainData::MAX_DEPTH + 1).times.reduce(STORE_SENTINEL) { |inner, _| [inner] }
+      [too_deep, 100_000.times.reduce(1) { |inner, _| [inner] }, loop].each do |bad|
+        # Without the depth cap, the loop would never end. Fail instead.
+        Timeout.timeout(30) do
+          expect_store_error(/plan.*#{store.run_id}/) { store.write("plan", bad) }
+        end
+      end
+      expect(Dir.children(store.path)).to be_empty
+    end
+
+    it "raises, rather than crash or recurse without end, reading a file nested deeper than MAX_DEPTH" do
+      [Quaack::Enclave::PlainData::MAX_DEPTH + 1, 100_000].each do |depth|
+        File.write(File.join(store.path, "plan.json"), "#{"[" * depth}1#{"]" * depth}")
+
+        expect_store_error(/plan.*#{store.run_id}.*isn't valid JSON\z/) { store.read("plan") }
+      end
+    end
+
+    sentinel_object = Object.new.tap { |o| o.define_singleton_method(:to_s) { STORE_SENTINEL } }
+    [
+      ["an object", -> { sentinel_object }],
+      ["a BasicObject", -> { BasicObject.new }],
+      ["a Time", -> { Time.at(0) }],
+      ["a Struct", -> { Struct.new(:ssn).new(STORE_SENTINEL) }],
+      ["a String subclass", -> { Class.new(String).new(STORE_SENTINEL) }],
+      ["an object as a Hash key", -> { { sentinel_object => 1 } }],
+      ["an object deep in plain data", -> { { "a" => [{ "b" => sentinel_object }] } }]
+    ].each do |name, value|
+      it "raises, writing nothing and carrying nothing from the data, for #{name}" do
+        expect_store_error(/literals.*#{store.run_id}/) { store.write("literals", [instance_exec(&value)]) }
+        expect(Dir.children(store.path)).to be_empty
+      end
+    end
+
+    it "reads back what it wrote whatever the locale is" do
+      code = <<~RUBY
+        require "quaack/enclave/store"
+        s = Quaack::Enclave::Store.create(base: ARGV[0])
+        s.write(:inputs, ["caf\\u00e9 \\u2603"])
+        value = Quaack::Enclave::Store.open(s.run_id, base: ARGV[0]).read(:inputs)
+        print Encoding.default_external, " ", value.first.encoding, " ", value.first.unpack1("H*")
+      RUBY
+      env = { "LANG" => "C", "LC_ALL" => "C", "LC_CTYPE" => "C" }
+      out, err, status = Open3.capture3(env, RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", code, base)
+
+      expect(status).to be_success, "stderr was #{err}"
+      expect(out).to eq("US-ASCII UTF-8 #{"café ☃".unpack1("H*")}")
     end
 
     it "raises, naming the entry and run but not the value, when a result can't be written as JSON" do
@@ -164,6 +235,42 @@ RSpec.describe Quaack::Enclave::Store do
         expect_store_error(/literals.*#{store.run_id}/) { store.write("literals", bad) }
       end
       expect(Dir.children(store.path)).to be_empty
+    end
+
+    describe "when something is already at the temp file's name" do
+      let(:hex) { "0123456789abcdef" }
+      let(:temp) { File.join(store.path, ".inputs.json.#{hex}.tmp") }
+
+      # SecureRandom is an edge: stubbing it only makes the temp name known.
+      before do
+        store
+        allow(SecureRandom).to receive(:hex).with(8).and_return(hex)
+      end
+
+      it "the stub gives the temp name the store uses" do
+        store.write("inputs", [1])
+
+        expect(SecureRandom).to have_received(:hex).with(8)
+      end
+
+      it "won't write through a file that's there, and leaves it alone" do
+        File.write(temp, STORE_SENTINEL)
+
+        expect_store_error(/inputs.*#{store.run_id}/) { store.write("inputs", [1]) }
+        expect(File.read(temp)).to eq(STORE_SENTINEL)
+        expect(Dir.children(store.path)).to eq([File.basename(temp)])
+      end
+
+      it "won't write through a symlink that's there, and leaves its target alone" do
+        outside = File.join(@tmp, "outside.json")
+        File.write(outside, STORE_SENTINEL)
+        File.symlink(outside, temp)
+
+        expect_store_error(/inputs.*#{store.run_id}/) { store.write("inputs", [1]) }
+        expect(File.read(outside)).to eq(STORE_SENTINEL)
+        expect(File.symlink?(temp)).to be(true)
+        expect(Dir.children(store.path)).to eq([File.basename(temp)])
+      end
     end
 
     it "leaves no temp file behind when the rename fails" do
@@ -211,7 +318,8 @@ RSpec.describe Quaack::Enclave::Store do
     it "rejects a run ID that isn't in the run ID format, before building any path" do
       store # make sure the base exists
       bad = ["../runs", "..", "", "20260923T221500Z-abc", "20260923T221500Z-0123456789", "20260923t221500z-01234567",
-             "20260923T221500Z-0123456G", "x/20260923T221500Z-01234567", "20260923T221500Z-01234567\n", nil]
+             "20260923T221500Z-0123456G", "x/20260923T221500Z-01234567", "20260923T221500Z-01234567\n", nil, 20_260_923,
+             :"20260923T221500Z-01234567"]
       bad.each do |run_id|
         expect_store_error(/run ID/) { described_class.open(run_id, base:) }
       end

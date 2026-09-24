@@ -11,6 +11,10 @@ module Quaack
     # made, and the umask can only take bits away, so nothing is ever more
     # open than it should be. A chmod right after puts back any owner bits
     # the umask took.
+    #
+    # No test can tell the creation mode from the chmod after it, since
+    # both leave the same mode. The creation mode is still what keeps the
+    # file or directory closed to others in the moment before the chmod.
     module PrivateFiles
       module_function
 
@@ -27,30 +31,30 @@ module Quaack
         File.chmod(0o700, dir)
       end
 
-      # Writes contents to a temp file in file's directory, made 0600, and
-      # renames it over file, so a reader never sees half a file. On a
-      # failure it removes the temp file and re-raises.
+      # Writes contents to a new temp file in file's directory, made 0600,
+      # and renames it over file, so a reader never sees half a file. If
+      # anything is already at the temp name, even a symlink, it fails and
+      # leaves that alone: File::EXCL never follows a symlink. If a later
+      # step fails, it removes the temp file it made and re-raises.
       def write_atomically(file, contents)
         temp = File.join(File.dirname(file), ".#{File.basename(file)}.#{SecureRandom.hex(8)}.tmp")
-        begin
-          write_new_file(temp, contents)
-          File.rename(temp, file)
-        rescue SystemCallError
-          FileUtils.rm_f(temp)
-          raise
+        File.open(temp, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |f|
+          fill_and_rename(f, contents, temp, file)
         end
       end
 
-      # Makes file 0600, failing if anything is already there.
-      def write_new_file(file, contents)
-        File.open(file, File::WRONLY | File::CREAT | File::EXCL | File::NOFOLLOW, 0o600) do |f|
-          f.chmod(0o600)
-          f.write(contents)
-          f.fsync
-        end
+      def fill_and_rename(temp_file, contents, temp, file)
+        temp_file.chmod(0o600)
+        temp_file.write(contents)
+        temp_file.fsync
+        File.rename(temp, file)
+      rescue SystemCallError
+        FileUtils.rm_f(temp)
+        raise
       end
 
-      # Reads file without following it if it's a symlink.
+      # Reads file without following it if it's a symlink. The String comes
+      # back in the locale's encoding, which may not be UTF-8.
       def read(file) = File.open(file, File::RDONLY | File::NOFOLLOW, &:read)
 
       # The file's lstat, or nil if there's nothing there.
