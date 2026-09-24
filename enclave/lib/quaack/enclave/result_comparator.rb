@@ -14,11 +14,13 @@ module Quaack
     #
     # - multiset: the same rows, in any order, with the same multiplicities.
     # - ordered: the same rows in the same order.
-    # - with_ties: FETCH FIRST ... WITH TIES. Compared as a multiset (see
-    #   ResultComparison for why).
     # - subset: LIMIT or OFFSET with no ORDER BY. expected is the original's
     #   full result, run without them. The candidate's rows must be a
     #   sub-multiset of it, with exactly expected_count rows.
+    #
+    # A Verdict can also name with_ties, the mode for FETCH FIRST ... WITH
+    # TIES, which compare doesn't take. ResultComparison refuses it (see
+    # there).
     #
     # Columns. The counts and then the type OIDs must be equal, column by
     # column, before any value is compared. int4 against int8 is a
@@ -55,18 +57,23 @@ module Quaack
     # positions, never a row value, and it checks that on creation. Errors
     # here carry fixed messages.
     module ResultComparator
-      MODES = %i[multiset ordered subset with_ties].freeze
+      MODES = %i[multiset ordered subset].freeze
+      VERDICT_MODES = [*MODES, :with_ties].freeze
 
       # What decided a mismatch:
       # - column_count, column_types: the result shapes differ. column is
       #   the first differing column's index for column_types.
       # - row_count: the candidate has the wrong number of rows.
       # - value (ordered): the first row and column that differ.
-      # - multiset (multiset, with_ties), subset: row is the first candidate
-      #   row, by its index in the candidate's result, with no partner.
+      # - multiset, subset: row is the first candidate row, by its index in
+      #   the candidate's result, with no partner.
       # - candidate_unordered: the original has an ORDER BY and the
       #   candidate has none. ResultComparison decides this one.
-      RULES = %i[column_count column_types row_count value multiset subset candidate_unordered].freeze
+      # - unsupported_order: the original's order is one the comparison
+      #   can't check, so it never says match. ResultComparison decides
+      #   this one too.
+      RULES = %i[column_count column_types row_count value multiset subset candidate_unordered
+                 unsupported_order].freeze
 
       FLOAT_TYPES = [700, 701].freeze
       NUMERIC_TYPE = 1700
@@ -100,7 +107,7 @@ module Quaack
       # The messages never name a value.
       VERDICT_CHECKS = {
         "a verdict's match must be true or false" => ->(f) { [true, false].include?(f[:match]) },
-        "a verdict's mode must be one of MODES" => ->(f) { MODES.include?(f[:mode]) },
+        "a verdict's mode must be one of VERDICT_MODES" => ->(f) { VERDICT_MODES.include?(f[:mode]) },
         "a verdict's rule must be one of RULES, or nil" => ->(f) { f[:rule].nil? || RULES.include?(f[:rule]) },
         "a verdict's counts and positions must be non-negative Integers or nil" => lambda do |f|
           f.values_at(:expected_rows, :actual_rows, :row, :column)
@@ -194,23 +201,30 @@ module Quaack
 
         SPECIAL_FLOATS = { "NaN" => Float::NAN, "Infinity" => Float::INFINITY, "-Infinity" => -Float::INFINITY }.freeze
 
-        # A float's text output as a Float, or the text itself if it isn't
-        # one, which then compares exactly.
-        def parse_float(text) = SPECIAL_FLOATS.fetch(text) { Float(text, exception: false) || text }
+        # A float's text output as a Float. Ruby's Float() doesn't read
+        # Postgres's NaN or infinities, hence SPECIAL_FLOATS. Postgres always
+        # prints a float that this reads, so other text means the Result
+        # wasn't a real one, and it's refused.
+        def parse_float(text)
+          SPECIAL_FLOATS.fetch(text) do
+            Float(text, exception: false) or raise ArgumentError, "a float column holds text that isn't a float"
+          end
+        end
 
         def floats_equal?(left, right)
-          return left == right unless [left, right].all?(Float)
           return left.nan? && right.nan? if left.nan? || right.nan?
 
           [left, right].all?(&:finite?) ? within_tolerance?(left, right) : left == right
         end
 
+        # Relative to the larger magnitude. The smaller would do as well: at
+        # a relative 1e-9, no pair of doubles falls between the two
+        # tolerances, so no test can tell them apart.
         def within_tolerance?(left, right)
           (left - right).abs <= [RELATIVE_TOLERANCE * [left.abs, right.abs].max, ABSOLUTE_TOLERANCE].max
         end
 
         def float_key(value)
-          return value unless value.is_a?(Float)
           return value.to_s if value.nan? || value.infinite?
           return "0" if value.abs < ABSOLUTE_TOLERANCE
 
@@ -218,15 +232,15 @@ module Quaack
         end
 
         # numeric's text output with its scale's trailing zeros dropped, so
-        # equal values give equal text. numeric_out never uses an exponent.
-        # Anything else, such as NaN or Infinity, is kept as it is.
+        # equal values give equal text. numeric_out never uses an exponent,
+        # or a leading zero before another digit. Anything else, such as NaN
+        # or Infinity, is kept as it is.
         def numeric_text(text)
           match = /\A(-?)(\d+)(?:\.(\d+))?\z/.match(text)
           return text unless match
 
-          integer = match[2].sub(/\A0+(?=\d)/, "")
           fraction = match[3].to_s.sub(/0+\z/, "")
-          digits = fraction.empty? ? integer : "#{integer}.#{fraction}"
+          digits = fraction.empty? ? match[2] : "#{match[2]}.#{fraction}"
           digits == "0" ? "0" : "#{match[1]}#{digits}"
         end
       end

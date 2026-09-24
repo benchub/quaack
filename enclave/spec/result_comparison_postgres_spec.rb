@@ -124,6 +124,53 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(fields(verdict)).to include(match: false, rule: :column_types, column: 1)
     end
 
+    describe "a candidate that leaves rows tied that the original orders" do
+      # (id, grp) interleaved, so that ORDER BY grp alone leaves ties the
+      # original's ORDER BY grp, id breaks.
+      let(:interleaved) do
+        [[1, 2], [2, 1], [3, 2], [4, 1], [5, 3]].map do |id, grp|
+          Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns: %w[id grp], values: [id.to_s, grp.to_s])
+        end
+      end
+
+      def expect_mismatch(original, candidate)
+        verdict = compare(original, candidate, rows: interleaved)
+
+        expect(fields(verdict)).to include(match: false, mode: :ordered, rule: :value)
+      end
+
+      it "is a mismatch when the candidate drops a sort key" do
+        original = "SELECT id, grp FROM items ORDER BY grp, id"
+        candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp"
+        expect(raw(original, candidate, rows: interleaved).uniq.size).to eq(2)
+
+        expect_mismatch(original, candidate)
+      end
+
+      # Here the descending run matches, so only the ascending one catches it.
+      it "is a mismatch when the dropped sort key was descending" do
+        expect_mismatch("SELECT id, grp FROM items ORDER BY grp, id DESC",
+                        "SELECT id, grp FROM #{forward} ORDER BY grp")
+      end
+
+      it "is a mismatch when the candidate's keys tie every row under a LIMIT" do
+        expect_mismatch("SELECT id, grp FROM items ORDER BY id LIMIT 2",
+                        "SELECT id, grp FROM #{reversed} ORDER BY grp - grp LIMIT 2")
+      end
+
+      it "is a mismatch when DISTINCT ON picks by a key the candidate dropped" do
+        expect_mismatch("SELECT DISTINCT ON (grp) grp, id FROM items ORDER BY grp, id",
+                        "SELECT DISTINCT ON (grp) grp, id FROM #{reversed} ORDER BY grp")
+      end
+
+      it "still matches DISTINCT ON when the candidate keeps the keys" do
+        verdict = compare("SELECT DISTINCT ON (grp) grp, id FROM #{forward} ORDER BY grp, id",
+                          "SELECT DISTINCT ON (grp) grp, id FROM #{reversed} ORDER BY grp, id", rows: interleaved)
+
+        expect(verdict.match?).to be(true)
+      end
+    end
+
     it "leaves columns btree can't order, such as json, out of the tiebreaker" do
       json = "SELECT doc, id FROM #{forward} ORDER BY grp"
 
@@ -179,17 +226,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
   describe "FETCH FIRST ... WITH TIES" do
     let(:original) { "SELECT id, grp FROM #{forward} ORDER BY grp FETCH FIRST 1 ROWS WITH TIES" }
 
-    it "compares the tied rows as a multiset" do
-      candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp FETCH FIRST 1 ROWS WITH TIES"
-      expect(raw(original, candidate).uniq.size).to eq(2)
+    # The comparison can't check the order of WITH TIES rows, so it fails
+    # closed and never says match, even for the same query.
+    it "is an unsupported_order mismatch, whatever the candidate, and runs nothing" do
+      reordered = "SELECT * FROM (SELECT id, grp FROM items ORDER BY grp FETCH FIRST 3 ROWS WITH TIES) s " \
+                  "ORDER BY id DESC"
+      verdicts = [original, reordered, "SELECT broken FROM nowhere ORDER BY 1"].map { |c| compare(original, c) }
 
-      expect(fields(compare(original, candidate))).to include(match: true, mode: :with_ties)
-    end
-
-    it "is a row_count mismatch for a plain LIMIT" do
-      verdict = compare(original, "SELECT id, grp FROM items ORDER BY grp LIMIT 1")
-
-      expect(fields(verdict)).to include(match: false, mode: :with_ties, rule: :row_count)
+      expect(verdicts.map { |v| v.to_h.slice(:match, :mode, :rule, :expected_rows, :actual_rows) }.uniq)
+        .to eq([{ match: false, mode: :with_ties, rule: :unsupported_order, expected_rows: nil, actual_rows: nil }])
     end
   end
 

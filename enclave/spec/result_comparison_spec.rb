@@ -59,6 +59,12 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(sql).to eq("SELECT a, b, c FROM t ORDER BY b DESC, 1, 3 LIMIT 5")
     end
 
+    it "sorts the tiebreaker DESC NULLS FIRST when asked to" do
+      sql = shape("SELECT a, b, c FROM t ORDER BY b LIMIT 5").with_tiebreaker([1, 3], descending: true)
+
+      expect(sql).to eq("SELECT a, b, c FROM t ORDER BY b, 1 DESC NULLS FIRST, 3 DESC NULLS FIRST LIMIT 5")
+    end
+
     it "works on a set operation" do
       sql = shape("SELECT a FROM t UNION SELECT a FROM u ORDER BY 1").with_tiebreaker([1])
 
@@ -109,6 +115,14 @@ RSpec.describe Quaack::Enclave::ResultComparison do
             expect([e.rule, e.query]).to eq(%i[not_one_select original])
             expect(e.message).to eq("a query for the result comparison isn't exactly one SELECT")
           }
+      end
+    end
+
+    it "refuses SQL the enclave's walkers don't support, naming only its shape" do
+      ["SELECT a FROM t TABLESAMPLE SYSTEM (10) WHERE a = '#{sentinel}'",
+       "SELECT a FROM t WHERE a = '#{sentinel}' FOR UPDATE"].each do |sql|
+        expect { described_class::Shape.parse(sql, :candidate) }
+          .to raise_error(Quaack::Enclave::SupportedSql::Error) { |e| expect(e.message).not_to include(sentinel) }
       end
     end
 

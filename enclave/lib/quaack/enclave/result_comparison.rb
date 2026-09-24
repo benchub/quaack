@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "result_comparator"
+require_relative "supported_sql"
 
 module Quaack
   module Enclave
@@ -25,16 +26,27 @@ module Quaack
     #   The tiebreaker needs the output types first, so a probe runs each
     #   query wrapped with LIMIT 0 and compares their columns. If they
     #   differ, that's the verdict, and nothing else runs.
+    #
+    #   The tiebreaker goes on the candidate too, so it could supply an
+    #   order the candidate never asked for: a candidate that drops a sort
+    #   key, or whose keys tie everything, would come out in the original's
+    #   order by luck. So both queries run twice, once with the tiebreaker
+    #   ascending and once with every tiebreaker position DESC NULLS FIRST,
+    #   and both runs must match. Two rows the original orders but the
+    #   candidate leaves tied stay put in the original and swap places in
+    #   the candidate between the runs, so one of the runs mismatches. That
+    #   holds under a LIMIT, which then picks different rows, and for
+    #   DISTINCT ON, which then picks a different row per group.
     # - LIMIT or OFFSET with no ORDER BY: subset. Any rows are a valid
     #   answer. Run the original as written for the expected row count,
     #   which Postgres works out whatever the LIMIT expression is. Run it
     #   again without its LIMIT and OFFSET for the full result. The
     #   candidate's rows must be a sub-multiset of the full result, with
     #   that count. FETCH FIRST ... ONLY is a LIMIT.
-    # - FETCH FIRST ... WITH TIES: with_ties. Its set of rows is already
-    #   fixed, since every row tied with the last one comes back. A
-    #   tiebreaker would change that set, so run both as written and
-    #   compare them as a multiset. The order isn't checked.
+    # - FETCH FIRST ... WITH TIES: with_ties, an unsupported_order mismatch
+    #   with nothing run. A tiebreaker would change which rows come back,
+    #   and without one the order of tied rows can't be checked, so the
+    #   comparison fails closed and never says match.
     #
     # When the original has an ORDER BY and the candidate has none at its
     # top level, that's a candidate_unordered mismatch, with nothing run.
@@ -43,18 +55,20 @@ module Quaack
     # xml, or point, since ORDER BY on one is an error, and one error ends
     # the arena transaction. ORDERABLE_TYPES lists the built-in types it
     # keeps. Anything else, including enums, domains, composites, ranges,
-    # and extension types, is left out too. When a column is left out, rows
-    # that tie on every other column can still come back in either order,
-    # and the comparison can say mismatch for a good candidate. It can't say
-    # match for a bad one.
+    # and extension types, is left out too. That leaves a window both ways.
+    # Rows that tie on every column the tiebreaker has, and differ only in
+    # one it left out, don't swap between the two runs. So a candidate that
+    # leaves such rows tied where the original orders them can still match,
+    # and a good candidate can mismatch when those rows come back in either
+    # order.
     #
-    # DISTINCT and set operations (UNION, INTERSECT, EXCEPT) need nothing
-    # more. Their results are fixed multisets, and their top-level ORDER BY
-    # and LIMIT are read the same way. Known ways to discard a good
-    # candidate, all toward mismatch, never toward a false match:
+    # DISTINCT, DISTINCT ON, and set operations (UNION, INTERSECT, EXCEPT)
+    # need nothing more. Their top-level ORDER BY and LIMIT are read the
+    # same way. Known ways to discard a good candidate, all toward
+    # mismatch:
     #
-    # - A LIMIT inside a subquery, or DISTINCT ON without an ORDER BY that
-    #   orders each group fully, picks rows Postgres is free to vary.
+    # - A LIMIT inside a subquery, or DISTINCT ON with no ORDER BY, picks
+    #   rows Postgres is free to vary.
     # - A candidate whose ORDER BY adds its own keys, such as ORDER BY a, id
     #   for ORDER BY a, orders ties its own way before the tiebreaker.
     # - Floats within tolerance of each other can sort either way in the
@@ -63,8 +77,11 @@ module Quaack
     # Trust boundary. The verdict is ResultComparator's, with counts and
     # positions only. The built SQL keeps the query's literals, so it stays
     # in the enclave. A parse error becomes an Error with a fixed message
-    # and no cause, since pg_query's message quotes the SQL. Errors from
-    # running a query are ArenaRunner::Errors, which keep no Postgres text.
+    # and no cause, since pg_query's message quotes the SQL. Both queries
+    # go through SupportedSql.check! too, like every walker's input, so a
+    # construct the enclave doesn't support is refused by its node type.
+    # Errors from running a query are ArenaRunner::Errors, which keep no
+    # Postgres text.
     module ResultComparison
       class Error < StandardError
         # query is :original or :candidate.
@@ -107,7 +124,9 @@ module Quaack
         def initialize(sql, query)
           @sql = sql
           @query = query
-          select_stmt(parse)
+          parsed = parse
+          select_stmt(parsed)
+          SupportedSql.check!(parsed)
         end
 
         def mode
@@ -127,10 +146,11 @@ module Quaack
           end
         end
 
-        # positions are 1-based output column positions.
-        def with_tiebreaker(positions)
+        # positions are 1-based output column positions. descending sorts
+        # each DESC NULLS FIRST, the exact reverse of the default.
+        def with_tiebreaker(positions, descending: false)
           build do |select|
-            positions.each { |position| select.sort_clause << position_sort(position) }
+            positions.each { |position| select.sort_clause << position_sort(position, descending) }
           end
         end
 
@@ -158,10 +178,10 @@ module Quaack
           PgQuery.deparse(parsed.tree)
         end
 
-        def position_sort(position)
+        def position_sort(position, descending)
           constant = PgQuery::Node.new(a_const: PgQuery::A_Const.new(ival: PgQuery::Integer.new(ival: position)))
-          PgQuery::Node.new(sort_by: PgQuery::SortBy.new(node: constant, sortby_dir: :SORTBY_DEFAULT,
-                                                         sortby_nulls: :SORTBY_NULLS_DEFAULT))
+          direction, nulls = descending ? %i[SORTBY_DESC SORTBY_NULLS_FIRST] : %i[SORTBY_DEFAULT SORTBY_NULLS_DEFAULT]
+          PgQuery::Node.new(sort_by: PgQuery::SortBy.new(node: constant, sortby_dir: direction, sortby_nulls: nulls))
         end
       end
 
@@ -175,8 +195,8 @@ module Quaack
         mode = original_shape.mode
         return run(transaction, original, candidate, mode) if mode == :multiset
         return subset(transaction, original_shape, original, candidate) if mode == :subset
+        return ResultComparator::Verdict.for(mode, :unsupported_order) if mode == :with_ties
         return ResultComparator::Verdict.for(mode, :candidate_unordered) unless candidate_shape.ordered?
-        return run(transaction, original, candidate, mode) if mode == :with_ties
 
         ordered(transaction, original_shape, candidate_shape)
       end
@@ -197,7 +217,16 @@ module Quaack
         return shape if shape
 
         positions = tiebreaker_positions(original_probe.types)
-        original_sql, candidate_sql = [original_shape, candidate_shape].map { |s| s.with_tiebreaker(positions) }
+        ascending = tiebroken(transaction, original_shape, candidate_shape, positions, descending: false)
+        return ascending unless ascending.match?
+
+        tiebroken(transaction, original_shape, candidate_shape, positions, descending: true)
+      end
+
+      def tiebroken(transaction, original_shape, candidate_shape, positions, descending:)
+        original_sql, candidate_sql = [original_shape, candidate_shape].map do |shape|
+          shape.with_tiebreaker(positions, descending:)
+        end
         run(transaction, original_sql, candidate_sql, :ordered)
       end
 

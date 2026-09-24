@@ -132,13 +132,17 @@ RSpec.describe Quaack::Enclave::ResultComparator do
     end
   end
 
-  describe "with_ties mode" do
-    it "compares as a multiset" do
-      match = compare(result([int4], [["1"], ["2"]]), result([int4], [["2"], ["1"]]), mode: :with_ties)
-      mismatch = compare(result([int4], [["1"], ["2"]]), result([int4], [["2"], ["3"]]), mode: :with_ties)
+  describe "with_ties" do
+    it "isn't a mode compare takes, since it can't check the order" do
+      same = result([int4], [["1"]])
 
-      expect([match.match?, match.mode]).to eq([true, :with_ties])
-      expect(verdict_fields(mismatch)).to include(match: false, rule: :multiset, row: 1)
+      expect { compare(same, same, mode: :with_ties) }.to raise_error(ArgumentError, /mode must be one of/)
+    end
+
+    it "is a mode a verdict can name, never as a match" do
+      verdict = described_class::Verdict.for(:with_ties, :unsupported_order)
+
+      expect(verdict_fields(verdict)).to include(match: false, mode: :with_ties, rule: :unsupported_order)
     end
   end
 
@@ -272,6 +276,20 @@ RSpec.describe Quaack::Enclave::ResultComparator do
 
       it "doesn't overflow on the largest finite values" do
         expect(floats("1.7976931348623157e+308", "-1.7976931348623157e+308").match?).to be(false)
+      end
+
+      # 1e-12 - 0 is exactly the absolute tolerance in binary too.
+      it "includes the boundary itself" do
+        expect([floats("0", "1e-12").match?, floats("-1e-12", "0").match?]).to eq([true, true])
+      end
+
+      it "refuses float text that isn't a float, and keeps none of it" do
+        bad = result([float8], [[sentinel]])
+
+        expect { compare(bad, bad, mode: :ordered) }
+          .to raise_error(ArgumentError, "a float column holds text that isn't a float") { |e|
+            expect(e.message).not_to include(sentinel)
+          }
       end
     end
   end
