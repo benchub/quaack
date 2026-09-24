@@ -634,3 +634,20 @@ Combine candidates greedily up to three indexes. Rank by worst-case cost reducti
   - `IndexRanking.rank(conn, query:, literal_sets:, baseline:, results:)` returns `Ranking(top:, combination:)`. Each entry carries the DDL, the size, the cost before and after for each literal set, `used`, the canonical plans, and `partial`. Inspect leaves out the DDL.
   - 5a-4's runner became a public `SingleCandidateTest::Session`, with `measure(candidates)` for several hypothetical indexes at once. All of 5a-4's safety moved over with it (the reviewers checked 28 mutants). Every measure resets HypoPG, and a closed session refuses to measure.
   - Leftover findings became 20260924-10.
+
+### 20260922-9. Leak tests.
+
+Build a reusable test helper that runs a step on data with known sentinel values and fails if any sentinel shows up in enclave output. Every later enclave task should use it.
+
+- **Depends on:** 20260922-7, 20260922-2.
+- **README:** Trust boundary.
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review. The helper is in `enclave/spec/support/leak_check*`:
+  - `LeakCheck::Sentinels` makes text, word, number, date (Gregorian, 1100 to 1899), json, and LIKE sentinels.
+  - `LeakCheck.findings` scans stdout, stderr, status, and objects: inspect, to_s, messages, backtraces, causes, ivars, members, and a StringIO's `#string`. It refuses a StringIO or IO where a String belongs.
+  - `expect_no_leaks` runs an isolated positive control first, with every needle in every place.
+  - `LeakCheck::Quaacks` runs the installed gem outside Bundler with a temporary HOME.
+  - `LeakCheck::Fixture.plant` seeds sentinels into `pg_stats`.
+  - The intake and error_filter specs use it.
+
+  The second review found no blockers. Its findings became 20260924-13.

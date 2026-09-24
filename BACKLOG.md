@@ -54,13 +54,7 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 
 ### 20260922-8. Error filtering. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-9. Leak tests.
-
-Build a reusable test helper that runs a step on data with known sentinel values and fails if any sentinel shows up in enclave output. Every later enclave task should use it.
-
-- **Depends on:** 20260922-7, 20260922-2.
-- **README:** Trust boundary.
-- **Status:** todo
+### 20260922-9. Leak tests. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
@@ -1049,6 +1043,25 @@ Split out of 20260922-24. The work so far is on branch `task/20260922-24`. Build
 - **Depends on:** 20260922-24's branch.
 - **Came from:** Second review of 20260922-24.
 - **README:** 3h.
+- **Status:** todo
+
+### 20260924-13. Leak-test helper loose ends.
+
+Findings from the reviews of 20260922-9:
+- **A Tempfile slips past the IO refusal.** Tempfile is a Delegator, so `is_a?(IO)` is false, and a Tempfile holding a sentinel returns no findings. Refuse Tempfile too. A File nested inside an object is also neither scanned nor refused.
+- **The positive control doesn't plant in Array elements, Hash keys and values, Struct or Data members, or a StringIO's `#string`,** though its comment says it does. The unit specs catch those breaks. Add the plants, or reword the comment.
+- **Surviving mutants:**
+  - `MAX_DEPTH` 24 → 10
+  - case-insensitive `extra:` needles
+  - scanning only the first backtrace line
+  - `MIN_EXTRA` 9 → 4
+  - the `seen` set, which only affects speed
+- **`pg` isn't a runtime dependency of quaacks,** so `LeakCheck::Quaacks` can't run subcommands that connect to Postgres. The first task with such a step (20260922-16) must add `pg` to the quaacks gemspec and to `ENCLAVE_ALLOWED_GEMS`.
+- **The harness schema has no JSON column,** so the fixture can't plant the JSON sentinel in stored rows.
+
+- **Depends on:** 20260922-9.
+- **Came from:** Both reviews of 20260922-9.
+- **README:** Trust boundary.
 - **Status:** todo
 
 ## After version 1.
