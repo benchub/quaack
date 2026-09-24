@@ -197,6 +197,12 @@ Verify the run server: same major version and extensions as production plus Hypo
 
 - **Depends on:** 20260922-16.
 - **README:** Step 4.
+- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
+  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
+  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
+  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
+  - Per-tablespace `random_page_cost`.
+  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
 - **Status:** todo
 - **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
 
