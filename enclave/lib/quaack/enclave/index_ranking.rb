@@ -12,6 +12,16 @@ module Quaack
         def reductions = costs.transform_values(&:reduction)
 
         def worst_reduction = reductions.values.min
+
+        # The DDL can hold a partial index's predicate, so it's left out.
+        def inspect
+          "#<data #{self.class} indexes=#{ddl.size}, size=#{size}, costs=#{costs}, used=#{used}, " \
+            "partial=#{partial}, ddl=<redacted>>"
+        end
+
+        alias_method :to_s, :inspect
+
+        def pretty_print(pp) = pp.text(inspect)
       end
 
       Cost = Data.define(:before, :after) do
@@ -34,9 +44,12 @@ module Quaack
       def ranked(entries) = entries.sort_by { |e| [-e.worst_reduction, e.size, e.ddl] }
 
       def single(result, baseline)
-        Entry.new(candidates: [result.candidate], ddl: [result.candidate.to_ddl], size: result.size,
-                  costs: costs(result.plans, baseline), used: result.plans.transform_values { |p| [p.used] },
-                  canonical_plans: result.plans.transform_values(&:canonical_plan), partial: false)
+        entry([result.candidate], result.size, result.plans, result.plans.transform_values { |p| [p.used] }, baseline)
+      end
+
+      def entry(candidates, size, plans, used, baseline)
+        Entry.new(candidates:, ddl: candidates.map(&:to_ddl), size:, costs: costs(plans, baseline), used:,
+                  canonical_plans: plans.transform_values(&:canonical_plan), partial: candidates.any?(&:predicate))
       end
 
       def costs(plans, baseline)
@@ -69,9 +82,7 @@ module Quaack
         used = measured.plans.transform_values(&:used)
         return nil unless candidates.each_index.all? { |i| used.each_value.any? { |u| u[i] } }
 
-        Entry.new(candidates:, ddl: candidates.map(&:to_ddl), size: measured.sizes.sum,
-                  costs: costs(measured.plans, baseline), used:,
-                  canonical_plans: measured.plans.transform_values(&:canonical_plan), partial: false)
+        entry(candidates, measured.sizes.sum, measured.plans, used, baseline)
       end
     end
   end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "delegate"
+require "pp"
 require "quaack/enclave/index_ranking"
 
 # 5a-7 against real HypoPG on the test harness. Each table is analyzed with
@@ -216,5 +217,32 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(rankings.map { |r| r.combination.ddl }).to all(eq([on_b.to_ddl, on_a.to_ddl]))
     expect(rankings.map { |r| r.top.map(&:ddl) }.uniq.size).to eq(1)
     expect(rankings.map { |r| r.combination.costs }.uniq.size).to eq(1)
+  end
+
+  # The partial index's predicate holds the sentinel, which t's flag holds
+  # for 1% of rows.
+  let(:partial_query) do
+    "SELECT a FROM t WHERE b = $1 AND flag = '#{sentinel}' UNION ALL SELECT x FROM o WHERE x = $2"
+  end
+  let(:partial_sets) { { slow: %w[7 5] } }
+  let(:partial) { candidate(key: ["b"], predicate: "flag = '#{sentinel}'") }
+
+  it "tags an entry partial when any of its indexes has a predicate" do
+    ranking = ranked(partial_query, partial_sets, [partial, on_x])
+
+    expect(ranking.top.to_h { |e| [e.candidates, e.partial] }).to eq([partial] => true, [on_x] => false)
+    expect(ranking.combination.candidates).to contain_exactly(partial, on_x)
+    expect(ranking.combination.partial).to be(true)
+  end
+
+  it "keeps a partial index's predicate out of inspect, though its DDL holds it" do
+    ranking = ranked(partial_query, partial_sets, [partial, on_x])
+
+    expect(ranking.combination.ddl.join).to include(sentinel)
+    expect(ranking.top.flat_map(&:ddl).join).to include(sentinel)
+    expect(ranking.inspect).not_to include(sentinel)
+    expect(ranking.to_s).not_to include(sentinel)
+    expect(ranking.combination.to_s).not_to include(sentinel)
+    expect(ranking.top.first.pretty_inspect).not_to include(sentinel)
   end
 end
