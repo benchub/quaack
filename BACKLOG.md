@@ -270,7 +270,8 @@ Normalize definitions. Drop candidates covered by an existing index or by an ear
 
 - **Depends on:** 20260922-19, 20260922-22.
 - **README:** 5a-3, step 8.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-32` through a build, a review, a fix round, and a second review, but not landed. The second review found that an array check on the partial filter had a vacuous test, and that generator two's partials on `varchar` columns were always dropped. 20260923-31 finishes the task on top of that branch.
 
 ### 20260922-33. 5a-5 generator three.
 
@@ -847,6 +848,20 @@ Findings from both reviews of 20260922-43 that don't block it:
 - **Depends on:** 20260923-29.
 - **Came from:** Both reviews of 20260922-43, and its builder's notes.
 - **README:** Step 9 and 9c.
+- **Status:** todo
+
+### 20260923-31. Finish 5a-3 dedupe and filter.
+
+Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build on that branch, then land both together. Fix what the second review of 20260922-32 found:
+- **Vacuous test on the trust-boundary check.** In `predicate_check.rb` `constant?`, changing `elements.all?` to `elements.any?` stays green. With that mutant, `status = ANY(ARRAY['open', lower('bob@x.com')])` keeps its partial. Add a mixed-element array to the drop list.
+- **Generator two's partials on `varchar` columns are always dropped.** Postgres prints `((status)::text = 'open'::text)`, so the predicate has a cast on the column side, and `constants_compared_with_columns?` wants a bare column. Accept a column under casts, but not under any other expression. Test it with real generator two output from a Postgres plan.
+- **Allowed forms no test pins:** `AEXPR_OP_ALL`, `AEXPR_NOT_DISTINCT`, `AEXPR_ILIKE`, `AEXPR_NOT_BETWEEN`, and both SYMMETRIC forms.
+- **Dead code:** the BETWEEN special case in `column_comparison?` can't be reached. Drop it.
+- **Type modifiers in an allowed comparison aren't checked,** as in `status = 'x'::mytype(lower('bob'))`. Check them, or drop anything that isn't an integer constant.
+
+- **Depends on:** 20260922-32's branch.
+- **Came from:** Second review of 20260922-32.
+- **README:** 5a-3.
 - **Status:** todo
 
 ## After version 1.
