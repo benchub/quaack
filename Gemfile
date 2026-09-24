@@ -11,9 +11,6 @@ gemspec path: "enclave"
 gemspec path: "driver"
 
 group :development do
-  # Only the test database harness in spec/support/test_postgres.rb uses pg
-  # for now, so it's a development gem. It isn't in any gemspec.
-  gem "pg", "~> 1.6"
   gem "rake", "~> 13.0"
   gem "rspec", "~> 3.13"
   gem "rubocop", "~> 1.0", require: false

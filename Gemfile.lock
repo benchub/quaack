@@ -9,6 +9,7 @@ PATH
   remote: enclave
   specs:
     quaacks (0.1.0)
+      pg (~> 1.6)
       pg_query (~> 6.2)
       quaack-protocol
 
@@ -94,7 +95,6 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  pg (~> 1.6)
   quaack-driver!
   quaack-protocol!
   quaacks!
