@@ -61,17 +61,7 @@ Build the driver's LLM client, with a test double so tests never make real LLM c
 
 ## Trust boundary.
 
-### 20260922-7. Egress function and whitelist.
-
-Build the single egress function. It only accepts fields on a whitelist, and it drops anything else entirely rather than scrubbing it. The whitelist lives in one place so every change to it gets reviewed.
-
-- **Depends on:** 20260922-1.
-- **README:** Trust boundary.
-- **Status:** todo
-- **Decided:**
-  - The whitelist is one file in the protocol gem that maps each output type to its allowed field names, such as `column_stats: [table, column, n_distinct, null_frac, correlation, mcv_freqs, low_card_values]` and `error: [step, rule, sqlstate]`. It lists the fields of QUAACK's own output messages, not database columns, so it changes only when QUAACK changes what a step outputs.
-  - The egress function drops any field not on its type's list, and drops any output of an unknown type. There are no field types.
-  - Changes to the whitelist get reviewed through the normal git diff. There's no snapshot test and no CODEOWNERS.
+### 20260922-7. Egress function and whitelist. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-8. Error filtering.
 
@@ -784,6 +774,19 @@ Minor findings from the second review of 20260923-7:
 - **Depends on:** 20260923-7.
 - **Came from:** Second review of 20260923-7.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-26. Egress loose ends.
+
+Minor findings from the second review of 20260922-7:
+- **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
+- **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
+- **Deep nesting and cycles raise `SystemStackError`.** A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
+- **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
+
+- **Depends on:** 20260922-7.
+- **Came from:** Both reviews of 20260922-7.
+- **README:** Trust boundary.
 - **Status:** todo
 
 ## After version 1.
