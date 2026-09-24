@@ -55,8 +55,9 @@ module Quaack
     #    constant anywhere else drops the partial, when unsure:
     #    'ssn' = 'ssn', status = lower('bob@x.com'), lower(status) = 'x',
     #    or a bare true. A predicate with no constants, such as flag or
-    #    status IS NULL, needs only the column check. A stored predicate
-    #    that doesn't parse again is dropped too. This comes first,
+    #    status IS NULL, needs only the column check. Every stored
+    #    predicate parses again, since IndexCandidate refuses one that
+    #    pg_query can't deparse faithfully (see Deparse). This comes first,
     #    because it's the trust-boundary check (README 5a-3): until a
     #    partial passes it, its predicate may hold PII.
     # 2. A candidate covered by an existing index is dropped
@@ -198,10 +199,6 @@ module Quaack
         PredicateCheck.predicate_columns(candidate.predicate).any? do |column|
           !@low_cardinality.include?([candidate.table, column])
         end || !PredicateCheck.constants_compared_with_columns?(candidate.predicate)
-      rescue ArgumentError
-        # The stored predicate doesn't parse again, which pg_query's
-        # deparse can cause. When unsure, drop. The error doesn't quote it.
-        true
       end
 
       def covering_index(candidate, indexes)

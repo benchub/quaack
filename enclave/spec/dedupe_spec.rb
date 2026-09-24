@@ -426,17 +426,6 @@ RSpec.describe Quaack::Enclave::Dedupe do
         end
       end
 
-      # pg_query deparses a type modifier that isn't a constant as nothing,
-      # so IndexCandidate stores 'x'::mytype(), which doesn't parse again.
-      it "drops a partial whose stored predicate doesn't parse, without raising or quoting it" do
-        s = search
-        cand = candidate(["customer_id"], predicate: "status = 'quaack-sentinel-p4rse'::mytype(lower('bob'))")
-
-        expect(s.filter([cand])).to eq([])
-        expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality])
-        expect(s.drops.inspect).not_to include("quaack-sentinel")
-      end
-
       it "never shows a dropped constant in the drop record" do
         sentinel = "quaack-sentinel-c0n5t"
         predicates = ["status = 'open' OR '#{sentinel}' = '#{sentinel}'",

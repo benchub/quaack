@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 
 module Quaack
   module Enclave
@@ -8,9 +9,10 @@ module Quaack
     # Recheck Cond, Join Filter, Hash Cond, Sort Key, and Group Key) with
     # pg_query, for GeneratorTwo. It's private to the enclave namespace.
     #
-    # The strings hold real literals. Nothing here raises on them: a string
-    # that doesn't parse as what it should gives back nothing, so no error
-    # can quote it.
+    # The strings hold real literals. A string that doesn't parse as what it
+    # should gives back nothing, so no error can quote it. The one error
+    # raised here is unqualified_sql's Deparse::Error, whose message is
+    # fixed.
     module PlanExpression
       module_function
 
@@ -117,13 +119,15 @@ module Quaack
       end
 
       # The conjunct as SQL, with every column's qualifier dropped, for a
-      # partial index predicate. It holds the conjunct's literal.
+      # partial index predicate. It holds the conjunct's literal. If pg_query
+      # would deparse it as a different expression, it raises Deparse::Error,
+      # which quotes nothing.
       def unqualified_sql(node)
         copy = PgQuery::Node.decode(PgQuery::Node.encode(node))
         each_message(copy) do |m|
           m.fields.replace([m.fields.last]) if m.is_a?(PgQuery::ColumnRef)
         end
-        PgQuery.deparse_expr(copy)
+        Deparse.expression(copy)
       end
     end
 

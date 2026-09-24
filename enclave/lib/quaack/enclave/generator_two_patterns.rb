@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "deparse"
 require_relative "index_candidate"
 require_relative "plan_expression"
 
@@ -34,7 +35,8 @@ module Quaack
         # Filter's other columns, constant equality columns first. With no
         # other columns there's no partial index, because the plain btree on
         # the column already covers it. A `col = $1` conjunct has no literal,
-        # so it's never a predicate. A Filter with no constant equality
+        # so it's never a predicate, and neither is one pg_query can't deparse
+        # faithfully (see Deparse). A Filter with no constant equality
         # columns proposes nothing.
         def seq_scan(node)
           table = scan_table(node, "Seq Scan")
@@ -51,8 +53,18 @@ module Quaack
           columns = (equality + own_columns(conjuncts, alias_name).map(&:name)).uniq
           conjuncts.select { |c| removes_most_alone?(c) }.filter_map do |c|
             key = columns - [c.columns.first.name]
-            build(table, key:, predicate: PlanExpression.unqualified_sql(c.node)) if key.any?
+            predicate = partial_predicate(c) if key.any?
+            build(table, key:, predicate:) if predicate
           end
+        end
+
+        # The conjunct as a partial index predicate, or nil when pg_query
+        # can't write it faithfully (see Deparse). That one partial is
+        # skipped.
+        def partial_predicate(conjunct)
+          PlanExpression.unqualified_sql(conjunct.node)
+        rescue Deparse::Error
+          nil
         end
 
         # A scan's own Filter can only compare its own columns to constants,

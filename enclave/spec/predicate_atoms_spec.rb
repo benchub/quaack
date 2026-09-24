@@ -2,6 +2,7 @@
 
 require "json"
 require "pg_query"
+require "quaack/enclave/deparse"
 require "quaack/enclave/predicate_atoms"
 
 RSpec.describe Quaack::Enclave::PredicateAtoms do
@@ -324,6 +325,25 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       sql = where("CASE WHEN o.total > 1 THEN o.note END = 'x'")
       expect(replaced(sql)).to eq(["SELECT o.id FROM public.orders o WHERE true",
                                    "SELECT o.id FROM public.orders o WHERE CASE WHEN true THEN o.note END = 'x'"])
+    end
+
+    # pg_query's deparser drops the parentheses these need, so the SQL
+    # would mean something else or not parse. Replacing the whole construct
+    # with TRUE takes it out of the SQL, so that one still works.
+    {
+      "IS NOT DISTINCT FROM with AND" => ["(o.status = 1) IS NOT DISTINCT FROM (o.active AND o.total > 2)", 3],
+      "an ARRAY subquery's subscript" => ["o.status = (ARRAY(SELECT 1))[1] AND (o.active OR o.total > 2)", 2]
+    }.each do |construct, (predicate, inner)|
+      it "refuses to replace an atom in a query with #{construct}, but for the whole construct" do
+        parse = PgQuery.parse(where(predicate))
+        outer, *rest = described_class.extract(parse, column_names:)
+        expect(described_class.with_true(parse, outer)).to start_with("SELECT o.id FROM public.orders o WHERE true")
+        expect(rest.size).to eq(inner)
+        rest.each do |atom|
+          expect { described_class.with_true(parse, atom) }
+            .to raise_error(Quaack::Enclave::Deparse::Error) { |e| expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil]) }
+        end
+      end
     end
 
     it "leaves the parse it was given alone" do

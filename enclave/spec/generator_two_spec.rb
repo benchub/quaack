@@ -122,6 +122,15 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(ddl("seq_scan_most_rows")).to include(btree("orders", "status, created_at", " WHERE total_cents = 5100"))
     end
 
+    # pg_query deparses a type modifier that isn't a constant as nothing,
+    # so this conjunct's predicate can't be written faithfully. Postgres
+    # never prints one, so the captured Filter is edited by hand.
+    it "skips a partial index whose predicate pg_query can't deparse faithfully, and keeps the rest" do
+      explain = plan("seq_scan_rare_value")
+      explain.first["Plan"]["Filter"] = "((total_cents > 100) AND ((status)::mytype(lower('bob')) = 'failed'::text))"
+      expect(described_class.candidates(explain, statistics:).map(&:to_ddl)).to eq([btree("orders", "status")])
+    end
+
     it "makes no partial index on a column with no pg_stats row" do
       no_status = orders_stats.with(columns: orders_stats.columns.except("status"))
       stats = enclave::Statistics.new(tables: [no_status, customers_stats])
@@ -606,6 +615,16 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     it "drops every qualifier from a predicate, keeping its casts" do
       node = expression.conjuncts("(s.o.status = 'x'::text)").first
       expect(expression.unqualified_sql(node)).to eq("status = 'x'::text")
+    end
+
+    # pg_query would drop the parentheses, so the predicate would index
+    # different rows. The error has no text of the plan's.
+    it "raises, quoting nothing, rather than give a predicate that means something else" do
+      node = expression.conjuncts("((o.a = 'quaack-sentinel') IS NOT DISTINCT FROM (o.b AND o.c))").first
+      expect { expression.unqualified_sql(node) }.to raise_error(enclave::Deparse::Error) { |e|
+        expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil])
+        expect(e.full_message).not_to include("quaack-sentinel")
+      }
     end
 
     it "sorts conditions into constant equalities, join equalities, and the rest" do

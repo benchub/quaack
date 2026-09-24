@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 
 module Quaack
   module Enclave
@@ -76,7 +77,17 @@ module Quaack
       end
 
       # The predicate as pg_query deparses it.
-      def normalize_predicate(sql) = PgQuery.deparse_expr(parse_predicate(sql)).freeze
+      def normalize_predicate(sql) = deparse_predicate(parse_predicate(sql)).freeze
+
+      # The predicate node as SQL. pg_query's deparser can write an
+      # expression that means something else, such as (a = 1) IS NOT
+      # DISTINCT FROM (b AND c) without its parentheses, so it must parse
+      # back to the same node (see Deparse).
+      def deparse_predicate(node)
+        Deparse.expression(node)
+      rescue Deparse::Error
+        raise ArgumentError, "predicate changes meaning when pg_query deparses it", cause: nil
+      end
 
       # See IndexCandidate.from_ddl.
       def read_index(sql, sources)
@@ -103,7 +114,7 @@ module Quaack
           table: table_name(stmt.relation),
           key: stmt.index_params.map { |n| key_column(n.index_elem) },
           include: stmt.index_including_params.map { |n| n.index_elem.name },
-          access_method: stmt.access_method, predicate: where && PgQuery.deparse_expr(where),
+          access_method: stmt.access_method, predicate: where && deparse_predicate(where),
           unique: stmt.unique, sources:
         )
       rescue ArgumentError

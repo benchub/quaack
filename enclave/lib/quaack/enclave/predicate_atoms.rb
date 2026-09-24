@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 require_relative "supported_sql"
 require_relative "table_name"
 
@@ -77,7 +78,15 @@ module Quaack
     # simple CASE becomes a searched one, CASE WHEN x = v ..., so one WHEN
     # can be TRUE. A USING column can't be replaced, because USING also
     # merges the two columns into one, so replaceable is false and with_true
-    # raises ArgumentError.
+    # raises ArgumentError. The deparsed SQL must parse back to the changed
+    # tree, or with_true raises Deparse::Error (rule deparse_mismatch). A
+    # query with a construct pg_query deparses wrong, such as
+    # (a = 1) IS NOT DISTINCT FROM (b AND c), is refused that way for every
+    # atom but those that replace the whole construct.
+    #
+    # Shapes aren't guarded. They're for the report, and they can come out
+    # wrong the same way: that atom's shape reads a = $1 IS NOT DISTINCT
+    # FROM b AND c.
     #
     # Trust boundary. shape is the only field made from the SQL's text, and
     # it has every literal replaced (see Redaction). The rest hold names,
@@ -114,7 +123,7 @@ module Quaack
         if case_expr then SimpleCase.searched(case_expr, atom.path[-3])
         else Tree.set(tree, atom.path, Tree.true_node)
         end
-        PgQuery.deparse(tree)
+        Deparse.faithfully(tree)
       end
 
       # The atom's own node in the parse, real constants and all. For a
