@@ -5,12 +5,13 @@ require "quaack/enclave/result_comparator"
 # Step 9d's comparator over two results built by hand. See
 # result_comparison_postgres_spec.rb for the rules run against Postgres.
 RSpec.describe Quaack::Enclave::ResultComparator do
-  INT4 = 23
-  INT8 = 20
-  TEXT = 25
-  FLOAT4 = 700
-  FLOAT8 = 701
-  NUMERIC = 1700
+  # Type OIDs.
+  def int4 = 23
+  def int8 = 20
+  def text = 25
+  def float4 = 700
+  def float8 = 701
+  def numeric = 1700
 
   let(:sentinel) { "SENTINEL-47c1d9" }
 
@@ -23,7 +24,7 @@ RSpec.describe Quaack::Enclave::ResultComparator do
   end
 
   # One-column float8 results, one value each.
-  def floats(expected, actual, type: FLOAT8)
+  def floats(expected, actual, type: float8)
     compare(result([type], [[expected]]), result([type], [[actual]]), mode: :ordered)
   end
 
@@ -33,20 +34,20 @@ RSpec.describe Quaack::Enclave::ResultComparator do
 
   describe "columns" do
     it "is a column_count mismatch when the column counts differ" do
-      verdict = compare(result([INT4], [["1"]]), result([INT4, INT4], [%w[1 2]]))
+      verdict = compare(result([int4], [["1"]]), result([int4, int4], [%w[1 2]]))
 
       expect(verdict_fields(verdict)).to eq(match: false, mode: :multiset, rule: :column_count,
                                             expected_rows: 1, actual_rows: 1, row: nil, column: nil)
     end
 
     it "is a column_types mismatch at the first column whose type differs, even int4 against int8" do
-      verdict = compare(result([TEXT, INT4, INT4], [%w[a 1 1]]), result([TEXT, INT8, TEXT], [%w[a 1 1]]))
+      verdict = compare(result([text, int4, int4], [%w[a 1 1]]), result([text, int8, text], [%w[a 1 1]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :column_types, column: 1)
     end
 
     it "ignores column names" do
-      verdict = compare(result([INT4], [["1"]], columns: ["id"]), result([INT4], [["1"]], columns: ["other"]))
+      verdict = compare(result([int4], [["1"]], columns: ["id"]), result([int4], [["1"]], columns: ["other"]))
 
       expect(verdict.match?).to be(true)
     end
@@ -54,78 +55,78 @@ RSpec.describe Quaack::Enclave::ResultComparator do
 
   describe "multiset mode" do
     it "matches the same rows in a different order" do
-      verdict = compare(result([INT4, TEXT], [%w[1 a], %w[2 b], %w[3 c]]),
-                        result([INT4, TEXT], [%w[3 c], %w[1 a], %w[2 b]]))
+      verdict = compare(result([int4, text], [%w[1 a], %w[2 b], %w[3 c]]),
+                        result([int4, text], [%w[3 c], %w[1 a], %w[2 b]]))
 
       expect(verdict_fields(verdict)).to eq(match: true, mode: :multiset, rule: nil,
                                             expected_rows: 3, actual_rows: 3, row: nil, column: nil)
     end
 
     it "is a row_count mismatch when the counts differ" do
-      verdict = compare(result([INT4], [["1"], ["2"]]), result([INT4], [["1"]]))
+      verdict = compare(result([int4], [["1"], ["2"]]), result([int4], [["1"]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :row_count, expected_rows: 2, actual_rows: 1)
     end
 
     it "counts duplicates, so the same rows with different multiplicities don't match" do
-      verdict = compare(result([INT4], [["1"], ["1"], ["2"]]), result([INT4], [["1"], ["2"], ["2"]]))
+      verdict = compare(result([int4], [["1"], ["1"], ["2"]]), result([int4], [["1"], ["2"], ["2"]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :multiset, row: 2)
     end
 
     it "is a multiset mismatch at the first candidate row with no partner" do
-      verdict = compare(result([INT4, TEXT], [%w[1 a], %w[2 b]]), result([INT4, TEXT], [%w[2 b], %w[1 z]]))
+      verdict = compare(result([int4, text], [%w[1 a], %w[2 b]]), result([int4, text], [%w[2 b], %w[1 z]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :multiset, row: 1, column: nil)
     end
 
     it "matches floats within tolerance in a different order" do
-      verdict = compare(result([FLOAT8], [["1"], ["2"]]), result([FLOAT8], [["2.0000000001"], ["1.0000000001"]]))
+      verdict = compare(result([float8], [["1"], ["2"]]), result([float8], [["2.0000000001"], ["1.0000000001"]]))
 
       expect(verdict.match?).to be(true)
     end
 
     it "doesn't match floats outside tolerance" do
-      verdict = compare(result([FLOAT8], [["1"], ["2"]]), result([FLOAT8], [["2.00001"], ["1"]]))
+      verdict = compare(result([float8], [["1"], ["2"]]), result([float8], [["2.00001"], ["1"]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :multiset, row: 0)
     end
 
     it "matches floats on both sides of zero that are within the absolute tolerance" do
-      verdict = compare(result([FLOAT8], [["1e-13"], ["5"]]), result([FLOAT8], [["5"], ["-1e-13"]]))
+      verdict = compare(result([float8], [["1e-13"], ["5"]]), result([float8], [["5"], ["-1e-13"]]))
 
       expect(verdict.match?).to be(true)
     end
 
     it "matches a chain of floats that are each within tolerance of their partner" do
-      verdict = compare(result([FLOAT8], [["1"], ["1.0000000009"]]),
-                        result([FLOAT8], [["1.0000000018"], ["1.0000000009"]]))
+      verdict = compare(result([float8], [["1"], ["1.0000000009"]]),
+                        result([float8], [["1.0000000018"], ["1.0000000009"]]))
 
       expect(verdict.match?).to be(true)
     end
 
     it "matches empty results" do
-      expect(compare(result([INT4], []), result([INT4], [])).match?).to be(true)
+      expect(compare(result([int4], []), result([int4], [])).match?).to be(true)
     end
   end
 
   describe "ordered mode" do
     it "matches the same rows in the same order" do
-      verdict = compare(result([INT4], [["1"], ["2"]]), result([INT4], [["1"], ["2"]]), mode: :ordered)
+      verdict = compare(result([int4], [["1"], ["2"]]), result([int4], [["1"], ["2"]]), mode: :ordered)
 
       expect(verdict_fields(verdict)).to eq(match: true, mode: :ordered, rule: nil,
                                             expected_rows: 2, actual_rows: 2, row: nil, column: nil)
     end
 
     it "is a value mismatch at the first differing row and column when the order differs" do
-      verdict = compare(result([TEXT, INT4], [%w[a 1], %w[a 2]]), result([TEXT, INT4], [%w[a 2], %w[a 1]]),
+      verdict = compare(result([text, int4], [%w[a 1], %w[a 2]]), result([text, int4], [%w[a 2], %w[a 1]]),
                         mode: :ordered)
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :value, row: 0, column: 1)
     end
 
     it "is a row_count mismatch when the counts differ" do
-      verdict = compare(result([INT4], [["1"]]), result([INT4], [["1"], ["2"]]), mode: :ordered)
+      verdict = compare(result([int4], [["1"]]), result([int4], [["1"], ["2"]]), mode: :ordered)
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :row_count, expected_rows: 1, actual_rows: 2)
     end
@@ -133,8 +134,8 @@ RSpec.describe Quaack::Enclave::ResultComparator do
 
   describe "with_ties mode" do
     it "compares as a multiset" do
-      match = compare(result([INT4], [["1"], ["2"]]), result([INT4], [["2"], ["1"]]), mode: :with_ties)
-      mismatch = compare(result([INT4], [["1"], ["2"]]), result([INT4], [["2"], ["3"]]), mode: :with_ties)
+      match = compare(result([int4], [["1"], ["2"]]), result([int4], [["2"], ["1"]]), mode: :with_ties)
+      mismatch = compare(result([int4], [["1"], ["2"]]), result([int4], [["2"], ["3"]]), mode: :with_ties)
 
       expect([match.match?, match.mode]).to eq([true, :with_ties])
       expect(verdict_fields(mismatch)).to include(match: false, rule: :multiset, row: 1)
@@ -142,13 +143,13 @@ RSpec.describe Quaack::Enclave::ResultComparator do
   end
 
   describe "subset mode" do
-    let(:full) { result([INT4, TEXT], [%w[1 a], %w[2 b], %w[3 c], %w[2 b]]) }
+    let(:full) { result([int4, text], [%w[1 a], %w[2 b], %w[3 c], %w[2 b]]) }
 
     def subset(actual, expected_count: 2) = compare(full, actual, mode: :subset, expected_count:)
 
     it "matches any sub-multiset of the full result with the expected count" do
-      first = subset(result([INT4, TEXT], [%w[1 a], %w[2 b]]))
-      other = subset(result([INT4, TEXT], [%w[3 c], %w[2 b]]))
+      first = subset(result([int4, text], [%w[1 a], %w[2 b]]))
+      other = subset(result([int4, text], [%w[3 c], %w[2 b]]))
 
       expect(verdict_fields(first)).to eq(match: true, mode: :subset, rule: nil,
                                           expected_rows: 2, actual_rows: 2, row: nil, column: nil)
@@ -156,31 +157,31 @@ RSpec.describe Quaack::Enclave::ResultComparator do
     end
 
     it "matches a row as many times as the full result has it" do
-      expect(subset(result([INT4, TEXT], [%w[2 b], %w[2 b]])).match?).to be(true)
+      expect(subset(result([int4, text], [%w[2 b], %w[2 b]])).match?).to be(true)
     end
 
     it "is a subset mismatch when a row appears more often than in the full result" do
-      verdict = subset(result([INT4, TEXT], [%w[1 a], %w[1 a]]))
+      verdict = subset(result([int4, text], [%w[1 a], %w[1 a]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :subset, row: 1)
     end
 
     it "is a subset mismatch at a candidate row that isn't in the full result" do
-      verdict = subset(result([INT4, TEXT], [%w[1 a], %w[4 d]]))
+      verdict = subset(result([int4, text], [%w[1 a], %w[4 d]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :subset, row: 1)
     end
 
     it "is a row_count mismatch when the candidate returns other than the expected count" do
-      verdict = subset(result([INT4, TEXT], [%w[1 a]]))
+      verdict = subset(result([int4, text], [%w[1 a]]))
 
       expect(verdict_fields(verdict)).to include(match: false, rule: :row_count, expected_rows: 2, actual_rows: 1)
     end
 
     it "uses the float tolerance" do
-      full = result([FLOAT8], [["1"], ["2"], ["3"]])
-      inside = compare(full, result([FLOAT8], [["3.0000000001"]]), mode: :subset, expected_count: 1)
-      outside = compare(full, result([FLOAT8], [["3.0001"]]), mode: :subset, expected_count: 1)
+      full = result([float8], [["1"], ["2"], ["3"]])
+      inside = compare(full, result([float8], [["3.0000000001"]]), mode: :subset, expected_count: 1)
+      outside = compare(full, result([float8], [["3.0001"]]), mode: :subset, expected_count: 1)
 
       expect([inside.match?, outside.rule]).to eq([true, :subset])
     end
@@ -192,47 +193,48 @@ RSpec.describe Quaack::Enclave::ResultComparator do
 
   describe "values" do
     it "treats NULL as equal to NULL and unequal to anything else" do
-      nulls = compare(result([TEXT], [[nil]]), result([TEXT], [[nil]]), mode: :ordered)
-      empty = compare(result([TEXT], [[nil]]), result([TEXT], [[""]]), mode: :ordered)
-      float = compare(result([FLOAT8], [[nil]]), result([FLOAT8], [["0"]]), mode: :ordered)
+      nulls = compare(result([text], [[nil]]), result([text], [[nil]]), mode: :ordered)
+      empty = compare(result([text], [[nil]]), result([text], [[""]]), mode: :ordered)
+      float = compare(result([float8], [[nil]]), result([float8], [["0"]]), mode: :ordered)
 
       expect([nulls.match?, empty.rule, float.rule]).to eq([true, :value, :value])
     end
 
     it "compares text exactly, even when it looks like a float" do
-      verdict = compare(result([TEXT], [["1"]]), result([TEXT], [["1.0000000001"]]), mode: :ordered)
+      verdict = compare(result([text], [["1"]]), result([text], [["1.0000000001"]]), mode: :ordered)
 
       expect(verdict.rule).to eq(:value)
     end
 
     it "compares integers exactly" do
-      verdict = compare(result([INT8], [["1000000000000"]]), result([INT8], [["1000000000001"]]), mode: :ordered)
+      verdict = compare(result([int8], [["1000000000000"]]), result([int8], [["1000000000001"]]), mode: :ordered)
 
       expect(verdict.rule).to eq(:value)
     end
 
     describe "numeric" do
-      def numerics(expected, actual)
-        compare(result([NUMERIC], [[expected]]), result([NUMERIC], [[actual]]), mode: :ordered).match?
+      def numerics_equal?(expected, actual)
+        compare(result([numeric], [[expected]]), result([numeric], [[actual]]), mode: :ordered).match?
       end
 
       it "compares by value, so the printed scale doesn't matter" do
-        expect([numerics("1.0", "1.00"), numerics("1", "1.000"), numerics("-0.00", "0"), numerics("0.50", "0.5")])
-          .to eq([true, true, true, true])
+        pairs = [%w[1.0 1.00], %w[1 1.000], %w[-0.00 0], %w[0.50 0.5]]
+
+        expect(pairs.map { |pair| numerics_equal?(*pair) }).to eq([true, true, true, true])
       end
 
       it "compares exactly, with no tolerance" do
-        expect([numerics("1.0", "1.0000000000001"), numerics("1", "10"), numerics("100", "1"),
-                numerics("-1", "1"), numerics("0.1", "0.01")]).to eq([false, false, false, false, false])
+        expect([numerics_equal?("1.0", "1.0000000000001"), numerics_equal?("1", "10"), numerics_equal?("100", "1"),
+                numerics_equal?("-1", "1"), numerics_equal?("0.1", "0.01")]).to eq([false, false, false, false, false])
       end
 
       it "treats NaN and the infinities as equal only to themselves" do
-        expect([numerics("NaN", "NaN"), numerics("Infinity", "Infinity"), numerics("NaN", "0"),
-                numerics("Infinity", "-Infinity")]).to eq([true, true, false, false])
+        expect([numerics_equal?("NaN", "NaN"), numerics_equal?("Infinity", "Infinity"), numerics_equal?("NaN", "0"),
+                numerics_equal?("Infinity", "-Infinity")]).to eq([true, true, false, false])
       end
 
       it "matches by value in a multiset too" do
-        verdict = compare(result([NUMERIC], [["1.10"], ["2"]]), result([NUMERIC], [["2.000"], ["1.1"]]))
+        verdict = compare(result([numeric], [["1.10"], ["2"]]), result([numeric], [["2.000"], ["1.1"]]))
 
         expect(verdict.match?).to be(true)
       end
@@ -264,7 +266,7 @@ RSpec.describe Quaack::Enclave::ResultComparator do
       end
 
       it "applies to float4 too" do
-        expect([floats("1", "1.0000000009", type: FLOAT4).match?, floats("1", "1.1", type: FLOAT4).match?])
+        expect([floats("1", "1.0000000009", type: float4).match?, floats("1", "1.1", type: float4).match?])
           .to eq([true, false])
       end
 
@@ -275,7 +277,7 @@ RSpec.describe Quaack::Enclave::ResultComparator do
   end
 
   describe "trust boundary" do
-    let(:types) { [TEXT, FLOAT8, NUMERIC] }
+    let(:types) { [text, float8, numeric] }
     let(:expected) { result(types, [[sentinel, "1", "1"], [sentinel, "2", "2"]]) }
 
     let(:mismatches) do
@@ -285,8 +287,8 @@ RSpec.describe Quaack::Enclave::ResultComparator do
         compare(expected, other, mode: :ordered),
         compare(expected, other, mode: :subset, expected_count: 2),
         compare(expected, result(types, [[sentinel, "1", "1"]]), mode: :ordered),
-        compare(expected, result([TEXT], [[sentinel]])),
-        compare(expected, result([TEXT, TEXT, NUMERIC], [[sentinel, sentinel, "1"]]))
+        compare(expected, result([text], [[sentinel]])),
+        compare(expected, result([text, text, numeric], [[sentinel, sentinel, "1"]]))
       ]
     end
 
@@ -295,7 +297,7 @@ RSpec.describe Quaack::Enclave::ResultComparator do
       mismatches.each do |verdict|
         expect(verdict.inspect).not_to include(sentinel)
         expect(verdict.to_h.to_s).not_to include(sentinel)
-        expect(verdict.to_h.values).to all(satisfy { |v| [true, false, nil].include?(v) || v.is_a?(Symbol) || v.is_a?(Integer) })
+        expect(verdict.to_h.values.map(&:class).uniq - [TrueClass, FalseClass, NilClass, Symbol, Integer]).to eq([])
       end
     end
 

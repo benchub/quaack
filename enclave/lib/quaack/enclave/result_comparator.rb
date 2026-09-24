@@ -45,10 +45,11 @@ module Quaack
     # takes the first row left in its bucket that it equals within
     # tolerance. A match is claimed only when every candidate row found its
     # own partner this way, so a match is always real. The edge case goes
-    # the other way: two floats within tolerance that round to different
-    # keys, such as 1.23456785e0 and 1.2345678500001e0, land in different
-    # buckets, and the comparison says mismatch. With no float columns the
-    # key is exact, and that can't happen.
+    # the other way: two floats within tolerance of each other but on
+    # either side of a rounding boundary land in different buckets, and
+    # the comparison says mismatch. So does a greedy pick in a bucket that
+    # leaves a later row without the one partner it had. With no float
+    # columns the key is exact, and neither can happen.
     #
     # Trust boundary. A Verdict holds only a boolean, symbols, counts, and
     # positions, never a row value, and it checks that on creation. Errors
@@ -77,23 +78,35 @@ module Quaack
       # expected_rows is the expected count, not the full result's size. row
       # and column are zero-based positions, or nil.
       Verdict = Data.define(:match, :mode, :rule, :expected_rows, :actual_rows, :row, :column) do
-        def initialize(match:, mode:, rule:, expected_rows:, actual_rows:, row:, column:)
-          raise ArgumentError, "a verdict's match must be true or false" unless [true, false].include?(match)
-          raise ArgumentError, "a verdict's mode must be one of MODES" unless MODES.include?(mode)
-          raise ArgumentError, "a verdict's rule must be one of RULES, or nil" unless rule.nil? || RULES.include?(rule)
-          unless [expected_rows, actual_rows, row, column].all? { |n| n.nil? || (n.is_a?(Integer) && !n.negative?) }
-            raise ArgumentError, "a verdict's counts and positions must be non-negative Integers or nil"
-          end
+        def initialize(**fields)
+          problem, = VERDICT_CHECKS.find { |_, ok| !ok.call(fields) }
+          raise ArgumentError, problem if problem
 
           super
         end
 
         def match? = match
 
-        def self.for(mode, rule = nil, expected_rows: nil, actual_rows: nil, row: nil, column: nil)
-          new(match: rule.nil?, mode:, rule:, expected_rows:, actual_rows:, row:, column:)
+        # A verdict from a mode and a mismatch rule, or no rule for a match.
+        # counts and positions are expected_rows, actual_rows, row, and
+        # column, each nil when not given.
+        def self.for(mode, rule = nil, **counts_and_positions)
+          new(match: rule.nil?, mode:, rule:, expected_rows: nil, actual_rows: nil, row: nil, column: nil,
+              **counts_and_positions)
         end
       end
+
+      # Each Verdict check in order, with the message for one that fails it.
+      # The messages never name a value.
+      VERDICT_CHECKS = {
+        "a verdict's match must be true or false" => ->(f) { [true, false].include?(f[:match]) },
+        "a verdict's mode must be one of MODES" => ->(f) { MODES.include?(f[:mode]) },
+        "a verdict's rule must be one of RULES, or nil" => ->(f) { f[:rule].nil? || RULES.include?(f[:rule]) },
+        "a verdict's counts and positions must be non-negative Integers or nil" => lambda do |f|
+          f.values_at(:expected_rows, :actual_rows, :row, :column)
+           .all? { |n| n.nil? || (n.is_a?(Integer) && !n.negative?) }
+        end
+      }.freeze
 
       module_function
 
@@ -107,8 +120,9 @@ module Quaack
       end
 
       def check_arguments(expected, actual, mode, expected_count)
-        result = ArenaRunner::Result
-        raise ArgumentError, "compare takes two ArenaRunner::Results" unless expected.is_a?(result) && actual.is_a?(result)
+        unless [expected, actual].all?(ArenaRunner::Result)
+          raise ArgumentError, "compare takes two ArenaRunner::Results"
+        end
         raise ArgumentError, "mode must be one of #{MODES.join(", ")}" unless MODES.include?(mode)
         return unless mode == :subset
         return if expected_count.is_a?(Integer) && !expected_count.negative?
@@ -185,10 +199,13 @@ module Quaack
         def parse_float(text) = SPECIAL_FLOATS.fetch(text) { Float(text, exception: false) || text }
 
         def floats_equal?(left, right)
-          return left == right unless left.is_a?(Float) && right.is_a?(Float)
+          return left == right unless [left, right].all?(Float)
           return left.nan? && right.nan? if left.nan? || right.nan?
-          return left == right if left.infinite? || right.infinite?
 
+          [left, right].all?(&:finite?) ? within_tolerance?(left, right) : left == right
+        end
+
+        def within_tolerance?(left, right)
           (left - right).abs <= [RELATIVE_TOLERANCE * [left.abs, right.abs].max, ABSOLUTE_TOLERANCE].max
         end
 
