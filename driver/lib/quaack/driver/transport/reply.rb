@@ -4,6 +4,7 @@ require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require_relative "../enclave_error"
+require_relative "lexical"
 
 module Quaack
   module Driver
@@ -35,6 +36,15 @@ module Quaack
       # than dropping what it doesn't know and going on with the rest, since
       # a message missing from a run's output can change what the run means.
       # The error names none of the fields or values it refused.
+      #
+      # It must read a line the same way whichever json is loaded. The
+      # laptop may run the driver outside Bundler, with Ruby 3.4's default
+      # json (2.9.1), which reads comments, unknown escapes such as \q, and
+      # repeated keys that json 3 refuses. JSON.generate never writes any of
+      # those, or a number too big for a Float, which both read as Infinity.
+      # So a line that starts like a message, with {, and holds a comment or
+      # an unknown escape is refused, as is one with a Float that isn't
+      # finite, on either version.
       module Reply
         # The error line's fields, checked for the shapes the enclave's
         # ErrorFilter gives them. The driver can't load the enclave, so the
@@ -108,10 +118,12 @@ module Quaack
         # A line that isn't JSON still counts as the last line, so it's
         # returned as :skip rather than dropped.
         def line(line)
-          return :skip if line == :skip || !json?(line)
+          return :skip if line == :skip
+          return REFUSED if line.start_with?("{") && Lexical.problem?(line)
+          return :skip unless json?(line)
 
           object = strict(line)
-          object.instance_of?(Hash) ? object : REFUSED
+          object.instance_of?(Hash) && Lexical.finite?(object) ? object : REFUSED
         end
 
         # Whether line is JSON at all, whatever keys it repeats. json 3

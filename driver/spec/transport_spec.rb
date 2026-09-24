@@ -422,7 +422,7 @@ RSpec.describe Quaack::Driver::Transport do
   describe "reading the lines" do
     it "skips blank lines and lines that aren't JSON" do
       result = raw(<<~'RUBY').call("probe")
-        print %(\n  \n{"type":"version",\nnot json\n{"type":"version","version":"1"}\n\t\n{"type":"done"}\n\n \t\n)
+        print %(\n  \n{"type":"version",\nnot json\nnot json // or /* this */\n{"type":"version","version":"1"}\n\t\n{"type":"done"}\n\n \t\n)
       RUBY
 
       expect(result.messages).to eq([{ "type" => "version", "version" => "1" }])
@@ -534,22 +534,39 @@ RSpec.describe Quaack::Driver::Transport do
         rescue Quaack::Driver::EnclaveError => e
           e.rule
         end
-        puts JSON.generate(results)
+        puts JSON.generate(results, allow_nan: true)
         puts $LOADED_FEATURES.grep(%r{/json\.rb\z}).first
       RUBY
       cases = { %({"type":"version","version":"1","version":"2"}) => "unexpected_output",
                 %({"type":"burndown","stages":{"a":{"b":{"c":1,"c":2}}},"totals":{}}) => "unexpected_output",
                 %({"type":"version","version":"1"}) => [{ "type" => "version", "version" => "1" }],
-                %({"type":"version","vers) => [] }
-      out, err, status = Bundler.with_unbundled_env do
-        run_ruby("--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-I", File.join(REPO_ROOT, "protocol", "lib"),
-                 "-e", script, JSON.generate(cases.keys))
+                %({"type":"version","vers) => [],
+                # JSON.generate never writes a comment, an unknown escape, or
+                # a number too big for a Float, and the two versions read
+                # them differently, so they're refused on both.
+                %({"type":"version","version":"1" /* x */}) => "unexpected_output",
+                %({"type":"version","version":"1"} // x) => "unexpected_output",
+                %({"type":"version","version":"a\\q"}) => "unexpected_output",
+                %({"type":"version","version":"\\x41"}) => "unexpected_output",
+                %({"type":"version","version":1e999999}) => "unexpected_output",
+                %({"type":"column_stats","mcv_freqs":[0.5,[-1e999]]}) => "unexpected_output",
+                # A slash or comment marker inside a string is just text.
+                %({"type":"version","version":"a/b//c /* d */ \\" \\\\ \\/ \\u0041"}) =>
+                  [{ "type" => "version", "version" => %(a/b//c /* d */ " \\ / A) }],
+                # A line cut off inside an escape is still just cut off.
+                %({"type":"version","version":"a\\) => [] }
+      paths = ["-I", File.join(GEM_ROOT, "lib"), "-I", File.join(REPO_ROOT, "protocol", "lib")]
+      default = Bundler.with_unbundled_env do
+        run_ruby("--disable-gems", *paths, "-e", script, JSON.generate(cases.keys))
       end
+      bundled = run_ruby(*paths, "-e", script, JSON.generate(cases.keys))
 
-      expect(status).to be_success, "stderr was #{err}"
-      results, json = out.lines(chomp: true)
-      expect(File.realpath(json)).to start_with(File.realpath(RbConfig::CONFIG["rubylibdir"]))
-      expect(JSON.parse(results)).to eq(cases.values)
+      { default => true, bundled => false }.each do |(out, err, status), stdlib|
+        expect(status).to be_success, "stderr was #{err}"
+        results, json = out.lines(chomp: true)
+        expect(File.realpath(json).start_with?(File.realpath(RbConfig::CONFIG["rubylibdir"]))).to be(stdlib)
+        expect(JSON.parse(results, allow_nan: true)).to eq(cases.values), "under #{json}"
+      end
     end
 
     it "skips a line that isn't valid UTF-8, as it would a cut-off line" do

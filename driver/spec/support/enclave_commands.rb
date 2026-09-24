@@ -10,7 +10,12 @@ require "tmpdir"
 # Commands that run the enclave script in a child process, for the driver's
 # local transport. They run the repo's enclave/exe/quaacks with `ruby -I`,
 # the way enclave/spec/cli_spec.rb does, inside this bundle. The driver's
-# spec process never loads the enclave gem itself: only the children do.
+# specs never require the enclave's code themselves: only the children run
+# it. That's not a clean separation, though. The root Gemfile's
+# `gemspec path: "enclave"` makes Bundler load the enclave's gemspec, which
+# requires enclave/lib/quaack/enclave/version.rb, and put enclave/lib on
+# $LOAD_PATH, in this process too. What the driver gem really loads is
+# checked by spec/runtime_boundary_spec.rb, which installs it outside Bundler.
 module EnclaveCommands
   ENCLAVE = File.join(REPO_ROOT, "enclave")
   RUBY = [RbConfig.ruby, "-I", File.join(ENCLAVE, "lib")].freeze
@@ -20,7 +25,7 @@ module EnclaveCommands
   # The real `quaacks`, as a command for Transport::Local.
   def quaacks = [*RUBY, File.join(ENCLAVE, "exe", "quaacks")]
 
-  # The enclave's VERSION, read in a child so this process doesn't load it.
+  # The enclave's VERSION, as a fresh child reads it from enclave/lib.
   def enclave_version
     out, err, status = Open3.capture3(*RUBY, "-e", 'require "quaack/enclave/version"; print Quaack::Enclave::VERSION')
     raise "couldn't read the enclave version: #{err}" unless status.success?
