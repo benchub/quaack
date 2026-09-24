@@ -4,6 +4,9 @@ require "open3"
 require "rbconfig"
 
 GEM_ROOT = File.expand_path("..", __dir__)
+REPO_ROOT = File.expand_path("..", GEM_ROOT)
+
+require_relative "support/enclave_commands"
 
 # Runs Ruby in a child process that inherits this bundle. Specs use it so
 # that what they check (running an executable) happens in a clean process,
