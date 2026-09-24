@@ -149,6 +149,16 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         .to rejected("bad_placeholder", "bad_placeholder: $1 isn't allowed, since the original has no placeholders")
     end
 
+    {
+      "the select list" => ["SELECT $1, $9 FROM orders", 9],
+      "a subquery" => ["SELECT $2 FROM orders WHERE id IN (SELECT id FROM orders WHERE id = $3 OR id = $5)", 5]
+    }.each do |where, (sql, bad)|
+      it "finds a bad placeholder after good ones, in #{where}" do
+        expect { check(sql) }
+          .to rejected("bad_placeholder", "bad_placeholder: $#{bad} isn't one of the original's $1 to $3")
+      end
+    end
+
     it "finds a placeholder anywhere in the candidate" do
       expect { check("WITH c AS (SELECT id FROM orders WHERE id IN (SELECT $9)) SELECT id FROM c") }
         .to rejected("bad_placeholder", "bad_placeholder: $9 isn't one of the original's $1 to $3")
@@ -185,6 +195,19 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(check("SELECT id FROM public.orders", original: both).sql).to eq("SELECT id FROM public.orders")
       expect { check("SELECT id FROM sales.orders", original: both) }
         .to rejected("not_a_table", "not_a_table: sales.orders has relkind v, not r")
+    end
+
+    {
+      "a join" => "SELECT o.id FROM public.orders o JOIN public.order_view v ON v.id = o.id",
+      "a subquery" => "SELECT id FROM orders WHERE id IN (SELECT id FROM order_view)"
+    }.each do |where, sql|
+      it "refuses a view that comes after a table, in #{where}" do
+        mixed = described_class::Original.new(
+          relations: [table_name("public", "orders"), table_name("public", "order_view")], placeholders: 0
+        )
+        expect { check(sql, original: mixed) }
+          .to rejected("not_a_table", "not_a_table: public.order_view has relkind v, not r")
+      end
     end
 
     it "refuses a relation the original names that doesn't exist" do
