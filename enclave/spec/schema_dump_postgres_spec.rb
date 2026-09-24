@@ -1,0 +1,346 @@
+# frozen_string_literal: true
+
+require "tmpdir"
+require "quaack/enclave/schema_dump"
+require "quaack/enclave/store"
+require "quaack/enclave/error_filter"
+
+# Every example runs real pg_dump against real Postgres. The dev Macs have
+# no pg_dump 18, so pg_dump runs inside the harness's own container, through
+# SchemaDump's command prefix, and connects over the container's Unix
+# socket, the way the jump server's pg_dump uses the operator's own libpq
+# setup.
+#
+# The sample schema (public.customers and public.orders, orders -> customers)
+# gets more tables in more schemas. Arrows are FKs, from child to parent:
+#
+#   sales.items -> public.orders -> public.customers   (cross-schema, two levels)
+#   sales.items -> sales.skus -> audit.vendors          (into a schema the query doesn't touch)
+#   sales.items -> sales.warehouses                     (partitioned, with two partitions,
+#                                                        one of them partitioned again)
+#   sales.warehouse_east -> sales.zones                 (an FK of a partition's own)
+#   sales.a -> sales.b -> sales.a                       (a cycle)
+#   sales.b -> sales.regions -> sales.regions           (a self-reference)
+#   sales.item_notes -> sales.items                     (a child, not a parent)
+#
+# plus sales.unrelated, and other.lonely in a schema nothing touches.
+RSpec.describe Quaack::Enclave::SchemaDump do
+  let(:db) { test_database }
+  let(:conn) { db.connection }
+  let(:conninfo) { { dbname: db.name, user: TestPostgres::USER } }
+  let(:pg_dump) { ["docker", "exec", TestPostgres.server.container_id, "pg_dump"] }
+  let(:store) { Quaack::Enclave::Store.create(base: @base) }
+
+  around do |example|
+    Dir.mktmpdir("quaack-schema-dump") do |dir|
+      @base = File.join(dir, "runs")
+      example.run
+    end
+  end
+
+  def table(schema, name) = Quaack::Enclave::TableName.new(schema:, name:)
+
+  def run(relations, conninfo: self.conninfo, pg_dump: self.pg_dump)
+    described_class.run(store:, relations:, connection: conn, conninfo:, pg_dump:)
+  end
+
+  # The tables a dump creates, as "schema.name" the way pg_dump writes them.
+  def created_tables(ddl) = ddl.scan(/^CREATE TABLE (.+) \($/).flatten.sort
+
+  before do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA sales;
+      CREATE SCHEMA audit;
+      CREATE SCHEMA other;
+      CREATE TABLE audit.vendors (id int PRIMARY KEY);
+      CREATE TABLE sales.skus (id int PRIMARY KEY, vendor_id int REFERENCES audit.vendors);
+      CREATE TABLE sales.regions (id int PRIMARY KEY, parent_id int REFERENCES sales.regions);
+      CREATE TABLE sales.zones (id int PRIMARY KEY);
+      CREATE TABLE sales.warehouses (id int PRIMARY KEY, zone_id int) PARTITION BY RANGE (id);
+      CREATE TABLE sales.warehouse_east PARTITION OF sales.warehouses FOR VALUES FROM (0) TO (100);
+      ALTER TABLE sales.warehouse_east ADD FOREIGN KEY (zone_id) REFERENCES sales.zones;
+      CREATE TABLE sales.warehouse_west PARTITION OF sales.warehouses FOR VALUES FROM (100) TO (200)
+        PARTITION BY RANGE (id);
+      CREATE TABLE sales.warehouse_west_low PARTITION OF sales.warehouse_west FOR VALUES FROM (100) TO (150);
+      CREATE TABLE sales.items (
+        id int PRIMARY KEY,
+        order_id bigint REFERENCES public.orders,
+        sku_id int REFERENCES sales.skus,
+        warehouse_id int REFERENCES sales.warehouses
+      );
+      CREATE TABLE sales.item_notes (id int, item_id int REFERENCES sales.items);
+      CREATE TABLE sales.a (id int PRIMARY KEY, b_id int);
+      CREATE TABLE sales.b (id int PRIMARY KEY, a_id int REFERENCES sales.a, region_id int REFERENCES sales.regions);
+      ALTER TABLE sales.a ADD FOREIGN KEY (b_id) REFERENCES sales.b;
+      CREATE TABLE sales.unrelated (id int);
+      CREATE TABLE other.lonely (id int);
+    SQL
+  end
+
+  let(:subset) do
+    %w[public.customers public.orders audit.vendors sales.items sales.skus sales.warehouses sales.warehouse_east
+       sales.warehouse_west sales.warehouse_west_low sales.zones sales.regions sales.a sales.b]
+  end
+
+  describe "the subset" do
+    it "is the query's tables and their whole FK ancestor chain, sorted, once each" do
+      result = run([table("sales", "items"), table("sales", "a")])
+
+      expect(result).to be_a(described_class::Result)
+      expect(result.tables.map(&:to_s)).to eq(subset.sort)
+    end
+
+    it "is stored as the pg_dump of just those tables, schema only, with no owners or privileges" do
+      conn.exec("GRANT SELECT ON sales.items TO PUBLIC")
+      run([table("sales", "items"), table("sales", "a")])
+
+      stored = store.read("schema_subset")
+      expect(stored.keys).to eq(%w[tables ddl])
+      expect(stored["tables"]).to eq(subset.sort.map { it.split(".") })
+      expect(created_tables(stored["ddl"])).to eq(subset.sort)
+      expect(stored["ddl"])
+        .to include("ADD CONSTRAINT items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)")
+      expect(stored["ddl"]).not_to match(/OWNER TO|GRANT|^COPY |INSERT INTO/)
+    end
+
+    # pg_dump with no --table dumps every table, so it isn't run.
+    it "is empty for a query that uses no tables" do
+      result = run([])
+
+      expect(result.tables).to eq([])
+      expect(store.read("schema_subset")).to eq({ "tables" => [], "ddl" => "" })
+      expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[public.customers public.orders])
+    end
+
+    it "refuses a relation the catalog doesn't have, and stores nothing" do
+      expect { run([table("sales", "items"), table("sales", "gone")]) }
+        .to refused("unknown_relation", "sales.gone doesn't exist")
+      nothing_stored
+    end
+  end
+
+  describe "the full dump" do
+    it "is stored as the schema-only pg_dump of every schema the query touches, plus public" do
+      conn.exec("GRANT SELECT ON sales.items TO PUBLIC")
+      result = run([table("sales", "items")])
+
+      expect(result.namespaces).to eq(%w[public sales])
+      stored = store.read("schema_dump")
+      expect(stored.keys).to eq(%w[namespaces ddl])
+      expect(stored["namespaces"]).to eq(%w[public sales])
+      expect(created_tables(stored["ddl"])).to eq(
+        %w[public.customers public.orders sales.a sales.b sales.item_notes sales.items sales.regions sales.skus
+           sales.unrelated sales.warehouse_east sales.warehouse_west sales.warehouse_west_low sales.warehouses
+           sales.zones]
+      )
+      expect(stored["ddl"]).not_to match(/OWNER TO|GRANT|^COPY |INSERT INTO/)
+    end
+
+    it "includes public even when the query doesn't touch it" do
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[other public])
+      expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely public.customers public.orders])
+    end
+  end
+
+  # pg_dump reads --schema and --table as patterns: unquoted, it folds case
+  # and takes * and ? as wildcards. Each name goes in quoted, so it matches
+  # only itself.
+  describe "names pg_dump would read as patterns" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA "Odd";
+        CREATE SCHEMA odd;
+        CREATE TABLE "Odd"."Wild*" (id int);
+        CREATE TABLE "Odd"."wildcard" (id int);
+        CREATE TABLE "Odd"."wild" (id int);
+        CREATE TABLE "Odd"."say ""hi""" (id int);
+        CREATE TABLE odd.wild (id int);
+      SQL
+    end
+
+    it "dumps only the tables and schemas named, exactly" do
+      result = run([table("Odd", "Wild*"), table("Odd", 'say "hi"')])
+
+      expect(result.namespaces).to eq(%w[Odd public])
+      expect(created_tables(store.read("schema_subset")["ddl"])).to eq(['"Odd"."Wild*"', '"Odd"."say ""hi"""'])
+      expect(created_tables(store.read("schema_dump")["ddl"])).to eq(
+        ['"Odd"."Wild*"', '"Odd"."say ""hi"""', '"Odd".wild', '"Odd".wildcard', "public.customers", "public.orders"]
+      )
+    end
+  end
+
+  # A schema-only dump has no rows in it. The tables in both dumps get
+  # sentinel rows, most common values, and histogram bounds, and none of
+  # them may turn up in anything stored or returned.
+  describe "the data in the tables" do
+    let(:sentinels) { LeakCheck::Sentinels.new }
+
+    before do
+      LeakCheck::Fixture.plant(db, sentinels)
+      conn.exec(<<~SQL)
+        ALTER TABLE sales.unrelated ADD COLUMN note text;
+        INSERT INTO sales.unrelated SELECT i, '#{sentinels.text}' FROM generate_series(1, 100) AS i;
+        INSERT INTO audit.vendors VALUES (#{sentinels.number});
+        INSERT INTO sales.skus VALUES (1, #{sentinels.number});
+        ANALYZE;
+      SQL
+    end
+
+    it "never reaches the stored dumps, any other stored file, or the result" do
+      result = run([table("sales", "items"), table("sales", "a")])
+
+      everything = [pg_dump, "--dbname=dbname=#{db.name} user=postgres"].flatten
+      data, = Open3.capture3(*everything)
+      expect(data).to include(sentinels.text, sentinels.word, sentinels.number.to_s)
+      stored = Dir.children(store.path).sort
+      expect(stored).to eq(%w[schema_dump.json schema_subset.json])
+      files = stored.map { File.read(File.join(store.path, it)) }.join("\n")
+      expect_no_leaks(sentinels, stdout: files, objects: { result: })
+    end
+  end
+
+  # The store keeps JSON, which must be UTF-8, whatever the production
+  # database's encoding is, and whatever the jump server's locale is.
+  describe "a database that isn't UTF-8" do
+    let(:latin1) { "quaack_latin1_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+    let(:latin1_conn) { PG.connect(**db.connection_params, dbname: latin1) }
+
+    before do
+      admin.exec("CREATE DATABASE #{latin1} ENCODING 'LATIN1' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0")
+      latin1_conn.exec("CREATE TABLE public.menu (id int)")
+      latin1_conn.exec("COMMENT ON TABLE public.menu IS 'café'")
+    end
+
+    after do
+      latin1_conn.close
+      admin.exec("DROP DATABASE IF EXISTS #{latin1} WITH (FORCE)")
+    end
+
+    it "is dumped as UTF-8, even when Ruby's default encoding isn't" do
+      external = Encoding.default_external
+      Encoding.default_external = Encoding::US_ASCII
+      described_class.run(store:, relations: [table("public", "menu")], connection: latin1_conn,
+                          conninfo: { dbname: latin1, user: TestPostgres::USER }, pg_dump:)
+      Encoding.default_external = external
+
+      %w[schema_dump schema_subset].each do |entry|
+        expect(store.read(entry)["ddl"]).to include("COMMENT ON TABLE public.menu IS 'café';")
+      end
+    ensure
+      Encoding.default_external = external
+    end
+  end
+
+  describe "the connection parameters" do
+    it "reach pg_dump as one libpq connection string, whatever their values hold" do
+      odd = "quaack_it's \\odd_#{Process.pid}"
+      admin = TestPostgres.server.admin
+      admin.exec("CREATE DATABASE #{admin.quote_ident(odd)}")
+      PG.connect(**db.connection_params, dbname: odd).tap { it.exec("CREATE TABLE public.here (id int)") }.close
+
+      ddl = described_class.dump(pg_dump, { dbname: odd, user: TestPostgres::USER }, [%(--table="public"."here")])
+
+      expect(created_tables(ddl)).to eq(["public.here"])
+    ensure
+      admin&.exec("DROP DATABASE IF EXISTS #{admin.quote_ident(odd)} WITH (FORCE)")
+    end
+
+    it "can't hold a password, since pg_dump's command line is visible to others on the jump server" do
+      sentinels = LeakCheck::Sentinels.new
+      error = nil
+      expect { run([table("sales", "items")], conninfo: { **conninfo, password: sentinels.text }) }
+        .to(refused("password_in_conninfo", "pg_dump gets its password from the operator's own libpq setup") do |e|
+          error = e
+        end)
+      nothing_stored
+      expect(error).to be_a(described_class::Error)
+      expect_no_leaks(sentinels, objects: { error: })
+    end
+  end
+
+  # The Error for rule, with message, and no cause. The block, if any,
+  # gets the error too, so the example can scan it.
+  def refused(rule, message, &also)
+    raise_error(described_class::Error, "#{rule}: #{message}") do |error|
+      expect([error.rule, error.cause]).to eq([rule, nil])
+      also&.call(error)
+    end
+  end
+
+  def nothing_stored = expect(Dir.children(store.path)).to eq([])
+
+  # A stand-in pg_dump, at the edge: a script that prints version for
+  # --version, as pg_dump does, and fails for anything else.
+  def fake_pg_dump(dir, version)
+    path = File.join(dir, "pg_dump")
+    File.write(path, "#!/bin/sh\n[ \"$1\" = --version ] && echo '#{version}' && exit 0\nexit 1\n")
+    File.chmod(0o700, path)
+    [path]
+  end
+
+  describe "pg_dump itself" do
+    it "must be at least the server's major version, since pg_dump refuses an older one" do
+      Dir.mktmpdir do |dir|
+        expect { run([table("sales", "items")], pg_dump: fake_pg_dump(dir, "pg_dump (PostgreSQL) 17.6")) }
+          .to refused("pg_dump_too_old", "pg_dump is major version 17, older than the server's 18")
+      end
+      nothing_stored
+    end
+
+    it "is refused when it isn't there" do
+      expect { run([table("sales", "items")], pg_dump: ["/nonexistent/quaack/pg_dump"]) }
+        .to refused("pg_dump_missing", "pg_dump couldn't be run, or didn't say its version")
+      nothing_stored
+    end
+
+    it "is refused when it doesn't say its version the way pg_dump does" do
+      Dir.mktmpdir do |dir|
+        expect { run([table("sales", "items")], pg_dump: fake_pg_dump(dir, "something else 18.1")) }
+          .to refused("pg_dump_missing", "pg_dump couldn't be run, or didn't say its version")
+      end
+      nothing_stored
+    end
+  end
+
+  # pg_dump's stderr carries the server's messages, and names what it was
+  # asked for, so none of it goes into an error. Only its exit status does.
+  describe "a pg_dump that fails" do
+    let(:sentinels) { LeakCheck::Sentinels.new }
+
+    # What pg_dump itself says on stderr for argv, run straight, to show
+    # the sentinel was really there to leak.
+    def pg_dump_stderr(*argv)
+      _out, err, status = Open3.capture3(*pg_dump, *argv)
+      expect(status.success?).to be(false)
+      err
+    end
+
+    it "is refused with its exit status, and nothing it said, when it can't connect" do
+      error = nil
+      bad = { dbname: sentinels.word, user: TestPostgres::USER }
+      expect { run([table("sales", "items")], conninfo: bad) }
+        .to refused("pg_dump_failed", "pg_dump exited with status 1") { error = it }
+
+      expect(pg_dump_stderr("--schema-only", "--dbname=dbname=#{sentinels.word} user=postgres"))
+        .to include(sentinels.word)
+      nothing_stored
+      expect(error).to be_a(described_class::Error)
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+    end
+
+    it "is refused when a table it's asked for isn't there, even alongside one that is" do
+      error = nil
+      missing = "--table=#{described_class.pattern("sales", sentinels.word)}"
+      expect { described_class.dump(pg_dump, conninfo, [%(--table="sales"."items"), missing]) }
+        .to refused("pg_dump_failed", "pg_dump exited with status 1") { error = it }
+
+      expect(pg_dump_stderr("--schema-only", "--strict-names", missing, "--dbname=dbname=#{db.name} user=postgres"))
+        .to include(sentinels.word)
+      expect(error).to be_a(described_class::Error)
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+    end
+  end
+end
