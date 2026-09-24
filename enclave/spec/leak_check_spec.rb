@@ -73,6 +73,13 @@ RSpec.describe LeakCheck do
       expect(needles.size).to eq(1800)
     end
 
+    it "draws again when a draw repeats a needle an earlier set used" do
+      draws = %w[sentinel-draw-one sentinel-draw-one sentinel-draw-two].each
+
+      expect([LeakCheck::Sentinels.claim { draws.next }, LeakCheck::Sentinels.claim { draws.next }])
+        .to eq(%w[sentinel-draw-one sentinel-draw-two])
+    end
+
     it "adds fixed values, such as literals baked into a fixture file" do
       with_extra = LeakCheck::Sentinels.new(extra: { email: "quaack-sentinel-email" })
 
@@ -169,7 +176,7 @@ RSpec.describe LeakCheck do
       expect(channels(objects: { loud: loud.new })).to include("loud.inspect (raised)")
     end
 
-    it "stops at an object it has already seen" do
+    it "ends on a cycle, and still finds what's in it" do
       cycle = []
       cycle << cycle << sentinels.text
 
@@ -216,6 +223,15 @@ RSpec.describe LeakCheck do
 
       expect { expect_no_leaks(sentinels, outcome) }
         .to raise_error(RSpec::Expectations::ExpectationNotMetError, /text.*stdout/m)
+    end
+
+    # The scanner is a parameter only for this: to show a broken one fails
+    # the check before it can pass a leak.
+    it "runs the positive control first, so a scanner that finds nothing fails instead of passing" do
+      finds_nothing = ->(*, **) { [] }
+
+      expect { expect_no_leaks(sentinels, stdout: sentinels.text, scanner: finds_nothing) }
+        .to raise_error(LeakCheck::BrokenScanner)
     end
   end
 

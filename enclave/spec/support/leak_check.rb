@@ -61,11 +61,12 @@ module LeakCheck
     # Fails, listing each sentinel found and where, if any sentinel of
     # sentinels is in outcome (a Quaacks::Outcome) or in the channels, the
     # stdout:, stderr:, status:, and objects: that LeakCheck.findings takes.
-    # why goes at the front of the failure message.
-    def expect_no_leaks(sentinels, outcome = nil, why: nil, **channels)
+    # why goes at the front of the failure message. scanner is there only
+    # for the helper's own spec, to show a broken scanner fails.
+    def expect_no_leaks(sentinels, outcome = nil, why: nil, scanner: LeakCheck.method(:findings), **channels)
       channels = { stdout: outcome.stdout, stderr: outcome.stderr, status: outcome.status, **channels } if outcome
-      LeakCheck.check_scanner!(sentinels)
-      found = LeakCheck.findings(sentinels, **channels)
+      LeakCheck.check_scanner!(sentinels, scanner:)
+      found = scanner.call(sentinels, **channels)
       message = "#{"#{why}: " if why}sentinels leaked:\n#{found.map { "  #{it}" }.join("\n")}"
       expect(found.map(&:to_s)).to eq([]), message
     end
