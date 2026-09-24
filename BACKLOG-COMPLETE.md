@@ -845,3 +845,13 @@ The three `Cast` survivors in `expression.rb` (the WITH line in `Cast#word?`, `a
 - **Status:** done
 - **Decided (user, September 24):** Where Postgres requires two expressions to match, equal literals in matching positions share one placeholder. Otherwise, each occurrence gets its own.
 - **Landed:** Merged into `main` with 20260922-23 and 20260924-11, after a review, a fix round with only the blockers, a second review, a tests-only round, and a fresh check of those tests. The leftovers went to 20260924-25.
+
+### 20260924-21. 9d Shape deparses without the round-trip guard.
+
+**High priority. It's a correctness bug in the 9d comparison.** `ResultComparison::Shape#build` in `enclave/lib/quaack/enclave/result_comparison.rb` calls raw `PgQuery.deparse`, with no round-trip guard and no parentheses. It runs on the real 9d path: `without_limit`, `with_tiebreaker`, and `probe`. For example, `Shape.parse("SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id LIMIT 5", nil).without_limit` returns `SELECT id FROM t WHERE a OR b IS NULL ORDER BY id`. That's a different query, and it silently changes what 9d compares. Route it through `Deparse.faithfully` (with the parentheses fix from 20260924-4 once that lands), and refuse cleanly when the guard refuses. Add a PG18 test where the raw deparse would change the rows. Also check for other raw `PgQuery.deparse` or `deparse_expr` calls in the enclave that build SQL to run, and route each one through the guard.
+
+- **Depends on:** 20260922-47, 20260923-55.
+- **Came from:** First review of 20260924-4.
+- **README:** 9d, Step 1.
+- **Status:** done
+- **Landed:** Merged into `main` after two clean lean reviews. `Shape#build` uses `Deparse.faithfully`, and a refusal raises `ResultComparison::Error` with rule `deparse_mismatch`. `without_limit` also resets `limit_option`. A grep found no other enclave code that deparses SQL for running without the guard. A minor note: `LIMIT ALL` and `LIMIT NULL` use subset mode, which is harmless.
