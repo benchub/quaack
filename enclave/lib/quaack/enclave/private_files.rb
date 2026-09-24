@@ -53,9 +53,27 @@ module Quaack
         raise
       end
 
-      # Reads file without following it if it's a symlink. The String comes
+      # Reads file, which must be a regular file, and raises
+      # Errno::EINVAL if it isn't. So it won't follow a symlink, and won't
+      # wait forever on a FIFO, whose open waits for a writer, unless it's
+      # nonblocking. It checks before the open, and again on what it
+      # opened, in case the file was swapped in between. The String comes
       # back in the locale's encoding, which may not be UTF-8.
-      def read(file) = File.open(file, File::RDONLY | File::NOFOLLOW, &:read)
+      #
+      # The open and the fstat after it would refuse anything the lstat
+      # does, so no test can tell the lstat is there. It stays so that
+      # nothing but a regular file is ever opened: opening a device node
+      # can do something by itself. Pinning that would take a device node
+      # in the store, and only root can make one.
+      def read(file)
+        raise Errno::EINVAL, "not a regular file" unless File.lstat(file).file?
+
+        File.open(file, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |f|
+          raise Errno::EINVAL, "not a regular file" unless f.stat.file?
+
+          f.read
+        end
+      end
 
       # What's wrong with a directory that should be private to current_uid,
       # given its lstat (nil for nothing there), or nil if nothing is.
@@ -69,6 +87,15 @@ module Quaack
         return if stat.uid == current_uid
 
         "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
+      end
+
+      # Whether dir, or the directory it's in, is a symlink. It looks no
+      # further up. dir is normalized first, since lstat follows a symlink
+      # whose name ends in a slash. absolute_path, unlike expand_path,
+      # leaves a leading ~ alone.
+      def linked?(dir)
+        dir = File.absolute_path(dir)
+        [File.dirname(dir), dir].any? { lstat(it)&.symlink? }
       end
 
       # The file's lstat, or nil if there's nothing there.

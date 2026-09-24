@@ -73,6 +73,24 @@ RSpec.describe "quaacks intake" do
     expect_refused(rule, intake_with(plan: file("bad.json", text)), "plan #{text[0, 200].inspect}")
   end
 
+  describe "the store base" do
+    # The link's target is named for a sentinel, so a line that named it
+    # would show.
+    it "fails as bad_store_base, starting no run, when the store base is a symlink or a file" do
+      target = File.join(dir, INTAKE_SENTINEL).tap { Dir.mkdir(it, 0o700) }
+      File.symlink(target, base)
+      expect_refused("bad_store_base", intake_with, "linked")
+      expect(Dir.children(target)).to eq([])
+
+      File.unlink(base)
+      File.write(base, INTAKE_SENTINEL)
+      out.truncate(0) && out.rewind
+      expect(intake_with).to eq(70)
+      expect(out.string).to eq(error_line("bad_store_base"))
+      expect(File.read(base)).to eq(INTAKE_SENTINEL)
+    end
+  end
+
   describe "good inputs" do
     it "creates a run holding the inputs and prints only its run ID and the done line" do
       expect(intake_with).to eq(0)

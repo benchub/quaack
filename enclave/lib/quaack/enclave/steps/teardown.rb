@@ -24,7 +24,8 @@ module Quaack
       #   directory Store.open would open, such as a symlink, which could
       #   point out of the store. It's left alone.
       # - bad_store_base: it can't look in the store's base, such as one
-      #   that's a file or sits under a directory it can't search.
+      #   that's a file or sits under a directory it can't search, or the
+      #   base is a symlink or sits in one (Store::LINKED_BASE).
       # - teardown_failed: deleting the directory failed partway, and the
       #   directory is still there. A run another call deleted first is
       #   already_gone, not a failure.

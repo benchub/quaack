@@ -73,6 +73,16 @@ RSpec.describe Quaack::Enclave::PlainData do
       expect(plain.check(deep)).to equal(deep)
     end
 
+    # How deep JSON can go before it runs out of stack depends on the
+    # platform: the Store spec's 4 MB-thread test still passes on macOS
+    # with MAX_DEPTH at 6,000, which would likely fail on aarch64 Linux,
+    # where the jump servers run. So the value chosen from the measurements
+    # (see MAX_DEPTH) is pinned here, and the tests either side of this one
+    # pin the behavior at MAX_DEPTH and one deeper.
+    it "is 3,000, the depth chosen from the stack measurements on aarch64 Linux and macOS" do
+      expect(max).to eq(3_000)
+    end
+
     it "raises NotPlain for data nested one deeper than MAX_DEPTH" do
       expect_not_plain(nested(max + 1, PLAIN_SENTINEL))
     end

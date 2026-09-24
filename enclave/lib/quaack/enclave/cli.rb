@@ -4,6 +4,7 @@ require_relative "egress"
 require_relative "error_filter"
 require_relative "store"
 require_relative "cli/refused"
+require_relative "cli/bad_store_base"
 require_relative "cli/arguments"
 require_relative "cli/input"
 require_relative "cli/output"
@@ -160,7 +161,7 @@ module Quaack
       def with_new_run(step)
         return yield(nil) unless step.new_run
 
-        store = Store.create(base: store_base)
+        store = BadStoreBase.from_store { Store.create(base: store_base) }
         begin
           yield store
         rescue Exception # rubocop:disable Lint/RescueException
@@ -200,11 +201,12 @@ module Quaack
 
       # The run ID's form is checked first, so a missing (nil) or malformed
       # one is usage, and a well-formed one with no usable run is bad_run.
+      # A store base it can't use is bad_store_base.
       def open_store(run_id)
         raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
 
         begin
-          Store.open(run_id, base: store_base)
+          BadStoreBase.from_store { Store.open(run_id, base: store_base) }
         rescue Store::Error
           raise Refused, "bad_run", cause: nil
         end

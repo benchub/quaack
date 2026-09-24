@@ -156,6 +156,21 @@ RSpec.describe "quaacks teardown" do
     File.chmod(0o700, dir)
   end
 
+  # The link's target is named for a sentinel, so a line that named it
+  # would show.
+  it "sends bad_store_base when the store base is a symlink, and deletes nothing through it" do
+    store = planted_run
+    target = File.join(dir, sentinels.word)
+    File.rename(base, target)
+    File.symlink(target, base)
+    expect_exposed(File.join(target, store.run_id))
+
+    expect(teardown("--run", store.run_id)).to eq(70)
+    expect(out.string).to eq(error_line("bad_store_base"))
+    expect(File.directory?(File.join(target, store.run_id))).to be(true)
+    expect_no_leaks(sentinels, stdout: out.string)
+  end
+
   # The CLI's error line never reads an error's cause, but a caller that
   # did would find the Store::Error, which names the run's directory.
   it "raises each rule's error with no cause" do

@@ -8,9 +8,6 @@ module Quaack
     # Store.teardown, kept apart from the rest of Store (store.rb). Require
     # this file to use it.
     class Store
-      # What teardown raises for a base it can't look in.
-      class BadBase < Error; end
-
       # Deletes the run's directory by run ID, for `quaacks teardown`. It
       # returns :deleted, or :already_gone if nothing is at the run's path,
       # so a second teardown of a run succeeds too. The run ID is checked as
@@ -21,16 +18,18 @@ module Quaack
       # run directory is removed, not followed.
       #
       # A run that vanishes partway, as when another teardown of it deletes
-      # it first, is :already_gone too. A base it can't look in, such as a
-      # file or one under a directory it can't search, raises BadBase.
+      # it first, is :already_gone too. A base open would refuse, such as a
+      # file, one under a directory it can't search, or a symlink, raises
+      # BadBase, even with nothing at the run's path.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
-        return :already_gone unless PrivateFiles.lstat(path)
+        return :already_gone unless look_up(run_id, base) { PrivateFiles.lstat(path) }
 
         self.open(run_id, base:, current_uid:).teardown
         :deleted
-      rescue SystemCallError
-        raise BadBase, "couldn't look up run #{run_id} in the store's base", cause: nil
+      rescue BadBase
+        # Not a run that went: the run's path can't be trusted to say.
+        raise
       rescue Error
         # The run went while this call deleted it, as when another teardown
         # got there first. Anything else is raised again.
