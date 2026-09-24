@@ -121,6 +121,32 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
     end
   end
 
+  describe "an index that orders the ties" do
+    let(:original) { "SELECT id FROM (SELECT * FROM items ORDER BY grp, id LIMIT 2) s ORDER BY id" }
+    let(:candidate) { "SELECT id FROM (SELECT * FROM items ORDER BY grp LIMIT 2) s ORDER BY id" }
+
+    # Each load order in its own transaction, with the planner free to use
+    # indexes.
+    def with_indexes
+      [items, described_class.reverse_load(items)].map do |rows|
+        runner.with_fixture(rows) { |tx| described_class.compare(tx, original:, candidate:).match? }
+      end
+    end
+
+    it "catches the dropped key even when an index would hand back the ties in id order" do
+      conn.exec("CREATE INDEX ON items (grp, id)")
+      expect(with_indexes).to eq([true, true])
+
+      expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
+    end
+
+    it "catches it with an index on the first key only" do
+      conn.exec("CREATE INDEX ON items (grp)")
+
+      expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
+    end
+  end
+
   describe "a correct rewrite" do
     it "matches in both orders" do
       original = "SELECT id, grp FROM (SELECT * FROM items ORDER BY grp, id LIMIT 2) s ORDER BY id"
@@ -163,7 +189,37 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
       rows = rows_of("node", %w[id up], [1, nil], [2, 1])
 
       expect { both("SELECT id FROM node", "SELECT id FROM node", rows:) }
-        .to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e| expect([e.rule, e.index]).to eq([:fixture_load_failed, 0]) }
+        .to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
+          expect([e.rule, e.step, e.sqlstate, e.index]).to eq([:reverse_load_failed, :load, "23503", 1])
+          expect(e.message).to eq("a fixture row failed to load when the fixture was loaded in reverse")
+        end
+    end
+
+    it "keeps a failure in the forward load a fixture_load_failed" do
+      conn.exec("CREATE TABLE node (id integer PRIMARY KEY, up integer REFERENCES node)")
+      rows = rows_of("node", %w[id up], [1, nil], [2, 3])
+
+      expect { both("SELECT id FROM node", "SELECT id FROM node", rows:) }
+        .to raise_error(Quaack::Enclave::ArenaRunner::Error) { |e| expect([e.rule, e.index]).to eq([:fixture_load_failed, 1]) }
+    end
+
+    it "treats same-named tables in two schemas as different tables" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA a; CREATE SCHEMA b;
+        CREATE TABLE a.t (id integer PRIMARY KEY);
+        CREATE TABLE b.t (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES a.t);
+      SQL
+      in_schema = lambda do |schema, columns, *values|
+        values.map do |v|
+          Quaack::Enclave::ArenaRunner::FixtureRow.new(
+            table: Quaack::Enclave::TableName.new(schema:, name: "t"), columns:, values: v.map(&:to_s)
+          )
+        end
+      end
+      rows = in_schema.call("a", %w[id], [1], [2]) + in_schema.call("b", %w[id a_id], [10, 1], [11, 2])
+      scan = "SELECT string_agg(id::text, ',') FROM b.t"
+
+      expect(fields(both(scan, "SELECT '10,11'", rows:))).to include(match: false, load_order: :reverse)
     end
 
     it "keeps raw inserts in their order, after the rows" do
@@ -171,6 +227,8 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
       inserts = ["INSERT INTO parent VALUES (2)", "INSERT INTO child VALUES (10, 1), (11, 2)"]
 
       expect(fields(both(join, semi, rows:, inserts:))).to include(match: true, load_order: nil)
+      expect(fields(both("SELECT string_agg(id::text, ',' ORDER BY id) FROM child", "SELECT '10,11'", rows:, inserts:)))
+        .to eq(match: true, mode: :multiset, rule: nil, load_order: nil)
     end
   end
 end

@@ -121,8 +121,8 @@ module Quaack
     # The reverse load in compare_in_both_orders catches both when the
     # pick follows the order rows reach it in, as a small sort or a first
     # row kept does. It can't when the pick follows something else that
-    # comes out the same both ways, such as a hash table's order, or an
-    # index scan's.
+    # comes out the same both ways, such as a hash table's order. It turns
+    # index scans off so an index's order can't be that.
     #
     # Known ways to discard a good candidate, all toward mismatch:
     #

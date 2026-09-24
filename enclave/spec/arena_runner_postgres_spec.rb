@@ -173,6 +173,31 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     end
   end
 
+  describe "index scans" do
+    let(:scan_settings) do
+      "SELECT current_setting('enable_indexscan'), current_setting('enable_indexonlyscan'), " \
+        "current_setting('enable_bitmapscan')"
+    end
+
+    def session_scans = conn.exec(scan_settings).values
+
+    it "leaves index scans on by default" do
+      expect(runner.with_fixture { |tx| tx.query(scan_settings).rows }).to eq([%w[on on on]])
+    end
+
+    it "turns index, index-only, and bitmap scans off for the transaction only, when asked" do
+      inside = runner.with_fixture(index_scans: false) { |tx| tx.query(scan_settings).rows }
+
+      expect(inside).to eq([%w[off off off]])
+      expect(session_scans).to eq([%w[on on on]])
+    end
+
+    it "refuses an index_scans that isn't true or false" do
+      expect { runner.with_fixture(index_scans: "off") }
+        .to raise_error(ArgumentError, "index_scans must be true or false")
+    end
+  end
+
   describe "always rolling back" do
     it "rolls back after a query error, naming the query by its position" do
       error = run_error(runner, [parent(1, "a")]) do |tx|

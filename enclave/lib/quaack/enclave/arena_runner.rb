@@ -68,6 +68,11 @@ module Quaack
 
       DEFAULT_STATEMENT_TIMEOUT_MS = 10_000
 
+      # What index_scans: false sets for the transaction. It's a fixed list
+      # the runner owns, so no caller's SQL runs a SET.
+      NO_INDEX_SCANS = %w[enable_indexscan enable_indexonlyscan enable_bitmapscan]
+                       .map { |name| "SET LOCAL #{name} = off" }.freeze
+
       def initialize(connection, statement_timeout_ms: DEFAULT_STATEMENT_TIMEOUT_MS)
         unless statement_timeout_ms.is_a?(Integer) && statement_timeout_ms.positive?
           raise ArgumentError, "statement_timeout_ms must be a positive Integer"
@@ -83,6 +88,12 @@ module Quaack
       # inserts are for 10b, whose statements have already passed the
       # inbound check.
       #
+      # index_scans: false turns off index, index-only, and bitmap scans for
+      # the transaction (NO_INDEX_SCANS), so each table is read in heap
+      # order. Step 9d compares results only, so the plan doesn't matter,
+      # and an index would hand back tied rows in its own order however the
+      # fixture was loaded (see ResultComparison.compare_in_both_orders).
+      #
       # It checks the rows and inserts before it touches the connection. If
       # the connection is already inside a transaction, it raises
       # already_in_transaction and leaves that transaction alone.
@@ -90,20 +101,21 @@ module Quaack
       # While it runs, it drops every notice on the connection, since a
       # notice can carry a real value and libpq's default receiver prints it
       # on stderr. It puts the previous receiver back when it's done.
-      def with_fixture(rows = [], inserts: [], &)
-        check_fixture(rows, inserts)
+      def with_fixture(rows = [], inserts: [], index_scans: true, &)
+        check_fixture(rows, inserts, index_scans)
         refuse_unless_idle
         without_notices do
           database(:begin_failed, :begin) { @connection.exec("BEGIN") }
-          in_transaction(Transaction.new(method(:run_query)), rows, inserts, &)
+          in_transaction(Transaction.new(method(:run_query)), rows, inserts, index_scans ? [] : NO_INDEX_SCANS, &)
         end
       end
 
       private
 
-      def check_fixture(rows, inserts)
+      def check_fixture(rows, inserts, index_scans)
         raise ArgumentError, "rows must be an Array of FixtureRows" unless rows.is_a?(Array) && rows.all?(FixtureRow)
         raise ArgumentError, "inserts must be an Array of Strings" unless inserts.is_a?(Array) && inserts.all?(String)
+        raise ArgumentError, "index_scans must be true or false" unless [true, false].include?(index_scans)
 
         inserts.each_with_index { |sql, index| StatementCheck.check(sql, :insert, index) }
       end
@@ -135,9 +147,9 @@ module Quaack
       # rolls back a transaction whose connection is gone, and a connection
       # that's still open but in a transaction is refused by the next
       # with_fixture.
-      def in_transaction(handle, rows, inserts)
+      def in_transaction(handle, rows, inserts, settings)
         failed = false
-        load(rows, inserts)
+        load(rows, inserts, settings)
         yield handle
       rescue Exception # rubocop:disable Lint/RescueException -- only noted, then raised again
         failed = true
@@ -147,8 +159,9 @@ module Quaack
       end
 
       # SET LOCAL, so the timeout ends with the transaction however it ends.
-      def load(rows, inserts)
+      def load(rows, inserts, settings)
         database(:begin_failed, :begin) { @connection.exec("SET LOCAL statement_timeout = #{@statement_timeout_ms}") }
+        settings.each { |sql| database(:begin_failed, :begin) { @connection.exec(sql) } }
         rows.each_with_index do |row, index|
           statement(*insert_sql(row), step: :load, rule: :fixture_load_failed, index:)
         end
