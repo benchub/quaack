@@ -1,0 +1,164 @@
+# frozen_string_literal: true
+
+require "delegate"
+require "quaack/enclave/index_ranking"
+
+# 5a-7 against real HypoPG on the test harness. Each table is analyzed with
+# a statistics target big enough to read every row, so the statistics, and
+# with them every cost, come out the same on every run.
+#
+# t's s column is skewed as in 5a-4's spec: 90% of rows hold 0, and the
+# rest each hold a value of their own. o and cu join on o.cid = cu.id. w is
+# one more table, of a size between o's and cu's.
+RSpec.describe Quaack::Enclave::IndexRanking do
+  let(:conn) { test_database.connection }
+  let(:sentinel) { "SENTINEL-5a7-91d2" }
+
+  before do
+    conn.exec(<<~SQL)
+      CREATE EXTENSION IF NOT EXISTS hypopg;
+      CREATE TABLE t (a int, b int, c int, s int, flag text);
+      INSERT INTO t SELECT i, i % 1000, i, CASE WHEN i % 10 = 0 THEN i ELSE 0 END,
+                           CASE WHEN i % 100 = 0 THEN '#{sentinel}' ELSE 'closed' END
+      FROM generate_series(1, 100000) AS i;
+      CREATE TABLE o (id int, cid int, x int);
+      INSERT INTO o SELECT i, i % 10000, i FROM generate_series(1, 100000) AS i;
+      CREATE TABLE cu (id int, y int);
+      INSERT INTO cu SELECT i, i FROM generate_series(1, 10000) AS i;
+      CREATE TABLE w (z int);
+      INSERT INTO w SELECT i FROM generate_series(1, 50000) AS i;
+    SQL
+    conn.exec("SET default_statistics_target = 1000")
+    conn.exec("VACUUM ANALYZE t, o, cu, w")
+    conn.exec("RESET default_statistics_target")
+  end
+
+  def table(name) = Quaack::Enclave::TableName.new(schema: "public", name:)
+
+  def candidate(on = "t", **)
+    Quaack::Enclave::IndexCandidate.new(table: table(on), sources: [:parse], **)
+  end
+
+  def key(name, direction) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction:)
+
+  def single_test(query, literal_sets, candidates)
+    Quaack::Enclave::SingleCandidateTest.run(conn, query:, literal_sets:, candidates:)
+  end
+
+  def rank(query, literal_sets, report, connection: conn, results: report.results)
+    described_class.rank(connection, query:, literal_sets:, baseline: report.baseline, results:)
+  end
+
+  # 5a-4, then 5a-7 on its results.
+  def ranked(query, literal_sets, candidates)
+    rank(query, literal_sets, single_test(query, literal_sets, candidates))
+  end
+
+  def ddl(entry) = entry&.ddl
+
+  def leftovers
+    {
+      hypothetical: conn.exec("SELECT count(*) FROM hypopg_list_indexes").getvalue(0, 0).to_i,
+      prepared: conn.exec("SELECT count(*) FROM pg_prepared_statements").getvalue(0, 0).to_i,
+      transaction: conn.transaction_status
+    }
+  end
+
+  let(:clean) { { hypothetical: 0, prepared: 0, transaction: 0 } }
+
+  # s = 10 finds one row, and s = 0 finds 90,000. b = 7 finds 100 either
+  # way. So the index on s helps only the slow literal, but helps it most,
+  # and the index on b helps both.
+  let(:skewed) { "SELECT * FROM t WHERE s = $1 AND b = $2" }
+  let(:skewed_sets) { { slow: %w[10 7], worst: %w[0 7] } }
+  let(:on_s) { candidate(key: ["s"]) }
+  let(:on_b) { candidate(key: ["b"]) }
+
+  it "ranks by the worst case across literal sets, above one that helps only the slow literal more" do
+    ranking = ranked(skewed, skewed_sets, [on_s, on_b])
+    by_candidate = ranking.top.to_h { |e| [e.candidates, e] }
+
+    expect(ranking.top.map(&:candidates)).to eq([[on_b], [on_s]])
+    expect(by_candidate[[on_s]].reductions[:slow]).to be > by_candidate[[on_b]].reductions[:slow]
+    expect(by_candidate[[on_s]].reductions[:worst]).to be_within(1e-9).of(0.0)
+    expect(by_candidate[[on_b]].worst_reduction).to be > 0.5
+  end
+
+  it "leaves out a candidate the planner never used and one HypoPG refused" do
+    ignored = candidate(key: ["c"])
+    refused = candidate(key: ["nope"])
+    ranking = ranked(skewed, skewed_sets, [ignored, on_b, refused])
+
+    expect(ranking.top.map(&:candidates)).to eq([[on_b]])
+    expect(ranking.combination).to be_nil
+  end
+
+  let(:join) { "SELECT * FROM o JOIN cu ON cu.id = o.cid WHERE o.x = $1 AND cu.y = $2" }
+  let(:join_sets) { { slow: %w[5 5], typical: %w[70000 70000] } }
+  let(:on_x) { candidate("o", key: ["x"]) }
+  let(:on_y) { candidate("cu", key: ["y"]) }
+
+  it "keeps a pair of indexes, on two joined tables, that beats either one alone" do
+    report = single_test(join, join_sets, [on_y, on_x])
+    ranking = rank(join, join_sets, report)
+    best = ranking.top.first
+    pair = ranking.combination
+
+    expect(ranking.top.map(&:candidates)).to eq([[on_x], [on_y]])
+    expect(pair).to be_a(described_class::Entry)
+    expect(pair.candidates).to eq([on_x, on_y])
+    expect(pair.ddl).to eq([on_x.to_ddl, on_y.to_ddl])
+    expect(pair.used).to eq(slow: [true, true], typical: [true, true])
+    expect(pair.worst_reduction).to be > best.worst_reduction
+    expect(pair.costs.transform_values(&:after)).to all(satisfy { |set, after| after < best.costs[set].after })
+    expect(pair.costs.transform_values(&:before)).to eq(report.baseline.plans.transform_values(&:total_cost))
+    expect(pair.size).to eq(report.results.sum(&:size))
+    expect(pair.canonical_plans.values).to all(be_comparable)
+    expect(pair.canonical_plans[:slow]).not_to be_matches(best.canonical_plans[:slow])
+  end
+
+  # What the plans use with these candidates' indexes all present, from
+  # 5a-4's shared core.
+  def used_together(query, literal_sets, candidates)
+    Quaack::Enclave::SingleCandidateTest.session(conn, query:, literal_sets:) do |session|
+      session.measure(candidates).plans.transform_values(&:used)
+    end
+  end
+
+  # With both indexes, s = 10 uses the one on s and s = 0 uses the one on
+  # b, whose cost doesn't depend on s. So the worst case is no better.
+  it "keeps no combination that doesn't lower the worst case, though each index is used" do
+    ranking = ranked(skewed, skewed_sets, [on_s, on_b])
+
+    expect(used_together(skewed, skewed_sets, [on_b, on_s])).to eq(slow: [false, true], worst: [true, false])
+    expect(ranking.combination).to be_nil
+  end
+
+  # With both indexes, the planner uses only one of them.
+  it "keeps no combination whose second index the plan never uses" do
+    query = "SELECT * FROM t WHERE a = $1"
+    sets = { slow: ["5"], typical: ["70000"] }
+    ranking = ranked(query, sets, [candidate(key: ["a"]), candidate(key: %w[a c])])
+    together = used_together(query, sets, ranking.top.flat_map(&:candidates))
+
+    expect(ranking.top.size).to eq(2)
+    expect(together.values.uniq.size).to eq(1)
+    expect(together.values.first).to contain_exactly(true, false)
+    expect(ranking.combination).to be_nil
+  end
+
+  # The index on b helps both branches some, so it ranks first. The ones on
+  # a and c each help one branch more. With all three, neither branch uses
+  # the one on b, so the third addition, though cheaper, isn't kept.
+  it "keeps no combination in which an index it already had goes unused" do
+    query = "SELECT a FROM t WHERE b = $1 AND a = $2 UNION ALL SELECT a FROM t WHERE b = $3 AND c = $4"
+    sets = { slow: %w[7 7 7 9] }
+    on_a = candidate(key: ["a"])
+    on_c = candidate(key: ["c"])
+    ranking = ranked(query, sets, [on_c, on_a, on_b])
+
+    expect(used_together(query, sets, [on_b, on_a, on_c])).to eq(slow: [false, true, true])
+    expect(ranking.combination.candidates).to eq([on_b, on_a])
+    expect(ranking.combination.used).to eq(slow: [true, true])
+  end
+end
