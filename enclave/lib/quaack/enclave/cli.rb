@@ -41,11 +41,20 @@ module Quaack
       # options:) and returns an Array of message Hashes. input is the
       # parsed stdin object if the step takes input (input: true), and nil
       # otherwise, so stdin is read only for such a step. store is the
-      # Store for --run if the step needs a run (run: true), and nil
-      # otherwise. options maps each option the step declares, as its name
-      # without the dashes, to :value or :flag (see Arguments).
-      Step = Data.define(:handler, :input, :run, :options) do
-        def initialize(handler:, input: false, run: false, options: {}) = super
+      # Store for --run if the step needs a run (run: true), a new run's
+      # Store if the step starts one (new_run: true), and nil otherwise.
+      # options maps each option the step declares, as its name without the
+      # dashes, to :value or :flag (see Arguments).
+      #
+      # A new run is deleted again unless the call succeeds all the way
+      # through its done line, so a failed call leaves no run behind, and
+      # none that holds inputs the step went on to refuse.
+      Step = Data.define(:handler, :input, :run, :new_run, :options) do
+        def initialize(handler:, input: false, run: false, new_run: false, options: {})
+          raise ArgumentError, "a step can't both start a run and open one" if run && new_run
+
+          super
+        end
       end
 
       # Each subcommand and its step. To add a step, require its file above
@@ -120,18 +129,40 @@ module Quaack
       def run_step(step, step_name, args)
         raise Refused, "usage" unless step
 
-        write(dispatch(step, args))
+        with_new_run(step) { |new_store| write(dispatch(step, args, new_store)) }
         EX_OK
       rescue Refused => e
         write("#{ErrorFilter.to_egress(e, step: step_name)}\n")
         EX_USAGE
       end
 
-      # Runs step and returns its output, every line of it.
-      def dispatch(step, args)
+      # Yields a new run's Store for a step that starts one, and nil for any
+      # other. If anything goes wrong before the block finishes, even a
+      # signal or a failed write of the output, it deletes the run and
+      # raises again. A failure to delete it doesn't hide the error that
+      # caused it.
+      def with_new_run(step)
+        return yield(nil) unless step.new_run
+
+        store = Store.create(base: store_base)
+        begin
+          yield store
+        rescue Exception # rubocop:disable Lint/RescueException
+          begin
+            store.teardown
+          rescue Store::Error
+            nil
+          end
+          raise
+        end
+      end
+
+      # Runs step and returns its output, every line of it. new_store is the
+      # run with_new_run started, if any.
+      def dispatch(step, args, new_store)
         arguments = Arguments.parse(step, args)
         input = Input.read(@stdin) if step.input
-        store = open_store(arguments.run_id) if step.run
+        store = step.run ? open_store(arguments.run_id) : new_store
         messages = call_step(step, input:, store:, options: arguments.options)
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)
 
@@ -157,11 +188,13 @@ module Quaack
         raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
 
         begin
-          Store.open(run_id, base: @store_base || Store.default_base)
+          Store.open(run_id, base: store_base)
         rescue Store::Error
           raise Refused, "bad_run", cause: nil
         end
       end
+
+      def store_base = @store_base || Store.default_base
 
       def write(text)
         @out.write(text)
