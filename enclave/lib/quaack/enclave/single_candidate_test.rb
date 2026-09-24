@@ -23,6 +23,11 @@ module Quaack
     # placeholders or none. candidates are IndexCandidates, as Dedupe leaves
     # them.
     #
+    # session takes the same arguments but candidates, and yields a Session
+    # whose measure creates several hypothetical indexes at once. 5a-7's
+    # IndexRanking uses it to measure combinations. run is built on it, so
+    # everything below holds for both.
+    #
     # Until 3e literal sets (20260922-21) and 3g redaction (20260922-23)
     # land, literal_sets is a stand-in: a Hash from each set's name to its
     # values, in parameter order. Each value is a String in a valid

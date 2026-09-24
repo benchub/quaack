@@ -272,4 +272,70 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect { rank(point, point_sets, other, results: report.results) }.to raise_error(*mismatch)
     expect(leftovers).to eq(clean)
   end
+
+  it "leaves no hypothetical index, prepared statement, or transaction behind" do
+    report = single_test(join, join_sets, [on_x, on_y])
+    conn.exec("SELECT * FROM hypopg_create_index('CREATE INDEX ON public.o (cid)')")
+    ranking = rank(join, join_sets, report)
+
+    expect(ranking.combination.candidates.size).to eq(2)
+    expect(leftovers).to eq(clean)
+  end
+
+  def rank_error(...)
+    rank(...)
+    nil
+  rescue Quaack::Enclave::SingleCandidateTest::Error => e
+    e
+  end
+
+  it "raises an error with a rule and SQLSTATE that never quotes a literal, and leaves nothing behind" do
+    report = single_test(join, join_sets, [on_x, on_y])
+    error = rank_error(join, { slow: ["5", sentinel], typical: %w[70000 70000] }, report)
+
+    expect(error).to have_attributes(rule: :explain_failed, sqlstate: "22P02", cause: nil)
+    expect(error.full_message).not_to include(sentinel)
+    expect(leftovers).to eq(clean)
+  end
+
+  it "refuses a literal that isn't a String without quoting it, even with nothing to combine" do
+    report = single_test(point, point_sets, [on_a])
+    error = rank_error(point, { slow: ["5"], typical: [Struct.new(:s).new(sentinel)] }, report)
+
+    expect(error).to have_attributes(rule: :bad_literal, sqlstate: nil, cause: nil)
+    expect(error.full_message).not_to include(sentinel)
+  end
+
+  # The wrapper records, for each hypopg_reset, the DDL of every index
+  # created after it, so each list is one measurement's indexes.
+  it "never measures a candidate together with itself" do
+    recording = Class.new(SimpleDelegator) do
+      attr_reader :created
+
+      def exec(sql, *)
+        (@created ||= []) << [] if sql.include?("hypopg_reset")
+        super
+      end
+
+      def exec_params(sql, params, *)
+        @created.last << params.first if sql.include?("hypopg_create_index")
+        super
+      end
+    end.new(conn)
+    report = single_test(branches, branch_sets, [on_a, on_x, on_z, on_y])
+    rank(branches, branch_sets, report, connection: recording)
+    measured = recording.created.reject(&:empty?)
+
+    expect(measured.map(&:size).tally).to eq(2 => 3, 3 => 2)
+    expect(measured).to all(satisfy { |ddls| ddls.uniq == ddls })
+  end
+
+  it "freezes what it returns" do
+    ranking = ranked(join, join_sets, [on_x, on_y])
+    entries = [*ranking.top, ranking.combination]
+
+    expect([ranking, ranking.top, *entries]).to all(be_frozen)
+    expect(entries.flat_map { |e| [e.candidates, e.ddl, e.costs, e.used, *e.used.values, e.canonical_plans] })
+      .to all(be_frozen)
+  end
 end
