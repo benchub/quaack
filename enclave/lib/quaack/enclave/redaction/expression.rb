@@ -229,10 +229,14 @@ module Quaack
           def read(token, source)
             case token
             when :ICONST, :FCONST then [:number, source]
-            when :BCONST, :XCONST then constant(source)&.bsval&.then { [:string, Literal.bits(it.bsval)] }
+            when :BCONST, :XCONST then constant(source)&.bsval&.then { bits(it.bsval) }
             else constant(source)&.sval&.then { [:string, it.sval] }
             end
           end
+
+          # A bit string as the string of its bits, or nil if it isn't one,
+          # as X'zz' isn't.
+          def bits(text) = Literal.bits(text)&.then { [:string, it] }
 
           def constant(source)
             stmts = PgQuery.parse("SELECT #{source}").tree.stmts

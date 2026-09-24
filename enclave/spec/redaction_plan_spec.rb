@@ -128,8 +128,12 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
     # still has to be matched or masked, never copied.
     it "reads a bit string token as its bits" do
       expect(filter("((b = B'101') AND (c = X'1F') AND (d = B'11'))",
-                    map(entry("b101", "bit varying"), entry("x1F", "bit varying"))))
+                    map(entry("b101", "bit varying"), entry("b00011111", "bit varying"))))
         .to eq("((b = $1) AND (c = $2) AND (d = $?))")
+    end
+
+    it "masks a bit string token that isn't bits" do
+      expect(filter("(b = X'zz')", map(entry("5", "integer")))).to eq("(b = $?)")
     end
 
     describe "a number too big to read" do
@@ -139,6 +143,9 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
             .to eq("((s = $1::text) AND (id = $2))")
           expect(filter("((x = '1e99999999'::numeric) AND (y = 1e99999999))", map(entry("5", "integer"))))
             .to eq("((x = $?::numeric) AND (y = $?))")
+          expect(filter("((x = '1E-99999999'::numeric) AND (y = 5))",
+                        map(entry("5", "integer"), entry("1e-99999999", "numeric"))))
+            .to eq("((x = $?::numeric) AND (y = $1))")
         end
       end
 
@@ -151,6 +158,31 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
                                                        entry("5"))))
             .to eq("((x = $3) AND (y = $?))")
         end
+      end
+
+      it "reads an exponent up to 1,000, and no further" do
+        expect(filter("((x = '10e999'::numeric) AND (y = '10e1000'::numeric))",
+                      map(entry("1e1000", "numeric"), entry("1e1001", "numeric"))))
+          .to eq("((x = $1::numeric) AND (y = $?::numeric))")
+      end
+
+      it "still matches a number of 90 digits, written two ways" do
+        digits = "1234567890" * 9
+        expect(filter("(x = #{digits})", map(entry("#{digits}.0", "numeric")))).to eq("(x = $1)")
+      end
+
+      it "reads a long hex integer, and a decimal with underscores" do
+        expect(filter("((x = #{2**100}) AND (y = 1000.5))",
+                      map(entry("0x1#{"0" * 25}", "numeric"), entry("1_000.5", "numeric"))))
+          .to eq("((x = $1) AND (y = $2))")
+      end
+
+      it "writes the lowest placeholder a string matches, by text or by number" do
+        expect(filter("(x = '5.0'::numeric)", map(entry("5", "integer"), entry("5.0")))).to eq("(x = $1::numeric)")
+      end
+
+      it "reads a number the query wrote with spaces around it" do
+        expect(filter("(x = 5)", map(entry(" 5 ")))).to eq("(x = $1)")
       end
 
       it "still matches a number with a modest exponent" do
@@ -273,6 +305,14 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       result = redact(fixture("sentinel_literals"), {})
       expect(leaked(result.explain)).to be_empty
       expect(result.masked).to eq(2)
+    end
+  end
+
+  it "matches a 10,000-element IN list against 10,000 placeholders quickly" do
+    placeholder_map = map(*(1..10_000).map { entry(it.to_s, "integer") })
+    Timeout.timeout(3) do
+      text = filter("(id = ANY ('{#{(1..10_000).to_a.join(",")}}'::integer[]))", placeholder_map)
+      expect(text).to eq("(id = ANY (ARRAY[#{(1..10_000).map { "$#{it}" }.join(", ")}]::integer[]))")
     end
   end
 

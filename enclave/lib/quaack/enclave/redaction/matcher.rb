@@ -35,7 +35,6 @@ module Quaack
         # The placeholder types a number or a boolean in a plan can match.
         NUMBERS_FROM = ["unknown", *NUMBER_TYPES].freeze
         BOOLEANS_FROM = %w[boolean unknown].freeze
-        MATCHES = { string: :string?, number: :number?, boolean: :boolean? }.freeze
         DECIMAL = /\A[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE]([+-]?\d+))?\z/
         MAX_NUMBER = 100
         MAX_EXPONENT = 1_000
@@ -44,42 +43,54 @@ module Quaack
 
         # map is a placeholder map, as RedactedQuery#placeholder_map gives it
         # and the governed store gives it back. Anything else raises
-        # Error bad_placeholder_map.
+        # Error bad_placeholder_map. Each placeholder's value is read once,
+        # here, into lookups by text, by number, by bits, and by boolean,
+        # so matching a literal costs the same however many placeholders
+        # there are, as for an IN list of thousands.
         def initialize(map)
-          @entries = Redaction.checked_map(map).map do |key, entry|
-            [Integer(key[1..]), entry["value"], entry["type"]]
-          end.sort.freeze
+          @texts = lookup
+          @numbers = lookup
+          @numbers_from = lookup
+          @bits = lookup
+          @booleans = lookup
+          Redaction.checked_map(map).each { |key, entry| index(Integer(key[1..]), entry["value"], entry["type"]) }
         end
 
         # The numbers of the placeholders the literal could be, lowest first.
         def candidates(literal)
           kind, text = literal
-          @entries.filter_map { |number, value, type| number if !value.nil? && match?(kind, text, value, type) }
+          case kind
+          when :string then [@texts[text], @numbers[number(text)], @bits[text]].flatten.uniq.sort
+          when :number then @numbers_from[number(text)].sort
+          else @booleans[text].sort
+          end
         end
 
         private
 
-        def match?(kind, text, value, type) = send(MATCHES.fetch(kind), text, value, type)
+        def lookup = Hash.new { [] }
 
-        def string?(text, value, type)
-          text == value || (NUMBER_TYPES.include?(type) && same_number?(text, value)) ||
-            (type == "bit varying" && Literal.bits(value) == text)
+        def index(number, value, type)
+          return if value.nil?
+
+          add(@texts, value, number)
+          add(@numbers, number(value), number) if NUMBER_TYPES.include?(type)
+          add(@numbers_from, number(value), number) if NUMBERS_FROM.include?(type)
+          add(@bits, Literal.bits(value), number) if type == "bit varying"
+          add(@booleans, boolean(value), number) if BOOLEANS_FROM.include?(type)
         end
 
-        def number?(text, value, type) = NUMBERS_FROM.include?(type) && same_number?(text, value)
-
-        def boolean?(text, value, type) = BOOLEANS_FROM.include?(type) && boolean(value) == text
-
-        def same_number?(one, other)
-          one = number(one)
-          !one.nil? && one == number(other)
+        def add(lookup, key, number)
+          lookup[key] += [number] unless key.nil?
         end
 
+        # A number, as a Rational so that 5 and 5.0 are the same key, or nil.
         def number(text)
-          text = text.strip.delete("_")
           return nil if text.length > MAX_NUMBER
 
-          Literal.integer(text) || decimal(text)
+          text = text.strip.delete("_")
+          found = Literal.integer(text) || decimal(text)
+          Rational(found) if found
         end
 
         def decimal(text)
