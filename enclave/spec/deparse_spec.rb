@@ -119,12 +119,90 @@ RSpec.describe Quaack::Enclave::Deparse do
       expect { described_class.faithfully(changed) }.to refused
     end
 
+    # Each tree below is edited so the deparser loses one scalar field, and
+    # the tree it parses back differs from it in that one field alone. So
+    # each fails if that field, or every field of its type, isn't compared.
+    describe "one scalar that doesn't survive" do
+      def select_of(sql) = tree(sql).tap { |t| yield t.stmts[0].stmt.select_stmt }
+
+      # An int32. interval's first typmod is a field mask. The deparser
+      # writes only the masks it knows, so this one comes back as the
+      # full range, 32767.
+      it "refuses a changed Integer ival" do
+        changed = select_of("SELECT '1'::interval(3)") do |select|
+          select.target_list[0].res_target.val.type_cast.type_name.typmods[0].a_const.ival.ival = 12_345
+        end
+        expect(PgQuery.deparse(changed)).to eq("SELECT '1'::interval(3)")
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      # Enums. The deparser writes nothing for a value it doesn't know, so
+      # each comes back as the default.
+      it "refuses a changed SortBy direction" do
+        changed = select_of("SELECT a FROM public.t ORDER BY a") { |s| s.sort_clause[0].sort_by.sortby_dir = 7 }
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      it "refuses a changed SortBy nulls ordering" do
+        changed = select_of("SELECT a FROM public.t ORDER BY a") { |s| s.sort_clause[0].sort_by.sortby_nulls = 9 }
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      it "refuses a changed A_Expr kind" do
+        changed = select_of("SELECT a FROM public.t WHERE a = 1") { |s| s.where_clause.a_expr.kind = 99 }
+        expect(PgQuery.deparse(changed)).to eq("SELECT a FROM public.t WHERE a = 1")
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      it "refuses a changed BoolExpr boolop" do
+        changed = select_of("SELECT a FROM public.t WHERE a AND b") { |s| s.where_clause.bool_expr.boolop = 9 }
+        expect(PgQuery.deparse(changed)).to eq("SELECT a FROM public.t WHERE a AND b")
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      # An A_Const that's NULL and also holds a boolean. The deparser
+      # writes NULL, so the boolean is lost.
+      it "refuses a lost A_Const boolval" do
+        changed = select_of("SELECT NULL") do |select|
+          select.target_list[0].res_target.val.a_const.boolval = PgQuery::Boolean.new(boolval: true)
+        end
+        expect(PgQuery.deparse(changed)).to eq("SELECT NULL")
+        expect { described_class.faithfully(changed) }.to refused
+      end
+
+      # A bool. The deparser reads WITH RECURSIVE from the WithClause, and
+      # the parser never sets cterecursive.
+      it "refuses a changed CommonTableExpr cterecursive" do
+        changed = select_of("WITH c AS (SELECT 1) SELECT * FROM c") do |select|
+          select.with_clause.ctes[0].common_table_expr.cterecursive = true
+        end
+        expect(PgQuery.deparse(changed)).to eq("WITH c AS (SELECT 1) SELECT * FROM c")
+        expect { described_class.faithfully(changed) }.to refused
+      end
+    end
+
     # The parser cuts identifiers to 63 bytes, so a longer name in a built
     # tree comes back as a different name.
     it "refuses a name the parser would cut short" do
       changed = tree("SELECT a FROM public.t")
       changed.stmts[0].stmt.select_stmt.from_clause[0].range_var.relname = "t" * 64
       expect { described_class.faithfully(changed) }.to refused
+    end
+
+    # CREATE TABLESPACE's location is its directory, a string, not a place
+    # in the text.
+    it "clears only the int32 fields named for a location" do
+      compared = described_class.comparable(tree("CREATE TABLESPACE space LOCATION '/data/space'"))
+      expect(compared.stmts[0].stmt.create_table_space_stmt.location).to eq("/data/space")
+      expect(described_class.comparable(tree("SELECT a")).stmts[0].stmt.select_stmt.target_list[0].res_target.location)
+        .to eq(0)
+    end
+
+    # Deeper than protobuf's default limit of 100, so the copy that's
+    # compared has to allow more.
+    it "deparses a tree hundreds of levels deep" do
+      sql = "SELECT #{(["1"] * 450).join(" + ")}"
+      expect(described_class.faithfully(tree(sql))).to eq(PgQuery.deparse(tree(sql)))
     end
 
     it "doesn't change the tree it's given" do

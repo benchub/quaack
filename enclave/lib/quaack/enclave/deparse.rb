@@ -20,7 +20,7 @@ module Quaack
     # only when they match.
     #
     # The comparison is of the whole protobuf tree, constants included,
-    # with only the location fields cleared, since spacing and spelling
+    # with only the int32 location fields cleared, since spacing and spelling
     # move every location. A fingerprint wouldn't do: it ignores constants.
     # What the deparser spells differently but parses to the same tree,
     # such as != for <>, CAST(x AS t) for x::t, or extra parentheses,
@@ -95,12 +95,16 @@ module Quaack
         copy
       end
 
+      # A location is an int32. CreateTableSpaceStmt's location is a string,
+      # its directory, so it's compared like any other field.
+      def location?(field) = field.type == :int32 && LOCATIONS.include?(field.name)
+
       def clear_locations(node)
         case node
         when Google::Protobuf::RepeatedField then node.each { |child| clear_locations(child) }
         when Google::Protobuf::MessageExts
           node.class.descriptor.each do |field|
-            if LOCATIONS.include?(field.name) then field.clear(node)
+            if location?(field) then field.clear(node)
             else clear_locations(field.get(node))
             end
           end
