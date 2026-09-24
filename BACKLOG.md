@@ -95,14 +95,7 @@ Check the connection to the production server and record the version, extensions
 
 ## Step 3: Schema, statistics, and classification.
 
-### 20260922-17. 3a relations.
-
-List the query's relations with pg_query and check each `relkind`. Abort on views and materialized views.
-
-- **Depends on:** 20260922-14.
-- **README:** 3a.
-- **Status:** todo
-- **Decided:** Allow only plain tables (`relkind` `r`). Abort on views, materialized views, partitioned tables, and foreign tables, and name the relation and its kind in the message.
+### 20260922-17. 3a relations. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-18. 3b schema dump and subset.
 
@@ -697,6 +690,7 @@ Findings from both reviews and the builder of 20260922-14:
 - **Came from:** Both reviews of 20260922-14, and its builder's notes.
 - **README:** Step 1.
 - **Status:** todo
+- **Note (from the review of 20260922-17):** RelationQualifier ignores the implicit `pg_temp` at the front of the search path. So a temp view named `orders` in the plan's session would resolve to `public.orders`. The enclave session has no temp relations, so this only matters if the plan's own session had one shadowing a real relation.
 
 ### 20260923-28. Canonical plan loose ends.
 
@@ -848,6 +842,7 @@ Minor findings from the reviews of 20260922-10:
 - **Came from:** The reviews of 20260922-10.
 - **README:** What goes into the enclave.
 - **Status:** todo
+- **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
 
 ### 20260923-58. Enclave CLI loose ends.
 
@@ -1103,6 +1098,20 @@ Minor findings from the second review of 20260923-34:
 - **Depends on:** 20260923-34.
 - **Came from:** Second review of 20260923-34.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-19. 3a relations loose ends.
+
+Findings from the reviews of 20260922-17:
+- **A function in FROM can hide a view or foreign table.** With `CREATE FUNCTION public.f() RETURNS SETOF public.order_view LANGUAGE sql STABLE AS 'SELECT * FROM public.order_view'`, `SELECT * FROM f()` passes with relations `[]`, while EXPLAIN shows the base table scanned. Non-inlined functions have the same gap. README 3a says to list relations with pg_query, so this matches the letter of the README. But 3b and 3c may need the relations the plan actually scans. Decide whether to refuse set-returning functions in FROM, or to read relations from the plan.
+- **A relation named only in an unused CTE is still checked,** so it can over-refuse, for example `WITH c AS (SELECT id FROM p1) SELECT id FROM ONLY p1`.
+- **`Relations.check` always reads search_path,** where `RelationQualifier.qualify` reads it only when a name has no schema. It doesn't matter in practice.
+- **3b and 3c may need inheritance descendants,** because the scan reads them. `relations` lists only the tables the query names.
+- **A leaf partition named directly is relkind `r`, so it passes.** That's a question for the user.
+
+- **Depends on:** 20260922-17.
+- **Came from:** The reviews of 20260922-17.
+- **README:** 3a.
 - **Status:** todo
 
 ## After version 1.
