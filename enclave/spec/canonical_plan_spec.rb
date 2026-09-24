@@ -265,6 +265,24 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
       expect(canonical(explain).comparable?).to be(false)
     end
 
+    it "treats a qual that parses as two statements the same way" do
+      expect(canonical(with_filter("seq_scan_rare_value", "(id = 5); SELECT 1")).comparable?).to be(false)
+    end
+
+    it "treats a qual with a NUL byte the same way, without raising" do
+      expect(canonical(with_filter("seq_scan_rare_value", "(email = 'quaack-sentinel\0email')")).comparable?)
+        .to be(false)
+    end
+
+    it "treats a sort key with a NUL byte the same way, without raising" do
+      explain = changed("incremental_sort") { |top| top["Plans"].first["Sort Key"] = ["status", "(x || '\0')"] }
+      expect(canonical(explain).comparable?).to be(false)
+    end
+
+    it "treats a qual that isn't valid UTF-8 the same way, without raising" do
+      expect(canonical(with_filter("seq_scan_rare_value", "(email = '\xFF(ANY ')")).comparable?).to be(false)
+    end
+
     it "treats a sort key that adds a second key the same way" do
       explain = changed("incremental_sort") { |top| top["Plans"].first["Sort Key"] = ["status, id"] }
       expect(canonical(explain).comparable?).to be(false)
@@ -283,6 +301,48 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     it "matches the same hypothetical index with another oid" do
       expect(same?(hypothetical("<13542>btree_orders_total_cents"), hypothetical("<16901>btree_orders_total_cents")))
         .to be(true)
+    end
+
+    def mapped(name, map) = canonical_with(hypothetical(name), map)
+
+    def canonical_with(explain, map) = described_class.new(explain, hypothetical_indexes: map)
+
+    it "tells apart hypothetical indexes with one name that the caller maps to different identities" do
+      expect(mapped("<13542>btree_orders_status", 13_542 => "CREATE INDEX ON orders (status)")
+        .matches?(mapped("<13542>btree_orders_status", 13_542 => "CREATE INDEX ON orders (status DESC)")))
+        .to be(false)
+    end
+
+    it "matches hypothetical indexes with different oids that the caller maps to one identity" do
+      expect(mapped("<13542>btree_orders_status", 13_542 => "CREATE INDEX ON orders (status)")
+        .matches?(mapped("<16901>btree_orders_status", 16_901 => "CREATE INDEX ON orders (status)"))).to be(true)
+    end
+
+    it "tells a mapped hypothetical index from a real index whose name is its identity" do
+      real = canonical(plan("primary_key_lookup"))
+      expect(mapped("<13542>btree_orders_status", 13_542 => "orders_pkey").matches?(real)).to be(false)
+    end
+
+    it "makes a plan with a hypothetical index the map leaves out not comparable" do
+      expect(mapped("<13542>btree_orders_status", 99 => "CREATE INDEX ON orders (status)").comparable?).to be(false)
+      expect(mapped("<13542>btree_orders_status", 13_542 => "CREATE INDEX ON orders (status)").comparable?).to be(true)
+    end
+
+    it "leaves real indexes as they are when there's a map" do
+      expect(canonical_with(plan("primary_key_lookup"), 13_542 => "x").matches?(canonical(plan("primary_key_lookup"))))
+        .to be(true)
+    end
+
+    it "holds no identity, since a partial index's predicate holds a literal" do
+      map = { 13_542 => "CREATE INDEX ON orders (status) WHERE email = 'quaack-sentinel-email'" }
+      expect(Marshal.dump(mapped("<13542>btree_orders_status", map))).not_to include("quaack-sentinel")
+    end
+
+    [["not a hash"], { "13542" => "x" }, { 13_542 => :x }].each do |map|
+      it "rejects hypothetical_indexes #{map.inspect.dump} without quoting it" do
+        expect { mapped("<13542>btree_orders_status", map) }
+          .to raise_error(ArgumentError, "hypothetical_indexes must map index oids to identity strings")
+      end
     end
 
     it "tells two hypothetical indexes apart" do

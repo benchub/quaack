@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "pg_query"
 require_relative "plan_node"
 require_relative "plan_expression"
@@ -10,6 +11,7 @@ module Quaack
     # to compare plans:
     #
     #   CanonicalPlan.new(explain).matches?(CanonicalPlan.new(other))
+    #   CanonicalPlan.new(explain, hypothetical_indexes: { 13542 => definition })
     #
     # explain is the parsed JSON of EXPLAIN (FORMAT JSON): the top-level
     # array Postgres prints. It can come from EXPLAIN ANALYZE, with or
@@ -51,8 +53,18 @@ module Quaack
     # raises on a qual, so no error can quote one. The form still comes from
     # production quals, so it stays in the enclave with the plan.
     class CanonicalPlan
-      # Kept as they are, except that a HypoPG index name's "<oid>" prefix is
-      # dropped, since each session gives the same index a new oid.
+      # Kept as they are, except for a HypoPG index's name, "<oid>" followed
+      # by a name made from its method, table, and columns. Each session
+      # gives the same index a new oid, and different indexes, such as a
+      # partial one and a plain one, can get the same name. So a caller that
+      # knows what each hypothetical index is passes hypothetical_indexes, a
+      # Hash from each one's oid to an identity string, such as its
+      # definition from hypopg_get_indexdef. Each hypothetical index then
+      # stands for its identity, and one the Hash leaves out makes the plan
+      # not comparable?. The canonical form keeps only a digest of the
+      # identity, since a partial index's predicate holds a literal. Without
+      # hypothetical_indexes, the "<oid>" is just dropped, and indexes that
+      # HypoPG names the same match.
       NAMES = ["Parent Relationship", "Subplan Name", "Relation Name", "CTE Name", "Function Name", "Index Name",
                "Join Type", "Strategy", "Partial Mode", "Scan Direction"].freeze
 
@@ -62,10 +74,11 @@ module Quaack
       # Lists of keys. Their order matters.
       SORT_KEYS = ["Sort Key", "Presorted Key", "Group Key"].freeze
 
-      # Raises ArgumentError, without quoting the plan, if explain isn't the
-      # parsed JSON of EXPLAIN (FORMAT JSON).
-      def initialize(explain)
-        builder = Builder.new(roots(explain))
+      # Raises ArgumentError, without quoting either argument, if explain
+      # isn't the parsed JSON of EXPLAIN (FORMAT JSON) or hypothetical_indexes
+      # isn't nil or a Hash from Integer oids to Strings.
+      def initialize(explain, hypothetical_indexes: nil)
+        builder = Builder.new(roots(explain), checked(hypothetical_indexes))
         @tree = builder.tree
         @comparable = builder.comparable
         freeze
@@ -91,12 +104,20 @@ module Quaack
         explain.map { |entry| PlanNode.new(entry["Plan"]) }
       end
 
+      def checked(hypothetical_indexes)
+        return hypothetical_indexes if hypothetical_indexes.nil? ||
+                                       (hypothetical_indexes.is_a?(Hash) &&
+                                        hypothetical_indexes.all? { |oid, id| oid.is_a?(Integer) && id.is_a?(String) })
+
+        raise ArgumentError, "hypothetical_indexes must map index oids to identity strings"
+      end
+
       # Builds the canonical form of a plan's roots.
       class Builder
         # A bare column in these nodes' quals belongs to the heap scan above.
         BITMAPS = ["Bitmap Index Scan", "BitmapAnd", "BitmapOr"].freeze
 
-        HYPOTHETICAL_INDEX = /\A<\d+>/
+        HYPOTHETICAL_INDEX = /\A<(\d+)>/
 
         # "InitPlan 1", "SubPlan 1", "hashed SubPlan 1", or "rescan SubPlan 1".
         SUBPLAN = /(?:hashed |rescan )?(?:InitPlan|SubPlan) \d+/
@@ -107,8 +128,9 @@ module Quaack
 
         attr_reader :tree, :comparable
 
-        def initialize(roots)
+        def initialize(roots, hypothetical_indexes)
           @comparable = true
+          @hypothetical_indexes = hypothetical_indexes
           @identities = identities(roots.flat_map(&:subtree))
           sole = @identities.values.uniq
           @sole = sole.first if sole.size == 1
@@ -132,14 +154,24 @@ module Quaack
 
         def names(plan_node)
           names = NAMES.filter_map { |key| [key, plan_node[key]] if plan_node[key] }.to_h
-          names["Index Name"] = names["Index Name"].sub(HYPOTHETICAL_INDEX, "") if names["Index Name"].is_a?(String)
+          index = names["Index Name"]
+          names["Index Name"] = hypothetical(index, Integer(index[HYPOTHETICAL_INDEX, 1])) if hypothetical?(index)
           names
+        end
+
+        def hypothetical?(index) = index.is_a?(String) && index.match?(HYPOTHETICAL_INDEX)
+
+        def hypothetical(index, oid)
+          return index.sub(HYPOTHETICAL_INDEX, "") unless @hypothetical_indexes
+
+          identity = @hypothetical_indexes[oid]
+          identity ? "<hypothetical #{Digest::SHA256.hexdigest(identity)}>" : unparsed
         end
 
         def quals(plan_node, default)
           QUALS.filter_map do |key|
             text = plan_node[key]
-            [key, text.is_a?(String) ? fingerprint("SELECT WHERE #{text}", default) : unparsed] if text
+            [key, text?(text) ? fingerprint("SELECT WHERE #{text}", default) : unparsed] if text
           end.to_h
         end
 
@@ -147,11 +179,15 @@ module Quaack
           SORT_KEYS.filter_map do |key|
             texts = plan_node[key]
             next unless texts
-            next [key, unparsed] unless texts.is_a?(Array) && texts.all?(String)
+            next [key, unparsed] unless texts.is_a?(Array) && texts.all? { |text| text?(text) }
 
             [key, texts.map { |text| fingerprint("SELECT ORDER BY #{text}", default) }]
           end.to_h
         end
+
+        # Text pg_query and the subplan rewrite can take without raising:
+        # valid UTF-8 with no NUL byte.
+        def text?(value) = value.is_a?(String) && value.valid_encoding? && !value.include?("\0")
 
         # What a bare column in the node's quals and keys belongs to, or nil.
         def default_identity(plan_node, inherited)

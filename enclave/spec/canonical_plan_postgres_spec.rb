@@ -91,4 +91,57 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     expect(names).to all(end_with("btree_orders_total_cents"))
     expect(described_class.new(plans.first).matches?(described_class.new(plans.last))).to be(true)
   end
+
+  # HypoPG names an index for its method, table, and columns only, so two
+  # different indexes can get the same name. The caller maps each
+  # hypothetical index's oid to what it is, here its definition.
+  describe "hypothetical indexes mapped to what they are" do
+    # The plan of query with only the hypothetical index ddl, and the oid to
+    # definition map from HypoPG.
+    def with_hypothetical(ddl, query)
+      conn = test_database.connection
+      conn.exec("CREATE EXTENSION IF NOT EXISTS hypopg")
+      conn.exec("SELECT hypopg_reset()")
+      oid = Integer(conn.exec_params("SELECT indexrelid FROM hypopg_create_index($1)", [ddl]).getvalue(0, 0))
+      definition = conn.exec_params("SELECT hypopg_get_indexdef($1)", [oid]).getvalue(0, 0)
+      [explain(query, settings: ["enable_seqscan = off", "enable_bitmapscan = off"]), { oid => definition }]
+    end
+
+    before do
+      test_database.connection.exec("DROP INDEX public.orders_status_created_at_idx")
+    end
+
+    {
+      "a partial index and a plain one" => ["CREATE INDEX ON public.orders (status)",
+                                            "CREATE INDEX ON public.orders (status) WHERE total_cents > 100"],
+      "an index with a column and one that includes it" => [
+        "CREATE INDEX ON public.orders (status, created_at)",
+        "CREATE INDEX ON public.orders (status) INCLUDE (created_at)"
+      ],
+      "an ascending index and a descending one" => ["CREATE INDEX ON public.orders (status)",
+                                                    "CREATE INDEX ON public.orders (status DESC)"]
+    }.each do |what, (first, second)|
+      it "tells apart #{what}, which HypoPG names the same" do
+        # total_cents > 200 implies the partial index's predicate but stays
+        # in the Filter, so the plans differ only in which index they use.
+        query = "SELECT o.created_at FROM public.orders o WHERE o.status = 'shipped' AND o.total_cents > 200"
+        (a, a_map), (b, b_map) = [first, second].map { |ddl| with_hypothetical(ddl, query) }
+        names = [a, b].map { |p| p.dig(0, "Plan", "Index Name").sub(/\A<\d+>/, "") }
+        expect(names.uniq.size).to eq(1)
+        expect(described_class.new(a).matches?(described_class.new(b))).to be(true)
+        expect(described_class.new(a, hypothetical_indexes: a_map)
+                 .matches?(described_class.new(b, hypothetical_indexes: b_map))).to be(false)
+      end
+    end
+
+    it "matches the same hypothetical index made in two sessions" do
+      query = "SELECT o.id FROM public.orders o WHERE o.status = 'shipped'"
+      (a, a_map), (b, b_map) = Array.new(2) do |i|
+        test_database.connection.exec("SELECT hypopg_create_index('CREATE INDEX ON public.customers (name)')") if i == 1
+        with_hypothetical("CREATE INDEX ON public.orders (status) WHERE total_cents > 100", query)
+      end
+      expect(described_class.new(a, hypothetical_indexes: a_map)
+               .matches?(described_class.new(b, hypothetical_indexes: b_map))).to be(true)
+    end
+  end
 end
