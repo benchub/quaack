@@ -14,15 +14,27 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
   before do
     conn.exec(<<~SQL)
+      CREATE TYPE mood AS ENUM ('sad', 'happy');
+      CREATE TYPE pair AS (a integer, b text);
+      CREATE TYPE json_pair AS (a integer, b json);
       CREATE TABLE items (
         id integer PRIMARY KEY,
         grp integer NOT NULL,
         price float8,
         amount numeric,
         label text,
-        doc json
+        doc json,
+        m mood,
+        p pair,
+        jp json_pair
       )
     SQL
+  end
+
+  def rows_of(columns, *rows)
+    rows.map do |values|
+      Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns:, values: values.map(&:to_s))
+    end
   end
 
   # Six rows or fewer, so Postgres sorts them with its stable insertion
@@ -90,20 +102,28 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(fields(compare(original, candidate))).to eq(match: true, mode: :ordered, rule: nil, row: nil, column: nil)
     end
 
-    it "keeps the LIMIT, so a limit that splits a tie still matches" do
+    it "keeps the LIMIT, and matches when it cuts no tie" do
+      limited = "#{original} LIMIT 4"
+      candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT 4"
+      expect(raw(limited, candidate).uniq.size).to eq(2)
+
+      expect(fields(compare(limited, candidate))).to include(match: true, mode: :ordered)
+    end
+
+    it "refuses a LIMIT that splits a tie, even for a good candidate" do
       limited = "#{original} LIMIT 2"
       candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT 2"
       first, second = raw(limited, candidate)
       expect(first.sort).not_to eq(second.sort)
 
-      expect(fields(compare(limited, candidate))).to include(match: true, mode: :ordered)
+      expect(fields(compare(limited, candidate))).to include(match: false, rule: :unsupported_order)
     end
 
     it "keeps the OFFSET" do
-      candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT 2 OFFSET 1"
+      candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT 1 OFFSET 3"
 
-      expect(compare("#{original} LIMIT 2 OFFSET 1", candidate).match?).to be(true)
-      expect(fields(compare("#{original} LIMIT 2 OFFSET 2", candidate))).to include(match: false, rule: :value)
+      expect(compare("#{original} LIMIT 1 OFFSET 3", candidate).match?).to be(true)
+      expect(fields(compare("#{original} LIMIT 1 OFFSET 4", candidate))).to include(match: false, rule: :value)
     end
 
     it "is a value mismatch when the order differs" do
@@ -171,6 +191,113 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
+    # The original's rows depend on how a tie at a LIMIT or OFFSET cut, or
+    # a DISTINCT ON pick, breaks. The two tiebreaker runs only expose the
+    # first and last rows of each tie, so the comparison refuses.
+    describe "a tie at a cut" do
+      # Reads items with id 3, or 2 below, first, then by id.
+      def moved(id) = "(SELECT * FROM items ORDER BY id = #{id} DESC, id OFFSET 0) s"
+
+      def expect_refused(original, candidate, rows)
+        expect(fields(compare(original, candidate, rows:)))
+          .to eq(match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil)
+      end
+
+      let(:four) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1]) }
+
+      it "refuses a LIMIT that cuts a tie" do
+        original = "SELECT id, grp FROM items ORDER BY grp LIMIT 2"
+        candidate = "SELECT id, grp FROM #{moved(3)} ORDER BY LEAST(grp, 1) LIMIT 2"
+        expect(raw(candidate, rows: four)).to eq([[%w[1 0], %w[3 2]]])
+
+        expect_refused(original, candidate, four)
+      end
+
+      it "refuses a DISTINCT ON whose pick is a tie" do
+        rows = rows_of(%w[id grp price], [1, 1, 1], [2, 1, 2], [3, 1, 1])
+
+        expect_refused("SELECT DISTINCT ON (grp) grp, id FROM items ORDER BY grp, price",
+                       "SELECT DISTINCT ON (grp) grp, id FROM #{moved(2)} ORDER BY grp, LEAST(price, 1)", rows)
+      end
+
+      it "refuses an OFFSET that cuts a tie" do
+        rows = rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1], [5, 3])
+
+        candidate = "SELECT id, grp FROM #{moved(3)} ORDER BY CASE WHEN grp = 2 THEN 1 ELSE grp END OFFSET 1 LIMIT 1"
+
+        expect_refused("SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 1", candidate, rows)
+      end
+
+      it "still matches a LIMIT that cuts no tie" do
+        verdicts = [1, 3].map do |limit|
+          compare("SELECT id, grp FROM #{forward} ORDER BY grp LIMIT #{limit}",
+                  "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT #{limit}", rows: four)
+        end
+
+        expect(verdicts.map { |v| fields(v) }.uniq)
+          .to eq([{ match: true, mode: :ordered, rule: nil, row: nil, column: nil }])
+      end
+
+      it "still finds a bad candidate when no tie is cut" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 3",
+                          "SELECT id, grp FROM items ORDER BY grp DESC LIMIT 3", rows: four)
+
+        expect(fields(verdict)).to include(match: false, rule: :value)
+      end
+    end
+
+    # Each original sorts by a column only the catalog knows can be ordered,
+    # and each candidate leaves every row tied, so it comes out in the
+    # original's order only by luck of the scan.
+    describe "types found in the catalog" do
+      it "puts an enum in the tiebreaker" do
+        rows = rows_of(%w[id grp m], [1, 1, "sad"], [2, 1, "happy"])
+        original = "SELECT m FROM items ORDER BY m"
+        candidate = "SELECT m FROM #{forward} ORDER BY grp"
+        expect(raw(original, candidate, rows:).uniq.size).to eq(1)
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+
+      it "puts an array of enums in the tiebreaker" do
+        rows = rows_of(%w[id grp m], [1, 1, "sad"], [2, 1, "happy"])
+        original = "SELECT ARRAY[m] AS ms FROM items ORDER BY ms"
+        candidate = "SELECT ARRAY[m] AS ms FROM #{forward} ORDER BY grp"
+        expect(raw(original, candidate, rows:).uniq.size).to eq(1)
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+
+      it "puts a range in the tiebreaker" do
+        rows = rows_of(%w[id grp], [1, 1], [2, 1])
+        original = "SELECT int4range(0, id) AS r FROM items ORDER BY r"
+        candidate = "SELECT int4range(0, id) AS r FROM #{forward} ORDER BY grp"
+        expect(raw(original, candidate, rows:).uniq.size).to eq(1)
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+
+      it "puts a composite of orderable fields in the tiebreaker" do
+        rows = rows_of(%w[id grp p], [1, 1, "(1,a)"], [2, 1, "(1,b)"])
+        original = "SELECT p FROM items ORDER BY p"
+        candidate = "SELECT p FROM #{forward} ORDER BY grp"
+        expect(raw(original, candidate, rows:).uniq.size).to eq(1)
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+
+      it "leaves out a composite with a field btree can't order" do
+        rows = rows_of(%w[id grp jp], [1, 1, %((1,"{}"))], [2, 1, %((2,"[]"))])
+        sql = "SELECT jp, id FROM #{forward} ORDER BY grp"
+
+        expect(compare(sql, "SELECT jp, id FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)
+      end
+
+      it "the check catches a composite that ORDER BY can't sort" do
+        expect { conn.exec("SELECT NULL::json_pair ORDER BY 1") }.to raise_error(PG::UndefinedFunction)
+      end
+    end
+
     it "leaves columns btree can't order, such as json, out of the tiebreaker" do
       json = "SELECT doc, id FROM #{forward} ORDER BY grp"
 
@@ -184,9 +311,10 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
 
     it "works on a set operation" do
-      sql = "SELECT grp, label FROM items UNION ALL SELECT grp, label FROM items ORDER BY 1 LIMIT 3"
+      # grp 1 has six rows here, so LIMIT 6 cuts no tie.
+      sql = "SELECT grp, label FROM items UNION ALL SELECT grp, label FROM items ORDER BY 1 LIMIT 6"
 
-      candidate = "SELECT grp, label FROM #{reversed} UNION ALL SELECT grp, label FROM items ORDER BY 1 LIMIT 3"
+      candidate = "SELECT grp, label FROM #{reversed} UNION ALL SELECT grp, label FROM items ORDER BY 1 LIMIT 6"
 
       expect(compare(sql, candidate).match?).to be(true)
     end

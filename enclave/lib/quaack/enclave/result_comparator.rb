@@ -217,9 +217,10 @@ module Quaack
           [left, right].all?(&:finite?) ? within_tolerance?(left, right) : left == right
         end
 
-        # Relative to the larger magnitude. The smaller would do as well: at
-        # a relative 1e-9, no pair of doubles falls between the two
-        # tolerances, so no test can tell them apart.
+        # Relative to the larger magnitude, so the order of the two values
+        # doesn't matter. The two differ at the edge: 7.603 against
+        # 7.603000007603 is equal here, but wouldn't be relative to the
+        # smaller.
         def within_tolerance?(left, right)
           (left - right).abs <= [RELATIVE_TOLERANCE * [left.abs, right.abs].max, ABSOLUTE_TOLERANCE].max
         end
