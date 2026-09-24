@@ -467,14 +467,7 @@ Keep the top three candidates by total blocks.
 
 ## Step 15: Report.
 
-### 20260922-61. Burndown counters.
-
-Record per-stage counts (in, added, dropped by reason, out) in the governed store as each enclave step runs, and in the driver for LLM calls. Every stage task should call into this as it's built.
-
-- **Depends on:** 20260922-3, 20260922-7.
-- **README:** 15b.
-- **Status:** todo
-- **Note:** This should be built early, right after the foundations, even though it lives in this section.
+### 20260922-61. Burndown counters. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-62. 15 main report.
 
@@ -991,6 +984,21 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Depends on:** 20260922-47.
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
 - **README:** 9d.
+- **Status:** todo
+
+### 20260924-8. Burndown loose ends.
+
+Findings from the second review of 20260922-61:
+- **`Protocol::Burndown.valid?` raises ArgumentError instead of returning false** on a record that mixes String and Symbol keys, because `record.keys.sort` can't compare them. It fails closed, but it breaks egress's contract of raising `Egress::Error`. Check that every key is a String before sorting.
+- **Integer counts have no upper bound.** A 16-digit number could go out as a count if an Integer from the database were passed in. Consider a sanity cap, such as counts below 10**12.
+- **Misuse double-counts instead of being refused.** Calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`, is accepted. Consider deriving `since` from the stored burndown for each search.
+- **`since` and the Dedupe live only in memory.** 5a-5 needs a separate enclave call after the driver's LLM call, so the next process has to rebuild both. Add a note for 20260922-33.
+- **`record_single_candidate_test` doesn't tie its report to the Dedupe's proposals.**
+- **Question for the user:** should drop reasons and total names be closed lists in the protocol gem, like `STAGES`? Today any lowercase word passes, so a one-word value could be stored as a reason.
+
+- **Depends on:** 20260922-61.
+- **Came from:** Both reviews of 20260922-61.
+- **README:** 15b.
 - **Status:** todo
 
 ## After version 1.

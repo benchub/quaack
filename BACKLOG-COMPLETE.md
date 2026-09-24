@@ -587,3 +587,19 @@ Also, from the same review:
 - **README:** 9d.
 - **Status:** done
 - **Landed:** Merged into `main` together with 20260922-47 and 20260923-54, after a build and two reviews. A four-row fixture pins `hidden_differences?`, and the composite tests assert `unsupported_order`.
+
+### 20260922-61. Burndown counters.
+
+Record per-stage counts (in, added, dropped by reason, out) in the governed store as each enclave step runs, and in the driver for LLM calls. Every stage task should call into this as it's built.
+
+- **Depends on:** 20260922-3, 20260922-7.
+- **README:** 15b.
+- **Status:** done
+- **Note:** This should be built early, right after the foundations, even though it lives in this section.
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review.
+  - `Quaack::Enclave::Burndown` keeps a single `burndown` Store entry, keyed by stage and search, plus work totals. Every write checks `in + added - dropped - set_aside == out`.
+  - Adapters: `record_dedupe` (5a-3), `record_single_candidate_test` (5a-4), and `record_llm_round` (one combined 5a-5 or 5a-6 record per round).
+  - The shape predicate `Protocol::Burndown.valid?` lives in the protocol gem. Egress and the store both use it, so a hand-built `burndown` message can't carry a value.
+  - The driver's `Burndown` counts LLM calls by step.
+  - The whitelist gained `burndown: [stages, totals]`.
+  - The second review found no blockers. Its findings became 20260924-8.
