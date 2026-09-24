@@ -65,7 +65,11 @@ module Quaack
       # A step called exit or abort (see call_step).
       class StepExited < StandardError; end
 
-      # The line that ends every call that succeeded, and no other.
+      # The last line of the step's buffered output. A refused or failed step
+      # never prints it. But if the write goes out and the flush after it
+      # fails, the error line follows it. So the driver must require DONE to
+      # be the last non-blank line, and treat an error line after it as a
+      # failure.
       DONE = Egress.serialize(type: :done)
 
       EX_OK = 0

@@ -22,7 +22,8 @@ INPUT_REFUSED_ON_EVERY_JSON = [
   # 2.9.1 keeps the character after an unknown escape; 3.0.2 refuses it.
   *%w[q x41 a ' 0 U0041].map { |escape| %({"a": "#{CLI_SENTINEL}\\#{escape}"}) },
   # Both read a number too big for a Float as Infinity.
-  %({"a": 1e400, "b": "#{CLI_SENTINEL}"}), %({"a": [[-1e400]], "b": "#{CLI_SENTINEL}"})
+  %({"a": 1e400, "b": "#{CLI_SENTINEL}"}), %({"a": [[-1e400]], "b": "#{CLI_SENTINEL}"}),
+  %({"a": 1, "b": 1e400, "c": "#{CLI_SENTINEL}"}), %({"a": [1, [2, -1e400]], "b": "#{CLI_SENTINEL}"})
 ].freeze
 
 # Input these must accept on every json version: a slash or comment marker
@@ -235,9 +236,12 @@ RSpec.describe Quaack::Enclave::CLI do
 
     # A regex that repeats over each character can keep a backtrack entry
     # per character, about 70 bytes each, so a 64 MB input once took 5 GB.
-    # The child reports its peak RSS (getrusage's ru_maxrss: bytes on
-    # macOS, KB on Linux) before and after parsing about 32 MB of spaces
-    # and then about 32 MB inside a string.
+    # Each child builds one input of about 32 MB, of spaces or inside a
+    # string, from a 64 KB chunk so building it leaves no bigger peak of its
+    # own. It reports its peak RSS (getrusage's ru_maxrss: bytes on macOS,
+    # KB on Linux) before and after parsing it. The peak before must hold
+    # the input itself, so a reading that's always 0, such as the wrong
+    # field of rusage, can't pass.
     it "parses big input in memory a small multiple of its size" do
       script = <<~RUBY
         require "fiddle"
@@ -251,19 +255,26 @@ RSpec.describe Quaack::Enclave::CLI do
           usage[32, 8].unpack1("q") * (RUBY_PLATFORM.include?("darwin") ? 1 : 1024)
         end
         size = 32 * 1024 * 1024
-        texts = ["{" + (" " * size) + "}", '{"a":"' + ("x" * size) + '"}']
+        chunk = ARGV[0] * (64 * 1024)
+        text = String.new(ARGV[1], capacity: size + 16)
+        (size / chunk.bytesize).times { text << chunk }
+        text << ARGV[2]
         GC.start
         before = peak.call
-        texts.each { |text| Quaack::Enclave::CLI::Input.parse(text.dup) }
+        Quaack::Enclave::CLI::Input.parse(text)
         puts before, peak.call, size
       RUBY
-      out, err, status = Bundler.with_unbundled_env do
-        run_ruby("--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-e", script)
-      end
+      [[" ", "{", "}"], ["x", '{"a":"', '"}']].each do |filler, open, close|
+        out, err, status = Bundler.with_unbundled_env do
+          run_ruby("--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-e", script, filler, open, close)
+        end
 
-      expect(status).to be_success, "stderr was #{err}"
-      before, after, size = out.lines.map { Integer(it) }
-      expect(after - before).to be < 6 * size, "peak RSS grew #{(after - before) >> 20} MB for #{size >> 20} MB"
+        expect(status).to be_success, "stderr was #{err}"
+        before, after, size = out.lines.map { Integer(it) }
+        expect(before).to be > size, "peak RSS before parsing was #{before >> 20} MB, less than the input"
+        expect(after - before).to be < 6 * size,
+                                  "#{filler.inspect}: peak RSS grew #{(after - before) >> 20} MB for #{size >> 20} MB"
+      end
     end
 
     # JSON doesn't count an empty innermost container toward its limit, so
