@@ -69,17 +69,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ## Step 2: Production inventory.
 
-### 20260922-16. Production inventory.
-
-Check the connection to the production server and record the version, extensions, memory, planner settings, parallel settings, non-default GUCs from the plan's `SETTINGS`, `pg_database` locale fields, and `default_text_search_config`.
-
-- **Depends on:** 20260922-4, 20260922-13.
-- **README:** Step 2.
-- **Status:** todo
-- **Decided:**
-  - Connect with the operator's own libpq setup on the jump server: the host from the input, plus `PGUSER`, `~/.pgpass`, and `~/.pg_service.conf`. QUAACK stores no credentials, and it reads inside a read-only transaction.
-  - A `quaacks` config value holds a one-line shell command for finding instance memory, with the hostname filled in. The enclave script runs it on the jump server. That leaves room for any cloud provider.
-- **Open questions:** What does the memory command print (bytes, or a size like `64GB`)? What happens when it isn't configured, or when it fails?
+### 20260922-16. Production inventory. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 3: Schema, statistics, and classification.
 
@@ -976,6 +966,7 @@ Findings from the reviews of 20260922-9:
 - **Came from:** Both reviews of 20260922-9.
 - **README:** Trust boundary.
 - **Status:** todo
+- **Note:** The `pg` item is resolved. 20260922-16 made pg a runtime dependency of quaacks.
 
 ### 20260924-14. LLM client loose ends.
 
@@ -1134,6 +1125,29 @@ Findings from the build and reviews of 20260924-4:
 - **Depends on:** 20260924-4.
 - **Came from:** The build and reviews of 20260924-4.
 - **README:** Step 1.
+- **Status:** todo
+
+### 20260924-24. Production inventory loose ends.
+
+Findings from the build and reviews of 20260922-16:
+- **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
+- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 must also decide whether to compare the run server with these values or with the plan's own Settings.
+- **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
+- **`"memory_command": null` counts as not configured,** but the README says that's `bad_config`.
+- **There's no upper bound on the memory size.**
+- **A background child that holds stdout makes the memory command wait out the full timeout,** and a `setsid` child escapes the process-group kill.
+- **`pg` now loads for every `quaacks` subcommand.**
+- **Spec noise:** `ProductionServer` prints NOTICE lines into the rake output.
+- **Surviving mutants:**
+  - config: invalid UTF-8 handling
+  - memory: a double space before the unit, `reap`, the TIMEOUT and MAX_OUTPUT values, and a spawn failure
+  - inventory: closing the connection
+  - the step: a hardcoded `major_version`
+- **3a's `Relations.check`** could use `Inventory::Production.connect` and `read_only`.
+
+- **Depends on:** 20260922-16.
+- **Came from:** The build and reviews of 20260922-16.
+- **README:** Step 2.
 - **Status:** todo
 
 ## After version 1.

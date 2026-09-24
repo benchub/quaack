@@ -780,3 +780,17 @@ Before deparsing, wrap the operand in an explicit parenthesis node, or post-proc
 - **README:** Step 1.
 - **Status:** done
 - **Landed:** Merged into `main` after two reviews. The second review was clean: 77,000 fuzzed supported queries round-trip with none refused, and 2,798 gave the same rows on PG18. `Deparse::Parentheses.add!` wraps operands before deparsing, and the round-trip guard still runs last. The leftovers went to 20260924-23.
+
+### 20260922-16. Production inventory.
+
+Check the connection to the production server and record the version, extensions, memory, planner settings, parallel settings, non-default GUCs from the plan's `SETTINGS`, `pg_database` locale fields, and `default_text_search_config`.
+
+- **Depends on:** 20260922-4, 20260922-13.
+- **README:** Step 2.
+- **Status:** done
+- **Decided:**
+  - Connect with the operator's own libpq setup on the jump server: the host from the input, plus `PGUSER`, `~/.pgpass`, and `~/.pg_service.conf`. QUAACK stores no credentials, and it reads inside a read-only transaction.
+  - A `quaacks` config value holds a one-line shell command for finding instance memory, with the hostname filled in. The enclave script runs it on the jump server. That leaves room for any cloud provider.
+- **Open questions:** What does the memory command print (bytes, or a size like `64GB`)? What happens when it isn't configured, or when it fails?
+- **Answered (main session default, pending the user):** The memory command prints bytes, or a number with a kB, MB, GB, TB, KiB, MiB, GiB, or TiB unit (all binary). If it isn't configured, memory is unknown and the run continues. If it's configured and fails, the run aborts with `memory_command_failed`, `memory_command_timed_out`, or `memory_command_bad_output`. The config is `~/.quaack/config.json`, with `memory_command` and a `{host}` placeholder.
+- **Landed:** Merged into `main` after a review, a fix round with only the one blocker (`enable_gathermerge`), and a clean second review. It adds `quaacks inventory --run <id>` and the whitelist type `inventory: [major_version, memory_known]`, and makes `pg` a runtime dependency of quaacks. The minor findings went to 20260924-24.
