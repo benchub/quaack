@@ -29,6 +29,7 @@ require_relative "enclave/rewrite_candidate_check"
 require_relative "enclave/relations"
 require_relative "enclave/schema_dump"
 require_relative "enclave/planner_statistics"
+require_relative "enclave/pii_classification"
 require_relative "enclave/redaction"
 
 module Quaack

@@ -90,6 +90,20 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
                                 "column_names" => %w[id customer_id status total_cents created_at])
       expect(orders["relpages"]).to be_a(Integer).and be_positive
     end
+
+    # For 3f's heuristic: the string types, a domain over one, and citext.
+    # An array of text isn't text itself.
+    it "lists the text-like columns, in attnum order" do
+      conn.exec(<<~SQL)
+        CREATE EXTENSION citext;
+        CREATE DOMAIN handle AS varchar(20);
+        CREATE TABLE kinds (a text, b varchar(10), c char(2), d citext, e handle, f text[], g int, h name, i jsonb);
+      SQL
+      run([orders, table("public", "kinds")])
+
+      expect(stored_table("orders")["text_columns"]).to eq(["status"])
+      expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
+    end
   end
 
   describe "the stored indexes" do
@@ -176,31 +190,6 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       result = run
 
       expect(described_class.load(store)).to eq(result)
-    end
-  end
-
-  describe "the few-distinct columns, for 3f" do
-    it "lists each column with fewer than 50 distinct values, as Dedupe's low_cardinality pairs" do
-      expect(run.few_distinct).to eq([[orders, "status"]])
-    end
-
-    # 49 and 50 distinct values: n_distinct is the count itself. 40 rows, each
-    # different: n_distinct is -1, a fraction of the rows, so the count is
-    # 40. A table never analyzed has no count at all.
-    it "counts distinct values the way 5a-1 does, and draws the line at 50" do
-      conn.exec(<<~SQL)
-        CREATE TABLE edges (under int, at int, id int);
-        INSERT INTO edges SELECT i % 49, i % 50, NULL FROM generate_series(1, 5000) AS i;
-        CREATE TABLE small (id int);
-        INSERT INTO small SELECT i FROM generate_series(1, 40) AS i;
-        CREATE TABLE fresh (flag boolean);
-        ANALYZE edges, small;
-      SQL
-      tables = %w[edges small fresh].map { table("public", it) }
-      result = run(tables)
-
-      expect(result.statistics.table(tables[1]).column("id").n_distinct).to eq(-1.0)
-      expect(result.few_distinct).to eq([[tables[0], "under"], [tables[1], "id"]])
     end
   end
 

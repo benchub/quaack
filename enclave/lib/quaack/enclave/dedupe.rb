@@ -30,8 +30,8 @@ module Quaack
     #
     # low_cardinality is the columns that README 3f classes as
     # low-cardinality, as [TableName, column name] pairs: fewer than 50
-    # distinct values and not PII. 3f (20260922-22) isn't built yet, so the
-    # caller supplies the pairs. This class doesn't apply 3f's rule itself.
+    # distinct values and not PII. PiiClassification#low_cardinality gives
+    # them. This class doesn't apply 3f's rule itself.
     #
     # Normalizing. IndexCandidate normalizes each definition when it's built:
     # the nulls ordering each direction defaults to, the method's case, and

@@ -153,7 +153,7 @@ Pull planner statistics for the query's tables and their indexes, including exte
 
 These statistics include real values in `most_common_vals` and `histogram_bounds`. That makes them value-class data under the trust boundary, so they stay in the governed store.
 
-Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also lists the columns with fewer than 50 distinct values, which step 3f narrows to the low-cardinality set.
+Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic.
 
 Unsupported in v1: a table with inheritance children is refused with `inheritance_parent`, because `pg_stats` keeps two rows for each of its columns and QUAACK doesn't choose between them. The element and range statistics in `pg_stats` and the statistics on expressions in `pg_stats_ext_exprs` aren't read.
 
@@ -175,12 +175,18 @@ This literal set is value-class data, so it stays in the governed store. QUAACK 
 
 Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.
 
+- The configured list is `pii_columns` in the `quaacks` config: `schema.table.column` globs, such as `*.users.email`. A `*` matches within one name part and never crosses a dot. Matching ignores case, so a glob can only match more columns, never fewer.
+- The heuristic flags a column whose type is text-like (text, varchar, char, name, citext, or a domain over one) and that has 50 or more distinct values. A text column whose distinct count is unknown, because it was never analyzed, counts as PII too.
+- The config's `cardinality_threshold` moves the line of 50, here and for low-cardinality below.
+
 This classification doesn't decide whether values get sent, because no values are ever sent. Instead, it controls which derived scalars go out:
 
 - For a PII column, also withhold the MCV frequencies. A frequency vector plus a column name can be enough to re-identify values in a small domain.
 - For every column, PII or not, still send `n_distinct`, `null_frac`, and `correlation`. A single number that summarizes a whole column reveals nothing about any one row.
 
-This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values and isn't classified as PII. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out.
+This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
+
+This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. A later step does.
 
 ### 3g. Redaction.
 
