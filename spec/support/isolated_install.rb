@@ -37,17 +37,19 @@ class IsolatedInstall
   end
 
   # Runs the executable `exe` with `args`. Records $LOADED_FEATURES at exit.
-  def run(exe, *) = run_ruby(File.join(@home, "bin", exe), *)
+  def run(exe, *, **) = run_ruby(File.join(@home, "bin", exe), *, **)
 
   # Runs the Ruby script `script` with `args`, the same way as an executable.
-  def run_ruby(script, *)
+  # `env` adds to the child's environment, such as a HOME, and `stdin` is
+  # what it reads on stdin.
+  def run_ruby(script, *, env: {}, stdin: "")
     features_file = File.join(@dir, "loaded_features.txt")
     FileUtils.rm_f(features_file)
     dumper = self.dumper
     File.write(dumper, "at_exit { File.write(ENV.fetch('QUAACK_FEATURES_OUT'), $LOADED_FEATURES.join(\"\\n\")) }\n")
-    env = isolated_env.merge("RUBYOPT" => "-r#{dumper}", "QUAACK_FEATURES_OUT" => features_file)
+    env = isolated_env.merge(env, "RUBYOPT" => "-r#{dumper}", "QUAACK_FEATURES_OUT" => features_file)
     out, err, status = Bundler.with_unbundled_env do
-      Open3.capture3(env, RbConfig.ruby, script, *)
+      Open3.capture3(env, RbConfig.ruby, script, *, stdin_data: stdin)
     end
     features = File.exist?(features_file) ? File.read(features_file).split("\n") : []
     Run.new(out, err, status, features)
