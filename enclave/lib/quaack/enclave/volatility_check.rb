@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "function_calls"
 require_relative "relation_qualifier"
+require_relative "supported_sql"
 
 module Quaack
   module Enclave
@@ -20,7 +21,8 @@ module Quaack
     # production database. Only the catalog is read, with plain SELECTs.
     #
     # It checks each call FunctionCalls finds in the parse, which says what
-    # that covers and what it can't see.
+    # that covers and what it can't see. First, the query must use only
+    # what SupportedSql lists, or SupportedSql::Error is raised.
     #
     # Picking the overload Postgres would pick takes its full type
     # resolution, so the check doesn't try. It aborts if any candidate
@@ -135,8 +137,10 @@ module Quaack
       module_function
 
       def check(sql, settings, connection)
+        parse = parse(sql)
+        SupportedSql.check!(parse)
         path = nil
-        FunctionCalls.of(parse(sql).tree).uniq.each do |call|
+        FunctionCalls.of(parse.tree).uniq.each do |call|
           schemas = call.schema ? [call.schema] : (path ||= search_path(settings, connection))
           row = volatile(call, schemas, connection)
           raise Error.new("volatile_function", describe(call, row)) if row

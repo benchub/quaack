@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "strscan"
+require_relative "supported_sql"
 require_relative "table_name"
 
 module Quaack
@@ -22,9 +23,10 @@ module Quaack
     # name reaches it isn't a relation, so it's left alone: a CTE's name
     # reaches the rest of its statement, including subqueries, and later
     # CTEs in the same WITH. Under WITH RECURSIVE it reaches every CTE
-    # there, itself included. The target of INSERT, UPDATE, DELETE, or MERGE
-    # is always a table, so CTE names don't reach it. The names in FOR
-    # UPDATE OF name FROM items, not relations, so they're left alone too.
+    # there, itself included.
+    #
+    # The query must use only what SupportedSql lists, so it's one SELECT
+    # with no locking clause. Anything else raises SupportedSql::Error.
     #
     # Every other name is resolved the way Postgres resolved it for the
     # session that made the plan, using the search_path in Settings. EXPLAIN
@@ -78,24 +80,22 @@ module Quaack
         Result.new(sql: parse.deparse, resolved:)
       end
 
+      # The parse, once SupportedSql has checked it.
       def parse(sql)
-        PgQuery.parse(sql)
-      rescue PgQuery::ParseError
-        raise Error, "the query doesn't parse", cause: nil
+        parse = begin
+          PgQuery.parse(sql)
+        rescue PgQuery::ParseError
+          raise Error, "the query doesn't parse", cause: nil
+        end
+        SupportedSql.check!(parse)
+        parse
       end
 
-      # The statements whose relation field is their target, which is always
-      # a table, never a CTE.
-      DML_STATEMENTS = [PgQuery::InsertStmt, PgQuery::UpdateStmt, PgQuery::DeleteStmt, PgQuery::MergeStmt].freeze
-
       # Every RangeVar with no schema that isn't a reference to a CTE in
-      # scope. A locking clause's RangeVars (FOR UPDATE OF w) name FROM
-      # items, not relations, and Postgres rejects them qualified, so
-      # they're skipped.
+      # scope.
       def collect(node, ctes, found)
         case node
         when PgQuery::RangeVar then found << node if unqualified?(node, ctes)
-        when PgQuery::LockingClause then nil
         when Google::Protobuf::RepeatedField then node.each { |child| collect(child, ctes, found) }
         when Google::Protobuf::MessageExts then collect_message(node, ctes, found)
         end
@@ -109,11 +109,9 @@ module Quaack
         node.class.descriptor.each do |field|
           next if field.name == "with_clause"
 
-          collect(field.get(node), dml_target?(node, field) ? [] : ctes + names, found)
+          collect(field.get(node), ctes + names, found)
         end
       end
-
-      def dml_target?(node, field) = field.name == "relation" && DML_STATEMENTS.include?(node.class)
 
       # Walks each CTE's body with the names that reach it, and returns the
       # names.
