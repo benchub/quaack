@@ -59,17 +59,21 @@ module Quaack
     # error (class 08), a transaction state or rollback (25, 40), a lack of
     # resources (53), a cancel, timeout, or shutdown (57), a lock timeout
     # (55P03), a system error (58), corrupt data (XX001, XX002), or no
-    # SQLSTATE at all. Those stop
-    # the run with Error(:hypopg_failed). HypoPG reports much of what it
-    # refuses, such as a column that doesn't exist, as XX000, so that
-    # counts as a refusal.
+    # SQLSTATE at all, such as a failure to send. Those stop the run with
+    # Error(:hypopg_failed). HypoPG reports much of what it refuses, such
+    # as a column that doesn't exist, as XX000, so that counts as a
+    # refusal.
     #
     # The run happens inside a transaction that's rolled back, and
     # hypopg_reset runs at the end, since hypothetical indexes don't roll
     # back. A hypothetical index the caller made earlier is gone afterward.
-    # Postgres notices are dropped during the run, since a notice can quote
-    # a literal, and the caller's notice receiver is put back after, even
-    # if cleanup fails.
+    # The transaction also sets hypopg.enabled = on, since with it off,
+    # HypoPG still creates and sizes each index but the planner never sees
+    # it, so every candidate would look unused. If the run fails and
+    # cleanup fails too, the run's error is the one raised. Postgres
+    # notices are dropped during the run, since a notice can quote a
+    # literal, and the caller's notice receiver is put back after, even if
+    # cleanup fails.
     #
     # Trust boundary: the literals and the raw plans are value-class data
     # and stay in the enclave. inspect and to_s of every result leave the
@@ -132,7 +136,7 @@ module Quaack
       # hypopg_create_index.
       STATEMENT = "quaack_5a4"
 
-      CREATE_SQL = "SELECT indexrelid, hypopg_relation_size(indexrelid) FROM hypopg_create_index($1)"
+      CREATE_SQL = "SELECT indexrelid, indexname, hypopg_relation_size(indexrelid) FROM hypopg_create_index($1)"
 
       # SQLSTATE classes and codes that mean the session failed, not the
       # candidate. See the comment at the top.
@@ -204,17 +208,29 @@ module Quaack
 
         private
 
+        # If the run fails and cleanup fails too, the run's error is the
+        # one raised.
         def tested
+          failed = true
           SingleCandidateTest.guarded(:explain_failed) { start }
-          baseline = Baseline.new(plans: plans(nil, nil))
-          Report.new(baseline:, results: @candidates.map { |c| test(c) }.freeze)
+          baseline = Baseline.new(plans: plans(nil, nil, nil))
+          report = Report.new(baseline:, results: @candidates.map { |c| test(c) }.freeze)
+          failed = false
+          report
         ensure
+          cleanup(failed)
+        end
+
+        def cleanup(failed)
           SingleCandidateTest.guarded(:cleanup_failed) { finish }
+        rescue StandardError
+          raise unless failed
         end
 
         def start
           @connection.exec("BEGIN")
           @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
+          @connection.exec("SET LOCAL hypopg.enabled = on")
           @connection.exec("SELECT hypopg_reset()")
         end
 
@@ -230,24 +246,24 @@ module Quaack
         end
 
         def test(candidate)
-          oid, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
+          oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
           return refused(candidate, sqlstate) if oid.nil?
 
-          Result.new(candidate:, size:, plans: plans(oid, candidate), refusal: nil)
+          Result.new(candidate:, size:, plans: plans(oid, name, candidate), refusal: nil)
         end
 
-        # The new index's oid and size, or, if HypoPG refused it, nil, nil,
-        # and the SQLSTATE.
+        # The new index's oid, name, and size, or, if HypoPG refused it,
+        # three nils and the SQLSTATE.
         def create(candidate)
           @connection.exec("SELECT hypopg_reset()")
           @connection.exec("SAVEPOINT #{STATEMENT}")
           created = @connection.exec_params(CREATE_SQL, [candidate.to_ddl])
           @connection.exec("RELEASE SAVEPOINT #{STATEMENT}")
-          [Integer(created.getvalue(0, 0)), Integer(created.getvalue(0, 1))]
+          [Integer(created.getvalue(0, 0)), created.getvalue(0, 1), Integer(created.getvalue(0, 2))]
         rescue StandardError => e
           raise unless SingleCandidateTest.postgres_error?(e)
 
-          [nil, nil, refusal_sqlstate(SingleCandidateTest.sqlstate(e))]
+          [nil, nil, nil, refusal_sqlstate(SingleCandidateTest.sqlstate(e))]
         end
 
         # Rolls back a refused create and returns its SQLSTATE, or raises
@@ -264,9 +280,9 @@ module Quaack
                      refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
         end
 
-        def plans(oid, candidate)
+        def plans(oid, index_name, candidate)
           identities = oid ? { oid => candidate.to_ddl } : {}
-          @literal_sets.to_h { |name, values| [name, plan(explain(values), oid, identities)] }.freeze
+          @literal_sets.to_h { |set, values| [set, plan(explain(values), index_name, identities)] }.freeze
         end
 
         def explain(values)
@@ -289,16 +305,18 @@ module Quaack
           "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
         end
 
-        def plan(explain, oid, identities)
+        def plan(explain, index_name, identities)
           root = explain.first["Plan"]
-          Plan.new(used: !oid.nil? && uses?(PlanNode.new(root), oid),
+          Plan.new(used: !index_name.nil? && uses?(PlanNode.new(root), index_name),
                    total_cost: root["Total Cost"],
                    canonical_plan: CanonicalPlan.new(explain, hypothetical_indexes: identities),
                    raw_plan: explain)
         end
 
-        def uses?(root, oid)
-          root.subtree.any? { |node| node["Index Name"].is_a?(String) && node["Index Name"].start_with?("<#{oid}>") }
+        # Whether any node scans the hypothetical index, by the name HypoPG
+        # gave it.
+        def uses?(root, index_name)
+          root.subtree.any? { |node| node["Index Name"] == index_name }
         end
       end
 

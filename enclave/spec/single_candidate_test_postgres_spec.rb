@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "json"
 require "quaack/enclave/single_candidate_test"
 
@@ -358,6 +359,70 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(skewed_summary(other)).to eq(custom_plans)
   ensure
     other&.close
+  end
+
+  # With hypopg.enabled off, HypoPG still creates the index and sizes it,
+  # but the planner never sees it.
+  it "turns HypoPG on for the run when the session has it off" do
+    conn.exec("SET hypopg.enabled = off")
+    expect(skewed_summary(conn)).to eq(custom_plans)
+    expect(conn.exec("SHOW hypopg.enabled").getvalue(0, 0)).to eq("off")
+  end
+
+  it "turns HypoPG on for the run when the database has it off" do
+    conn.exec("ALTER DATABASE #{conn.escape_identifier(test_database.name)} SET hypopg.enabled = off")
+    other = test_database.connect
+    expect(other.exec("SHOW hypopg.enabled").getvalue(0, 0)).to eq("off")
+    expect(skewed_summary(other)).to eq(custom_plans)
+  ensure
+    other&.close
+  end
+
+  # A Postgres error with no SQLSTATE, such as a failure to send, says the
+  # connection is at fault. The wrapper fails the create call that way.
+  it "stops the run when creating an index fails with no SQLSTATE" do
+    unsendable = Class.new(SimpleDelegator) do
+      def exec_params(*) = raise(PG::UnableToSend, "SENTINEL-5a4-7f3c")
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: unsendable.new(conn))
+
+    expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: nil, cause: nil)
+    expect(error.full_message).not_to include("SENTINEL")
+    expect(leftovers).to eq(clean)
+  end
+
+  # hypopg_reset can't be found, so start fails, and then cleanup fails
+  # the same way.
+  it "raises the first error when cleanup fails too" do
+    conn.exec("SET search_path = pg_catalog")
+    error = run_error("SELECT * FROM public.t WHERE a = $1", { slow: ["5"] })
+    conn.exec("RESET search_path")
+
+    expect(error).to have_attributes(rule: :explain_failed, sqlstate: "42883", cause: nil)
+    expect(leftovers).to eq(clean)
+  end
+
+  # The wrapper fails only the last hypopg_reset, which cleanup runs after
+  # the rollback.
+  it "raises a cleanup failure after a run that otherwise worked" do
+    last_reset_fails = Class.new(SimpleDelegator) do
+      def exec(sql, *)
+        raise PG::UnableToSend, "no" if sql.include?("hypopg_reset") && transaction_status.zero?
+
+        super
+      end
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: last_reset_fails.new(conn))
+
+    expect(error).to have_attributes(rule: :cleanup_failed, sqlstate: nil, cause: nil)
+  end
+
+  it "doesn't count a real index the plan uses as the candidate" do
+    conn.exec("CREATE INDEX t_a_real ON t (a)")
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["c"])])
+
+    expect(index_names(report.results.first.plans[:slow].raw_plan)).to eq(["t_a_real"])
+    expect(report.results.first.used?).to be(false)
   end
 
   it "puts the caller's notice receiver back even when cleanup fails" do
