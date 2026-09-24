@@ -423,6 +423,43 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       expect(in_child(sql).map(&:first))
         .to eq(["normalize (o.note || $2, NFC) = $3", "o.note || $4 IS NFKD NORMALIZED"])
     end
+
+    it "redacts the second argument of normalize called as a plain function" do
+      sql = "SELECT 1 FROM public.orders o WHERE pg_catalog.normalize(o.note, 'SENTINEL') = 'x' " \
+            "AND pg_catalog.is_normalized(o.note, 'SENTINEL')"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["pg_catalog.\"normalize\"(o.note, $2) = $3", "pg_catalog.is_normalized(o.note, $4)"])
+    end
+
+    def recursive(clause)
+      "SELECT 1 FROM public.orders o WHERE EXISTS (WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL " \
+        "SELECT n + 1 FROM t) #{clause} SELECT 1 FROM t WHERE t.n = o.id)"
+    end
+
+    it "keeps the marks a CYCLE clause gets when TO and DEFAULT aren't written, since the parser made them" do
+      shapes = in_child(recursive("CYCLE n SET c USING p")).map(&:first)
+      expect(shapes.first).to include("CYCLE n SET c TO true DEFAULT false USING p")
+      expect(shapes.last).to eq("t.n = o.id")
+    end
+
+    it "gives written CYCLE marks string placeholders, since the deparser needs literals there" do
+      shapes = in_child(recursive("CYCLE n SET c TO 'SENTINEL_TO' DEFAULT 'SENTINEL_DEF' USING p")).map(&:first)
+      expect(shapes.first).to include("CYCLE n SET c TO '$4' DEFAULT '$5' USING p")
+      expect(shapes.join).not_to include("SENTINEL")
+    end
+
+    it "handles a SEARCH clause" do
+      shapes = in_child(recursive("SEARCH DEPTH FIRST BY n SET s")).map(&:first)
+      expect(shapes.first).to include("SEARCH DEPTH FIRST BY n SET s")
+    end
+
+    it "keeps XMLROOT's keyword arguments, and redacts a written version" do
+      sql = "SELECT 1 FROM public.orders o WHERE xmlroot(o.note::xml, version no value, standalone no value) IS NULL " \
+            "AND xmlroot(o.note::xml, version 'SENTINEL', standalone yes) IS NULL"
+      expect(in_child(sql).map(&:first))
+        .to eq(["xmlroot(o.note::xml, version no value, standalone no value) IS NULL",
+                "xmlroot(o.note::xml, version $2, standalone yes) IS NULL"])
+    end
   end
 
   describe "FROM items" do
@@ -502,6 +539,21 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     it "splits NOT, and takes IS TRUE and subquery tests, inside an atom" do
       sql = where("coalesce(NOT o.active, (o.status = 1) IS TRUE, EXISTS (SELECT 1), false)")
       expect(shapes(sql).drop(1)).to eq(["o.active", "o.status = $1 IS TRUE", "o.status = $1", "EXISTS (SELECT $2)"])
+    end
+
+    it "takes IS NULL, IN (SELECT ...), and ALL tests inside an atom" do
+      sql = where("coalesce(o.note IS NULL, o.status IN (SELECT 1), o.status > ALL (SELECT 2), false)")
+      expect(shapes(sql).drop(1))
+        .to eq(["o.note IS NULL", "o.status IN (SELECT $1)", "o.status > ALL (SELECT $2)"])
+    end
+
+    it "doesn't take an A_Expr that isn't a test, such as NULLIF, inside an atom" do
+      expect(shapes(where("coalesce(NULLIF(o.status, 1), 2) > 0"))).to eq(["COALESCE(NULLIF(o.status, $1), $2) > $3"])
+    end
+
+    it "takes atoms in a simple CASE's argument and ELSE" do
+      sql = where("CASE (o.total > 1) WHEN true THEN true ELSE o.total > 2 END")
+      expect(shapes(sql).drop(1)).to eq(["o.total > $1", "(o.total > $1) = $2", "o.total > $4"])
     end
 
     it "goes back to reading only predicate positions after an atom" do

@@ -198,13 +198,21 @@ module Quaack
       # as do COLLATE names. They're written in the query's own text, like
       # its column names, and say how a value is typed, not what it is.
       #
-      # Two kinds of constant are syntax the deparser needs as literals. A
-      # JSON_TABLE path (the row path, a column's PATH, a NESTED PATH) can
-      # hold values, so it becomes a string holding its placeholder, such
-      # as '$3'. A parameter there crashes the deparser, and the process
-      # with it. The normal form of normalize(x, NFC) and x IS NFC
-      # NORMALIZED stays: it can only be NFC, NFD, NFKC, or NFKD, so it's a
-      # keyword, not a value, and the deparser takes nothing else there.
+      # Some constants aren't values, and stay:
+      # - A constant the parser made, which has no location. The parser
+      #   makes one for a default it fills in, such as the TRUE and FALSE
+      #   marks of a CYCLE clause with no TO or DEFAULT, or for a keyword,
+      #   such as XMLROOT's standalone yes or version no value. None of
+      #   them is ever text from the query.
+      # - The normal form of normalize(x, NFC) and x IS NFC NORMALIZED. It
+      #   can only be NFC, NFD, NFKC, or NFKD, so it's a keyword, and the
+      #   deparser takes nothing else there. normalize(x, 'NFC') called as
+      #   a plain function is redacted like any other call.
+      # Where the deparser needs a literal but the query wrote one, the
+      # literal becomes a string holding its placeholder, such as '$3': a
+      # JSON_TABLE path (the row path, a column's PATH, a NESTED PATH) and
+      # a CYCLE clause's written TO and DEFAULT marks. Both can hold
+      # values. A parameter there crashes the deparser, or makes it raise.
       class Redaction
         def initialize(tree)
           constants = []
@@ -228,7 +236,7 @@ module Quaack
 
         def collect(node, constants, params)
           case node
-          when PgQuery::A_Const then constants << node.location
+          when PgQuery::A_Const then constants << node.location unless Literals.made?(node)
           when PgQuery::ParamRef then params << node.number
           when PgQuery::TypeName then nil
           else Literals.values(node).each { |child| collect(child, constants, params) }
@@ -246,7 +254,7 @@ module Quaack
         end
 
         def replace_node(node)
-          return placeholder(node.a_const) if node.a_const
+          return Literals.made?(node.a_const) ? node : placeholder(node.a_const) if node.a_const
 
           replace(node.inner)
           node
@@ -255,7 +263,8 @@ module Quaack
         def replace_fields(message)
           case message
           when PgQuery::TypeName then nil
-          when PgQuery::JsonTablePathSpec then message.string = path_placeholder(message.string)
+          when PgQuery::JsonTablePathSpec then message.string = literal(message.string)
+          when PgQuery::CTECycleClause then cycle_marks(message)
           when Literals.method(:normal_form?) then message.args[0] = replace(message.args[0])
           else message.class.descriptor.each { |field| replace_field(message, field) }
           end
@@ -266,11 +275,17 @@ module Quaack
           value.is_a?(PgQuery::Node) ? field.set(message, replace(value)) : replace(value)
         end
 
-        # A string holding the path's placeholder.
-        def path_placeholder(path)
-          return replace(path) unless path.a_const
+        def cycle_marks(clause)
+          clause.cycle_mark_value = literal(clause.cycle_mark_value)
+          clause.cycle_mark_default = literal(clause.cycle_mark_default)
+        end
 
-          text = "$#{@numbers.fetch(path.a_const.location, 0)}"
+        # A constant where the deparser needs a literal: a string holding its
+        # placeholder, or the constant itself if the parser made it.
+        def literal(node)
+          return node if Literals.made?(node.a_const)
+
+          text = "$#{@numbers.fetch(node.a_const.location, 0)}"
           PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: text)))
         end
 
@@ -285,6 +300,12 @@ module Quaack
 
         # A message's field values, without a normal form.
         def values(node) = normal_form?(node) ? [node.args[0]] : Tree.children(node)
+
+        # A constant the parser made, not one written in the query: a
+        # default it fills in, such as CYCLE's TRUE and FALSE marks, or a
+        # keyword it stores as a constant, such as XMLROOT's standalone.
+        # Only these have no location.
+        def made?(constant) = constant.location == -1
 
         # normalize(x, NFC) or x IS NFC NORMALIZED.
         def normal_form?(node)
