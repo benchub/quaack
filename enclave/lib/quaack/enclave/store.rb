@@ -113,6 +113,12 @@ module Quaack
         nil
       end
 
+      # Whether something is at the entry's file, so a caller can tell an
+      # entry that was never written from one that can't be read. Anything
+      # there counts, even a symlink, so read then fails rather than the
+      # caller starting afresh.
+      def entry?(name) = !PrivateFiles.lstat(entry_path(entry_name(name))).nil?
+
       # Returns the entry's data. It won't follow an entry that's a symlink.
       def read(name)
         name = entry_name(name)

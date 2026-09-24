@@ -62,7 +62,8 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "keeps every field on each type's list, and only those, for every type on the whitelist" do
-      whitelist.each do |type, fields|
+      # A burndown's fields must be a burndown, so it gets its own tests below.
+      whitelist.except(:burndown).each do |type, fields|
         message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
         out = egress.serialize(message)
 
@@ -155,6 +156,47 @@ RSpec.describe Quaack::Enclave::Egress do
       def type.to_s = "error"
 
       expect(egress.serialize(type: type, step: EGRESS_SENTINEL)).to be_nil
+    end
+  end
+
+  describe "a burndown message" do
+    let(:record) do
+      { "in" => 2, "added" => {}, "dropped" => { "duplicate" => 1 }, "set_aside" => 0, "out" => 1, "extra" => {} }
+    end
+
+    it "sends stages and totals that are a burndown as they are" do
+      stages = { "5a-3" => { "original" => record } }
+      out = egress.serialize(type: :burndown, stages:, totals: { "fixture_loads" => 3 }, rows: EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "burndown", "stages" => stages, "totals" => { "fixture_loads" => 3 })
+    end
+
+    it "the sentinel check itself: an error field carries the same nested value out" do
+      out = egress.serialize(type: :error, rule: { "5a-3" => { "orders_email" => EGRESS_SENTINEL } })
+
+      expect(out).to include(EGRESS_SENTINEL)
+    end
+
+    [
+      ["a value in place of a count", { "5a-3" => { "original" => { "in" => EGRESS_SENTINEL } } }, {}],
+      ["a value as a search", { "5a-3" => { EGRESS_SENTINEL => { "in" => 0 } } }, {}],
+      ["a value as a stage", { EGRESS_SENTINEL => {} }, {}],
+      ["a value as a total", {}, { "fixture_loads" => EGRESS_SENTINEL }],
+      ["a value as a total's name", {}, { EGRESS_SENTINEL => 1 }],
+      ["an extra field in a record", { "5a-3" => { "original" => { "rows" => [EGRESS_SENTINEL] } } }, {}]
+    ].each do |what, stages, totals|
+      it "refuses one with #{what}, built by hand, without quoting it" do
+        expect { egress.serialize(type: :burndown, stages:, totals:) }
+          .to raise_error(described_class::Error, "a value in this burndown message isn't a burndown") { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+      end
+    end
+
+    it "refuses one missing stages or totals, since the check needs both" do
+      expect { egress.serialize(type: :burndown, stages: {}) }.to raise_error(described_class::Error)
+      expect { egress.serialize(type: :burndown, totals: {}) }.to raise_error(described_class::Error)
     end
   end
 
