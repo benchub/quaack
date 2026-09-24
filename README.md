@@ -118,7 +118,7 @@ Validate the connection to step 1's production server. Then record the following
 
 ### 3a. Relations.
 
-Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, abort if the query uses a view or a materialized view. Don't handle partitioning until we need it.
+Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
 ### 3b. Schema dump.
 
