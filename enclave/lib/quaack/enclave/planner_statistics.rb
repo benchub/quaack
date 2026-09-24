@@ -17,7 +17,6 @@ module Quaack
     #   result = PlannerStatistics.run(store:, relations: Relations.check(sql, settings, conn).relations,
     #                                  connection: conn)
     #   result.statistics            # => Statistics, for 5a-1, 5a-2, and 5a-3
-    #   result.few_distinct          # => [[TableName(public.orders), "status"]], for 3f
     #   store.read("statistics")     # => { "tables" => [{ "schema" => "public", "name" => "orders", ... }] }
     #   PlannerStatistics.load(store) # => the same Result, rebuilt from the store
     #
@@ -32,6 +31,9 @@ module Quaack
     # The stored entry holds, for each table in the order given:
     # - schema, name, reltuples, relpages, and column_names, every column in
     #   attnum order.
+    # - text_columns: the text-like columns, in attnum order: those whose
+    #   type is in Postgres's string category (text, varchar, char, name,
+    #   citext, or a domain over one), for 3f's heuristic.
     # - columns: each column's own pg_stats row (inherited = false), keyed by
     #   name, with null_frac, avg_width, n_distinct, most_common_vals,
     #   most_common_freqs, histogram_bounds, and correlation. The value
@@ -56,12 +58,8 @@ module Quaack
     #
     # The Result's statistics is built from that entry, with each index as
     # IndexCandidate.from_ddl reads its definition, sources [:existing], or
-    # nil where it can't. few_distinct is each column, in table and then
-    # attnum order, whose distinct count (TableStatistics#distinct_count, as
-    # 5a-1 counts) is known and under LOW_CARDINALITY_LIMIT, as
-    # [TableName, column] pairs, the shape Dedupe's low_cardinality takes.
-    # It isn't the low-cardinality set yet: README 3f takes out the PII
-    # columns first.
+    # nil where it can't. README 3f (PiiClassification) reads the entry for
+    # the low-cardinality set that Dedupe takes.
     #
     # Refusals raise Error, with a rule and a message naming only tables:
     # unknown_relation (the catalog doesn't have one), and
@@ -80,13 +78,9 @@ module Quaack
         end
       end
 
-      Result = Data.define(:statistics, :few_distinct)
+      Result = Data.define(:statistics)
 
       ENTRY = "statistics"
-
-      # README 3f: a column is low-cardinality with fewer than this many
-      # distinct values.
-      LOW_CARDINALITY_LIMIT = 50
 
       module_function
 
@@ -102,16 +96,7 @@ module Quaack
       def load(store) = build(store.read(ENTRY))
 
       def build(data)
-        tables = data["tables"].map { table_statistics(it) }
-        few = tables.flat_map do |stats|
-          stats.column_names.select { few_distinct?(stats, it) }.map { [stats.name, it] }
-        end
-        Result.new(statistics: Statistics.new(tables:), few_distinct: few)
-      end
-
-      def few_distinct?(stats, column)
-        count = stats.column?(column) && stats.distinct_count(column)
-        count && count < LOW_CARDINALITY_LIMIT
+        Result.new(statistics: Statistics.new(tables: data["tables"].map { table_statistics(it) }))
       end
 
       def table_statistics(table)

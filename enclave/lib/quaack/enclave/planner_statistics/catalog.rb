@@ -18,10 +18,15 @@ module Quaack
           WHERE n.nspname = $1 AND c.relname = $2
         SQL
 
+        # A column is text-like when its type is in the string category:
+        # text, varchar, char, name, citext, and any domain over one, since
+        # a domain takes its base type's category.
         COLUMNS_SQL = <<~SQL
-          SELECT attname FROM pg_catalog.pg_attribute
-          WHERE attrelid = $1 AND attnum > 0 AND NOT attisdropped
-          ORDER BY attnum
+          SELECT a.attname, t.typcategory = 'S'
+          FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+          WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
+          ORDER BY a.attnum
         SQL
 
         # One relation's own pg_stats rows. An index's are its expressions'.
@@ -73,7 +78,9 @@ module Quaack
         end
 
         def contents(table, oid, connection)
-          { "column_names" => connection.exec_params(COLUMNS_SQL, [oid]).column_values(0),
+          columns = connection.exec_params(COLUMNS_SQL, [oid]).values
+          { "column_names" => columns.map(&:first),
+            "text_columns" => columns.filter_map { |name, text| name if text == "t" },
             "columns" => pg_stats(connection, table.schema, table.name),
             "indexes" => indexes(connection, table.schema, oid),
             "extended_statistics" => extended(connection, oid) }
