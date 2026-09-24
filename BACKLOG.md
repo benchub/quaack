@@ -37,16 +37,7 @@ Build the driver side of the link: call enclave subcommands over ssh, pass argum
 - **Status:** todo
 - **Decided:** Larger inputs go to the enclave script as a JSON document on stdin, piped into `ssh <jump server> quaacks <subcommand>`. The local test transport pipes the same JSON.
 
-### 20260922-6. LLM client.
-
-Build the driver's LLM client, with a test double so tests never make real LLM calls. Count every call by step for the 15b burndown.
-
-- **Depends on:** 20260922-1.
-- **README:** Where QUAACK runs, 15b.
-- **Status:** todo
-- **Decided:**
-  - Use the Anthropic API through the official `anthropic` Ruby gem. The key comes from `ANTHROPIC_API_KEY` on the laptop. The default model is `claude-opus-5-5`, and config can override it.
-  - Don't build a provider abstraction yet, but don't make one hard to add later. The user may want other providers, or several models working in parallel, someday.
+### 20260922-6. LLM client. Done, see BACKLOG-COMPLETE.md.
 
 ## Trust boundary.
 
@@ -167,16 +158,7 @@ Replace literals with numbered, shape-preserving placeholders. Annotate each wit
 - **Note:** Built on branch `task/20260922-23` through a build, a review, a fix round, and a second review, but not landed. The second review found that a string like `'1e99999999'` hangs `Rational()` in the matcher. 20260924-11 finishes it on top of that branch.
 - **Decided:** Match each literal in a racetrack plan to the placeholder map by value, after normalizing casts. Replace anything still unmatched with a generic `$?` marker, so no literal leaks, and count the masks for the 15b burndown.
 
-### 20260922-24. 3h clock anchoring.
-
-Replace the listed time functions with `quaack.clock_anchor()` in the AST. Keep a way to put the original functions back for the report.
-
-- **Depends on:** 20260922-14.
-- **README:** 3h.
-- **Note (from 20260922-13):** Intake stores `clock_anchor` as a UTC ISO-8601 string with microseconds, such as `2026-09-24T07:35:44.661129Z`.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260922-24` through a build, a review, a fix round, and a second review, but not landed. The second review found that anchoring renames implicit output columns and function-in-FROM aliases, which can silently rebind `ORDER BY now`. 20260924-12 finishes it on top of that branch.
-- **Decided:** `quaacks intake` takes an optional `--captured-at` flag, the time the production plan ran. Without it, the anchor is the time of intake. The run stores the anchor, and `clock_anchor()` returns it.
+### 20260922-24. 3h clock anchoring. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 4: Run server.
 
@@ -494,15 +476,15 @@ Wire every step together in the driver, from intake through the report and teard
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64.
 - **README:** All.
 - **Status:** todo
+- **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
+  - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
+  - Require the `teardown` line followed by the done line.
+  - Treat `store: "already_gone"` as success.
+  - On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand. The enclave never sends the path.
+  - Turn `next_step: "destroy_run_server"` into a plain operator message. Nothing destroys the run server automatically.
+  - Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command for later.
 
-### 20260922-66. Run teardown.
-
-At the end of a run, delete the governed store directory and tell the operator to destroy the run server.
-
-- **Depends on:** 20260922-3.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Decided:** Teardown runs when a run ends, whether it succeeded or aborted. A `--keep` flag leaves the run server and store directory in place for debugging, and `quaacks teardown <run>` removes them later.
+### 20260922-66. Run teardown. Done, see BACKLOG-COMPLETE.md.
 
 ## Added later.
 
@@ -778,6 +760,7 @@ Minor findings from the second review of 20260923-32:
 - **Came from:** Second review of 20260923-32.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note (from the review of 20260922-66):** A symlinked store base (`~/.quaack/runs`) is followed by create, open, and teardown. Decide whether to refuse it.
 
 ### 20260923-35. Volatility check loose ends.
 
@@ -1024,26 +1007,10 @@ Split out of 20260922-23. The work so far is on branch `task/20260922-23`. Build
 - **Depends on:** 20260922-23's branch.
 - **Came from:** Second review of 20260922-23.
 - **README:** 3g.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260924-11` (on top of `task/20260922-23`) through a build, a review, a fix round, and a second review, but not landed. This task's own items are fixed and verified. The second review found three new blockers, and 20260924-16 finishes the work on the same branch.
 
-### 20260924-12. Finish 3h clock anchoring.
-
-Split out of 20260922-24. The work so far is on branch `task/20260922-24`. Build on that branch, then land both together. Fix what the second review of 20260922-24 found:
-- **Anchoring changes implicit names.** Postgres names an unaliased `now()` column `now`, and it looks through casts, so `now()::date` is also `now`. `CURRENT_DATE` is `current_date`, and `LOCALTIMESTAMP` is `localtimestamp`. After anchoring, the names become `clock_anchor`, `date`, or `timestamp`. So each of these fails after anchoring:
-  - `SELECT s.now FROM (SELECT now()) s`
-  - `WITH w AS (SELECT now()) SELECT w.now FROM w`
-  - `SELECT now() ORDER BY now`
-  - `SELECT now.now FROM now()`
-
-  The worst case is silent. In `SELECT id, now()::date FROM public.ev ORDER BY now`, where `ev` has a column named `now`, `ORDER BY now` rebinds to the table column and the order changes. Keep the original names: set `ResTarget.name` when it's empty, and add an alias when an unaliased function in FROM is anchored. Make `restore` handle or remove what anchoring added. Test each case on Postgres, including the silent one and `GROUP BY` by name.
-- **Minor:**
-  - `NodeRewrite` has no spec of its own.
-  - The "is plain strings" test passes on an empty list.
-
-- **Depends on:** 20260922-24's branch.
-- **Came from:** Second review of 20260922-24.
-- **README:** 3h.
-- **Status:** todo
+### 20260924-12. Finish 3h clock anchoring. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-13. Leak-test helper loose ends.
 
@@ -1062,6 +1029,78 @@ Findings from the reviews of 20260922-9:
 - **Depends on:** 20260922-9.
 - **Came from:** Both reviews of 20260922-9.
 - **README:** Trust boundary.
+- **Status:** todo
+
+### 20260924-14. LLM client loose ends.
+
+Findings from the builds and reviews of 20260922-6:
+- **Streaming.** Non-streaming requests are capped at the gem's limit: 21,333 max_tokens for the default model, and lower for some models. Add streaming if a step ever needs bigger outputs.
+- **Lazy-load `anthropic`.** Requiring it adds about 0.5s to every driver CLI start, even for commands that never call the LLM.
+- **A driver config file** for the model and similar settings. Today config comes only from code and the environment.
+- **Surviving mutants in `driver/lib/quaack/driver/llm/client.rb`:**
+  - `limit = MODEL_NONSTREAMING_TOKENS[...]` → `nil`. The per-model limit is never tested. Try `model: "claude-opus-4-0"` with `max_tokens: 8193`.
+  - `ENV[ALLOW_REAL_ENV] == "1"` → truthy. Nothing tests `QUAACK_ALLOW_REAL_LLM=yes` against the client guard. The root suite and child processes rely on that guard alone.
+  - `ENV[SPECS_ENV] == "1"` → truthy. Nothing tests `QUAACK_SPECS=0`.
+  - `e.message` passed through with extra text. Messages are matched by prefix only.
+- **The `NoNetwork` prepend is only in the driver suite.** The root suite and child processes get only the client-level guard. Consider sharing it.
+- **The workload-identity token exchange bypasses `PooledNetRequester`.** It calls `Net::HTTP` directly when a client is built with no key and federation credentials exist. Our client always passes a key, so only a spec that builds `Anthropic::Client` directly could reach it.
+- **`calculate_nonstreaming_timeout` isn't in the gem's `rbi/` or `sig/`,** so a 1.x update could rename it. The specs would go red, but note this when bumping the gem.
+
+- **Depends on:** 20260922-6.
+- **Came from:** The builds and both reviews of 20260922-6.
+- **README:** Where QUAACK runs, 15b.
+- **Status:** todo
+
+### 20260924-15. 3h clock anchoring loose ends.
+
+Findings from the builds and reviews of 20260922-24 and 20260924-12:
+- **Restore LLM candidates by anchored form, not by position.** `restore` finds added names by slot number. That's sound for queries with the same structure, but a restructured rewrite candidate (README step 15) usually gives `restore_mismatch`. Rarely, it could strip a name the author wrote that happens to match. A candidate that swaps the anchors gets mislabeled, and `quaack.clock_anchor()::date` without pg_catalog raises. This is needed if the report shows candidate SQL.
+- **`'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` literals also read the clock,** as in `created_at > 'today'::date - 7`. That needs a README change, or a decision from the user.
+- **Three-part names:** `db.pg_catalog.now()`.
+- **Refusing pg_temp and `$user` before pg_catalog is stricter than Postgres.**
+- **ImplicitName differs from Postgres for some scalar subqueries.** It reads the raw parse, and Postgres reads the analyzed target list. For example, `(SELECT * FROM (SELECT 1 AS z) q)` is `z` in Postgres but `?column?` here, `(SELECT t.* FROM ...)` is `z` but `t` here, and `(VALUES (1))` is `column1` but `?column?` here. Anchoring stays correct, because inner slots keep their own names. Fix the code, or narrow the doc comment's claim.
+- **Surviving mutants:**
+  - `figure_sub_link`: removing `return NONE unless target` survives. Add `(VALUES (1))` to the oracle list.
+  - `figure_sub_link`: the weak-name path `target.name.empty? ? figure(target.val) : strong(target.name)` survives. `(SELECT 1)::text` kills it.
+  - `clock_anchoring.rb` `split_path`: dropping `cause: nil` from the `bad_search_path` raise survives.
+
+- **Depends on:** 20260924-12.
+- **Came from:** The reviews of 20260922-24 and 20260924-12.
+- **README:** 3h.
+- **Status:** todo
+
+### 20260924-16. Finish 3g redaction, part two.
+
+Split out of 20260924-11. The work so far is on branch `task/20260924-11`, which also carries 20260922-23. Build on that branch, then land all three together. Fix what the second review of 20260924-11 found:
+- **A number like `5.e3` crashes redaction, and the error message quotes the literal.** `DECIMAL` accepts `\d+\.` followed by an exponent, but `Rational("5.e3")` raises `ArgumentError: invalid value for convert(): "5.e3"`. It fires while the map is built, for any `unknown` or number placeholder (`t.s = '918273.e5'`, or the numeric literal `t.n = 918273.e5`), and in `Redaction.plan` on plan tokens. Match or mask the literal, and never raise with it in the message. Look for other texts that `DECIMAL` accepts but `Rational` or `Literal` refuse.
+- **An expression that appears in both GROUP BY and the select list, ORDER BY, or HAVING gets two placeholders, so it can't be prepared.** `SELECT date_trunc('day', o.created_at), count(*) FROM public.orders o GROUP BY date_trunc('day', o.created_at)` becomes `date_trunc($1, ...) ... GROUP BY date_trunc($2, ...)`, and `Binding#prepare` fails with 42803. `o.status || '-x'` fails the same way. **Main session default, pending the user:** where Postgres requires two expressions to match (GROUP BY against the target list, ORDER BY, and HAVING; DISTINCT ON against the leading ORDER BY; SELECT DISTINCT against ORDER BY; and any others you find), equal literals in matching positions of structurally identical expressions share one placeholder. Everywhere else, keep one placeholder per occurrence. The map still sends each placeholder to exactly one value. Record the rule in README 3g. Test by binding and running the redacted query on real PG18, and check that the rows match the original's. The existing "GROUP BY and HAVING" sentinel query has to bind, too.
+- **Vacuous test: "refuses SQL that isn't one SELECT".** Changing `unless stmts.size == 1 && stmts.first.stmt.select_stmt` to `unless stmts.size == 1` survives, because the only input has two statements. Add a single non-SELECT, such as `DELETE ... WHERE id = $1`.
+- **Binding accepts a data-modifying CTE and `FOR UPDATE`,** which SupportedSql refuses. Refuse them in Binding too, or narrow the doc's "exactly one SELECT" claim to what's checked.
+- **Surviving mutants worth killing:**
+  - `literal.rb`: `digits = text.delete("_")` → `text` (PREPARE would declare `1_000_000_000_000` as numeric). The `INT8` bounds (±1). `> MAX_DIGITS` → `>=`. Dropping `.delete_prefix("+")`. `class_of` for a Float node (the shape of 5000000000).
+  - `matcher.rb`: the `MAX_NUMBER` boundary (`>=`, 99, 101). `NUMBER_TYPES` without `bigint`. `[eE]` and `[+-]?` in `DECIMAL`. `TRUE_TEXT` and `FALSE_TEXT` members. The `strip` and `downcase` in `word`. The `.sort` on the number and boolean branches.
+  - `expression.rb`: the array `rescue ArgumentError` not counting its mask.
+  - `binding.rb`: dropping `raise unless postgres_error?(e)`. The 42P18 sqlstate check and the regex anchors in `untyped_parameter`. Deleting `RELEASE SAVEPOINT`. Capping retries at two (test a query with two untyped parameters, such as `concat('a', 'b')`).
+- **The huge-exponent test's `Timeout` can't interrupt `Rational()`.** Make the test fail fast without the cap, for example by running the call in a subprocess with a kill.
+
+The three `Cast` survivors in `expression.rb` (the WITH line in `Cast#word?`, `after_word?` in `modifiers`, and the `break` on `","`) couldn't be reached from a real PG18 plan. Kill them if you can build a reachable case. Otherwise, say so.
+
+- **Depends on:** 20260924-11's branch.
+- **Came from:** Second review of 20260924-11.
+- **README:** 3g.
+- **Status:** todo
+
+### 20260924-17. Teardown loose ends.
+
+Findings from the reviews of 20260922-66:
+- **The rule is wrong when the recheck fails.** If the recheck `lstat` inside `Store.teardown`'s `rescue Error` raises a `SystemCallError`, such as EACCES after the base's mode changes mid-call, the raw Errno escapes as `internal_error`, where it should be `bad_store_base` or `teardown_failed`.
+- **The rule is wrong after a race.** If the run path is swapped for a non-directory between `open`'s check and the delete, the path is left alone, as it should be, but the rule is `teardown_failed`, not `bad_run`.
+- **A doc comment describes unbuilt behavior.** The top of `steps/teardown.rb` says the driver runs teardown at the end of every run. That's future work (20260922-65).
+- **A redundant check.** `return :already_gone unless PrivateFiles.lstat(path)` is an equivalent mutant, because the recheck already covers it. Keep it as a fast path with a comment, or drop it.
+
+- **Depends on:** 20260922-66.
+- **Came from:** The reviews of 20260922-66.
+- **README:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.

@@ -17,6 +17,7 @@ module Quaack
     #   store.write("literals", ["a", 1])         # <run dir>/literals.json
     #   Store.open(store.run_id).read("literals") # => ["a", 1]
     #   store.teardown                            # deletes the run's directory
+    #   Store.teardown(run_id)                    # the same, by run ID (store/teardown.rb)
     #
     # Each result is a JSON file named for its entry. Entry names are
     # lowercase words, such as inputs or placeholder_map. Reads return what
@@ -31,6 +32,9 @@ module Quaack
     # value, so they have no cause.
     class Store
       class Error < StandardError; end
+      # What open raises for a run path that isn't a run directory it would
+      # open, so what teardown raises for one it won't delete.
+      class BadRun < Error; end
 
       # A run ID: the UTC time the run started, then eight random hex
       # characters, such as 20260923T221500Z-0a1b2c3d.
@@ -60,38 +64,26 @@ module Quaack
         raise Error, "couldn't make the base directory #{base}", cause: nil
       end
 
-      # Opens a run an earlier call started. The run ID usually comes from
-      # argv, so it must be exactly in the RUN_ID form before it goes into a
-      # path. The run directory must be a real directory, not a symlink,
-      # mode 0700, and owned by the current user. current_uid is there for
-      # tests.
+      # Opens a run an earlier call started. The run directory must be a
+      # real directory, not a symlink, mode 0700, and owned by the current
+      # user, or it raises BadRun. current_uid is there for tests.
       def self.open(run_id, base: default_base, current_uid: Process.euid)
-        unless run_id.is_a?(String) && RUN_ID.match?(run_id)
-          raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
-        end
-
-        path = File.join(base, run_id)
-        problem = directory_problem(PrivateFiles.lstat(path), current_uid)
-        raise Error, "run #{run_id} #{problem}" if problem
+        path = run_path(run_id, base)
+        problem = PrivateFiles.directory_problem(PrivateFiles.lstat(path), current_uid)
+        raise BadRun, "run #{run_id} #{problem}" if problem
 
         new(run_id, path)
       end
 
-      # What's wrong with a run directory, given its lstat, or nil if
-      # nothing is.
-      def self.directory_problem(stat, current_uid)
-        return "has no directory" unless stat
-        return "has a path that isn't a directory" unless stat.directory?
+      # The run ID usually comes from argv, so it must be exactly in the
+      # RUN_ID form before it goes into a path.
+      def self.run_path(run_id, base)
+        return File.join(base, run_id) if run_id.is_a?(String) && RUN_ID.match?(run_id)
 
-        mode = stat.mode & 0o7777
-        return format("has a directory with mode %<mode>04o, not 0700", mode:) unless mode == 0o700
-
-        return if stat.uid == current_uid
-
-        "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
+        raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
       end
 
-      private_class_method :make_base, :directory_problem, :new
+      private_class_method :make_base, :run_path, :new
 
       attr_reader :run_id, :path
 

@@ -179,6 +179,42 @@ RSpec.describe Quaack::Enclave::CLI do
     end
   end
 
+  # A step that names a run but doesn't open it (run_id: true), as teardown
+  # does, since its run may already be gone.
+  describe "a run named but not opened" do
+    let(:steps) { { "end" => step_class.new(handler: recorder, run_id: true) } }
+
+    it "passes the run ID and the store base, not a Store, even when the run isn't there" do
+      expect(cli(steps).run(%w[end --run 20260923T221500Z-0a1b2c3d])).to eq(0)
+      expect(calls).to eq([{ input: nil, store: nil, options: {}, run_id: "20260923T221500Z-0a1b2c3d",
+                             store_base: base }])
+    end
+
+    it "passes Store.default_base when the CLI has no store base" do
+      cli = cli_class.new(steps:, stdin: StringIO.new, out:)
+
+      expect(cli.run(%w[end --run 20260923T221500Z-0a1b2c3d])).to eq(0)
+      expect(calls[0][:store_base]).to eq(Quaack::Enclave::Store.default_base)
+    end
+
+    it "refuses a missing or malformed run ID as usage" do
+      [[], ["--run"], ["--run", CLI_SENTINEL], ["--run", "../20260923T221500Z-0a1b2c3d"],
+       ["20260923T221500Z-0a1b2c3d"]].each do |args|
+        out.truncate(0) && out.rewind
+        expect(cli(steps).run(["end", *args])).to eq(64), "args #{args.inspect}"
+        expect(out.string).to eq(error_line("end", "usage")), "args #{args.inspect}"
+      end
+      expect(calls).to eq([])
+    end
+
+    it "can't be combined with run: true or new_run: true" do
+      [{ run: true }, { new_run: true }].each do |other|
+        expect { step_class.new(handler: recorder, run_id: true, **other) }
+          .to raise_error(ArgumentError, "a step that names a run can't also open or start one"), other.inspect
+      end
+    end
+  end
+
   # A step that starts a run (new_run: true), as intake does.
   describe "a new run" do
     def runs = Dir.children(base)
