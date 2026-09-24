@@ -15,6 +15,7 @@ require_relative "enclave/canonical_plan"
 require_relative "enclave/predicate_atoms"
 require_relative "enclave/volatility_check"
 require_relative "enclave/dedupe"
+require_relative "enclave/single_candidate_test"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
