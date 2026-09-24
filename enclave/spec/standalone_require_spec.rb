@@ -15,6 +15,10 @@ RSpec.describe "requiring one enclave file on its own" do
     {
       "quaack/enclave/table_name" => "puts #{table}",
       "quaack/enclave/egress" => 'print Quaack::Enclave::Egress.serialize(type: :error, step: "3f")',
+      "quaack/enclave/store" =>
+        'base = File.join(ENV.fetch("TMPDIR", "/tmp"), "quaack-standalone-" + Process.pid.to_s); ' \
+        "s = Quaack::Enclave::Store.create(base:); s.write(:inputs, [1]); print s.read(:inputs); " \
+        "s.teardown; Dir.rmdir(base)",
       "quaack/enclave/index_candidate" =>
         "puts #{candidate}.to_ddl; " \
         "puts Quaack::Enclave::IndexCandidate.from_ddl('CREATE INDEX i ON public.o USING btree (a)', sources: [:x])",

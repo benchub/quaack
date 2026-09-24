@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 require "quaack/enclave/egress"
 
 # Stands in for a real production value. It must never show up in what
@@ -184,12 +185,19 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a Struct", -> { Struct.new(:email).new(EGRESS_SENTINEL) }],
       ["a Time", -> { Time.at(0) }],
       ["a Range", -> { EGRESS_SENTINEL..EGRESS_SENTINEL }],
-      ["a Rational", -> { Rational(1, 3) }]
+      ["a Rational", -> { Rational(1, 3) }],
+      ["a BasicObject", -> { BasicObject.new }],
+      ["Arrays nested 100,000 deep", -> { 100_000.times.reduce(EGRESS_SENTINEL) { |v, _| [v] } }],
+      ["an Array that contains itself", -> { [EGRESS_SENTINEL].tap { |a| a << a } }]
     ].each do |name, value|
       it "raises Egress::Error that carries nothing from the message, for #{name}" do
         error = nil
         begin
-          egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+          # A value that contains itself would loop forever without the
+          # depth cap in PlainData. The timeout makes that a failure.
+          Timeout.timeout(30) do
+            egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+          end
         rescue StandardError => e
           error = e
         end
@@ -202,6 +210,31 @@ RSpec.describe Quaack::Enclave::Egress do
         end
         expect(error.instance_variables).to be_empty
       end
+    end
+  end
+
+  describe "a value that isn't plain JSON data beside plain ones" do
+    let(:bad) { Object.new.tap { |o| o.define_singleton_method(:to_s) { EGRESS_SENTINEL } } }
+
+    [
+      ["in the first field", ->(bad) { { step: bad, rule: "ok", sqlstate: "23505" } }],
+      ["in a middle field", ->(bad) { { step: "3f", rule: bad, sqlstate: "23505" } }],
+      ["in the last field", ->(bad) { { step: "3f", rule: "ok", sqlstate: bad } }],
+      ["first in an Array", ->(bad) { { step: "3f", rule: [bad, 1, 2] } }],
+      ["in the middle of an Array", ->(bad) { { step: "3f", rule: [1, bad, 2] } }],
+      ["last in an Array", ->(bad) { { step: "3f", rule: [1, 2, bad] } }],
+      ["first in a Hash", ->(bad) { { step: "3f", rule: { "a" => bad, "b" => 1, "c" => 2 } } }],
+      ["in the middle of a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => bad, "c" => 2 } } }],
+      ["last in a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => 2, "c" => bad } } }]
+    ].each do |name, fields|
+      it "raises Egress::Error for one #{name}" do
+        expect { egress.serialize(type: :error, **fields.call(bad)) }
+          .to raise_error(described_class::Error, "a value in this error message can't be written as JSON")
+      end
+    end
+
+    it "the sentinel check itself: the bad value's to_s is the sentinel" do
+      expect(JSON.generate([bad])).to include(EGRESS_SENTINEL)
     end
   end
 
