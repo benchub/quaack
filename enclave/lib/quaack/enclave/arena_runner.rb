@@ -118,6 +118,8 @@ module Quaack
 
       # set_notice_receiver returns the previous receiver, or nil for
       # libpq's default, and with no block it puts the default back.
+      # This stays local rather than using ErrorFilter.drop_notices, since it
+      # must put the previous receiver back and drop_notices doesn't return it.
       def without_notices
         previous = database(:connection_unusable, :transaction) { @connection.set_notice_receiver { nil } }
         begin
