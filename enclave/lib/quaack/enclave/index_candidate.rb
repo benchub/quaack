@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 require_relative "table_name"
 require_relative "index_sql"
 require_relative "index_methods"
@@ -48,6 +49,10 @@ module Quaack
     # The predicate is parsed at construction and stored as pg_query deparses
     # it, so "(status = 'open')" and "status = 'open'" make equal candidates.
     # Casts don't normalize away: "status::text = 'open'" stays different.
+    # A predicate that pg_query deparses as SQL that doesn't parse back to the
+    # same expression, such as (a = 1) IS NOT DISTINCT FROM (b AND c), is
+    # refused with ArgumentError, since stored that way it would mean
+    # something else. from_ddl returns nil for one.
     # The constructor refuses a predicate with a parameter ($1), a subquery,
     # or an aggregate, window, or grouping call. It finds a plain call like
     # sum(b) by name, against the aggregates and window functions built into
@@ -122,9 +127,11 @@ module Quaack
       end
 
       # CREATE INDEX DDL, built as a pg_query parse tree and deparsed. This is
-      # the one output that holds the predicate's literals.
+      # the one output that holds the predicate's literals. HypoPG runs it, so
+      # it must parse back to the tree that was built, or it raises
+      # Deparse::Error. A name longer than Postgres allows would be cut short.
       def to_ddl
-        PgQuery.deparse_stmt(
+        Deparse.statement(
           PgQuery::IndexStmt.new(
             relation:, unique:,
             access_method: access_method.to_s,
