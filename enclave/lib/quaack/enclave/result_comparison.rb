@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "result_comparator"
 require_relative "supported_sql"
 require_relative "result_comparison/tiebreaker"
+require_relative "result_comparison/load_orders"
 
 module Quaack
   module Enclave
@@ -15,6 +16,11 @@ module Quaack
     #   runner.with_fixture(rows) do |tx|
     #     ResultComparison.compare(tx, original:, candidate:)
     #   end
+    #
+    # Step 9 calls compare_in_both_orders (result_comparison/load_orders.rb)
+    # instead, which runs compare twice, with the fixture loaded forward and
+    # then in reverse, and matches only if both runs match. That covers much
+    # of the first gap below.
     #
     # Only the top level of the original counts. The mode, by its ORDER BY
     # and LIMIT:
@@ -101,7 +107,8 @@ module Quaack
     # catalog lookup finds (CATALOG_ORDERABLE_SQL). A domain reports its
     # base type, so it's covered by that type.
     #
-    # Gaps that remain, where a bad candidate can still match:
+    # Gaps that remain in one compare, where a bad candidate can still
+    # match:
     # - Nondeterminism below the top level. A LIMIT, DISTINCT, GROUP BY, or
     #   UNION inside a subquery or CTE, in either query, can keep any of
     #   several rows, or any representative of values btree calls equal,
@@ -111,6 +118,11 @@ module Quaack
     # - A nondeterministic collation outside the ordered mode, where no
     #   tiebreaker runs but a DISTINCT or GROUP BY can still pick either
     #   of 'a' and 'A'.
+    # The reverse load in compare_in_both_orders catches both when the
+    # pick follows the order rows reach it in, as a small sort or a first
+    # row kept does. It can't when the pick follows something else that
+    # comes out the same both ways, such as a hash table's order, or an
+    # index scan's.
     #
     # Known ways to discard a good candidate, all toward mismatch:
     #
