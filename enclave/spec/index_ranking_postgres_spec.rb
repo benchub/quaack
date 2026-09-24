@@ -358,6 +358,21 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(ranking.combination.partial).to be(true)
   end
 
+  # s = 0 sorts 90,000 rows, so the heavy set's baseline costs most, and
+  # the index on a saves the smallest fraction of it. The index on c saves
+  # that sort, but only for s = 0: for s = 10, sorting one row is cheaper.
+  # The light set comes first, so the plans' first literal set doesn't use
+  # the index on c.
+  it "keeps a combination whose added index is used for only some literal sets" do
+    query = "SELECT a FROM t WHERE a = $1 UNION ALL (SELECT a FROM t WHERE s = $2 ORDER BY c)"
+    ranking = ranked(query, { light: %w[5 10], heavy: %w[5 0] }, [candidate(key: ["c"]), on_a])
+
+    expect(ranking.top.first.candidates).to eq([on_a])
+    expect(ranking.combination.ddl).to eq([on_a.to_ddl, candidate(key: ["c"]).to_ddl])
+    expect(ranking.combination.used).to eq(light: [true, false], heavy: [true, true])
+    expect(ranking.combination.worst_reduction).to be > ranking.top.first.worst_reduction
+  end
+
   it "freezes what it returns" do
     ranking = ranked(join, join_sets, [on_x, on_y])
     entries = [*ranking.top, ranking.combination]

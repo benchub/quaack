@@ -2,6 +2,7 @@
 
 require "delegate"
 require "json"
+require "pp"
 require "quaack/enclave/single_candidate_test"
 
 # 5a-4 against real HypoPG on the test harness. The table's s column is
@@ -587,8 +588,22 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(leftovers).to eq(clean)
   end
 
+  # The wrapper records every call that could send SQL once the block has
+  # ended.
   it "refuses to measure after the session's block has ended, without touching the database" do
-    escaped = session("SELECT * FROM t WHERE a = $1", { slow: ["5"] }) { |s| s }
+    recording = Class.new(SimpleDelegator) do
+      attr_accessor :calls
+
+      %i[exec exec_params prepare].each do |name|
+        define_method(name) do |*args|
+          calls&.push(name)
+          super(*args)
+        end
+      end
+    end.new(conn)
+    escaped = described_class.session(recording, query: "SELECT * FROM t WHERE a = $1",
+                                                 literal_sets: { slow: ["5"] }) { |s| s }
+    recording.calls = []
     error = nil
     begin
       escaped.measure([candidate(key: ["a"])])
@@ -597,7 +612,20 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     end
 
     expect(error).to have_attributes(rule: :session_closed, sqlstate: nil, cause: nil)
+    expect(recording.calls).to eq([])
     expect(leftovers).to eq(clean)
+  end
+
+  it "keeps the raw plan's literals out of a Measurement's inspect" do
+    measurement = session("SELECT * FROM t WHERE flag = $1", { slow: [sentinel] }) do |s|
+      s.measure([candidate(key: ["flag"])])
+    end
+    measured = measurement.plans[:slow]
+    shown = [measurement, measured].flat_map { |v| [v.inspect, v.to_s, v.pretty_inspect] }
+
+    expect(JSON.generate(measured.raw_plan)).to include(sentinel)
+    expect(measured.used).to eq([true])
+    expect(shown).to all(satisfy { |text| !text.include?(sentinel) })
   end
 
   it "freezes its results" do
