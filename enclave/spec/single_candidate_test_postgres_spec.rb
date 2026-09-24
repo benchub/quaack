@@ -93,8 +93,10 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(report.baseline.plans.values.map { |p| index_names(p.raw_plan) }).to eq([[], []])
   end
 
-  # Postgres may switch a prepared statement to a generic plan after five
-  # executions, and a generic plan wouldn't see a new hypothetical index.
+  # Postgres may switch a reused prepared statement to a generic plan after
+  # five executions, and a generic plan wouldn't see a new hypothetical
+  # index. "tests a query with no parameters" covers the other case, where
+  # a reused statement always keeps its first plan.
   it "plans every EXPLAIN afresh, however many run" do
     ignored = Array.new(4) { |i| candidate(key: ["c"], predicate: "a = #{i}") }
     report = run("SELECT * FROM t WHERE s = $1", { worst: ["0"], slow: ["10"] }, [*ignored, candidate(key: ["s"])])
@@ -214,6 +216,110 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(error).to have_attributes(rule: :explain_failed, sqlstate: "22P02", cause: nil)
     expect(error.full_message).not_to include(sentinel)
     expect(error.message).to eq("explain_failed (SQLSTATE 22P02)")
+  end
+
+  def run_error(query, literal_sets, candidates = [candidate(key: ["a"])], connection: conn)
+    described_class.run(connection, query:, literal_sets:, candidates:)
+    nil
+  rescue described_class::Error => e
+    e
+  end
+
+  it "refuses a query of more than one statement, so nothing can escape the rollback" do
+    conn.exec("CREATE TABLE side (x int)")
+    error = run_error("SELECT * FROM t WHERE a = $1; COMMIT; INSERT INTO side VALUES (1)", { slow: ["5"] })
+
+    expect(error).to have_attributes(rule: :prepare_failed, sqlstate: "42601", cause: nil)
+    expect(conn.exec("SELECT count(*) FROM side").getvalue(0, 0)).to eq("0")
+    expect(leftovers).to eq(clean)
+  end
+
+  it "keeps an inline literal out of an error preparing the query" do
+    error = run_error("SELECT * FROM t WHERE nope = '#{sentinel}' AND a = $1", { slow: ["5"] })
+
+    expect(error).to have_attributes(rule: :prepare_failed, sqlstate: "42703", cause: nil)
+    expect(error.full_message).not_to include(sentinel)
+    expect(leftovers).to eq(clean)
+  end
+
+  it "tests a query with no parameters" do
+    report = run("SELECT * FROM t WHERE a = 5", { slow: [] }, [candidate(key: ["a"])])
+
+    expect(report.results.first.plans[:slow].used).to be(true)
+    expect(report.baseline.plans[:slow].used).to be(false)
+  end
+
+  it "quotes literals the way Postgres reads them" do
+    values = ["O'Brien", "a\\b"]
+    report = run("SELECT * FROM t WHERE flag = $1 OR flag = $2", { slow: values }, [])
+    inline = inline_explain("SELECT * FROM t WHERE flag = #{conn.escape_literal(values[0])} " \
+                            "OR flag = #{conn.escape_literal(values[1])}")
+
+    expect(inline.first["Plan"]["Filter"]).to include("O''Brien").and include("a\\b")
+    expect(report.baseline.plans[:slow].raw_plan.first["Plan"]["Filter"]).to eq(inline.first["Plan"]["Filter"])
+  end
+
+  {
+    "a value that isn't a String" => 5,
+    "a String with invalid encoding" => "SENTINEL-5a4-7f3c\xFF".dup.force_encoding(Encoding::UTF_8),
+    "a String with a NUL" => "SENTINEL-5a4-7f3c\0"
+  }.each do |what, value|
+    it "refuses #{what} before touching the database, without quoting it" do
+      error = run_error("SELECT * FROM t WHERE flag = $1", { slow: ["ok"], bad: [value] })
+
+      expect(error).to have_attributes(rule: :bad_literal, sqlstate: nil, cause: nil)
+      expect(error.full_message).not_to include("SENTINEL")
+      expect(conn.transaction_status).to eq(0)
+    end
+  end
+
+  it "refuses literal sets that aren't a Hash of lists" do
+    expect(run_error("SELECT * FROM t WHERE flag = $1", [["ok"]])).to have_attributes(rule: :bad_literal)
+    expect(run_error("SELECT * FROM t WHERE flag = $1", { slow: "ok" })).to have_attributes(rule: :bad_literal)
+  end
+
+  # HypoPG reports a column that doesn't exist as an internal error, XX000.
+  it "records a candidate on a column that doesn't exist as refused" do
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["nope"])])
+
+    expect(report.results.first.refusal)
+      .to eq(described_class::Refusal.new(rule: :hypopg_refused, sqlstate: "XX000"))
+  end
+
+  # A cancel while creating the index isn't HypoPG refusing it, so the
+  # run stops. The candidate's predicate raises query_canceled when HypoPG
+  # reads it.
+  it "stops the run when creating an index fails for a reason that isn't a refusal" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION cancelled() RETURNS int IMMUTABLE LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'cancelled' USING ERRCODE = 'query_canceled';
+      END $$;
+    SQL
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] },
+                      [candidate(key: ["a"], predicate: "a = cancelled()"), candidate(key: ["a"])])
+
+    expect(error).to have_attributes(rule: :hypopg_failed, sqlstate: "57014", cause: nil)
+    expect(leftovers).to eq(clean)
+  end
+
+  it "puts the caller's notice receiver back even when cleanup fails" do
+    other = test_database.connect
+    other.exec(<<~SQL)
+      CREATE FUNCTION die(v text) RETURNS int IMMUTABLE LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM pg_terminate_backend(pg_backend_pid());
+        RETURN 1;
+      END $$;
+    SQL
+    mine = proc {}
+    other.set_notice_receiver(&mine)
+    error = run_error("SELECT * FROM t WHERE a = die($1)", { slow: ["5"] }, connection: other)
+
+    expect(error).to be_a(described_class::Error)
+    expect(other.set_notice_receiver { nil }).to be(mine)
+  ensure
+    other&.close
   end
 
   it "keeps the raw plan's literals out of inspect" do

@@ -19,33 +19,52 @@ module Quaack
     #   #           results: [Result(candidate:, size:, plans: { slow: Plan, ... }, refusal: nil), ...])
     #
     # connection is a live racetrack connection with the hypopg extension,
-    # not inside a transaction. query is the query text with $n
-    # placeholders. candidates are IndexCandidates, as Dedupe leaves them.
+    # not inside a transaction. query is the text of one statement, with $n
+    # placeholders or none. candidates are IndexCandidates, as Dedupe leaves
+    # them.
     #
     # Until 3e literal sets (20260922-21) and 3g redaction (20260922-23)
     # land, literal_sets is a stand-in: a Hash from each set's name to its
-    # values, as text in parameter order, with nil for NULL.
+    # values, in parameter order. Each value is a String in a valid
+    # encoding with no NUL, or nil for NULL. Anything else raises
+    # Error(:bad_literal) before the database is touched.
     #
     # Each literal is planned the way the production session plans it,
-    # with its real value, not with a generic plan. The query is prepared
-    # once, and each EXPLAIN runs EXECUTE with plan_cache_mode set to
-    # force_custom_plan, so every EXPLAIN plans afresh, seeing the
-    # hypothetical index of the moment. A value goes into EXECUTE as a
-    # quoted literal, which Postgres reads with the parameter's type, just
-    # as it reads a bound text parameter. (EXECUTE can't take a bound
-    # parameter, since its own parameter types are unknown.)
+    # with its real value, not with a generic plan. Each EXPLAIN prepares
+    # the query afresh, with the extended protocol, which refuses more than
+    # one statement. It runs EXPLAIN EXECUTE once and deallocates, so every
+    # plan is a new one that sees the hypothetical index of the moment. (A
+    # prepared statement with no parameters always reuses its first plan,
+    # even with plan_cache_mode = force_custom_plan, so it can't be kept
+    # across candidates.) A value goes into EXECUTE as a quoted literal,
+    # which Postgres reads with the parameter's type, just as it reads a
+    # bound text parameter. EXECUTE can't take a bound parameter, since its
+    # own parameter types are unknown.
     #
     # The baseline plans each literal set with no hypothetical index. Then,
     # for each candidate in order: hypopg_reset, hypopg_create_index with
     # its DDL, hypopg_relation_size, and an EXPLAIN per literal set. A
     # candidate the planner never uses keeps its result, and so does one
-    # HypoPG refuses, recorded with a Refusal.
+    # HypoPG refuses, recorded with a Refusal. Each result's canonical plan
+    # names the hypothetical index by the candidate's to_ddl, so a caller
+    # that compares these plans with others must name hypothetical indexes
+    # the same way.
+    #
+    # A failure creating the index counts as a refusal unless its SQLSTATE
+    # says the session, not the definition, is the problem: a connection
+    # error (class 08), a transaction state or rollback (25, 40), a lack of
+    # resources (53), a cancel, timeout, or shutdown (57), a system error
+    # (58), corrupt data (XX001, XX002), or no SQLSTATE at all. Those stop
+    # the run with Error(:hypopg_failed). HypoPG reports much of what it
+    # refuses, such as a column that doesn't exist, as XX000, so that
+    # counts as a refusal.
     #
     # The run happens inside a transaction that's rolled back, and
     # hypopg_reset runs at the end, since hypothetical indexes don't roll
     # back. A hypothetical index the caller made earlier is gone afterward.
     # Postgres notices are dropped during the run, since a notice can quote
-    # a literal, and the caller's notice receiver is put back after.
+    # a literal, and the caller's notice receiver is put back after, even
+    # if cleanup fails.
     #
     # Trust boundary: the literals and the raw plans are value-class data
     # and stay in the enclave. inspect and to_s of every result leave the
@@ -62,7 +81,8 @@ module Quaack
     # - Value-class: Plan#raw_plan, which holds the literals.
     # Nothing here goes through egress yet.
     module SingleCandidateTest
-      # rule is :in_transaction or :explain_failed. sqlstate is the
+      # rule is one of :in_transaction, :bad_literal, :prepare_failed,
+      # :explain_failed, :hypopg_failed, or :cleanup_failed. sqlstate is the
       # Postgres SQLSTATE, or nil if there wasn't one.
       class Error < StandardError
         attr_reader :rule, :sqlstate
@@ -109,15 +129,28 @@ module Quaack
 
       CREATE_SQL = "SELECT indexrelid, hypopg_relation_size(indexrelid) FROM hypopg_create_index($1)"
 
+      # SQLSTATE classes and codes that mean the session failed, not the
+      # candidate. See the comment at the top.
+      SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\AXX00[12]\z/
+
       # libpq's PG_DIAG_SQLSTATE, the field code for an error's SQLSTATE.
       SQLSTATE_FIELD = "C".ord
 
       module_function
 
       def run(connection, query:, literal_sets:, candidates:)
+        raise Error, :bad_literal unless literal_sets?(literal_sets)
         raise Error, :in_transaction unless connection.transaction_status.zero?
 
         Run.new(connection, query, literal_sets, candidates).report
+      end
+
+      def literal_sets?(sets)
+        sets.is_a?(Hash) && sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
+      end
+
+      def literal?(value)
+        value.nil? || (value.instance_of?(String) && value.valid_encoding? && !value.include?("\0"))
       end
 
       # The SQLSTATE of a Postgres error, or nil.
@@ -126,14 +159,16 @@ module Quaack
         result&.error_field(SQLSTATE_FIELD)
       end
 
-      # Runs the block, turning a Postgres error into an Error that carries
-      # nothing from it.
-      def guarded
+      def postgres_error?(error) = !error.is_a?(Error) && error.respond_to?(:result)
+
+      # Runs the block, turning a Postgres error into an Error with the rule
+      # that carries nothing from it.
+      def guarded(rule)
         yield
       rescue StandardError => e
-        raise if e.is_a?(Error) || !e.respond_to?(:result)
+        raise unless postgres_error?(e)
 
-        raise Error.new(:explain_failed, sqlstate(e)), cause: nil
+        raise Error.new(rule, sqlstate(e)), cause: nil
       end
 
       def deep_freeze(value)
@@ -156,33 +191,40 @@ module Quaack
         def report
           previous = @connection.set_notice_receiver { nil }
           begin
-            SingleCandidateTest.guarded { start }
-            baseline = Baseline.new(plans: plans(nil, nil))
-            Report.new(baseline:, results: @candidates.map { |c| test(c) }.freeze)
+            tested
           ensure
-            SingleCandidateTest.guarded { finish }
             @connection.set_notice_receiver(&previous)
           end
         end
 
         private
 
+        def tested
+          SingleCandidateTest.guarded(:explain_failed) { start }
+          baseline = Baseline.new(plans: plans(nil, nil))
+          Report.new(baseline:, results: @candidates.map { |c| test(c) }.freeze)
+        ensure
+          SingleCandidateTest.guarded(:cleanup_failed) { finish }
+        end
+
         def start
           @connection.exec("BEGIN")
-          @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
           @connection.exec("SELECT hypopg_reset()")
-          @connection.exec("PREPARE #{STATEMENT} AS #{@query}")
-          @prepared = true
         end
 
         def finish
           @connection.exec("ROLLBACK") unless @connection.transaction_status.zero?
-          @connection.exec("DEALLOCATE #{STATEMENT}") if @prepared
+          deallocate if @prepared
           @connection.exec("SELECT hypopg_reset()")
         end
 
+        def deallocate
+          @connection.exec("DEALLOCATE #{STATEMENT}")
+          @prepared = false
+        end
+
         def test(candidate)
-          oid, size, sqlstate = SingleCandidateTest.guarded { create(candidate) }
+          oid, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
           return refused(candidate, sqlstate) if oid.nil?
 
           Result.new(candidate:, size:, plans: plans(oid, candidate), refusal: nil)
@@ -197,10 +239,18 @@ module Quaack
           @connection.exec("RELEASE SAVEPOINT #{STATEMENT}")
           [Integer(created.getvalue(0, 0)), Integer(created.getvalue(0, 1))]
         rescue StandardError => e
-          raise unless e.respond_to?(:result)
+          raise unless SingleCandidateTest.postgres_error?(e)
+
+          [nil, nil, refusal_sqlstate(SingleCandidateTest.sqlstate(e))]
+        end
+
+        # Rolls back a refused create and returns its SQLSTATE, or raises
+        # if the failure wasn't a refusal.
+        def refusal_sqlstate(sqlstate)
+          raise Error.new(:hypopg_failed, sqlstate), cause: nil if sqlstate.nil? || SESSION_FAILURE.match?(sqlstate)
 
           @connection.exec("ROLLBACK TO SAVEPOINT #{STATEMENT}")
-          [nil, nil, SingleCandidateTest.sqlstate(e)]
+          sqlstate
         end
 
         def refused(candidate, sqlstate)
@@ -214,12 +264,23 @@ module Quaack
         end
 
         def explain(values)
-          arguments = values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")
-          execute = arguments.empty? ? STATEMENT : "#{STATEMENT}(#{arguments})"
-          json = SingleCandidateTest.guarded do
-            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute}").getvalue(0, 0)
+          SingleCandidateTest.guarded(:prepare_failed) do
+            @connection.prepare(STATEMENT, @query)
+            @prepared = true
           end
+          json = SingleCandidateTest.guarded(:explain_failed) do
+            @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute(values)}").getvalue(0, 0)
+          end
+          SingleCandidateTest.guarded(:cleanup_failed) { deallocate }
           SingleCandidateTest.deep_freeze(JSON.parse(json))
+        end
+
+        # EXECUTE of the prepared statement with these values. With no
+        # values, it takes no parentheses.
+        def execute(values)
+          return STATEMENT if values.empty?
+
+          "#{STATEMENT}(#{values.map { |v| v.nil? ? "NULL" : @connection.escape_literal(v) }.join(", ")})"
         end
 
         def plan(explain, oid, identities)
