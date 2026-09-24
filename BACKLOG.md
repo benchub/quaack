@@ -80,15 +80,7 @@ Build a reusable test helper that runs a step on data with known sentinel values
 - **README:** Trust boundary.
 - **Status:** todo
 
-### 20260922-10. Inbound check for rewrite candidates.
-
-Parse each rewrite candidate with pg_query. Accept exactly one `SELECT`. Reject data-modifying CTEs, `SELECT INTO`, and locking clauses. Run the 3d volatility check on it. Each rejection names the rule it broke.
-
-- **Depends on:** 20260922-1, 20260922-20.
-- **README:** What goes into the enclave.
-- **Note (from the review of 20260922-20):** Run the 3a relation check on rewrite candidates too. Reject views, and relations the original query doesn't use, because a view's body can call a volatile function that the 3d check never sees.
-- **Note (from the review of 20260922-46):** The arena runner relies on this check to refuse function calls with side effects that persist or change the session. Examples are `set_config` (which can turn off `statement_timeout`), session-level `pg_advisory_lock` (it survives ROLLBACK), and `lo_import`. The 3d volatility check refuses all of them. Test that it does, and call `SupportedSql.check!` (20260923-33) on every candidate.
-- **Status:** todo
+### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-11. Inbound check for index DDL.
 
@@ -980,6 +972,18 @@ Split out of 20260923-39. The work so far is on branch `task/20260923-39`, which
 - **Depends on:** 20260923-39's branch.
 - **Came from:** Second review of 20260923-39.
 - **README:** 5a-4.
+- **Status:** todo
+
+### 20260923-57. Rewrite candidate check loose ends.
+
+Minor findings from the reviews of 20260922-10:
+- **Only-the-last mutants survive.** `used.last(1).each` in the relkind loop and `.last(1).find` in the placeholder check both stay green, because every test puts the bad item last. Add a view-before-table case and a bad-before-good placeholder case.
+- **The reparse of the qualified SQL can raise a raw `PgQuery::ParseError`.** An example is `(ARRAY(SELECT ...))[1]`. It fails closed as `internal_error`, but it should be the check's own error. 20260923-55 covers this.
+- **Partitioned tables are refused.** A candidate against relkind `p` is refused, consistent with 3a (20260922-17). Revisit that if 3a starts allowing them.
+
+- **Depends on:** 20260922-10.
+- **Came from:** The reviews of 20260922-10.
+- **README:** What goes into the enclave.
 - **Status:** todo
 
 ## After version 1.
