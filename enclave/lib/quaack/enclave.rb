@@ -12,6 +12,7 @@ require_relative "enclave/generator_two"
 require_relative "enclave/relation_qualifier"
 require_relative "enclave/canonical_plan"
 require_relative "enclave/predicate_atoms"
+require_relative "enclave/arena_runner"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
