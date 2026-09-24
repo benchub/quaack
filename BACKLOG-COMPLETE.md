@@ -895,3 +895,23 @@ Build the slow, worst-case, and typical literal sets and keep them in the govern
   - Only plain `=` counts as equality.
   - `$n::type` cast placeholders keep the slow literal.
 - **Landed:** Merged into `main` after a review, a fix round for the range-pair blocker, and a second review. The entry point is `LiteralSet.run(store:, sql:)`, and `.load` reads it back. It stores `literal_sets` (slow, worst_case, and typical placeholder maps, plus fallback reasons), and any set binds through `Redaction.binding`. The leftovers went to 20260924-28.
+
+### 20260922-25. Run server checks.
+
+Verify the run server: same major version and extensions as production plus HypoPG, same planner GUCs and locale settings, superuser access, no other clients, no background jobs, and autovacuum off. Abort and name the failed check.
+
+- **Depends on:** 20260922-16.
+- **README:** Step 4.
+- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
+  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
+  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
+  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
+  - Per-tablespace `random_page_cost`.
+  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
+- **Status:** done
+- **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
+- **Decided (builder, accepted by the main session):**
+  - Production's value for a GUC is its own recorded value from step 2, not the plan session's value.
+  - Step 2 also records TimeZone, DateStyle, IntervalStyle, and default_statistics_target, because they aren't EXPLAIN-flagged.
+  - A GUC with no recorded value must be EXPLAIN-flagged and at its boot_val.
+- **Landed:** Merged into `main` after two clean lean reviews. The entry point is `RunServerCheck.run(store:, connection:, own_connections:)`. It raises on the first failure, with a `run_server_*` rule and a message of the form `rule: name`. The leftovers went to 20260924-29.

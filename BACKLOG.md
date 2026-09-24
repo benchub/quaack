@@ -91,20 +91,7 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ## Step 4: Run server.
 
-### 20260922-25. Run server checks.
-
-Verify the run server: same major version and extensions as production plus HypoPG, same planner GUCs and locale settings, superuser access, no other clients, no background jobs, and autovacuum off. Abort and name the failed check.
-
-- **Depends on:** 20260922-16.
-- **README:** Step 4.
-- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
-  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
-  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
-  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
-  - Per-tablespace `random_page_cost`.
-  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
-- **Status:** todo
-- **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
+### 20260922-25. Run server checks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-26. 4a racetrack setup.
 
@@ -1060,7 +1047,7 @@ Findings from the build and reviews of 20260924-4:
 
 Findings from the build and reviews of 20260922-16:
 - **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
-- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 must also decide whether to compare the run server with these values or with the plan's own Settings.
+- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 (20260922-25) decided: the run server is compared with production's own recorded values.
 - **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
 - **`"memory_command": null` counts as not configured,** but the README says that's `bad_config`.
 - **There's no upper bound on the memory size.**
@@ -1135,6 +1122,20 @@ Findings from the build and reviews of 20260922-21:
 - **Depends on:** 20260922-21.
 - **Came from:** The build and reviews of 20260922-21.
 - **README:** 3e.
+- **Status:** todo
+
+### 20260924-29. Run server check loose ends.
+
+Findings from the build and reviews of 20260922-25:
+- **Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked.** The inventory doesn't record production's tablespace spcoptions. Record them in step 2, then compare them here.
+- **`shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.** Only pg_extension is.
+- **PGTZ and PGDATESTYLE in the operator's libpq environment** change the session's TimeZone and DateStyle on both connections, so the check compares session values, not server values.
+- **The debug_parallel_query test goes through the recorded-value path,** not the boot_val path its name suggests.
+- **The required superuser bypasses row-level security.** The step 5 plan gate catches that for the original query.
+
+- **Depends on:** 20260922-25.
+- **Came from:** The build and reviews of 20260922-25.
+- **README:** Steps 2 and 4.
 - **Status:** todo
 
 ## After version 1.
