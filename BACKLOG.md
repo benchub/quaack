@@ -25,7 +25,9 @@ Build the per-run store directory on the jump server: its layout, a run ID, and 
 
 - **Depends on:** 20260922-1.
 - **README:** Where QUAACK runs (the storage table), and the note about destroying state after each run.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-3` through a build, a review, a fix round, and a second review, but not landed. The second review found `SystemStackError` on Hash nesting inside `MAX_DEPTH` on aarch64 Linux, and tests that miss a walk that skips sibling values. 20260923-32 finishes it on top of that branch.
+- **Defaults the main session chose (the user was away):** the base is `~/.quaack/runs/`, run IDs look like `20260923T221500Z-<8 hex>`, entry names match `/\A[a-z][a-z0-9_]*\z/`, writes are atomic, and opening a run checks that it's 0700 and owned by the current user.
 - **Decided:**
   - Each stored result is a JSON file in the run's directory.
   - The run directory is mode 0700 and its files are 0600, in the operator's home directory. Encryption at rest comes from the jump server's disk encryption. There's no encryption in the app.
@@ -768,7 +770,7 @@ Minor findings from the second review of 20260923-7:
 Minor findings from the second review of 20260922-7:
 - **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
 - **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
-- **Deep nesting and cycles raise `SystemStackError`.** A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
+- **Deep nesting and cycles raise `SystemStackError`.** (20260923-32 fixes this through the shared `PlainData.check`, once it lands.) A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
 - **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
 
 - **Depends on:** 20260922-7.
@@ -862,6 +864,23 @@ Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build
 - **Depends on:** 20260922-32's branch.
 - **Came from:** Second review of 20260922-32.
 - **README:** 5a-3.
+- **Status:** todo
+
+### 20260923-32. Finish the governed store.
+
+Split out of 20260922-3. The work so far is on branch `task/20260922-3`. Build on that branch, then land both together. It also changes egress, which now shares `PlainData.check`. Fix what the second review of 20260922-3 found:
+- **Hash nesting within `MAX_DEPTH` raises `SystemStackError` on aarch64 Linux.** json 2.9.1 on `ruby:3.4-slim` writes nested Hashes only about 9,700 deep on the main thread, and about 1,200 in a thread. The comment on `MAX_DEPTH = 10_000` promises more than that. The deepest real pg_query tree is about 1,500 levels. Lower `MAX_DEPTH` with room to spare. Add Hash and Array round-trip tests at `MAX_DEPTH`. Also turn `SystemStackError` from JSON into `Store::Error` and `Egress::Error`.
+- **Tests miss a walk that skips sibling values.** Each of these changes stays green:
+  - `hash.values` changed to `first(1)` or `last(1)`
+  - an Array walk using `item.last(1)`
+  - egress checking only the last field
+
+  Put bad values first, in the middle, and in a field other than `rule`.
+- **Egress now honors a singleton `to_json` on a plain Array or Hash,** because it generates the original object, not a copy. That's evasion, not an honest mistake, so just say so in a comment.
+
+- **Depends on:** 20260922-3's branch.
+- **Came from:** Second review of 20260922-3.
+- **README:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.
