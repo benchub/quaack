@@ -35,6 +35,18 @@ module Quaack
       # What open raises for a run path that isn't a run directory it would
       # open, so what teardown raises for one it won't delete.
       class BadRun < Error; end
+      # What create, open, and teardown raise for a base they can't use:
+      # one they can't make or look in, such as a file or one under a
+      # directory they can't search, or one that's linked (LINKED_BASE).
+      class BadBase < Error; end
+
+      # QUAACK makes the base and the directory above it, ~/.quaack/runs
+      # and ~/.quaack, so if either is a symlink, the store would live
+      # wherever it points. So create, open, and teardown raise BadBase for
+      # either, and make, read, and delete nothing through it. The
+      # directories above those, such as the operator's home, are the
+      # operator's to arrange.
+      LINKED_BASE = "the store's base is a symlink, or is in one, so it wasn't used"
 
       # A run ID: the UTC time the run started, then eight random hex
       # characters, such as 20260923T221500Z-0a1b2c3d.
@@ -47,21 +59,11 @@ module Quaack
       # Starts a new run: makes its directory under base, making base (and
       # any missing directory above it) mode 0700 first.
       def self.create(base: default_base)
-        make_base(base)
+        in_base(base, "couldn't make the base directory #{base}") { PrivateFiles.make_directories(base) }
         run_id = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}"
         path = File.join(base, run_id)
-        begin
-          PrivateFiles.make_directory(path)
-        rescue SystemCallError
-          raise Error, "couldn't make a run directory in #{base}", cause: nil
-        end
+        in_base(base, "couldn't make a run directory in #{base}") { PrivateFiles.make_directory(path) }
         new(run_id, path)
-      end
-
-      def self.make_base(base)
-        PrivateFiles.make_directories(base)
-      rescue SystemCallError
-        raise Error, "couldn't make the base directory #{base}", cause: nil
       end
 
       # Opens a run an earlier call started. The run directory must be a
@@ -69,11 +71,26 @@ module Quaack
       # user, or it raises BadRun. current_uid is there for tests.
       def self.open(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
-        problem = PrivateFiles.directory_problem(PrivateFiles.lstat(path), current_uid)
+        problem = PrivateFiles.directory_problem(look_up(run_id, base) { PrivateFiles.lstat(path) }, current_uid)
         raise BadRun, "run #{run_id} #{problem}" if problem
 
         new(run_id, path)
       end
+
+      # Refuses a linked base (see LINKED_BASE), and yields, turning a
+      # SystemCallError from either into BadBase with failure as its
+      # message. The SystemCallError names a file, which can be below base,
+      # so it's left behind.
+      def self.in_base(base, failure)
+        raise BadBase, LINKED_BASE, cause: nil if PrivateFiles.linked?(base)
+
+        yield
+      rescue SystemCallError
+        raise BadBase, failure, cause: nil
+      end
+
+      # in_base, for a lookup of the run's path.
+      def self.look_up(run_id, base, &) = in_base(base, "couldn't look up run #{run_id} in the store's base", &)
 
       # The run ID usually comes from argv, so it must be exactly in the
       # RUN_ID form before it goes into a path.
@@ -83,7 +100,7 @@ module Quaack
         raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
       end
 
-      private_class_method :make_base, :run_path, :new
+      private_class_method :in_base, :look_up, :run_path, :new
 
       attr_reader :run_id, :path
 
@@ -127,9 +144,10 @@ module Quaack
       # Deletes the run's directory and everything in it. It does nothing
       # if the directory is already gone. It won't delete a run path that's
       # been replaced by something other than a directory, and it removes a
-      # symlink inside the run directory without following it.
+      # symlink inside the run directory without following it. It raises
+      # BadBase for a base open would refuse.
       def teardown
-        stat = PrivateFiles.lstat(path)
+        stat = self.class.send(:look_up, run_id, File.dirname(path)) { PrivateFiles.lstat(path) }
         return unless stat
         raise Error, "run #{run_id}: its path isn't a directory, so it wasn't deleted" unless stat.directory?
 
