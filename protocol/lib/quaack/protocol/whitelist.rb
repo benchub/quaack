@@ -30,6 +30,13 @@ module Quaack
       # started and eight random hex characters, never anything from the
       # operator's inputs.
       run: %i[run_id].freeze,
+      # What `quaacks teardown` did with a run. run_id is the Store run ID
+      # the call named, checked for its form. store is deleted or
+      # already_gone. next_step is always destroy_run_server, since the
+      # enclave can't destroy the run server itself, so the operator must.
+      # All three are the enclave's own constants, never anything read from
+      # the run.
+      teardown: %i[run_id store next_step].freeze,
       # The README 15b burndown. Its values are nested Hashes, so unlike
       # every other field, they're checked on the way out: the egress
       # function sends them only if Protocol::Burndown.valid? passes, so

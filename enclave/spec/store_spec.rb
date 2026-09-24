@@ -622,6 +622,21 @@ RSpec.describe Quaack::Enclave::Store do
       File.chmod(0o700, locked)
     end
 
+    it "raises BadRun for a run path it refuses, and a Store::Error that isn't one when the delete fails" do
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, "") }
+      expect { described_class.teardown(File.basename(file), base:) }.to raise_error(described_class::BadRun)
+      expect(described_class::BadRun.superclass).to eq(described_class::Error)
+
+      locked = File.join(store.path, "locked").tap { Dir.mkdir(it) }
+      File.write(File.join(locked, "kept.json"), "[]")
+      File.chmod(0o500, locked)
+      expect { described_class.teardown(store.run_id, base:) }.to raise_error(described_class::Error) do |error|
+        expect(error).not_to be_a(described_class::BadRun)
+      end
+    ensure
+      File.chmod(0o700, locked) if locked
+    end
+
     it "doesn't follow a symlink out of the run directory" do
       outside = File.join(@tmp, "outside")
       Dir.mkdir(outside)

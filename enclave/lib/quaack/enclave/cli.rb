@@ -9,6 +9,7 @@ require_relative "cli/input"
 require_relative "cli/output"
 require_relative "steps/version"
 require_relative "steps/intake"
+require_relative "steps/teardown"
 
 module Quaack
   module Enclave
@@ -73,7 +74,8 @@ module Quaack
       STEPS = {
         "version" => Step.new(handler: Steps::Version),
         "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS,
-                             required: Steps::Intake::REQUIRED)
+                             required: Steps::Intake::REQUIRED),
+        "teardown" => Step.new(handler: Steps::Teardown, run_id: true)
       }.freeze
 
       # Other names for a subcommand.

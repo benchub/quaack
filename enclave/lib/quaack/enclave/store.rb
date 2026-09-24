@@ -17,6 +17,7 @@ module Quaack
     #   store.write("literals", ["a", 1])         # <run dir>/literals.json
     #   Store.open(store.run_id).read("literals") # => ["a", 1]
     #   store.teardown                            # deletes the run's directory
+    #   Store.teardown(run_id)                    # the same, by run ID
     #
     # Each result is a JSON file named for its entry. Entry names are
     # lowercase words, such as inputs or placeholder_map. Reads return what
@@ -31,6 +32,9 @@ module Quaack
     # value, so they have no cause.
     class Store
       class Error < StandardError; end
+      # What teardown raises for a run path it won't delete, since it isn't
+      # a run directory open would open.
+      class BadRun < Error; end
 
       # A run ID: the UTC time the run started, then eight random hex
       # characters, such as 20260923T221500Z-0a1b2c3d.
@@ -76,15 +80,16 @@ module Quaack
       # so a second teardown of a run succeeds too. The run ID is checked as
       # open checks it, so it can't name a path outside base. Anything else
       # at the run's path must be a run directory open would open, or it's
-      # left alone: never a symlink, which could point out of the store. A
-      # symlink inside the run directory is removed, not followed.
+      # left alone and teardown raises BadRun: it never deletes through a
+      # symlink, which could point out of the store. A symlink inside the
+      # run directory is removed, not followed.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
         stat = PrivateFiles.lstat(path)
         return :already_gone unless stat
 
         problem = directory_problem(stat, current_uid)
-        raise Error, "run #{run_id} #{problem}" if problem
+        raise BadRun, "run #{run_id} #{problem}" if problem
 
         new(run_id, path).teardown
         :deleted
