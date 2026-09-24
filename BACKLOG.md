@@ -912,6 +912,7 @@ This was split out of 20260922-29. The work so far is on branch `task/20260922-2
 - **Came from:** Second review of 20260922-29.
 - **README:** 5a-4.
 - **Status:** in progress
+- **Note:** Built on branch `task/20260923-39` with a build, a review, a fix round, and a second review, but not landed. The second review found that hidden real indexes skew the plans, and that deep plans raise a raw `JSON::NestingError`. 20260923-56 finishes it on top of that branch.
 
 ### 20260923-40. Allowlist loose ends.
 
@@ -964,6 +965,21 @@ pg_query's deparser can change what a query means. `WHERE (status = $1) IS NOT D
 - **Depends on:** 20260922-14, 20260922-10.
 - **Came from:** Second review of 20260922-10.
 - **README:** Step 1, and "What goes into the enclave".
+- **Status:** todo
+
+### 20260923-56. Finish 5a-4, second pass.
+
+Split out of 20260923-39. The work so far is on branch `task/20260923-39`, which carries 20260922-29. Build on that branch, then land all three together. Fix what the second review of 20260923-39 found:
+- **A real index hidden with HypoPG skews every plan without warning.** HypoPG keeps hidden indexes per session, and `hypopg_reset()` doesn't clear hidden real ones. In the reproduction, the baseline cost went from 8.31 to 1887.0 and the run returned normally. Refuse when `hypopg_hidden_indexes()` isn't empty, with a new rule such as `indexes_hidden`. Don't unhide them, since that isn't transactional. Add a comment that HypoPG older than 1.4 fails closed.
+- **A plan more than about 48 nodes deep raises a raw `JSON::NestingError`.** A 60-table join chain is enough. Parse EXPLAIN output with `max_nesting: false`, or with a documented cap that gives a clear refusal rule, and test it with a deep plan. This settles the parsing half of the note on 20260922-29. Sending plans through egress is still open.
+- **Surviving mutants:**
+  - Unanchored SQLSTATE class alternatives. Pin them with a refusal code such as `22025` or `42P08` that contains one of the class pairs.
+  - An index-name match on `start_with?("<")`.
+  - The `RELEASE SAVEPOINT` line, which you can delete, or explain why it's there.
+
+- **Depends on:** 20260923-39's branch.
+- **Came from:** Second review of 20260923-39.
+- **README:** 5a-4.
 - **Status:** todo
 
 ## After version 1.
