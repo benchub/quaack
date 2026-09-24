@@ -62,7 +62,7 @@ RSpec.describe "what each side loads at runtime" do
   describe "the enclave side" do
     it_behaves_like "a side that loads only what it may",
                     :enclave, "enclave", "quaacks",
-                    %({"type":"version","version":"#{Quaack::Enclave::VERSION}"}\n)
+                    %({"type":"version","version":"#{Quaack::Enclave::VERSION}"}\n{"type":"done"}\n)
   end
 
   describe "the driver side" do

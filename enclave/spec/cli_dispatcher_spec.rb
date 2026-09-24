@@ -18,7 +18,11 @@ CLI_SENTINEL = "sentinel-7f3a9c-ssn"
 INPUT_REFUSED_ON_EVERY_JSON = [
   %({"a": 1, "a": "#{CLI_SENTINEL}"}), %({"a": {"b": 1, "b": "#{CLI_SENTINEL}"}}),
   %({"a": [{"b": 1, "b": "#{CLI_SENTINEL}"}]}), %(/* #{CLI_SENTINEL} */ {"a": 1}),
-  %({"a": /* #{CLI_SENTINEL} */ 1}), %({"a": 1 // #{CLI_SENTINEL}\n}), %({"a": 1}\n// #{CLI_SENTINEL}\n)
+  %({"a": /* #{CLI_SENTINEL} */ 1}), %({"a": 1 // #{CLI_SENTINEL}\n}), %({"a": 1}\n// #{CLI_SENTINEL}\n),
+  # 2.9.1 keeps the character after an unknown escape; 3.0.2 refuses it.
+  *%w[q x41 a ' 0 U0041].map { |escape| %({"a": "#{CLI_SENTINEL}\\#{escape}"}) },
+  # Both read a number too big for a Float as Infinity.
+  %({"a": 1e400, "b": "#{CLI_SENTINEL}"}), %({"a": [[-1e400]], "b": "#{CLI_SENTINEL}"})
 ].freeze
 
 # Input these must accept on every json version: a slash or comment marker
@@ -27,7 +31,9 @@ INPUT_ACCEPTED_ON_EVERY_JSON = {
   %({"sql": "SELECT 1 /* hint */ -- x", "path": "a/b//c"}) =>
     { "sql" => "SELECT 1 /* hint */ -- x", "path" => "a/b//c" },
   %({"q": "a \\" /* not a comment */ \\\\", "b": "/"}) => { "q" => %(a " /* not a comment */ \\), "b" => "/" },
-  %({"a": {"b": 1}, "c": {"b": 2}}) => { "a" => { "b" => 1 }, "c" => { "b" => 2 } }
+  %({"a": {"b": 1}, "c": {"b": 2}}) => { "a" => { "b" => 1 }, "c" => { "b" => 2 } },
+  %({"a": "\\"\\\\\\/\\b\\f\\n\\r\\t\\u0041\\u00e9"}) => { "a" => %("\\/\b\f\n\r\tAé) },
+  %({"a": 1e300, "b": -0.5e-400}) => { "a" => 1e300, "b" => -0.0 }
 }.freeze
 
 # Unit tests of the dispatcher. Each plugs test steps into the CLI's steps
@@ -53,6 +59,8 @@ RSpec.describe Quaack::Enclave::CLI do
 
   def line(**fields) = "#{JSON.generate(fields.transform_keys(&:to_s))}\n"
   def error_line(step, rule) = line(type: "error", step:, rule:)
+  # The line that ends every successful run, and no failed one.
+  def done = line(type: "done")
 
   describe "dispatch" do
     it "runs the named step and prints each message it returns as one egress line" do
@@ -60,22 +68,22 @@ RSpec.describe Quaack::Enclave::CLI do
                                                             { type: :version, version: "b" }])) }
 
       expect(cli(steps).run(["echo"])).to eq(0)
-      expect(out.string).to eq(line(type: "version", version: "a") + line(type: "version", version: "b"))
+      expect(out.string).to eq(line(type: "version", version: "a") + line(type: "version", version: "b") + done)
       expect(calls).to eq([{ input: nil, store: nil, options: {} }])
     end
 
-    it "prints nothing for a message the egress function drops, and still succeeds" do
+    it "prints nothing for a message the egress function drops, and still succeeds with its done line" do
       steps = { "echo" => step_class.new(handler: recorder([{ type: :bogus, version: CLI_SENTINEL }, "not a hash"])) }
 
       expect(cli(steps).run(["echo"])).to eq(0)
-      expect(out.string).to eq("")
+      expect(out.string).to eq(done)
     end
 
     it "drops a field that isn't on the whitelist" do
       steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "1", value: CLI_SENTINEL }])) }
 
       expect(cli(steps).run(["echo"])).to eq(0)
-      expect(out.string).to eq(line(type: "version", version: "1"))
+      expect(out.string).to eq(line(type: "version", version: "1") + done)
     end
 
     it "prints only the error line when any message can't be written, not the ones before it" do
@@ -117,7 +125,7 @@ RSpec.describe Quaack::Enclave::CLI do
 
     it "maps --version to the version step" do
       expect(cli(cli_class::STEPS).run(["--version"])).to eq(0)
-      expect(out.string).to eq(line(type: "version", version: Quaack::Enclave::VERSION))
+      expect(out.string).to eq(line(type: "version", version: Quaack::Enclave::VERSION) + done)
     end
   end
 
@@ -225,6 +233,39 @@ RSpec.describe Quaack::Enclave::CLI do
         .to eq([*["bad_input"] * INPUT_REFUSED_ON_EVERY_JSON.size, *INPUT_ACCEPTED_ON_EVERY_JSON.values])
     end
 
+    # A regex that repeats over each character can keep a backtrack entry
+    # per character, about 70 bytes each, so a 64 MB input once took 5 GB.
+    # The child reports its peak RSS (getrusage's ru_maxrss: bytes on
+    # macOS, KB on Linux) before and after parsing about 32 MB of spaces
+    # and then about 32 MB inside a string.
+    it "parses big input in memory a small multiple of its size" do
+      script = <<~RUBY
+        require "fiddle"
+        require "stringio"
+        require "quaack/enclave/cli/input"
+        getrusage = Fiddle::Function.new(Fiddle.dlopen(nil)["getrusage"], [Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP],
+                                         Fiddle::TYPE_INT)
+        usage = Fiddle::Pointer.malloc(256)
+        peak = lambda do
+          getrusage.call(0, usage)
+          usage[32, 8].unpack1("q") * (RUBY_PLATFORM.include?("darwin") ? 1 : 1024)
+        end
+        size = 32 * 1024 * 1024
+        texts = ["{" + (" " * size) + "}", '{"a":"' + ("x" * size) + '"}']
+        GC.start
+        before = peak.call
+        texts.each { |text| Quaack::Enclave::CLI::Input.parse(text.dup) }
+        puts before, peak.call, size
+      RUBY
+      out, err, status = Bundler.with_unbundled_env do
+        run_ruby("--disable-gems", "-I", File.join(GEM_ROOT, "lib"), "-e", script)
+      end
+
+      expect(status).to be_success, "stderr was #{err}"
+      before, after, size = out.lines.map { Integer(it) }
+      expect(after - before).to be < 6 * size, "peak RSS grew #{(after - before) >> 20} MB for #{size >> 20} MB"
+    end
+
     # JSON doesn't count an empty innermost container toward its limit, so
     # each depth is tried with an empty one and with a full one.
     it "reads nesting up to PlainData::MAX_DEPTH and refuses deeper" do
@@ -262,7 +303,7 @@ RSpec.describe Quaack::Enclave::CLI do
       steps = { "echo" => step_class.new(handler: recorder) }
 
       expect(cli(steps, stdin:).run(["echo"])).to eq(0)
-      expect(out.string).to eq(line(type: "version", version: "ok"))
+      expect(out.string).to eq(line(type: "version", version: "ok") + done)
     end
 
     it "raises a bad_input Refused with no cause and none of the input in its message" do
@@ -316,14 +357,8 @@ RSpec.describe Quaack::Enclave::CLI do
       steps = { "echo" => step_class.new(handler: recorder([{ type: :version, version: "1" }])) }
 
       expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["echo"])).to eq(70)
-      expect(flush_fails.string).to eq(line(type: "version", version: "1") + error_line("echo", "internal_error"))
-    end
-
-    it "adds no blank line when the step printed nothing before the error" do
-      steps = { "echo" => step_class.new(handler: recorder([])) }
-
-      expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["echo"])).to eq(70)
-      expect(flush_fails.string).to eq(error_line("echo", "internal_error"))
+      expected = line(type: "version", version: "1") + done + error_line("echo", "internal_error")
+      expect(flush_fails.string).to eq(expected)
     end
   end
 

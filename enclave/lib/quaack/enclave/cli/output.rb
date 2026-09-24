@@ -10,8 +10,9 @@ module Quaack
       # blank line.
       #
       # So the driver (20260922-5) must skip blank lines and lines that
-      # aren't JSON, and must treat any run with an error line, or that died
-      # by a signal, as failed, and discard its other lines.
+      # aren't JSON. It must treat a run as failed, and discard its other
+      # lines, if it has an error line, died by a signal, or didn't end with
+      # the done line (CLI::DONE), which only a run that succeeded prints.
       class Output
         def initialize(io)
           @io = io

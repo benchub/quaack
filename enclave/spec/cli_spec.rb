@@ -11,12 +11,14 @@ RSpec.describe "quaacks executable" do
   let(:exe) { File.join(GEM_ROOT, "exe", "quaacks") }
 
   def usage_line(step) = %({"type":"error","step":"#{step}","rule":"usage"}\n)
+  # The line that ends every successful run, and no failed one.
+  def done = %({"type":"done"}\n)
 
-  it "prints its version as one egress line for --version and for version" do
+  it "prints its version line and then the done line for --version and for version" do
     [["--version"], ["version"]].each do |argv|
       out, err, status = run_ruby(exe, *argv)
 
-      expect(out).to eq(%({"type":"version","version":"#{Quaack::Enclave::VERSION}"}\n)), "stderr was #{err}"
+      expect(out).to eq(%({"type":"version","version":"#{Quaack::Enclave::VERSION}"}\n#{done})), "stderr was #{err}"
       expect(err).to eq("")
       expect(status.exitstatus).to eq(0)
     end
@@ -64,7 +66,7 @@ RSpec.describe "quaacks executable" do
         [{ type: :version, version: "1" }]
       RUBY
 
-      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(out).to eq(%({"type":"version","version":"1"}\n#{done}))
       expect(err).to eq("")
       expect(status.exitstatus).to eq(0)
     end
@@ -73,7 +75,7 @@ RSpec.describe "quaacks executable" do
       out, err, status = main(%(puts "#{sentinel}"; $stdout.flush; [{ type: :version, version: "1" }]),
                               prelude: "$stdout = STDOUT.dup")
 
-      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(out).to eq(%({"type":"version","version":"1"}\n#{done}))
       expect(err).to eq("")
       expect(status.exitstatus).to eq(0)
     end
@@ -89,9 +91,8 @@ RSpec.describe "quaacks executable" do
     end
 
     # exit! ends the process at once, skipping every rescue and ensure, so
-    # the CLI can't catch it. It prints nothing, and its status is whatever
-    # the step gave. That's why the driver must treat a run with no result
-    # line as failed.
+    # the CLI can't catch it. It prints nothing, not even the done line, so
+    # the driver can tell it from a success that sent no messages.
     it "can't catch a step's exit!, which ends the process with nothing on stdout" do
       out, err, status = main("exit!(0)")
 
@@ -111,7 +112,7 @@ RSpec.describe "quaacks executable" do
     it "drops a field that isn't on the whitelist" do
       out, err, status = main(%([{ type: :version, version: "1", literal: "#{sentinel}" }]))
 
-      expect(out).to eq(%({"type":"version","version":"1"}\n))
+      expect(out).to eq(%({"type":"version","version":"1"}\n#{done}))
       expect(err).to eq("")
       expect(status.exitstatus).to eq(0)
     end
@@ -128,7 +129,7 @@ RSpec.describe "quaacks executable" do
       out, err, status = main("[{ type: :version, version: inputs[:input].fetch('v') }]",
                               input: true, stdin: '{"v":"from stdin"}')
 
-      expect(out).to eq(%({"type":"version","version":"from stdin"}\n)), "stderr was #{err}"
+      expect(out).to eq(%({"type":"version","version":"from stdin"}\n#{done})), "stderr was #{err}"
       expect(status.exitstatus).to eq(0)
     end
 
@@ -139,7 +140,7 @@ RSpec.describe "quaacks executable" do
                                 argv: ["probe", "--run", store.run_id], run: true,
                                 prelude: "ENV['HOME'] = #{home.inspect}")
 
-        expect(out).to eq(%({"type":"version","version":"#{store.run_id}"}\n)), "stderr was #{err}"
+        expect(out).to eq(%({"type":"version","version":"#{store.run_id}"}\n#{done})), "stderr was #{err}"
         expect(status.exitstatus).to eq(0)
       end
     end

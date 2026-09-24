@@ -23,7 +23,9 @@ module Quaack
     # Array of message Hashes, and the CLI sends each through
     # Egress.serialize, printing nothing for one it drops. It sends them
     # only once the step has returned and every one of them has been
-    # written, so a step that fails prints only its error line.
+    # written, so a step that fails prints only its error line. A step that
+    # succeeds ends with DONE, so the driver can tell it from a process
+    # that died without a word.
     #
     # Stderr goes back over ssh too, so main silences it, and main points
     # stdout's file descriptor at the null device, keeping a private copy
@@ -62,6 +64,9 @@ module Quaack
 
       # A step called exit or abort (see call_step).
       class StepExited < StandardError; end
+
+      # The line that ends every call that succeeded, and no other.
+      DONE = Egress.serialize(type: :done)
 
       EX_OK = 0
       # sysexits.h's EX_USAGE.
@@ -126,7 +131,7 @@ module Quaack
         messages = call_step(step, input:, store:, options: arguments.options)
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)
 
-        messages.filter_map { Egress.serialize(it) }.map { "#{it}\n" }.join
+        [*messages.filter_map { Egress.serialize(it) }, DONE].map { "#{it}\n" }.join
       end
 
       # A step ends by returning. ErrorFilter.guard lets SystemExit through,
@@ -134,7 +139,8 @@ module Quaack
       # the process with a status of its own and no error line, or look like
       # success. So it's an internal error here. exit! can't be caught: it
       # skips every rescue and ensure, and ends the process with nothing on
-      # stdout, so the driver must treat a run with no result as failed.
+      # stdout, not even DONE, so the driver must treat a run without DONE as
+      # failed.
       def call_step(step, **)
         step.handler.call(**)
       rescue SystemExit
