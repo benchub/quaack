@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "stringio"
 require "pg_query"
 require "quaack/enclave/supported_sql"
 
@@ -44,6 +45,16 @@ RSpec.describe LeakCheck do
     it "makes a date long before any date QUAACK writes itself" do
       expect(sentinels.date).to be_a(Date)
       expect(sentinels.date.year).to be < 1900
+    end
+
+    # Postgres counts days by the Gregorian calendar all the way back, so a
+    # Julian-only leap day, such as 1100-02-29, is out of range for it.
+    it "never draws a day Postgres refuses, and every day it draws is before 1900" do
+      days = Array.new(LeakCheck::Sentinels::DAYS) { LeakCheck::Sentinels.day(it).iso8601 }
+
+      expect(days & %w[1100-02-29 1300-02-29 1400-02-29 1500-02-29]).to eq([])
+      expect(days.max).to start_with("189")
+      expect(test_database.connection.exec("SELECT DATE '#{days.max}', DATE '#{days.min}'").ntuples).to eq(1)
     end
 
     it "names each needle it scans for, and each is distinct" do
@@ -176,6 +187,34 @@ RSpec.describe LeakCheck do
       expect(channels(objects: { loud: loud.new })).to include("loud.inspect (raised)")
     end
 
+    # In-process specs capture into a StringIO, whose to_s is only
+    # #<StringIO:...>, so passing it by mistake would scan nothing.
+    it "refuses stdout or stderr that isn't a String, such as the StringIO it was captured in" do
+      io = StringIO.new.tap { it.write("leak #{sentinels.text}") }
+
+      expect { findings(stdout: io) }.to raise_error(ArgumentError, /stdout.*String/)
+      expect { findings(stderr: io) }.to raise_error(ArgumentError, /stderr.*String/)
+    end
+
+    it "scans the text of a StringIO among the objects, and refuses any other IO" do
+      io = StringIO.new.tap { it.write("leak #{sentinels.text}") }
+
+      expect(channels(objects: { out: io })).to eq(["out.string"])
+      expect { findings(objects: { out: $stdout }) }.to raise_error(ArgumentError, /out.*IO/)
+    end
+
+    it "finds a sentinel in a Struct's or a Data's members that inspect hides" do
+      hiding = Module.new do
+        def inspect = "#<hidden>"
+        def to_s = "hidden"
+      end
+      hidden_struct = Struct.new(:value).include(hiding)
+      hidden_data = Data.define(:value).include(hiding)
+
+      expect(channels(objects: { s: hidden_struct.new(sentinels.text), d: hidden_data.new(value: sentinels.word) }))
+        .to match_array(%w[s.value d.value])
+    end
+
     it "ends on a cycle, and still finds what's in it" do
       cycle = []
       cycle << cycle << sentinels.text
@@ -202,6 +241,40 @@ RSpec.describe LeakCheck do
         .to raise_error(LeakCheck::BrokenScanner, /cause/)
     end
 
+    it "fails, naming the kind, for a scanner that misses one kind of sentinel" do
+      misses_numbers = ->(set, **channels) { LeakCheck.findings(set, **channels).reject { it.sentinel == :number } }
+
+      expect { LeakCheck.check_scanner!(sentinels, scanner: misses_numbers) }
+        .to raise_error(LeakCheck::BrokenScanner, /number in stdout/)
+    end
+
+    # The places overlap unless each plant keeps its needle out of every
+    # other place. An error's full_message, for one, holds its message,
+    # backtrace, and cause, so a scanner that missed causes would still
+    # find a cause planted in an ordinary error.
+    it "plants each place so the needle shows only there" do
+      expected = {
+        "stdout" => ["stdout"], "stdout, in capitals" => ["stdout"], "stdout, in UTF-16" => ["stdout"],
+        "stderr" => ["stderr"], "status" => %w[status status.inspect status.detail],
+        "a deep object" => ["result#{".@value" * LeakCheck::PositiveControl::DEPTH}"],
+        "an object's to_s" => ["result"], "an object's inspect" => ["result.inspect"],
+        "an object's instance variable" => ["result.@value"],
+        "an error's message" => ["error.message"], "an error's backtrace" => ["error.backtrace"],
+        "an error's detailed_message" => ["error.detailed_message"],
+        "an error's full_message" => ["error.full_message"], "an error's cause" => ["error.cause"],
+        "an error's instance variable" => ["error.@kept.@value"]
+      }
+      plants = LeakCheck::PositiveControl::PLANTS
+
+      expect(plants.keys).to match_array(expected.keys)
+      plants.each do |place, plant|
+        found = LeakCheck.findings(sentinels, **plant.call(sentinels.word))
+        channels = found.map(&:channel)
+        channels = channels.map { it.sub(/\Aerror\.cause\..*/, "error.cause") }.uniq if place == "an error's cause"
+        expect(channels).to match_array(expected.fetch(place)), place
+      end
+    end
+
     it "fails for a scanner that finds nothing" do
       expect { LeakCheck.check_scanner!(sentinels, scanner: ->(*, **) { [] }) }
         .to raise_error(LeakCheck::BrokenScanner)
@@ -223,6 +296,18 @@ RSpec.describe LeakCheck do
 
       expect { expect_no_leaks(sentinels, outcome) }
         .to raise_error(RSpec::Expectations::ExpectationNotMetError, /text.*stdout/m)
+    end
+
+    it "scans a subprocess outcome's stderr and status too" do
+      on_stderr = LeakCheck::Quaacks::Outcome.new(stdout: "", stderr: "x #{sentinels.word}", status: nil,
+                                                  loaded_features: [])
+      in_status = LeakCheck::Quaacks::Outcome.new(stdout: "", stderr: "", loaded_features: [],
+                                                  status: Struct.new(:detail).new(sentinels.number))
+
+      expect { expect_no_leaks(sentinels, on_stderr) }
+        .to raise_error(RSpec::Expectations::ExpectationNotMetError, /word in stderr/)
+      expect { expect_no_leaks(sentinels, in_status) }
+        .to raise_error(RSpec::Expectations::ExpectationNotMetError, /number in status/)
     end
 
     # The scanner is a parameter only for this: to show a broken one fails
@@ -296,6 +381,36 @@ RSpec.describe LeakCheck do
       quaacks.remove
 
       expect(File.exist?(quaacks.home)).to be(false)
+    end
+
+    it "writes the script it runs into the install's directory, and removes it after" do
+      outcome = quaacks.run_ruby("print __FILE__")
+
+      expect(File.dirname(outcome.stdout)).to eq(quaacks.install.dir)
+      expect(File.exist?(outcome.stdout)).to be(false)
+    end
+
+    # No subcommand reads stdin yet, so a stand-in install shows what run
+    # hands it. run_ruby's spec above shows the install passes stdin on.
+    it "passes stdin, HOME, and argv on to the installed quaacks" do
+      install = Class.new do
+        attr_reader :calls
+
+        def initialize = @calls = []
+
+        def run(*args, **kwargs)
+          @calls << [args, kwargs]
+          IsolatedInstall::Run.new("", "", nil, [])
+        end
+      end.new
+      stand_in = described_class.new(install:)
+
+      stand_in.run("probe", "--flag", stdin: "from stdin")
+
+      expect(install.calls)
+        .to eq([[%w[quaacks probe --flag], { env: { "HOME" => stand_in.home }, stdin: "from stdin" }]])
+    ensure
+      stand_in&.remove
     end
   end
 

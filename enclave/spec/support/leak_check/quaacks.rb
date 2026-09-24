@@ -36,25 +36,31 @@ module LeakCheck
 
     attr_reader :home
 
-    def initialize
+    # install is the IsolatedInstall to run, Quaacks.install unless a spec
+    # of this class gives a stand-in. No subcommand reads stdin yet, so a
+    # stand-in is the only way to see that run passes stdin on.
+    def initialize(install: nil)
       @home = Dir.mktmpdir("quaack-leak-home")
+      @install = install
     end
 
+    def install = @install ||= Quaacks.install
     def store_base = File.join(home, ".quaack", "runs")
-    def gem_home = Quaacks.install.home
+    def gem_home = install.home
 
     # The IDs of the runs under store_base, sorted.
     def runs = File.directory?(store_base) ? Dir.children(store_base).sort : []
 
     # Runs `quaacks *argv`, with stdin on its stdin, and returns an Outcome.
-    def run(*argv, stdin: "") = outcome(Quaacks.install.run("quaacks", *argv, env: env, stdin:))
+    def run(*argv, stdin: "") = outcome(install.run("quaacks", *argv, env: env, stdin:))
 
     # Runs the Ruby source the same way, such as CLI.main with a test step
     # plugged in. The installed gems are on its load path, as for the exe.
+    # The script is written into the install's directory and removed after.
     def run_ruby(source, *argv, stdin: "")
-      script = File.join(Quaacks.install.dir, "script-#{SecureRandom.hex(4)}.rb")
+      script = File.join(install.dir, "script-#{SecureRandom.hex(4)}.rb")
       File.write(script, source)
-      outcome(Quaacks.install.run_ruby(script, *argv, env: env, stdin:))
+      outcome(install.run_ruby(script, *argv, env: env, stdin:))
     ensure
       FileUtils.rm_f(script)
     end

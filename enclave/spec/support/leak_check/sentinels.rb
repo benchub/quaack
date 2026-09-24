@@ -27,6 +27,8 @@ module LeakCheck
     MIN_EXTRA = 9
     # The needles every set has, in order.
     KINDS = %i[text word number date json like].freeze
+    # How many days a date sentinel is drawn from.
+    DAYS = 290_000
 
     @used = Set.new
     class << self
@@ -35,6 +37,12 @@ module LeakCheck
         needle = yield until needle && @used.add?(needle)
         needle
       end
+
+      # The nth day a date sentinel can be, for index in 0...DAYS. It counts in
+      # the Gregorian calendar all the way back, as Postgres does. Ruby's
+      # default switches to the Julian calendar before 1582, which has leap
+      # days, such as 1100-02-29, that Postgres refuses.
+      def day(index) = Date.new(1100, 1, 1, Date::GREGORIAN) + index
     end
 
     attr_reader :number, :date, :needles
@@ -42,7 +50,7 @@ module LeakCheck
     def initialize(extra: {})
       @tokens = %i[text word json like].to_h { [it, token] }
       @number = Sentinels.claim { SecureRandom.random_number(100_000_000..999_999_999) }
-      @date = Sentinels.claim { Date.new(1100, 1, 1) + SecureRandom.random_number(290_000) }
+      @date = Sentinels.claim { Sentinels.day(SecureRandom.random_number(DAYS)) }
       @needles = { **@tokens, number: number.to_s, date: date.iso8601 }.slice(*KINDS).merge(fixed(extra)).freeze
     end
 

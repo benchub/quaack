@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "stringio"
+
 module LeakCheck
   # One sentinel found in one place. channel says where, such as "stderr",
   # "status", or "error.cause.message" for the cause of the object passed as
@@ -11,8 +13,9 @@ module LeakCheck
   # Collects every piece of text a Ruby object could show, each with the
   # path it came from: a String itself; any other object's to_s and inspect;
   # an error's message, detailed_message, full_message, backtrace, and cause;
-  # the elements of an Array, the keys and values of a Hash, and every
-  # object's instance variables. It visits each object once, so a cycle
+  # the elements of an Array, the keys and values of a Hash, the members of
+  # a Struct or Data (which a custom inspect can hide), a StringIO's text,
+  # and every object's instance variables. It visits each object once, so a cycle
   # ends, and goes at most MAX_DEPTH deep. A describing method that raises
   # gives the raised error's message instead, since that's what a caller
   # would see.
@@ -72,6 +75,7 @@ module LeakCheck
     def children(object, path)
       kids = object.instance_variables.map { [object.instance_variable_get(it), "#{path}.#{it}"] }
       kids << [object.cause, "#{path}.cause"] if object.is_a?(Exception) && object.cause
+      kids << [object.string, "#{path}.string"] if object.is_a?(StringIO)
       kids + members(object, path)
     end
 
@@ -93,11 +97,34 @@ module LeakCheck
   # verdict, or a result for egress. It matches without regard to case or
   # encoding. It returns Findings, at most one for each sentinel in each
   # place, and [] when it finds none.
+  #
+  # Use it directly only for exposure checks, which assert that a sentinel
+  # is there, such as in the plan a step reads. For "nothing leaked," use
+  # expect_no_leaks, which runs the positive control first, so a broken
+  # scanner can't make an empty result look clean.
+  #
+  # stdout and stderr must be Strings or nil. A StringIO's to_s is only
+  # #<StringIO:...>, so passing the capture instead of its text would
+  # scan nothing. Among objects, a StringIO's text is scanned, and any
+  # other IO given as an object is refused, since what it holds can't be read.
   def findings(sentinels, stdout: nil, stderr: nil, status: nil, objects: {})
-    texts = { "stdout" => stdout, "stderr" => stderr }.compact.to_a
+    texts = { "stdout" => text_channel("stdout", stdout), "stderr" => text_channel("stderr", stderr) }.compact.to_a
     texts += Texts.of(status, "status") unless status.nil?
-    objects.each { |name, object| texts += Texts.of(object, name.to_s) }
-    texts.flat_map { |channel, text| findings_in(sentinels, channel, text) }.uniq
+    objects.each { |name, object| texts += Texts.of(scannable(name, object), name.to_s) }
+    texts.flat_map { |channel, text| findings_in(sentinels, channel, text) }
+  end
+
+  def text_channel(name, text)
+    return text if text.nil? || text.is_a?(String)
+
+    raise ArgumentError,
+          "#{name} must be a String or nil, not a #{text.class}; pass the text it captured, such as out.string"
+  end
+
+  def scannable(name, object)
+    return object unless object.is_a?(IO)
+
+    raise ArgumentError, "#{name} is an IO, whose text can't be scanned; pass the text it wrote instead"
   end
 
   def findings_in(sentinels, channel, text)
