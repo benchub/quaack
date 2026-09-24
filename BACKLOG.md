@@ -121,14 +121,7 @@ Read the three operator inputs from the governed store (query text, `EXPLAIN (AN
 
 ### 20260922-14. Fully qualify relations. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-15. Canonical plan form.
-
-Define the canonical plan: keep node type, relation, index, join type, strategy, quals, and sort keys, and strip costs, row counts, buffers, and aliases. Build the comparison every later step uses.
-
-- **Depends on:** 20260922-1.
-- **README:** Step 1.
-- **Status:** todo
-- **Decided:** Parse each qual with pg_query, replace each alias with the relation it stands for, and compare the pg_query fingerprints, which ignore constants. Two plans that differ only in literal values or alias names compare equal.
+### 20260922-15. Canonical plan form. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 2: Production inventory.
 
@@ -794,6 +787,24 @@ Findings from both reviews and the builder of 20260922-14:
 
 - **Depends on:** 20260922-14.
 - **Came from:** Both reviews of 20260922-14, and its builder's notes.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260923-28. Canonical plan loose ends.
+
+Minor findings from the second review of 20260922-15:
+- **`Integer()` reads a leading zero as octal.** A real index named `"<09>fake"` raises `ArgumentError`, and `"<010>fake"` is read as oid 8. Use `Integer(..., 10)`.
+- **A real index whose name starts with `<digits>` is treated as hypothetical.** Without a map, a real `"<123>orders_pkey"` compares equal to `orders_pkey`. It's unlikely, so document it.
+- **Surviving mutants:**
+  - An empty map treated like no map. `hypothetical_indexes: {}` with a `<oid>` index should make the plan not comparable.
+  - The `\A` anchor dropped from `HYPOTHETICAL_INDEX`.
+  - An Array of pairs accepted as the map.
+- **The "two sessions" Postgres spec never gets two oids,** because `hypopg_reset()` runs after the extra index is made. Fix the setup or the comment.
+- **The digest covers a partial predicate's literal.** A short literal could be guessed from the hash. It stays in the enclave today, but any step that sends a canonical form out must know this.
+- **Merge `PlanExpression`'s parse helper with `CanonicalPlan`'s own parse step.**
+
+- **Depends on:** 20260922-15.
+- **Came from:** Second review of 20260922-15, and its builder's notes.
 - **README:** Step 1.
 - **Status:** todo
 
