@@ -618,3 +618,19 @@ High priority. A rewrite that drops a secondary sort key below the top level mat
   - Both runs use `ArenaRunner#with_fixture(index_scans: false)`, which turns off index, index-only, and bitmap scans with SET LOCAL, so an index can't return ties in a fixed order.
   - A reverse-only load failure is `reverse_load_failed`.
   - In the second review, randomized probes found 15 survivors in about 1,900 wrong candidates. Its findings became 20260924-9.
+
+### 20260922-35. 5a-7 combination and ranking.
+
+Combine candidates greedily up to three indexes. Rank by worst-case cost reduction across literals, and break ties by size. Keep the top three plus the best combination if it wins. Each kept entry carries DDL, size, costs per literal, canonical plan, and partial-index tag.
+
+- **Depends on:** 20260922-29.
+- **README:** 5a-7.
+- **Status:** done
+- **Defaults the main session chose (the user was away):**
+  - Reduction is `1 − after/before` per literal set, and the worst case is the minimum across sets.
+  - Rank by worst case, highest first. Break ties by size, smallest first, then by DDL.
+  - Combine greedily from the best single index. Keep an added partner only when the worst case strictly improves and every index gets used. Stop at three indexes.
+- **Landed:** Merged into `main` after a build, a review, a fix round, a second review, a tests-only round, and a tests-only review.
+  - `IndexRanking.rank(conn, query:, literal_sets:, baseline:, results:)` returns `Ranking(top:, combination:)`. Each entry carries the DDL, the size, the cost before and after for each literal set, `used`, the canonical plans, and `partial`. Inspect leaves out the DDL.
+  - 5a-4's runner became a public `SingleCandidateTest::Session`, with `measure(candidates)` for several hypothetical indexes at once. All of 5a-4's safety moved over with it (the reviewers checked 28 mutants). Every measure resets HypoPG, and a closed session refuses to measure.
+  - Leftover findings became 20260924-10.
