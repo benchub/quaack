@@ -314,7 +314,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "refuses SQL the deparser would change once the originals are back" do
       now = described_class::Replacement.new(original: "now()", anchored: "quaack.clock_anchor()")
-      sql = "SELECT (quaack.clock_anchor() IS NOT DISTINCT FROM quaack.clock_anchor()) IS TRUE"
+      sql = "SELECT (quaack.clock_anchor() IS NOT DISTINCT FROM quaack.clock_anchor()) = 't'::boolean"
       expect { described_class.restore(sql, [now, now], []) }
         .to raise_error(Quaack::Enclave::Deparse::Error) { |error| expect(error.rule).to eq("deparse_mismatch") }
     end
@@ -335,7 +335,8 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     end
 
     it "refuses an anchored query the deparser would change" do
-      expect { anchor("SELECT (now() IS NOT DISTINCT FROM now()) IS TRUE") }
+      # The deparser writes 't'::boolean as true, another tree.
+      expect { anchor("SELECT (now() IS NOT DISTINCT FROM now()) = 't'::boolean") }
         .to raise_error(Quaack::Enclave::Deparse::Error) { |error| expect(error.rule).to eq("deparse_mismatch") }
     end
 
