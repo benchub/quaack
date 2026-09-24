@@ -85,16 +85,7 @@ Check the connection to the production server and record the version, extensions
 
 ### 20260922-17. 3a relations. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-18. 3b schema dump and subset.
-
-Run the full schema-only dump on every namespace the query touches, plus `public`. Build the subset: the query's tables and their FK parent tables.
-
-- **Depends on:** 20260922-17.
-- **README:** 3b.
-- **Status:** todo
-- **Decided:**
-  - Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
-  - Don't parse the dump. Find the subset tables and their FK ancestors from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
+### 20260922-18. 3b schema dump and subset. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-19. 3c statistics.
 
@@ -883,25 +874,7 @@ Findings from the reviews of 20260922-13:
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260924-4. Parenthesize what pg_query deparses wrong.
-
-The round-trip guard (20260923-55) now correctly refuses supported constructs that pg_query's deparser prints without needed parentheses, which would change their meaning:
-- `(a OR b) IS NULL`
-- `(a AND b) IS NOT NULL`
-- `(NOT a) IS NULL`
-- `(a AND b) IN (true)`
-- `(a AND b) = ANY(...)`
-- `(a = 1) = ANY(ARRAY[true])`
-- `a IS NOT DISTINCT FROM (b AND c)`
-- `a BETWEEN (b AND c) AND d`
-- `created_at AT TIME ZONE ('UTC' || '')`
-
-Before deparsing, wrap the operand in an explicit parenthesis node, or post-process the SQL, so these round-trip and stop being refused. Keep the guard in place as the check. Also consider fixing shapes, which use `deparse_expr` and so turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`.
-
-- **Depends on:** 20260923-55.
-- **Came from:** The reviews of 20260923-55.
-- **README:** Step 1.
-- **Status:** todo
+### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
@@ -1118,6 +1091,49 @@ Findings from the reviews of 20260922-5:
 - **Depends on:** 20260922-5.
 - **Came from:** The reviews of 20260922-5.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-21. 9d Shape deparses without the round-trip guard.
+
+**High priority. It's a correctness bug in the 9d comparison.** `ResultComparison::Shape#build` in `enclave/lib/quaack/enclave/result_comparison.rb` calls raw `PgQuery.deparse`, with no round-trip guard and no parentheses. It runs on the real 9d path: `without_limit`, `with_tiebreaker`, and `probe`. For example, `Shape.parse("SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id LIMIT 5", nil).without_limit` returns `SELECT id FROM t WHERE a OR b IS NULL ORDER BY id`. That's a different query, and it silently changes what 9d compares. Route it through `Deparse.faithfully` (with the parentheses fix from 20260924-4 once that lands), and refuse cleanly when the guard refuses. Add a PG18 test where the raw deparse would change the rows. Also check for other raw `PgQuery.deparse` or `deparse_expr` calls in the enclave that build SQL to run, and route each one through the guard.
+
+- **Depends on:** 20260922-47, 20260923-55.
+- **Came from:** First review of 20260924-4.
+- **README:** 9d, Step 1.
+- **Status:** todo
+
+### 20260924-22. 3b schema dump loose ends.
+
+Findings from the build and reviews of 20260922-18:
+- **The subset DDL can't restore into an empty arena on its own.** `pg_dump --table` emits no `CREATE SCHEMA`, types, domains, enums, functions used in defaults or CHECKs, or extensions. That matters for 4b and step 10.
+- **A query table that's a partition needs its parent.** Its dump carries `ALTER TABLE ONLY <parent> ATTACH PARTITION`.
+- **The full dump covers only the query's namespaces plus public,** so a cross-schema FK ancestor is in the subset but not in the full dump. That follows the README, but it's worth knowing.
+- **Add `--no-password` (`-w`),** so pg_dump never prompts.
+- **A SQL_ASCII database with non-ASCII names crashes as `internal_error`.** It fails closed. Refuse SQL_ASCII by name, and list it as unsupported in v1.
+- **In EUC_JP or WIN1252 databases, tables aren't in UTF-8 byte order.** Sort in Ruby after transcoding.
+- **Near-miss secret keys aren't refused,** such as `"password "`, `PASSWORD`, or keys holding `=`. Require keys to match `/\A[a-z_]+\z/`.
+- **Untested paths:** the subset dump's lock-wait timeout, a signal-killed pg_dump beyond the message, and an empty conninfo.
+- **A password can hide in a dbname URI.**
+- **Both dumps are held in memory.**
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build and reviews of 20260922-18.
+- **README:** 3b.
+- **Status:** todo
+
+### 20260924-23. Deparse loose ends.
+
+Findings from the build and reviews of 20260924-4:
+- **`'t'::boolean` and `'f'::boolean` are still refused.** The deparser prints them as `true` and `false`, which parse to a different tree.
+- **Shapes turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`,** because `deparse_expr` strips every `SELECT WHERE `.
+- **Very deep queries raise RuntimeError instead of deparse_mismatch.** The wrappers can push a tree past pg_query's encode limit of 1,000, for example `(e OR b) IS TRUE` nested 150 times. It fails closed as `internal_error`, but callers that rescue only `Deparse::Error` (generator two, index SQL, relations, and the rewrite candidate check) abort instead of skipping. Rescue the encode error in `faithful_parse`, and raise `Error`.
+- **Stale comments:** `predicate_atoms.rb` lines 82–89, `index_candidate.rb` lines 52–55, and `deparse.rb` lines 15–21, which don't mention Parentheses.
+- **Four mutants refuse rare SQL without a test noticing:** the `b_expr` edits at `parentheses.rb` line 156 (three variants), and `operator_level(..., subquery: true)` at line 300. Pin them if it's cheap.
+- **The deparse_spec matrix adds about 20s** to the enclave suite.
+
+- **Depends on:** 20260924-4.
+- **Came from:** The build and reviews of 20260924-4.
+- **README:** Step 1.
 - **Status:** todo
 
 ## After version 1.

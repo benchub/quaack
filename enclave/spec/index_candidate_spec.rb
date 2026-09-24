@@ -260,10 +260,9 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       end
     end
 
-    # pg_query deparses it as status = 'x' IS NOT DISTINCT FROM true AND
-    # false, which indexes different rows.
+    # pg_query deparses 't'::boolean as true, which parses as another tree.
     it "refuses one pg_query would deparse as a different expression, without quoting it" do
-      expect { candidate(predicate: "(status = 'SENTINEL-4e1a') IS NOT DISTINCT FROM (true AND false)") }
+      expect { candidate(predicate: "(status = 'SENTINEL-4e1a') IS NOT DISTINCT FROM 't'::boolean") }
         .to raise_error(ArgumentError, "predicate changes meaning when pg_query deparses it") { |e|
           expect(e.cause).to be_nil
           expect(e.full_message).not_to include("SENTINEL")

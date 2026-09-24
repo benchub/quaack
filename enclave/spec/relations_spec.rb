@@ -341,8 +341,10 @@ RSpec.describe Quaack::Enclave::Relations do
         .to rejected("unsupported_construct", "unsupported_construct: LockingClause")
     end
 
+    # pg_query writes 't'::boolean as true, which parses as another tree.
+    # Deparse adds the parentheses it leaves out elsewhere (20260924-4).
     it "is refused as deparse_mismatch when pg_query would deparse it wrong" do
-      expect { check("SELECT id FROM orders WHERE (status = 'a') IS NOT DISTINCT FROM (true AND false)") }
+      expect { check("SELECT id FROM orders WHERE (status = 'a') IS NOT DISTINCT FROM 't'::boolean") }
         .to rejected("deparse_mismatch")
     end
   end
@@ -376,7 +378,7 @@ RSpec.describe Quaack::Enclave::Relations do
       "unsupported_construct" => [planted(sentinel, tail: " FOR UPDATE")],
       "bad_search_path" => [planted(sentinel), { "search_path" => "public," }],
       "unknown_relation" => [planted(sentinel, from: "public.nowhere")],
-      "deparse_mismatch" => [planted(sentinel, tail: " AND ('x' = 'y') IS NOT DISTINCT FROM (true AND false)")],
+      "deparse_mismatch" => [planted(sentinel, tail: " AND ('x' = 'y') IS NOT DISTINCT FROM (true AND 't'::boolean)")],
       "view_relation" => [planted(sentinel, from: "order_view")],
       "foreign_relation" => [planted(sentinel, from: "remote_orders")]
     }.each do |rule, (sql, settings)|

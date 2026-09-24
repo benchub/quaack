@@ -746,3 +746,37 @@ List the query's relations with pg_query and check each `relkind`. Abort on view
 - **Decided:** Allow only plain tables (`relkind` `r`). Abort on views, materialized views, partitioned tables, and foreign tables, and name the relation and its kind in the message.
 - **Decided (main session, pending the user):** Each kind gets its own rule: `view_relation`, `matview_relation`, `partitioned_relation`, `foreign_relation`, `sequence_relation`, `composite_type_relation`, `toast_relation`, `index_relation`, and `not_a_table`. The relation name stays in the enclave. Unless every reference says ONLY, every inheritance descendant is checked, and the first one that isn't `r` is refused. Relations are checked in the query's text order.
 - **Landed:** Merged into `main` after a review, a fix round, a second review, a tests-only round, and a fresh check of those tests. The entry point is `Relations.check(sql, settings, connection)`. The minor findings went to 20260924-19.
+
+### 20260922-18. 3b schema dump and subset.
+
+Run the full schema-only dump on every namespace the query touches, plus `public`. Build the subset: the query's tables and their FK parent tables.
+
+- **Depends on:** 20260922-17.
+- **README:** 3b.
+- **Status:** done
+- **Decided:**
+  - Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
+  - Don't parse the dump. Find the subset tables and their FK ancestors from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
+- **Decided (user, September 24):** For v1, schema DDL is assumed to hold no PII, so the subset can go to the LLM as is.
+- **Landed:** Merged into `main` after a review, a fix round, a second review, a tests-only round, and a fresh check of that test. The entry point is `SchemaDump.run(store:, relations:, connection:, conninfo:, pg_dump:)`, and it stores `schema_dump` and `schema_subset`. The leftover findings went to 20260924-22.
+
+### 20260924-4. Parenthesize what pg_query deparses wrong.
+
+The round-trip guard (20260923-55) now correctly refuses supported constructs that pg_query's deparser prints without needed parentheses, which would change their meaning:
+- `(a OR b) IS NULL`
+- `(a AND b) IS NOT NULL`
+- `(NOT a) IS NULL`
+- `(a AND b) IN (true)`
+- `(a AND b) = ANY(...)`
+- `(a = 1) = ANY(ARRAY[true])`
+- `a IS NOT DISTINCT FROM (b AND c)`
+- `a BETWEEN (b AND c) AND d`
+- `created_at AT TIME ZONE ('UTC' || '')`
+
+Before deparsing, wrap the operand in an explicit parenthesis node, or post-process the SQL, so these round-trip and stop being refused. Keep the guard in place as the check. Also consider fixing shapes, which use `deparse_expr` and so turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`.
+
+- **Depends on:** 20260923-55.
+- **Came from:** The reviews of 20260923-55.
+- **README:** Step 1.
+- **Status:** done
+- **Landed:** Merged into `main` after two reviews. The second review was clean: 77,000 fuzzed supported queries round-trip with none refused, and 2,798 gave the same rows on PG18. `Deparse::Parentheses.add!` wraps operands before deparsing, and the round-trip guard still runs last. The leftovers went to 20260924-23.
