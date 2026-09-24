@@ -171,7 +171,7 @@ RSpec.describe RuntimeBoundary do
     it "flags the usage branch loading the driver" do
       gemspec = copy_of("enclave")
       add_dependency(gemspec, "quaack-driver")
-      plant(gemspec, "lib/quaack/enclave/cli.rb", "        else\n", %(          require "quaack/driver"\n))
+      plant(gemspec, "lib/quaack/enclave/cli.rb", "      rescue Refused => e\n", %(        require "quaack/driver"\n))
       report = check(described_class.enclave(gemspec_path: gemspec))
 
       expect(messages(report, run: "quaacks --version")).to eq([])
@@ -192,7 +192,7 @@ RSpec.describe RuntimeBoundary do
 
     it "flags a run whose loaded files weren't recorded, such as one that ends with exit!" do
       gemspec = copy_of("enclave")
-      plant(gemspec, "lib/quaack/enclave/cli.rb", "        else\n", "          exit!(EX_USAGE)\n")
+      plant(gemspec, "lib/quaack/enclave/cli.rb", "      rescue Refused => e\n", "        exit!(EX_USAGE)\n")
 
       expect(messages(check(described_class.enclave(gemspec_path: gemspec)), run: "quaacks"))
         .to eq(["recorded no loaded files"])

@@ -41,6 +41,12 @@ RSpec.describe Quaack::Enclave::Egress do
       expect(out).not_to include(EGRESS_SENTINEL)
     end
 
+    it "sends done, a type with no fields, as its type alone, and drops any field" do
+      expect(whitelist.fetch(:done)).to eq([])
+      expect(egress.serialize(type: :done)).to eq('{"type":"done"}')
+      expect(egress.serialize("type" => "done", "rule" => EGRESS_SENTINEL)).to eq('{"type":"done"}')
+    end
+
     it "keeps column_stats' allowed fields, values unchanged, and drops the rest" do
       out = egress.serialize(
         type: :column_stats, table: "public.orders", column: "status", n_distinct: 4, null_frac: 0.0,
