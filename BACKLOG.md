@@ -387,7 +387,8 @@ Compare results using the rules for no `ORDER BY`, a partial `ORDER BY` (add a t
 
 - **Depends on:** 20260922-46.
 - **README:** 9d.
-- **Status:** todo
+- **Status:** in progress
+- **Note:** Built on branch `task/20260922-47` through a build, a review, a fix round, and a second review, but not landed. The second review found false matches when a tie crosses a LIMIT or OFFSET cut or a DISTINCT ON pick, and when a column is an enum. 20260923-54 finishes it on top of that branch.
 - **Decided:** `float4` and `float8` values are equal within a relative 1e-9, with an absolute 1e-12 near zero. Numeric and integer columns compare exactly.
 
 ### 20260922-48. 9c vacuity guard.
@@ -495,6 +496,7 @@ Run the original and each candidate as plain queries per literal and compare in 
 
 - **Depends on:** 20260922-47, 20260922-57.
 - **README:** 14c.
+- **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
 - **Status:** todo
 - **Open questions:** Which hash? A plain sum of row hashes can mask duplicates in some cases, so we should pick one carefully.
 
@@ -935,6 +937,21 @@ Split out of 20260922-4. The work so far is on branch `task/20260922-4`. Build o
 - **Depends on:** 20260922-4's branch.
 - **Came from:** Second review of 20260922-4.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-54. Finish the 9d result comparator.
+
+Split out of 20260922-47. The work so far is on branch `task/20260922-47`. Build on that branch, then land both together. Fix what the second review of 20260922-47 found:
+- **A false match when a tie crosses a LIMIT or OFFSET cut, or a DISTINCT ON pick.** The two tiebreaker runs, ascending and then descending, only expose the first and last row of each tie group. So a candidate can widen the tie at the cut and still match both runs. The reviewer reproduced this for LIMIT, DISTINCT ON, and OFFSET on real Postgres.
+  - The main session's default is to fail closed. If the original's ascending and descending runs return different row multisets, the original depends on how ties break, so refuse the comparison with `unsupported_order` and never report a match.
+  - Otherwise the two-run scheme is sound. Test all three repros.
+  - A precise check could come later: the rows before the tied group must match exactly, and the rest must be drawn from that group.
+- **Enum columns are left out of the tiebreaker, which allows a false match.** For example, `ORDER BY m` on an enum matched a candidate that sorted by another column. Include enums by looking up the catalog (`typtype = 'e'`), and ranges and composites too if that's cheap. Test it.
+- **The comment claiming `max` and `min` are equivalent is wrong.** 7.603 against 7.603000007603 is equal under `max` and unequal under `min`. Fix the comment, and pin that pair in a test.
+
+- **Depends on:** 20260922-47's branch.
+- **Came from:** Second review of 20260922-47.
+- **README:** 9d.
 - **Status:** todo
 
 ## After version 1.
