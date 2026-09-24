@@ -85,7 +85,6 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
         .to eq([[:other, nil, false], [:other, nil, false], [:other, ">", false], [:other, nil, false]])
     end
 
-
     it "classifies a comparison between two relations as a join, whatever the operator" do
       sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON o.customer_id = c.id " \
             "AND o.total < c.id + 1 AND o.customer_id <> c.id WHERE coalesce(o.status, c.id) = 1"
@@ -134,7 +133,8 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
 
     it "takes a simple CASE's WHEN values as equality atoms on its argument" do
       sql = "SELECT CASE o.status WHEN 1 THEN 'a' WHEN 2 THEN 'b' END FROM public.orders o"
-      expect(extract(sql).map { |a| [a.kind, a.shape] }).to eq([[:equality, "o.status = $1"], [:equality, "o.status = $3"]])
+      atoms = extract(sql)
+      expect(atoms.map { |a| [a.kind, a.shape] }).to eq([[:equality, "o.status = $1"], [:equality, "o.status = $3"]])
     end
 
     it "takes the atoms inside subqueries anywhere, and the subquery test itself" do
@@ -165,10 +165,224 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
     end
   end
 
+  describe "columns" do
+    def column(table, refname, name) = described_class::Column.new(table:, refname:, name:)
+
+    # [table, refname, name] for each column of each atom.
+    def columns(sql) = extract(sql).map { |a| a.columns.map { |c| [c.table, c.refname, c.name] } }
+
+    it "resolves a column qualified by an alias, by a table name, or by schema and table" do
+      sql = "SELECT 1 FROM public.orders o, public.customers WHERE o.status = 1 AND customers.region = 'x' " \
+            "AND public.customers.email IS NULL"
+      expect(columns(sql)).to eq([[[orders, "o", "status"]], [[customers, "customers", "region"]],
+                                  [[customers, "customers", "email"]]])
+    end
+
+    it "resolves an unqualified column to the one table that has it" do
+      sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON customer_id = c.id WHERE region = 'x'"
+      expect(columns(sql)).to eq([[[orders, "o", "customer_id"], [customers, "c", "id"]],
+                                  [[customers, "c", "region"]]])
+    end
+
+    it "leaves an ambiguous or unknown unqualified column unresolved" do
+      sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON true WHERE id = 1 AND nothing = 2"
+      expect(columns(sql)).to eq([[[nil, nil, "id"]], [[nil, nil, "nothing"]]])
+    end
+
+    it "resolves a correlated column to the outer query, and makes that a join" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXISTS (SELECT 1 FROM public.items i WHERE i.order_id = o.id " \
+            "AND order_id = id AND qty = 1)"
+      atoms = extract(sql)
+      expect(atoms.drop(1).map { |a| [a.kind, a.columns.map { |c| [c.refname, c.name] }] })
+        .to eq([[:join, [%w[i order_id], %w[o id]]], [:other, [%w[i order_id], %w[i id]]],
+                [:equality, [%w[i qty]]]])
+    end
+
+    it "prefers the innermost query for an unqualified column" do
+      sql = "SELECT 1 FROM public.customers c WHERE c.id IN (SELECT o.customer_id FROM public.orders o " \
+            "WHERE id = 1 AND region = 'x')"
+      expect(columns(sql).drop(1)).to eq([[[orders, "o", "id"]], [[customers, "c", "region"]]])
+    end
+
+    it "names a subquery's, CTE's, or function's alias with no table" do
+      sql = "WITH w AS (SELECT 1 AS a) SELECT 1 FROM w JOIN (SELECT 1 AS b) s ON s.b = w.a " \
+            "JOIN generate_series(1, 2) g(n) ON g.n = s.b"
+      expect(columns(sql)).to eq([[[nil, "s", "b"], [nil, "w", "a"]], [[nil, "g", "n"], [nil, "s", "b"]]])
+      expect(extract(sql).map(&:kind)).to eq(%i[join join])
+    end
+
+    it "stops at a frame with a relation whose columns it doesn't know" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXISTS (SELECT 1 FROM (SELECT 1 AS x) s WHERE status = 1)"
+      expect(columns(sql).last).to eq([[nil, nil, "status"]])
+    end
+
+    it "keeps a non-LATERAL subquery in FROM from seeing its siblings, and lets a LATERAL one see them" do
+      sql = "SELECT 1 FROM public.orders o, (SELECT 1 FROM public.items i WHERE i.id = customer_id) s, " \
+            "LATERAL (SELECT 1 FROM public.items j WHERE j.id = customer_id) t"
+      expect(columns(sql)).to eq([[[items, "i", "id"], [nil, nil, "customer_id"]],
+                                  [[items, "j", "id"], [orders, "o", "customer_id"]]])
+    end
+
+    it "keeps each alias of a self-join apart" do
+      sql = "SELECT 1 FROM public.orders a JOIN public.orders b ON a.id = b.customer_id"
+      atom = extract(sql).first
+      expect([atom.kind, atom.columns]).to eq([:join, [column(orders, "a", "id"), column(orders, "b", "customer_id")]])
+    end
+
+    it "counts a column once per atom, and not the columns inside a subquery" do
+      sql = where("o.status = o.status + 1 AND o.status IN (SELECT c.id FROM public.customers c)")
+      expect(columns(sql).first(2)).to eq([[[orders, "o", "status"]], [[orders, "o", "status"]]])
+    end
+
+    it "lists the tables an atom touches" do
+      sql = "SELECT 1 FROM public.orders o JOIN public.customers c ON o.customer_id = c.id AND o.id = c.id + o.id"
+      expect(extract(sql).map(&:tables)).to eq([[orders, customers], [orders, customers]])
+    end
+
+    it "raises KeyError, naming the table, when a table has no column names" do
+      expect { extract("SELECT 1 FROM public.missing m WHERE m.a = 'SECRET'") }
+        .to raise_error(KeyError, /public\.missing/) { |e| expect(e.message).not_to include("SECRET") }
+    end
+  end
+
+  describe "replacing an atom with TRUE" do
+    # The query with each atom in turn replaced by TRUE.
+    def replaced(sql)
+      parse = PgQuery.parse(sql)
+      described_class.extract(parse, column_names:).map { |atom| described_class.with_true(parse, atom) }
+    end
+
+    it "replaces just that atom in WHERE" do
+      expect(replaced(where("o.status = 1 AND o.total > 2")))
+        .to eq(["SELECT o.id FROM public.orders o WHERE true AND o.total > 2",
+                "SELECT o.id FROM public.orders o WHERE o.status = 1 AND true"])
+    end
+
+    it "replaces it under OR and NOT" do
+      expect(replaced(where("o.status = 1 OR NOT o.active")))
+        .to eq(["SELECT o.id FROM public.orders o WHERE true OR NOT o.active",
+                "SELECT o.id FROM public.orders o WHERE o.status = 1 OR NOT true"])
+    end
+
+    it "replaces it in an ON clause, HAVING, and FILTER" do
+      sql = "SELECT count(*) FILTER (WHERE o.status = 1) FROM public.orders o " \
+            "JOIN public.customers c ON c.id = o.customer_id GROUP BY c.id HAVING count(*) > 2"
+      expect(replaced(sql)).to eq(
+        [
+          "SELECT count(*) FILTER (WHERE true) FROM public.orders o JOIN public.customers c " \
+          "ON c.id = o.customer_id GROUP BY c.id HAVING count(*) > 2",
+          "SELECT count(*) FILTER (WHERE o.status = 1) FROM public.orders o " \
+          "JOIN public.customers c ON true GROUP BY c.id HAVING count(*) > 2",
+          "SELECT count(*) FILTER (WHERE o.status = 1) FROM public.orders o " \
+          "JOIN public.customers c ON c.id = o.customer_id GROUP BY c.id HAVING true"
+        ]
+      )
+    end
+
+    it "replaces a subquery test, or an atom inside the subquery" do
+      sql = where("EXISTS (SELECT 1 FROM public.items i WHERE i.order_id = o.id)")
+      expect(replaced(sql))
+        .to eq(["SELECT o.id FROM public.orders o WHERE true",
+                "SELECT o.id FROM public.orders o WHERE EXISTS (SELECT 1 FROM public.items i WHERE true)"])
+    end
+
+    it "replaces a searched CASE's condition" do
+      sql = "SELECT CASE WHEN o.status = 1 THEN 'a' ELSE 'b' END FROM public.orders o"
+      expect(replaced(sql)).to eq(["SELECT CASE WHEN true THEN 'a' ELSE 'b' END FROM public.orders o"])
+    end
+
+    it "turns a simple CASE into a searched one to replace one WHEN" do
+      sql = "SELECT CASE o.status WHEN 1 THEN 'a' WHEN 2 THEN 'b' ELSE 'c' END FROM public.orders o"
+      expect(replaced(sql)).to eq([
+                                    "SELECT CASE WHEN true THEN 'a' WHEN o.status = 2 THEN 'b' ELSE 'c' END " \
+                                    "FROM public.orders o",
+                                    "SELECT CASE WHEN o.status = 1 THEN 'a' WHEN true THEN 'b' ELSE 'c' END " \
+                                    "FROM public.orders o"
+                                  ])
+    end
+
+    it "replaces an atom nested in another" do
+      sql = where("CASE WHEN o.total > 1 THEN o.note END = 'x'")
+      expect(replaced(sql)).to eq(["SELECT o.id FROM public.orders o WHERE true",
+                                   "SELECT o.id FROM public.orders o WHERE CASE WHEN true THEN o.note END = 'x'"])
+    end
+
+    it "leaves the parse it was given alone" do
+      parse = PgQuery.parse(where("o.status = 1"))
+      described_class.with_true(parse, described_class.extract(parse, column_names:).first)
+      expect(parse.deparse).to eq(where("o.status = 1"))
+    end
+
+    it "gives the atom's own node, with its real constants, for the value pools" do
+      sql = "SELECT CASE o.status WHEN 5 THEN 1 END FROM public.orders o WHERE o.note LIKE 'ab%'"
+      parse = PgQuery.parse(sql)
+      nodes = described_class.extract(parse, column_names:).map { |atom| described_class.node(parse, atom) }
+      expect(nodes.map { |n| PgQuery.deparse_expr(n) }).to eq(["o.status = 5", "o.note LIKE 'ab%'"])
+    end
+  end
+
+  describe "JOIN ... USING" do
+    let(:sql) { "SELECT 1 FROM public.orders o JOIN public.items i USING (id, customer_id)" }
+
+    it "makes each USING column a join atom on the table under each side that has it" do
+      atoms = extract("SELECT 1 FROM public.orders o JOIN public.customers c USING (id)")
+      expect(atoms.map { |a| [a.kind, a.operator, a.negated, a.bare, a.shape, a.columns] })
+        .to eq([[:join, "USING", false, true, "USING (id)",
+                 [described_class::Column.new(table: orders, refname: "o", name: "id"),
+                  described_class::Column.new(table: customers, refname: "c", name: "id")]]])
+    end
+
+    it "leaves a side's column unresolved when more than one table there has it, or none does" do
+      atoms = extract("SELECT 1 FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
+                      "JOIN public.items i USING (id, customer_id)")
+      expect(atoms.drop(1).map { |a| a.columns.map { |c| [c.refname, c.name] } })
+        .to eq([[[nil, "id"], %w[i id]], [%w[o customer_id], [nil, "customer_id"]]])
+    end
+
+    it "quotes a USING column's name when it needs it" do
+      column_names[items] += ["Odd Name"]
+      column_names[orders] += ["Odd Name"]
+      atoms = extract("SELECT 1 FROM public.orders o JOIN public.items i USING (\"Odd Name\")")
+      expect(atoms.map(&:shape)).to eq(["USING (\"Odd Name\")"])
+    end
+
+    it "can't be replaced by TRUE, since USING also merges the two columns into one" do
+      parse = PgQuery.parse("SELECT 1 FROM public.orders o JOIN public.customers c USING (id)")
+      atom = described_class.extract(parse, column_names:).first
+      expect(atom.replaceable).to be(false)
+      expect { described_class.with_true(parse, atom) }.to raise_error(ArgumentError, /USING/)
+    end
+
+    it "marks every other atom replaceable" do
+      expect(extract(where("o.status = 1 OR o.note IS NULL")).map(&:replaceable)).to eq([true, true])
+    end
+  end
+
+  describe "input" do
+    it "takes only a pg_query parse of one SELECT, and never quotes the SQL" do
+      [
+        ["SELECT 'SECRET'", "expected a pg_query parse result"],
+        [PgQuery.parse("SELECT 'SECRET'; SELECT 2"), "expected exactly one statement"],
+        [PgQuery.parse("UPDATE public.orders SET note = 'SECRET'"), "predicate atoms take only a SELECT"]
+      ].each do |input, message|
+        expect { described_class.extract(input, column_names:) }
+          .to raise_error(ArgumentError, message) { |e| expect(e.message).not_to include("SECRET") }
+      end
+    end
+
+    it "handles an atom deeper than protobuf's default nesting limit" do
+      sql = where("o.total #{"+ o.total " * 200}> 1")
+      parse = PgQuery.parse(sql)
+      atom = described_class.extract(parse, column_names:).first
+      expect(atom.shape).to end_with("> $1")
+      expect(described_class.with_true(parse, atom)).to eq("SELECT o.id FROM public.orders o WHERE true")
+    end
+  end
+
   describe "shapes" do
     def shapes(sql) = extract(sql).map(&:shape)
 
-    it "is the atom's SQL with each constant a placeholder numbered in query order, as PgQuery.normalize numbers them" do
+    it "is the atom's SQL with each constant a placeholder, numbered as PgQuery.normalize numbers them" do
       sql = where("o.status = 7 AND o.note LIKE 'abc%' AND o.total BETWEEN 1 AND 2")
       expect(shapes(sql)).to eq(["o.status = $1", "o.note LIKE $2", "o.total BETWEEN $3 AND $4"])
       expect(PgQuery.normalize(sql)).to include("o.status = $1 AND o.note LIKE $2 AND o.total BETWEEN $3 AND $4")
