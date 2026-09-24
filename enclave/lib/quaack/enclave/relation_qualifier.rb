@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "strscan"
+require_relative "deparse"
 require_relative "supported_sql"
 require_relative "table_name"
 
@@ -11,7 +12,8 @@ module Quaack
     # and search_path never matters again.
     #
     #   RelationQualifier.qualify(sql, settings, connection)
-    #   # => Result(sql: "SELECT ... FROM public.orders", resolved: {"orders" => TableName})
+    #   # => Result(sql: "SELECT ... FROM public.orders", parse: PgQuery::ParserResult,
+    #   #           resolved: {"orders" => TableName})
     #
     # Until input intake (20260922-13) lands, the inputs are plain values:
     # the query text, the Settings hash from the input plan's EXPLAIN
@@ -38,8 +40,11 @@ module Quaack
     # skipped. The first remaining schema with a pg_class entry of that name
     # wins, whatever its relkind. Step 3a checks the relkind.
     #
-    # The result's sql is the rewritten query, deparsed by pg_query, and
-    # resolved maps each name that had no schema to the table it now names.
+    # The result's sql is the rewritten query, deparsed by pg_query, parse
+    # is that SQL's own parse, and resolved maps each name that had no
+    # schema to the table it now names. The deparser can write SQL that
+    # means something else, so the SQL must parse back to the rewritten
+    # tree. If it doesn't, Deparse::Error (rule deparse_mismatch) is raised.
     #
     # Anything that can't be done raises Error, naming the rule it broke.
     # Relation and schema names are shape-class, so messages may name them,
@@ -49,7 +54,7 @@ module Quaack
     module RelationQualifier
       class Error < StandardError; end
 
-      Result = Data.define(:sql, :resolved)
+      Result = Data.define(:sql, :parse, :resolved)
 
       DEFAULT_SEARCH_PATH = '"$user", public'
 
@@ -77,7 +82,8 @@ module Quaack
           table = resolved[range.relname] ||= resolve(range.relname, path, connection)
           range.schemaname = table.schema
         end
-        Result.new(sql: parse.deparse, resolved:)
+        qualified = Deparse.faithful_parse(parse.tree)
+        Result.new(sql: qualified.query, parse: qualified, resolved:)
       end
 
       # The parse, once SupportedSql has checked it.
