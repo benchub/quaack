@@ -67,6 +67,8 @@ RSpec.describe Quaack::Enclave::Relations do
         "WHERE o.id IN (SELECT order_id FROM sales.items) AND EXISTS (SELECT 1 FROM public.orders)"
       )
       expect(result.parse.deparse).to eq(result.sql)
+      expect(result.parse.query).to eq(result.sql)
+      expect(result.parse.tree).to eq(PgQuery.parse(result.sql).tree)
       expect(result.relations)
         .to eq([table_name("public", "orders"), table_name("public", "customers"), table_name("sales", "items")])
     end
@@ -171,6 +173,11 @@ RSpec.describe Quaack::Enclave::Relations do
       expect { check(sql) }.to rejected("partitioned_relation")
     end
 
+    it "is the first one in the query's text, even in an OFFSET before a LIMIT" do
+      sql = "SELECT 1 FROM orders OFFSET (SELECT 0 FROM public.order_view) LIMIT (SELECT 1 FROM public.parted)"
+      expect { check(sql) }.to rejected("view_relation")
+    end
+
     it "lists relations in the query's text order" do
       sql = "WITH c AS (SELECT 1 FROM sales.items) SELECT 1 FROM orders, c " \
             "LIMIT (SELECT 1 FROM customers) OFFSET (SELECT 0 FROM public.parted_low)"
@@ -242,6 +249,52 @@ RSpec.describe Quaack::Enclave::Relations do
     it "checks the descendants when the table is also named without ONLY, in either order" do
       expect { check("SELECT 1 FROM ONLY parent, parent") }.to rejected("foreign_relation")
       expect { check("SELECT 1 FROM parent, ONLY parent") }.to rejected("foreign_relation")
+    end
+
+    # Descendants are checked in the order of the oids that reach them, so
+    # the first that isn't a plain table is named, whatever comes after it.
+    it "names the first descendant that isn't a plain table, even with others after it" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.multi (id int);
+        CREATE FOREIGN TABLE public.multi_fa () INHERITS (public.multi) SERVER elsewhere;
+        CREATE FOREIGN TABLE public.multi_fb () INHERITS (public.multi) SERVER elsewhere;
+        CREATE TABLE public.multi_plain () INHERITS (public.multi);
+      SQL
+      expect { check("SELECT id FROM multi") }
+        .to rejected("foreign_relation", "foreign_relation: public.multi has an inheritance descendant, " \
+                                         "public.multi_fa, that is a foreign table (relkind f), not a plain table")
+    end
+
+    # The order is depth first: a child's own descendants come before the
+    # siblings after it, so the grandchild is named, not the younger child.
+    it "names the first descendant depth first, before a later sibling" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.tree_root (id int);
+        CREATE TABLE public.tree_plain () INHERITS (public.tree_root);
+        CREATE FOREIGN TABLE public.tree_sibling () INHERITS (public.tree_root) SERVER elsewhere;
+        CREATE FOREIGN TABLE public.tree_grandchild () INHERITS (public.tree_plain) SERVER elsewhere;
+      SQL
+      expect { check("SELECT id FROM tree_root") }
+        .to rejected("foreign_relation", "foreign_relation: public.tree_root has an inheritance descendant, " \
+                                         "public.tree_grandchild, that is a foreign table (relkind f), " \
+                                         "not a plain table")
+    end
+
+    # ALTER ... INHERIT gives a parent a higher oid than its children, and
+    # here pg_inherits holds the children out of oid order. So the relation
+    # must come first by its place in the tree, not its oid, and the
+    # descendants must follow their oid paths, not the catalog's order.
+    it "names the right descendant when the children are older than the parent" do
+      conn.exec(<<~SQL)
+        CREATE FOREIGN TABLE public.early_b (id int) SERVER elsewhere;
+        CREATE FOREIGN TABLE public.early_a (id int) SERVER elsewhere;
+        CREATE TABLE public.late (id int);
+        ALTER FOREIGN TABLE public.early_a INHERIT public.late;
+        ALTER FOREIGN TABLE public.early_b INHERIT public.late;
+      SQL
+      expect { check("SELECT id FROM late") }
+        .to rejected("foreign_relation", "foreign_relation: public.late has an inheritance descendant, " \
+                                         "public.early_b, that is a foreign table (relkind f), not a plain table")
     end
   end
 
