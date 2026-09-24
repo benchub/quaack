@@ -40,8 +40,17 @@ RSpec.describe Quaack::Enclave::SchemaDump do
 
   def table(schema, name) = Quaack::Enclave::TableName.new(schema:, name:)
 
-  def run(relations, conninfo: self.conninfo, pg_dump: self.pg_dump)
-    described_class.run(store:, relations:, connection: conn, conninfo:, pg_dump:)
+  def run(relations, conninfo: self.conninfo, pg_dump: self.pg_dump, **)
+    described_class.run(store:, relations:, connection: conn, conninfo:, pg_dump:, **)
+  end
+
+  # A stand-in pg_dump, at the edge: a script that prints version for
+  # --version, as pg_dump does, and runs rest for anything else.
+  def fake_pg_dump(dir, version, rest = "exit 1")
+    path = File.join(dir, "pg_dump")
+    File.write(path, "#!/bin/sh\n[ \"$1\" = --version ] && echo '#{version}' && exit 0\n#{rest}\n")
+    File.chmod(0o700, path)
+    [path]
   end
 
   # The tables a dump creates, as "schema.name" the way pg_dump writes them.
@@ -103,6 +112,25 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(stored["ddl"]).not_to match(/OWNER TO|GRANT|^COPY |INSERT INTO/)
     end
 
+    # Byte order puts every capital before every lowercase letter, as Ruby's
+    # sort does for the namespaces. A linguistic collation wouldn't.
+    it "is sorted by byte, whatever the database's collation" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA "Upper";
+        CREATE TABLE sales.alpha (id int PRIMARY KEY);
+        CREATE TABLE sales."Beta" (id int PRIMARY KEY);
+        CREATE TABLE sales."Zeta" (id int, alpha_id int REFERENCES sales.alpha, beta_id int REFERENCES sales."Beta");
+        CREATE TABLE "Upper".t (id int);
+      SQL
+      expect(conn.exec("SELECT datcollate FROM pg_database WHERE datname = current_database()").getvalue(0, 0))
+        .not_to eq("C")
+
+      result = run([table("sales", "Zeta"), table("Upper", "t")])
+
+      expect(result.tables.map(&:to_s)).to eq(%w[Upper.t sales.Beta sales.Zeta sales.alpha])
+      expect(result.namespaces).to eq(%w[Upper public sales])
+    end
+
     # pg_dump with no --table dumps every table, so it isn't run.
     it "is empty for a query that uses no tables" do
       result = run([])
@@ -141,6 +169,17 @@ RSpec.describe Quaack::Enclave::SchemaDump do
 
       expect(result.namespaces).to eq(%w[other public])
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely public.customers public.orders])
+    end
+
+    # --strict-names would fail the dump on a --schema for a public that
+    # isn't there.
+    it "leaves out public when the database has none" do
+      conn.exec("DROP SCHEMA public CASCADE")
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[other])
+      expect(store.read("schema_dump")["namespaces"]).to eq(%w[other])
+      expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely])
     end
   end
 
@@ -232,6 +271,23 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     ensure
       Encoding.default_external = external
     end
+
+    # The connection's client encoding is the database's, LATIN1, so the
+    # catalog's names come back in it unless they're read as UTF-8, and a
+    # UTF-8 name from the query wouldn't match them.
+    it "finds non-ASCII table names in the chain, and leaves the connection's encoding as it was" do
+      latin1_conn.exec('CREATE TABLE public."café" (id int PRIMARY KEY)')
+      latin1_conn.exec('CREATE TABLE public."naïve" (id int, cafe_id int REFERENCES public."café")')
+      expect(latin1_conn.internal_encoding).to eq(Encoding::ISO_8859_1)
+
+      result = described_class.run(store:, relations: [table("public", "naïve")], connection: latin1_conn,
+                                   conninfo: { dbname: latin1, user: TestPostgres::USER }, pg_dump:)
+
+      expect(result.tables).to eq([table("public", "café"), table("public", "naïve")])
+      expect(created_tables(store.read("schema_subset")["ddl"])).to eq(['public."café"', 'public."naïve"'])
+      expect(latin1_conn.exec("SHOW client_encoding").getvalue(0, 0)).to eq("LATIN1")
+      expect(latin1_conn.internal_encoding).to eq(Encoding::ISO_8859_1)
+    end
   end
 
   describe "the connection parameters" do
@@ -248,16 +304,26 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       admin&.exec("DROP DATABASE IF EXISTS #{admin.quote_ident(odd)} WITH (FORCE)")
     end
 
-    it "can't hold a password, since pg_dump's command line is visible to others on the jump server" do
-      sentinels = LeakCheck::Sentinels.new
-      error = nil
-      expect { run([table("sales", "items")], conninfo: { **conninfo, password: sentinels.text }) }
-        .to(refused("password_in_conninfo", "pg_dump gets its password from the operator's own libpq setup") do |e|
-          error = e
-        end)
-      nothing_stored
-      expect(error).to be_a(described_class::Error)
-      expect_no_leaks(sentinels, objects: { error: })
+    # Each libpq keyword that holds a secret, as a Symbol or a String.
+    [:password, "password", :sslpassword, "sslpassword", :oauth_client_secret].each do |key|
+      it "can't hold a secret (#{key.inspect}), since pg_dump's command line is visible to others on the jump server" do
+        sentinels = LeakCheck::Sentinels.new
+        error = nil
+        expect { run([table("sales", "items")], conninfo: { **conninfo, key => sentinels.text }) }
+          .to(refused("secret_in_conninfo", "pg_dump gets its secrets from the operator's own libpq setup") do |e|
+            error = e
+          end)
+        nothing_stored
+        expect(error).to be_a(described_class::Error)
+        expect_no_leaks(sentinels, objects: { error: })
+      end
+    end
+
+    # passfile names a file, and isn't a secret itself.
+    it "can name a password file" do
+      run([table("sales", "items")], conninfo: { **conninfo, passfile: "/nonexistent/quaack/pgpass" })
+
+      expect(store.read("schema_subset")["tables"]).to include(%w[sales items])
     end
   end
 
@@ -271,15 +337,6 @@ RSpec.describe Quaack::Enclave::SchemaDump do
   end
 
   def nothing_stored = expect(Dir.children(store.path)).to eq([])
-
-  # A stand-in pg_dump, at the edge: a script that prints version for
-  # --version, as pg_dump does, and fails for anything else.
-  def fake_pg_dump(dir, version)
-    path = File.join(dir, "pg_dump")
-    File.write(path, "#!/bin/sh\n[ \"$1\" = --version ] && echo '#{version}' && exit 0\nexit 1\n")
-    File.chmod(0o700, path)
-    [path]
-  end
 
   describe "pg_dump itself" do
     it "must be at least the server's major version, since pg_dump refuses an older one" do
@@ -296,10 +353,21 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       nothing_stored
     end
 
-    it "is refused when it doesn't say its version the way pg_dump does" do
+    ["something else 18.1", "not pg_dump (PostgreSQL) 18.1"].each do |output|
+      it "is refused when it doesn't say its version the way pg_dump does (#{output.inspect})" do
+        Dir.mktmpdir do |dir|
+          expect { run([table("sales", "items")], pg_dump: fake_pg_dump(dir, output)) }
+            .to refused("pg_dump_missing", "pg_dump couldn't be run, or didn't say its version")
+        end
+        nothing_stored
+      end
+    end
+
+    it "is refused, with no exit status, when a signal kills it" do
       Dir.mktmpdir do |dir|
-        expect { run([table("sales", "items")], pg_dump: fake_pg_dump(dir, "something else 18.1")) }
-          .to refused("pg_dump_missing", "pg_dump couldn't be run, or didn't say its version")
+        killed = fake_pg_dump(dir, "pg_dump (PostgreSQL) 18.4", "kill -KILL $$")
+        expect { run([table("sales", "items")], pg_dump: killed) }
+          .to refused("pg_dump_failed", "pg_dump exited with status none (a signal)")
       end
       nothing_stored
     end
@@ -329,6 +397,35 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       nothing_stored
       expect(error).to be_a(described_class::Error)
       expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+    end
+
+    # pg_dump takes an ACCESS SHARE lock on each table it dumps. Rather
+    # than wait behind a long ACCESS EXCLUSIVE lock on production, it gives
+    # up. Its exit status is 1, as for any other failure, and its stderr
+    # isn't read, so it's pg_dump_failed too. The lock is let go after
+    # release seconds whatever happens, so a pg_dump that would wait
+    # forever finishes, and the example fails rather than hanging.
+    it "gives up waiting for a table's lock after the lock wait timeout" do
+      release = 15
+      done = Queue.new
+      blocker = db.connect
+      blocker.exec("BEGIN")
+      blocker.exec("LOCK TABLE sales.items IN ACCESS EXCLUSIVE MODE")
+      watchdog = Thread.new do
+        done.pop(timeout: release)
+        blocker.exec("ROLLBACK")
+      end
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      expect { run([table("sales", "items")], lock_wait_timeout: "1s") }
+        .to refused("pg_dump_failed", "pg_dump exited with status 1")
+
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < release
+      nothing_stored
+    ensure
+      done << true
+      watchdog&.join
+      blocker&.close
     end
 
     it "is refused when a table it's asked for isn't there, even alongside one that is" do
