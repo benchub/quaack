@@ -2,6 +2,7 @@
 
 require "pp"
 require "pg_query"
+require "quaack/enclave/deparse"
 require "quaack/enclave/index_candidate"
 
 RSpec.describe Quaack::Enclave::IndexCandidate do
@@ -241,6 +242,14 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect(elems(stmt.index_params).map(&:first)).to eq(%w[CustomerId select])
       expect(stmt.index_including_params.map { |n| n.index_elem.name }).to eq(["line item"])
     end
+
+    # The parser cuts a name to 63 bytes, so this DDL would name a
+    # different column. HypoPG would run it, so it's refused instead.
+    it "refuses DDL that doesn't parse back to what was built" do
+      long = candidate(key: ["c" * 64])
+      expect { long.to_ddl }
+        .to raise_error(Quaack::Enclave::Deparse::Error) { |e| expect([e.rule, e.cause]).to eq(["deparse_mismatch", nil]) }
+    end
   end
 
   describe "predicates" do
@@ -249,6 +258,27 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
        "a = 1) OR (true", "a = = 1"].each do |bad|
         expect { candidate(predicate: bad) }.to raise_error(ArgumentError, /predicate/), bad.inspect
       end
+    end
+
+    # pg_query deparses it as status = 'x' IS NOT DISTINCT FROM true AND
+    # false, which indexes different rows.
+    it "refuses one pg_query would deparse as a different expression, without quoting it" do
+      expect { candidate(predicate: "(status = 'SENTINEL-4e1a') IS NOT DISTINCT FROM (true AND false)") }
+        .to raise_error(ArgumentError, "predicate changes meaning when pg_query deparses it") { |e|
+          expect(e.cause).to be_nil
+          expect(e.full_message).not_to include("SENTINEL")
+        }
+    end
+
+    # pg_query deparses a type modifier that isn't a constant as nothing,
+    # so the stored predicate would be 'x'::mytype(), which doesn't parse.
+    # Dedupe used to meet such a predicate, and dropped it.
+    it "refuses one pg_query would deparse to SQL that doesn't parse, without quoting it" do
+      expect { candidate(predicate: "status = 'quaack-sentinel-p4rse'::mytype(lower('bob'))") }
+        .to raise_error(ArgumentError, "predicate changes meaning when pg_query deparses it") { |e|
+          expect(e.cause).to be_nil
+          expect(e.full_message).not_to include("quaack-sentinel")
+        }
     end
 
     it "stores the deparsed form, so equality follows it" do
@@ -489,6 +519,17 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
   describe ".from_ddl" do
     def from_ddl(sql) = described_class.from_ddl(sql, sources: [:existing])
+
+    # Read back, this would be a candidate for different rows. Postgres 18
+    # prints IS NOT DISTINCT FROM as NOT (... IS DISTINCT FROM ...), which
+    # pg_query deparses faithfully, so this is written by hand.
+    it "gives nil for a predicate pg_query deparses as a different expression" do
+      ddl = "CREATE INDEX odd_idx ON public.orders USING btree (id) " \
+            "WHERE ((status = 'x'::text) IS NOT DISTINCT FROM ((total_cents > 1) AND (customer_id > 2)))"
+      expect(from_ddl(ddl.sub("IS NOT DISTINCT", "IS DISTINCT"))).to be_a(described_class)
+
+      expect(from_ddl(ddl)).to be_nil
+    end
 
     it "reads an index definition as pg_get_indexdef prints it" do
       c = from_ddl("CREATE INDEX orders_status_idx ON public.orders USING btree " \

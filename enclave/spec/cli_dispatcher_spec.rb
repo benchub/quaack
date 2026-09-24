@@ -179,6 +179,118 @@ RSpec.describe Quaack::Enclave::CLI do
     end
   end
 
+  # A step that starts a run (new_run: true), as intake does.
+  describe "a new run" do
+    def runs = Dir.children(base)
+
+    it "creates a run under the store base and passes its Store" do
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(0)
+      expect(calls.size).to eq(1)
+      store = calls[0][:store]
+      expect(store).to be_a(Quaack::Enclave::Store)
+      expect(runs).to eq([store.run_id])
+      expect(Quaack::Enclave::Store.open(store.run_id, base:).path).to eq(store.path)
+    end
+
+    it "keeps what the step wrote when it succeeds" do
+      handler = lambda do |store:, **|
+        store.write("query", "SELECT 1")
+        []
+      end
+      steps = { "start" => step_class.new(handler:, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(0)
+      expect(runs.size).to eq(1)
+      expect(Quaack::Enclave::Store.open(runs[0], base:).read("query")).to eq("SELECT 1")
+    end
+
+    it "deletes the run, and what the step wrote to it, when the step fails" do
+      handler = lambda do |store:, **|
+        store.write("query", CLI_SENTINEL)
+        raise ArgumentError, CLI_SENTINEL
+      end
+      steps = { "start" => step_class.new(handler:, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(70)
+      expect(out.string).to eq(error_line("start", "internal_error"))
+      expect(runs).to eq([])
+    end
+
+    it "deletes the run when the step's options are refused" do
+      steps = { "start" => step_class.new(handler: recorder, new_run: true, options: { "query" => :value }) }
+
+      expect(cli(steps).run(%w[start --bogus])).to eq(64)
+      expect(out.string).to eq(error_line("start", "usage"))
+      expect(runs).to eq([])
+    end
+
+    it "deletes the run when a message can't be written" do
+      steps = { "start" => step_class.new(handler: recorder([{ type: :version, version: Object.new }]),
+                                          new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(70)
+      expect(runs).to eq([])
+    end
+
+    it "deletes the run when writing the output fails, even after the done line went out" do
+      flush_fails = Class.new(StringIO) { def flush = raise(IOError, "flush failed") }.new
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+
+      expect(cli_class.new(steps:, stdin: StringIO.new, out: flush_fails, store_base: base).run(["start"])).to eq(70)
+      expect(runs).to eq([])
+    end
+
+    it "deletes the run when the process gets a signal during the step, and still dies by it" do
+      steps = { "start" => step_class.new(handler: ->(**) { raise Interrupt }, new_run: true) }
+
+      expect { cli(steps).run(["start"]) }.to raise_error(Interrupt)
+      expect(runs).to eq([])
+    end
+
+    it "still sends the step's own rule when deleting the run fails" do
+      failure = Class.new(StandardError) { def rule = "step_rule" }
+      handler = lambda do |store:, **|
+        FileUtils.rm_r(store.path)
+        File.write(store.path, "not a directory")
+        raise failure, CLI_SENTINEL
+      end
+      steps = { "start" => step_class.new(handler:, new_run: true) }
+
+      expect(cli(steps).run(["start"])).to eq(70)
+      expect(out.string).to eq(error_line("start", "step_rule"))
+    end
+
+    it "checks the arguments, required options, and stdin before it makes the run" do
+      blocked = File.join(base, "file").tap { File.write(it, "") }
+      steps = { "start" => step_class.new(handler: recorder, new_run: true, input: true,
+                                          options: { "query" => :value }, required: ["query"]) }
+      { %w[start --bogus] => ["{}", "usage"], %w[start] => ["{}", "usage"],
+        %w[start --query q] => ["[]", "bad_input"] }.each do |argv, (stdin, rule)|
+        out.truncate(0) && out.rewind
+        cli = cli_class.new(steps:, stdin: StringIO.new(stdin), out:, store_base: File.join(blocked, "runs"))
+
+        expect(cli.run(argv)).to eq(64), argv.inspect
+        expect(out.string).to eq(error_line("start", rule)), argv.inspect
+      end
+      expect(calls).to eq([])
+    end
+
+    it "takes no --run" do
+      steps = { "start" => step_class.new(handler: recorder, new_run: true) }
+
+      expect(cli(steps).run(%w[start --run 20260923T221500Z-0a1b2c3d])).to eq(64)
+      expect(out.string).to eq(error_line("start", "usage"))
+      expect(calls).to eq([])
+    end
+
+    it "can't be combined with run: true" do
+      expect { step_class.new(handler: recorder, new_run: true, run: true) }
+        .to raise_error(ArgumentError, "a step can't both start a run and open one")
+    end
+  end
+
   describe "input" do
     let(:steps) { { "echo" => step_class.new(handler: recorder, input: true) } }
 

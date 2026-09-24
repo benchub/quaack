@@ -503,3 +503,39 @@ Split out of 20260923-39. The work so far is on branch `task/20260923-39`, which
 - **README:** 5a-4.
 - **Status:** done
 - **Landed:** Merged into `main` after a build, a review, a fix round, and a second review. It refuses when HypoPG has hidden indexes, parses plans with `max_nesting: false`, and pins the anchored SQLSTATE classes. It also has tests for the check order, a leftover prepared statement, and a real index with a hypothetical-looking name. The first review listed every piece of state the runner depends on, and that list went to 20260922-25. The second review found no blockers. Its findings became 20260924-1.
+
+### 20260922-13. Input intake.
+
+Read the three operator inputs from the governed store (query text, `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` output, and server name) and check that they're well formed.
+
+- **Depends on:** 20260922-3, 20260922-4.
+- **README:** Step 1.
+- **Note (from 20260923-33):** Call `SupportedSql.check!` on the input query, so unsupported constructs are refused at intake.
+- **Status:** done
+- **Decided:** The operator runs a `quaacks` subcommand on the jump server, such as `quaacks intake --query q.sql --plan plan.json --server prod-db-3`. It checks the inputs, creates the run, and prints the run ID for the driver to use.
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review.
+  - **Usage:** `quaacks intake --query F --plan F --server NAME [--captured-at T]`.
+  - **Files:** it reads regular files only, no symlinks, up to 16 MB each, and strips one leading BOM.
+  - **Query checks:** UTF-8, no NUL bytes, it parses, exactly one statement, `SupportedSql`, and no `$n` parameters.
+  - **Plan checks:** strict JSON, shaped `[{"Plan":...}]`, with ANALYZE and BUFFERS present. `Settings` can be missing or `{}`.
+  - **Other checks:** a hostname-shaped server, and `--captured-at` in ISO-8601 with a zone, from 1970 up to one day after intake.
+  - **On success:** a `CLI::Step new_run: true` run stores `query`, `plan`, `server`, and `clock_anchor` (UTC ISO-8601 with microseconds), then outputs `run: [run_id]` and `done`.
+  - **On failure:** the run is deleted, and the error carries only the rule. Arguments are parsed before the run is created.
+  - The second review found no blockers. Its findings went into 20260924-3.
+
+### 20260923-55. Round-trip guard for deparsed SQL.
+
+pg_query's deparser can change what a query means. `WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)` deparses as `status = $1 IS NOT DISTINCT FROM true AND false`, which returned 0 rows where the original returned 20000. `(ARRAY(SELECT ...))[1]` deparses as `ARRAY(SELECT ...)[1]`, which doesn't parse. `RelationQualifier` (20260922-14) returns deparsed SQL, so both the original query in step 1 and every rewrite candidate that passes 20260922-10 can silently become a different query.
+- After deparsing, reparse the SQL and compare its tree with the tree that was deparsed, ignoring locations. Refuse on a mismatch or a parse failure, with a rule such as `deparse_mismatch` and a fixed message. Put the guard in one shared place and use it in RelationQualifier. It also covers the `with_true` guard in 20260923-30.
+- In 20260922-10, wrap the reparse so a parse failure raises `RewriteCandidateCheck::Error`, not a raw `PgQuery::ParseError`. Also run `SupportedSql` and the placeholder check on `Accepted.parse`, not only on the candidate's own parse.
+- Test with the two repros above against real Postgres, plus the other deparse cases listed in 20260923-30.
+
+- **Depends on:** 20260922-14, 20260922-10.
+- **Came from:** Second review of 20260922-10.
+- **README:** Step 1, and "What goes into the enclave".
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a review, a fix round, and a second review.
+  - **The guard:** `Deparse.faithfully`, `expression`, and `statement` deparse, reparse, and compare whole protobuf trees after clearing `version` and the int32 location fields. A mismatch raises `deparse_mismatch`.
+  - **Where it's wired in:** RelationQualifier (which now returns `parse`), RewriteCandidateCheck, `with_true`, IndexSql `normalize_predicate` and `from_ddl`, `IndexCandidate#to_ddl`, and `PlanExpression.unqualified_sql`. GeneratorTwo skips a partial that doesn't round-trip. Shapes, which are report-only, aren't guarded.
+  - **Checked against:** about 270 realistic queries, with no over-refusal.
+  - Constructs that the guard now refuses because pg_query drops their parentheses became 20260924-4.

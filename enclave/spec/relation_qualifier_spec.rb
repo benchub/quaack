@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "quaack/enclave/deparse"
 require "quaack/enclave/relation_qualifier"
 
 # Every example runs against real Postgres, since resolving a name means
@@ -334,6 +335,37 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
         expect { qualify(sql, connection: nil) }
           .to raise_error(Quaack::Enclave::SupportedSql::Error, "unsupported_construct: #{detail}")
       end
+    end
+  end
+
+  # pg_query's deparser can write SQL that means something else, so the
+  # qualified SQL is checked to parse back to the tree it came from.
+  describe "a query pg_query deparses wrong" do
+    def deparse_mismatch
+      raise_error(Quaack::Enclave::Deparse::Error) do |error|
+        expect([error.rule, error.cause]).to eq(["deparse_mismatch", nil])
+      end
+    end
+
+    it "refuses IS NOT DISTINCT FROM with AND, which would read different rows" do
+      sql = "SELECT count(*) FROM orders WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)"
+      count = ->(query) { conn.exec_params(query, ["shipped"]).getvalue(0, 0).to_i }
+      deparsed = deparse(sql)
+      expect(deparsed).to eq("SELECT count(*) FROM orders WHERE status = $1 IS NOT DISTINCT FROM true AND false")
+      expect([count.call(sql), count.call(deparsed)]).to match([be_positive, 0])
+
+      expect { qualify(sql) }.to deparse_mismatch
+    end
+
+    it "refuses an ARRAY subquery's subscript, which would deparse to SQL that doesn't parse" do
+      expect { qualify("SELECT (ARRAY(SELECT id FROM orders))[1]") }.to deparse_mismatch
+    end
+
+    it "gives the qualified SQL's own parse, which matches it" do
+      result = qualify("SELECT id FROM orders WHERE status != $1")
+      expect(result.sql).to eq("SELECT id FROM public.orders WHERE status <> $1")
+      expect(result.parse.query).to eq(result.sql)
+      expect(result.parse.tree).to eq(PgQuery.parse(result.sql).tree)
     end
   end
 

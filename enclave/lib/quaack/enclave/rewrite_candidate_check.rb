@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "deparse"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
 require_relative "table_name"
@@ -49,6 +50,10 @@ module Quaack
     #    a rewrite can eliminate a join. not_a_table if a relation isn't a
     #    plain table (relkind r), since a view's body can call a volatile
     #    function that the volatility check, below, never sees.
+    #    deparse_mismatch if the qualified candidate, as pg_query deparses
+    #    it, doesn't parse back to the tree it came from (see Deparse). So
+    #    Accepted's parse is the candidate's own parse with schemas added,
+    #    and checks 2 and 3 hold for it without being run again.
     # 5. volatile_function (or bad_search_path): the 3d VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
@@ -134,10 +139,12 @@ module Quaack
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        qualified = RelationQualifier.qualify(sql, settings, connection).sql
-        Accepted.new(sql: qualified, parse: PgQuery.parse(qualified))
+        qualified = RelationQualifier.qualify(sql, settings, connection)
+        Accepted.new(sql: qualified.sql, parse: qualified.parse)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
+      rescue Deparse::Error => e
+        raise Error.from(e), cause: nil
       end
 
       def relations!(parse, allowed, connection)
