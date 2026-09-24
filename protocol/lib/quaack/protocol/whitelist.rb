@@ -21,7 +21,10 @@ module Quaack
       # A failed step: which step, which rule it broke, and the Postgres
       # SQLSTATE if there was one. Never the error's message text, which can
       # hold a real value.
-      error: %i[step rule sqlstate].freeze
+      error: %i[step rule sqlstate].freeze,
+      # The enclave script's version, from `quaacks --version`. It's the
+      # gem's VERSION constant, never anything read from a run.
+      version: %i[version].freeze
     }.freeze
   end
 end

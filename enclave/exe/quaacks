@@ -3,4 +3,4 @@
 
 require "quaack/enclave"
 
-exit Quaack::Enclave::CLI.new.run(ARGV)
+exit Quaack::Enclave::CLI.main(ARGV)
