@@ -27,6 +27,7 @@ require_relative "enclave/result_comparison"
 require_relative "enclave/supported_sql"
 require_relative "enclave/rewrite_candidate_check"
 require_relative "enclave/relations"
+require_relative "enclave/schema_dump"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
