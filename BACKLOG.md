@@ -77,6 +77,7 @@ Parse each rewrite candidate with pg_query. Accept exactly one `SELECT`. Reject 
 
 - **Depends on:** 20260922-1, 20260922-20.
 - **README:** What goes into the enclave.
+- **Note (from the review of 20260922-20):** Run the 3a relation check on rewrite candidates too. Reject views, and relations the original query doesn't use, because a view's body can call a volatile function that the 3d check never sees.
 - **Status:** todo
 
 ### 20260922-11. Inbound check for index DDL.
@@ -157,16 +158,10 @@ Pull planner statistics (including extended statistics), index definitions, and 
 
 - **Depends on:** 20260922-17.
 - **README:** 3c.
+- **Note (from the review of 20260922-32):** Leave out invalid indexes (`indisvalid = false`), or a failed `CREATE INDEX CONCURRENTLY` counts as covering in 5a-3. Also fill `TableStatistics#indexes`, and the low-cardinality set for 3f, in the shapes `Dedupe` takes.
 - **Status:** todo
 
-### 20260922-20. 3d volatility check.
-
-Check `provolatile` for every function in the query, including the select list. Abort and name any volatile function. Reusable for rewrite candidates.
-
-- **Depends on:** 20260922-14.
-- **README:** 3d.
-- **Status:** todo
-- **Decided:** Yes. Resolve each operator's `oprcode` and each cast's `castfunc` in `pg_catalog`, and abort if any of them is volatile.
+### 20260922-20. 3d volatility check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-21. 3e literal set.
 
@@ -258,14 +253,7 @@ For each candidate: reset HypoPG, create the hypothetical index, `EXPLAIN` the q
 
 ### 20260922-31. 5a-2 generator two. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-32. 5a-3 dedupe and filter.
-
-Normalize definitions. Drop candidates covered by an existing index or by an earlier proposal in the same search, recording the source generators and the covering index. Drop partial indexes on columns that aren't low-cardinality. Set GIN and GiST aside, untested, for step 12. Scope must be per search, so each rewrite's search is independent.
-
-- **Depends on:** 20260922-19, 20260922-22.
-- **README:** 5a-3, step 8.
-- **Status:** in progress
-- **Note:** Built on branch `task/20260922-32` through a build, a review, a fix round, and a second review, but not landed. The second review found that an array check on the partial filter had a vacuous test, and that generator two's partials on `varchar` columns were always dropped. 20260923-31 finishes the task on top of that branch.
+### 20260922-32. 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-33. 5a-5 generator three.
 
@@ -823,19 +811,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 - **README:** Step 9 and 9c.
 - **Status:** todo
 
-### 20260923-31. Finish 5a-3 dedupe and filter.
-
-Split out of 20260922-32. The work so far is on branch `task/20260922-32`. Build on that branch, then land both together. Fix what the second review of 20260922-32 found:
-- **Vacuous test on the trust-boundary check.** In `predicate_check.rb` `constant?`, changing `elements.all?` to `elements.any?` stays green. With that mutant, `status = ANY(ARRAY['open', lower('bob@x.com')])` keeps its partial. Add a mixed-element array to the drop list.
-- **Generator two's partials on `varchar` columns are always dropped.** Postgres prints `((status)::text = 'open'::text)`, so the predicate has a cast on the column side, and `constants_compared_with_columns?` wants a bare column. Accept a column under casts, but not under any other expression. Test it with real generator two output from a Postgres plan.
-- **Allowed forms no test pins:** `AEXPR_OP_ALL`, `AEXPR_NOT_DISTINCT`, `AEXPR_ILIKE`, `AEXPR_NOT_BETWEEN`, and both SYMMETRIC forms.
-- **Dead code:** the BETWEEN special case in `column_comparison?` can't be reached. Drop it.
-- **Type modifiers in an allowed comparison aren't checked,** as in `status = 'x'::mytype(lower('bob'))`. Check them, or drop anything that isn't an integer constant.
-
-- **Depends on:** 20260922-32's branch.
-- **Came from:** Second review of 20260922-32.
-- **README:** 5a-3.
-- **Status:** todo
+### 20260923-31. Finish 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-32. Finish the governed store. Done, see BACKLOG-COMPLETE.md.
 
@@ -864,6 +840,39 @@ Minor findings from the second review of 20260923-32:
 - **Depends on:** 20260923-32.
 - **Came from:** Second review of 20260923-32.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260923-35. Volatility check loose ends.
+
+Findings from the reviews of 20260922-20:
+- **Domain CHECK constraints aren't checked.** A domain whose CHECK calls a volatile function passes. That's realistic, because a validator function is VOLATILE unless someone marks it otherwise.
+- **Attribute notation isn't checked.** `t.f` and `(t).f`, which call a function, are missed.
+- **One volatile cast to a common type poisons every cast to it.** For example, `CREATE CAST (x AS int)` with a volatile function makes every `::int` abort. None of the catalogs checked have one.
+- **TABLESAMPLE always aborts,** because the `system` and `bernoulli` methods are volatile. The allowlist (20260923-33) will refuse TABLESAMPLE anyway.
+- **Surviving mutants:**
+  - Three `quote_ident` columns aren't pinned: `OPERATOR_SQL` `f.proname`, and `CAST_SQL` `named.nspname` and `fn.nspname`.
+  - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
+- **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
+- **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
+
+- **Depends on:** 20260922-20.
+- **Came from:** Both reviews of 20260922-20, and the tests-only review.
+- **README:** 3d.
+- **Status:** todo
+
+### 20260923-36. 5a-3 loose ends.
+
+Findings from the reviews of 20260922-32 and 20260923-31:
+- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for every index on a partitioned table's parent (`ON ONLY`), for any index `WITH (fillfactor=...)` or `WITH (deduplicate_items=off)`, and for unique indexes with `NULLS NOT DISTINCT`. So a candidate identical to one of them is proposed and tested as if it were new, and 15a won't report it as a duplicate. None of these options changes which queries the index can serve.
+- **`IndexCandidate` accepts a predicate whose deparse doesn't parse again.** For example, `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`. Dedupe drops it, but other consumers would raise. `IndexSql.normalize_predicate` should re-parse its output.
+- **Array bounds on a cast aren't checked,** as in `status::text[12345] IS NULL`. It's the same class as the integer typmods the user accepted, but the doc comment doesn't say so.
+- **Dead or defensive code:** `left = unwrap(node.lexpr)` in `column_comparison?` is redundant, and the `A_Const` check in `plain_type?` can't be reached through Dedupe.
+- **README 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
+- **Open question for the user:** the rule drops every partial that uses a column that isn't low-cardinality, including partials with no literal at all, like `WHERE deleted_at IS NULL`. Those carry no PII risk and are common. Should they get an exception?
+
+- **Depends on:** 20260923-31.
+- **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
+- **README:** 5a-3.
 - **Status:** todo
 
 ## After version 1.
