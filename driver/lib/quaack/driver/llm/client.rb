@@ -35,6 +35,15 @@ module Quaack
         ALLOW_REAL_ENV = "QUAACK_ALLOW_REAL_LLM"
         SPECS_ENV = "QUAACK_SPECS"
 
+        # The stop reasons of a reply that finished. Any other, such as
+        # max_tokens, refusal, model_context_window_exceeded, pause_turn,
+        # tool_use, or one the gem doesn't know, means it isn't whole.
+        WHOLE = %i[end_turn stop_sequence].freeze
+
+        # 408 is a timeout and 409 a lock. The gem retries both, so what's
+        # left is an API that isn't answering.
+        TRANSIENT_STATUSES = [408, 409].freeze
+
         def initialize(burndown:, api_key: ENV.fetch(API_KEY_ENV, nil), model: LLM.model, transport: nil,
                        max_retries: Anthropic::Client::DEFAULT_MAX_RETRIES)
           refuse_real_client_in_specs unless transport
@@ -54,7 +63,7 @@ module Quaack
           params = { model: @model, max_tokens: max_tokens, messages: messages }
           params[:system_] = system if system
           params[:output_config] = { format_: { type: :json_schema, schema: schema } } if schema
-          text = reply_text(send_message(params, step))
+          text = reply(params, step, timeout: nonstreaming_timeout(max_tokens))
           schema || json ? parse_json(text) : text
         end
 
@@ -68,21 +77,42 @@ module Quaack
                                    "Pass a transport, such as FakeLLM, or set #{ALLOW_REAL_ENV}=1 to mean it."
         end
 
+        # Passing request_options skips the gem's own check of max_tokens
+        # against how long a non-streaming request may run, so this runs that
+        # check first. Past it, a request needs streaming, which this client
+        # doesn't do yet. The timeout it returns goes in request_options.
+        def nonstreaming_timeout(max_tokens)
+          limit = Anthropic::Client::MODEL_NONSTREAMING_TOKENS[@model.to_sym]
+          @anthropic.calculate_nonstreaming_timeout(max_tokens, limit)
+        rescue ArgumentError
+          raise ArgumentError, "max_tokens #{max_tokens} needs streaming, which this client doesn't do", cause: nil
+        end
+
+        # The reply's text, with every way the gem can fail made an Error.
+        # A reply the gem can't read raises from its parsing, as a
+        # ConversionError, a TypeError, or a JSON::ParserError, some of them
+        # quoting the body, so those aren't kept as the cause.
+        def reply(params, step, timeout:)
+          reply_text(send_message(params, step, timeout))
+        rescue Anthropic::Errors::APIError => e
+          raise Error.new(rule_for(e), e.message)
+        rescue Anthropic::Errors::Error, TypeError, JSON::ParserError
+          raise Error.new("llm_bad_response", "the reply couldn't be read as a message"), cause: nil
+        end
+
         # Each attempt passes through `count`, inside the gem's retry loop,
         # and then through the transport, if there is one, in place of HTTP.
         # Burndown#llm_call refuses a step that isn't one of
         # Protocol::Burndown::LLM_STEPS, and `count` runs first, so a bad
         # step raises ArgumentError before any attempt goes out.
-        def send_message(params, step)
+        def send_message(params, step, timeout)
           count = lambda do |request, nxt|
             @burndown.llm_call(step)
             nxt.call(request)
           end
           middleware = [count]
           middleware << ->(request, _nxt) { @transport.call(request, step: step) } if @transport
-          @anthropic.messages.create(**params, request_options: { middleware: middleware })
-        rescue Anthropic::Errors::APIError => e
-          raise Error.new(rule_for(e), e.message)
+          @anthropic.messages.create(**params, request_options: { middleware: middleware, timeout: timeout })
         end
 
         def rule_for(error)
@@ -90,15 +120,14 @@ module Quaack
           when Anthropic::Errors::RateLimitError then "llm_rate_limited"
           when Anthropic::Errors::AuthenticationError, Anthropic::Errors::PermissionDeniedError then "llm_auth"
           when Anthropic::Errors::InternalServerError, Anthropic::Errors::APIConnectionError then "llm_unavailable"
-          else "llm_bad_request"
+          else TRANSIENT_STATUSES.include?(error.status) ? "llm_unavailable" : "llm_bad_request"
           end
         end
 
         def reply_text(message)
-          case message.stop_reason
-          when :max_tokens then raise Error.new("llm_bad_response", "the reply was cut short at max_tokens")
-          when :refusal then raise Error.new("llm_bad_response", "the model refused")
-          end
+          reason = message.stop_reason
+          raise Error.new("llm_bad_response", "the reply stopped for #{reason}") unless WHOLE.include?(reason)
+
           texts = message.content.select { it.type == :text }.map(&:text)
           raise Error.new("llm_bad_response", "the reply had no text") if texts.empty?
 

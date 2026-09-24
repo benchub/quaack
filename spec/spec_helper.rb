@@ -2,6 +2,10 @@
 
 REPO_ROOT = File.expand_path("..", __dir__)
 
+# Tells the driver's LLM client, in every child process a spec starts, that
+# specs are running, so it refuses to call the real API.
+ENV["QUAACK_SPECS"] = "1"
+
 Dir[File.join(__dir__, "support", "*.rb")].each { |f| require f }
 
 RSpec.configure do |config|

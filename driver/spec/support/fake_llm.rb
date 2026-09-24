@@ -16,6 +16,7 @@ require "quaack/driver/llm"
 #   fake.reply("5a-5", "CREATE INDEX ...")            # a text answer
 #   fake.reply("6a", { "rewrites" => [] })            # a Hash or Array goes out as JSON text
 #   fake.error("10a", status: 529)                    # one failed attempt, which the gem may retry
+#   fake.raw("6a", "[1]")                             # a 200 whose body isn't a message
 #   client = fake.client(burndown: burndown)
 #
 # Each step's answers are used in the order they were scripted, one per
@@ -67,6 +68,13 @@ class FakeLLM
     self
   end
 
+  # Queues one attempt for step that answers 200 with `body`, text sent as
+  # it is, such as a body that isn't a message.
+  def raw(step, body)
+    @scripts[step] << [200, {}, body]
+    self
+  end
+
   # Queues one attempt for step that fails to connect, the way a dropped
   # network does.
   def drop(step)
@@ -91,7 +99,7 @@ class FakeLLM
 
     status, headers, body = scripted
     Anthropic::APIResponse.new(status: status, headers: { "content-type" => "application/json", **headers },
-                               body: JSON.generate(body), request: request)
+                               body: body.is_a?(String) ? body : JSON.generate(body), request: request)
   end
 
   private
