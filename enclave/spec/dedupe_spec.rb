@@ -267,6 +267,40 @@ RSpec.describe Quaack::Enclave::Dedupe do
       expect(s.filter([candidate(["customer_id"], sources: [:plan])])).to eq([candidate(["customer_id"])])
     end
 
+    it "treats INCLUDE columns in another order as a duplicate" do
+      s = search
+      s.filter([candidate(["id"], include: %w[total note], sources: [:parse])])
+
+      expect(s.filter([candidate(["id"], include: %w[note total], sources: [:plan])])).to eq([])
+      expect(s.proposals.map { |p| [p.include, p.sources] }).to eq([[%w[total note], Set[:parse, :plan]]])
+      expect(s.drops.map(&:reason)).to eq([:duplicate])
+    end
+
+    it "treats a btree read backward as a duplicate, and keeps the first proposal" do
+      s = search
+      s.filter([candidate(%w[id customer_id], sources: [:parse])])
+
+      expect(s.filter([candidate([desc("id"), desc("customer_id")], sources: [:plan])])).to eq([])
+      expect(s.proposals).to eq([candidate(%w[id customer_id])])
+      expect(s.proposals.first.sources).to eq(Set[:parse, :plan])
+    end
+
+    it "treats a reversed unique btree as a duplicate, but not a partly reversed one" do
+      s = search
+      s.filter([candidate(%w[id customer_id]), candidate(["id"], unique: true)])
+
+      expect(s.filter([candidate(["id", desc("customer_id")]), candidate([desc("id")])]).size).to eq(2)
+      expect(s.filter([candidate([desc("id")], unique: true)])).to eq([])
+    end
+
+    it "doesn't treat a unique candidate and a plain one with the same key as duplicates" do
+      s = search
+      s.filter([candidate(["id"], unique: true)])
+
+      expect(s.filter([candidate(["id"])]).size).to eq(1)
+      expect(s.filter([candidate(["customer_id"]), candidate(["customer_id"], unique: true)]).size).to eq(2)
+    end
+
     it "keeps every proposal in order in proposals" do
       s = search
       s.filter([candidate(["customer_id"])])
@@ -274,6 +308,14 @@ RSpec.describe Quaack::Enclave::Dedupe do
 
       expect(s.proposals).to eq([candidate(["customer_id"]), candidate(["status"])])
       expect(s.proposals).to be_frozen
+    end
+
+    it "returns drops as a frozen array" do
+      s = search
+      s.filter([candidate(["id"]), candidate(["id"])])
+
+      expect(s.drops.size).to eq(1)
+      expect(s.drops).to be_frozen
     end
   end
 
@@ -302,16 +344,59 @@ RSpec.describe Quaack::Enclave::Dedupe do
       expect(search.filter([candidate(["customer_id"], predicate: "orders.status = 'open'")])).to eq([])
     end
 
-    it "keeps a partial candidate whose predicate uses no column at all" do
-      cand = candidate(["customer_id"], predicate: "true")
-
-      expect(search.filter([cand])).to eq([cand])
+    it "drops a partial candidate that names a column twice over, such as status.status" do
+      expect(search.filter([candidate(["customer_id"], predicate: "status.status = 'open'")])).to eq([])
     end
 
     it "finds columns anywhere in the predicate, such as inside a function call" do
       s = search
-      expect(s.filter([candidate(["customer_id"], predicate: "lower(note) = 'x'")])).to eq([])
-      expect(s.filter([candidate(["customer_id"], predicate: "lower(status) = 'x'")]).size).to eq(1)
+      expect(s.filter([candidate(["customer_id"], predicate: "lower(note) IS NULL")])).to eq([])
+      expect(s.filter([candidate(["customer_id"], predicate: "lower(status) IS NULL")]).size).to eq(1)
+    end
+
+    describe "constants" do
+      def kept?(predicate)
+        s = search(low_cardinality: [[orders, "status"], [orders, "kind"], [orders, "flag"]])
+        s.filter([candidate(["customer_id"], predicate:)]).size == 1
+      end
+
+      it "keeps a constant compared directly with a low-cardinality column" do
+        ["status = 'open'", "'open' = status", "status <> 'open'", "status > 'a'", "status = 'open'::text",
+         "status = CAST('open' AS varchar(10))::text", "status IN ('open', 'shipped')",
+         "status NOT IN ('open')", "status = ANY('{open,shipped}')", "status = ANY('{open}'::text[])",
+         "status = ANY(ARRAY['open', 'shipped'])", "status BETWEEN 'a' AND 'm'", "status LIKE 'op%'",
+         "status IS DISTINCT FROM 'open'", "'open' IS DISTINCT FROM status", "status = NULL",
+         "kind = 3 OR NOT status = 'open'"].each do |predicate|
+          expect(kept?(predicate)).to be(true), predicate
+        end
+      end
+
+      it "keeps a predicate with no constants at all on low-cardinality columns" do
+        ["flag", "status IS NULL", "NOT flag", "status = kind", "flag IS TRUE"].each do |predicate|
+          expect(kept?(predicate)).to be(true), predicate
+        end
+      end
+
+      it "drops a constant that isn't compared directly with a low-cardinality column" do
+        ["'secret' = 'secret'", "status = 'open' OR 'ssn' = 'ssn'", "status = lower('bob@x.com')",
+         "lower(status) = 'x'", "true", "status = 'open' AND true", "status || 'x' = 'openx'",
+         "status = ANY(ARRAY[lower('a')])", "status IN ('a', lower('b'))", "status BETWEEN lower('a') AND 'm'",
+         "(status, kind) = ('a', 'b')", "coalesce(status, 'x') = kind",
+         "status = (CASE WHEN flag THEN 'a' ELSE 'b' END)", "NULLIF(status, 'x') IS NULL",
+         "lower(status) BETWEEN 'a' AND 'm'", "status = lower('x')::text"].each do |predicate|
+          expect(kept?(predicate)).to be(false), predicate
+        end
+      end
+
+      it "never shows a dropped constant in the drop record" do
+        sentinel = "quaack-sentinel-c0n5t"
+        s = search
+        s.filter([candidate(["customer_id"], predicate: "status = 'open' OR '#{sentinel}' = '#{sentinel}'")])
+
+        expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality])
+        expect(s.drops.first.candidate.to_ddl).to include(sentinel)
+        [s.drops.inspect, s.drops.pretty_inspect, s.inspect].each { |text| expect(text).not_to include(sentinel) }
+      end
     end
 
     it "drops a partial candidate that isn't low-cardinality even when an existing index matches it" do

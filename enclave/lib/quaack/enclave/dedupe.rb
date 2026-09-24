@@ -2,7 +2,7 @@
 
 require_relative "table_name"
 require_relative "index_candidate"
-require_relative "index_sql"
+require_relative "predicate_check"
 require_relative "statistics"
 
 module Quaack
@@ -35,26 +35,37 @@ module Quaack
     # Normalizing. IndexCandidate normalizes each definition when it's built:
     # the nulls ordering each direction defaults to, the method's case, and
     # the predicate as pg_query deparses it. So this compares candidates
-    # with == and never looks at the DDL.
+    # by their members, through covers?, and never looks at the DDL.
     #
     # Each candidate, in order, meets the first of these that applies:
     #
-    # 1. A partial candidate whose predicate uses a column that isn't
-    #    low-cardinality on the candidate's table is dropped
-    #    (:partial_not_low_cardinality). So is one with a column reference
-    #    that isn't a bare name, such as t.a, since it can't be sure which
-    #    column that is. This comes first, because it's the trust-boundary
-    #    check (README 5a-3): until a partial passes it, its predicate may
-    #    hold PII. A predicate with no column, such as true, passes.
+    # 1. A partial candidate is dropped (:partial_not_low_cardinality)
+    #    unless its predicate passes two checks. Every column it uses must
+    #    be a bare name (not t.a or t.*, since it can't be sure which column
+    #    that is) that's low-cardinality on the candidate's table. And every
+    #    constant must be compared directly with one of those columns, as in
+    #    status = 'open', status IN ('a', 'b'), status = ANY('{a,b}'), or
+    #    status BETWEEN 'a' AND 'm', with at most a cast on the constant
+    #    (see PredicateCheck.constants_compared_with_columns?). Only a
+    #    low-cardinality column's values may leave the enclave, so a
+    #    constant anywhere else drops the partial, when unsure:
+    #    'ssn' = 'ssn', status = lower('bob@x.com'), lower(status) = 'x',
+    #    or a bare true. A predicate with no constants, such as flag or
+    #    status IS NULL, needs only the column check. This comes first,
+    #    because it's the trust-boundary check (README 5a-3): until a
+    #    partial passes it, its predicate may hold PII.
     # 2. A candidate covered by an existing index is dropped
     #    (:covered_by_existing), recording the index as an ExistingIndex.
     #    See covers? for what "covered" means.
     # 3. A candidate equal to an earlier proposal in this search is dropped
     #    (:duplicate), and its sources are added to the earlier proposal.
-    #    The drop records the earlier proposal, sources merged. "Equal" is
-    #    IndexCandidate#==, the whole definition. A prefix of an earlier
-    #    proposal isn't dropped, because generator one proposes every leading
-    #    prefix on purpose, and 5a-4 tests each.
+    #    The drop records the earlier proposal, sources merged, and the
+    #    first proposal wins. "Equal" means each covers the other under
+    #    covers?, so it follows the coverage rules: INCLUDE order doesn't
+    #    count, and a btree with every direction and nulls ordering flipped
+    #    is the same index read backward. A prefix of an earlier proposal
+    #    isn't dropped, because generator one proposes every leading prefix
+    #    on purpose, and 5a-4 tests each.
     # 4. A GIN, GiST, or SP-GiST candidate is set aside, untested, for step
     #    12. HypoPG can't model those methods. The README names GIN and GiST.
     #    The HypoPG in the test image (Postgres 18) refuses SP-GiST as well,
@@ -179,9 +190,9 @@ module Quaack
       def partial_not_low_cardinality?(candidate)
         return false if candidate.predicate.nil?
 
-        IndexSql.predicate_columns(candidate.predicate).any? do |column|
+        PredicateCheck.predicate_columns(candidate.predicate).any? do |column|
           !@low_cardinality.include?([candidate.table, column])
-        end
+        end || !PredicateCheck.constants_compared_with_columns?(candidate.predicate)
       end
 
       def covering_index(candidate, indexes)
@@ -191,12 +202,13 @@ module Quaack
         nil
       end
 
-      # Merges the candidate's sources into the earlier proposal equal to
-      # it, if there is one, and returns the merged proposal.
+      # Merges the candidate's sources into the earlier proposal that's the
+      # same index as it, if there is one, and returns the merged proposal.
+      # Two candidates are the same index when each covers the other.
       def merge_into_earlier(candidate)
         [@proposals, @set_aside].each do |list|
-          i = list.index(candidate)
-          return list[i] = list[i].merge_sources(candidate) if i
+          i = list.index { |p| Coverage.covers?(p, candidate) && Coverage.covers?(candidate, p) }
+          return list[i] = list[i].with(sources: list[i].sources | candidate.sources) if i
         end
         nil
       end

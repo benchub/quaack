@@ -78,19 +78,6 @@ module Quaack
       # The predicate as pg_query deparses it.
       def normalize_predicate(sql) = PgQuery.deparse_expr(parse_predicate(sql)).freeze
 
-      # The names of the columns a predicate uses, without repeats. A column
-      # reference that isn't a bare name, such as t.a or t.*, comes back as
-      # nil, since which column it means isn't certain. It raises what
-      # parse_predicate raises.
-      def predicate_columns(sql)
-        parse_predicate(sql)
-        names = []
-        PgQuery.parse("SELECT WHERE #{sql}").walk! do |node|
-          names << (node.fields.first.string&.sval if node.fields.size == 1) if node.is_a?(PgQuery::ColumnRef)
-        end
-        names.uniq
-      end
-
       # See IndexCandidate.from_ddl.
       def read_index(sql, sources)
         stmt = parse_index_stmt(sql)
