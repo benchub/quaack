@@ -17,6 +17,7 @@ Gem::Specification.new do |spec|
 
   # Never add the driver gem or an LLM SDK here. spec/boundary_spec.rb at the
   # repo root fails if either shows up, directly or transitively.
+  spec.add_dependency "pg", "~> 1.6"
   spec.add_dependency "pg_query", "~> 6.2"
   spec.add_dependency "quaack-protocol"
 end
