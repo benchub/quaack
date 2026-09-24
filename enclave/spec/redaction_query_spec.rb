@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 require "pg_query"
 require "quaack/enclave/redaction"
 
@@ -71,6 +72,11 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(redact(where("o.a < INTERVAL '1 day' AND o.b < INTERVAL(3) '1.5 s'")).placeholder_map.size).to eq(2)
   end
 
+  it "types an integer with millions of digits as numeric without reading it" do
+    map = Timeout.timeout(3) { redact(where("o.id = #{"9" * 4_000_000}")).placeholder_map }
+    expect(map["$1"]["type"]).to eq("numeric")
+  end
+
   it "types integers written in hex, octal, binary, or with underscores" do
     map = redact(where("o.a = 0x1F AND o.b = 0o17 AND o.c = 0b101 AND o.d = 1_000 AND o.e = 0xFFFFFFFFFF"))
           .placeholder_map
@@ -113,6 +119,10 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
                   "AND o.e LIKE 'x\\%' AND o.f LIKE '_x' AND o.g ~~ 'x_' AND o.h LIKE 'x!%' ESCAPE '!'")
       expect(shapes(sql).values.map { it["pattern"] }.compact)
         .to eq([%w[trailing], %w[leading], %w[leading trailing], [], [], %w[leading], %w[trailing], []])
+    end
+
+    it "reads an ESCAPE character under a cast" do
+      expect(shapes(where("o.a LIKE 'a!%' ESCAPE '!'::text"))["$1"]["pattern"]).to eq([])
     end
 
     it "says when a pattern has a wildcard in the middle, and reads an empty pattern" do

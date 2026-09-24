@@ -18,6 +18,7 @@ module Quaack
         }.flat_map { |klass, names| names.map { |name| [name, klass] } }.to_h.freeze
 
         INT8 = (-(2**63))..((2**63) - 1)
+        MAX_DIGITS = 100
 
         module_function
 
@@ -46,8 +47,12 @@ module Quaack
         end
 
         # An integer written as Postgres reads one, in decimal, hex, octal,
-        # or binary, with underscores, or nil for anything else.
+        # or binary, with underscores, or nil for anything else. Past
+        # MAX_DIGITS characters it's nil too, since reading it would be slow,
+        # and it's far past bigint anyway.
         def integer(text)
+          return nil if text.length > MAX_DIGITS
+
           digits = text.delete("_")
           sign = digits.start_with?("-") ? -1 : 1
           digits = digits.delete_prefix("-").delete_prefix("+")
@@ -56,6 +61,16 @@ module Quaack
           sign * Integer(digits, base) if digits.match?(/\A\h+\z/)
         rescue ArgumentError
           nil
+        end
+
+        # A bit string's bits, from pg_query's text for it, such as b101 or
+        # x1F, or nil for anything else.
+        def bits(text)
+          body = text[1..].to_s
+          case text[0]&.downcase
+          when "b" then body
+          when "x" then body.chars.map { |c| Integer(c, 16).to_s(2).rjust(4, "0") }.join if body.match?(/\A\h*\z/)
+          end
         end
 
         # The type class of an uncast constant.

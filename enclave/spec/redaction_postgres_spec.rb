@@ -81,6 +81,34 @@ RSpec.describe Quaack::Enclave::Redaction do
     expect(result.placeholder_shapes["$1"]["rows"]).to eq("status" => "none")
   end
 
+  describe "bit strings" do
+    let(:query) { "SELECT t.id FROM public.bits t WHERE t.b = B'10110' AND t.x = X'1F'" }
+
+    before do
+      conn = test_database.connection
+      conn.exec("CREATE TABLE public.bits (id int, b bit varying, x bit(8))")
+      conn.exec("INSERT INTO public.bits VALUES (1, B'10110', X'1F'), (2, B'1', X'00')")
+      conn.exec("ANALYZE public.bits")
+    end
+
+    it "matches the bits Postgres prints to the placeholders that hold them" do
+      result = redact(query)
+      expect(result.plan.explain.first["Plan"]["Filter"]).to eq("((t.b = $1::bit varying) AND (t.x = $2::\"bit\"))")
+      expect(result.plan.masked).to eq(0)
+      expect(result.placeholder_shapes.values.map { it["rows"]["status"] }).to eq(%w[found found])
+    end
+
+    it "binds them to the same rows" do
+      result = redact(query)
+      bound = described_class.binding(result.query.sql, result.placeholder_map)
+      conn = test_database.connection
+      bound.prepare(conn, "quaack_bits")
+      expect(bound.execute(conn, "quaack_bits").values).to eq([["1"]])
+    ensure
+      conn&.exec("DEALLOCATE ALL")
+    end
+  end
+
   describe "row counts" do
     let(:seq_scan) { ["enable_indexscan = off", "enable_bitmapscan = off"] }
 

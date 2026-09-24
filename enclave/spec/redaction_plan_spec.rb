@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 require "pg_query"
 require "quaack/enclave/redaction"
 
@@ -111,16 +112,56 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       expect(filter("(a = (Other 918273645).col1)", {})).to eq("(a = (Other $?).col1)")
     end
 
-    it "matches a boolean the query wrote as a string, and bits" do
-      placeholder_map = map(entry("yes"), entry("b101", "bit varying"), entry("x1F", "bit varying"))
-      expect(filter("((a = true) AND (b = B'101'::bit(3)) AND (c = B'00011111'::bit varying))", placeholder_map))
-        .to eq("((a = $1) AND (b = $2::bit(3)) AND (c = $3::bit varying))")
+    it "matches a boolean the query wrote as a string, and bits in the form Postgres prints them" do
+      placeholder_map = map(entry("yes"), entry("b10110", "bit varying"), entry("x1F", "bit varying"))
+      expect(filter("((a = true) AND (b = '10110'::bit varying) AND (c = '00011111'::\"bit\"))", placeholder_map))
+        .to eq("((a = $1) AND (b = $2::bit varying) AND (c = $3::\"bit\"))")
+    end
+
+    it "doesn't match bits to a string placeholder, or a string to bits it doesn't hold" do
+      placeholder_map = map(entry("x1F", "bit varying"), entry("10110"))
+      expect(filter("((b = '10110'::bit varying) AND (c = '1F'::text))", placeholder_map.slice("$1")))
+        .to eq("((b = $?::bit varying) AND (c = $?::text))")
+    end
+
+    # Postgres doesn't print bit strings this way, but a token like it
+    # still has to be matched or masked, never copied.
+    it "reads a bit string token as its bits" do
+      expect(filter("((b = B'101') AND (c = X'1F') AND (d = B'11'))",
+                    map(entry("b101", "bit varying"), entry("x1F", "bit varying"))))
+        .to eq("((b = $1) AND (c = $2) AND (d = $?))")
+    end
+
+    describe "a number too big to read" do
+      it "matches no placeholder, and doesn't hang, whichever side holds it" do
+        Timeout.timeout(5) do
+          expect(filter("((s = '1e99999999'::text) AND (id = 5))", map(entry("1e99999999"), entry("5", "integer"))))
+            .to eq("((s = $1::text) AND (id = $2))")
+          expect(filter("((x = '1e99999999'::numeric) AND (y = 1e99999999))", map(entry("5", "integer"))))
+            .to eq("((x = $?::numeric) AND (y = $?))")
+        end
+      end
+
+      # Ruby reads a long run of digits in time that grows with its square:
+      # four million take seconds.
+      it "doesn't read a placeholder with millions of digits as a number" do
+        huge = "9" * 4_000_000
+        Timeout.timeout(1) do
+          expect(filter("((x = 5) AND (y = 1.5))", map(entry(huge, "numeric"), entry("#{huge}.5", "numeric"),
+                                                       entry("5"))))
+            .to eq("((x = $3) AND (y = $?))")
+        end
+      end
+
+      it "still matches a number with a modest exponent" do
+        expect(filter("(x = '100000'::numeric)", map(entry("1e5", "numeric")))).to eq("(x = $1::numeric)")
+      end
     end
 
     it "matches only the placeholder types each kind of literal can be" do
-      placeholder_map = map(entry("5", "boolean"), entry("1", "integer"), entry("b1", "integer"))
-      expect(filter("((a = 5) AND (c = true) AND (d = B'1'))",
-                    placeholder_map)).to eq("((a = $?) AND (c = $?) AND (d = $?))")
+      placeholder_map = map(entry("5", "boolean"), entry("1", "integer"), entry("b10", "integer"))
+      expect(filter("((a = 5) AND (c = true) AND (d = '10'::\"bit\"))",
+                    placeholder_map)).to eq("((a = $?) AND (c = $?) AND (d = $?::\"bit\"))")
     end
 
     it "matches a number the query wrote in hex, octal, binary, or with underscores" do
@@ -253,6 +294,31 @@ RSpec.describe Quaack::Enclave::Redaction, ".plan" do
       .to raise_error(described_class::Error, "bad_placeholder_map")
     expect { described_class.binding("SELECT 1", { "$1" => "quaack-sentinel-map" }) }
       .to raise_error(described_class::Error, "bad_placeholder_map")
+  end
+
+  describe "binding" do
+    # A fake connection at the edge that says it can't type $1 however
+    # it's declared.
+    let(:connection) do
+      error_class = Class.new(StandardError) do
+        def result
+          Struct.new(:fields) { def error_field(code) = fields[code] }
+                .new({ "C".ord => "42P18", "M".ord => "could not determine data type of parameter $1" })
+        end
+      end
+      Class.new do
+        define_method(:transaction_status) { 0 }
+        define_method(:exec) { |_sql| raise error_class }
+      end.new
+    end
+
+    it "stops retyping a parameter it has already made text" do
+      bound = described_class.binding("SELECT $1", { "$1" => entry("x") })
+      Timeout.timeout(5) do
+        expect { bound.prepare(connection, "quaack_loop") }
+          .to raise_error(described_class::Error) { |e| expect([e.rule, e.sqlstate]).to eq(%w[prepare_failed 42P18]) }
+      end
+    end
   end
 
   describe "row counts" do

@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "../pg_array"
+require_relative "literal"
 
 module Quaack
   module Enclave
@@ -222,11 +223,13 @@ module Quaack
         module Value
           module_function
 
-          # [kind, text], or nil if pg_query won't read it alone.
+          # [kind, text], or nil if pg_query won't read it alone. A bit
+          # string reads as the string of its bits, the way Postgres prints
+          # one.
           def read(token, source)
             case token
             when :ICONST, :FCONST then [:number, source]
-            when :BCONST, :XCONST then constant(source)&.bsval&.then { [:bits, it.bsval] }
+            when :BCONST, :XCONST then constant(source)&.bsval&.then { [:string, Literal.bits(it.bsval)] }
             else constant(source)&.sval&.then { [:string, it.sval] }
             end
           end
