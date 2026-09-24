@@ -127,6 +127,23 @@ RSpec.describe RuntimeBoundary do
       expect(messages(check(side))).to include(%r{loaded \S+/lib/openai\.rb, which this side must never load})
     end
 
+    # The real SDK the driver uses, not a stand-in, admitted by the
+    # allowlist along with its own dependencies, so only its name can flag it.
+    it "flags the anthropic gem the driver uses, even when the allowlist admits it" do
+      gemspec = copy_of("enclave")
+      add_dependency(gemspec, "anthropic")
+      plant(gemspec, "lib/quaack/enclave.rb", %(require "pg_query"\n), %(require "anthropic"\n))
+      sdk = Boundary.dependency_closure(Gem::Specification.find_by_name("anthropic")).names
+      side = described_class.enclave(gemspec_path: gemspec,
+                                     allowed_gems: [*Boundary::ENCLAVE_ALLOWED_GEMS, "anthropic", *sdk])
+      report = check(side)
+      anthropic = File.join(report.install.gem_dirs.fetch("anthropic"), "lib", "anthropic.rb")
+
+      expect(messages(report, run: "quaacks --version"))
+        .to include("loaded #{anthropic}, which this side must never load")
+      expect(messages(report)).to all(end_with("which this side must never load"))
+    end
+
     it "flags any file from the installed driver gem, even one whose name isn't forbidden" do
       driver = copy_of("driver")
       write(driver, "lib/plain_helper.rb", "module PlainHelper; end\n")
@@ -140,9 +157,12 @@ RSpec.describe RuntimeBoundary do
     end
   end
 
+  # quaack/driver itself can't load here, since the enclave's install has no
+  # anthropic gem for the driver's LLM client, so the plants that load the
+  # driver from the repo checkout load a file of it that needs nothing else.
   it "flags the driver loaded from the repo checkout instead of an installed gem" do
     gemspec = copy_of("enclave")
-    driver = File.join(REPO_ROOT, "driver", "lib", "quaack", "driver")
+    driver = File.join(REPO_ROOT, "driver", "lib", "quaack", "driver", "version")
     plant(gemspec, "lib/quaack/enclave.rb", %(require "pg_query"\n), %(require #{driver.inspect}\n))
     loaded = "loaded #{driver}.rb, which"
 
@@ -155,7 +175,7 @@ RSpec.describe RuntimeBoundary do
     # dependency. A dependency on the other side gets flagged on its own,
     # since the every-file run loads all of its files, so it would hide
     # whether the planted file was reached.
-    let(:repo_driver) { File.join(REPO_ROOT, "driver", "lib", "quaack", "driver.rb") }
+    let(:repo_driver) { File.join(REPO_ROOT, "driver", "lib", "quaack", "driver", "version.rb") }
 
     it "flags a lib file nothing requires that loads the driver" do
       gemspec = copy_of("enclave")
