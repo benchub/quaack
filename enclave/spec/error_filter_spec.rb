@@ -50,6 +50,9 @@ RSpec::Matchers.define_negated_matcher :not_output, :output
 
 RSpec.describe Quaack::Enclave::ErrorFilter do
   let(:filter) { described_class }
+  # ERROR_SENTINEL is fixed, since the fakes above are built before any
+  # example runs, and it's there to scan for alongside the made ones.
+  let(:sentinels) { LeakCheck::Sentinels.new(extra: { planted: ERROR_SENTINEL }) }
 
   def line(**fields) = JSON.generate({ "type" => "error", **fields.transform_keys(&:to_s) })
 
@@ -78,7 +81,21 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       out = filter.to_egress(error, step: "3f")
 
       expect(out).to eq(line(step: "3f", rule: "unique_email", sqlstate: "23505"))
-      expect(out).not_to include(ERROR_SENTINEL)
+      expect_no_leaks(sentinels, stdout: out)
+    end
+
+    it "sends none of an error's text, however it's reached, while the error itself holds every sentinel" do
+      error = raised do
+        raise FilterFakes::RuledError.new(sentinels.text, rule: "unique_email", sqlstate: "23505")
+      rescue FilterFakes::RuledError
+        raise FilterFakes::RuledError.new("Key (email)=(#{sentinels.word}) #{sentinels.number}", rule: "cause_rule")
+      end
+      error.set_backtrace(["#{sentinels.like_prefix}.rb:1 #{sentinels.date}"])
+      error.instance_variable_set(:@detail, sentinels.json)
+      held = LeakCheck.findings(sentinels, objects: { error: }).map(&:sentinel).uniq
+      expect(held).to match_array(LeakCheck::Sentinels::KINDS)
+
+      expect_no_leaks(sentinels, stdout: filter.to_egress(error, step: "9b"))
     end
 
     it "takes a rule given as a Symbol" do
@@ -265,7 +282,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         expect(status).to eq(described_class::EX_SOFTWARE), "for #{name}"
         expect(out.string.lines.size).to eq(1), "for #{name}"
         expect(JSON.parse(out.string)).to include("type" => "error", "step" => "3f"), "for #{name}"
-        expect(out.string).not_to include(ERROR_SENTINEL), "for #{name}"
+        expect_no_leaks(sentinels, stdout: out.string, why: "for #{name}")
       end
     end
 
@@ -375,6 +392,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       expect(status).not_to be_success
       expect(err).to eq("")
       expect(out).to eq("reached")
+      expect_no_leaks(sentinels, stdout: out, stderr: err, status:)
     end
   end
 end

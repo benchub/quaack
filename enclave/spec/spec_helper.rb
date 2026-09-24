@@ -3,9 +3,13 @@
 require "json"
 require "open3"
 require "rbconfig"
-require_relative "../../spec/support/test_postgres"
-
 GEM_ROOT = File.expand_path("..", __dir__)
+# The root suite's spec_helper defines it too. The harness files shared from
+# the root's spec/support, such as repo_gems.rb, find the repo by it.
+REPO_ROOT = File.expand_path("..", GEM_ROOT)
+
+require_relative "../../spec/support/test_postgres"
+require_relative "support/leak_check"
 
 # Runs Ruby in a child process that inherits this bundle. Specs use it so
 # that what they check (loading a gem, running an executable) happens in a
@@ -20,4 +24,5 @@ RSpec.configure do |config|
   config.order = :random
   Kernel.srand config.seed
   TestPostgres.configure(config)
+  LeakCheck.configure(config)
 end
