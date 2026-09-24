@@ -25,9 +25,17 @@ RSpec.describe Quaack::Driver::Transport do
   # The file descriptors this process has open.
   # The file descriptors this process has open, after collecting any IO
   # an earlier spec left for the garbage collector to close.
-  def open_fds
+  def open_fds = Dir.children("/dev/fd").size
+
+  # Runs the block with the garbage collector off, after one collection,
+  # so an IO some code leaked stays open for open_fds to count, and an IO
+  # an earlier spec leaked can't be closed partway through.
+  def without_gc
     GC.start
-    Dir.children("/dev/fd").size
+    GC.disable
+    yield
+  ensure
+    GC.enable
   end
 
   # The EnclaveError that calling transport raises.
@@ -135,6 +143,7 @@ RSpec.describe Quaack::Driver::Transport do
       error = failure(local.new(command: [File.join(dir, "missing")], timeout:))
 
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["not_started", nil, nil, nil])
+      expect([error.usage?, error.step_failed?, error.killed?]).to eq([false, false, false])
       expect(error.message).to eq("quaacks probe failed: not_started")
     end
 
@@ -251,7 +260,8 @@ RSpec.describe Quaack::Driver::Transport do
       step = local.new(command: EnclaveCommands.probe(dir, body), timeout: 1)
       error = nil
 
-      expect(elapsed { error = failure(step) }).to be < 10
+      # The timeout, plus the moment SIGTERM takes, and no more.
+      expect(elapsed { error = failure(step) }).to be < 3
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
       expect(alive?(Integer(File.read(pid_file)))).to be(false)
@@ -276,13 +286,19 @@ RSpec.describe Quaack::Driver::Transport do
     it "returns once the run ends, even if something it started still holds stdin" do
       grandchild = "exec 3<&0; sleep 8 <&3 >/dev/null 2>&1 & printf '{\"type\":\"done\"}\\n'; exit 0"
       step = local.new(command: ["sh", "-c", grandchild], timeout: 5)
+      input = { "a" => "x" * (16 * 1024 * 1024) }
       threads = Thread.list.size
-      fds = open_fds
       result = nil
+      took = nil
+      fds_before, fds_after = without_gc do
+        before = open_fds
+        took = elapsed { result = step.call("probe", input:) }
+        [before, open_fds]
+      end
 
-      expect(elapsed { result = step.call("probe", input: { "a" => "x" * (16 * 1024 * 1024) }) }).to be < 4
+      expect(took).to be < 4
       expect(result.messages).to eq([])
-      expect([Thread.list.size, open_fds]).to eq([threads, fds])
+      expect([Thread.list.size, fds_after]).to eq([threads, fds_before])
     end
 
     it "kills a run that ignores SIGTERM with SIGKILL" do
@@ -485,6 +501,40 @@ RSpec.describe Quaack::Driver::Transport do
       expect(refusal(%({"type":"done"}\n{"type":"version","version":"1"})).rule).to eq("unexpected_output")
     end
 
+    it "refuses a run whose last line is a done line with a field, rather than calling it incomplete" do
+      error = failure(raw("print #{%({"type":"version","version":"1"}\n{"type":"done","version":"1"}\n).inspect}"))
+
+      expect([error.rule, error.exit_status]).to eq(["unexpected_output", 0])
+    end
+
+    # The shapes the enclave's ErrorFilter gives an error line's fields.
+    # The driver can't load the enclave, so its copies are pinned here: to
+    # the enclave's source text, and at their edges.
+    it "checks the error line's fields with the enclave ErrorFilter's own patterns" do
+      source = File.read(File.join(REPO_ROOT, "enclave", "lib", "quaack", "enclave", "error_filter.rb"))
+      reply = Quaack::Driver::Transport::Reply
+      { "RULE" => reply::RULE, "STEP" => reply::STEP, "SQLSTATE" => reply::SQLSTATE }.each do |name, pattern|
+        enclave = source[%r{^\s*#{name} = /(.+)/$}, 1]
+
+        expect(pattern.source).to eq(enclave), "#{name} differs from the enclave's #{enclave.inspect}"
+      end
+    end
+
+    it "keeps an error line's fields only at the shapes' edges, and drops them just past" do
+      fields = lambda do |step, rule, sqlstate|
+        error = refusal(JSON.generate({ "type" => "error", "step" => step, "rule" => rule, "sqlstate" => sqlstate }))
+        [error.step, error.rule, error.sqlstate]
+      end
+      step63 = "5a-#{"b" * 60}"
+      rule63 = "a#{"_" * 62}"
+
+      expect(fields.call(step63, rule63, "0A000")).to eq([step63, rule63, "0A000"])
+      expect(fields.call("#{step63}c", "#{rule63}b", "23505")).to eq([nil, "unexpected_output", "23505"])
+      expect(fields.call("-a", "1a", "2350")).to eq([nil, "unexpected_output", nil])
+      expect(fields.call("_a", "_a", "235050")).to eq([nil, "unexpected_output", nil])
+      expect(fields.call("a", "a", "2350a")).to eq(%w[a a] + [nil])
+    end
+
     # Egress sends a burndown only if Protocol::Burndown.valid? passes, so
     # the driver checks the same.
     it "reads a burndown that Protocol::Burndown.valid? passes, and refuses one it doesn't" do
@@ -554,16 +604,22 @@ RSpec.describe Quaack::Driver::Transport do
                 %({"type":"version","version":"a/b//c /* d */ \\" \\\\ \\/ \\u0041"}) =>
                   [{ "type" => "version", "version" => %(a/b//c /* d */ " \\ / A) }],
                 # A line cut off inside an escape is still just cut off.
-                %({"type":"version","version":"a\\) => [] }
+                %({"type":"version","version":"a\\) => [],
+                # Every escape JSON.generate writes, as egress would write a
+                # multi-line query or plan, reads as a message.
+                JSON.generate({ "type" => "version", "version" => "a\b\f\n\r\t\u0001\"\\/é" }) =>
+                  [{ "type" => "version", "version" => "a\b\f\n\r\t\u0001\"\\/é" }] }
       paths = ["-I", File.join(GEM_ROOT, "lib"), "-I", File.join(REPO_ROOT, "protocol", "lib")]
       default = Bundler.with_unbundled_env do
-        run_ruby("--disable-gems", *paths, "-e", script, JSON.generate(cases.keys))
+        run_ruby("--disable-gems", *paths, "-e", script, JSON.generate(cases.keys, ascii_only: true))
       end
-      bundled = run_ruby(*paths, "-e", script, JSON.generate(cases.keys))
+      bundled = run_ruby(*paths, "-e", script, JSON.generate(cases.keys, ascii_only: true))
 
+      # The lines go over argv as ASCII, and come back as UTF-8, whatever
+      # the locale says.
       { default => true, bundled => false }.each do |(out, err, status), stdlib|
         expect(status).to be_success, "stderr was #{err}"
-        results, json = out.lines(chomp: true)
+        results, json = out.dup.force_encoding(Encoding::UTF_8).lines(chomp: true)
         expect(File.realpath(json).start_with?(File.realpath(RbConfig::CONFIG["rubylibdir"]))).to be(stdlib)
         expect(JSON.parse(results, allow_nan: true)).to eq(cases.values), "under #{json}"
       end
