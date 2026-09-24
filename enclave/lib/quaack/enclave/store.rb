@@ -32,8 +32,8 @@ module Quaack
     # value, so they have no cause.
     class Store
       class Error < StandardError; end
-      # What teardown raises for a run path it won't delete, since it isn't
-      # a run directory open would open.
+      # What open raises for a run path that isn't a run directory it would
+      # open, so what teardown raises for one it won't delete.
       class BadRun < Error; end
 
       # A run ID: the UTC time the run started, then eight random hex
@@ -64,13 +64,13 @@ module Quaack
         raise Error, "couldn't make the base directory #{base}", cause: nil
       end
 
-      # Opens a run an earlier call started. The run directory must be a real directory, not a symlink,
-      # mode 0700, and owned by the current user. current_uid is there for
-      # tests.
+      # Opens a run an earlier call started. The run directory must be a
+      # real directory, not a symlink, mode 0700, and owned by the current
+      # user, or it raises BadRun. current_uid is there for tests.
       def self.open(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
-        problem = directory_problem(PrivateFiles.lstat(path), current_uid)
-        raise Error, "run #{run_id} #{problem}" if problem
+        problem = PrivateFiles.directory_problem(PrivateFiles.lstat(path), current_uid)
+        raise BadRun, "run #{run_id} #{problem}" if problem
 
         new(run_id, path)
       end
@@ -84,42 +84,21 @@ module Quaack
       # symlink, which could point out of the store. A symlink inside the
       # run directory is removed, not followed.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
-        path = run_path(run_id, base)
-        stat = PrivateFiles.lstat(path)
-        return :already_gone unless stat
+        return :already_gone unless PrivateFiles.lstat(run_path(run_id, base))
 
-        problem = directory_problem(stat, current_uid)
-        raise BadRun, "run #{run_id} #{problem}" if problem
-
-        new(run_id, path).teardown
+        self.open(run_id, base:, current_uid:).teardown
         :deleted
       end
 
       # The run ID usually comes from argv, so it must be exactly in the
       # RUN_ID form before it goes into a path.
       def self.run_path(run_id, base)
-        unless run_id.is_a?(String) && RUN_ID.match?(run_id)
-          raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
-        end
+        return File.join(base, run_id) if run_id.is_a?(String) && RUN_ID.match?(run_id)
 
-        File.join(base, run_id)
+        raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
       end
 
-      # What's wrong with a run directory, given its lstat, or nil if
-      # nothing is.
-      def self.directory_problem(stat, current_uid)
-        return "has no directory" unless stat
-        return "has a path that isn't a directory" unless stat.directory?
-
-        mode = stat.mode & 0o7777
-        return format("has a directory with mode %<mode>04o, not 0700", mode:) unless mode == 0o700
-
-        return if stat.uid == current_uid
-
-        "has a directory owned by uid #{stat.uid}, not the current user (uid #{current_uid})"
-      end
-
-      private_class_method :make_base, :run_path, :directory_problem, :new
+      private_class_method :make_base, :run_path, :new
 
       attr_reader :run_id, :path
 

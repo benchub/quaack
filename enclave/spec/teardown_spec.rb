@@ -29,9 +29,10 @@ RSpec.describe "quaacks teardown" do
   # A run holding the sentinels, the way a real run holds production values.
   def planted_run
     store = Quaack::Enclave::Store.create(base:)
-    store.write("query", "SELECT 1 WHERE a = '#{sentinels.text}' AND b = #{sentinels.number}")
-    store.write("literals", [sentinels.text, sentinels.number, sentinels.date.iso8601])
-    File.write(File.join(store.path, "#{sentinels.word}.json"), "[#{sentinels.json}]")
+    s = sentinels
+    store.write("query", "SELECT 1 WHERE a = '#{s.text}' AND b = #{s.number}")
+    store.write("literals", [s.text, s.number, s.date.iso8601])
+    File.write(File.join(store.path, "#{s.word}.json"), "[#{s.json}]")
     store
   end
 
@@ -41,8 +42,9 @@ RSpec.describe "quaacks teardown" do
     expect(LeakCheck.findings(sentinels, stdout: held).map(&:sentinel)).to include(*kinds)
   end
 
-  def teardown_line(run_id, store) =
+  def teardown_line(run_id, store)
     %({"type":"teardown","run_id":"#{run_id}","store":"#{store}","next_step":"destroy_run_server"}\n)
+  end
 
   def done = %({"type":"done"}\n)
   def error_line(rule) = %({"type":"error","step":"teardown","rule":"#{rule}"}\n)
