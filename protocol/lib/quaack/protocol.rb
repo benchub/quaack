@@ -2,6 +2,7 @@
 
 require_relative "protocol/version"
 require_relative "protocol/whitelist"
+require_relative "protocol/burndown"
 
 module Quaack
   # The messages the driver and the enclave script exchange. Both sides load
