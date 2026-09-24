@@ -1149,6 +1149,15 @@ pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b load
 - **README:** 3b.
 - **Status:** todo
 
+### 20260924-31. Keyset pagination with row comparisons.
+
+**Question for the user first:** should this be part of the v1 profile? `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
+
+- **Depends on:** 20260923-33.
+- **Came from:** The review of 20260923-33 and the second review of 20260924-16.
+- **README:** Step 1.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
