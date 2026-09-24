@@ -63,6 +63,7 @@ A rejected input fails with a message that says which rule it broke. The script 
 - Pass or fail results, with the scenario or predicate atom behind each failure.
 - Which predicate atoms step 9c couldn't exercise, identified by their redacted shape.
 - Counts of what each stage added and dropped, for the 15b burndown.
+- Production's major version, and whether step 2 found its instance memory.
 
 Result rows, fixture contents, and literals never come out.
 
@@ -81,7 +82,7 @@ Inside the enclave, the enclave script keeps its data in three places:
 
 All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
 
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache.
+When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory and prints a reminder to destroy the run server, which the enclave can't do itself. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
 
 ## 1. Input.
 
@@ -95,7 +96,7 @@ The operator finds the slow query and puts these inputs in the governed store on
 
 To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for 3h. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
 
-The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct` and the name of the construct. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
+The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
 
 Fully qualify every relation in the query so `search_path` never matters.
 
@@ -114,11 +115,31 @@ Validate the connection to step 1's production server. Then record the following
 - From `pg_database`: `datcollate`, `datctype`, `datlocprovider`, `datlocale`, and `datcollversion`.
 - `default_text_search_config`.
 
+The driver runs `quaacks inventory --run <run ID>`. It connects to the server named at intake with the operator's own libpq setup on the jump server. The host comes from the run, and everything else comes from where libpq looks for it: `PGUSER` and the other `PG` environment variables, a service in `~/.pg_service.conf` named by `PGSERVICE`, and the password in `~/.pgpass`. QUAACK stores no credentials. It reads everything inside one read-only, repeatable read transaction, so it can't write to production. Production must run Postgres 17 or later, since older versions don't have `datlocale`.
+
+For each setting the plan's `SETTINGS` lists, it records production's own current value, not the value in the plan, which came from the operator's session. It records settings the way `SHOW` prints them, such as `128MB`.
+
+The instance memory comes from a command the operator configures, since Postgres can't report it and every cloud provider finds it differently. The command lives in the `quaacks` config file on the jump server, `~/.quaack/config.json`, under the key `memory_command`:
+
+```json
+{ "memory_command": "aws rds describe-db-instances ... {host} ..." }
+```
+
+It's one line of shell. Each `{host}` becomes the production host, quoted as one shell word, and `/bin/sh -c` runs it with no stdin, throwing its stderr away. It must print the memory as a whole number of bytes, or as a whole number and a unit: `kB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, or `TiB`, in any case, with an optional space. Every unit is binary, as in Postgres, so `64GB` is 64 × 1024³ bytes. The command gets 30 seconds, and a timeout stops everything it started.
+
+- With no config file, or no `memory_command` in it, the step records the memory as unknown and carries on. Later steps that need it refuse clearly.
+- A command that fails aborts the step with `memory_command_failed`, one that runs too long with `memory_command_timed_out`, and one whose output isn't a size with `memory_command_bad_output`. The command's output never appears in any message.
+- A config file that's a symlink, isn't a readable regular file, isn't a JSON object, or has a `memory_command` that isn't one non-blank line is refused as `bad_config`, before the step connects.
+
+Failing to connect is `production_connection_failed`. A Postgres error while reading is `production_read_failed`, with its SQLSTATE. Neither error names the host, the user, or the server's message. Nothing is recorded unless the whole step succeeds.
+
+The inventory stays in the governed store. The step prints only its shape: production's major version and whether the memory is known.
+
 ## 3. Schema, statistics, and classification.
 
 ### 3a. Relations.
 
-Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, abort if the query uses a view or a materialized view. Don't handle partitioning until we need it.
+Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
 ### 3b. Schema dump.
 

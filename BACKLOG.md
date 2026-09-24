@@ -23,19 +23,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-4. Enclave command-line script. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-5. Driver transport.
-
-Build the driver side of the link: call enclave subcommands over ssh, pass arguments and untrusted inputs, and parse the results. Include a local transport so tests can run the enclave script without ssh.
-
-- **Depends on:** 20260922-4.
-- **README:** Where QUAACK runs.
-- **Note (from the reviews of 20260922-4 and 20260922-8):** The driver's contract for reading `quaacks` output:
-  - Skip blank lines, and lines that aren't JSON.
-  - Treat any run as failed if it printed an error line, exited nonzero, or died by a signal, and discard its other lines. A signal in the middle of a write can leave a cut-off line, and valid-looking lines can come before the error line.
-  - Exit codes are 0 for success, 64 when the CLI refuses a call, and 70 when a step fails. A signal death means the process died by that signal after writing its error line.
-- **Note (from the second review of 20260922-4):** A step can end the process with `exit!(0)`, which prints nothing, so an empty stdout isn't proof of success. 20260923-53 adds a final `done` line to every successful run. Treat a run as failed unless `done` is its last non-blank line. A flush failure can print `done` and then an error line.
-- **Status:** todo
-- **Decided:** Larger inputs go to the enclave script as a JSON document on stdin, piped into `ssh <jump server> quaacks <subcommand>`. The local test transport pipes the same JSON.
+### 20260922-5. Driver transport. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-6. LLM client. Done, see BACKLOG-COMPLETE.md.
 
@@ -81,39 +69,13 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ## Step 2: Production inventory.
 
-### 20260922-16. Production inventory.
-
-Check the connection to the production server and record the version, extensions, memory, planner settings, parallel settings, non-default GUCs from the plan's `SETTINGS`, `pg_database` locale fields, and `default_text_search_config`.
-
-- **Depends on:** 20260922-4, 20260922-13.
-- **README:** Step 2.
-- **Status:** todo
-- **Decided:**
-  - Connect with the operator's own libpq setup on the jump server: the host from the input, plus `PGUSER`, `~/.pgpass`, and `~/.pg_service.conf`. QUAACK stores no credentials, and it reads inside a read-only transaction.
-  - A `quaacks` config value holds a one-line shell command for finding instance memory, with the hostname filled in. The enclave script runs it on the jump server. That leaves room for any cloud provider.
-- **Open questions:** What does the memory command print (bytes, or a size like `64GB`)? What happens when it isn't configured, or when it fails?
+### 20260922-16. Production inventory. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 3: Schema, statistics, and classification.
 
-### 20260922-17. 3a relations.
+### 20260922-17. 3a relations. Done, see BACKLOG-COMPLETE.md.
 
-List the query's relations with pg_query and check each `relkind`. Abort on views and materialized views.
-
-- **Depends on:** 20260922-14.
-- **README:** 3a.
-- **Status:** todo
-- **Decided:** Allow only plain tables (`relkind` `r`). Abort on views, materialized views, partitioned tables, and foreign tables, and name the relation and its kind in the message.
-
-### 20260922-18. 3b schema dump and subset.
-
-Run the full schema-only dump on every namespace the query touches, plus `public`. Build the subset: the query's tables and their FK parent tables.
-
-- **Depends on:** 20260922-17.
-- **README:** 3b.
-- **Status:** todo
-- **Decided:**
-  - Include the whole FK chain up, not only direct parents, so arena can satisfy every FK.
-  - Don't parse the dump. Find the subset tables and their FK ancestors from `pg_catalog`, and get the subset from `pg_dump --table` for each one. This came from 20260923-1.
+### 20260922-18. 3b schema dump and subset. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-19. 3c statistics.
 
@@ -476,15 +438,15 @@ Wire every step together in the driver, from intake through the report and teard
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64.
 - **README:** All.
 - **Status:** todo
+- **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
+  - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
+  - Require the `teardown` line followed by the done line.
+  - Treat `store: "already_gone"` as success.
+  - On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand. The enclave never sends the path.
+  - Turn `next_step: "destroy_run_server"` into a plain operator message. Nothing destroys the run server automatically.
+  - Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command for later.
 
-### 20260922-66. Run teardown.
-
-At the end of a run, delete the governed store directory and tell the operator to destroy the run server.
-
-- **Depends on:** 20260922-3.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Decided:** Teardown runs when a run ends, whether it succeeded or aborted. A `--keep` flag leaves the run server and store directory in place for debugging, and `quaacks teardown <run>` removes them later.
+### 20260922-66. Run teardown. Done, see BACKLOG-COMPLETE.md.
 
 ## Added later.
 
@@ -506,6 +468,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Came from:** First review of 20260922-1.
 - **README:** Where QUAACK runs.
 - **Status:** todo
+- **Note (from 20260922-5):** The driver runs a bare `quaacks` over non-interactive ssh (`ssh -T -o BatchMode=yes -- host 'quaacks ...'`), so `quaacks` must be on PATH for a non-interactive session. The remote login shell must also be POSIX-compatible (bash, sh, or zsh). fish and csh break the Shellwords quoting.
 - **Decided:** The driver builds the `quaacks` and `quaack-protocol` gems locally, copies them to the jump server over ssh, and installs them into a user gem directory there. It checks the installed version before each run. There's no gem server.
 
 ### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
@@ -697,6 +660,7 @@ Findings from both reviews and the builder of 20260922-14:
 - **Came from:** Both reviews of 20260922-14, and its builder's notes.
 - **README:** Step 1.
 - **Status:** todo
+- **Note (from the review of 20260922-17):** RelationQualifier ignores the implicit `pg_temp` at the front of the search path. So a temp view named `orders` in the plan's session would resolve to `public.orders`. The enclave session has no temp relations, so this only matters if the plan's own session had one shadowing a real relation.
 
 ### 20260923-28. Canonical plan loose ends.
 
@@ -749,17 +713,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 
 ### 20260923-33. Fail closed on unsupported SQL constructs. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-34. Governed store loose ends.
-
-Minor findings from the second review of 20260923-32:
-- **`Store.open` and `#teardown` still let a raw `SystemCallError` out of `PrivateFiles.lstat`.** For example, after `File.chmod(0, base)`, both raise `Errno::EACCES` naming `<base>/<run_id>`. A base that's a regular file gives `Errno::ENOTDIR`. Nothing below the run directory is named, so nothing leaks, but the class promises `Store::Error`.
-- **The 4 MB-thread test pins `MAX_DEPTH` loosely on macOS.** A value of 6,000 still passes there, though it would likely fail on aarch64 Linux.
-- **Reading an entry that's a FIFO blocks forever.** Only the owner can plant one, so this is informational.
-
-- **Depends on:** 20260923-32.
-- **Came from:** Second review of 20260923-32.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-34. Governed store loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-35. Volatility check loose ends.
 
@@ -858,6 +812,7 @@ Minor findings from the reviews of 20260922-10:
 - **Came from:** The reviews of 20260922-10.
 - **README:** What goes into the enclave.
 - **Status:** todo
+- **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
 
 ### 20260923-58. Enclave CLI loose ends.
 
@@ -909,25 +864,7 @@ Findings from the reviews of 20260922-13:
 - **README:** Step 1.
 - **Status:** todo
 
-### 20260924-4. Parenthesize what pg_query deparses wrong.
-
-The round-trip guard (20260923-55) now correctly refuses supported constructs that pg_query's deparser prints without needed parentheses, which would change their meaning:
-- `(a OR b) IS NULL`
-- `(a AND b) IS NOT NULL`
-- `(NOT a) IS NULL`
-- `(a AND b) IN (true)`
-- `(a AND b) = ANY(...)`
-- `(a = 1) = ANY(ARRAY[true])`
-- `a IS NOT DISTINCT FROM (b AND c)`
-- `a BETWEEN (b AND c) AND d`
-- `created_at AT TIME ZONE ('UTC' || '')`
-
-Before deparsing, wrap the operand in an explicit parenthesis node, or post-process the SQL, so these round-trip and stop being refused. Keep the guard in place as the check. Also consider fixing shapes, which use `deparse_expr` and so turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`.
-
-- **Depends on:** 20260923-55.
-- **Came from:** The reviews of 20260923-55.
-- **README:** Step 1.
-- **Status:** todo
+### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
@@ -1029,6 +966,7 @@ Findings from the reviews of 20260922-9:
 - **Came from:** Both reviews of 20260922-9.
 - **README:** Trust boundary.
 - **Status:** todo
+- **Note:** The `pg` item is resolved. 20260922-16 made pg a runtime dependency of quaacks.
 
 ### 20260924-14. LLM client loose ends.
 
@@ -1087,6 +1025,129 @@ The three `Cast` survivors in `expression.rb` (the WITH line in `Cast#word?`, `a
 - **Depends on:** 20260924-11's branch.
 - **Came from:** Second review of 20260924-11.
 - **README:** 3g.
+- **Status:** todo
+
+### 20260924-17. Teardown loose ends.
+
+Findings from the reviews of 20260922-66:
+- **The rule is wrong when the recheck fails.** If the recheck `lstat` inside `Store.teardown`'s `rescue Error` raises a `SystemCallError`, such as EACCES after the base's mode changes mid-call, the raw Errno escapes as `internal_error`, where it should be `bad_store_base` or `teardown_failed`.
+- **The rule is wrong after a race.** If the run path is swapped for a non-directory between `open`'s check and the delete, the path is left alone, as it should be, but the rule is `teardown_failed`, not `bad_run`.
+- **A doc comment describes unbuilt behavior.** The top of `steps/teardown.rb` says the driver runs teardown at the end of every run. That's future work (20260922-65).
+- **A redundant check.** `return :already_gone unless PrivateFiles.lstat(path)` is an equivalent mutant, because the recheck already covers it. Keep it as a fast path with a comment, or drop it.
+
+- **Depends on:** 20260922-66.
+- **Came from:** The reviews of 20260922-66.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-18. Governed store loose ends, part two.
+
+Minor findings from the second review of 20260923-34:
+- **Nothing tests that create makes nothing through a linked `~/.quaack`.** In `Store.create`, replacing the first `in_base(...) { PrivateFiles.make_directories(base) }` with a plain call survives: the second check still raises BadBase, but `target/runs` gets created. Add a store case where the parent is linked and the target has no `runs`, and assert the target stays empty.
+- **The pre-open lstat's condition isn't pinned.** `unless File.lstat(file).file?` → `if File.lstat(file).directory?` survives. Stub `File.lstat` to return a FIFO's stat for a real regular-file entry, and expect a refusal. Also fix the `PrivateFiles.read` comment, which says no test can tell the lstat is there.
+- **`Store::BaseChecks` is a public constant.** Its methods are private, but it could be `private_constant`.
+- **A base directly under macOS `/tmp` is refused,** because `/tmp` is a symlink. Only a custom test base can hit this. `standalone_require_spec` falls back to `/tmp` when `TMPDIR` is unset.
+
+- **Depends on:** 20260923-34.
+- **Came from:** Second review of 20260923-34.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-19. 3a relations loose ends.
+
+Findings from the reviews of 20260922-17:
+- **A function in FROM can hide a view or foreign table.** With `CREATE FUNCTION public.f() RETURNS SETOF public.order_view LANGUAGE sql STABLE AS 'SELECT * FROM public.order_view'`, `SELECT * FROM f()` passes with relations `[]`, while EXPLAIN shows the base table scanned. Non-inlined functions have the same gap. README 3a says to list relations with pg_query, so this matches the letter of the README. But 3b and 3c may need the relations the plan actually scans. Decide whether to refuse set-returning functions in FROM, or to read relations from the plan.
+- **A relation named only in an unused CTE is still checked,** so it can over-refuse, for example `WITH c AS (SELECT id FROM p1) SELECT id FROM ONLY p1`.
+- **`Relations.check` always reads search_path,** where `RelationQualifier.qualify` reads it only when a name has no schema. It doesn't matter in practice.
+- **3b and 3c may need inheritance descendants,** because the scan reads them. `relations` lists only the tables the query names.
+- **A leaf partition named directly is relkind `r`, so it passes.** That's a question for the user.
+
+- **Depends on:** 20260922-17.
+- **Came from:** The reviews of 20260922-17.
+- **README:** 3a.
+- **Status:** todo
+
+### 20260924-20. Driver transport loose ends.
+
+Findings from the reviews of 20260922-5:
+- **A timeout doesn't stop the remote `quaacks`.** It kills only the local ssh process. With `-T`, the remote side gets no SIGHUP, and it can keep running queries on the jump server until it next writes. Options: run the remote side under `timeout`, or have the enclave CLI exit when stdin or stdout closes.
+- **Over ssh, a remote quaacks killed by a signal shows up as ssh exit 255,** so `killed?` is false. The error line still decides the rule.
+- **Lexical is skipped when a line starts with whitespace,** so json 2.9.1 and 3.0.2 read ` {"type":"error",/*c*/"rule":"zz"}` differently. Check `line.lstrip`, or run Lexical on every line.
+- **A child that closes stdout and then reads the rest of stdin hangs until the timeout,** because Pump stops writing on stdout EOF.
+- **A grandchild holding stdout makes a call wait out the whole timeout** (3,600s by default) and then report success.
+- **MAX_ARGV_BYTES doesn't bound the escaped ssh remote command.** Shellwords turns a newline into 3 bytes, so a value that passes can exceed Linux's 128 KiB per-argument limit and show up as `incomplete`. Cap the escaped length for Ssh.
+- **Three Pump mutants are caught only by hanging the suite.** Add a per-example timeout to the driver specs.
+- **The timeout test expects under 3s against a 1s timeout,** which could flake on a loaded machine.
+
+- **Depends on:** 20260922-5.
+- **Came from:** The reviews of 20260922-5.
+- **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260924-21. 9d Shape deparses without the round-trip guard.
+
+**High priority. It's a correctness bug in the 9d comparison.** `ResultComparison::Shape#build` in `enclave/lib/quaack/enclave/result_comparison.rb` calls raw `PgQuery.deparse`, with no round-trip guard and no parentheses. It runs on the real 9d path: `without_limit`, `with_tiebreaker`, and `probe`. For example, `Shape.parse("SELECT id FROM t WHERE (a OR b) IS NULL ORDER BY id LIMIT 5", nil).without_limit` returns `SELECT id FROM t WHERE a OR b IS NULL ORDER BY id`. That's a different query, and it silently changes what 9d compares. Route it through `Deparse.faithfully` (with the parentheses fix from 20260924-4 once that lands), and refuse cleanly when the guard refuses. Add a PG18 test where the raw deparse would change the rows. Also check for other raw `PgQuery.deparse` or `deparse_expr` calls in the enclave that build SQL to run, and route each one through the guard.
+
+- **Depends on:** 20260922-47, 20260923-55.
+- **Came from:** First review of 20260924-4.
+- **README:** 9d, Step 1.
+- **Status:** todo
+
+### 20260924-22. 3b schema dump loose ends.
+
+Findings from the build and reviews of 20260922-18:
+- **The subset DDL can't restore into an empty arena on its own.** `pg_dump --table` emits no `CREATE SCHEMA`, types, domains, enums, functions used in defaults or CHECKs, or extensions. That matters for 4b and step 10.
+- **A query table that's a partition needs its parent.** Its dump carries `ALTER TABLE ONLY <parent> ATTACH PARTITION`.
+- **The full dump covers only the query's namespaces plus public,** so a cross-schema FK ancestor is in the subset but not in the full dump. That follows the README, but it's worth knowing.
+- **Add `--no-password` (`-w`),** so pg_dump never prompts.
+- **A SQL_ASCII database with non-ASCII names crashes as `internal_error`.** It fails closed. Refuse SQL_ASCII by name, and list it as unsupported in v1.
+- **In EUC_JP or WIN1252 databases, tables aren't in UTF-8 byte order.** Sort in Ruby after transcoding.
+- **Near-miss secret keys aren't refused,** such as `"password "`, `PASSWORD`, or keys holding `=`. Require keys to match `/\A[a-z_]+\z/`.
+- **Untested paths:** the subset dump's lock-wait timeout, a signal-killed pg_dump beyond the message, and an empty conninfo.
+- **A password can hide in a dbname URI.**
+- **Both dumps are held in memory.**
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build and reviews of 20260922-18.
+- **README:** 3b.
+- **Status:** todo
+
+### 20260924-23. Deparse loose ends.
+
+Findings from the build and reviews of 20260924-4:
+- **`'t'::boolean` and `'f'::boolean` are still refused.** The deparser prints them as `true` and `false`, which parse to a different tree.
+- **Shapes turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`,** because `deparse_expr` strips every `SELECT WHERE `.
+- **Very deep queries raise RuntimeError instead of deparse_mismatch.** The wrappers can push a tree past pg_query's encode limit of 1,000, for example `(e OR b) IS TRUE` nested 150 times. It fails closed as `internal_error`, but callers that rescue only `Deparse::Error` (generator two, index SQL, relations, and the rewrite candidate check) abort instead of skipping. Rescue the encode error in `faithful_parse`, and raise `Error`.
+- **Stale comments:** `predicate_atoms.rb` lines 82–89, `index_candidate.rb` lines 52–55, and `deparse.rb` lines 15–21, which don't mention Parentheses.
+- **Four mutants refuse rare SQL without a test noticing:** the `b_expr` edits at `parentheses.rb` line 156 (three variants), and `operator_level(..., subquery: true)` at line 300. Pin them if it's cheap.
+- **The deparse_spec matrix adds about 20s** to the enclave suite.
+
+- **Depends on:** 20260924-4.
+- **Came from:** The build and reviews of 20260924-4.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260924-24. Production inventory loose ends.
+
+Findings from the build and reviews of 20260922-16:
+- **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
+- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 must also decide whether to compare the run server with these values or with the plan's own Settings.
+- **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
+- **`"memory_command": null` counts as not configured,** but the README says that's `bad_config`.
+- **There's no upper bound on the memory size.**
+- **A background child that holds stdout makes the memory command wait out the full timeout,** and a `setsid` child escapes the process-group kill.
+- **`pg` now loads for every `quaacks` subcommand.**
+- **Spec noise:** `ProductionServer` prints NOTICE lines into the rake output.
+- **Surviving mutants:**
+  - config: invalid UTF-8 handling
+  - memory: a double space before the unit, `reap`, the TIMEOUT and MAX_OUTPUT values, and a spawn failure
+  - inventory: closing the connection
+  - the step: a hardcoded `major_version`
+- **3a's `Relations.check`** could use `Inventory::Production.connect` and `read_only`.
+
+- **Depends on:** 20260922-16.
+- **Came from:** The build and reviews of 20260922-16.
+- **README:** Step 2.
 - **Status:** todo
 
 ## After version 1.

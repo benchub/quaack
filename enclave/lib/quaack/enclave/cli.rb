@@ -4,11 +4,14 @@ require_relative "egress"
 require_relative "error_filter"
 require_relative "store"
 require_relative "cli/refused"
+require_relative "cli/bad_store_base"
 require_relative "cli/arguments"
 require_relative "cli/input"
 require_relative "cli/output"
 require_relative "steps/version"
 require_relative "steps/intake"
+require_relative "steps/teardown"
+require_relative "steps/inventory"
 
 module Quaack
   module Enclave
@@ -48,14 +51,20 @@ module Quaack
       # dashes, to :value or :flag (see Arguments). required names the
       # options a call must give.
       #
+      # A step that names a run without opening it (run_id: true) takes
+      # --run too, but gets no Store. It gets the run ID, checked only for
+      # its form, as run_id:, and the store base as store_base:. That's for
+      # teardown, whose run may already be gone.
+      #
       # A new run is made only once argv and stdin have been read and
       # checked, so a usage or bad_input refusal never makes one. It's
       # deleted again unless the call succeeds all the way through its done
       # line, so a failed call leaves no run behind, and none that holds
       # inputs the step went on to refuse.
-      Step = Data.define(:handler, :input, :run, :new_run, :options, :required) do
-        def initialize(handler:, input: false, run: false, new_run: false, options: {}, required: [])
+      Step = Data.define(:handler, :input, :run, :new_run, :run_id, :options, :required) do
+        def initialize(handler:, input: false, run: false, new_run: false, run_id: false, options: {}, required: [])
           raise ArgumentError, "a step can't both start a run and open one" if run && new_run
+          raise ArgumentError, "a step that names a run can't also open or start one" if run_id && (run || new_run)
 
           super
         end
@@ -67,7 +76,9 @@ module Quaack
       STEPS = {
         "version" => Step.new(handler: Steps::Version),
         "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS,
-                             required: Steps::Intake::REQUIRED)
+                             required: Steps::Intake::REQUIRED),
+        "teardown" => Step.new(handler: Steps::Teardown, run_id: true),
+        "inventory" => Step.new(handler: Steps::Inventory, run: true)
       }.freeze
 
       # Other names for a subcommand.
@@ -152,7 +163,7 @@ module Quaack
       def with_new_run(step)
         return yield(nil) unless step.new_run
 
-        store = Store.create(base: store_base)
+        store = BadStoreBase.from_store { Store.create(base: store_base) }
         begin
           yield store
         rescue Exception # rubocop:disable Lint/RescueException
@@ -171,7 +182,7 @@ module Quaack
       # run with_new_run started, if any.
       def dispatch(step, arguments, input, new_store)
         store = step.run ? open_store(arguments.run_id) : new_store
-        messages = call_step(step, input:, store:, options: arguments.options)
+        messages = call_step(step, input:, store:, options: arguments.options, **named_run(step, arguments.run_id))
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)
 
         [*messages.filter_map { Egress.serialize(it) }, DONE].map { "#{it}\n" }.join
@@ -192,14 +203,25 @@ module Quaack
 
       # The run ID's form is checked first, so a missing (nil) or malformed
       # one is usage, and a well-formed one with no usable run is bad_run.
+      # A store base it can't use is bad_store_base.
       def open_store(run_id)
         raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
 
         begin
-          Store.open(run_id, base: store_base)
+          BadStoreBase.from_store { Store.open(run_id, base: store_base) }
         rescue Store::Error
           raise Refused, "bad_run", cause: nil
         end
+      end
+
+      # What a step that names a run without opening it gets: the run ID,
+      # checked as open_store checks it, and the store base. Other steps get
+      # neither.
+      def named_run(step, run_id)
+        return {} unless step.run_id
+        raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
+
+        { run_id:, store_base: }
       end
 
       def store_base = @store_base || Store.default_base

@@ -236,8 +236,10 @@ module Quaack
           )))
         end
 
-        # The atom's SQL, with every constant replaced.
-        def shape(node) = PgQuery.deparse_expr(replace(Tree.copy(node)))
+        # The atom's SQL, with every constant replaced, and with the
+        # parentheses the deparser leaves out (20260924-4). A shape is only
+        # reported, so it isn't checked by parsing it back.
+        def shape(node) = PgQuery.deparse_expr(Deparse::Parentheses.add!(replace(Tree.copy(node))))
 
         private
 

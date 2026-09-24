@@ -43,7 +43,7 @@ module Boundary
   # enclave's dependencies don't match it exactly, and
   # runtime_boundary_spec.rb fails if the enclave loads a gem that isn't on
   # it. Never add the driver gem or an LLM SDK.
-  ENCLAVE_ALLOWED_GEMS = %w[bigdecimal google-protobuf pg_query quaack-protocol rake].freeze
+  ENCLAVE_ALLOWED_GEMS = %w[bigdecimal google-protobuf pg pg_query quaack-protocol rake].freeze
 
   ENCLAVE_FORBIDDEN_REQUIRES = ["quaack/driver", *LLM_SDK_REQUIRES].freeze
   # Both sides load the protocol gem, so it obeys both sides' rules.

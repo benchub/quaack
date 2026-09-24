@@ -347,18 +347,30 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
       end
     end
 
-    it "refuses IS NOT DISTINCT FROM with AND, which would read different rows" do
+    # pg_query alone drops the parentheses, and its SQL reads no rows. The
+    # parentheses Deparse adds (20260924-4) keep the query's meaning.
+    it "keeps IS NOT DISTINCT FROM with AND, which would otherwise read different rows" do
       sql = "SELECT count(*) FROM orders WHERE (status = $1) IS NOT DISTINCT FROM (true AND false)"
       count = ->(query) { conn.exec_params(query, ["shipped"]).getvalue(0, 0).to_i }
       deparsed = deparse(sql)
       expect(deparsed).to eq("SELECT count(*) FROM orders WHERE status = $1 IS NOT DISTINCT FROM true AND false")
       expect([count.call(sql), count.call(deparsed)]).to match([be_positive, 0])
 
-      expect { qualify(sql) }.to deparse_mismatch
+      qualified = qualify(sql).sql
+      expect(qualified)
+        .to eq("SELECT count(*) FROM public.orders WHERE status = $1 IS NOT DISTINCT FROM (true AND false)")
+      expect(count.call(qualified)).to eq(count.call(sql))
     end
 
-    it "refuses an ARRAY subquery's subscript, which would deparse to SQL that doesn't parse" do
-      expect { qualify("SELECT (ARRAY(SELECT id FROM orders))[1]") }.to deparse_mismatch
+    it "keeps an ARRAY subquery's subscript, which would otherwise deparse to SQL that doesn't parse" do
+      expect(qualify("SELECT (ARRAY(SELECT id FROM orders))[1]").sql)
+        .to eq("SELECT (ARRAY(SELECT id FROM public.orders))[1]")
+    end
+
+    # The deparser writes 't'::boolean as true, which parses to another
+    # tree, so the guard still has something to refuse.
+    it "refuses what the deparser still changes" do
+      expect { qualify("SELECT id FROM orders WHERE 't'::boolean") }.to deparse_mismatch
     end
 
     it "gives the qualified SQL's own parse, which matches it" do

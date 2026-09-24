@@ -30,6 +30,20 @@ module Quaack
       # started and eight random hex characters, never anything from the
       # operator's inputs.
       run: %i[run_id].freeze,
+      # What `quaacks teardown` did with a run. run_id comes from argv, and
+      # the CLI sends it back only once it matches the Store run ID form:
+      # the UTC time the run started and eight random hex characters. store
+      # is deleted or already_gone. next_step is always destroy_run_server,
+      # since the enclave can't destroy the run server itself, so the
+      # operator must. store and next_step are the enclave's own constants.
+      # None of the three is ever read from the run.
+      teardown: %i[run_id store next_step].freeze,
+      # What `quaacks inventory` recorded, as shape only. major_version is
+      # an Integer, production's server_version_num divided by 10,000, such
+      # as 18. memory_known is true or false: whether the operator's memory
+      # command gave the instance memory. The inventory itself, its settings,
+      # locale names, and extensions, stays in the store.
+      inventory: %i[major_version memory_known].freeze,
       # The README 15b burndown. Its values are nested Hashes, so unlike
       # every other field, they're checked on the way out: the egress
       # function sends them only if Protocol::Burndown.valid? passes, so

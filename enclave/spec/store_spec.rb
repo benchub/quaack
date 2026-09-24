@@ -6,6 +6,7 @@ require "time"
 require "timeout"
 require "tmpdir"
 require "quaack/enclave/store"
+require "quaack/enclave/store/teardown"
 
 # Stands in for a real production value kept in the store. It must never show
 # up in an error message.
@@ -48,30 +49,47 @@ RSpec.describe Quaack::Enclave::Store do
   end
 
   describe ".create" do
-    it "raises Store::Error, naming only the base, when the base is a file" do
-      file = File.join(@tmp, "file")
+    # Each base is named for the sentinel, so a message that named the base
+    # would show it.
+    it "raises Store::Error, naming no path, when the base is a file" do
+      file = File.join(@tmp, STORE_SENTINEL)
       File.write(file, STORE_SENTINEL)
 
-      expect_store_error(/\Acouldn't make the base directory #{file}\z/) { described_class.create(base: file) }
+      expect_store_error(/\Acouldn't make the store's base directory\z/) { described_class.create(base: file) }
       expect(File.read(file)).to eq(STORE_SENTINEL)
     end
 
-    it "raises Store::Error, naming only the base, when the base can't be made" do
+    it "raises Store::Error, naming no path, when the base can't be made" do
       locked = File.join(@tmp, "locked")
       Dir.mkdir(locked, 0o555)
-      deep = File.join(locked, "runs")
+      deep = File.join(locked, STORE_SENTINEL)
 
-      expect_store_error(/\Acouldn't make the base directory #{deep}\z/) { described_class.create(base: deep) }
+      expect_store_error(/\Acouldn't make the store's base directory\z/) { described_class.create(base: deep) }
     ensure
       File.chmod(0o700, locked)
     end
 
-    it "raises Store::Error, naming only the base, when the run's directory can't be made in it" do
+    it "raises Store::Error, naming no path, when the run's directory can't be made in the base" do
+      shut = File.join(@tmp, STORE_SENTINEL).tap { Dir.mkdir(it, 0o500) }
+
+      expect_store_error(/\Acouldn't make a run directory in the store's base\z/) do
+        described_class.create(base: shut)
+      end
+    ensure
+      File.chmod(0o700, shut)
+    end
+
+    it "raises BadBase when the base is a file, can't be made, or can't take a run's directory" do
+      file = File.join(@tmp, "file").tap { File.write(it, "") }
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it, 0o000) }
       Dir.mkdir(base, 0o500)
 
-      expect_store_error(/\Acouldn't make a run directory in #{base}\z/) { described_class.create(base:) }
+      [file, File.join(closed, "runs"), base].each do |bad_base|
+        expect { described_class.create(base: bad_base) }.to raise_error(described_class::BadBase), bad_base
+      end
+      expect(described_class::BadBase.superclass).to eq(described_class::Error)
     ensure
-      File.chmod(0o700, base)
+      File.chmod(0o700, closed, base)
     end
 
     it "names the run with a UTC timestamp and eight random hex characters" do
@@ -237,7 +255,9 @@ RSpec.describe Quaack::Enclave::Store do
 
     # The jump server's main thread has an 8 MB stack, and JSON needs the
     # most stack to write nested Hashes. A thread with half that must still
-    # manage MAX_DEPTH, so the cap leaves room to spare.
+    # manage MAX_DEPTH, so the cap leaves room to spare. How much room
+    # depends on the platform, so this doesn't pin MAX_DEPTH's value. The
+    # PlainData spec does.
     it "keeps Arrays and Hashes nested MAX_DEPTH deep in a thread with a 4 MB stack" do
       out = in_thread(4 * 1024 * 1024, <<~RUBY)
         s = Quaack::Enclave::Store.create(base: ARGV[0])
@@ -413,6 +433,43 @@ RSpec.describe Quaack::Enclave::Store do
 
       expect_store_error(/inputs.*#{store.run_id}/) { store.read("inputs") }
     end
+
+    # Opening a FIFO for reading waits for a writer, so without the checks
+    # read would never return. The timeout turns that into a failure.
+    it "refuses an entry that's a FIFO, rather than wait for a writer" do
+      File.mkfifo(File.join(store.path, "inputs.json"))
+
+      Timeout.timeout(5) do
+        expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
+      end
+    end
+
+    # The entry is swapped for a FIFO after read looks at it: the stand-in
+    # lstat reports a regular file, as the lstat before the swap would. So
+    # only the open, which mustn't wait, and the check after it stop it.
+    it "refuses an entry that turns out to be a FIFO once it's open, rather than wait for a writer" do
+      fifo = File.join(store.path, "inputs.json").tap { File.mkfifo(it) }
+      regular = File.lstat(File.join(@tmp, "regular").tap { File.write(it, "[]") })
+      allow(File).to(receive(:lstat).and_wrap_original { |lstat, path| path == fifo ? regular : lstat.call(path) })
+
+      Timeout.timeout(5) do
+        expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
+      end
+      expect(File).to have_received(:lstat).with(fifo)
+    end
+
+    # The same swap, to a symlink to a regular file outside the run: only
+    # the open's O_NOFOLLOW stops it, since the fstat would find a regular
+    # file.
+    it "won't follow an entry that turns out to be a symlink once it's opened" do
+      outside = File.join(@tmp, "outside.json").tap { File.write(it, "[\"#{STORE_SENTINEL}\"]") }
+      linked = File.join(store.path, "inputs.json").tap { File.symlink(outside, it) }
+      regular = File.lstat(outside)
+      allow(File).to(receive(:lstat).and_wrap_original { |lstat, path| path == linked ? regular : lstat.call(path) })
+
+      expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
+      expect(File).to have_received(:lstat).with(linked)
+    end
   end
 
   describe "#entry?" do
@@ -490,6 +547,22 @@ RSpec.describe Quaack::Enclave::Store do
         described_class.open("20260923T221500Z-01234567", base:)
       end
     end
+
+    it "raises BadBase, naming only the run, when the base is a file or can't be searched" do
+      file = File.join(@tmp, STORE_SENTINEL).tap { File.write(it, STORE_SENTINEL) }
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it) }
+      FileUtils.mkdir_p(File.join(closed, "runs", store.run_id), mode: 0o700)
+      File.chmod(0o000, closed)
+
+      [file, File.join(closed, "runs")].each do |bad_base|
+        expect_store_error(/\Acouldn't look up run #{store.run_id} in the store's base\z/) do
+          described_class.open(store.run_id, base: bad_base)
+        end
+        expect { described_class.open(store.run_id, base: bad_base) }.to raise_error(described_class::BadBase)
+      end
+    ensure
+      File.chmod(0o700, closed)
+    end
   end
 
   describe "#teardown" do
@@ -544,6 +617,270 @@ RSpec.describe Quaack::Enclave::Store do
       expect_store_error(/#{store.run_id}.*isn't a directory/) { store.teardown }
       expect(File.symlink?(store.path)).to be(true)
       expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+
+    it "raises BadBase, naming only the run, when the base has become a file or can't be searched" do
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it) }
+      shut = described_class.create(base: File.join(closed, "runs"))
+      File.chmod(0o000, closed)
+      FileUtils.rm_r(store.path.then { File.dirname(it) })
+      File.write(base, STORE_SENTINEL)
+
+      [shut, store].each do |gone|
+        expect_store_error(/\Acouldn't look up run #{gone.run_id} in the store's base\z/) { gone.teardown }
+        expect { gone.teardown }.to raise_error(described_class::BadBase)
+      end
+      expect(File.read(base)).to eq(STORE_SENTINEL)
+    ensure
+      File.chmod(0o700, closed)
+    end
+  end
+
+  # QUAACK makes ~/.quaack and ~/.quaack/runs, so neither may be a symlink:
+  # the store would live wherever it points. Create, open, and both
+  # teardowns refuse such a base as BadBase, making and deleting nothing
+  # through it. Each link's target is named for the sentinel, so a message
+  # that named it would show.
+  describe "a base that's a symlink, or sits in one" do
+    let(:run_id) { "20260923T221500Z-0a1b2c3d" }
+    let(:target) { File.join(@tmp, STORE_SENTINEL) }
+
+    def contents(dir) = Dir.glob("**/*", File::FNM_DOTMATCH, base: dir).sort
+
+    def expect_bad_base(&)
+      expect_store_error(/\Athe store's base is a symlink, or is in one, so it wasn't used\z/, &)
+      expect(&).to raise_error(described_class::BadBase)
+    end
+
+    # Makes dir, and each directory below it down to the last of below,
+    # mode 0700, so open would open a run planted this way.
+    def plant_run(dir, *below)
+      [dir, *below.each_index.map { File.join(dir, *below[..it]) }].each { Dir.mkdir(it, 0o700) }
+    end
+
+    # The link's name in the temp directory, and where the base is below it.
+    { "the base is a symlink" => ["runs", []],
+      "the base's parent is a symlink" => [".quaack", ["runs"]] }.each do |name, (link_name, below)|
+      describe "when #{name}" do
+        let(:link) { File.join(@tmp, link_name) }
+        let(:linked) { File.join(link, *below) }
+        let(:real) { File.join(target, *below) }
+
+        # A run open would open, wherever the link points, so only the check
+        # on the base stops each call below.
+        before do
+          plant_run(target, *below, run_id)
+          File.symlink(target, link)
+        end
+
+        it "plants a run that open opens through the link's target" do
+          expect(described_class.open(run_id, base: real).path).to eq(File.join(real, run_id))
+        end
+
+        it "won't create a run in it" do
+          before = contents(target)
+
+          expect_bad_base { described_class.create(base: linked) }
+          expect(contents(target)).to eq(before)
+        end
+
+        it "won't open a run in it" do
+          expect_bad_base { described_class.open(run_id, base: linked) }
+        end
+
+        it "won't tear down a run in it by run ID" do
+          before = contents(target)
+
+          expect_bad_base { described_class.teardown(run_id, base: linked) }
+          expect(contents(target)).to eq(before)
+        end
+
+        # A trailing slash makes lstat follow the link, so the base must be
+        # normalized before the check.
+        it "refuses it the same way when its name ends in slashes" do
+          before = contents(target)
+
+          ["#{linked}/", "#{linked}//"].each do |slashed|
+            expect_bad_base { described_class.create(base: slashed) }
+            expect_bad_base { described_class.open(run_id, base: slashed) }
+            expect_bad_base { described_class.teardown(run_id, base: slashed) }
+          end
+          expect(contents(target)).to eq(before)
+        end
+
+        it "won't say a run that isn't in it is already gone" do
+          expect_bad_base { described_class.teardown("20260923T221500Z-00000009", base: linked) }
+        end
+      end
+
+      it "won't tear down a run it opened once #{name.sub("is a", "has become a")}" do
+        link = File.join(@tmp, link_name)
+        plant_run(link, *below, run_id)
+        opened = described_class.open(run_id, base: File.join(link, *below))
+        File.rename(link, target)
+        File.symlink(target, link)
+
+        # Inside a rescue, as when the CLI deletes the run of a failed step,
+        # so the error mustn't take the one being handled as its cause.
+        begin
+          raise STORE_SENTINEL
+        rescue RuntimeError
+          expect_bad_base { opened.teardown }
+        end
+        expect(File.directory?(File.join(target, *below, run_id))).to be(true)
+      end
+    end
+  end
+
+  # Teardown by run ID, for `quaacks teardown`, which must also work on a
+  # run whose directory is already gone.
+  describe ".teardown" do
+    def plant_run_path(name)
+      FileUtils.mkdir_p(base)
+      File.join(base, name)
+    end
+
+    it "deletes the named run's directory and everything in it, leaves other runs, and returns :deleted" do
+      store.write("literals", [STORE_SENTINEL])
+      other = described_class.create(base:)
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(base)).to eq([other.run_id])
+    end
+
+    it "returns :already_gone for a well-formed run ID with nothing there, even with no base" do
+      store.teardown
+      missing = File.join(@tmp, "missing")
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(described_class.teardown(store.run_id, base: missing)).to eq(:already_gone)
+      expect(File.exist?(missing)).to be(false)
+    end
+
+    it "refuses a run ID that isn't in the RUN_ID form, and deletes nothing, in the base or outside it" do
+      target = File.join(@tmp, "20260923T221500Z-0a1b2c3d")
+      Dir.mkdir(target, 0o700)
+      ["../20260923T221500Z-0a1b2c3d", "..", ".", "", "/tmp", STORE_SENTINEL, "#{store.run_id}/", nil, 1,
+       store.run_id.to_sym].each do |bad|
+        expect_store_error(/\Arun ID isn't in the form/) { described_class.teardown(bad, base:) }
+      end
+      expect(File.directory?(target)).to be(true)
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "refuses a run path that's a symlink, a file, or a directory not mode 0700, and leaves it" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside, 0o700)
+      File.write(File.join(outside, "#{STORE_SENTINEL}.json"), "[]")
+      linked = plant_run_path("20260923T221500Z-00000001").tap { File.symlink(outside, it) }
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, STORE_SENTINEL) }
+      loose = plant_run_path("20260923T221500Z-00000003").tap { Dir.mkdir(it) && File.chmod(0o755, it) }
+
+      [linked, file, loose].each do |path|
+        run_id = File.basename(path)
+        expect_store_error(/\Arun #{run_id} has /) { described_class.teardown(run_id, base:) }
+      end
+      expect(File.symlink?(linked)).to be(true)
+      expect(Dir.children(outside)).to eq(["#{STORE_SENTINEL}.json"])
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+      expect(File.directory?(loose)).to be(true)
+    end
+
+    it "refuses a run directory owned by someone else, and leaves it" do
+      expect_store_error(/owned by uid/) do
+        described_class.teardown(store.run_id, base:, current_uid: Process.euid + 1)
+      end
+      expect(File.directory?(store.path)).to be(true)
+    end
+
+    it "raises Store::Error, naming only the run, when it can't delete the directory" do
+      locked = File.join(store.path, "locked")
+      Dir.mkdir(locked)
+      File.write(File.join(locked, "#{STORE_SENTINEL}.json"), "[]")
+      File.chmod(0o500, locked)
+
+      expect_store_error(/\Acouldn't delete the directory of run #{store.run_id}\z/) do
+        described_class.teardown(store.run_id, base:)
+      end
+    ensure
+      File.chmod(0o700, locked)
+    end
+
+    it "raises BadRun for a run path it refuses, and a Store::Error that isn't one when the delete fails" do
+      file = plant_run_path("20260923T221500Z-00000002").tap { File.write(it, "") }
+      expect { described_class.teardown(File.basename(file), base:) }.to raise_error(described_class::BadRun)
+      expect(described_class::BadRun.superclass).to eq(described_class::Error)
+
+      locked = File.join(store.path, "locked").tap { Dir.mkdir(it) }
+      File.write(File.join(locked, "kept.json"), "[]")
+      File.chmod(0o500, locked)
+      expect { described_class.teardown(store.run_id, base:) }.to raise_error(described_class::Error) do |error|
+        expect(error).not_to be_a(described_class::BadRun)
+      end
+    ensure
+      File.chmod(0o700, locked) if locked
+    end
+
+    it "doesn't follow a symlink out of the run directory" do
+      outside = File.join(@tmp, "outside")
+      Dir.mkdir(outside)
+      File.write(File.join(outside, "keep.json"), "[]")
+      File.symlink(outside, File.join(store.path, "linked"))
+      File.symlink(File.join(outside, "keep.json"), File.join(store.path, "keep.json"))
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:deleted)
+      expect(File.exist?(store.path)).to be(false)
+      expect(Dir.children(outside)).to eq(["keep.json"])
+    end
+
+    it "refuses a dangling symlink at the run path as BadRun, and leaves it" do
+      dangling = plant_run_path("20260923T221500Z-00000004").tap { File.symlink(File.join(@tmp, "missing"), it) }
+
+      expect { described_class.teardown(File.basename(dangling), base:) }.to raise_error(described_class::BadRun)
+      expect(File.symlink?(dangling)).to be(true)
+    end
+
+    # Another teardown of the same run can delete it partway through this
+    # one. The stand-in rm_r deletes the directory first, as the other
+    # call would, and then runs the real rm_r, which finds it gone.
+    it "returns :already_gone when the run vanishes while it's being deleted" do
+      allow(FileUtils).to receive(:rm_r).and_wrap_original do |rm_r, path, **options|
+        rm_r.call(path)
+        rm_r.call(path, **options)
+      end
+
+      expect(described_class.teardown(store.run_id, base:)).to eq(:already_gone)
+      expect(File.exist?(store.path)).to be(false)
+    end
+
+    it "raises BadBase, naming only the run, when the base is a file or can't be searched" do
+      file = File.join(@tmp, STORE_SENTINEL).tap { File.write(it, STORE_SENTINEL) }
+      closed = File.join(@tmp, "closed").tap { Dir.mkdir(it) }
+      FileUtils.mkdir_p(File.join(closed, "runs", store.run_id))
+      File.chmod(0o000, closed)
+
+      [file, File.join(closed, "runs")].each do |bad_base|
+        expect_store_error(/\Acouldn't look up run #{store.run_id} in the store's base\z/) do
+          described_class.teardown(store.run_id, base: bad_base)
+        end
+        expect { described_class.teardown(store.run_id, base: bad_base) }.to raise_error(described_class::BadBase)
+      end
+      expect(File.read(file)).to eq(STORE_SENTINEL)
+    ensure
+      File.chmod(0o700, closed)
+    end
+
+    it "keeps the run-path helper private" do
+      expect(described_class.private_methods).to include(:run_path)
+      expect { described_class.run_path(store.run_id, base) }.to raise_error(NoMethodError)
+    end
+
+    it "keeps the base helpers private, on the class and on a store" do
+      [described_class, store].each do |receiver|
+        expect(receiver.private_methods).to include(:in_base, :look_up)
+        expect { receiver.look_up(store.run_id, base) { nil } }.to raise_error(NoMethodError)
+      end
     end
   end
 end
