@@ -53,14 +53,21 @@ module Quaack
       # grouping calls. Function volatility needs the catalog, so it isn't
       # checked here (see README 3d).
       def check_predicate_node(node)
-        problem = case node
-                  when PgQuery::ParamRef then "a parameter"
-                  when PgQuery::SubLink then "a subquery"
-                  when PgQuery::GroupingFunc, PgQuery::JsonArrayAgg, PgQuery::JsonObjectAgg
-                    "an aggregate, window, or grouping function"
-                  when PgQuery::FuncCall then "an aggregate, window, or grouping function" if aggregate?(node)
-                  end
+        problem = forbidden(node)
         raise ArgumentError, "predicate can't use #{problem}" if problem
+      end
+
+      # What's wrong with node, as check_predicate_node describes it, or nil.
+      # IndexDdlCheck uses it for index expressions too, where Postgres
+      # refuses the same things.
+      def forbidden(node)
+        case node
+        when PgQuery::ParamRef then "a parameter"
+        when PgQuery::SubLink then "a subquery"
+        when PgQuery::GroupingFunc, PgQuery::JsonArrayAgg, PgQuery::JsonObjectAgg
+          "an aggregate, window, or grouping function"
+        when PgQuery::FuncCall then "an aggregate, window, or grouping function" if aggregate?(node)
+        end
       end
 
       def aggregate?(call) = aggregate_syntax?(call) || built_in_aggregate?(call)
