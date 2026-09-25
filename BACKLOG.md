@@ -89,14 +89,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ## Step 5: Plan gate and index candidates.
 
-### 20260922-28. 5 plan gate.
-
-`EXPLAIN` the original query on the racetrack with the slow literals and compare canonical forms with the step 1 plan. On mismatch, abort and name stale racetrack statistics as the likely cause.
-
-- **Depends on:** 20260922-26, 20260922-15, 20260922-21, 20260922-23.
-- **README:** Step 5.
-- **Status:** todo
-- **Note (from 20260922-26):** CanonicalPlan fingerprints include function names, so a racetrack qual like `created_at > quaack.clock_anchor()` won't match production's `created_at > now()`. Map the anchor back to the original functions (as `ClockAnchoring.restore` does), or normalize both sides, before comparing.
+### 20260922-28. 5 plan gate. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-29. 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
@@ -1164,6 +1157,17 @@ Minor findings from the first review of 20260922-12:
 - **Depends on:** 20260922-12.
 - **Came from:** The first review of 20260922-12.
 - **README:** What goes into the enclave.
+- **Status:** todo
+
+### 20260925-3. Plan gate loose ends.
+
+Minor findings from the first review of 20260922-28:
+- **The `Redaction.binding` call in `plan_gate.rb` is untested.** Deleting it stays green. Add a test that SQL which doesn't bind to the stored map (an extra `$n`, or unredacted SQL) raises `Redaction::Error`.
+- **The guards in `CanonicalPlan#unqualify_type` are untested.** Removing the anchor-only guard or the `names.size > 1` guard stays green. Test them, or drop the guards if stripping `pg_catalog` from every cast is fine.
+
+- **Depends on:** 20260922-28.
+- **Came from:** The first review of 20260922-28.
+- **README:** Step 5.
 - **Status:** todo
 
 ## After version 1.
