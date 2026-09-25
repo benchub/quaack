@@ -18,19 +18,20 @@ module Quaack
       # Parses a predicate as the WHERE clause of an otherwise empty SELECT,
       # and refuses it unless that SELECT has nothing but the WHERE clause.
       # That keeps a second statement, a UNION, or a stray ORDER BY out of
-      # the DDL. Returns the parsed expression node.
-      def parse_predicate(sql)
+      # the DDL. Returns the parsed expression node. A key expression is
+      # parsed the same way, and what names it in the errors.
+      def parse_predicate(sql, what: "predicate")
         result = PgQuery.parse("SELECT WHERE #{sql}")
         stmts = result.tree.stmts
         select = stmts.first.stmt.select_stmt if stmts.size == 1
         where = select&.where_clause
         bare = PgQuery::SelectStmt.new(where_clause: where, limit_option: :LIMIT_OPTION_DEFAULT, op: :SETOP_NONE)
-        raise ArgumentError, "predicate must be a single SQL expression" unless where && select == bare
+        raise ArgumentError, "#{what} must be a single SQL expression" unless where && select == bare
 
-        result.walk! { |node| check_predicate_node(node) }
+        result.walk! { |node| check_predicate_node(node, what) }
         where
       rescue PgQuery::ParseError
-        raise ArgumentError, "predicate doesn't parse as SQL", cause: nil
+        raise ArgumentError, "#{what} doesn't parse as SQL", cause: nil
       end
 
       # Every aggregate and window function in pg_catalog on Postgres 18. The
@@ -52,9 +53,9 @@ module Quaack
       # tree can show: parameters, subqueries, and aggregate, window, or
       # grouping calls. Function volatility needs the catalog, so it isn't
       # checked here (see README 3d).
-      def check_predicate_node(node)
+      def check_predicate_node(node, what = "predicate")
         problem = forbidden(node)
-        raise ArgumentError, "predicate can't use #{problem}" if problem
+        raise ArgumentError, "#{what} can't use #{problem}" if problem
       end
 
       # What's wrong with node, as check_predicate_node describes it, or nil.
@@ -90,10 +91,10 @@ module Quaack
       # expression that means something else, such as (a = 1) IS NOT
       # DISTINCT FROM (b AND c) without its parentheses, so it must parse
       # back to the same node (see Deparse).
-      def deparse_predicate(node)
+      def deparse_predicate(node, what: "predicate")
         Deparse.expression(node)
       rescue Deparse::Error
-        raise ArgumentError, "predicate changes meaning when pg_query deparses it", cause: nil
+        raise ArgumentError, "#{what} changes meaning when pg_query deparses it", cause: nil
       end
 
       # See IndexCandidate.from_ddl.
@@ -119,7 +120,7 @@ module Quaack
         where = stmt.where_clause
         IndexCandidate.new(
           table: table_name(stmt.relation),
-          key: stmt.index_params.map { |n| key_column(n.index_elem) },
+          key: stmt.index_params.map { |n| IndexKeySql.key_column(n.index_elem) },
           include: stmt.index_including_params.map { |n| n.index_elem.name },
           access_method: stmt.access_method, predicate: where && deparse_predicate(where),
           unique: stmt.unique, sources:
@@ -130,25 +131,13 @@ module Quaack
 
       def table_name(range_var) = TableName.new(schema: range_var.schemaname, name: range_var.relname)
 
-      def key_column(elem)
-        IndexCandidate::KeyColumn.new(
-          name: elem.name, direction: elem.ordering == :SORTBY_DESC ? :desc : :asc,
-          nulls: { SORTBY_NULLS_FIRST: :first, SORTBY_NULLS_LAST: :last }[elem.nulls_ordering]
-        )
-      end
-
       # Changes the parsed statement in place to what to_ddl would render: no
-      # name, and ASC or default nulls orderings left implicit. CONCURRENTLY
-      # and IF NOT EXISTS stay, so from_ddl returns nil for them.
-      # pg_get_indexdef never prints either.
+      # name, and each key column as IndexKeySql.comparable leaves it.
+      # CONCURRENTLY and IF NOT EXISTS stay, so from_ddl returns nil for
+      # them. pg_get_indexdef never prints either.
       def comparable(stmt)
         stmt.idxname = ""
-        stmt.index_params.each do |n|
-          e = n.index_elem
-          e.ordering = :SORTBY_DEFAULT if e.ordering == :SORTBY_ASC
-          default_nulls = e.ordering == :SORTBY_DESC ? :SORTBY_NULLS_FIRST : :SORTBY_NULLS_LAST
-          e.nulls_ordering = :SORTBY_NULLS_DEFAULT if e.nulls_ordering == default_nulls
-        end
+        stmt.index_params.each { |n| IndexKeySql.comparable(n.index_elem) }
         stmt
       end
     end

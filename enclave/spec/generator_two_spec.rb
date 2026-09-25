@@ -244,12 +244,23 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
 
     it "skips an index its statistics can't represent, or doesn't list" do
       unrepresentable = orders_index_ddls.merge(
-        "orders_status_created_at_idx" => "CREATE INDEX x ON public.orders USING btree (lower(status))"
+        "orders_status_created_at_idx" => "CREATE INDEX x ON public.orders USING btree (status) WITH (fillfactor='70')"
       )
       [unrepresentable, orders_index_ddls.except("orders_status_created_at_idx")].each do |index_ddls|
         stats = enclave::Statistics.new(tables: [orders_stats(index_ddls:), customers_stats])
         expect(ddl("index_scan_filter", stats:)).to eq([])
       end
+    end
+
+    it "extends an expression index in use, keeping its expression (20260922-33)" do
+      index_ddls = orders_index_ddls.merge(
+        "orders_status_created_at_idx" => "CREATE INDEX x ON public.orders USING btree (lower(status))"
+      )
+      stats = enclave::Statistics.new(tables: [orders_stats(index_ddls:), customers_stats])
+      expect(ddl("index_scan_filter", stats:)).to eq(
+        ["CREATE INDEX ON public.orders USING btree (lower(status), total_cents)",
+         "CREATE INDEX ON public.orders USING btree (lower(status)) INCLUDE (total_cents)"]
+      )
     end
 
     it "extends only a btree index, since other methods can't take the columns" do
