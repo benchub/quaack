@@ -117,6 +117,43 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     end
   end
 
+  # The racetrack runs 3h's anchored query, so its plan prints
+  # quaack.clock_anchor() where production's printed now() and the like.
+  # These are the texts Postgres 18 prints, plain and VERBOSE.
+  describe "clock functions and 3h's anchor" do
+    {
+      "(created_at > now())" => "(created_at > quaack.clock_anchor())",
+      "(orders.created_at > transaction_timestamp())" => "(orders.created_at > quaack.clock_anchor())",
+      "(created_at > statement_timestamp())" => "(created_at > quaack.clock_anchor())",
+      "(created_at > CURRENT_TIMESTAMP)" => "(created_at > quaack.clock_anchor())",
+      "(created_at > (CURRENT_DATE - 7))" => "(created_at > ((quaack.clock_anchor())::date - 7))",
+      "(created_at > LOCALTIMESTAMP(2))" => "(created_at > (quaack.clock_anchor())::timestamp(2) without time zone)",
+      "(created_at > CURRENT_TIMESTAMP(3))" => "(created_at > (quaack.clock_anchor())::timestamp(3) with time zone)",
+      "(created_at > pg_catalog.now())" => "(created_at > quaack.clock_anchor())"
+    }.each do |production, racetrack|
+      it "matches #{production} with #{racetrack}" do
+        expect(same?(with_filter("seq_scan_rare_value", production), with_filter("seq_scan_rare_value", racetrack)))
+          .to be(true)
+      end
+    end
+
+    it "doesn't match a clock function with the anchor cast to another type" do
+      expect(same?(with_filter("seq_scan_rare_value", "(created_at > (CURRENT_DATE - 7))"),
+                   with_filter("seq_scan_rare_value", "(created_at > ((quaack.clock_anchor())::time - 7))")))
+        .to be(false)
+    end
+
+    it "doesn't match another schema's now() with the anchor" do
+      expect(same?(with_filter("seq_scan_rare_value", "(created_at > app.now())"),
+                   with_filter("seq_scan_rare_value", "(created_at > quaack.clock_anchor())"))).to be(false)
+    end
+
+    it "doesn't match clock_timestamp() with the anchor" do
+      expect(same?(with_filter("seq_scan_rare_value", "(created_at > clock_timestamp())"),
+                   with_filter("seq_scan_rare_value", "(created_at > quaack.clock_anchor())"))).to be(false)
+    end
+  end
+
   describe "plans that differ only in aliases" do
     it "matches a plan with every alias renamed" do
       expect(same?(plan("nested_loop_parameterized"),
