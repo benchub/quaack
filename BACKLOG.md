@@ -39,15 +39,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-11. Inbound check for index DDL. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-12. Inbound check for step 10 inserts.
-
-Accept only plain `INSERT` statements into tables in the 3b subset schema. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, and anything else that isn't a plain insert.
-
-- **Depends on:** 20260922-1, 20260922-18.
-- **README:** What goes into the enclave.
-- **Note (from the review of 20260922-46):** The arena runner accepts any single InsertStmt, including `WITH ... INSERT`, `ON CONFLICT`, and `RETURNING`. This check is the real guard. It must refuse those forms, plus `set_config`, advisory locks, and any function that isn't immutable.
-- **Status:** todo
-- **Decided:** A plain insert is `INSERT INTO <subset table> (<columns>) VALUES (...), ...`. The values can be constants, casts, `DEFAULT`, and calls to immutable functions that pass the 3d volatility check. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, `WITH`, `OVERRIDING`, and any function that isn't immutable.
+### 20260922-12. Inbound check for step 10 inserts. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 1: Input.
 
@@ -153,7 +145,7 @@ Ask the LLM for rewrites of the redacted query, each stating its transformation 
 - **Depends on:** 20260922-6, 20260922-5, 20260922-10, 20260922-18, 20260922-23.
 - **README:** 6a.
 - **Status:** todo
-- **Open questions:** How many rewrites per run? Assumptions need a structured format for 6b to check them. What's the vocabulary (`NOT NULL`, unique, FK, anything else)?
+- **Decided:** Ask for up to five rewrites per run. Assumptions use a structured format, and the vocabulary is exactly: a `NOT NULL` column, a unique column set, a foreign key, and a `CHECK` constraint. A candidate stating any other kind of assumption is rejected.
 
 ### 20260922-38. 6b assumption check.
 
@@ -290,7 +282,7 @@ Run every measurement statement in a `READ ONLY` transaction with `statement_tim
 - **Depends on:** 20260922-26.
 - **README:** 12b.
 - **Status:** todo
-- **Open questions:** What timeout? What happens when a measurement times out?
+- **Decided:** `statement_timeout` is 3× the original query's baseline time, clamped to at least 5 seconds and at most 5 minutes. We should always be willing to wait 5 seconds, and anything needing more than 5 minutes needs a human. A candidate whose measurement times out is dropped and counted in the report as timed out.
 
 ### 20260922-55. 13 baseline runs.
 
@@ -1158,6 +1150,19 @@ Findings from the second review of 20260922-11:
 
 - **Depends on:** 20260922-11.
 - **Came from:** The second review of 20260922-11.
+- **README:** What goes into the enclave.
+- **Status:** todo
+
+### 20260925-2. Insert check loose ends.
+
+Minor findings from the first review of 20260922-12:
+- **The variadic arity branch is untested.** Dropping `OR p.provariadic <> 0` in `insert_values.rb` MUTABLE_SQL stays green. Add a test that `concat('a','b')` is refused as `not_immutable`.
+- **The `attisdropped` clause in COLUMNS_SQL is unproven.** Removing it stays green, because dropped columns get unmatchable names. Keep it or drop it.
+- **Implicit coercion is unchecked.** An uncast literal into a column whose type has a volatile input function, or a domain `CHECK` that calls one, runs that function at insert time. The function comes from the production schema, not the LLM. Document this in the README, or check column-type input functions and domain checks.
+- **Values aren't pinned to be deterministic.** TimeZone-dependent timestamptz literals and `'now'`, `'today'` are accepted. Set a fixed TimeZone in the arena session, or refuse the special date and time inputs, or note it in the README.
+
+- **Depends on:** 20260922-12.
+- **Came from:** The first review of 20260922-12.
 - **README:** What goes into the enclave.
 - **Status:** todo
 
