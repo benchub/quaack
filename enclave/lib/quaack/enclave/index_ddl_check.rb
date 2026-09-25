@@ -37,10 +37,12 @@ module Quaack
     #    the text near the error, so it's replaced, not wrapped.
     # 2. not_create_index: it isn't exactly one statement, or that
     #    statement isn't a CREATE INDEX.
-    # 3. concurrently, unique, nulls_not_distinct, tablespace, and on_only,
-    #    in that order: it uses CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT,
-    #    TABLESPACE, or ON ONLY. Storage options, WITH (...), and IF NOT
-    #    EXISTS are allowed. Every index method is allowed, as are
+    # 3. concurrently, unique, nulls_not_distinct, tablespace, on_only, and
+    #    storage_options, in that order: it uses CONCURRENTLY, UNIQUE, NULLS
+    #    NOT DISTINCT, TABLESPACE, ON ONLY, or WITH (...) storage options.
+    #    IndexCandidate can't hold storage options, so from_ddl would return
+    #    nil and the candidate would be lost without a word; refusing says
+    #    why. IF NOT EXISTS is allowed. Every index method is allowed, as are
     #    expression keys, operator classes with or without parameters,
     #    collations, directions, NULLS FIRST and LAST, and INCLUDE.
     # 4. unqualified_table: the table has no schema. It isn't resolved
@@ -112,7 +114,8 @@ module Quaack
         ["unique", "UNIQUE", lambda(&:unique)],
         ["nulls_not_distinct", "NULLS NOT DISTINCT", lambda(&:nulls_not_distinct)],
         ["tablespace", "TABLESPACE", ->(stmt) { !stmt.table_space.empty? }],
-        ["on_only", "ON ONLY", ->(stmt) { !stmt.relation.inh }]
+        ["on_only", "ON ONLY", ->(stmt) { !stmt.relation.inh }],
+        ["storage_options", "WITH (...)", ->(stmt) { !stmt.options.empty? }]
       ].freeze
 
       module_function

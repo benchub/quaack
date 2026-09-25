@@ -91,10 +91,6 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       "a BRIN index" => [
         "CREATE INDEX ON public.orders USING brin (created_at)", "CREATE INDEX ON public.orders USING brin (created_at)"
       ],
-      "storage options" => [
-        "CREATE INDEX ON public.orders (status) WITH (fillfactor = 70)",
-        "CREATE INDEX ON public.orders USING btree (status) WITH (fillfactor=70)"
-      ],
       "an immutable user function" => [
         "CREATE INDEX ON sales.items (public.steady(sku))",
         "CREATE INDEX ON sales.items USING btree (public.steady(sku))"
@@ -182,7 +178,11 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
         "CREATE INDEX ON public.orders (status) NULLS NOT DISTINCT", "NULLS NOT DISTINCT isn't allowed"
       ],
       "tablespace" => ["CREATE INDEX ON public.orders (status) TABLESPACE pg_default", "TABLESPACE isn't allowed"],
-      "on_only" => ["CREATE INDEX ON ONLY public.orders (status)", "ON ONLY isn't allowed"]
+      "on_only" => ["CREATE INDEX ON ONLY public.orders (status)", "ON ONLY isn't allowed"],
+      # IndexCandidate can't hold them, so they'd be lost without a word.
+      "storage_options" => [
+        "CREATE INDEX ON public.orders (status) WITH (fillfactor = 70)", "WITH (...) isn't allowed"
+      ]
     }.each do |rule, (sql, detail)|
       it "refuses #{rule}" do
         expect { check(sql) }.to rejected(rule, "#{rule}: #{detail}")
@@ -363,6 +363,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       "nulls_not_distinct" => planted(sentinel).sub(") WHERE", ") NULLS NOT DISTINCT WHERE"),
       "tablespace" => planted(sentinel).sub(") WHERE", ") TABLESPACE pg_default WHERE"),
       "on_only" => planted(sentinel, table: "ONLY public.orders"),
+      "storage_options" => planted(sentinel).sub(") WHERE", ") WITH (fillfactor = 70) WHERE"),
       "unqualified_table" => planted(sentinel, table: "orders"),
       "unknown_relation" => planted(sentinel, table: "sales.refunds"),
       "forbidden_in_index" => planted(sentinel, tail: " AND status = $1"),
