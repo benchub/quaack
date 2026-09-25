@@ -1206,14 +1206,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations).
-
-Fully qualify the query against production and find its relations. Store the qualified query and the relation list. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260922-14, 20260922-17, 20260922-13.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** Step 1, 3a.
-- **Status:** todo
+### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b).
 
@@ -1294,6 +1287,18 @@ Set up the racetrack on the run server recorded by `run-server`, using the store
 - **Depends on:** 20260925-7.
 - **Came from:** The first review of 20260925-7.
 - **README:** 4.
+- **Status:** todo
+
+### 20260925-18. Qualify loose ends.
+
+Minor findings from the first review of 20260925-8:
+- **No read-only transaction.** `steps/qualify.rb` reads production outside a read-only transaction, unlike inventory. Every statement is a fixed catalog SELECT today. Wrap `Relations.check` in `Inventory::Production.read_only`, both for defense in depth and for one snapshot across the lookups.
+- **`"$user"` is the operator's role.** It resolves to the operator's role, not the role of the application that made the plan. Say so in the README, or refuse a `$user` path entry that matches an existing schema other than the operator's own.
+- **The step spec covers one join only.** Add step-level cases for a CTE, a subquery, quoted identifiers, and already-qualified names.
+
+- **Depends on:** 20260925-8.
+- **Came from:** The first review of 20260925-8.
+- **README:** Step 1, 3a.
 - **Status:** todo
 
 ## After version 1.
