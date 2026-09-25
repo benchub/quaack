@@ -154,7 +154,7 @@ Check each stated assumption against `pg_constraint` and `pg_index`, treating `N
 - **Depends on:** 20260922-37.
 - **README:** 6b.
 - **Status:** todo
-- **Open questions:** What happens to an assumption the checker can't express as a catalog check?
+- **Decided:** The vocabulary is fixed by 20260922-37, so an assumption outside it rejects the candidate. A `CHECK` assumption is met only by a validated `CHECK` constraint on that table whose expression, normalized through pg_query, is identical to the stated one. Implied constraints don't count in v1.
 
 ### 20260922-39. 7 operator candidates.
 
