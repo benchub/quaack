@@ -52,6 +52,7 @@ Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject an
   - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
   - Drop any index name the DDL gives, so later steps name indexes themselves.
 - **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
+- **Note (progress, 2026-09-25):** Built on branch `worktree-agent-a4c54cb99ecf8ae8f` (commit 994bf22, worktree `.claude/worktrees/agent-a4c54cb99ecf8ae8f`). The builder reports rake green. Next: the first review (step 3 of the loop), then the fix round, the second review, and landing.
 
 ### 20260922-12. Inbound check for step 10 inserts.
 
