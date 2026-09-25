@@ -51,14 +51,20 @@ module Quaack
       module_function
 
       def filter(ddls, dedupe:, tables:, settings:, connection:)
-        raise ArgumentError, "ddls must be an Array of Strings" unless ddls.is_a?(Array) && ddls.all?(String)
-
+        check_ddls(ddls)
+        check = ->(sql) { IndexDdlCheck.check(sql, tables, settings, connection) }
         outcomes = ddls.each_with_index.map do |sql, i|
           next dropped(i + 1, "too_many") if i >= MAX_CANDIDATES
 
-          outcome(i + 1, sql, dedupe, tables, settings, connection)
+          outcome(i + 1, sql, dedupe, check)
         end
         Result.new(outcomes:, survivors: outcomes.select { it.status == :accepted }.map(&:candidate))
+      end
+
+      def check_ddls(ddls)
+        return if ddls.is_a?(Array) && ddls.all?(String)
+
+        raise ArgumentError, "ddls must be an Array of Strings"
       end
 
       def messages(result)
@@ -68,8 +74,8 @@ module Quaack
         end
       end
 
-      def outcome(index, sql, dedupe, tables, settings, connection)
-        accepted = IndexDdlCheck.check(sql, tables, settings, connection)
+      def outcome(index, sql, dedupe, check)
+        accepted = check.call(sql)
         candidate = IndexCandidate.from_ddl(accepted.sql, sources: [:llm])
         return dropped(index, "unrepresentable") unless candidate
 

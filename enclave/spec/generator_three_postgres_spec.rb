@@ -15,17 +15,18 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
 
   def existing(sql) = Quaack::Enclave::IndexCandidate.from_ddl(sql, sources: [:existing])
 
+  let(:orders_index) do
+    existing("CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at)")
+  end
+
   let(:statistics) do
     table = lambda do |name, column_names, indexes|
       Quaack::Enclave::TableStatistics.new(name:, reltuples: 1000, columns: {}, column_names:, indexes:)
     end
-    Quaack::Enclave::Statistics.new(tables: [
-      table[orders, %w[id customer_id status total_cents created_at], {
-        "orders_status_created_at_idx" =>
-          existing("CREATE INDEX orders_status_created_at_idx ON public.orders USING btree (status, created_at)")
-      }],
-      table[customers, %w[id name email created_at], {}]
-    ])
+    order_columns = %w[id customer_id status total_cents created_at]
+    tables = [table[orders, order_columns, { "orders_status_created_at_idx" => orders_index }],
+              table[customers, %w[id name email created_at], {}]]
+    Quaack::Enclave::Statistics.new(tables:)
   end
 
   let(:dedupe) { Quaack::Enclave::Dedupe.new(statistics:, low_cardinality: [[orders, "status"]]) }
@@ -40,7 +41,8 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
     result = filter(["CREATE INDEX ON public.customers (email text_pattern_ops)"])
 
     expect(outcome_fields(result)).to eq([[1, :accepted, nil, nil, false]])
-    expect(result.survivors.map(&:to_ddl)).to eq(["CREATE INDEX ON public.customers USING btree (email text_pattern_ops)"])
+    expect(result.survivors.map(&:to_ddl))
+      .to eq(["CREATE INDEX ON public.customers USING btree (email text_pattern_ops)"])
     expect(result.survivors.map { it.sources.to_a }).to eq([[:llm]])
     expect(dedupe.proposals).to eq(result.survivors)
   end
@@ -61,7 +63,8 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
   end
 
   it "drops a candidate a mechanical generator already proposed, adding llm to its sources" do
-    mechanical = Quaack::Enclave::IndexCandidate.new(table: orders, key: ["customer_id", "created_at"], sources: [:parse])
+    mechanical = Quaack::Enclave::IndexCandidate.new(table: orders, key: %w[customer_id created_at],
+                                                     sources: [:parse])
     dedupe.filter([mechanical])
 
     result = filter(["CREATE INDEX ON public.orders (customer_id, created_at)"])
@@ -116,16 +119,12 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
     it "goes out through egress as shape only: position, outcome, rule, covering index, and tag" do
       lines = described_class.messages(filter(planted)).map { Quaack::Enclave::Egress.serialize(it) }
 
-      expect(lines.map { JSON.parse(it) }).to eq([
-        { "type" => "index_outcome", "index" => 1, "outcome" => "dropped", "rule" => "partial_not_low_cardinality",
-          "covered_by" => nil, "partial_constant_only" => false },
-        { "type" => "index_outcome", "index" => 2, "outcome" => "dropped", "rule" => "unqualified_table",
-          "covered_by" => nil, "partial_constant_only" => false },
-        { "type" => "index_outcome", "index" => 3, "outcome" => "accepted", "rule" => nil,
-          "covered_by" => nil, "partial_constant_only" => false },
-        { "type" => "index_outcome", "index" => 4, "outcome" => "accepted", "rule" => nil,
-          "covered_by" => nil, "partial_constant_only" => true }
-      ])
+      expected = [[1, "dropped", "partial_not_low_cardinality", false], [2, "dropped", "unqualified_table", false],
+                  [3, "accepted", nil, false], [4, "accepted", nil, true]].map do |index, outcome, rule, tag|
+        { "type" => "index_outcome", "index" => index, "outcome" => outcome, "rule" => rule, "covered_by" => nil,
+          "partial_constant_only" => tag }
+      end
+      expect(lines.map { JSON.parse(it) }).to eq(expected)
     end
 
     it "never carries the DDL, so a planted sentinel never shows up" do
