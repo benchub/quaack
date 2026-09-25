@@ -43,11 +43,15 @@ Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject an
 
 - **Depends on:** 20260922-1, 20260922-17.
 - **README:** What goes into the enclave.
-- **Status:** todo
+- **Status:** in progress
 - **Decided:**
   - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
   - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
-- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today.
+  - The table name must be schema-qualified. Refuse an unqualified one. Don't resolve it through the search path.
+  - Every function and operator in a key expression or the WHERE predicate must be IMMUTABLE, read from the catalog, as Postgres itself requires for indexes.
+  - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
+  - Drop any index name the DDL gives, so later steps name indexes themselves.
+- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
 
 ### 20260922-12. Inbound check for step 10 inserts.
 
@@ -132,6 +136,7 @@ Build the shape-only payload, ask the LLM for up to five candidates it hasn't se
 - **README:** 5a-5.
 - **Status:** todo
 - **Note:** The `IndexCandidate` shape from 20260923-11 only holds plain column keys. 5a-5 asks the LLM for expression indexes and operator classes such as `text_pattern_ops` and trigram GIN. So this task has to extend the shape with expression keys, opclasses, and probably collations, and teach 5a-3's dedupe to handle them.
+- **Note (from 20260922-11):** The inbound check refuses index DDL whose table name isn't schema-qualified. The LLM prompt must say so plainly: an unqualified table name gets the candidate refused and counts against the LLM, so it should always write the schema.
 
 ### 20260922-34. 5a-6 refinement round.
 
