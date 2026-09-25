@@ -52,7 +52,7 @@ Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject an
   - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
   - Drop any index name the DDL gives, so later steps name indexes themselves.
 - **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
-- **Note (progress, 2026-09-25):** Built on branch `worktree-agent-a4c54cb99ecf8ae8f` (commit 994bf22, worktree `.claude/worktrees/agent-a4c54cb99ecf8ae8f`). The builder reports rake green. Next: the first review (step 3 of the loop), then the fix round, the second review, and landing.
+- **Note (progress, 2026-09-25):** Built on branch `worktree-agent-a4c54cb99ecf8ae8f` (commit 994bf22, worktree `.claude/worktrees/agent-a4c54cb99ecf8ae8f`). The builder reports rake green. The first review found nothing blocking. It found one minor issue, now recorded on 20260923-35. So no fix round is needed. Next: the second review with a fresh reviewer (step 5), then landing.
 
 ### 20260922-12. Inbound check for step 10 inserts.
 
@@ -688,6 +688,7 @@ Findings from the reviews of 20260922-20:
   - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
 - **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
 - **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
+- **Index DDL too (from the first review of 20260922-11):** `IndexDdlCheck` reuses this check, so the attribute-notation and domain CHECK gaps reach index DDL. With `evil3(public.orders)` a VOLATILE SQL function, `CREATE INDEX ON public.orders ((orders.evil3))` is accepted, and HypoPG and a real CREATE INDEX both build it, because Postgres inlines the SQL body before its IMMUTABLE check. Postgres still refuses a body with side effects, or a non-SQL function. Fix these gaps here, and list them in the "what it doesn't catch" part of `IndexDdlCheck`'s header.
 
 - **Depends on:** 20260922-20.
 - **Came from:** Both reviews of 20260922-20, and the tests-only review.
