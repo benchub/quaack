@@ -37,22 +37,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-11. Inbound check for index DDL.
-
-Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject anything else, naming the rule it broke.
-
-- **Depends on:** 20260922-1, 20260922-17.
-- **README:** What goes into the enclave.
-- **Status:** in progress
-- **Decided:**
-  - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
-  - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
-  - The table name must be schema-qualified. Refuse an unqualified one. Don't resolve it through the search path.
-  - Refuse volatile functions and operators in key expressions and the WHERE predicate, using the 3d rule. Leave STABLE to Postgres: HypoPG (5a-4) and the real CREATE INDEX (step 12) refuse it with exact type resolution. (The first plan was to require IMMUTABLE here, but the catalog lookup can't pick overloads, and `=`, `<`, `||`, and `date_trunc` each have STABLE versions, so almost every partial index would be refused.)
-  - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
-  - Drop any index name the DDL gives, so later steps name indexes themselves.
-- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
-- **Note (progress, 2026-09-25):** Built on branch `worktree-agent-a4c54cb99ecf8ae8f` (commit 994bf22, worktree `.claude/worktrees/agent-a4c54cb99ecf8ae8f`). The builder reports rake green. The first review found nothing blocking. It found one minor issue, now recorded on 20260923-35. So no fix round is needed. Next: the second review with a fresh reviewer (step 5), then landing.
+### 20260922-11. Inbound check for index DDL. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-12. Inbound check for step 10 inserts.
 
@@ -1163,6 +1148,17 @@ pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b load
 - **Depends on:** 20260923-33.
 - **Came from:** The review of 20260923-33 and the second review of 20260924-16.
 - **README:** Step 1.
+- **Status:** todo
+
+### 20260925-1. Index DDL check loose ends.
+
+Findings from the second review of 20260922-11:
+- **The unparsable sentinel test doesn't exercise the leak path.** In `enclave/spec/index_ddl_check_spec.rb`, the `"unparsable"` case in "a sentinel in the DDL" ends in a trailing AND. So pg_query's message is "syntax error at end of input", which never quotes the sentinel. Plant the syntax error on a sentinel token, such as `... WHERE status = '<sentinel>' '<sentinel>'`. The exact-message test still catches a leak today.
+- **The README doesn't list the index DDL rules.** README "What goes into the enclave" says only "exactly one `CREATE INDEX` statement on a table the query uses". Add the refusals (CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT, TABLESPACE, ON ONLY, an unqualified table, volatile functions, parameters, subqueries, and aggregates). Also say that the index name is dropped and that STABLE is left to Postgres.
+
+- **Depends on:** 20260922-11.
+- **Came from:** The second review of 20260922-11.
+- **README:** What goes into the enclave.
 - **Status:** todo
 
 ## After version 1.
