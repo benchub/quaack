@@ -214,30 +214,35 @@ module Quaack
           select = stmts.first.stmt.select_stmt if stmts.size == 1
           return unparsed unless select && PlanExpression.bare?(select)
 
-          PlanExpression.each_message(select) { |m| requalify(m, default) if m.is_a?(PgQuery::ColumnRef) }
-          anchor_clocks(select)
+          normalize(select, default)
           result.fingerprint
         rescue PgQuery::ParseError
           unparsed
         end
 
-        # Replaces each clock function with its anchored expression, then
-        # drops pg_catalog from the type of every cast of the anchor.
-        def anchor_clocks(select)
+        # Requalifies columns, replaces each clock function with its
+        # anchored expression, then drops pg_catalog from the type of every
+        # cast of the anchor.
+        def normalize(select, default)
+          PlanExpression.each_message(select) { |m| requalify(m, default) if m.is_a?(PgQuery::ColumnRef) }
           NodeRewrite.each(select) { |node| (sql = ClockFunctions.anchored_sql(node)) && anchored(sql) }
-          PlanExpression.each_message(select) do |m|
-            next unless m.is_a?(PgQuery::TypeCast) && anchor_call?(m.arg)
-
-            names = m.type_name.names
-            names.shift if names.size > 1 && names.first.string&.sval == "pg_catalog"
-          end
+          PlanExpression.each_message(select) { |m| unqualify_type(m) if m.is_a?(PgQuery::TypeCast) }
         end
 
-        def anchored(sql) = PgQuery.parse("SELECT #{sql}").tree.stmts.first.stmt.select_stmt.target_list.first.res_target.val
+        def unqualify_type(cast)
+          return unless anchor_call?(cast.arg)
+
+          names = cast.type_name.names
+          names.shift if names.size > 1 && names.first.string&.sval == "pg_catalog"
+        end
+
+        def anchored(sql)
+          PgQuery.parse("SELECT #{sql}").tree.stmts.first.stmt.select_stmt.target_list.first.res_target.val
+        end
 
         def anchor_call?(node)
-          node&.func_call && node.func_call.args.empty? &&
-            node.func_call.funcname.map { |part| part.string&.sval } == %w[quaack clock_anchor]
+          call = node&.func_call
+          call && call.args.empty? && call.funcname.map { |part| part.string&.sval } == %w[quaack clock_anchor]
         end
 
         def unparsed
