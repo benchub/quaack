@@ -614,9 +614,6 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "returns nil for an index it can't represent" do
       [
-        "CREATE INDEX i ON public.orders USING btree (lower(email))",
-        "CREATE INDEX i ON public.orders USING btree (email text_pattern_ops)",
-        %(CREATE INDEX i ON public.orders USING btree (email COLLATE "C")),
         "CREATE INDEX i ON ONLY public.orders USING btree (a)",
         "CREATE INDEX i ON public.orders USING btree (a) WITH (fillfactor='70')",
         "CREATE INDEX i ON public.orders USING btree (a) TABLESPACE fast",

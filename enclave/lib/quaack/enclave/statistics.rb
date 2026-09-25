@@ -29,7 +29,7 @@ module Quaack
     #                                                   most_common_vals: %w[delivered shipped],  # optional
     #                                                   most_common_freqs: [0.7, 0.2]) },         # optional
     #       indexes: { "orders_pkey" => IndexCandidate.from_ddl(pkey_indexdef, sources: [:existing]),
-    #                  "orders_lower_note_idx" => nil }  # nil: from_ddl couldn't represent it
+    #                  "orders_note_trgm_idx" => nil }  # nil: from_ddl couldn't represent it
     #     )
     #   ])
     #   stats.table(orders).distinct_count("status")              # => 5.0

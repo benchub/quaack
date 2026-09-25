@@ -11,6 +11,8 @@ require "quaack/enclave/store"
 #
 # - orders_pending_idx is partial, and customers_lower_email_idx is on an
 #   expression, so Postgres keeps statistics for its lower(email) column.
+# - customers_email_ff_idx has a WITH option, which IndexCandidate can't
+#   represent.
 # - orders_customer_id_key is a UNIQUE index built CONCURRENTLY. Many orders
 #   share a customer, so the build fails and leaves the index invalid.
 # - orders_status_customer is CREATE STATISTICS (ndistinct, dependencies,
@@ -36,6 +38,7 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
     conn.exec(<<~SQL)
       CREATE INDEX orders_pending_idx ON orders (created_at) WHERE status = 'pending';
       CREATE INDEX customers_lower_email_idx ON customers (lower(email));
+      CREATE INDEX customers_email_ff_idx ON customers (email) WITH (fillfactor = 70);
       CREATE STATISTICS orders_status_customer (ndistinct, dependencies, mcv) ON status, customer_id FROM orders;
     SQL
     expect { conn.exec("CREATE UNIQUE INDEX CONCURRENTLY orders_customer_id_key ON orders (customer_id)") }
@@ -183,7 +186,9 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect([pending.key.map(&:name), pending.predicate, pending.sources.to_a])
         .to eq([["created_at"], "status = 'pending'::text", [:existing]])
       expect(result.statistics.table(orders).indexes["orders_pkey"].unique).to be(true)
-      expect(result.statistics.table(customers).indexes).to include("customers_lower_email_idx" => nil)
+      lower = result.statistics.table(customers).indexes["customers_lower_email_idx"]
+      expect(lower.key.map(&:expression)).to eq(["lower(email)"])
+      expect(result.statistics.table(customers).indexes).to include("customers_email_ff_idx" => nil)
     end
 
     it "reads back from the store as the same result" do
