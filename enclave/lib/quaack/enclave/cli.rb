@@ -12,6 +12,7 @@ require_relative "steps/version"
 require_relative "steps/intake"
 require_relative "steps/teardown"
 require_relative "steps/inventory"
+require_relative "steps/run_server"
 
 module Quaack
   module Enclave
@@ -78,7 +79,9 @@ module Quaack
         "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS,
                              required: Steps::Intake::REQUIRED),
         "teardown" => Step.new(handler: Steps::Teardown, run_id: true),
-        "inventory" => Step.new(handler: Steps::Inventory, run: true)
+        "inventory" => Step.new(handler: Steps::Inventory, run: true),
+        "run-server" => Step.new(handler: Steps::RunServer, run: true, options: Steps::RunServer::OPTIONS,
+                                 required: Steps::RunServer::REQUIRED)
       }.freeze
 
       # Other names for a subcommand.

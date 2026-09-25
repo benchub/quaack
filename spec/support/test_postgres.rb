@@ -89,6 +89,14 @@ module TestPostgres
 
     def admin = @admin ||= PG.connect(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
 
+    # Closes the admin connection, for a spec whose code under test must
+    # see no other client on the server. The next use of admin opens a new
+    # one.
+    def close_admin
+      @admin&.close
+      @admin = nil
+    end
+
     def database_names = admin.exec("SELECT datname FROM pg_database").column_values(0)
 
     # Polls with a real connection until one works. While the image's entry
