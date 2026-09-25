@@ -141,6 +141,12 @@ RSpec.describe "Dedupe.covers? against the planner" do
     { name: "an opclass candidate under the default opclass", existing: "(s)",
       candidate: { key: [expr_key(name: "s", opclass: "text_pattern_ops")] },
       query: "SELECT * FROM t WHERE s ~>=~ 'ab' AND s ~<~ 'ac'", covered: false },
+    { name: "a plain candidate under an opclass read backward", existing: "(s text_pattern_ops DESC)",
+      candidate: { key: ["s"] },
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
+    { name: "a plain candidate under a collation read backward", existing: "(s COLLATE \"C\" DESC)",
+      candidate: { key: ["s"] },
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
     { name: "the same collation", existing: "(s COLLATE \"C\")",
       candidate: { key: [expr_key(name: "s", collation: "C")] },
       query: "SELECT * FROM t ORDER BY s COLLATE \"C\" LIMIT 10", covered: true }
