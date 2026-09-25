@@ -1197,9 +1197,101 @@ Minor findings from the first review of 20260925-4:
 
 Add `quaacks` subcommands that open the racetrack connection and run the mechanical half of step 5: the plan gate, 5a-1, 5a-2, 5a-3, and 5a-4. They save the mechanical proposals and Dedupe state, the 5a-4 results, and the redacted plan in the governed store, so the 5a-5 subcommands (20260925-4) can read them. The driver side of step 5 is wired in 20260922-36.
 
-- **Depends on:** 20260922-26, 20260922-28, 20260922-29, 20260922-30, 20260922-31, 20260922-32.
+- **Depends on:** 20260922-26, 20260922-28, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260925-7 through 20260925-16.
 - **README:** Step 5, 5a.
+- **Note:** `IndexCandidate` and `Dedupe` can't be saved to and read back from the store yet. This task must add that, because the 20260925-4 `index-test` loads the Dedupe state it saves. Key the saved entries per search (for example `index_search_original`, and later `index_search_rewrite_<n>`).
 - **Decided:** The user chose to build this as its own prerequisite task, ahead of the 5a-5 subcommands and 20260922-36.
+- **Status:** todo
+
+### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4).
+
+Record the run server in the run store and run the step 4 checks against it. `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. Credentials come from the operator's libpq setup (the `PG` environment variables, `~/.pg_service.conf`, `~/.pgpass`), as they do for production. QUAACK stores none. Later racetrack and arena steps connect using what this step recorded. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260922-25, 20260922-16.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** Step 4.
+- **Decided:** The user chose to give the run server at its own step and store it in the run, with the port recorded too.
+- **Status:** todo
+
+### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations).
+
+Fully qualify the query against production and find its relations. Store the qualified query and the relation list. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260922-14, 20260922-17, 20260922-13.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** Step 1, 3a.
+- **Status:** todo
+
+### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b).
+
+Dump the schema and build the subset. Store the subset. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-18.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3b.
+- **Status:** todo
+
+### 20260925-10. Enclave subcommand: `quaacks statistics` (3c).
+
+Gather the planner statistics and existing indexes for the subset tables. Store them for generators one and two and for Dedupe. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-19.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3c.
+- **Status:** todo
+
+### 20260925-11. Enclave subcommand: `quaacks volatility` (3d).
+
+Run the volatility check on the qualified query. Store the result. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-20.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3d.
+- **Status:** todo
+
+### 20260925-12. Enclave subcommand: `quaacks literals` (3e).
+
+Build the literal set and store it. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-21.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3e.
+- **Status:** todo
+
+### 20260925-13. Enclave subcommand: `quaacks classify` (3f).
+
+Classify PII and low-cardinality columns. Store the classification, and send `outbound_statistics` out as `column_stats`. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-10, 20260922-22.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3f.
+- **Status:** todo
+
+### 20260925-14. Enclave subcommand: `quaacks redact` (3g).
+
+Redact the query. Store the placeholder map and the redacted SQL (the redacted SQL isn't stored today). Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-12, 20260925-13, 20260922-23.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3g.
+- **Status:** todo
+
+### 20260925-15. Enclave subcommand: `quaacks anchor` (3h).
+
+Anchor the clock in the redacted query. Store the anchored SQL. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-14, 20260922-24.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3h.
+- **Status:** todo
+
+### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a).
+
+Set up the racetrack on the run server recorded by `run-server`, using the stored schema and statistics. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-7, 20260925-9, 20260925-10, 20260922-26.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 4a.
 - **Status:** todo
 
 ## After version 1.
