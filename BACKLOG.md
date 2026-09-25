@@ -48,7 +48,7 @@ Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject an
   - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
   - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
   - The table name must be schema-qualified. Refuse an unqualified one. Don't resolve it through the search path.
-  - Every function and operator in a key expression or the WHERE predicate must be IMMUTABLE, read from the catalog, as Postgres itself requires for indexes.
+  - Refuse volatile functions and operators in key expressions and the WHERE predicate, using the 3d rule. Leave STABLE to Postgres: HypoPG (5a-4) and the real CREATE INDEX (step 12) refuse it with exact type resolution. (The first plan was to require IMMUTABLE here, but the catalog lookup can't pick overloads, and `=`, `<`, `||`, and `date_trunc` each have STABLE versions, so almost every partial index would be refused.)
   - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
   - Drop any index name the DDL gives, so later steps name indexes themselves.
 - **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
