@@ -142,6 +142,8 @@ The inventory stays in the governed store. The step prints only its shape: produ
 
 Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
+The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualification and this check together. It connects to the run's production server the way step 2 does, with the operator's own libpq setup, and reads only the catalog. It resolves each unqualified name through the `search_path` in the input plan's `SETTINGS`, or the default `"$user", public` without one. It stores the qualified query as the run's `qualified_query` entry, and the relations, each once and in the order the query first names them, as `relations`, a list of `{"schema", "name"}` objects. Later steps of 3 read both from there. It prints nothing but its done line, since the driver sees the schema only as 3b's subset. A refusal names only its rule, such as `view_relation`, `unknown_relation`, `unsupported_construct`, or `production_connection_failed`, and stores nothing.
+
 ### 3b. Schema dump.
 
 Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it.
