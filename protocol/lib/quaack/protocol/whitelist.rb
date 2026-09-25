@@ -53,6 +53,16 @@ module Quaack
       # stages maps each stage to its searches and each search to its
       # counts. totals maps each work total to its count.
       burndown: %i[stages totals].freeze,
+      # What 5a-5 made of one index the LLM proposed (see the enclave's
+      # GeneratorThree), never its DDL. index is its 1-based position in
+      # the LLM's list. outcome is accepted, set_aside, or dropped. rule is
+      # nil or why it was dropped, one of the enclave's own rule constants,
+      # such as unqualified_table or covered_by_existing. covered_by is nil
+      # or the name of the existing index that covers it, from the catalog,
+      # which is schema and so shape. partial_constant_only is true or
+      # false: whether it's a partial index, which only works when the
+      # predicate's literal is a constant in the application's SQL.
+      index_outcome: %i[index outcome rule covered_by partial_constant_only].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
