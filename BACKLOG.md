@@ -85,6 +85,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 - **README:** 4b.
 - **Status:** todo
 - **Note (from the first build attempt):** Waiting on 20260924-30. The plan once it lands: load the dump through the connection with the `\restrict` and `\unrestrict` lines removed, as one implicit transaction. Drop the empty `public` schema before loading, since the dump runs `CREATE SCHEMA public`. Map the locale provider (`c` to libc, `i` to ICU_LOCALE, `b` to BUILTIN_LOCALE). Name the database from the run ID, with a COMMENT tag, and on a rerun drop and rebuild a tagged database. Reuse Racetrack's anchor code. Run DISABLE TRIGGER USER on every table. Don't create hypopg. The inventory doesn't record the database encoding, so arena gets the run server's default.
+- **Note (from 20260925-7):** The user chose to take the arena database name at `quaacks run-server --arena-db`. Use the recorded name and connect with `RunServer.connect(store, :arena)`, rather than naming the database from the run ID. The COMMENT tag and drop-and-rebuild on a rerun still apply.
 - **Note (from 20260922-26):** Reuse `Racetrack.create_clock_anchor` and `anchor_literal` for arena, perhaps through a shared module.
 
 ## Step 5: Plan gate and index candidates.
@@ -1203,15 +1204,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 - **Decided:** The user chose to build this as its own prerequisite task, ahead of the 5a-5 subcommands and 20260922-36.
 - **Status:** todo
 
-### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4).
-
-Record the run server in the run store and run the step 4 checks against it. `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. Credentials come from the operator's libpq setup (the `PG` environment variables, `~/.pg_service.conf`, `~/.pgpass`), as they do for production. QUAACK stores none. Later racetrack and arena steps connect using what this step recorded. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260922-25, 20260922-16.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** Step 4.
-- **Decided:** The user chose to give the run server at its own step and store it in the run, with the port recorded too.
-- **Status:** todo
+### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations).
 
@@ -1292,6 +1285,15 @@ Set up the racetrack on the run server recorded by `run-server`, using the store
 - **Depends on:** 20260925-7, 20260925-9, 20260925-10, 20260922-26.
 - **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
 - **README:** 4a.
+- **Status:** todo
+
+### 20260925-17. Possible flake in the run-server success test.
+
+`enclave/spec/run_server_postgres_spec.rb:65` needs no other clients on the shared test server. It closes the harness's admin connection, but if another spec in the same process leaves a connection open, the test fails with `run_server_other_clients`. It hasn't happened yet. If it shows up, give that test its own server or close every harness connection first.
+
+- **Depends on:** 20260925-7.
+- **Came from:** The first review of 20260925-7.
+- **README:** 4.
 - **Status:** todo
 
 ## After version 1.
