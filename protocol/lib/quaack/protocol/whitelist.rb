@@ -77,6 +77,17 @@ module Quaack
       # nested and go out unchecked, so the enclave's IndexPayload step is
       # where this is reviewed.
       index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,
+      # The README 6a payload, from `quaacks rewrite-payload`: the same
+      # shape-class fields as index_payload, without mechanical_results.
+      rewrite_payload: %i[query placeholders plan schema stats].freeze,
+      # What `quaacks rewrite-check` made of one rewrite (6a or step 7),
+      # never its SQL or its statements. index is its 1-based position in
+      # the input. outcome is accepted or rejected. rule is nil or one of
+      # the enclave's rule constants. rewrite is nil or the store entry it
+      # was saved as, such as rewrite_2. warnings is an Array of
+      # { "kind", "table", "rule" } for unmet inferred assumptions (step 7):
+      # the assumption kind, a table name from the catalog, and a rule.
+      rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
