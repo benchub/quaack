@@ -68,14 +68,15 @@ module Quaack
           raise ArgumentError, "schemas must be nil or an Array of schema names"
         end
 
-        Walk.new(roots(explain, analyzed), statistics, schemas, check_thresholds(thresholds), analyzed).candidates
+        explain_roots = roots(explain)
+        check_analyze(explain) if analyzed
+        Walk.new(explain_roots, statistics, schemas, check_thresholds(thresholds), analyzed).candidates
       end
 
-      def roots(explain, analyzed)
+      def roots(explain)
         valid = explain.is_a?(Array) && !explain.empty? && explain.all? { |e| e.is_a?(Hash) && e["Plan"].is_a?(Hash) }
         raise ArgumentError, "explain must be the parsed JSON of EXPLAIN (FORMAT JSON)" unless valid
 
-        check_analyze(explain) if analyzed
         explain.map { |e| PlanNode.new(e["Plan"]) }
       end
 
