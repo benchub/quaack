@@ -118,6 +118,15 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(fake.asks).to eq([])
       expect(burndown.llm_calls).to eq({})
     end
+
+    it "holds a model to its own, lower non-streaming limit" do
+      small = fake.client(burndown: burndown, model: "claude-opus-4-0")
+      fake.reply("5a-5", "ok")
+
+      expect(small.ask(step: "5a-5", messages: messages, max_tokens: 8192)).to eq("ok")
+      expect { small.ask(step: "5a-5", messages: messages, max_tokens: 8193) }
+        .to raise_error(ArgumentError, /max_tokens 8193 needs streaming/)
+    end
   end
 
   describe "JSON replies" do
@@ -416,6 +425,13 @@ RSpec.describe Quaack::Driver::LLM do
       end
     end
 
+    it "takes only 1 as the opt-in, not any other value" do
+      with_env("QUAACK_ALLOW_REAL_LLM" => "yes") do
+        expect { described_class::Client.new(api_key: "k", burndown: burndown) }
+          .to raise_error(described_class::RealClientInSpecs)
+      end
+    end
+
     it "fails with llm_auth when there's no API key" do
       with_env("QUAACK_ALLOW_REAL_LLM" => "1", "ANTHROPIC_API_KEY" => nil) do
         expect { described_class::Client.new(burndown: burndown) }
@@ -429,6 +445,16 @@ RSpec.describe Quaack::Driver::LLM do
       code = 'require "quaack/driver"; ' \
              'c = Quaack::Driver::LLM::Client.new(api_key: "k", burndown: Quaack::Driver::Burndown.new); print c.class'
       out, err, status = Open3.capture3({ "QUAACK_SPECS" => nil, "QUAACK_ALLOW_REAL_LLM" => nil },
+                                        RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", code)
+
+      expect(status).to be_success, "stderr was #{err}"
+      expect(out).to eq("Quaack::Driver::LLM::Client")
+    end
+
+    it "can be built outside specs when QUAACK_SPECS is set to something other than 1" do
+      code = 'require "quaack/driver"; ' \
+             'c = Quaack::Driver::LLM::Client.new(api_key: "k", burndown: Quaack::Driver::Burndown.new); print c.class'
+      out, err, status = Open3.capture3({ "QUAACK_SPECS" => "0", "QUAACK_ALLOW_REAL_LLM" => nil },
                                         RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", code)
 
       expect(status).to be_success, "stderr was #{err}"
