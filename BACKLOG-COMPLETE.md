@@ -1815,3 +1815,21 @@ The enclave steps exist, but `Pipeline` doesn't run them: `arena-setup` (4b), `i
 - **Came from:** 20260922-62 build report.
 - **README:** Steps 4b and 12-14.
 - **Status:** done
+
+### 20260922-63. 15a negative result.
+
+When nothing beats the original, explain which rewrites were disproved and by which scenario, which indexes the planner declined, and which proposed indexes already existed.
+
+- **Depends on:** 20260922-62.
+- **README:** 15a.
+- **Status:** done
+
+### 20260922-64. 15b burndown tables.
+
+Render the three burndown sections from the recorded counts.
+
+- **Depends on:** 20260922-61, 20260922-62.
+- **README:** 15b.
+- **Status:** done
+
+## End to end.
