@@ -16,7 +16,8 @@ RSpec.describe "quaack run" do
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
   let(:entries) do
-    { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true }
+    { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
+      "rewrites_generated" => true }
   end
   let(:replies) do
     { "status" => [{ "type" => "status", "entries" => entries }],

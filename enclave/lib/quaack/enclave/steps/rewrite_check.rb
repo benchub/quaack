@@ -45,11 +45,18 @@ module Quaack
       # The transformation and assumptions come from the LLM, so they're
       # kept in the store only, never sent.
       #
+      # Each call adds its counts to the step 8 burndown (StructuralDiscard.
+      # record, search rewrites), with the inbound check's rejections as
+      # inbound_check. A call with 6a's rewrites (not inferred) also writes
+      # the rewrites_generated marker, so a resumed run skips 6a.
+      #
       # It sends one rewrite_outcome per rewrite: index, outcome (accepted
       # or rejected), rule, rewrite (the entry name, or nil), and warnings.
       module RewriteCheck
         MAX = 5
         FIELDS = %w[assumptions sql transformation].freeze
+        STRUCTURAL = %w[failed_to_plan output_mismatch].freeze
+        OWN = %w[too_many bad_assumption unmet_assumption].freeze
 
         class Error < IndexSearch::Error; end
         # A rewrite this step rejects by a rule of its own.
@@ -62,7 +69,10 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           context = { store:, connection:, inferred:, original: original(store),
                       settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
-          rewrites.each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
+          outcomes = rewrites.each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
+          record(store, outcomes)
+          store.write("rewrites_generated", {}) unless inferred
+          outcomes
         ensure
           connection&.close
         end
@@ -132,6 +142,17 @@ module Quaack
         def unmet(assumptions, connection)
           assumptions.each_with_index.reject { |assumption, _| AssumptionCheck.met?(assumption, connection) }
                      .map { |assumption, i| { "assumption" => i + 1, "kind" => assumption["kind"] } }
+        end
+
+        # The step 8 burndown for this call: the rewrites the inbound check
+        # rejected, those StructuralDiscard dropped, and the survivors.
+        # Rejections by this step's own rules (6a and 6b) aren't step 8's.
+        def record(store, outcomes)
+          rules = outcomes.map { it[:rule]&.to_s }
+          dropped = STRUCTURAL.to_h { |rule| [rule.to_sym, rules.count(rule)] }
+          inbound = rules.count { it && !(STRUCTURAL + OWN).include?(it) }
+          kept = outcomes.filter_map { it[:rewrite] }
+          StructuralDiscard.record(store, StructuralDiscard::Result.new(kept:, dropped:), inbound_rejected: inbound)
         end
 
         def rejected(index, rule)
