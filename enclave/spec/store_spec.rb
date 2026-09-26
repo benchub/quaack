@@ -414,6 +414,11 @@ RSpec.describe Quaack::Enclave::Store do
       expect_store_error(/no entry literals in run #{store.run_id}/) { store.read("literals") }
     end
 
+    # A step's error line names only its rule, so the rule names the entry.
+    it "gives a missing entry the rule missing_ and the entry's name" do
+      expect { store.read("literals") }.to raise_error(Quaack::Enclave::Store::Error) { expect(it.rule).to eq("missing_literals") }
+    end
+
     it "raises without the file's contents, or the parse error, for an entry that isn't valid JSON" do
       ["{\"literals\": [#{STORE_SENTINEL}", "[\"#{STORE_SENTINEL}\xFF\"]".b].each do |contents|
         File.binwrite(File.join(store.path, "literals.json"), contents)

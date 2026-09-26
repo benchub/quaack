@@ -60,11 +60,15 @@ RSpec.describe "quaacks statistics, against a real server" do
   def statistics(env: operator_env) = quaacks.run("statistics", "--run", store.run_id, env: libpq_env(**env))
 
   def done = %({"type":"done"}\n)
-  def error_line(rule) = %({"type":"error","step":"statistics","rule":"#{rule}"}\n)
+
+  def error_line(rule, sqlstate = nil)
+    %({"type":"error","step":"statistics","rule":"#{rule}"#{%(,"sqlstate":"#{sqlstate}") if sqlstate}}\n)
+  end
+
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
 
-  def expect_failed(outcome, rule)
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule), "", 70])
+  def expect_failed(outcome, rule, sqlstate = nil)
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule, sqlstate), "", 70])
     expect(stored.entry?("statistics")).to be(false)
     expect_no_leaks(sentinels, outcome)
   end
@@ -121,5 +125,28 @@ RSpec.describe "quaacks statistics, against a real server" do
 
     expect_failed(outcome, "production_connection_failed")
     expect(outcome.stdout).not_to include(production.host)
+  end
+
+  # A role that may connect but can't read pg_stats, so the read fails with
+  # permission denied (README 3c: the refusal stores nothing).
+  context "when the statistics read fails" do
+    let(:reader) { "reader_#{SecureRandom.hex(6)}" }
+
+    before do
+      conn = production.connect
+      conn.exec(<<~SQL)
+        CREATE ROLE #{reader} LOGIN PASSWORD '#{production.password}';
+        REVOKE SELECT ON pg_catalog.pg_stats FROM PUBLIC;
+      SQL
+      conn.close
+    end
+
+    after { production.server.admin.exec("DROP ROLE IF EXISTS #{reader}") }
+
+    it "fails as production_read_failed and stores nothing" do
+      pgpass(user: reader)
+
+      expect_failed(statistics(env: operator_env(PGUSER: reader)), "production_read_failed", "42501")
+    end
   end
 end

@@ -52,6 +52,17 @@ RSpec.describe "quaacks run-server, against a real server" do
                 "--arena-db", arena, env: libpq_env(**env))
   end
 
+  # The run server must have no other clients (README, 4a), so every
+  # connection this process holds, including the harness's own and any a
+  # spec left open, is ended first.
+  def close_every_harness_connection
+    TestPostgres.server.admin.exec(<<~SQL)
+      SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity
+      WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()
+    SQL
+    TestPostgres.server.close_admin
+  end
+
   def done = %({"type":"done"}\n)
   def error_line(rule) = %({"type":"error","step":"run-server","rule":"#{rule}"}\n)
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
@@ -66,8 +77,9 @@ RSpec.describe "quaacks run-server, against a real server" do
     it "records a run server that passes every check, and prints only the done line" do
       record_inventory
       pgpass
-      # The harness's own connection would be another client.
-      TestPostgres.server.close_admin
+      # A connection another spec in this process left open.
+      production.connect
+      close_every_harness_connection
 
       outcome = run_server
 
