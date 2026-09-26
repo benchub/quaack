@@ -1330,14 +1330,7 @@ The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.
 - **README:** Step 8.
 - **Status:** todo
 
-### 20260926-7. Wire `quaack run` into the driver CLI.
-
-Add `quaack run --run ID [--rewrites <file>]` to `driver/lib/quaack/driver/cli.rb`. It looks up the jump host with `Runs#host` (20260926-1), builds `Transport::Ssh` and the LLM client, and calls `Pipeline#run` (20260922-36). If `--rewrites` is given, it sends the file through `OperatorCandidates.from_file` (20260922-39).
-
-- **Depends on:** 20260926-1, 20260922-36, 20260922-39.
-- **Came from:** Track A, B, and F build reports.
-- **README:** Where QUAACK runs, and step 7.
-- **Status:** todo
+### 20260926-7. Wire `quaack run` into the driver CLI. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-8. Step 5 orchestration loose ends.
 
@@ -1438,4 +1431,18 @@ These are minor findings from the build and reviews of 20260922-44 to -51:
 - **Depends on:** 20260922-51.
 - **Came from:** Track D build report and reviews.
 - **README:** Steps 9 and 10.
+- **Status:** todo
+
+### 20260926-16. `quaack run` loose ends.
+
+These are minor findings from the review of 20260926-7:
+- No spec covers a failing enclave or LLM call (exit 1 and `quaack run failed: <rule>`). Changing the exit code to 0, or narrowing the rescue list, stays green.
+- No spec covers a rewrites file that won't parse.
+- A reply to rewrite-payload with no `rewrite_payload` message passes nil on and crashes with a stack trace.
+- Step 7 runs after the whole pipeline, not next to 6a.
+- Nothing prints on success.
+
+- **Depends on:** 20260926-7.
+- **Came from:** 20260926-7 build report and review.
+- **README:** Step 7.
 - **Status:** todo

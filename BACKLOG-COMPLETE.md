@@ -1354,3 +1354,12 @@ Load the inserts, run the 9d comparator, recheck untested atoms with the 9c test
 - **Decided:** All three rounds always run.
 
 ## Step 11: Per-candidate index ranking.
+
+### 20260926-7. Wire `quaack run` into the driver CLI.
+
+Add `quaack run --run ID [--rewrites <file>]` to `driver/lib/quaack/driver/cli.rb`. It looks up the jump host with `Runs#host` (20260926-1), builds `Transport::Ssh` and the LLM client, and calls `Pipeline#run` (20260922-36). If `--rewrites` is given, it sends the file through `OperatorCandidates.from_file` (20260922-39).
+
+- **Depends on:** 20260926-1, 20260922-36, 20260922-39.
+- **Came from:** Track A, B, and F build reports.
+- **README:** Where QUAACK runs, and step 7.
+- **Status:** done
