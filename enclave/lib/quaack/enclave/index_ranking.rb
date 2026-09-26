@@ -71,8 +71,9 @@ module Quaack
       # to one boolean per index saying whether the plan uses it, and to
       # its CanonicalPlan. partial is true if any index has a predicate:
       # README 5a-5 says such an index works only if the predicate's literal
-      # is a constant in the application's SQL.
-      Entry = Data.define(:candidates, :ddl, :size, :costs, :used, :canonical_plans, :partial) do
+      # is a constant in the application's SQL. plans maps each literal set
+      # to its 5a-4 Plan, raw and enclave-only.
+      Entry = Data.define(:candidates, :ddl, :size, :costs, :used, :canonical_plans, :plans, :partial) do
         def reductions = costs.transform_values(&:reduction)
 
         def worst_reduction = reductions.values.min
@@ -128,7 +129,7 @@ module Quaack
       def entry(candidates, size, plans, used, baseline)
         Entry.new(candidates: candidates.freeze, ddl: candidates.map(&:to_ddl).freeze, size:,
                   costs: costs(plans, baseline).freeze, used: used.transform_values { |u| u.dup.freeze }.freeze,
-                  canonical_plans: plans.transform_values(&:canonical_plan).freeze,
+                  canonical_plans: plans.transform_values(&:canonical_plan).freeze, plans: plans.freeze,
                   partial: candidates.any?(&:predicate))
       end
 

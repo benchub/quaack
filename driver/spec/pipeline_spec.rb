@@ -70,13 +70,13 @@ RSpec.describe Quaack::Driver::Pipeline do
 
     run
 
-    expect(subcommands).to eq(%w[status index-payload index-feedback index-rank status])
+    expect(subcommands).to eq(%w[status index-feedback index-rank status])
     expect(fake.asks).to eq([])
 
     entries["index_ranking_original"] = true
     transport.calls.clear
     run
-    expect(subcommands).to eq(%w[status index-payload index-feedback status])
+    expect(subcommands).to eq(%w[status index-feedback status])
   end
 
   describe "step 6a and step 8" do
@@ -122,7 +122,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       run
 
-      expect(subcommands.drop(3)).to eq(%w[rewrite-payload rewrite-check status] +
+      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status] +
                                         (%w[index-search index-rank rewrite-prune] * 2) + %w[status status])
       expect(transport.calls.last(8).first(6).map { it.last[:args][:search] })
         .to eq(%w[rewrite_1 rewrite_1 rewrite_1 rewrite_2 rewrite_2 rewrite_2])
@@ -136,7 +136,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       run
 
-      expect(subcommands.drop(3)).to eq(%w[index-rank rewrite-prune status])
+      expect(subcommands.drop(2)).to eq(%w[index-rank rewrite-prune status])
       expect(transport.calls[-2].last[:args]).to eq(run: "RUN", search: "rewrite_2")
       expect(fake.asks).to eq([])
     end
@@ -162,7 +162,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       run
 
-      expect(searched).to eq([%w[index-payload original], %w[index-feedback original], ["status", nil],
+      expect(searched).to eq([%w[index-feedback original], ["status", nil],
                               %w[index-payload rewrite_2], %w[index-test rewrite_2], %w[index-feedback rewrite_2],
                               %w[index-rank rewrite_2]])
       expect(fake.asks.map(&:step)).to eq(["5a-5"])
@@ -175,8 +175,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       run
 
-      expect(searched.drop(3)).to eq([%w[index-payload rewrite_1], %w[index-feedback rewrite_1],
-                                      %w[index-rank rewrite_1], %w[index-payload rewrite_2],
+      expect(searched.drop(2)).to eq([%w[index-feedback rewrite_1], %w[index-rank rewrite_1],
                                       %w[index-feedback rewrite_2]])
       expect(fake.asks).to eq([])
     end
@@ -223,7 +222,7 @@ RSpec.describe Quaack::Driver::Pipeline do
                                                                              "rewrite_survived_#{number}" => survived)
     end
 
-    def ninth_on = subcommands.drop(3).reject { it == "status" }
+    def ninth_on = subcommands.drop(2).reject { it == "status" }
 
     it "runs step 9 on each rewrite, then three 10a rounds on the one that passed, numbering them" do
       status.merge!(rewrite(1), rewrite(2))

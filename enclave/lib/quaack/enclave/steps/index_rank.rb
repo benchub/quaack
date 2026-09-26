@@ -24,7 +24,9 @@ module Quaack
       #   "top"         up to three single-index entries, best first
       #   "combination" the best combination of two or three, or nil
       # Each entry is { "ddl" => [String], "size", "costs" => { set =>
-      # { "before", "after" } }, "used" => { set => [Boolean] }, "partial" }.
+      # { "before", "after" } }, "used" => { set => [Boolean] }, "partial",
+      # "plans" => { set => its plan, redacted through 3g as IndexSearch
+      # stores plans } } (README 5a-7's canonical plans, for step 13).
       # The DDL can hold a low-cardinality predicate literal, so the entry
       # stays in the store. Once 5a-5 has run for the search
       # (index_generated_<search>), it also writes index_llm_ranked_<search>,
@@ -56,7 +58,12 @@ module Quaack
           report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry))
           ranking = IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,
                                                   results: report.results)
-          { "top" => ranking.top.map { plain(it) }, "combination" => ranking.combination && plain(ranking.combination) }
+          plain_ranking(ranking, LiteralSet.load(store).sets)
+        end
+
+        def plain_ranking(ranking, maps)
+          { "top" => ranking.top.map { plain(it, maps) },
+            "combination" => ranking.combination && plain(ranking.combination, maps) }
         end
 
         def used(entry)
@@ -65,10 +72,11 @@ module Quaack
             .map { IndexStore.candidate(it["candidate"]) }
         end
 
-        def plain(entry)
+        def plain(entry, maps)
           { "ddl" => entry.ddl, "size" => entry.size,
             "costs" => entry.costs.transform_values { { "before" => it.before, "after" => it.after } },
-            "used" => entry.used, "partial" => entry.partial }
+            "used" => entry.used, "partial" => entry.partial,
+            "plans" => IndexSearch.plans(entry.plans, maps).transform_values { it["plan"] } }
         end
       end
     end

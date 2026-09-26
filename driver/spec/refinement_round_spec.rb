@@ -51,11 +51,11 @@ RSpec.describe Quaack::Driver::RefinementRound do
     expect([fake.asks, tested]).to eq([[], []])
   end
 
-  it "doesn't call the enclave when the LLM offers no revision" do
+  it "records that the round ran, with an empty refinement index-test, when the LLM offers no revision" do
     fake.reply("5a-6", { "indexes" => [] })
 
-    expect(run.outcomes).to eq([])
-    expect(tested).to eq([])
+    expect(run.ddls).to eq([])
+    expect(tested).to eq([[[], "refinement"]])
   end
 
   it "builds its enclave calls over the transport" do
