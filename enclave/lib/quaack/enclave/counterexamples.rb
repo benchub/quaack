@@ -65,6 +65,10 @@ module Quaack
       # The runner rules that mean the fixture, not the candidate, failed.
       LOAD_RULES = %i[fixture_load_failed reverse_load_failed insert_failed].freeze
 
+      # The runner steps that load the fixture. A failure in one of them,
+      # whatever its rule (a statement_timeout, say), is a load failure.
+      LOAD_STEPS = %i[load insert].freeze
+
       module_function
 
       # 10b and 10c. Runs 9d's comparison on the prepared fixture, in both
@@ -83,7 +87,7 @@ module Quaack
         Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
                   covered: covered(runner, prepared, original, atoms, untested), load_failed: false)
       rescue ArenaRunner::Error => e
-        load_failed = LOAD_RULES.include?(e.rule)
+        load_failed = LOAD_RULES.include?(e.rule) || LOAD_STEPS.include?(e.step)
         Round.new(match: load_failed ? nil : false, rule: e.rule, load_order: nil, covered: [], load_failed:)
       end
 

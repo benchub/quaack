@@ -76,8 +76,10 @@ module Quaack
         of = rows.group_by(&:first)
         Constraints.new(uniques: (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) },
                         foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) },
-                        checks: of.fetch("c", []).map(&:last))
+                        checks: checks(conn, table, of))
       end
+
+      def self.checks(conn, table, of) = of.fetch("c", []).map(&:last) + DomainChecks.read(conn, regclass(conn, table))
 
       def self.foreign_key(row)
         _, cols, schema, name, parent_cols = row
@@ -114,3 +116,5 @@ module Quaack
     end
   end
 end
+
+require_relative "arena_schema/domain_checks"

@@ -1294,19 +1294,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-7. Wire `quaack run` into the driver CLI. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-8. Step 5 orchestration loose ends.
-
-These are minor findings from the review of 20260922-34 and -36:
-- If the LLM's 5a-6 answer is empty, `refined` is never set, so every resume asks the LLM again (`refinement_round.rb:57`). Call `index-test --round refinement` with an empty list.
-- After a partial crash, a resume can leave the ranking stale.
-- `index-payload` runs on every resume.
-- Same for 6a: an empty rewrite reply never writes `rewrites_generated`, so every resume asks the LLM again (`rewrite_generation.rb:90`, from the review of 20260926-6).
-- `IndexRanking` entries don't carry the canonical plans that README 5a-7 says they should.
-
-- **Depends on:** 20260922-36.
-- **Came from:** 20260922-34 and -36 build report and review.
-- **README:** 5a-6, 5a-7.
-- **Status:** todo
+### 20260926-8. Step 5 orchestration loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-9. Driver start and run server loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -1320,24 +1308,7 @@ These are minor findings from the review of 20260922-34 and -36:
 
 ### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-15. Scenario builder and counterexample loose ends.
-
-These are minor findings from the build and reviews of 20260922-44 to -51:
-- A statement timeout while loading an LLM's inserts becomes `:statement_timeout`, which isn't in `LOAD_RULES`, so it wrongly disproves the candidate (`arena_runner.rb:214`). Check the step, not the rule.
-- `Counterexamples.covered` skips atoms it can't replace, and no test covers that.
-- Only equality joins between plain columns tie keys together.
-- A join near miss is skipped when a foreign key touches either column.
-- Groups that collide on a unique key are dropped without saying so.
-- Self-joins merge aliases into one row.
-- Domain CHECK constraints are ignored.
-- Bound literals are uncast (bit strings).
-- 3e literal sets and 3c statistics aren't used for pools.
-- The rule that an atom, once exercised, stays exercised across rebuilds has no test.
-
-- **Depends on:** 20260922-51.
-- **Came from:** Track D build report and reviews.
-- **README:** Steps 9 and 10.
-- **Status:** todo
+### 20260926-15. Scenario builder and counterexample loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-16. `quaack run` loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -1369,17 +1340,7 @@ These are minor findings from the build and reviews of 20260922-44 to -51:
 - **README:** Step 7; CLAUDE.md Development.
 - **Status:** todo
 
-### 20260926-22. Steps 9 and 10 wiring loose ends.
-
-- A rewrite whose inserts failed to load in every round is still marked survived, with no fixture ever compared. The report should flag it (from the 20260926-14 review).
-- A resume restarts step 10 at round 1, which repeats LLM calls.
-- The driver doesn't check that a reply holds the message it expects (`rewrite_test`, `counterexample_payload`), so a missing one crashes.
-- The payload's untested-atom test seeds the store directly rather than getting the atoms from a real step 9 run.
-
-- **Depends on:** 20260926-14.
-- **Came from:** 20260926-14 build and reviews.
-- **README:** Steps 9 and 10, 15.
-- **Status:** todo
+### 20260926-22. Steps 9 and 10 wiring loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-23. Index build loose ends.
 
@@ -1403,4 +1364,26 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260926-19.
 - **Came from:** Review of 20260926-19.
 - **README:** 6b, 12b.
+- **Status:** todo
+
+### 20260926-25. Pipeline loose ends, part four.
+
+- A resumed run restarts step 10 at round 1. Continuing mid-way would need the earlier rounds' LLM conversation.
+- The sentinel check in `index_rank_step_postgres_spec.rb` doesn't bite by itself. Plant a sentinel literal in the fixture's literal sets.
+
+- **Depends on:** 20260926-8, 20260926-22.
+- **Came from:** Their build and review.
+- **README:** 5a-7, step 10.
+- **Status:** todo
+
+### 20260926-26. Scenario and counterexample loose ends, part two.
+
+- `counterexamples/parent_rows.rb` calls `Values#typical` in strict mode, so a parent row whose domain column fails the typical value is refused with `unsupported_type` (this fails safe). Pass `strict: false`, and add a test.
+- The `dropped` group count isn't carried through to the driver's report.
+- A timeout during the fixture load step (as opposed to the insert step) has no direct test.
+- The typed-binding item from 20260926-15 was judged stale (untyped binding works for bit strings) but wasn't independently checked.
+
+- **Depends on:** 20260926-15.
+- **Came from:** 20260926-15 build and review.
+- **README:** Steps 9 and 10.
 - **Status:** todo

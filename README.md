@@ -571,6 +571,16 @@ Columns the query never mentions still need values. A column with a `DEFAULT` ge
 
 Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle between two tables is refused with `fk_cycle`.
 
+A domain's `CHECK` counts as a `CHECK` on each column of that domain, with the same rule for what's simple.
+
+Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark an atom untested, but they never make a fixture break a constraint:
+
+- Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
+- A join atom gets no near miss when a foreign key touches either of its columns.
+- A self-join's aliases share one row per group, so atoms on different aliases of the same table can't be failed one at a time.
+- A group whose row would collide with an earlier row on a unique key is left out. The step 9 report counts these as `dropped`.
+- The pools don't use 3e's literal sets or 3c's statistics.
+
 Run steps 9a through 9e for each scenario.
 
 ### 9a. Open the transaction.

@@ -39,4 +39,13 @@ RSpec.describe Quaack::Enclave::StepNine do
     expect(report.to_h.to_s).not_to include("SENTINEL_49")
     expect(report.inspect).not_to include("SENTINEL_49")
   end
+
+  it "counts the groups left out because they collide on a unique key" do
+    expect(run.dropped).to eq(0)
+    conn.exec("CREATE TABLE fx.tags (id integer PRIMARY KEY, name text NOT NULL UNIQUE, qty integer)")
+    # The hit and qty's near miss both need name 'a', so the near miss
+    # collides with the hit on the unique name.
+    report = described_class.run(conn, "SELECT t.id FROM fx.tags t WHERE t.name = 'a' AND t.qty <> 5", [])
+    expect(report.dropped).to be_positive
+  end
 end
