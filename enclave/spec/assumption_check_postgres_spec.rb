@@ -30,6 +30,7 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       CREATE UNIQUE INDEX items_code ON public.items (code);
       CREATE UNIQUE INDEX items_tag ON public.items (tag) NULLS NOT DISTINCT;
       ALTER TABLE public.items ADD CONSTRAINT items_ref UNIQUE (ref) DEFERRABLE;
+      ALTER TABLE public.items ADD grade text CHECK (grade IN ('a')), ADD flag text CHECK (flag NOT IN ('z'));
     SQL
   end
 
@@ -81,6 +82,13 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
     expect([met?(items.call("state IN ('new', 'paid')")), met?(items.call("state IN ('new')")),
             met?(items.call("kind NOT IN ('x', 'y')")), met?(items.call("kind IN ('x', 'y')"))])
       .to eq([true, false, true, false])
+  end
+
+  it "meets a one-element IN list CHECK, which Postgres stores as plain = or <>" do
+    items = ->(expression) { check(expression).merge("table" => "public.items") }
+    expect([met?(items.call("grade IN ('a')")), met?(items.call("flag NOT IN ('z')")),
+            met?(items.call("grade = 'a'")), met?(items.call("grade IN ('b')"))])
+      .to eq([true, true, true, false])
   end
 
   it "doesn't meet an assumption about a table that doesn't exist" do
