@@ -195,6 +195,8 @@ When a set can't get a value, the placeholder keeps its slow literal there, and 
 - A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
 - A placeholder that 3g shares between expressions, since it can feed more than one place.
 
+The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
+
 ### 3f. PII classification.
 
 Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.
