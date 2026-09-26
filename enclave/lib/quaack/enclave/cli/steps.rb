@@ -26,6 +26,7 @@ require_relative "../steps/rewrite_payload"
 require_relative "../steps/rewrite_check"
 require_relative "../steps/rewrite_prune"
 require_relative "../steps/counterexamples"
+require_relative "../steps/index_build"
 
 module Quaack
   module Enclave
@@ -69,7 +70,8 @@ module Quaack
                                              required: Steps::Counterexamples::REQUIRED),
         "counterexample-round" => Step.new(handler: Steps::Counterexamples::Round, run: true, input: true,
                                            options: Steps::Counterexamples::Round::OPTIONS,
-                                           required: Steps::Counterexamples::Round::REQUIRED)
+                                           required: Steps::Counterexamples::Round::REQUIRED),
+        "index-build" => Step.new(handler: Steps::IndexBuild, run: true)
       }.freeze
     end
   end

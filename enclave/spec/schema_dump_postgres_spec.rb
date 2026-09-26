@@ -178,6 +178,12 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely public.customers public.orders])
     end
 
+    # Arena setup drops public before loading, so the dump must create it.
+    it "creates public itself, as pg_dump 18 does for a schema named with --schema" do
+      run([table("other", "lonely")])
+      expect(store.read("schema_dump")["ddl"]).to match(/^CREATE SCHEMA public;$/)
+    end
+
     # --strict-names would fail the dump on a --schema for a public that
     # isn't there.
     it "leaves out public when the database has none" do
