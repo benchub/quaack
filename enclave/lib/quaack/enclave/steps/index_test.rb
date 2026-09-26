@@ -33,10 +33,16 @@ module Quaack
       # same form as "results" (see IndexSearch). "baseline" and "results",
       # the mechanical ones, stay as they were.
       #
+      # With --round refinement (README 5a-6), each tested candidate also
+      # carries "round" => "refinement", and the entry gets "refined" =>
+      # true, even if nothing survived. Any other round is refused with
+      # index_test_unknown_round.
+      #
       # It sends one index_outcome per DDL (see GeneratorThree), never the
       # DDL or a plan.
       module IndexTest
-        OPTIONS = { "search" => :value }.freeze
+        OPTIONS = { "search" => :value, "round" => :value }.freeze
+        ROUNDS = %w[refinement].freeze
 
         class Error < IndexSearch::Error; end
 
@@ -44,19 +50,24 @@ module Quaack
 
         def call(store:, options:, input:, **)
           search = options.fetch("search", "original")
-          ddls = check(store, search, input)
-          key = "index_search_#{search}"
-          entry = store.read(key)
+          ddls = check(store, search, input, options)
+          entry = store.read("index_search_#{search}")
           connection = Enclave::RunServer.connect(store, :racetrack)
           result, report, dedupe = run(store, entry, ddls, connection)
-          store.write(key, updated(entry, dedupe, report, LiteralSet.load(store).sets))
+          save(store, search, updated(entry, dedupe, report, LiteralSet.load(store).sets, options["round"]),
+               options["round"])
           GeneratorThree.messages(result)
         ensure
           connection&.close
         end
 
-        def check(store, search, input)
+        def save(store, search, entry, _round)
+          store.write("index_search_#{search}", entry)
+        end
+
+        def check(store, search, input, options)
           raise Error, "index_test_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_test_unknown_round" unless [nil, *ROUNDS].include?(options["round"])
           raise Error, "index_test_no_index_search" unless store.entry?("index_search_#{search}")
 
           ddls = input["ddls"] if input.keys == ["ddls"]
@@ -80,11 +91,13 @@ module Quaack
           SingleCandidateTest.run(connection, query: store.read("anchored_query"), literal_sets:, candidates:)
         end
 
-        def updated(entry, dedupe, report, maps)
+        def updated(entry, dedupe, report, maps, round)
           proposals = dedupe.proposals
+          tested = report.results.map { IndexSearch.result(it, proposals, maps) }
+          tested = tested.map { it.merge("round" => round) } if round
           entry.merge("dedupe" => IndexStore.dedupe_plain(dedupe),
-                      "llm_results" => (entry["llm_results"] || []) +
-                                       report.results.map { IndexSearch.result(it, proposals, maps) })
+                      "llm_results" => (entry["llm_results"] || []) + tested)
+               .merge(round ? { "refined" => true } : {})
         end
       end
     end

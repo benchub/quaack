@@ -62,6 +62,19 @@ RSpec.describe "quaacks index-test, against a real server" do
       .to eq(%w[created_at total])
   end
 
+  it "tags the 5a-6 revisions with --round refinement, and records that the round ran even if nothing survived" do
+    prepare
+    index_search
+    index_test(ddls(partial))
+
+    expect(index_test(ddls("CREATE INDEX ON orders (total)"), "--round", "refinement").status.exitstatus).to eq(0)
+    expect(stored.read("index_search_original")["refined"]).to be(true)
+    index_test(ddls("CREATE INDEX ON public.orders (total)"), "--round", "refinement")
+
+    expect(stored.read("index_search_original")["llm_results"].map { it["round"] }).to eq([nil, "refinement"])
+    expect(index_test(ddls(partial), "--round", "third").stdout).to eq(error_line("index_test_unknown_round"))
+  end
+
   it "refuses stdin that isn't {\"ddls\": [strings]}, and a run with no index search, storing nothing" do
     prepare
     expect(index_test(ddls(partial)).stdout).to eq(error_line("index_test_no_index_search"))

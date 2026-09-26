@@ -77,6 +77,12 @@ module Quaack
       # nested and go out unchecked, so the enclave's IndexPayload step is
       # where this is reviewed.
       index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,
+      # README 5a-6 feedback for the LLM, from `quaacks index-feedback`:
+      # the 5a-4 results for its own candidates, built like index_payload
+      # (plans redacted through 3g, DDL through CandidateDdlRedaction), with
+      # each one's shortfall. Its values are nested and go out unchecked,
+      # so the enclave's IndexFeedback step is where this is reviewed.
+      index_feedback: %i[revise refined baseline candidates].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
