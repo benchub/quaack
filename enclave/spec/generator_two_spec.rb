@@ -382,6 +382,38 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     end
   end
 
+  describe "a plain EXPLAIN plan, as a rewrite has on the racetrack (analyzed: false)" do
+    # Strip everything only ANALYZE prints, recursively.
+    def plain(value)
+      case value
+      when Array then value.map { |v| plain(v) }
+      when Hash
+        value.reject { |k, _| k.start_with?("Actual ", "Rows Removed", "Hash Batches", "Original Hash Batches") }
+             .transform_values { |v| plain(v) }
+      else value
+      end
+    end
+
+    def plain_ddl(name) = described_class.candidates(plain(plan(name)), statistics:, analyzed: false).map(&:to_ddl)
+
+    it "runs the patterns that need neither actual rows nor rows removed" do
+      expect(plain_ddl("sort_under_limit")).to eq([btree("orders", "customer_id, created_at DESC")])
+      expect(plain_ddl("bitmap_or")).to eq([btree("customers", "id, email")])
+      expect(plain_ddl("hash_aggregate")).to eq([btree("orders", "status, total_cents")])
+    end
+
+    it "skips the patterns that need actual rows or rows removed" do
+      %w[seq_scan_most_rows index_scan_filter nested_loop_inner hash_join_batches].each do |name|
+        expect(ddl(name)).not_to be_empty
+        expect(plain_ddl(name)).to eq([]), name
+      end
+    end
+
+    it "skips them even on a plan that has actual rows" do
+      expect(described_class.candidates(plan("seq_scan_most_rows"), statistics:, analyzed: false)).to eq([])
+    end
+  end
+
   describe "an aggregate" do
     it "indexes the GROUP BY keys of a hash aggregate" do
       expect(ddl("hash_aggregate")).to eq([btree("orders", "status, total_cents")])

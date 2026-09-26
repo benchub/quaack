@@ -90,10 +90,10 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
 
       expect(lines(outcome).first(5)).to eq(
         [outcome_line(1, "rejected", "bad_placeholder"), outcome_line(2, "rejected", "bad_assumption"),
-         outcome_line(3, "rejected", "bad_assumption"), outcome_line(4, "rejected", "column_count_mismatch"),
-         outcome_line(5, "rejected", "column_type_mismatch")]
+         outcome_line(3, "rejected", "bad_assumption"), outcome_line(4, "rejected", "output_mismatch"),
+         outcome_line(5, "rejected", "output_mismatch")]
       )
-      expect(lines(unplannable).first).to eq(outcome_line(1, "rejected", "plan_failed"))
+      expect(lines(unplannable).first).to eq(outcome_line(1, "rejected", "failed_to_plan"))
       expect(stored.entry?("rewrite_1")).to be(false)
     end
 
@@ -124,7 +124,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
 
       outcome = rewrite_check(rewrites(rewrite("SELECT o.note FROM public.orders o"), inferred: true))
 
-      expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "column_count_mismatch"))
+      expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "output_mismatch"))
     end
 
     it "checks only the first five, marking the rest too_many" do
