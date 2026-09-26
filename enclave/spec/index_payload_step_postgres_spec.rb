@@ -59,6 +59,31 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(sent["placeholders"]["$1"]["actual_rows"]).to be_positive
   end
 
+  context "with a timestamptz range" do
+    let(:query) do
+      "SELECT o.note FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+        "AND o.created_at >= '2026-09-01' AND o.created_at < '2026-09-02'"
+    end
+
+    it "types each placeholder as Postgres infers it for the query" do
+      searched
+
+      types = payload(index_payload)["placeholders"].transform_values { it["type"] }
+
+      expect(types).to eq("$1" => "text", "$2" => "timestamp with time zone", "$3" => "timestamp with time zone")
+    end
+  end
+
+  it "strips pg_dump's restrict and unrestrict lines from the schema DDL" do
+    prepare
+    store.write("schema_subset", "tables" => [%w[public orders]],
+                                 "ddl" => "\\restrict AbC123\nCREATE TABLE public.orders (id integer);\n" \
+                                          "\\unrestrict AbC123\n")
+    index_search
+
+    expect(payload(index_payload)["schema"]["ddl"]).to eq("CREATE TABLE public.orders (id integer);\n")
+  end
+
   it "sends each mechanical result as redacted DDL, with its size, refusal, and redacted plans" do
     searched
 

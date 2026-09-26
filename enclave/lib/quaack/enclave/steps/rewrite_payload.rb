@@ -15,9 +15,9 @@ module Quaack
 
         def call(store:, **)
           [{ type: :rewrite_payload, query: store.read("redacted_query"),
-             placeholders: IndexPayload.placeholders(store.read("placeholder_shapes")),
+             placeholders: IndexPayload.placeholders(store),
              plan: store.read("redacted_plan")["explain"].map { it.except("Settings") },
-             schema: store.read("schema_subset"),
+             schema: IndexPayload.schema(store),
              stats: store.read("classification")["outbound_statistics"] }]
         end
       end
