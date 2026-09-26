@@ -40,6 +40,20 @@ module Quaack
       # directory they can't search, or one that's linked (LINKED_BASE).
       class BadBase < Error; end
 
+      # What read raises for an entry that isn't there, such as a step's
+      # upstream entry when the step that writes it hasn't run. Its rule,
+      # missing_ and the entry's name, is what the step's error line names
+      # (see ErrorFilter), for every step at once. Entry names are fixed
+      # lowercase words in the code, never data.
+      class MissingEntry < Error
+        attr_reader :rule
+
+        def initialize(message, entry:)
+          super(message)
+          @rule = "missing_#{entry}"
+        end
+      end
+
       # QUAACK makes the base and the directory above it, ~/.quaack/runs
       # and ~/.quaack, so if either is a symlink, the store would live
       # wherever it points. So create, open, and teardown raise BadBase for
@@ -142,7 +156,7 @@ module Quaack
         text = begin
           PrivateFiles.read(entry_path(name))
         rescue Errno::ENOENT
-          raise Error, "no entry #{name} in run #{run_id}", cause: nil
+          raise MissingEntry.new("no entry #{name} in run #{run_id}", entry: name), cause: nil
         rescue SystemCallError
           raise Error, "couldn't read entry #{name} in run #{run_id}", cause: nil
         end

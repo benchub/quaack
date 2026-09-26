@@ -171,7 +171,7 @@ RSpec.describe "quaacks classify, after quaacks statistics against a real server
     outcome = classify
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
-      .to eq([%({"type":"error","step":"classify","rule":"internal_error"}\n), "", 70])
+      .to eq([%({"type":"error","step":"classify","rule":"missing_statistics"}\n), "", 70])
     expect(stored.entry?("classification")).to be(false)
   end
 

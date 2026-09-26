@@ -25,4 +25,16 @@ RSpec.describe "quaacks selection" do
     expect(result["top"].map { it["label"] }).to eq(["original:top:1"])
     expect(result["excluded"]).to eq("rewrite_1:none" => "result_mismatch")
   end
+
+  # One upstream entry stands in for every step's: Store names the missing
+  # one in the rule, and the error line carries nothing else.
+  it "refuses a missing upstream entry as missing_ and its name" do
+    store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+    store.write("result_comparison", "verdicts" => {}, "discarded" => [], "partial_count" => 0)
+
+    outcome = quaacks.run("selection", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
+
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([%({"type":"error","step":"selection","rule":"missing_minimax"}\n), "", 70])
+  end
 end
