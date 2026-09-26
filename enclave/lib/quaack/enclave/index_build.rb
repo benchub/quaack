@@ -38,7 +38,7 @@ module Quaack
         indexes = combinations.values.flatten.uniq.to_h do |ddl|
           [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
         end
-        hide(connection, indexes.keys)
+        hide_all(connection, "indexes" => indexes)
         store.write("index_build", "indexes" => indexes,
                                    "combinations" => combinations.transform_values { it.map { name(it) } })
       end
@@ -66,14 +66,18 @@ module Quaack
              .map { IndexStore.candidate(it) }.reject(&:unique).map(&:to_ddl)
       end
 
+      def index_stmt(ddl) = PgQuery.parse(ddl).tree.stmts.first.stmt.index_stmt
+
       def name(ddl) = "quaack_#{Digest::SHA256.hexdigest(ddl)[0, 20]}"
 
       # Builds the index unless it's there, and returns its size in bytes.
       def create(connection, name, ddl)
-        stmt = PgQuery.parse(ddl).tree.stmts.first.stmt.index_stmt
+        stmt = index_stmt(ddl)
         raise Error, "index_build_unique" if stmt.unique
 
         schema = stmt.relation.schemaname
+        raise Error, "index_build_unqualified" if schema.empty?
+
         unless oid(connection, schema, name)
           stmt.idxname = name
           connection.exec(PgQuery.deparse_stmt(stmt))
@@ -90,23 +94,36 @@ module Quaack
         SQL
       end
 
-      # Sets indisvalid for QUAACK's own non-unique indexes only.
-      def set_valid(connection, names, valid)
-        connection.exec_params(<<~SQL, [valid, PG::TextEncoder::Array.new.encode(names)])
-          UPDATE pg_index i SET indisvalid = $1 FROM pg_class c
-          WHERE c.oid = i.indexrelid AND c.relname = ANY($2::text[]) AND c.relname LIKE 'quaack\\_%'
+      # Each of build's index names, mapped to its table's schema.
+      def schemas(build)
+        build["indexes"].transform_values { index_stmt(it["ddl"]).relation.schemaname }
+      end
+
+      # Sets indisvalid for QUAACK's own non-unique indexes only, matched on
+      # schema and name. schemas is one schema for every name, or a name =>
+      # schema hash (see schemas).
+      def set_valid(connection, names, valid, schemas:)
+        pairs = names.map { [schemas.is_a?(Hash) ? schemas.fetch(it) : schemas, it] }
+        enc = PG::TextEncoder::Array.new
+        connection.exec_params(<<~SQL, [valid, enc.encode(pairs.map(&:first)), enc.encode(pairs.map(&:last))])
+          UPDATE pg_index i SET indisvalid = $1 FROM pg_class c, pg_namespace n
+          WHERE c.oid = i.indexrelid AND n.oid = c.relnamespace
+            AND (n.nspname, c.relname) IN (SELECT * FROM unnest($2::text[], $3::text[]))
+            AND c.relname LIKE 'quaack\\_%'
             AND NOT i.indisunique AND NOT i.indisprimary AND NOT i.indisexclusion
         SQL
       end
 
-      def hide(connection, names) = set_valid(connection, names, false)
+      def hide(connection, names, schemas:) = set_valid(connection, names, false, schemas:)
+
+      def hide_all(connection, build) = hide(connection, build["indexes"].keys, schemas: schemas(build))
 
       # Unhides the combination named key and hides every other index in
       # build, then confirms with EXPLAIN. Returns the combination's names.
       def show_only(connection, build, key, sql:, params: [])
         visible = build["combinations"].fetch(key)
-        hide(connection, build["indexes"].keys - visible)
-        set_valid(connection, visible, true)
+        hide(connection, build["indexes"].keys - visible, schemas: schemas(build))
+        set_valid(connection, visible, true, schemas: schemas(build))
         confirm(connection, build, visible, sql:, params:)
         visible
       end
@@ -118,14 +135,18 @@ module Quaack
         used = index_names(JSON.parse(connection.exec_params("EXPLAIN (FORMAT JSON) #{sql}", params).getvalue(0, 0)))
         raise Error, "index_build_hidden_index_used" if used.intersect?(hidden)
 
-        valid = valid_names(connection, build["indexes"].keys)
-        raise Error, "index_build_wrong_set_hidden" unless valid == visible.sort
+        raise Error, "index_build_wrong_set_hidden" unless valid_names(connection, build) == visible.sort
       end
 
-      def valid_names(connection, names)
-        connection.exec_params(<<~SQL, [PG::TextEncoder::Array.new.encode(names)]).column_values(0)
+      # The names of build's indexes that are valid, matched on schema and name.
+      def valid_names(connection, build)
+        pairs = schemas(build).to_a
+        enc = PG::TextEncoder::Array.new
+        connection.exec_params(<<~SQL, [enc.encode(pairs.map(&:last)), enc.encode(pairs.map(&:first))]).column_values(0)
           SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-          WHERE c.relname = ANY($1::text[]) AND i.indisvalid ORDER BY c.relname
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE (n.nspname, c.relname) IN (SELECT * FROM unnest($1::text[], $2::text[])) AND i.indisvalid
+          ORDER BY c.relname
         SQL
       end
 

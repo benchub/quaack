@@ -31,7 +31,7 @@ module Quaack
           []
         ensure
           if connection
-            Enclave::IndexBuild.hide(connection, store.read("index_build")["indexes"].keys)
+            Enclave::IndexBuild.hide_all(connection, store.read("index_build"))
             connection.close
           end
         end

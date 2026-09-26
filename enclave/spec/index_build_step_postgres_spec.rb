@@ -88,6 +88,50 @@ RSpec.describe "quaacks index-build, against a real server" do
     conn&.close
   end
 
+  it "never hides a primary key, a user unique index even named quaack_, or a user index not named quaack_" do
+    prepare
+    conn = production.connect
+    conn.exec("CREATE UNIQUE INDEX quaack_x ON public.orders (id, note)")
+    conn.exec("CREATE INDEX user_note ON public.orders (note)")
+    pkey = conn.exec("SELECT conname FROM pg_constraint WHERE conrelid = 'public.orders'::regclass AND contype = 'p'")
+               .getvalue(0, 0)
+
+    Quaack::Enclave::IndexBuild.set_valid(conn, ["quaack_x", pkey, "user_note"], false, schemas: "public")
+
+    expect(indexes(conn).select { %W[quaack_x #{pkey} user_note].include?(it["relname"]) }.map { it["indisvalid"] })
+      .to eq(%w[t t t])
+    conn.exec("CREATE INDEX quaack_y ON public.orders (note)")
+    Quaack::Enclave::IndexBuild.set_valid(conn, ["quaack_y"], false, schemas: "public")
+    expect(indexes(conn).find { it["relname"] == "quaack_y" }["indisvalid"]).to eq("f")
+  ensure
+    conn&.close
+  end
+
+  it "hides and reads validity by schema and name, leaving a same-named index in another schema alone" do
+    prepare
+    conn = production.connect
+    conn.exec("CREATE SCHEMA other; CREATE TABLE other.orders (note text)")
+    conn.exec("CREATE INDEX quaack_y ON public.orders (note); CREATE INDEX quaack_y ON other.orders (note)")
+
+    Quaack::Enclave::IndexBuild.set_valid(conn, ["quaack_y"], false, schemas: "public")
+
+    other = conn.exec("SELECT indisvalid FROM pg_index WHERE indexrelid = 'other.quaack_y'::regclass").getvalue(0, 0)
+    expect(other).to eq("t")
+    build = { "indexes" => { "quaack_y" => { "ddl" => "CREATE INDEX ON public.orders (note)" } } }
+    expect(Quaack::Enclave::IndexBuild.valid_names(conn, build)).to eq([])
+  ensure
+    conn&.close
+  end
+
+  it "refuses unqualified DDL" do
+    prepare
+    conn = production.connect
+    expect { Quaack::Enclave::IndexBuild.create(conn, "quaack_z", "CREATE INDEX ON orders (note)") }
+      .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_unqualified")
+  ensure
+    conn&.close
+  end
+
   it "builds with raised maintenance settings" do
     ranked_run
     conn = production.connect
