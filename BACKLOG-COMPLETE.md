@@ -1285,3 +1285,15 @@ Let operators submit placeholder-based rewrites through the driver. Ask the LLM 
 - **Decided:** A file flag on the laptop, `--rewrites <file>`, with one placeholder-SQL rewrite per `;`-terminated statement. They go through the same `quaacks rewrite-check` as 6a's rewrites, flagged as inferred.
 
 ## Step 8: Plan-based pruning.
+
+### 20260924-27. 3f classification loose ends.
+
+Findings from the build and reviews of 20260922-22:
+- **text[], json, and jsonb columns aren't text-like for the heuristic,** so their MCV frequencies leave unless a glob names them. Their values never leave. The reviewer judged this low risk: a frequency vector over a large domain doesn't re-identify anyone. Decide whether they should fail closed as PII anyway.
+- **Expression-index and extended-statistics MCVs are left out of the projection entirely.** If 5a-5 needs them, they'll need rules of their own.
+
+- **Decided:** Leave text[], json and jsonb as they are: their frequencies may leave, and their values never do. Add rules that send expression-index and extended-statistics MCVs, classified under the rules of their base columns. An expression that touches any PII column is treated as PII.
+- **Depends on:** 20260922-22.
+- **Came from:** The build and reviews of 20260922-22.
+- **README:** 3f.
+- **Status:** done
