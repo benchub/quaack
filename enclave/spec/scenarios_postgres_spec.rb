@@ -116,6 +116,16 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(s4.zip(s1)).to all(satisfy { |four, one| four > one })
   end
 
+  it "fills a required column to satisfy its domain's CHECK" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN fx.rank AS integer CHECK (VALUE BETWEEN 7 AND 9);
+      CREATE TABLE fx.d (id integer PRIMARY KEY, r fx.rank NOT NULL, v text);
+    SQL
+    rows = build("SELECT id FROM fx.d WHERE v = 'x'")[:s1]
+    expect(values(rows, "d", "r").map(&:to_i)).to all(be_between(7, 9))
+    expect(run(rows, "SELECT count(*) FROM fx.d")).to eq([[rows.size.to_s]])
+  end
+
   it "refuses a table with a CHECK it can't satisfy simply" do
     conn.exec("CREATE TABLE fx.c (id integer PRIMARY KEY, lo integer, hi integer, CHECK (lo < hi))")
     expect { build("SELECT id FROM fx.c WHERE lo = 1") }

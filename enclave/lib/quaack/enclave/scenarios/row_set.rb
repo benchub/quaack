@@ -12,11 +12,13 @@ module Quaack
           @rows = Hash.new { |h, k| h[k] = [] }
         end
 
+        # False when the group collides and is left out.
         def add(group_rows)
           fresh = group_rows.reject { |r| @rows[r.table].include?(r) }
-          return if fresh.any? { |r| collides?(r) }
+          return false if fresh.any? { |r| collides?(r) }
 
           fresh.each { |r| @rows[r.table] << r }
+          true
         end
 
         def in_order(tables) = tables.flat_map { |t| @rows[t] }

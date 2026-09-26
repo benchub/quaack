@@ -106,7 +106,9 @@ module Quaack
 
       # Builds the scenarios for one query.
       class Builder
-        attr_reader :atoms, :pools, :parse
+        # dropped counts the groups the last build left out because they
+        # collide on a unique key, over every scenario.
+        attr_reader :atoms, :pools, :parse, :dropped
 
         UNIQUE = Object.new.freeze
 
@@ -124,9 +126,10 @@ module Quaack
         def build(variants = {})
           @picker = Picker.new(@pools, probes, @checks, variants)
           @identities = {}
+          @dropped = 0
           Plan.new(@topology, @atoms, @pools.keys).scenarios.transform_values do |groups|
             set = RowSet.new(@schema)
-            groups.each { |g| build_group(g)&.then { |rows| set.add(rows) } }
+            groups.each { |g| build_group(g)&.then { |rows| @dropped += 1 unless set.add(rows) } }
             set.in_order(order)
           end
         end
@@ -180,7 +183,7 @@ module Quaack
           return UNIQUE if col.default.nil? && @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
           return :omit if col.default
 
-          @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col)])
+          @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col, strict: false)])
         end
 
         def slot_atoms(slot)

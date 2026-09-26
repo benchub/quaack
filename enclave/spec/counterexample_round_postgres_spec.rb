@@ -58,7 +58,8 @@ RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
   it "skips an untested atom that can't be replaced by TRUE" do
     using = "SELECT o.id FROM fx.orders o JOIN fx.orders p USING (status) WHERE o.status = 'SENTINEL_10b'"
     orders = Quaack::Enclave::TableName.new(schema: "fx", name: "orders")
-    using_atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(using), column_names: { orders => %w[id status] })
+    using_atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(using),
+                                                          column_names: { orders => %w[id status] })
     fixed = using_atoms.each_index.reject { |i| using_atoms[i].replaceable }
     expect(fixed).not_to be_empty
     prepared = described_class::Prepared.new(

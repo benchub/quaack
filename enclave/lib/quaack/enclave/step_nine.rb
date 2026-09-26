@@ -28,16 +28,20 @@ module Quaack
     # Trust boundary: the report holds booleans, symbols, counts, and 9c's
     # redacted shapes. The fixtures, with the real literals, stay here.
     module StepNine
-      Report = Data.define(:results, :untested, :untested_atoms, :retries)
+      # dropped counts the scenario groups left out because they collide on
+      # a unique key (Scenarios::Builder#dropped).
+      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
 
       def run(conn, sql, candidates, statement_timeout_ms: 10_000)
         runner = ArenaRunner.new(conn, statement_timeout_ms:)
-        guard = VacuityGuard.run(runner, Scenarios::Builder.new(conn, PgQuery.parse(sql)), sql)
+        builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
+        guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, sql, candidate) }
-        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries)
+        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
+                   dropped: builder.dropped)
       end
 
       def test(runner, scenarios, sql, candidate)

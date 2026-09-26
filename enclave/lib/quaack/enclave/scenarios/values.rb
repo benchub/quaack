@@ -26,10 +26,13 @@ module Quaack
           @readable = {}
         end
 
-        def typical(col)
+        # With strict: false, nil when the type reads none of them, as for
+        # a domain whose CHECK the caller satisfies some other way.
+        def typical(col, strict: true)
           return labels(col).first if category(col) == "E"
 
-          first_readable(col, TYPICAL.fetch(category(col), []) + FALLBACK)
+          candidates = TYPICAL.fetch(category(col), []) + FALLBACK
+          strict ? first_readable(col, candidates) : candidates.find { |v| readable?(col, v) }
         end
 
         def nth(col, number)
