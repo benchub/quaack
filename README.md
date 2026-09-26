@@ -7,6 +7,7 @@ QUAACK takes a slow production query and works through it in stages. It proposes
 The driver on the engineer's laptop talks to the LLM. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart LR
     subgraph laptop["Engineer's laptop: shapes only"]
         driver["quaack (driver)<br/>runs the steps, calls the LLM,<br/>builds the report"]
@@ -36,6 +37,7 @@ flowchart LR
 Each run works through the steps below. Blue steps run in the enclave, orange steps run on the driver, and green steps are split between them.
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart TD
     s1["1. Intake<br/>query, EXPLAIN ANALYZE, server"] --> s2["2. Production inventory"]
     s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
