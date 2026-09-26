@@ -1221,14 +1221,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-14. Enclave subcommand: `quaacks redact` (3g). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-15. Enclave subcommand: `quaacks anchor` (3h).
-
-Anchor the clock in the redacted query. Store the anchored SQL. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-14, 20260922-24.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3h.
-- **Status:** todo
+### 20260925-15. Enclave subcommand: `quaacks anchor` (3h). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a).
 
@@ -1296,6 +1289,16 @@ The new step subcommands (redact, classify, and others) report a missing upstrea
 - **Depends on:** 20260925-14.
 - **Came from:** The first reviews of 20260925-14 and 20260925-12.
 - **README:** Step 3.
+- **Status:** todo
+
+### 20260925-23. Anchor step loose ends.
+
+- **`clock_replacements` can't go straight back into `restore`.** It's stored as string-keyed hashes, but `ClockAnchoring.restore` calls `.anchored` and `.original` on objects. Add a loader (`ClockAnchoring.load_replacements(store)` or similar) that rebuilds them, with a test that round-trips the stored form through `restore`. Step 15 needs this.
+- **The step spec doesn't cover `now() - interval $n`.** Add a case.
+
+- **Depends on:** 20260925-15.
+- **Came from:** The first review of 20260925-15.
+- **README:** 3h.
 - **Status:** todo
 
 ## After version 1.
