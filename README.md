@@ -565,6 +565,10 @@ The scenarios are:
 - **S5:** Type boundary values substituted into the hit rows.
 - **S6:** One group with one row, one group with many rows, and one empty group.
 
+Columns the query never mentions still need values. A column with a `DEFAULT` gets its default. Any other column gets a type-typical value (0, an empty string, the epoch), or, when a `CHECK` constrains it, a value that satisfies the `CHECK`.
+
+Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle between two tables is refused with `fk_cycle`.
+
 Run steps 9a through 9e for each scenario.
 
 ### 9a. Open the transaction.
