@@ -218,11 +218,11 @@ module Quaack
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, out:, **)
+        def run(transport:, run_id:, out:, client: nil, **)
           return unless out
 
           payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
-          Report.write(payload, run_id:, path: out)
+          Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {})
         end
       end
 
@@ -250,7 +250,7 @@ module Quaack
         entries = self.class.status(@transport, @run_id)
         STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites) }
         entries = MeasurementStage.run(transport: @transport, run_id: @run_id, entries:)
-        ReportStage.run(transport: @transport, run_id: @run_id, entries:, out: @out)
+        ReportStage.run(transport: @transport, client: @client, run_id: @run_id, out: @out)
       end
     end
   end

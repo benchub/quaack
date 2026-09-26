@@ -15,29 +15,48 @@ module Quaack
       # SQLSTATEs, existing index names (schema), and DDL through
       # CandidateDdlRedaction. Never a plan or a literal.
       module NegativeResult
+        REWRITE = /\Arewrite_[1-9]\d*\z/
+
         module_function
 
         # README 15a. Rule and scenario names, round numbers, redacted DDL,
         # existing index names, and SQLSTATEs only.
         def call(store)
-          rewrites = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }.to_a
+          rewrites = rewrites(store)
           searches = ["original", *rewrites].select { store.entry?("index_search_#{it}") }
           redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
           { "disproved" => rewrites.filter_map { disproved(store, it) },
             "declined" => searches.flat_map { declined(store, it, redaction) },
-            "existing" => searches.flat_map { existing(store, it, redaction) } }
+            "existing" => searches.flat_map { existing(store, it, redaction) },
+            "knocked_out" => knocked_out(store) }
+        end
+
+        # Every stored rewrite_<n>, in number order, gaps and all.
+        def rewrites(store) = store.entry_names.grep(REWRITE).sort_by { it.delete_prefix("rewrite_").to_i }
+
+        # The entry's data, or nil if the run doesn't hold it.
+        def optional(store, name) = (store.read(name) if store.entry?(name))
+
+        # The excluded labels whose rewrite survived steps 9 and 10, with
+        # the 14d reason: minimax's not_better or footprint_tie, or 14c's
+        # result_mismatch.
+        def knocked_out(store)
+          store.read("selection")["excluded"].filter_map do |label, reason|
+            number = label.split(":").first[/\Arewrite_(\d+)\z/, 1] or next
+            next unless optional(store, "rewrite_survived_#{number}")&.fetch("survived") == true
+
+            { "label" => label, "reason" => reason }
+          end
         end
 
         def disproved(store, search)
           number = search.delete_prefix("rewrite_")
-          tested = store.entry?("rewrite_tested_#{number}") && store.read("rewrite_tested_#{number}")
-          return unless tested
+          tested = optional(store, "rewrite_tested_#{number}") or return
           return disproof(search, "step9", tested["rule"], tested["scenario"], nil) unless tested["passed"]
 
-          survived = store.entry?("rewrite_survived_#{number}") && store.read("rewrite_survived_#{number}")
-          return unless survived && survived["survived"] == false
+          return unless optional(store, "rewrite_survived_#{number}")&.fetch("survived") == false
 
-          disproof(search, "step10", nil, nil, store.read("rewrite_round_#{number}")["round"])
+          disproof(search, "step10", nil, nil, optional(store, "rewrite_round_#{number}")&.fetch("round"))
         end
 
         def disproof(rewrite, step, rule, scenario, round)

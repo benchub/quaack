@@ -822,7 +822,7 @@ Explain why the winning candidate touches fewer blocks and what that means for c
 
 ### 15a. Negative result.
 
-If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, and which proposed indexes already existed.
+If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out.
 
 ### 15b. Burndown.
 

@@ -57,6 +57,7 @@ module Quaack
         <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
         <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["search"] %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
         <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["search"] %>: <%= h e["ddl"] %>: already covered by <%= h e["covered_by"] %></li><% end %></ul>
+        <p>Rewrites that passed steps 9 and 10 but were knocked out:</p><ul><% negative.fetch("knocked_out", []).each do |k| %><li><%= h k["label"] %>: passed steps 9 and 10, but <%= h knocked_out(k["reason"]) %></li><% end %></ul>
         <% end %></section>
         <section id="burndown"><h2>Burndown</h2>
         <% [["index", "Index candidates for the original query", index_rows], ["rewrite", "Rewrite candidates", rewrite_rows]].each do |id, title, rows| %><h3><%= h title %></h3>
@@ -118,8 +119,17 @@ module Quaack
         # README 15a, sent only when the selection is empty.
         def negative = @payload["negative"]
 
+        KNOCKED_OUT = { "not_better" => "minimax found it not better than the original",
+                        "footprint_tie" => "minimax dropped it for tying a candidate with a smaller index footprint",
+                        "result_mismatch" => "its results didn't match the original's in 14c" }.freeze
+
+        def knocked_out(reason) = KNOCKED_OUT.fetch(reason) { "14d excluded it (#{reason})" }
+
         def disproof(entry)
-          return "#{entry["rewrite"]}: disproved in step 10, counterexample round #{entry["round"]}" if entry["round"]
+          if entry["step"] == "step10"
+            round = ", counterexample round #{entry["round"]}" if entry["round"]
+            return "#{entry["rewrite"]}: disproved in step 10#{round}"
+          end
 
           "#{entry["rewrite"]}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
         end
@@ -166,8 +176,8 @@ module Quaack
 
       def render(payload, run_id:, llm_calls: {}) = View.new(payload, run_id, llm_calls).render
 
-      def write(payload, run_id:, path:)
-        File.write(path, render(payload, run_id:))
+      def write(payload, run_id:, path:, llm_calls: {})
+        File.write(path, render(payload, run_id:, llm_calls:))
         path
       end
     end
