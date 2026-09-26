@@ -117,6 +117,19 @@ module Quaack
         @considered = 0
       end
 
+      # A Dedupe in the state a saved one was in, for a later call that goes
+      # on with the same search (IndexStore reads it from the store). The
+      # lists are taken as given, in order, so the caller must pass what
+      # proposals, set_aside, drops, and considered returned.
+      def self.restore(statistics:, low_cardinality:, proposals:, set_aside:, drops:, considered:) # rubocop:disable Metrics/ParameterLists
+        new(statistics:, low_cardinality:).tap do |search|
+          search.instance_variable_set(:@proposals, proposals.dup)
+          search.instance_variable_set(:@set_aside, set_aside.dup)
+          search.instance_variable_set(:@drops, drops.dup)
+          search.instance_variable_set(:@considered, considered)
+        end
+      end
+
       # Every candidate filter has considered. Each one is dropped, set
       # aside, or kept as a proposal, so it should equal their sum. The
       # 15b burndown records it as the count that came in, and checks that.
