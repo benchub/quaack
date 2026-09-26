@@ -301,11 +301,14 @@ RSpec.describe Quaack::Driver::Transport do
       expect([Thread.list.size, fds_after]).to eq([threads, fds_before])
     end
 
+    # The timeout is long enough that the child has installed its TERM trap
+    # before SIGTERM arrives, even when Ruby starts slowly under load. With a
+    # short one, a slow start let SIGTERM kill it, and the test flaked.
     it "kills a run that ignores SIGTERM with SIGKILL" do
-      step = local.new(command: EnclaveCommands.raw('trap("TERM") {}; sleep 30'), timeout: 0.5)
+      step = local.new(command: EnclaveCommands.raw('trap("TERM") {}; sleep 60'), timeout: 5)
       error = nil
 
-      expect(elapsed { error = failure(step) }).to be < 10
+      expect(elapsed { error = failure(step) }).to be < 30
       expect([error.rule, error.signal]).to eq(%w[timeout KILL])
     end
 

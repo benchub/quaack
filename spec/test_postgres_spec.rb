@@ -274,6 +274,25 @@ RSpec.describe TestPostgres do
       end
     end
 
+    it "removes a container labeled with this host whose process is dead" do
+      dead_pid = Process.spawn(RbConfig.ruby, "-e", "exit")
+      Process.wait(dead_pid)
+      stale, = Open3.capture2("docker", "create", "--label", "#{TestPostgres::LABEL}=1",
+                              "--label", "#{TestPostgres::OWNER_LABEL}=#{dead_pid}",
+                              "--label", "#{TestPostgres::HOST_LABEL}=#{Socket.gethostname}",
+                              TestPostgres.image_tag)
+      stale = stale.strip
+
+      begin
+        out, status = run_child_spec(child_source)
+
+        expect(status).to be_success, out
+        expect(docker_ids("id=#{stale}")).to be_empty
+      ensure
+        Open3.capture2e("docker", "rm", "-f", "-v", stale)
+      end
+    end
+
     it "leaves a container owned by another host, even if its pid isn't alive here" do
       dead_pid = Process.spawn(RbConfig.ruby, "-e", "exit")
       Process.wait(dead_pid)
