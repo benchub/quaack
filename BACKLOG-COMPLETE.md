@@ -1691,3 +1691,25 @@ These are minor findings from the build and review of 20260922-53:
 - **Came from:** 20260922-53 build and review.
 - **README:** 12a.
 - **Status:** done
+
+### 20260922-58. 14a and 14b metric and minimax rule.
+
+Compare on total blocks only, with a 5% threshold. A candidate must beat the original on the slow literal and be no worse on the rest. Break ties by smallest index footprint.
+
+- **Depends on:** 20260922-56, 20260922-57.
+- **README:** 14a and 14b.
+- **Status:** done
+- **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
+- **Decided (original timeouts):** Baseline gives the original up to 15 minutes per run, not the 3x clamp. If the original still times out on a literal set, that set's count counts as infinite, so any candidate that finishes beats the original there. The report flags that set. The timeout for candidates stays 3x the original, clamped.
+- **Decided:** "No worse" means an increase within the 5% threshold.
+- **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
+- **Decided:** For an unstable literal, use the maximum of the three runs.
+
+### 20260926-28. Operator rewrites skip steps 8 to 11.
+
+`quaack run --rewrites` runs step 7 after the whole pipeline, so the operator's rewrites never go through step 8 (index search and pruning), steps 9 and 10 (equivalence testing), or step 11. Run step 7 next to 6a, inside or right after `RewriteStage`, before step 8. Add an enclave status marker so a resume doesn't run step 7 again.
+
+- **Depends on:** 20260926-7, 20260926-14.
+- **Came from:** Build of 20260926-21.
+- **README:** Step 7.
+- **Status:** done

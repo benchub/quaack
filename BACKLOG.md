@@ -139,18 +139,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-57. 14 candidate runs. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-58. 14a and 14b metric and minimax rule.
-
-Compare on total blocks only, with a 5% threshold. A candidate must beat the original on the slow literal and be no worse on the rest. Break ties by smallest index footprint.
-
-- **Depends on:** 20260922-56, 20260922-57.
-- **README:** 14a and 14b.
-- **Status:** todo
-- **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
-- **Decided (original timeouts):** Baseline gives the original up to 15 minutes per run, not the 3x clamp. If the original still times out on a literal set, that set's count counts as infinite, so any candidate that finishes beats the original there. The report flags that set. The timeout for candidates stays 3x the original, clamped.
-- **Decided:** "No worse" means an increase within the 5% threshold.
-- **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
-- **Decided:** For an unstable literal, use the maximum of the three runs.
+### 20260922-58. 14a and 14b metric and minimax rule. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-59. 14c production result comparison. Done, see BACKLOG-COMPLETE.md.
 
@@ -1311,14 +1300,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** Step 13.
 - **Status:** todo
 
-### 20260926-28. Operator rewrites skip steps 8 to 11.
-
-`quaack run --rewrites` runs step 7 after the whole pipeline, so the operator's rewrites never go through step 8 (index search and pruning), steps 9 and 10 (equivalence testing), or step 11. Run step 7 next to 6a, inside or right after `RewriteStage`, before step 8. Add an enclave status marker so a resume doesn't run step 7 again.
-
-- **Depends on:** 20260926-7, 20260926-14.
-- **Came from:** Build of 20260926-21.
-- **README:** Step 7.
-- **Status:** todo
+### 20260926-28. Operator rewrites skip steps 8 to 11. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-29. Remaining test-infrastructure unknowns.
 
@@ -1341,4 +1323,15 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260922-59.
 - **Came from:** 20260922-59 build and review.
 - **README:** 14c.
+- **Status:** todo
+
+### 20260926-31. Minimax and operator rewrite loose ends.
+
+- No test covers an empty `--rewrites` file (`rewrites: []`): removing the `rewrites.empty?` check stays green. Add a spec asserting no rewrite-check call and no LLM call (from the 20260926-28 review).
+- The timed-out guard in `Minimax.decide` wasn't separately mutation-tested.
+- No end-to-end Postgres test sends a real racetrack run through `quaacks minimax`. The step test uses a hand-built store.
+
+- **Depends on:** 20260922-58, 20260926-28.
+- **Came from:** Their builds and reviews.
+- **README:** 14b, step 7.
 - **Status:** todo
