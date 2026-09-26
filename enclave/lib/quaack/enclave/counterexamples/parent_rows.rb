@@ -106,7 +106,7 @@ module Quaack
           col.default == "generated" || (!col.default.nil? && !col.default.empty? && !unique?(table, col))
         end
 
-        def unique?(table, col) = @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
+        def unique?(table, col) = @schema.constraints(table).distinct?(col.name)
 
         def free_value(table, col)
           return @values.nth(col, @counter += 1) if unique?(table, col)
