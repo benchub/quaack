@@ -97,6 +97,15 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.entry?("rewrite_1")).to be(false)
     end
 
+    it "rejects a rewrite with an unmet assumption (6b), before anything runs it" do
+      ready
+
+      outcome = rewrite_check(rewrites(rewrite(same, [not_null_id.merge("column" => "note")])))
+
+      expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "unmet_assumption"))
+      expect(stored.entry?("rewrite_1")).to be(false)
+    end
+
     it "checks only the first five, marking the rest too_many" do
       ready
 

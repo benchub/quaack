@@ -1,0 +1,113 @@
+# frozen_string_literal: true
+
+require "json"
+require "pg_query"
+
+module Quaack
+  module Enclave
+    # README 6b: checks one stated assumption (see RewriteAssumptions for
+    # the four kinds) mechanically against pg_constraint and pg_index.
+    # NOT VALID constraints count as absent.
+    #
+    #   AssumptionCheck.met?({ "kind" => "not_null", "table" => "public.orders", "column" => "id" }, connection)
+    #   # => true
+    #
+    # - not_null: a validated NOT NULL or primary key constraint on the column.
+    # - unique: a valid unique index on the table, with no predicate and no
+    #   expression, whose key columns are all among the stated ones.
+    # - foreign_key: a validated foreign key from the table to
+    #   references_table, pairing the same columns.
+    # - check: a validated CHECK on the table whose expression, deparsed
+    #   by pg_query, is identical to the stated one's. Implied constraints
+    #   don't count in v1.
+    #
+    # A table that doesn't exist meets nothing. connection is read only,
+    # with plain SELECTs; the stated values go in as parameters, and a
+    # stated CHECK expression is only parsed, never run.
+    module AssumptionCheck
+      RELATION = <<~SQL
+        (SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = $1 AND c.relname = $2)
+      SQL
+
+      NOT_NULL = <<~SQL.freeze
+        SELECT 1 FROM pg_catalog.pg_constraint c
+        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.conrelid = #{RELATION} AND c.contype IN ('n', 'p') AND c.convalidated AND a.attname = $3
+      SQL
+
+      UNIQUE = <<~SQL.freeze
+        SELECT 1 FROM pg_catalog.pg_index i
+        WHERE i.indrelid = #{RELATION} AND i.indisunique AND i.indisvalid
+          AND i.indpred IS NULL AND i.indexprs IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS u(k, n)
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.k
+            WHERE u.n <= i.indnkeyatts AND a.attname <> ALL ($3::text[]))
+      SQL
+
+      FOREIGN_KEY = <<~SQL.freeze
+        SELECT array_to_json(ARRAY(
+                 SELECT ARRAY[a.attname::text, r.attname::text]
+                 FROM unnest(c.conkey, c.confkey) AS u(k, f)
+                 JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.k
+                 JOIN pg_catalog.pg_attribute r ON r.attrelid = c.confrelid AND r.attnum = u.f))::text
+        FROM pg_catalog.pg_constraint c
+        WHERE c.conrelid = #{RELATION} AND c.contype = 'f' AND c.convalidated
+          AND c.confrelid = (SELECT c2.oid FROM pg_catalog.pg_class c2
+                             JOIN pg_catalog.pg_namespace n2 ON n2.oid = c2.relnamespace
+                             WHERE n2.nspname = $3 AND c2.relname = $4)
+      SQL
+
+      CHECK = <<~SQL.freeze
+        SELECT pg_catalog.pg_get_constraintdef(c.oid) FROM pg_catalog.pg_constraint c
+        WHERE c.conrelid = #{RELATION} AND c.contype = 'c' AND c.convalidated
+      SQL
+
+      module_function
+
+      def met?(assumption, connection)
+        table = assumption["table"].split(".", 2)
+        case assumption["kind"]
+        when "not_null" then any?(connection, NOT_NULL, [*table, assumption["column"]])
+        when "unique" then any?(connection, UNIQUE, [*table, text_array(assumption["columns"])])
+        when "foreign_key" then foreign_key?(assumption, table, connection)
+        when "check" then check?(assumption["expression"], table, connection)
+        else false
+        end
+      end
+
+      def any?(connection, sql, params) = connection.exec_params(sql, params).ntuples.positive?
+
+      def foreign_key?(assumption, table, connection)
+        stated = assumption["columns"].zip(assumption["references_columns"]).sort
+        return false unless assumption["columns"].size == assumption["references_columns"].size
+
+        referenced = assumption["references_table"].split(".", 2)
+        connection.exec_params(FOREIGN_KEY, [*table, *referenced]).column_values(0)
+                  .any? { JSON.parse(it).sort == stated }
+      end
+
+      def check?(expression, table, connection)
+        stated = normalize(expression)
+        return false unless stated
+
+        connection.exec_params(CHECK, table).column_values(0)
+                  .any? { normalize(it.delete_prefix("CHECK ")) == stated }
+      end
+
+      # The expression's one-statement "SELECT <expression>", deparsed by
+      # pg_query, or nil if it doesn't parse as exactly that.
+      def normalize(expression)
+        parse = PgQuery.parse("SELECT #{expression}")
+        return unless parse.tree.stmts.size == 1
+
+        parse.deparse
+      rescue PgQuery::ParseError
+        nil
+      end
+
+      def text_array(values) = "{#{values.map { %("#{it.gsub(/["\\]/) { |c| "\\#{c}" }}") }.join(",")}}"
+    end
+  end
+end

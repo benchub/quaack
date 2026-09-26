@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../assumption_check"
 require_relative "../rewrite_assumptions"
 require_relative "../rewrite_candidate_check"
 require_relative "../run_server"
@@ -22,7 +23,7 @@ module Quaack
       #
       # On one racetrack connection, each rewrite goes through, in order:
       # its assumptions' vocabulary (bad_assumption), RewriteCandidateCheck
-      # (its rules), and StructuralDiscard (plan_failed,
+      # (its rules), 6b's AssumptionCheck (unmet_assumption), and StructuralDiscard (plan_failed,
       # column_count_mismatch, column_type_mismatch).
       #
       # The store format, which later steps read. Each survivor is saved as
@@ -45,6 +46,8 @@ module Quaack
         FIELDS = %w[assumptions sql transformation].freeze
 
         class Error < IndexSearch::Error; end
+        # A rewrite this step rejects by a rule of its own.
+        class Rejected < IndexSearch::Error; end
 
         module_function
 
@@ -78,17 +81,20 @@ module Quaack
           return rejected(index, "too_many") if index > MAX
           return rejected(index, "bad_assumption") unless RewriteAssumptions.valid?(rewrite["assumptions"])
 
-          sql, types = checked(rewrite["sql"], context)
+          sql, types = checked(rewrite, context)
           name = save(context[:store], rewrite, sql, types)
           { type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: [] }
-        rescue RewriteCandidateCheck::Error, StructuralDiscard::Error => e
+        rescue RewriteCandidateCheck::Error, StructuralDiscard::Error, Rejected => e
           rejected(index, e.rule)
         end
 
         # The accepted SQL and its output column types, or raises.
-        def checked(sql, context)
+        def checked(rewrite, context)
           connection = context[:connection]
-          accepted = RewriteCandidateCheck.check(sql, context[:original], context[:settings], connection)
+          accepted = RewriteCandidateCheck.check(rewrite["sql"], context[:original], context[:settings], connection)
+          unmet = rewrite["assumptions"].reject { AssumptionCheck.met?(it, connection) }
+          raise Rejected, "unmet_assumption" unless unmet.empty?
+
           [accepted.sql, StructuralDiscard.check(accepted.sql, context[:store].read("redacted_query"), connection)]
         end
 
