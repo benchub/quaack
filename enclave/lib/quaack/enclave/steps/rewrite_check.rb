@@ -48,7 +48,8 @@ module Quaack
       # Each call adds its counts to the step 8 burndown (StructuralDiscard.
       # record, search rewrites), with the inbound check's rejections as
       # inbound_check. A call with 6a's rewrites (not inferred) also writes
-      # the rewrites_generated marker, so a resumed run skips 6a.
+      # the rewrites_generated marker, so a resumed run skips 6a. A call
+      # with step 7's (inferred) writes operator_rewrites_checked instead.
       #
       # It sends one rewrite_outcome per rewrite: index, outcome (accepted
       # or rejected), rule, rewrite (the entry name, or nil), and warnings.
@@ -71,7 +72,7 @@ module Quaack
                       settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
           outcomes = rewrites.each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           record(store, outcomes)
-          store.write("rewrites_generated", {}) unless inferred
+          store.write(inferred ? "operator_rewrites_checked" : "rewrites_generated", {})
           outcomes
         ensure
           connection&.close

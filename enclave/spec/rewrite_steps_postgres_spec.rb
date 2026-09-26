@@ -137,6 +137,14 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "output_mismatch"))
     end
 
+    it "records that step 7 ran for an inferred call, and 6a only for a stated one" do
+      ready
+
+      rewrite_check(rewrites(inferred: true))
+
+      expect(%w[operator_rewrites_checked rewrites_generated].map { stored.entry?(it) }).to eq([true, false])
+    end
+
     it "checks only the first five, marking the rest too_many" do
       ready
 

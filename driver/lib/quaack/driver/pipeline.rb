@@ -3,6 +3,7 @@
 require_relative "counterexamples"
 require_relative "enclave_error"
 require_relative "generator_three"
+require_relative "operator_candidates"
 require_relative "refinement_round"
 require_relative "rewrite_generation"
 
@@ -11,7 +12,9 @@ module Quaack
     # What `quaack run --run ID` drives: every remaining step of a run, in
     # order, over the transport to the run's jump server.
     #
-    #   Pipeline.new(transport:, client:, run_id:).run
+    #   Pipeline.new(transport:, client:, run_id:, rewrites: nil).run
+    #
+    # rewrites are the operator's own (README step 7), from `--rewrites`.
     #
     # It resumes. It first asks `quaacks status` which step outputs the
     # store holds, and skips the steps whose outputs are there. Each
@@ -32,7 +35,7 @@ module Quaack
 
         module_function
 
-        def run(transport:, client:, run_id:, entries:)
+        def run(transport:, client:, run_id:, entries:, **)
           args = { run: run_id, search: SEARCH }
           transport.call("index-search", args:) unless entries["index_search_#{SEARCH}"]
           llm(transport, client, run_id, SEARCH, { generated: entries["index_generated_#{SEARCH}"],
@@ -65,10 +68,14 @@ module Quaack
         end
       end
 
-      # README 6a and step 8, after step 5:
+      # README 6a, step 7, and step 8, after step 5:
       # 1. 6a: RewriteGeneration on rewrite-payload, unless the store says
       #    it ran (rewrites_generated). Its rewrite-check stores the
-      #    survivors as rewrite_<n>, and status is asked again for them.
+      #    survivors as rewrite_<n>.
+      #    Step 7: OperatorCandidates on the same payload, for the operator's
+      #    rewrites, unless there are none or the store says it ran
+      #    (operator_rewrites_checked). Its survivors are stored after 6a's.
+      #    If either ran, status is asked again for them.
       # 2. Step 8, for each stored rewrite_<n> in order: index-search,
       #    index-rank, and rewrite-prune, each skipped when its output is
       #    stored.
@@ -78,19 +85,26 @@ module Quaack
 
         module_function
 
-        def run(transport:, client:, run_id:, entries:)
-          unless entries["rewrites_generated"]
-            generate(transport, client, run_id)
+        def run(transport:, client:, run_id:, entries:, rewrites: nil)
+          unless Pipeline.checked?(entries, rewrites)
+            generate(transport, client, run_id, entries, rewrites)
             entries = Pipeline.status(transport, run_id)
           end
           (1..).lazy.take_while { entries["rewrite_#{it}"] }.each { step8(transport, run_id, entries, it) }
         end
 
-        def generate(transport, client, run_id)
+        def generate(transport, client, run_id, entries, rewrites)
           payload = transport.call("rewrite-payload", args: { run: run_id }).messages
                              .find { it["type"] == "rewrite_payload" }
-          RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
-                           .run(payload)
+          unless entries["rewrites_generated"]
+            RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
+                             .run(payload)
+          end
+          return if rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"]
+          raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
+
+          OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
+                            .run(payload, rewrites)
         end
 
         def step8(transport, run_id, entries, number)
@@ -102,7 +116,7 @@ module Quaack
         end
       end
 
-      # README steps 9 and 10, after step 8. If 6a ran in this run, it asks
+      # README steps 9 and 10, after step 8. If 6a or step 7 ran in this run, it asks
       # status again, for the rewrites it stored. For each stored rewrite_<n> not yet decided
       # (rewrite_survived_<n>): rewrite-test (step 9), unless it's stored
       # (rewrite_tested_<n>), and, if the rewrite passed, the three 10a to
@@ -111,8 +125,8 @@ module Quaack
       module CounterexampleStage
         module_function
 
-        def run(transport:, client:, run_id:, entries:)
-          entries = Pipeline.status(transport, run_id) unless entries["rewrites_generated"]
+        def run(transport:, client:, run_id:, entries:, rewrites: nil)
+          entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
           (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
             next if entries["rewrite_survived_#{number}"]
 
@@ -170,15 +184,21 @@ module Quaack
         transport.call("status", args: { run: run_id }).messages.find { it["type"] == "status" }.fetch("entries")
       end
 
-      def initialize(transport:, client:, run_id:)
+      # Whether entries say 6a ran, and step 7 too if there are rewrites.
+      def self.checked?(entries, rewrites)
+        entries["rewrites_generated"] && (rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"])
+      end
+
+      def initialize(transport:, client:, run_id:, rewrites: nil)
         @transport = transport
         @client = client
         @run_id = run_id
+        @rewrites = rewrites
       end
 
       def run
         entries = self.class.status(@transport, @run_id)
-        STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:) }
+        STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites) }
         nil
       end
     end
