@@ -1166,3 +1166,92 @@ Run every measurement statement in a `READ ONLY` transaction with `statement_tim
 - **README:** 12b.
 - **Status:** done
 - **Decided:** `statement_timeout` is 3× the original query's baseline time, clamped to at least 5 seconds and at most 5 minutes. We should always be willing to wait 5 seconds, and anything needing more than 5 minutes needs a human. A candidate whose measurement times out is dropped and counted in the report as timed out.
+
+### 20260923-12. 5a-2 on rewrite plans.
+
+20260922-31 builds generator two from the production plan only. The task also wanted it to run on rewrites, with the racetrack plan. A racetrack plain `EXPLAIN` has no actual rows and no rows removed, so most of the patterns can't fire there. Decide how the patterns work on estimates, then build it.
+
+- **Depends on:** 20260922-31, 20260922-26.
+- **Came from:** Splitting 20260922-31, at the user's request to build it early.
+- **README:** 5a-2, step 8.
+- **Status:** done
+- **Decided:** On rewrite plans, run only the patterns that need neither actual rows nor rows removed, and skip the rest. The LLM in step 11 covers the gaps.
+
+### 20260922-40. 8 structural discards.
+
+Discard candidates that fail to plan on the racetrack, or whose output column count or types differ from the original. Count inbound-check rejections here too, for the report.
+
+- **Depends on:** 20260922-10, 20260922-23, 20260922-26.
+- **README:** Step 8.
+- **Status:** done
+
+### 20260922-41. 8 mechanical index search per candidate.
+
+For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse and racetrack plan. Save the 5a-4 results for step 11.
+
+- **Depends on:** 20260922-40, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260923-12.
+- **README:** Step 8.
+- **Status:** done
+
+### 20260922-42. 8 three-configuration pruning.
+
+`EXPLAIN` each candidate with no hypothetical indexes, with the original's top three, and with its own top three. Discard it only if its canonical plan matches the original's in all three.
+
+- **Depends on:** 20260922-41, 20260922-35, 20260922-15.
+- **README:** Step 8.
+- **Status:** done
+- **Decided:** Compare against the original's plan under the same index configuration.
+
+## Step 9: Predicate-aware fixtures.
+
+### 20260922-34. 5a-6 refinement round.
+
+If any LLM candidate went unused or lost to a simpler mechanical candidate, send the LLM its own 5a-4 results and ask for one revision. Filter and test what comes back. Only one round.
+
+- **Depends on:** 20260922-33.
+- **README:** 5a-6.
+- **Status:** done
+- **Decided:** An LLM candidate qualifies for the revision round if the planner didn't use it, or if a mechanical candidate with fewer key and INCLUDE columns (ties broken by smaller estimated size) has a worst-case cost across the literal sets no higher than the LLM candidate's.
+
+### 20260922-36. Step 5 orchestration.
+
+Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order the README gives.
+- **Decided (driver CLI):** `quaack start` (20260926-1) creates the run, and `quaack run --run ID` drives every remaining step in order. It can resume, skipping steps whose outputs are already in the store. Each orchestration task adds its stage to that sequence.
+
+- **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
+- **README:** 5a.
+- **Status:** done
+- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. Update from 20260925-13: the 5a-5 `index-payload` step (20260925-4) sends it, and Dedupe's low-cardinality input comes from the stored `classification` entry.
+
+## Steps 6 and 7: Rewrite candidates.
+
+### 20260926-1. Driver finds the jump server with a configured command.
+
+The driver has no way to know which jump server serves a production server. Add a driver config file on the laptop, `~/.quaack/driver.json`, with `jump_command`: a shell one-liner with `{server}` that prints the ssh host, following the pattern of `memory_command` (quoting, timeout, output checks). The operator starts a run from the laptop with something like `quaack start --server <prod> --query <path on jump server> --plan <path on jump server>`. The driver runs `jump_command`, then runs `quaacks intake` remotely over `Transport::Ssh` (the query and plan files stay on the jump server), and remembers run ID to jump host locally, so later commands take only the run ID. Update README "Where QUAACK runs" and step 1.
+
+- **Depends on:** 20260922-5, 20260922-13.
+- **README:** Where QUAACK runs, Step 1.
+- **Decided:** The user chose a driver-side config command over a static map or a `--jump` flag.
+- **Status:** done
+
+### 20260926-2. Build and record the run server with a configured command.
+
+Add `run_server_command` to the quaacks config on the jump server (`~/.quaack/config.json`). It's given `{server}` and `{run}`, builds or finds the run server from production, and prints JSON `{host, port, racetrack_db, arena_db}`. `quaacks run-server --run ID` with no flags calls it, validates the output the same way it validates the flags, and runs the step 4 checks. Flags still override. Add an optional matching `destroy_command` that `quaacks teardown` calls, so the run server is destroyed too, not just announced. Follow the `memory_command` pattern for quoting, timeouts, and discarding stderr. Nothing the command prints goes out except through the existing rules. Update README step 4 and teardown.
+
+- **Depends on:** 20260925-7, 20260922-66.
+- **README:** 4, Run teardown.
+- **Decided:** The user chose a provision command in the quaacks config over having the operator build the server by hand.
+- **Status:** done
+
+### 20260924-30. Include extensions in the 3b schema dump.
+
+pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b loads into arena fails on columns like `public.citext`. Found while building 20260922-27. The user picked this fix on September 24.
+- For each extension in production's `pg_extension` other than plpgsql, pass a quoted `--extension=<name>` to the full dump. pg_dump then emits `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...`.
+- Add each extension's schema to the full dump's namespaces, so `WITH SCHEMA ext` doesn't fail on a schema that doesn't exist.
+- Test with real pg_dump 18 output: citext in public, and pgcrypto in a separate schema `ext`. Load the dump into a fresh template0 database, and check that it succeeds.
+- Known and accepted: CREATE EXTENSION carries no VERSION, so arena gets the run server's default versions.
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build of 20260922-27.
+- **README:** 3b.
+- **Status:** done
