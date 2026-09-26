@@ -17,7 +17,12 @@ RSpec.describe Quaack::Driver::Pipeline do
 
   # Stands in for the ssh transport, at the edge: records each call and
   # answers with the enclave's messages for that subcommand.
+  # Status replies after the first, in order, when a spec needs status to
+  # change during the run. Otherwise every status call answers entries.
+  let(:later_statuses) { [] }
+
   let(:transport) do
+    statuses = later_statuses
     replies = { "status" => [{ "type" => "status", "entries" => entries }], "index-payload" => [payload],
                 "index-feedback" => [feedback],
                 "index-test" => [{ "type" => "index_outcome", "index" => 1, "outcome" => "accepted" }] }
@@ -27,8 +32,14 @@ RSpec.describe Quaack::Driver::Pipeline do
       define_method(:initialize) { @calls = [] }
 
       define_method(:call) do |subcommand, **options|
+        first_status = @calls.none? { it.first == "status" }
         @calls << [subcommand, options]
-        Data.define(:messages).new(messages: replies.fetch(subcommand, []))
+        messages = if subcommand == "status" && !first_status && statuses.any?
+                     [{ "type" => "status", "entries" => statuses.shift }]
+                   else
+                     replies.fetch(subcommand, [])
+                   end
+        Data.define(:messages).new(messages:)
       end
     end.new
   end
@@ -179,6 +190,16 @@ RSpec.describe Quaack::Driver::Pipeline do
       expect(searched.drop(2)).to eq([%w[index-feedback rewrite_1], %w[index-rank rewrite_1],
                                       %w[index-feedback rewrite_2]])
       expect(fake.asks).to eq([])
+    end
+
+    it "asks status again for step 11, rather than trusting the entries from the start of the run" do
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, **rewrite(1, step11: false, generated: true, ranked: true))
+      later_statuses << entries.merge("rewrite_step11_1" => true)
+
+      run
+
+      expect(searched.drop(2)).to eq([%w[index-feedback rewrite_1]])
     end
   end
 

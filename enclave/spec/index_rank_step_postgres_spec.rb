@@ -17,6 +17,10 @@ RSpec.describe "quaacks index-rank, against a real server" do
 
   it "stores the top three and the best combination from mechanical and LLM candidates, and sends only done" do
     prepare
+    # The sentinel is a literal in the slow and worst-case sets, so a plan
+    # stored unredacted carries it, and the leak check below bites.
+    expect(stored.read("literal_sets").values_at("slow", "worst_case").map { it.dig("$1", "value") })
+      .to eq([sentinels.text] * 2)
     index_search
     index_test("CREATE INDEX ON public.orders (status) WHERE note = 'n1'", # dropped: not low-cardinality
                "CREATE INDEX ON public.orders (note) WHERE status = 'held'")
@@ -43,8 +47,8 @@ RSpec.describe "quaacks index-rank, against a real server" do
     expect(kept.map { it["plans"].keys }).to all(eq(entry["baseline"].keys))
     held = JSON.generate(kept.map { it["plans"] })
     expect(kept.flat_map { it["plans"].values }).to all(be_a(Array))
-    expect(held).to include("$1")
     expect(LeakCheck.findings(sentinels, stdout: held)).to eq([])
+    expect(held).to include("$1")
   end
 
   it "refuses an unknown search, and a run with no index search" do
