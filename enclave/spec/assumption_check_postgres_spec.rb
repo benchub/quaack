@@ -24,7 +24,8 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       ALTER TABLE public.orders ADD CONSTRAINT seller_fk FOREIGN KEY (seller_id) REFERENCES public.customers (id) NOT VALID;
       ALTER TABLE public.orders ADD CONSTRAINT note_nn NOT NULL note NOT VALID;
       CREATE TABLE public.items (id int PRIMARY KEY, sku text, code text NOT NULL, tag text, ref int NOT NULL,
-                                 price numeric CHECK (price > 0), lot int, CONSTRAINT lot_pos CHECK (lot > 0) NO INHERIT);
+                                 price numeric CHECK (price > 0), lot int,
+                                 state text CHECK (state IN ('new', 'paid')), kind text CHECK (kind NOT IN ('x', 'y')), CONSTRAINT lot_pos CHECK (lot > 0) NO INHERIT);
       CREATE UNIQUE INDEX items_sku ON public.items (sku);
       CREATE UNIQUE INDEX items_code ON public.items (code);
       CREATE UNIQUE INDEX items_tag ON public.items (tag) NULLS NOT DISTINCT;
@@ -73,6 +74,13 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
     items = ->(expression) { check(expression).merge("table" => "public.items") }
     expect([met?(items.call("price > 0")), met?(items.call("price > 1")), met?(items.call("lot > 0"))])
       .to eq([true, false, true])
+  end
+
+  it "meets a CHECK stated as an IN list, which Postgres stores as = ANY (ARRAY[...])" do
+    items = ->(expression) { check(expression).merge("table" => "public.items") }
+    expect([met?(items.call("state IN ('new', 'paid')")), met?(items.call("state IN ('new')")),
+            met?(items.call("kind NOT IN ('x', 'y')")), met?(items.call("kind IN ('x', 'y')"))])
+      .to eq([true, false, true, false])
   end
 
   it "doesn't meet an assumption about a table that doesn't exist" do
