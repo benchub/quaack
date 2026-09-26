@@ -109,7 +109,8 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       "CASE" => "SELECT CASE WHEN random() > 0.5 THEN 1 END",
       "COALESCE" => "SELECT coalesce(null, random())",
       "a cast's argument" => "SELECT random()::text",
-      "an operator's argument" => "SELECT 1 + random()"
+      "an operator's argument" => "SELECT 1 + random()",
+      "a row comparison's tuple" => "SELECT id FROM orders WHERE (status, id) < ('a', (random() * 9)::int)"
     }.each do |place, sql|
       it "aborts on one in #{place}" do
         expect { check(sql) }.to volatile_error("function pg_catalog.random is volatile")

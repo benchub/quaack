@@ -157,6 +157,8 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
 - **Decided:** The end-to-end test uses a scripted fake LLM, so it runs free in rake. The scripts must be realistic, drawn from a large corpus of responses. **Before building, ask the user questions:** they'll collect responses from several different LLMs to seed the corpus.
+- **Landed (part one):** The prompt pack generator, `script/prompt_pack/run.rb`, and a partial pack in `spec/fixtures/llm_corpus/`. Rerun it after 20260926-37 and keyset support land, to capture the 10a and step 11 prompts.
+- **Note (2026-09-26):** The user is having another LLM build a large end-to-end query corpus: for each test, the schema, the inserts, the slow query, and the changes that make it fast. Build -65's end-to-end tests on that corpus when it arrives. Don't spend cycles writing our own fixture queries beyond the small prompt pack.
 - **Decided (corpus):** Split into two parts. First, a builder generates a prompt pack: it runs the pipeline on harness fixtures and captures every real LLM prompt (5a-5, 5a-6, 6a, step 7, 10a) to files. The user pastes each prompt into 3 LLMs, 3 replies each, and saves the replies next to the prompts. The fake LLM then replays them. Queries to cover: an ORM-style join (equality plus range, ORDER BY, LIMIT), aggregates with GROUP BY/HAVING, a correlated EXISTS or IN subquery, and keyset pagination (row comparisons are unsupported in v1, so that one tests the refusal path unless it's written without a row comparison).
 
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
@@ -1317,4 +1319,15 @@ Both are correctness bugs on realistic setups: a correct rewrite is rejected. Fi
 - **Depends on:** 20260922-63, -64.
 - **Came from:** Their build and review.
 - **README:** 15a, 15b.
+- **Status:** todo
+
+### 20260926-39. LLM payload fidelity.
+
+The prompt pack showed two things wrong with what the LLM is sent:
+- **Placeholder types:** the `created_at` placeholders in the ORM join are typed `text` in the payload, though the plan casts them to `timestamptz`. The payload should give each placeholder the type Postgres infers for it (for example from a PREPARE, as `Measurement` does).
+- **pg_dump's `\restrict` token:** the schema DDL sent to the LLM includes pg_dump's random `\restrict`/`\unrestrict` token lines. They're noise for the LLM, and they change every prompt on every run. Strip them from the schema in payloads.
+
+- **Depends on:** 20260925-4 (index payload), 20260922-37 (rewrite payload).
+- **Came from:** Review of the 20260922-65 prompt pack.
+- **README:** 3b, 5a-5, 6a.
 - **Status:** todo

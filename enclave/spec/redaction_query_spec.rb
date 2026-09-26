@@ -241,6 +241,33 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     end
   end
 
+  describe "a keyset row comparison" do
+    let(:sql) do
+      "SELECT o.id, o.created_at FROM public.orders o " \
+        "WHERE o.status = 'quaack-sentinel-status' AND (o.created_at, o.id) < ('2031-07-19 10:00:00+00', 918273645) " \
+        "ORDER BY o.created_at DESC, o.id DESC LIMIT 25"
+    end
+
+    it "gives each literal in the tuple its own placeholder, in text order" do
+      result = redact(sql)
+      expect(result.sql).to eq("SELECT o.id, o.created_at FROM public.orders o " \
+                               "WHERE o.status = $1 AND (o.created_at, o.id) < ($2, $3) " \
+                               "ORDER BY o.created_at DESC, o.id DESC LIMIT $4")
+      expect(result.placeholder_map.transform_values { it["value"] })
+        .to eq("$1" => "quaack-sentinel-status", "$2" => "2031-07-19 10:00:00+00", "$3" => "918273645", "$4" => "25")
+    end
+
+    it "keeps the tuple's literals out of the SQL and the shapes" do
+      result = redact(sql)
+      json = JSON.generate(result.placeholder_shapes)
+      %w[quaack-sentinel-status 2031-07-19 918273645].each do |sentinel|
+        expect(result.sql).not_to include(sentinel)
+        expect(json).not_to include(sentinel)
+        expect(JSON.generate(result.placeholder_map)).to include(sentinel)
+      end
+    end
+  end
+
   describe "refusals" do
     # Every SQL-only deparse bug Deparse's specs keep refusing either hangs
     # on a constant, which redaction replaces, or is outside SupportedSql.

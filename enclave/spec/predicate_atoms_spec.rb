@@ -71,6 +71,30 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
         .to eq([[:range, ">", false], [:equality, "=", false], [:in, "IN", false]])
     end
 
+    it "makes each keyset row comparison one row_comparison atom" do
+      sql = where("(o.created_at, o.id) < ($1, $2) AND (o.total, o.id) >= (5, 7) AND ($3, $4) > (o.status, o.id) " \
+                  "AND (o.status, o.id) = (1, 2) AND (o.status, o.id) <> (1, 2) AND ROW(o.id, o.total) <= ROW(1, 2)")
+      atoms = extract(sql)
+      expect(atoms.map { |a| [a.kind, a.operator, a.negated, a.bare] })
+        .to eq([[:row_comparison, "<", false, true], [:row_comparison, ">=", false, true],
+                [:row_comparison, ">", false, true], [:row_comparison, "=", false, true],
+                [:row_comparison, "<>", true, true], [:row_comparison, "<=", false, true]])
+      expect(atoms[0].columns.map(&:name)).to eq(%w[created_at id])
+      expect(atoms[0].shape).to eq("(o.created_at, o.id) < ($1, $2)")
+      expect(atoms[1].shape).to eq("(o.total, o.id) >= ($5, $6)")
+    end
+
+    it "isn't bare when a row element is an expression, and is other when a side mixes columns and values" do
+      expect(extract(where("(lower(o.note), o.id) > ($1, $2)")).map { |a| [a.kind, a.bare] })
+        .to eq([[:row_comparison, false]])
+      expect(kinds(where("(o.id, 1) > (2, o.total)"))).to eq([[:other, ">", false]])
+    end
+
+    it "is a join atom when the rows name two relations" do
+      sql = "SELECT 1 FROM public.orders o JOIN public.items i ON (o.id, o.status) = (i.order_id, i.qty)"
+      expect(kinds(sql)).to eq([[:join, "=", false]])
+    end
+
     it "classifies what fits no family as other" do
       sql = where("o.active AND o.status < ALL('{1}') AND o.status = ANY(ARRAY[o.id]) AND o.tags @> '{x}' " \
                   "AND o.status = o.id AND o.active IS TRUE AND lower(o.note) " \

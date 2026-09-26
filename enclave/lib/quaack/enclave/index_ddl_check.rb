@@ -57,7 +57,9 @@ module Quaack
     # 7. unsupported_construct: the key expressions and the predicate,
     #    taken as a SELECT's target list and WHERE clause, use a construct
     #    SupportedSql refuses. FunctionCalls, which the next check relies
-    #    on, is only right for what SupportedSql lists.
+    #    on, is only right for what SupportedSql lists. A row comparison,
+    #    which SupportedSql allows for keyset pagination, is refused here
+    #    too as RowExpr: no index predicate needs one.
     # 8. volatile_function (or bad_search_path): the 3d VolatilityCheck, run
     #    on that SELECT, finds a volatile function, operator, or cast. Its
     #    conservative rule holds here too: a call is refused if any
@@ -199,9 +201,20 @@ module Quaack
       end
 
       def volatility!(probe, settings, connection)
+        raise Error.new("unsupported_construct", "RowExpr") if row?(probe.tree)
+
         VolatilityCheck.check_parse(probe, settings, connection)
       rescue SupportedSql::Error, VolatilityCheck::Error => e
         raise Error.from(e), cause: nil
+      end
+
+      def row?(node)
+        case node
+        when PgQuery::RowExpr then true
+        when Google::Protobuf::RepeatedField then node.any? { |child| row?(child) }
+        when Google::Protobuf::MessageExts then node.class.descriptor.any? { |field| row?(field.get(node)) }
+        else false
+        end
       end
 
       # The statement without its name or IF NOT EXISTS, deparsed.

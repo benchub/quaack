@@ -167,7 +167,7 @@ To do that, the operator saves the query and the plan as files on the jump serve
 
 The operator usually starts this from the laptop instead, with `quaack start --server <name> --query <file> --plan <file>`, where the files are paths on the jump server. The driver finds the jump server with `jump_command` (see "Where QUAACK runs"), runs `quaacks intake` there over ssh, and prints the run ID. The files stay on the jump server.
 
-The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
+The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, `IS NULL`, and the row comparisons of keyset pagination, such as `(created_at, id) < ($1, $2)`, with `<`, `<=`, `>`, `>=`, `=`, or `<>` between two rows of the same length. A row anywhere else, such as `ROW(a, b)` in the select list, `(a, b) IN (SELECT ...)`, or a nested row, is refused. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
 
 Fully qualify every relation in the query so `search_path` never matters.
 
@@ -264,6 +264,7 @@ When a set can't get a value, the placeholder keeps its slow literal there, and 
 
 - A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
 - A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
+- A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
 - A placeholder that 3g shares between expressions, since it can feed more than one place.
 
 The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
@@ -410,7 +411,7 @@ For each table in the query:
 2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
 3. Build the index key in this order:
    - Equality columns, most selective first.
-   - At most one range column.
+   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order.
    - The `ORDER BY` columns, but only if they come after the equality columns and their sort directions match. That lets the planner drop the sort.
 4. Cap the key at three or four columns.
 5. Add the rest of the select-list columns as `INCLUDE` columns so an index-only scan becomes possible.
@@ -614,6 +615,7 @@ From the pg_query parse, pull out every predicate atom:
 - `IN` lists.
 - `IS NULL` tests.
 - Every join condition.
+- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. A tie there, where the later columns decide, is left out. With `=` or `<>`, it gets no pool, so 9c may mark it untested.
 
 For each atom, build a pool of interesting values. Include one value that satisfies the atom, one that fails it, and the boundary values where they exist. Boundary values include the literal itself, one unit on either side of it, a matching and a non-matching pattern, and case variants for text. Add `NULL` for nullable columns, and add the type's boundary values for every column.
 

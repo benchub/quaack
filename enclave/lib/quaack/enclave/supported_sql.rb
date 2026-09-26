@@ -38,6 +38,8 @@ module Quaack
     #   expressions, HAVING, WINDOW, ORDER BY (USING too), LIMIT, OFFSET,
     #   and FETCH FIRST (WITH TIES too). They're common and use no node
     #   that isn't listed for something else.
+    # - Row comparisons for keyset pagination, (a, b) < ($1, $2), with the
+    #   operators in ROW_COMPARE_OPERATORS.
     #
     # Refused, each a family that gets its own task after version 1:
     # - Any statement but SELECT, even inside a CTE: INSERT, UPDATE,
@@ -48,7 +50,8 @@ module Quaack
     #   list, anything but a function call in a function's place in FROM,
     #   and table functions (JSON_TABLE and XMLTABLE).
     # - CTE CYCLE and SEARCH.
-    # - ROW(...) and row comparisons, such as (a, b) < (1, 2).
+    # - ROW(...) outside a row comparison, and row comparisons other than
+    #   those in ROW_COMPARE_OPERATORS, such as (a, b) IN (SELECT ...).
     # - GROUPING SETS, ROLLUP, CUBE, and GROUPING().
     # - The XML and the SQL/JSON functions and predicates.
     # - SIMILAR TO.
@@ -124,7 +127,23 @@ module Quaack
         pg_catalog.btrim pg_catalog.ltrim pg_catalog.rtrim pg_catalog.timezone
       ].freeze
 
+      # The operators a row comparison can use, such as the keyset
+      # pagination (created_at, id) < ($1, $2). Both sides are rows of the
+      # same length, two or more, written (a, b) or ROW(a, b). A row
+      # anywhere else, or nested in one, is refused as RowExpr.
+      ROW_COMPARE_OPERATORS = %w[< <= > >= = <>].freeze
+
       module_function
+
+      # Whether this A_Expr is a supported row comparison.
+      def row_comparison?(expr)
+        rows = [expr.lexpr&.row_expr, expr.rexpr&.row_expr]
+        row_operator?(expr) && rows.all? && rows[0].args.size >= 2 && rows[0].args.size == rows[1].args.size
+      end
+
+      def row_operator?(expr)
+        expr.kind == :AEXPR_OP && ROW_COMPARE_OPERATORS.include?(expr.name.first.string&.sval)
+      end
 
       def check!(parse)
         walk(parse.tree)
@@ -137,8 +156,22 @@ module Quaack
         when PgQuery::Node then walk(node.inner)
         when Google::Protobuf::MessageExts
           check_node(node)
-          node.class.descriptor.each { |field| walk(field.get(node)) }
+          walk_fields(node)
         end
+      end
+
+      # A row comparison's rows aren't checked themselves, only what's in
+      # them.
+      def walk_fields(node)
+        return walk_row_comparison(node) if node.is_a?(PgQuery::A_Expr) && row_comparison?(node)
+
+        node.class.descriptor.each { |field| walk(field.get(node)) }
+      end
+
+      def walk_row_comparison(expr)
+        walk(expr.name)
+        walk(expr.lexpr.row_expr.args)
+        walk(expr.rexpr.row_expr.args)
       end
 
       def check_node(node)
