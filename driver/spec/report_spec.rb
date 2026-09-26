@@ -70,7 +70,48 @@ RSpec.describe Quaack::Driver::Report do
     expect(html).to include("<td>16 kB</td><td></td><td>t_a_idx</td>")
   end
 
-  it "leaves sections for the negative result and the burndown" do
-    expect(html).to include(%(<section id="negative-result">)).and include(%(<section id="burndown">))
+  it "leaves the negative result empty when a candidate beat the original" do
+    expect(html).to include(%(<section id="negative-result"></section>))
+  end
+
+  describe "when nothing beat the original (15a)" do
+    let(:negative_html) do
+      described_class.render(
+        payload.merge(
+          "top" => [], "candidates" => [],
+          "negative" => {
+            "disproved" => [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_<semantics>",
+                              "scenario" => "S3", "round" => nil },
+                            { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil,
+                              "round" => 2 }],
+            "declined" => [{ "search" => "original", "ddl" => "CREATE INDEX ON public.t USING btree (a) WHERE a < ?",
+                             "reason" => "unused", "sqlstate" => nil },
+                           { "search" => "rewrite_1", "ddl" => "CREATE INDEX ON public.t USING gin (b)",
+                             "reason" => "hypopg_refused", "sqlstate" => "0A000" }],
+            "existing" => [{ "search" => "original", "ddl" => "CREATE INDEX ON public.t USING btree (c)",
+                             "covered_by" => "t_c_d_idx" }]
+          }
+        ), run_id: "RUN-1"
+      )
+    end
+
+    let(:section) { negative_html[%r{<section id="negative-result">.*?</section>}m] }
+
+    it "says which rewrites were disproved, and by which scenario or round" do
+      expect(section).to include("<li>rewrite_2: disproved in step 9 by scenario S3 (rule null_&lt;semantics&gt;)</li>")
+      expect(section).to include("<li>rewrite_3: disproved in step 10, counterexample round 2</li>")
+    end
+
+    it "says which indexes the planner declined, and why" do
+      expect(section).to include("<li>original: CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?: " \
+                                 "the planner never used it</li>")
+      expect(section).to include("<li>rewrite_1: CREATE INDEX ON public.t USING gin (b): HypoPG refused it " \
+                                 "(SQLSTATE 0A000)</li>")
+    end
+
+    it "says which proposed indexes already existed" do
+      expect(section).to include("<li>original: CREATE INDEX ON public.t USING btree (c): already covered by " \
+                                 "t_c_d_idx</li>")
+    end
   end
 end

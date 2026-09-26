@@ -12,8 +12,9 @@ module Quaack
     #   Report.render(payload, run_id:)  # => HTML String
     #   Report.write(payload, run_id:, path:)  # => path
     #
-    # The negative-result (15a) and burndown (15b) sections are left as
-    # placeholders for their own tasks.
+    # The negative-result section (15a) is filled only when the payload
+    # carries negative, which the enclave sends when the selection is empty.
+    # The burndown section (15b) is left as a placeholder for its own task.
     module Report
       TEMPLATE = <<~HTML
         <!DOCTYPE html>
@@ -49,7 +50,11 @@ module Quaack
         <table><tr><th>Name</th><th>DDL</th><th>Built size</th><th>Existing index covering it</th><th>Existing indexes it makes redundant</th></tr>
         <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h i["ddl"] %></td><td><%= size(i["size"]) %></td><td><%= h i["covered_by"] %></td><td><%= h i["makes_redundant"].join(", ") %></td></tr>
         <% end %></table></section>
-        <section id="negative-result"></section>
+        <section id="negative-result"><% if negative %><h2>Why nothing beat the original</h2>
+        <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
+        <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["search"] %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
+        <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["search"] %>: <%= h e["ddl"] %>: already covered by <%= h e["covered_by"] %></li><% end %></ul>
+        <% end %></section>
         <section id="burndown"></section>
         </body></html>
       HTML
@@ -65,6 +70,22 @@ module Quaack
 
         %w[top excluded infinite_sets verdicts measurements candidates indexes original_plan
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
+
+        # README 15a, sent only when the selection is empty.
+        def negative = @payload["negative"]
+
+        def disproof(entry)
+          return "#{entry["rewrite"]}: disproved in step 10, counterexample round #{entry["round"]}" if entry["round"]
+
+          "#{entry["rewrite"]}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
+        end
+
+        def declined(entry)
+          return "the planner never used it" if entry["reason"] == "unused"
+          return "HypoPG refused it (SQLSTATE #{entry["sqlstate"]})" if entry["reason"] == "hypopg_refused"
+
+          "refused (#{entry["reason"]})"
+        end
 
         def h(value) = ERB::Util.html_escape(value.to_s)
 

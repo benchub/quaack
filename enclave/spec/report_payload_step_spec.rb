@@ -2,6 +2,8 @@
 
 require "json"
 require "quaack/enclave/clock_anchoring"
+require "quaack/enclave/index_candidate"
+require "quaack/enclave/index_store"
 require "quaack/enclave/store"
 
 # `quaacks report-payload --run <run ID>` (README step 15): one report
@@ -133,5 +135,85 @@ RSpec.describe "quaacks report-payload" do
   it "never sends a literal value or a row value" do
     expect(report).not_to be_nil
     expect_no_leaks(sentinels, outcome)
+  end
+
+  describe "when nothing beats the original (15a)" do
+    def plain(ddl)
+      candidate = Quaack::Enclave::IndexCandidate.from_ddl(ddl, sources: [:generator_one])
+      Quaack::Enclave::IndexStore.candidate_plain(candidate)
+    end
+
+    def result(ddl, used:, refusal: nil)
+      { "candidate" => plain("CREATE INDEX ON public.orders USING #{ddl}"), "size" => refusal ? nil : 8192,
+        "refusal" => refusal, "plans" => refusal ? {} : { "slow" => { "used" => used, "total_cost" => 1.0 } } }
+    end
+
+    def dedupe
+      existing = "CREATE INDEX orders_created_at_id_idx ON public.orders USING btree (created_at, id)"
+      { "proposals" => [], "set_aside" => [], "considered" => 3,
+        "drops" => [{ "candidate" => plain("CREATE INDEX ON public.orders USING btree (created_at)"),
+                      "reason" => "covered_by_existing",
+                      "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } },
+                    { "candidate" => plain("CREATE INDEX ON public.orders USING btree (id)"),
+                      "reason" => "duplicate", "covered_by" => nil }] }
+    end
+
+    def populate_negative(store) # rubocop:disable Metrics/MethodLength
+      populate(store)
+      store.write("selection", "top" => [], "excluded" => { "rewrite_1:none" => "worse" }, "infinite_sets" => [])
+      store.write("rewrite_2", "sql" => "SELECT 1")
+      store.write("rewrite_tested_2", "passed" => false, "scenario" => "S3", "rule" => "null_semantics",
+                                      "untested" => 0, "untested_atoms" => [])
+      store.write("rewrite_survived_2", "survived" => false)
+      store.write("rewrite_3", "sql" => "SELECT 2")
+      store.write("rewrite_tested_3", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 0,
+                                      "untested_atoms" => [])
+      store.write("rewrite_round_3", "round" => 2, "evidence" => true)
+      store.write("rewrite_survived_3", "survived" => false)
+      store.write("index_search_original", "dedupe" => dedupe, "llm_results" => [], "results" => [
+                    result("btree (note) WHERE note = '#{sentinel}'", used: false),
+                    result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }),
+                    result("btree (id, note)", used: true)
+                  ])
+    end
+
+    let(:outcome) do
+      store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+      populate_negative(store)
+      quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
+    end
+
+    it "says which rewrites were disproved, and by which step 9 scenario or step 10 round" do
+      expect(report["negative"]["disproved"]).to eq(
+        [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_semantics", "scenario" => "S3",
+           "round" => nil },
+         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2 }]
+      )
+    end
+
+    it "says which indexes the planner declined, and why, with redacted DDL" do
+      expect(report["negative"]["declined"]).to eq(
+        [{ "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (note) WHERE note = ?",
+           "reason" => "unused", "sqlstate" => nil },
+         { "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING gin (note)",
+           "reason" => "hypopg_refused", "sqlstate" => "0A000" }]
+      )
+    end
+
+    it "says which proposed indexes already existed" do
+      expect(report["negative"]["existing"]).to eq(
+        [{ "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)",
+           "covered_by" => "orders_created_at_id_idx" }]
+      )
+    end
+
+    it "never sends a literal value" do
+      expect(report["negative"]).not_to be_nil
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
+  it "sends no negative result when a candidate beat the original" do
+    expect(report["negative"]).to be_nil
   end
 end

@@ -6,6 +6,7 @@ require_relative "../dedupe"
 require_relative "../index_candidate"
 require_relative "../planner_statistics"
 require_relative "../table_name"
+require_relative "negative_result"
 
 module Quaack
   module Enclave
@@ -26,6 +27,13 @@ module Quaack
       #                    "covered_by", "makes_redundant" } }
       #   original_plan    the redacted step 1 plan's node shapes
       #   timed_out_count  candidate runs dropped for timing out
+      #   negative         nil unless top is empty (README 15a); then
+      #                    { "disproved" => [{ "rewrite", "step" (step9 or
+      #                    step10), "rule", "scenario", "round" }],
+      #                    "declined" => [{ "search", "ddl", "reason"
+      #                    (unused or the 5a-4 refusal rule), "sqlstate" }],
+      #                    "existing" => [{ "search", "ddl", "covered_by"
+      #                    (the existing index's name) }] }
       #
       # Trust boundary. sql is the anchored query with the 3h functions put
       # back (the 3g redacted query, literals as $n) for an index-only
@@ -43,7 +51,8 @@ module Quaack
           [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
              verdicts: store.read("minimax")["verdicts"].slice(*labels),
              measurements: measurements(store, labels), **shapes(store, labels),
-             timed_out_count: store.read("candidate_runs")["timed_out_count"] }]
+             timed_out_count: store.read("candidate_runs")["timed_out_count"],
+             negative: labels.empty? ? NegativeResult.call(store) : nil }]
         end
 
         def shapes(store, labels)
