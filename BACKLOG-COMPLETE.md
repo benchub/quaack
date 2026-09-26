@@ -1610,3 +1610,11 @@ Run the original three times per literal set with `EXPLAIN (ANALYZE, BUFFERS, TI
 - **Came from:** Review of 20260926-19.
 - **README:** 6b, 12b.
 - **Status:** done
+
+### 20260922-56. 13a index baselines.
+
+Repeat the baseline runs for each index combination kept in 5a.
+
+- **Depends on:** 20260922-55.
+- **README:** 13a.
+- **Status:** done

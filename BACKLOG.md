@@ -135,13 +135,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-55. 13 baseline runs. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-56. 13a index baselines.
-
-Repeat the baseline runs for each index combination kept in 5a.
-
-- **Depends on:** 20260922-55.
-- **README:** 13a.
-- **Status:** todo
+### 20260922-56. 13a index baselines. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-57. 14 candidate runs.
 
