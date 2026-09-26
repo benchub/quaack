@@ -64,12 +64,21 @@ module Quaack
         "partial_not_low_cardinality" => "its predicate uses a column that isn't low-cardinality, " \
                                          "or a constant not compared directly with one",
         "unrepresentable" => "QUAACK can't represent it, such as an operator class with parameters",
-        "too_many" => "it's past the first five",
         "storage_options" => "it uses WITH (...) storage options"
       }.freeze
 
       Round = Data.define(:ddls, :outcomes)
       Result = Data.define(:rounds)
+
+      # The index_test callable for run's search, over transport: it sends
+      # `quaacks index-test --run RUN --search SEARCH` with {"ddls": [...]}
+      # on stdin, and returns the index_outcome messages.
+      def self.index_test(transport, run_id:, search: "original")
+        lambda do |ddls|
+          transport.call("index-test", args: { run: run_id, search: }, input: { "ddls" => ddls })
+                   .messages.select { it["type"] == "index_outcome" }
+        end
+      end
 
       def initialize(client:, index_test:)
         @client = client
@@ -100,11 +109,14 @@ module Quaack
         rounds + [Round.new(ddls:, outcomes: @index_test.call(ddls))]
       end
 
-      # The DDL and outcome of each dropped candidate in round.
+      # The DDL and outcome of each dropped candidate in round, except those
+      # past the first five, which the enclave never checked. So at most
+      # five replacements are asked for.
       def dropped(round, ddls)
         return [] unless round
 
-        round.outcomes.select { it["outcome"] == "dropped" }.map { [ddls.fetch(it["index"] - 1), it] }
+        replaceable = round.outcomes.select { it["outcome"] == "dropped" && it["rule"] != "too_many" }
+        replaceable.map { [ddls.fetch(it["index"] - 1), it] }
       end
 
       def replacement_ask(dropped)

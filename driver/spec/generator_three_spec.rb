@@ -124,6 +124,51 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     expect(fake.asks.size).to eq(1)
   end
 
+  it "leaves too_many drops out of the replacement ask, and skips it when they're the only drops" do
+    ddls = (1..7).map { "CREATE INDEX ON public.customers (c#{it})" }
+    fake.reply("5a-5", { "indexes" => ddls })
+    fake.reply("5a-5", { "indexes" => [] })
+    answers << [dropped(1, "duplicate"), *(2..5).map { accepted(it) }, dropped(6, "too_many"), dropped(7, "too_many")]
+    run
+    text = user_texts(fake.asks.last).last
+
+    expect(text).to include("up to 1 replacements")
+    expect(text).not_to include("(c6)")
+
+    fake.reply("5a-5", { "indexes" => ddls })
+    answers << [*(1..5).map { accepted(it) }, dropped(6, "too_many"), dropped(7, "too_many")]
+    expect { run }.to change { fake.asks.size }.by(1)
+  end
+
+  describe ".index_test" do
+    # Stands in for the ssh transport, at the edge: records each call and
+    # answers with the enclave's messages.
+    let(:transport) do
+      Class.new do
+        attr_reader :calls
+
+        def initialize(messages)
+          @messages = messages
+          @calls = []
+        end
+
+        def call(subcommand, **options)
+          @calls << [subcommand, options]
+          Data.define(:messages).new(messages: @messages)
+        end
+      end.new([accepted(1), { "type" => "other" }])
+    end
+
+    it "calls quaacks index-test for the run and search with {\"ddls\": [...]}, and returns its index_outcomes" do
+      index_test = described_class.index_test(transport, run_id: "RUN", search: "original")
+      ddl = "CREATE INDEX ON public.customers (email)"
+
+      expect(index_test.call([ddl])).to eq([accepted(1)])
+      expect(transport.calls)
+        .to eq([["index-test", { args: { run: "RUN", search: "original" }, input: { "ddls" => [ddl] } }]])
+    end
+  end
+
   it "skips the enclave when the LLM proposes nothing" do
     fake.reply("5a-5", { "indexes" => [] })
 

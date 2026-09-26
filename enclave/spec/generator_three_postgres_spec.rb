@@ -113,15 +113,18 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
       ["CREATE INDEX ON public.orders (created_at) WHERE customer_id::text = '#{sentinel}'",
        "CREATE INDEX ON orders (created_at) WHERE status = '#{sentinel}'",
        "CREATE INDEX ON public.orders ((lower('#{sentinel}') || status))",
-       "CREATE INDEX ON public.orders (created_at) WHERE status = '#{sentinel}'"]
+       "CREATE INDEX ON public.orders (created_at) WHERE status = '#{sentinel}'",
+       "CREATE INDEX ON public.orders (status)"]
     end
 
     it "goes out through egress as shape only: position, outcome, rule, covering index, and tag" do
       lines = described_class.messages(filter(planted)).map { Quaack::Enclave::Egress.serialize(it) }
 
       expected = [[1, "dropped", "partial_not_low_cardinality", false], [2, "dropped", "unqualified_table", false],
-                  [3, "accepted", nil, false], [4, "accepted", nil, true]].map do |index, outcome, rule, tag|
-        { "type" => "index_outcome", "index" => index, "outcome" => outcome, "rule" => rule, "covered_by" => nil,
+                  [3, "accepted", nil, false], [4, "accepted", nil, true],
+                  [5, "dropped", "covered_by_existing", false, "orders_status_created_at_idx"]]
+                 .map do |index, outcome, rule, tag, covered_by|
+        { "type" => "index_outcome", "index" => index, "outcome" => outcome, "rule" => rule, "covered_by" => covered_by,
           "partial_constant_only" => tag }
       end
       expect(lines.map { JSON.parse(it) }).to eq(expected)

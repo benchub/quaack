@@ -63,6 +63,20 @@ module Quaack
       # false: whether it's a partial index, which only works when the
       # predicate's literal is a constant in the application's SQL.
       index_outcome: %i[index outcome rule covered_by partial_constant_only].freeze,
+      # The README 5a-5 payload for the LLM, from `quaacks index-payload`,
+      # built only from shape-class store entries: query is the 3g redacted
+      # query; placeholders each placeholder's 3g shape and the step 1 row
+      # counts; plan the 3g redacted step 1 plan; schema the 3b subset;
+      # stats the 3f outbound statistics, whose only values are the MCV
+      # values of low-cardinality columns; and mechanical_results the 5a-4
+      # results, with plans redacted through 3g and each candidate's DDL
+      # passed through the enclave's CandidateDdlRedaction, which masks
+      # every constant but a low-cardinality value compared directly with
+      # its own column in the predicate. The plan goes without its Settings.
+      # Its values are
+      # nested and go out unchecked, so the enclave's IndexPayload step is
+      # where this is reviewed.
+      index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
