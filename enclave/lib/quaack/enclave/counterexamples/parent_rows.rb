@@ -105,7 +105,7 @@ module Quaack
         def free_value(table, col)
           return @values.nth(col, @counter += 1) if @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
 
-          @checks.satisfying(table, col, [@values.typical(col)])
+          @checks.satisfying(table, col, [@values.typical(col, strict: false)])
         end
       end
     end
