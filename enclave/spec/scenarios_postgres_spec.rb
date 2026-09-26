@@ -132,5 +132,35 @@ RSpec.describe Quaack::Enclave::Scenarios do
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
   end
 
+  def loads_every_scenario(scenarios, table)
+    scenarios.each_value { |rows| expect(run(rows, "SELECT count(*) FROM #{table}")).to eq([[rows.size.to_s]]) }
+  end
+
+  it "gives distinct values to a column a plain unique index covers" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL, qty integer);
+               CREATE UNIQUE INDEX u_email ON fx.u (email)")
+    scenarios = build("SELECT id FROM fx.u WHERE qty <> 5")
+    expect(values(scenarios[:s1], "u", "email").uniq.size).to eq(scenarios[:s1].size)
+    loads_every_scenario(scenarios, "fx.u")
+  end
+
+  it "treats a partial unique index as always unique" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL, qty integer);
+               CREATE UNIQUE INDEX u_email ON fx.u (email) WHERE qty IS NOT NULL")
+    loads_every_scenario(build("SELECT id FROM fx.u WHERE qty <> 5"), "fx.u")
+  end
+
+  it "gives distinct values to a unique column that has a default" do
+    conn.exec("CREATE TABLE fx.w (id integer PRIMARY KEY, code text NOT NULL DEFAULT 'x' UNIQUE, v text)")
+    loads_every_scenario(build("SELECT id FROM fx.w WHERE v = 'a'"), "fx.w")
+  end
+
+  it "refuses a table with an expression unique index" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL);
+               CREATE UNIQUE INDEX u_email ON fx.u (lower(email))")
+    expect { build("SELECT id FROM fx.u WHERE email = 'a'") }
+      .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:expression_unique_index) }
+  end
+
   def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
 end

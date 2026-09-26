@@ -190,7 +190,9 @@ module Quaack
 
         columns = row.columns.map { |c| quote(c) }.join(", ")
         placeholders = Array.new(row.columns.size) { |i| "$#{i + 1}" }.join(", ")
-        ["INSERT INTO #{table} (#{columns}) VALUES (#{placeholders})", row.values]
+        # A fixture row may set a GENERATED ALWAYS identity key, so its
+        # parents' keys match; the override is a no-op on other tables.
+        ["INSERT INTO #{table} (#{columns}) OVERRIDING SYSTEM VALUE VALUES (#{placeholders})", row.values]
       end
 
       def table_sql(table) = [table.schema, table.name].map { |part| quote(part) }.join(".")

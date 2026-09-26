@@ -1842,3 +1842,15 @@ Render the three burndown sections from the recorded counts.
 - **Came from:** The review of 20260923-33 and the second review of 20260924-16.
 - **README:** Step 1.
 - **Status:** done
+
+### 20260926-37. Step 9 fixtures fail to load on realistic schemas.
+
+The prompt pack (20260922-65, part one) ran the pipeline on an ordinary users/products/orders/line_items schema, and every supported query stopped at step 9 with `fixture_load_failed`:
+- **23505, unique violation:** the scenario builder honors unique constraints but not unique indexes created with `CREATE UNIQUE INDEX` (for example `users_email_key`). It also skips columns that have a default, which can collide.
+- **23503, foreign-key violation:** fixture rows reference a parent table the query doesn't name (`orders.user_id` pointing to `users`), and the parent rows are never loaded.
+Both are correctness bugs on realistic setups: a correct rewrite is rejected. Fix the scenario builder so fixtures honor unique indexes (including partial unique indexes and expression unique indexes, or refuse cleanly) and load parent rows for every FK, including FKs to tables outside the query, recursively. Test on the prompt pack's schema (`script/prompt_pack/schema.sql`).
+
+- **Depends on:** 20260922-45, -49.
+- **Came from:** The 20260922-65 prompt pack run.
+- **README:** Step 9.
+- **Status:** done
