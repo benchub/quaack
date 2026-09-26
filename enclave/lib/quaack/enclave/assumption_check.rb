@@ -138,12 +138,16 @@ module Quaack
       end
 
       # col IN (a, b) as col = ANY (ARRAY[a, b]), and NOT IN as <> ALL,
-      # the form Postgres stores a CHECK in.
+      # the form Postgres stores a CHECK in. A one-element list it stores
+      # as plain = or <>, so that becomes col = a or col <> a.
       def any_array(expr)
+        items = expr.rexpr.list.items.to_a
         kind = expr.name.first.string.sval == "=" ? :AEXPR_OP_ANY : :AEXPR_OP_ALL
-        array = PgQuery::Node.new(a_array_expr: PgQuery::A_ArrayExpr.new(elements: expr.rexpr.list.items.to_a))
-        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name: expr.name.to_a, lexpr: expr.lexpr, rexpr: array))
+        kind, rexpr = items.size == 1 ? [:AEXPR_OP, items.first] : [kind, array_of(items)]
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name: expr.name.to_a, lexpr: expr.lexpr, rexpr:))
       end
+
+      def array_of(items) = PgQuery::Node.new(a_array_expr: PgQuery::A_ArrayExpr.new(elements: items))
 
       def text_array(values) = "{#{values.map { %("#{it.gsub(/["\\]/) { |c| "\\#{c}" }}") }.join(",")}}"
     end
