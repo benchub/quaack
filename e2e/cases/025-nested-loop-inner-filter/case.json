@@ -1,0 +1,28 @@
+{
+  "title": "Nested loop whose inner side over-fetches",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "Nested Loop with an expensive inner side (5a-2)",
+    "inner join key plus its filter column",
+    "low-cardinality filter"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "silver instead of gold",
+      "replace": {
+        "'gold'": "'silver'"
+      }
+    },
+    {
+      "name": "a status nobody has",
+      "replace": {
+        "'pending'": "'lost'"
+      }
+    }
+  ]
+}

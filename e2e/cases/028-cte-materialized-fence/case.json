@@ -1,0 +1,27 @@
+{
+  "title": "MATERIALIZED CTE blocks predicate pushdown",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "WITH ... AS MATERIALIZED",
+    "inline the CTE so the filter reaches the index"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "31337"
+      }
+    },
+    {
+      "name": "customer with no orders",
+      "replace": {
+        "4242": "99999"
+      }
+    }
+  ]
+}

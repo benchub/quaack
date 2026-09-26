@@ -1,0 +1,14 @@
+{
+  "title": "ROLLUP report",
+  "category": "refused",
+  "compare": "multiset",
+  "features": [
+    "GROUPING SETS / ROLLUP is unsupported in v1 (SupportedSql)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

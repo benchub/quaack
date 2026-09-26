@@ -1,0 +1,22 @@
+{
+  "title": "A query that's already well indexed",
+  "category": "none",
+  "compare": "ordered",
+  "features": [
+    "negative result (15a)",
+    "proposed index already covered by an existing one (5a-3)",
+    "duplicate recorded with the index that covers it"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "31337"
+      }
+    }
+  ]
+}

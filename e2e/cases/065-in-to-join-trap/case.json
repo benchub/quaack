@@ -1,0 +1,16 @@
+{
+  "title": "IN (subquery) to a plain join",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "IN semi-join vs. join fan-out",
+    "duplicates fixture (step 9, S3)",
+    "unmet uniqueness assumption (6b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

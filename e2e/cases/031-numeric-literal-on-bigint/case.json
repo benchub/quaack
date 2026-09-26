@@ -1,0 +1,28 @@
+{
+  "title": "Numeric literal against a bigint column",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "implicit cast of the column to numeric",
+    "cast the literal instead",
+    "typical ORM parameter bug"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "31337"
+      }
+    },
+    {
+      "name": "customer with no orders",
+      "replace": {
+        "4242": "99999"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "title": "NOT IN to NOT EXISTS over a nullable column",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "NOT IN with a NULL in the subquery",
+    "NULL fixtures disprove the rewrite (step 9, S2)",
+    "unmet NOT NULL assumption (6b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

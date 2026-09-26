@@ -1,0 +1,16 @@
+{
+  "title": "Filter that matches most of the table",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "negative result (15a)",
+    "index the planner declines to use (5a-4)",
+    "top-MCV literal"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

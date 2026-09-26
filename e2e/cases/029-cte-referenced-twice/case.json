@@ -1,0 +1,29 @@
+{
+  "title": "CTE referenced twice gets materialized",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "CTE referenced more than once",
+    "UNION ALL",
+    "NOT MATERIALIZED"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "same customer twice",
+      "replace": {
+        "31337": "4242"
+      }
+    },
+    {
+      "name": "customers with no orders",
+      "replace": {
+        "4242": "99998",
+        "31337": "99999"
+      }
+    }
+  ]
+}

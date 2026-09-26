@@ -1,0 +1,22 @@
+{
+  "title": "= ANY(array) with unqualified names",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "= ANY(array) atom",
+    "relation qualification (step 1)",
+    "CASE in the select list"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other customers",
+      "replace": {
+        "{4242, 31337, 777}": "{1, 2, 3}"
+      }
+    }
+  ]
+}

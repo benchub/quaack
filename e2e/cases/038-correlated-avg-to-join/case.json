@@ -1,0 +1,28 @@
+{
+  "title": "Correlated average per row",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "correlated scalar subquery in WHERE",
+    "pre-aggregate in a CTE and join",
+    "aggregate compared per group"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a longer window",
+      "replace": {
+        "2025-12-10": "2025-11-01"
+      }
+    },
+    {
+      "name": "after the data",
+      "replace": {
+        "2025-12-10": "2026-12-10"
+      }
+    }
+  ]
+}

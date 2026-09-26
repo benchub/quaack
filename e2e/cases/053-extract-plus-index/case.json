@@ -1,0 +1,29 @@
+{
+  "title": "extract() on a timestamptz, no index",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "extract on the column",
+    "two placeholders collapse into one range",
+    "stable function: no expression index possible"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another month",
+      "replace": {
+        ", 7, 1": ", 11, 1",
+        "= 7": "= 11"
+      }
+    },
+    {
+      "name": "a year with no data",
+      "replace": {
+        "2025": "2023"
+      }
+    }
+  ]
+}

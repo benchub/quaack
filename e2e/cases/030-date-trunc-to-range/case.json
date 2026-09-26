@@ -1,0 +1,28 @@
+{
+  "title": "date_trunc on an indexed column",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "non-sargable function on an indexed column",
+    "shared placeholder between GROUP BY and the select list (3g)",
+    "range rewrite depends on TimeZone (step 2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another month",
+      "replace": {
+        "2025-03-01": "2025-09-01"
+      }
+    },
+    {
+      "name": "a month with no data",
+      "replace": {
+        "2025-03-01": "2024-03-01"
+      }
+    }
+  ]
+}

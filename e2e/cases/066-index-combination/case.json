@@ -1,0 +1,28 @@
+{
+  "title": "Two missing indexes on two tables",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "greedy combination of candidates (5a-7)",
+    "range column plus a join key",
+    "Hash Join with a large inner build (5a-2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a longer window",
+      "replace": {
+        "2025-12-13": "2025-12-01"
+      }
+    },
+    {
+      "name": "after the data",
+      "replace": {
+        "2025-12-13": "2026-12-13"
+      }
+    }
+  ]
+}

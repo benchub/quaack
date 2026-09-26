@@ -1,0 +1,22 @@
+{
+  "title": "Date equality to a closed BETWEEN",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "BETWEEN ... 23:59:59 misses fractional seconds",
+    "boundary-value fixtures (step 9, S5)",
+    "one unit past the literal (step 9)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another day",
+      "replace": {
+        "2025-01-15": "2025-01-20"
+      }
+    }
+  ]
+}

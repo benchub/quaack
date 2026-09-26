@@ -1,0 +1,49 @@
+{
+  "title": "OR across two joined tables",
+  "category": "both",
+  "compare": "ordered",
+  "features": [
+    "OR across a join",
+    "UNION rewrite",
+    "btree from an equality atom (5a-1)",
+    "index unused by the original (15a)",
+    "uniqueness assumption checked in 6b"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "tracking number belongs to the same customer",
+      "replace": {
+        "TRK0000123456": "TRK0000076639"
+      }
+    },
+    {
+      "name": "email matches, tracking number doesn't exist",
+      "replace": {
+        "TRK0000123456": "TRK9999999999"
+      }
+    },
+    {
+      "name": "tracking number matches, email doesn't exist",
+      "replace": {
+        "customer4242@example.com": "nobody@example.com"
+      }
+    },
+    {
+      "name": "neither matches",
+      "replace": {
+        "customer4242@example.com": "nobody@example.com",
+        "TRK0000123456": "TRK9999999999"
+      }
+    },
+    {
+      "name": "tracking number of a pending order (NULL in the table)",
+      "replace": {
+        "TRK0000123456": "TRK0000460000"
+      }
+    }
+  ]
+}

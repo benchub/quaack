@@ -1,0 +1,15 @@
+{
+  "title": "Lookup in a tiny table",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "negative result (15a)",
+    "sequential scan of a two-page table"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

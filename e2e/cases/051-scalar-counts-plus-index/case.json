@@ -1,0 +1,22 @@
+{
+  "title": "Three scalar counts, each scanning a range",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "uncorrelated scalar subqueries",
+    "aggregate FILTER",
+    "range index shared by the branches"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a shorter window",
+      "replace": {
+        "2025-12-01": "2025-12-10"
+      }
+    }
+  ]
+}

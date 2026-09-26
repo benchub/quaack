@@ -1,0 +1,23 @@
+{
+  "title": "Three scalar subqueries over one table",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "uncorrelated scalar subqueries",
+    "aggregate FILTER",
+    "one pass instead of three"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "worst case: all three are the top MCV",
+      "replace": {
+        "'pending'": "'shipped'",
+        "'cancelled'": "'shipped'"
+      }
+    }
+  ]
+}

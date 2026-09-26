@@ -1,0 +1,21 @@
+{
+  "title": "Filter on a grouped column written in HAVING",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "HAVING without an aggregate",
+    "planner moves it to WHERE on its own"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "31337"
+      }
+    }
+  ]
+}

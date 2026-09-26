@@ -1,0 +1,28 @@
+{
+  "title": "Integer division on an indexed column",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "arithmetic on the column",
+    "CHECK constraint as a stated assumption (6b)",
+    "simple CHECK accepted by fixtures (step 9)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "the lowest bucket",
+      "replace": {
+        "437": "0"
+      }
+    },
+    {
+      "name": "above the data",
+      "replace": {
+        "437": "5000"
+      }
+    }
+  ]
+}

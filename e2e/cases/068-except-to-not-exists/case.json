@@ -1,0 +1,22 @@
+{
+  "title": "EXCEPT over a big table",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "EXCEPT set operation",
+    "anti-join rewrite",
+    "set operations treat NULLs as equal: NOT NULL assumption (6b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a lower threshold",
+      "replace": {
+        "20000": "15000"
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "title": "COALESCE around an indexed column",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "COALESCE on the column",
+    "literal-dependent rewrite",
+    "nullable column (NULL fixtures, S2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "worst case: top MCV",
+      "replace": {
+        "= 'blocked'": "= 'done'"
+      }
+    },
+    {
+      "name": "a status that isn't the COALESCE default",
+      "replace": {
+        "= 'blocked'": "= 'open'"
+      },
+      "minimax": false
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Foreign key with no index",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "seq scan with a selective equality filter (5a-2)",
+    "btree from an equality atom (5a-1)",
+    "ORDER BY after the equality column"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "31337"
+      }
+    },
+    {
+      "name": "customer with no orders",
+      "replace": {
+        "4242": "99999"
+      }
+    }
+  ]
+}

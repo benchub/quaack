@@ -1,0 +1,28 @@
+{
+  "title": "Status counts for one tenant",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "Sort or Hash feeding an aggregate (5a-2)",
+    "GROUP BY columns after the equality column (5a-1)",
+    "index-only scan"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another tenant",
+      "replace": {
+        "= 12": "= 190"
+      }
+    },
+    {
+      "name": "tenant with no tickets",
+      "replace": {
+        "= 12": "= 5000"
+      }
+    }
+  ]
+}

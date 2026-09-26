@@ -1,0 +1,27 @@
+{
+  "title": "count(*) > 0 instead of EXISTS",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "correlated scalar subquery",
+    "EXISTS stops at the first match"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "worst case: top MCV",
+      "replace": {
+        "'shipped'": "'pending'"
+      }
+    },
+    {
+      "name": "a status nobody has",
+      "replace": {
+        "'shipped'": "'lost'"
+      }
+    }
+  ]
+}

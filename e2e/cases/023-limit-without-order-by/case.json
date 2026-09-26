@@ -1,0 +1,21 @@
+{
+  "title": "LIMIT with no ORDER BY",
+  "category": "index",
+  "compare": "limit_subset",
+  "features": [
+    "LIMIT with no ORDER BY: subset comparison (9d)",
+    "two equality columns"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "= 42": "= 4321"
+      }
+    }
+  ]
+}

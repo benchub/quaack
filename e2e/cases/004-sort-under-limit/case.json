@@ -1,0 +1,28 @@
+{
+  "title": "Sort under a LIMIT",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "Sort under a Limit (5a-2)",
+    "ORDER BY columns after the equality column (5a-1)",
+    "DESC sort direction"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another author",
+      "replace": {
+        "= 42": "= 199"
+      }
+    },
+    {
+      "name": "author with no posts",
+      "replace": {
+        "= 42": "= 5000"
+      }
+    }
+  ]
+}

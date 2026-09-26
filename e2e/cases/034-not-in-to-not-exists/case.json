@@ -1,0 +1,28 @@
+{
+  "title": "NOT IN over a NOT NULL column",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "NOT IN subquery",
+    "anti-join rewrite",
+    "NOT NULL assumption checked in 6b"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "silver instead of gold",
+      "replace": {
+        "'gold'": "'silver'"
+      }
+    },
+    {
+      "name": "region with no gold customers",
+      "replace": {
+        "'apac'": "'eu'"
+      }
+    }
+  ]
+}

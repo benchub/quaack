@@ -1,0 +1,21 @@
+{
+  "title": "Correlated float average",
+  "category": "rewrite",
+  "compare": "tolerance",
+  "features": [
+    "float aggregates compared with a tolerance (9d)",
+    "correlated subquery to a pre-aggregated join"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a narrower batch range",
+      "replace": {
+        ">= 380": ">= 395"
+      }
+    }
+  ]
+}

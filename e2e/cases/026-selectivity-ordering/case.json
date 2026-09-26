@@ -1,0 +1,29 @@
+{
+  "title": "Two equality columns, the unselective one indexed",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "equality columns ranked by selectivity (5a-1)",
+    "negative n_distinct converted to a count (5a-1)",
+    "ORDER BY after the equality columns"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "thread in another tenant",
+      "replace": {
+        "= 3": "= 1",
+        "= 12343": "= 40001"
+      }
+    },
+    {
+      "name": "tenant and thread don't match",
+      "replace": {
+        "= 12343": "= 12344"
+      }
+    }
+  ]
+}

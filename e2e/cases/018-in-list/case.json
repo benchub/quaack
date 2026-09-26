@@ -1,0 +1,27 @@
+{
+  "title": "IN list on an unindexed column",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "IN list atom",
+    "IN list keeps its length in the worst-case and typical literals (3e)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other products",
+      "replace": {
+        "(101, 2002, 3303, 4404, 5505)": "(7, 8, 9, 10, 11)"
+      }
+    },
+    {
+      "name": "products with no moves",
+      "replace": {
+        "(101, 2002, 3303, 4404, 5505)": "(90001, 90002, 90003, 90004, 90005)"
+      }
+    }
+  ]
+}

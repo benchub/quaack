@@ -1,0 +1,28 @@
+{
+  "title": "Two single-column indexes combined with BitmapAnd",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "BitmapAnd of single-column indexes (5a-2)",
+    "two equality columns ranked by selectivity (5a-1)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another city and size",
+      "replace": {
+        "= 42": "= 250",
+        "= 3": "= 5"
+      }
+    },
+    {
+      "name": "no such city",
+      "replace": {
+        "= 42": "= 9999"
+      }
+    }
+  ]
+}

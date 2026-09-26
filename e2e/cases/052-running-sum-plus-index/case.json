@@ -1,0 +1,22 @@
+{
+  "title": "Correlated running sum with no index",
+  "category": "both",
+  "compare": "ordered",
+  "features": [
+    "correlated subquery per row",
+    "window function rewrite",
+    "composite index for the window order"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 55": "= 4999"
+      }
+    }
+  ]
+}

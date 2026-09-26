@@ -1,0 +1,22 @@
+{
+  "title": "FETCH FIRST ... WITH TIES",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "FETCH FIRST WITH TIES",
+    "ORDER BY that isn't a total order (9d tiebreaker)",
+    "Sort under a Limit (5a-2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another game",
+      "replace": {
+        "= 3": "= 17"
+      }
+    }
+  ]
+}

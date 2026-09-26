@@ -1,0 +1,23 @@
+{
+  "title": "NOT IN with no index on the inner key",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "NOT IN subquery",
+    "anti-join rewrite",
+    "NOT NULL assumption (6b)",
+    "index on the anti-join key"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "silver instead of gold",
+      "replace": {
+        "'gold'": "'silver'"
+      }
+    }
+  ]
+}

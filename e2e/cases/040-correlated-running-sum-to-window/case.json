@@ -1,0 +1,29 @@
+{
+  "title": "Running balance with a correlated subquery",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "correlated subquery per row",
+    "window function rewrite",
+    "unique ORDER BY key assumption (6b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 55": "= 999"
+      }
+    },
+    {
+      "name": "account with no rows",
+      "replace": {
+        "= 55": "= 5000"
+      },
+      "minimax": false
+    }
+  ]
+}
