@@ -98,6 +98,26 @@ module Quaack
       # { "assumption", "kind" }, one per unmet inferred assumption (step
       # 7): its 1-based position and its kind, from the fixed vocabulary.
       rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
+      # Step 9's verdict on one stored rewrite, from `quaacks rewrite-test`.
+      # rewrite is the entry name, such as rewrite_2. passed is true or
+      # false. scenario is nil or a scenario name (s0 to s6), and rule nil
+      # or one of the enclave's rule constants, such as row_count or
+      # discarded. Never SQL or a row.
+      rewrite_test: %i[rewrite passed scenario rule].freeze,
+      # The README 10a payload, from `quaacks counterexample-payload`:
+      # original is the 3g redacted query, candidate { "sql" } the stored
+      # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
+      # check accepted it), placeholders and schema as in index_payload,
+      # and untested_atoms step 9's redacted atom shapes. Its values are
+      # nested and go out unchecked, so the enclave's Counterexamples step
+      # is where this is reviewed.
+      counterexample_payload: %i[original candidate placeholders schema untested_atoms].freeze,
+      # One 10b/10c round, from `quaacks counterexample-round`: match is
+      # true, false, or nil; rule and load_order nil or enclave constants;
+      # covered the redacted shapes of the untested atoms the round
+      # exercised; refused [{ index, rule }], each refused insert's 0-based
+      # index and rule constant; load_failed true or false.
+      counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

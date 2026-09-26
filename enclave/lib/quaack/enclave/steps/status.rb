@@ -20,10 +20,11 @@ module Quaack
         end
 
         # For each stored rewrite_<n>, counting up from 1: its name and the
-        # names of its step 8 outputs. Only names of this fixed form go out.
+        # names of its step 8, 9, and 10 outputs. Only names of this fixed form go out.
         def rewrite_entries(store)
           (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.flat_map do |n|
-            ["rewrite_#{n}", "index_search_rewrite_#{n}", "index_ranking_rewrite_#{n}", "rewrite_pruned_#{n}"]
+            ["rewrite_#{n}", "index_search_rewrite_#{n}", "index_ranking_rewrite_#{n}", "rewrite_pruned_#{n}",
+             "rewrite_tested_#{n}", "rewrite_survived_#{n}"]
           end.to_a
         end
       end

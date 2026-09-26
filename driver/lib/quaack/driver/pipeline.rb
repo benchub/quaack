@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "counterexamples"
 require_relative "generator_three"
 require_relative "refinement_round"
 require_relative "rewrite_generation"
@@ -88,7 +89,45 @@ module Quaack
         end
       end
 
-      STAGES = [IndexStage, RewriteStage].freeze
+      # README steps 9 and 10, after step 8. If 6a ran in this run, it asks
+      # status again, for the rewrites it stored. For each stored rewrite_<n> not yet decided
+      # (rewrite_survived_<n>): rewrite-test (step 9), unless it's stored
+      # (rewrite_tested_<n>), and, if the rewrite passed, the three 10a to
+      # 10c rounds (Counterexamples) on counterexample-payload, each round
+      # a numbered counterexample-round. The enclave records survival.
+      module CounterexampleStage
+        module_function
+
+        def run(transport:, client:, run_id:, entries:)
+          entries = Pipeline.status(transport, run_id) unless entries["rewrites_generated"]
+          (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
+            next if entries["rewrite_survived_#{number}"]
+
+            rewrite(transport, client, { run: run_id, search: "rewrite_#{number}" },
+                    entries["rewrite_tested_#{number}"])
+          end
+        end
+
+        def rewrite(transport, client, args, tested)
+          return unless tested || message(transport.call("rewrite-test", args:), "rewrite_test")["passed"]
+
+          payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
+          Counterexamples.new(client:).run(payload, compare: compare(transport, args))
+        end
+
+        def compare(transport, args)
+          round = 0
+          lambda do |inserts|
+            round += 1
+            reply = transport.call("counterexample-round", args: args.merge(round:), input: { "inserts" => inserts })
+            message(reply, "counterexample_round")
+          end
+        end
+
+        def message(reply, type) = reply.messages.find { it["type"] == type }
+      end
+
+      STAGES = [IndexStage, RewriteStage, CounterexampleStage].freeze
 
       # The entries `quaacks status` says the run's store holds.
       def self.status(transport, run_id)
