@@ -1308,24 +1308,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-15. Scenario builder and counterexample loose ends.
-
-These are minor findings from the build and reviews of 20260922-44 to -51:
-- A statement timeout while loading an LLM's inserts becomes `:statement_timeout`, which isn't in `LOAD_RULES`, so it wrongly disproves the candidate (`arena_runner.rb:214`). Check the step, not the rule.
-- `Counterexamples.covered` skips atoms it can't replace, and no test covers that.
-- Only equality joins between plain columns tie keys together.
-- A join near miss is skipped when a foreign key touches either column.
-- Groups that collide on a unique key are dropped without saying so.
-- Self-joins merge aliases into one row.
-- Domain CHECK constraints are ignored.
-- Bound literals are uncast (bit strings).
-- 3e literal sets and 3c statistics aren't used for pools.
-- The rule that an atom, once exercised, stays exercised across rebuilds has no test.
-
-- **Depends on:** 20260922-51.
-- **Came from:** Track D build report and reviews.
-- **README:** Steps 9 and 10.
-- **Status:** todo
+### 20260926-15. Scenario builder and counterexample loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-16. `quaack run` loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -1391,4 +1374,16 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260926-8, 20260926-22.
 - **Came from:** Their build and review.
 - **README:** 5a-7, step 10.
+- **Status:** todo
+
+### 20260926-26. Scenario and counterexample loose ends, part two.
+
+- `counterexamples/parent_rows.rb` calls `Values#typical` in strict mode, so a parent row whose domain column fails the typical value is refused with `unsupported_type` (this fails safe). Pass `strict: false`, and add a test.
+- The `dropped` group count isn't carried through to the driver's report.
+- A timeout during the fixture load step (as opposed to the insert step) has no direct test.
+- The typed-binding item from 20260926-15 was judged stale (untyped binding works for bit strings) but wasn't independently checked.
+
+- **Depends on:** 20260926-15.
+- **Came from:** 20260926-15 build and review.
+- **README:** Steps 9 and 10.
 - **Status:** todo

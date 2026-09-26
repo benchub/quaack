@@ -1560,3 +1560,22 @@ These are minor findings from the review of 20260922-34 and -36:
 - **Came from:** 20260926-14 build and reviews.
 - **README:** Steps 9 and 10, 15.
 - **Status:** done
+
+### 20260926-15. Scenario builder and counterexample loose ends.
+
+These are minor findings from the build and reviews of 20260922-44 to -51:
+- A statement timeout while loading an LLM's inserts becomes `:statement_timeout`, which isn't in `LOAD_RULES`, so it wrongly disproves the candidate (`arena_runner.rb:214`). Check the step, not the rule.
+- `Counterexamples.covered` skips atoms it can't replace, and no test covers that.
+- Only equality joins between plain columns tie keys together.
+- A join near miss is skipped when a foreign key touches either column.
+- Groups that collide on a unique key are dropped without saying so.
+- Self-joins merge aliases into one row.
+- Domain CHECK constraints are ignored.
+- Bound literals are uncast (bit strings).
+- 3e literal sets and 3c statistics aren't used for pools.
+- The rule that an atom, once exercised, stays exercised across rebuilds has no test.
+
+- **Depends on:** 20260922-51.
+- **Came from:** Track D build report and reviews.
+- **README:** Steps 9 and 10.
+- **Status:** done
