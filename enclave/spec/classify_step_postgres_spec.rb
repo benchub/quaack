@@ -72,60 +72,64 @@ RSpec.describe "quaacks classify, after quaacks statistics against a real server
 
   def done = %({"type":"done"}\n)
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
-  def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
-  def column_line(outcome, name) = lines(outcome).find { it["column"] == name }
 
-  it "stores the classification and sends one column_stats line per column, then DONE" do
+  def outbound(name)
+    stored.read("classification")["outbound_statistics"]["tables"][0]["columns"].find { it["name"] == name }
+  end
+
+  def expect_frequencies(freqs, count)
+    expect(freqs.size).to eq(count)
+    expect(freqs).to all(be_a(Float).and(be_between(0.0, 1.0)))
+  end
+
+  it "stores the classification, printing only DONE" do
     statistics!
 
     outcome = classify
 
-    expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-    expect(outcome.stdout.lines.last).to eq(done)
-    expect(lines(outcome)[0..-2].map { [it["type"], it["table"], it["column"]] })
-      .to eq(%w[id status email code note].map { ["column_stats", { "schema" => "public", "name" => "orders" }, it] })
-    expect(lines(outcome)[0..-2].map(&:keys).uniq)
-      .to eq([%w[type table column n_distinct null_frac correlation mcv_freqs low_card_values]])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([done, "", 0])
     classes = stored.read("classification")["columns"].to_h { [it["column"], [it["pii"], it["low_cardinality"]]] }
     expect(classes).to eq("id" => [false, false], "status" => [false, true], "email" => [true, false],
                           "code" => [false, false], "note" => [true, false])
   end
 
-  it "sends a low-cardinality, non-PII column's MCV values and frequencies" do
+  it "stores a low-cardinality, non-PII column's MCV values and frequencies for the payload" do
     statistics!
+    classify
 
-    status = column_line(classify, "status")
+    status = outbound("status")
 
-    expect(status["low_card_values"]).to match_array(categories)
-    expect(status["mcv_freqs"].size).to eq(2)
-    expect(status["n_distinct"]).to eq(2.0)
-    expect(status["null_frac"]).to eq(0.0)
+    expect(status["most_common_vals"]).to match_array(categories)
+    expect_frequencies(status["most_common_freqs"], 2)
+    expect(status.values_at("n_distinct", "null_frac")).to eq([2.0, 0.0])
   end
 
-  it "withholds a PII column's MCV values and frequencies, but sends its scalars" do
+  it "stores no MCV values or frequencies for a PII column, but keeps its scalars" do
     statistics!
+    classify
 
-    email = column_line(classify, "email")
+    email = outbound("email")
 
-    expect(email.values_at("low_card_values", "mcv_freqs")).to eq([nil, nil])
+    expect(email.values_at("most_common_vals", "most_common_freqs")).to eq([nil, nil])
     expect(email["n_distinct"]).to eq(5.0)
   end
 
-  it "sends a high-cardinality non-PII column's frequencies but never its values" do
+  it "stores a high-cardinality non-PII column's frequencies but never its values" do
     statistics!
+    classify
 
-    code = column_line(classify, "code")
+    code = outbound("code")
 
-    expect(code["low_card_values"]).to be_nil
-    expect(code["mcv_freqs"].size).to eq(60)
+    expect(code["most_common_vals"]).to be_nil
+    expect_frequencies(code["most_common_freqs"], 60)
   end
 
-  it "never sends a sentinel, though the store holds them" do
+  it "prints no sentinel, though the store holds them" do
     statistics!
 
     outcome = classify
 
-    expect(outcome.stdout.lines.size).to eq(6)
+    expect(outcome.stdout).to eq(done)
     held = JSON.generate(stored.read("statistics"))
     expect(held).to include(sentinels.text, sentinels.number.to_s, sentinels.like_prefix)
     expect_no_leaks(sentinels, outcome)
@@ -136,26 +140,30 @@ RSpec.describe "quaacks classify, after quaacks statistics against a real server
 
     before { config({}) }
 
-    # The positive control: the leak check does see values in this output,
-    # so its passing above means something.
-    it "sends it, and the leak check catches it" do
+    # The positive control: the leak check sees the sentinel in what the
+    # payload step will send, so its finding nothing in classify's output
+    # means something.
+    it "stores it for the payload, and the leak check would catch it going out" do
       statistics!
 
       outcome = classify
 
-      expect(column_line(outcome, "status")["low_card_values"]).to include(sentinels.text)
-      found = LeakCheck.findings(sentinels, stdout: outcome.stdout, stderr: outcome.stderr, status: outcome.status)
+      values = outbound("status")["most_common_vals"]
+      expect(values).to include(sentinels.text)
+      found = LeakCheck.findings(sentinels, stdout: JSON.generate(values))
       expect(found.join("\n")).to include(sentinels.needles[:text])
+      expect_no_leaks(sentinels, outcome)
     end
   end
 
   context "with a cardinality_threshold of 2" do
     before { config(pii_columns: ["public.orders.email"], cardinality_threshold: 2) }
 
-    it "treats status as not low-cardinality, and sends none of its values" do
+    it "treats status as not low-cardinality, and stores none of its values" do
       statistics!
+      classify
 
-      expect(column_line(classify, "status")["low_card_values"]).to be_nil
+      expect(outbound("status")["most_common_vals"]).to be_nil
     end
   end
 
