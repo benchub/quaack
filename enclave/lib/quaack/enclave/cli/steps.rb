@@ -15,6 +15,7 @@ require_relative "../steps/redact"
 require_relative "../steps/literals"
 require_relative "../steps/anchor"
 require_relative "../steps/racetrack_setup"
+require_relative "../steps/arena_setup"
 require_relative "../steps/index_search"
 require_relative "../steps/index_feedback"
 require_relative "../steps/index_rank"
@@ -49,6 +50,7 @@ module Quaack
         "literals" => Step.new(handler: Steps::Literals, run: true),
         "anchor" => Step.new(handler: Steps::Anchor, run: true),
         "racetrack-setup" => Step.new(handler: Steps::RacetrackSetup, run: true),
+        "arena-setup" => Step.new(handler: Steps::ArenaSetup, run: true),
         "index-search" => Step.new(handler: Steps::IndexSearch, run: true, options: Steps::IndexSearch::OPTIONS),
         "index-payload" => Step.new(handler: Steps::IndexPayload, run: true, options: Steps::IndexPayload::OPTIONS),
         "index-feedback" => Step.new(handler: Steps::IndexFeedback, run: true,

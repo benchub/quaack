@@ -17,7 +17,10 @@ module Quaack
     # process-wide lock means no two statements run at once, even on
     # different connections. A statement cancelled by statement_timeout
     # comes back as a Run with timed_out true and no result; the caller
-    # drops that candidate and counts it as timed out. Any other error is
+    # drops that candidate and counts it as timed out. Any other cancel,
+    # such as an operator's pg_cancel_backend, is raised. sql goes through
+    # the extended protocol, so SQL holding more than one statement (a
+    # COMMIT that would end READ ONLY) is refused. Any other error is
     # raised, after the transaction is rolled back.
     module RunDiscipline
       MIN_MS = 5_000
@@ -45,8 +48,10 @@ module Quaack
 
       def timed(connection, sql, timeout_ms)
         connection.exec("SET LOCAL statement_timeout = #{Integer(timeout_ms)}")
-        Run.new(result: connection.exec(sql), timed_out: false)
-      rescue PG::QueryCanceled
+        Run.new(result: connection.exec_params(sql, []), timed_out: false)
+      rescue PG::QueryCanceled => e
+        raise unless e.message.include?("statement timeout")
+
         Run.new(result: nil, timed_out: true)
       end
     end
