@@ -100,16 +100,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ### 20260922-32. 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-33. 5a-5 generator three.
-
-Build the shape-only payload, ask the LLM for up to five candidates it hasn't seen covered, filter them through 5a-3, ask once for replacements of dropped ones, tag partial indexes, and test survivors with 5a-4. Must work for the original query and for rewrites.
-
-- **Depends on:** 20260922-6, 20260922-5, 20260922-11, 20260922-22, 20260922-23, 20260922-29, 20260922-32, 20260923-11.
-- **README:** 5a-5.
-- **Status:** todo
-- **Note:** The `IndexCandidate` shape from 20260923-11 only holds plain column keys. 5a-5 asks the LLM for expression indexes and operator classes such as `text_pattern_ops` and trigram GIN. So this task has to extend the shape with expression keys, opclasses, and probably collations, and teach 5a-3's dedupe to handle them.
-- **Note (from 20260922-11):** The inbound check refuses index DDL whose table name isn't schema-qualified. The LLM prompt must say so plainly: an unqualified table name gets the candidate refused and counts against the LLM, so it should always write the schema.
-- **Progress:** Piece one landed on `main` after a build, a first review, a fix round and a clean second review. `IndexCandidate::KeyColumn` now holds expression keys (normalized through pg_query, redacted like predicates), opclasses and collations (with `pg_catalog` dropped). `from_ddl` and `to_ddl` round-trip them, and Dedupe matches key columns only when all of them agree, including when a btree is read backward. The LLM loop is left, and it's split out as 20260925-4. Close this task when 20260925-4 lands.
+### 20260922-33. 5a-5 generator three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-34. 5a-6 refinement round.
 
@@ -1172,29 +1163,9 @@ Minor findings from the first review of 20260922-28:
 - **README:** Step 5.
 - **Status:** todo
 
-### 20260925-4. 5a-5 generator three: the LLM loop.
+### 20260925-4. 5a-5 generator three: the LLM loop. Done, see BACKLOG-COMPLETE.md.
 
-The rest of 20260922-33. Build the shape-only payload, ask the LLM for up to five candidates it hasn't seen covered, filter them through 5a-3, ask once for replacements of dropped ones, tag partial indexes, and test survivors with 5a-4. It must work for the original query and for rewrites.
-
-- **Depends on:** 20260922-33 piece one (landed), 20260925-6.
-- **README:** 5a-5.
-- **Decided:** Use two enclave subcommands. `quaacks index-payload [--candidate ID]` sends the shape-only payload out through egress, using a new whitelisted type. `quaacks index-test` reads the LLM's DDL on stdin and runs `IndexDdlCheck`, then `from_ddl` with `sources: [:llm]`, then Dedupe against the mechanical proposals saved in the store, then 5a-4. It saves the results in the store and returns a shape-only outcome for each candidate: accepted, or dropped with its rule. The driver runs the replacement round by calling `index-test` again.
-- **Note (from the review of 20260925-6):** The stored `index_search_<search>` entries hold real literals. Generator two runs on the unredacted step 1 plan, so partial predicates and key expressions, in `dedupe` proposals, drops, `covered_by`, and `results[].candidate`, can embed real quals such as `status = 'held'`. `index-payload` must not send candidate DDL or predicates as they are. Redact them through 3g, or allow only the 5a-3 low-cardinality values plus an explicit egress check. Add a sentinel test with a partial candidate whose predicate holds a sentinel. `index-test` should save its results under the same per-search key.
-- **Note (from 20260925-13):** `index-payload` must send `classification.outbound_statistics` as the payload's `stats`. By the user's decision, classify stores it and sends nothing.
-- **Note:** The prompt must say plainly that an unqualified table name gets the candidate refused and counts against the LLM.
-- **Note:** `IndexDdlCheck` accepts `WITH (...)` storage options, but `from_ddl` returns nil for them. Strip them or refuse them, so LLM DDL that uses them isn't silently lost. The "proportion" bullet of 20260923-17 can be decided in light of piece one.
-- **Status:** todo
-
-### 20260925-5. Generator three piece one loose ends.
-
-Minor findings from the first review of 20260925-4:
-- **`covered_by` going out through egress is untested.** In `enclave/lib/quaack/enclave/generator_three.rb` `messages`, setting `covered_by: nil` stays green. Add a DDL covered by an existing index to the egress sentinel case in `generator_three_postgres_spec.rb`.
-- **The replacement ask can ask for more than five.** `driver/lib/quaack/driver/generator_three.rb` `replacement_ask` asks for `dropped.size` replacements, including `too_many` drops. Cap it at five, and leave `too_many` drops out of the request.
-
-- **Depends on:** 20260925-4 piece one (landed).
-- **Came from:** The first review of 20260925-4.
-- **README:** 5a-5.
-- **Status:** todo
+### 20260925-5. Generator three piece one loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-6. Enclave subcommand for the mechanical half of step 5. Done, see BACKLOG-COMPLETE.md.
 
@@ -1313,6 +1284,16 @@ Add `run_server_command` to the quaacks config on the jump server (`~/.quaack/co
 - **Depends on:** 20260925-7, 20260922-66.
 - **README:** 4, Run teardown.
 - **Decided:** The user chose a provision command in the quaacks config over having the operator build the server by hand.
+- **Status:** todo
+
+### 20260926-3. Generator three follow-ups.
+
+- Record the 5a-5 burndown: LLM candidates, plus any replacements asked for dropped ones, with the 5a-3 and 5a-4 reasons (README step 15b table).
+- `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
+
+- **Depends on:** 20260925-4.
+- **Came from:** The build and second review of 20260925-4.
+- **README:** 5a-5, 15b.
 - **Status:** todo
 
 ## After version 1.
