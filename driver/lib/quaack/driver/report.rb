@@ -12,8 +12,12 @@ module Quaack
     #   Report.render(payload, run_id:)  # => HTML String
     #   Report.write(payload, run_id:, path:)  # => path
     #
-    # The negative-result (15a) and burndown (15b) sections are left as
-    # placeholders for their own tasks.
+    # The negative-result section (15a) is filled only when the payload
+    # carries negative, which the enclave sends when the selection is empty.
+    # The burndown section (15b) renders the payload's burndown counts, plus
+    # llm_calls, the driver's own Burndown#llm_calls.
+    #
+    #   Report.render(payload, run_id:, llm_calls: burndown.llm_calls)
     module Report
       TEMPLATE = <<~HTML
         <!DOCTYPE html>
@@ -49,22 +53,83 @@ module Quaack
         <table><tr><th>Name</th><th>DDL</th><th>Built size</th><th>Existing index covering it</th><th>Existing indexes it makes redundant</th></tr>
         <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h i["ddl"] %></td><td><%= size(i["size"]) %></td><td><%= h i["covered_by"] %></td><td><%= h i["makes_redundant"].join(", ") %></td></tr>
         <% end %></table></section>
-        <section id="negative-result"></section>
-        <section id="burndown"></section>
+        <section id="negative-result"><% if negative %><h2>Why nothing beat the original</h2>
+        <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
+        <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["search"] %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
+        <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["search"] %>: <%= h e["ddl"] %>: already covered by <%= h e["covered_by"] %></li><% end %></ul>
+        <% end %></section>
+        <section id="burndown"><h2>Burndown</h2>
+        <% [["index", "Index candidates for the original query", index_rows], ["rewrite", "Rewrite candidates", rewrite_rows]].each do |id, title, rows| %><h3><%= h title %></h3>
+        <table id="burndown-<%= id %>"><tr><th>Stage</th><th>In</th><th>Added</th><th>Dropped</th><th>Set aside</th><th>Out</th><th>Other counts</th></tr>
+        <% rows.each do |label, r| %><tr><td><%= h label %></td><td><%= h r["in"] %></td><td><%= h counts(r["added"]) %></td><td><%= h counts(r["dropped"]) %></td><td><%= h r["set_aside"] %></td><td><%= h r["out"] %></td><td><%= h counts(r["extra"]) %></td></tr>
+        <% end %></table>
+        <% end %><h3>Work totals</h3>
+        <ul id="burndown-totals"><% @llm_calls.each do |step, n| %><li>LLM calls, <%= h step %>: <%= n.to_i %></li><% end %><% burndown["totals"].each do |name, n| %><li><%= h name %>: <%= n.to_i %></li><% end %></ul>
+        </section>
         </body></html>
       HTML
 
       # The template's view of one payload.
       class View
-        def initialize(payload, run_id)
+        def initialize(payload, run_id, llm_calls = {})
           @payload = payload
           @run_id = run_id
+          @llm_calls = llm_calls
         end
 
         attr_reader :run_id
 
         %w[top excluded infinite_sets verdicts measurements candidates indexes original_plan
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
+
+        INDEX_STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7].freeze
+        REWRITE_STAGES = %w[6a step7 6b step8 step9 step10].freeze
+
+        # README 15b: the recorded counts, { "stages", "totals" }.
+        def burndown = @payload["burndown"] || { "stages" => {}, "totals" => {} }
+
+        # The original query's index search, one row per stage.
+        def index_rows
+          INDEX_STAGES.filter_map { |stage| (r = burndown["stages"].dig(stage, "original")) && [stage, r] }
+        end
+
+        # The rewrite stages, each summed over its searches, then the
+        # rewrites' own index searches (steps 8 and 11) totaled per stage.
+        def rewrite_rows
+          searches = INDEX_STAGES.filter_map do |stage|
+            records = burndown["stages"].fetch(stage, {}).except("original").values
+            ["Steps 8 and 11: #{stage}", sum(records)] unless records.empty?
+          end
+          summed(REWRITE_STAGES) + searches + summed(%w[step11 step14])
+        end
+
+        def summed(stages)
+          stages.filter_map { |stage| (records = burndown["stages"][stage]) && [stage, sum(records.values)] }
+        end
+
+        def sum(records)
+          records.reduce do |a, b|
+            a.merge(b) { |_, x, y| x.is_a?(Hash) ? x.merge(y) { |_, m, n| m + n } : x + y }
+          end
+        end
+
+        def counts(hash) = hash.map { |name, n| "#{name}: #{n}" }.join(", ")
+
+        # README 15a, sent only when the selection is empty.
+        def negative = @payload["negative"]
+
+        def disproof(entry)
+          return "#{entry["rewrite"]}: disproved in step 10, counterexample round #{entry["round"]}" if entry["round"]
+
+          "#{entry["rewrite"]}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
+        end
+
+        def declined(entry)
+          return "the planner never used it" if entry["reason"] == "unused"
+          return "HypoPG refused it (SQLSTATE #{entry["sqlstate"]})" if entry["reason"] == "hypopg_refused"
+
+          "refused (#{entry["reason"]})"
+        end
 
         def h(value) = ERB::Util.html_escape(value.to_s)
 
@@ -99,7 +164,7 @@ module Quaack
 
       module_function
 
-      def render(payload, run_id:) = View.new(payload, run_id).render
+      def render(payload, run_id:, llm_calls: {}) = View.new(payload, run_id, llm_calls).render
 
       def write(payload, run_id:, path:)
         File.write(path, render(payload, run_id:))
