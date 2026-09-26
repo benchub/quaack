@@ -141,7 +141,13 @@ RSpec.describe "quaacks statistics, against a real server" do
       conn.close
     end
 
-    after { production.server.admin.exec("DROP ROLE IF EXISTS #{reader}") }
+    # The container is shared per process, so put the grant back.
+    after do
+      conn = production.connect
+      conn.exec("GRANT SELECT ON pg_catalog.pg_stats TO PUBLIC")
+      conn.close
+      production.server.admin.exec("DROP ROLE IF EXISTS #{reader}")
+    end
 
     it "fails as production_read_failed and stores nothing" do
       pgpass(user: reader)

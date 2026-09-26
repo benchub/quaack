@@ -93,6 +93,8 @@ For version 1, we assume the schema dump and partial index predicates contain no
 
 Everything that leaves the enclave goes through one egress function, and that function only accepts fields on a whitelist. If a field isn't on the whitelist, it isn't sent at all. We don't scrub it and send it anyway. Adding a field to the whitelist is the single place where this policy gets reviewed.
 
+A step whose upstream store entry is missing, because the step that writes it hasn't run, refuses with the rule `missing_<entry>`, such as `missing_statistics`. Entry names are fixed words in the code, never data, so the rule is shape.
+
 ### Where QUAACK runs.
 
 QUAACK has two parts:
