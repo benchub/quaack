@@ -21,7 +21,7 @@ module Quaack
       COLUMNS_SQL = <<~SQL
         SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.atttypid::int,
                NOT a.attnotnull,
-               CASE WHEN a.attidentity <> '' OR a.attgenerated <> '' THEN 'generated'
+               CASE WHEN a.attgenerated <> '' THEN 'generated' WHEN a.attidentity <> '' THEN 'identity'
                     ELSE pg_get_expr(d.adbin, d.adrelid) END
         FROM pg_attribute a
         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
@@ -32,10 +32,24 @@ module Quaack
       # A foreign key: columns of the child reference parent_columns of
       # parent, a TableName.
       ForeignKey = Data.define(:columns, :parent, :parent_columns)
-      # Each table's primary key and unique constraints (as lists of column
-      # names), foreign keys, and validated CHECK expressions, as
-      # pg_get_constraintdef prints them.
-      Constraints = Data.define(:uniques, :foreign_keys, :checks)
+      # Each table's primary key, unique constraints, and unique indexes (as
+      # lists of column names), foreign keys, and validated CHECK
+      # expressions, as pg_get_constraintdef prints them. A partial unique
+      # index counts as always unique, which is conservative.
+      # expression_unique is whether a unique index has an expression key.
+      Constraints = Data.define(:uniques, :foreign_keys, :checks, :expression_unique)
+
+      # Unique indexes no constraint owns: their key columns (not INCLUDE
+      # ones), and whether any key is an expression.
+      UNIQUE_INDEXES_SQL = <<~SQL
+        SELECT array_to_json(ARRAY(SELECT a.attname FROM unnest(i.indkey::int2[]) WITH ORDINALITY k(n, o)
+                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n
+                 WHERE k.o <= i.indnkeyatts ORDER BY k.o)),
+               i.indexprs IS NOT NULL
+        FROM pg_index i
+        WHERE i.indrelid = $1::regclass AND i.indisunique AND i.indisvalid
+          AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = i.indrelid)
+      SQL
 
       CONSTRAINTS_SQL = <<~SQL
         SELECT c.contype,
@@ -74,10 +88,20 @@ module Quaack
       def self.read_constraints(conn, table)
         rows = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values
         of = rows.group_by(&:first)
-        Constraints.new(uniques: (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) },
+        indexes, expression_unique = unique_indexes(conn, table)
+        Constraints.new(uniques: keys(of) + indexes,
+                        expression_unique:,
                         foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) },
                         checks: checks(conn, table, of))
       end
+
+      # The unique indexes' column lists, and whether any has an expression.
+      def self.unique_indexes(conn, table)
+        rows = conn.exec_params(UNIQUE_INDEXES_SQL, [regclass(conn, table)]).values
+        [rows.map { |cols, _| JSON.parse(cols) }, rows.any? { |_, expr| expr == "t" }]
+      end
+
+      def self.keys(of) = (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) }
 
       def self.checks(conn, table, of) = of.fetch("c", []).map(&:last) + DomainChecks.read(conn, regclass(conn, table))
 
