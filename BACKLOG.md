@@ -162,6 +162,7 @@ Build every distinct index from 5a and step 11 with raised maintenance settings.
 ### 20260922-55. 13 baseline runs.
 
 Run the original three times per literal set with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks and the hit-versus-read split. Mark a literal unstable if the count moves, and record each run's plan.
+- **Decided:** For an unstable literal, 14a and 14b use the maximum of the three runs, for the original and for the candidates alike. The report flags that literal.
 
 - **Depends on:** 20260922-53, 20260922-54.
 - **README:** Step 13.
@@ -192,6 +193,8 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Status:** todo
 - **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
 - **Decided:** "No worse" means an increase within the 5% threshold.
+- **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
+- **Decided:** For an unstable literal, use the maximum of the three runs.
 
 ### 20260922-59. 14c production result comparison.
 
@@ -206,6 +209,7 @@ Run the original and each candidate as plain queries per literal and compare in 
 ### 20260922-60. 14d selection.
 
 Keep the top three candidates by total blocks.
+- **Decided:** Rank the candidates that survive minimax by total blocks on the slow literal. Break ties by the sum across all literals.
 
 - **Depends on:** 20260922-58, 20260922-59.
 - **README:** 14d.
@@ -1319,18 +1323,7 @@ Both of these are minor findings from the 20260922-54 review. First, `rescue PG:
 - **README:** Step 12b.
 - **Status:** todo
 
-### 20260926-6. Step 8 wiring.
-
-The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.rewrite_entry` and `ThreeConfigurationPruning` (20260922-40, -41, -42), along with `rewrite-check` (20260922-37). Wire them together:
-- `quaacks index-search --search rewrite_<n>`.
-- A per-candidate loop: search, rank the rewrite's top three with `IndexRanking`, then prune against `index_ranking_original`.
-- Record the step 8 burndown, including the count of inbound-check rejections (`StructuralDiscard.record`).
-- A driver stage in `Pipeline::STAGES`.
-
-- **Depends on:** 20260922-37, -40, -41, -42, -36.
-- **Came from:** Track C and track B build reports.
-- **README:** Step 8.
-- **Status:** todo
+### 20260926-6. Step 8 wiring. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-7. Wire `quaack run` into the driver CLI. Done, see BACKLOG-COMPLETE.md.
 
@@ -1340,6 +1333,7 @@ These are minor findings from the review of 20260922-34 and -36:
 - If the LLM's 5a-6 answer is empty, `refined` is never set, so every resume asks the LLM again (`refinement_round.rb:57`). Call `index-test --round refinement` with an empty list.
 - After a partial crash, a resume can leave the ranking stale.
 - `index-payload` runs on every resume.
+- Same for 6a: an empty rewrite reply never writes `rewrites_generated`, so every resume asks the LLM again (`rewrite_generation.rb:90`, from the review of 20260926-6).
 - `IndexRanking` entries don't carry the canonical plans that README 5a-7 says they should.
 
 - **Depends on:** 20260922-36.

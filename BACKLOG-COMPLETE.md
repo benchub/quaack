@@ -1373,3 +1373,16 @@ The output-type check compares only type OIDs, so a `varchar(10)` column and a `
 - **Came from:** Track C build report.
 - **README:** Step 8.
 - **Status:** dropped
+
+### 20260926-6. Step 8 wiring.
+
+The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.rewrite_entry` and `ThreeConfigurationPruning` (20260922-40, -41, -42), along with `rewrite-check` (20260922-37). Wire them together:
+- `quaacks index-search --search rewrite_<n>`.
+- A per-candidate loop: search, rank the rewrite's top three with `IndexRanking`, then prune against `index_ranking_original`.
+- Record the step 8 burndown, including the count of inbound-check rejections (`StructuralDiscard.record`).
+- A driver stage in `Pipeline::STAGES`.
+
+- **Depends on:** 20260922-37, -40, -41, -42, -36.
+- **Came from:** Track C and track B build reports.
+- **README:** Step 8.
+- **Status:** done

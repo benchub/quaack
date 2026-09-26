@@ -10,7 +10,8 @@ RSpec.describe Quaack::Driver::Pipeline do
   let(:payload) { { "type" => "index_payload", "query" => "SELECT 1", "mechanical_results" => {} } }
   let(:feedback) { { "type" => "index_feedback", "revise" => false, "refined" => false } }
   let(:entries) do
-    { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false }
+    { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false,
+      "rewrites_generated" => true }
   end
 
   # Stands in for the ssh transport, at the edge: records each call and
@@ -75,5 +76,67 @@ RSpec.describe Quaack::Driver::Pipeline do
     transport.calls.clear
     run
     expect(subcommands).to eq(%w[status index-payload index-feedback])
+  end
+
+  describe "step 6a and step 8" do
+    let(:done) do
+      { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true }
+    end
+    let(:rewrite_payload) { { "type" => "rewrite_payload", "query" => "SELECT 1" } }
+    let(:statuses) { [] }
+
+    # The status replies in order: the first for the run, the rest after 6a.
+    let(:transport) do
+      replies = { "index-payload" => [payload], "index-feedback" => [feedback], "rewrite-payload" => [rewrite_payload],
+                  "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted" }] }
+      queue = statuses
+      Class.new do
+        attr_reader :calls
+
+        define_method(:initialize) { @calls = [] }
+
+        define_method(:call) do |subcommand, **options|
+          @calls << [subcommand, options]
+          messages = if subcommand == "status"
+                       [{ "type" => "status", "entries" => queue.size > 1 ? queue.shift : queue.first }]
+                     else
+                       replies.fetch(subcommand, [])
+                     end
+          Data.define(:messages).new(messages:)
+        end
+      end.new
+    end
+
+    # A stored rewrite's status entries, with the named outputs done.
+    def rewrite(number, *outputs)
+      %w[index_search_rewrite_ index_ranking_rewrite_ rewrite_pruned_]
+        .to_h { ["#{it}#{number}", outputs.include?(it)] }.merge("rewrite_#{number}" => true)
+    end
+
+    it "generates rewrites (6a) after step 5, then runs step 8 on each stored rewrite" do
+      fake.reply("6a", { "rewrites" => [{ "sql" => "SELECT 2", "transformation" => "t", "assumptions" => [] }] })
+      statuses.push(done.merge("rewrites_generated" => false),
+                    done.merge("rewrites_generated" => true, **rewrite(1), **rewrite(2)))
+
+      run
+
+      expect(subcommands.drop(3)).to eq(%w[rewrite-payload rewrite-check status] +
+                                        (%w[index-search index-rank rewrite-prune] * 2))
+      expect(transport.calls.last(6).map { it.last[:args][:search] })
+        .to eq(%w[rewrite_1 rewrite_1 rewrite_1 rewrite_2 rewrite_2 rewrite_2])
+      expect(fake.asks.map(&:step)).to eq(["6a"])
+    end
+
+    it "resumes, skipping 6a and the step 8 outputs already stored" do
+      statuses.push(done.merge("rewrites_generated" => true,
+                               **rewrite(1, "index_search_rewrite_", "index_ranking_rewrite_", "rewrite_pruned_"),
+                               **rewrite(2, "index_search_rewrite_")))
+
+      run
+
+      expect(subcommands.drop(3)).to eq(%w[index-rank rewrite-prune])
+      expect(transport.calls.last.last[:args]).to eq(run: "RUN", search: "rewrite_2")
+      expect(fake.asks).to eq([])
+    end
   end
 end
