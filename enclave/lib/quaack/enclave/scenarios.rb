@@ -48,8 +48,12 @@ module Quaack
     # satisfies (or for its near miss, fails) the atom and satisfies every
     # other atom and CHECK on the column (see Picker). variants rotates an
     # atom's pool lists, by atom index, for 9c's retries. A key column takes
-    # a generated value per group, and a unique column one per distinct
-    # row. Another column with a DEFAULT is left out, so the default
+    # a generated value per group (an identity key too, when a key class
+    # ties it to another column), and a unique column one per distinct
+    # row, even with a DEFAULT. A unique index counts, a partial one as
+    # always unique; an expression unique index raises
+    # Error(:expression_unique_index). Another column with a DEFAULT (or
+    # an identity) is left out, so the default
     # applies. The rest take the type's typical value (0, '', the epoch),
     # or a value that satisfies the column's CHECKs. S1 has no NULLs but
     # those an atom needs (x IS NULL).
@@ -116,6 +120,8 @@ module Quaack
           @conn = conn
           @parse = parse
           @schema = ArenaSchema.load_closure(conn, Scenarios.query_tables(parse.tree))
+          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).expression_unique }
+
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
           @pools = ValuePools.build(conn, parse, @atoms, @schema)
           @topology = Topology.new(@schema, @atoms)
@@ -161,17 +167,21 @@ module Quaack
         end
 
         def column_value(table, col, group)
-          return :omit if col.default == "generated"
+          keyed = @topology.keyed?(table, col.name)
+          # An identity column a key class ties to another takes the key's
+          # value (the runner overrides the identity), or else its own.
+          return :omit if generated?(col, keyed)
 
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)
-          keyed = @topology.keyed?(table, col.name)
           return nil if nulled?(group, col, keyed || atoms.any?)
           return atom_value(slot, atoms, group) if atoms.any?
           return key_value(slot, group, table) if keyed
 
           free_value(table, col, group.mode)
         end
+
+        def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
 
         def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
 
@@ -180,7 +190,7 @@ module Quaack
         end
 
         def free_value(table, col, mode)
-          return UNIQUE if col.default.nil? && @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
+          return UNIQUE if @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
           return :omit if col.default
 
           @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col, strict: false)])

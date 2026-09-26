@@ -55,6 +55,14 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(load(prepared, "SELECT count(*) FROM fx.items i JOIN fx.orders o ON o.id = i.order_id")).to eq([["1"]])
   end
 
+  it "gives parents distinct values on unique indexes and on unique columns with a default" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN email text NOT NULL DEFAULT '',
+                 ADD COLUMN code text NOT NULL DEFAULT 'x' UNIQUE;
+               CREATE UNIQUE INDEX customers_email ON fx.customers (email)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b')")
+    expect(load(prepared, "SELECT count(DISTINCT c.email) FROM fx.customers c")).to eq([["2"]])
+  end
+
   it "refuses an insert the inbound check refuses, or one with an unknown placeholder, by rule alone" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) SELECT 1, 2, 'x'",
                        "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $9)",
