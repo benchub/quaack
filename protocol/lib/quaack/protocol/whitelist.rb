@@ -87,6 +87,17 @@ module Quaack
       # Which step outputs a run's store holds, from `quaacks status`:
       # entries maps each of a fixed list of entry names to true or false.
       status: %i[entries].freeze,
+      # The README 6a payload, from `quaacks rewrite-payload`: the same
+      # shape-class fields as index_payload, without mechanical_results.
+      rewrite_payload: %i[query placeholders plan schema stats].freeze,
+      # What `quaacks rewrite-check` made of one rewrite (6a or step 7),
+      # never its SQL or its statements. index is its 1-based position in
+      # the input. outcome is accepted or rejected. rule is nil or one of
+      # the enclave's rule constants. rewrite is nil or the store entry it
+      # was saved as, such as rewrite_2. warnings is an Array of
+      # { "assumption", "kind" }, one per unmet inferred assumption (step
+      # 7): its 1-based position and its kind, from the fixed vocabulary.
+      rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

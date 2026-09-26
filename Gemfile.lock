@@ -3,6 +3,7 @@ PATH
   specs:
     quaack-driver (0.1.0)
       anthropic (~> 1.73)
+      pg_query (~> 6.2)
       quaack-protocol
 
 PATH

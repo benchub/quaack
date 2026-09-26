@@ -29,6 +29,15 @@ RSpec.describe Quaack::Enclave::StructuralDiscard do
     expect(result.dropped).to eq(failed_to_plan: 0, output_mismatch: 0)
   end
 
+  it "prepares each candidate with the original's parameter types, so one that drops a placeholder still plans" do
+    two = "SELECT id, name FROM public.t WHERE name = $1 OR id < $2"
+    kept = ["SELECT id, name FROM public.t WHERE name = $1", "SELECT id, name FROM public.t WHERE $2 > id"]
+
+    result = described_class.check(conn, original: two, candidates: kept, literals: [sentinel, "5"])
+
+    expect(result.kept).to eq(kept)
+  end
+
   it "discards a candidate that fails to plan on the racetrack" do
     result = check(["SELECT id, name FROM public.t WHERE name = $1 AND 1 / (id - id) = 1 OR missing = 1",
                     "SELECT id, name FROM public.t WHERE name = $1::int::text AND id = $1::int"])

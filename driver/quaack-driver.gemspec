@@ -21,4 +21,6 @@ Gem::Specification.new do |spec|
   # The official Anthropic SDK, for the LLM client. Only the driver may
   # depend on it: every LLM call runs on the laptop, never in the enclave.
   spec.add_dependency "anthropic", "~> 1.73"
+  # For splitting an operator's rewrites file into statements (step 7).
+  spec.add_dependency "pg_query", "~> 6.2"
 end
