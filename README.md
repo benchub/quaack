@@ -35,6 +35,8 @@ QUAACK has two parts:
 
 The driver calls the enclave script over ssh, passing a subcommand for the step to run plus its arguments. The script reads what it needs from the governed store, does the work, writes any new state back to the store, and prints its result. Nothing stays in memory between calls.
 
+The driver finds the jump server with `jump_command` in its config file on the laptop, `~/.quaack/driver.json`. It's a one-line shell command in which every `{server}` becomes the production server name, as one shell word. `/bin/sh` runs it with no stdin, its stderr thrown away, and a 30-second timeout, and it must print one ssh host name and nothing else. `quaack start` runs it, then runs `quaacks intake` on that host (step 1), and records which jump server holds the run in `~/.quaack/runs/<run ID>.json`, so later commands, such as `quaack run --run <ID>`, take only the run ID.
+
 Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
 
 Everything the enclave script prints goes through the egress function, including error messages. Postgres errors can include real values, such as the key in a unique-violation message, so errors get filtered too. That's where the trust boundary is enforced. 
@@ -95,6 +97,8 @@ QUAACK takes three inputs:
 The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from 3g.
 
 To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for 3h. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
+
+The operator usually starts this from the laptop instead, with `quaack start --server <name> --query <file> --plan <file>`, where the files are paths on the jump server. The driver finds the jump server with `jump_command` (see "Where QUAACK runs"), runs `quaacks intake` there over ssh, and prints the run ID. The files stay on the jump server.
 
 The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
 
