@@ -15,7 +15,9 @@ module Quaack
       # placeholder_shapes; redacted_query, the SQL with $n in place of each
       # literal; and redacted_plan, {"explain", "masked", "dropped"}. The
       # 5a-5 payload step sends the last three. Everything is computed
-      # before the first write, so a refusal stores nothing.
+      # before the first write, so a refusal stores nothing. The entries are
+      # written one at a time, though, so a crash partway through the writes
+      # can leave some stored. A rerun overwrites them all.
       #
       # It sends nothing itself. Its only line is DONE.
       module Redact

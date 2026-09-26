@@ -52,13 +52,25 @@ RSpec.describe "quaacks racetrack-setup, against a real server" do
 
   it "sets up the recorded racetrack, stores the marker, and prints only the done line" do
     record_run_server
+    # ProductionServer makes it, so drop it to see setup make it.
+    conn = production.connect
+    conn.exec("DROP EXTENSION hypopg")
+    conn.close
 
     outcome = racetrack_setup
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
     expect(racetrack_value("SELECT quaack.clock_anchor() = '2026-09-23T22:15:00.123456Z'")).to eq("t")
+    expect(racetrack_value("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq("1")
     expect(stored.read("racetrack_setup")).to be(true)
     expect_no_leaks(sentinels, outcome)
+  end
+
+  it "refuses a run with a run_server but no clock_anchor entry as missing_clock_anchor" do
+    record_run_server
+    File.delete(File.join(store.path, "clock_anchor.json"))
+
+    expect_failed(racetrack_setup, "missing_clock_anchor")
   end
 
   it "refuses a run with no run_server entry, before connecting" do

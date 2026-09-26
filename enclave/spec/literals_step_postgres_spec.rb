@@ -86,13 +86,23 @@ RSpec.describe "quaacks literals" do
     expect(stored.entry?("literal_sets")).to be(false)
   end
 
-  it "refuses a run with no statistics entry, storing nothing" do
+  it "refuses a run whose volatility entry is there but didn't pass, storing nothing" do
+    store.write("volatility", { "passed" => false })
+
+    outcome = literals
+
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([%({"type":"error","step":"literals","rule":"volatility_not_passed"}\n), "", 70])
+    expect(stored.entry?("literal_sets")).to be(false)
+  end
+
+  it "refuses a run with no statistics entry as missing_statistics, storing nothing" do
     drop_entry("statistics")
 
     outcome = literals
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
-      .to eq([%({"type":"error","step":"literals","rule":"internal_error"}\n), "", 70])
+      .to eq([%({"type":"error","step":"literals","rule":"missing_statistics"}\n), "", 70])
     expect(stored.entry?("literal_sets")).to be(false)
   end
 end
