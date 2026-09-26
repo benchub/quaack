@@ -24,6 +24,12 @@ module Quaack
     # of GeneratorTwoPatterns#patterns. The same input always gives
     # the same output.
     #
+    # analyzed: false is for a plain EXPLAIN, such as a rewrite's racetrack
+    # plan (README step 8). It has no actual rows and no rows removed, so
+    # only the patterns that need neither run: the BitmapAnd/BitmapOr, Sort,
+    # and aggregate patterns. The others are skipped, even if the plan has
+    # actual rows.
+    #
     # The thresholds are keyword arguments, each a finite, non-negative
     # number:
     #
@@ -56,20 +62,20 @@ module Quaack
 
       module_function
 
-      def candidates(explain, statistics:, schemas: nil, **thresholds)
+      def candidates(explain, statistics:, schemas: nil, analyzed: true, **thresholds)
         raise ArgumentError, "statistics must be a Statistics" unless statistics.is_a?(Statistics)
         unless schemas.nil? || (schemas.is_a?(Array) && schemas.all?(String))
           raise ArgumentError, "schemas must be nil or an Array of schema names"
         end
 
-        Walk.new(roots(explain), statistics, schemas, check_thresholds(thresholds)).candidates
+        Walk.new(roots(explain, analyzed), statistics, schemas, check_thresholds(thresholds), analyzed).candidates
       end
 
-      def roots(explain)
+      def roots(explain, analyzed)
         valid = explain.is_a?(Array) && !explain.empty? && explain.all? { |e| e.is_a?(Hash) && e["Plan"].is_a?(Hash) }
         raise ArgumentError, "explain must be the parsed JSON of EXPLAIN (FORMAT JSON)" unless valid
 
-        check_analyze(explain)
+        check_analyze(explain) if analyzed
         explain.map { |e| PlanNode.new(e["Plan"]) }
       end
 
@@ -98,14 +104,15 @@ module Quaack
       class Walk
         include GeneratorTwoPatterns
 
-        def initialize(roots, statistics, schemas, thresholds)
+        def initialize(roots, statistics, schemas, thresholds, analyzed)
           @nodes = roots.flat_map(&:subtree)
           @columns = PlanColumns.new(@nodes, statistics, schemas)
           @thresholds = thresholds
+          @analyzed = analyzed
         end
 
         def candidates
-          @nodes.flat_map { |node| patterns(node) }.uniq.freeze
+          @nodes.flat_map { |node| @analyzed ? patterns(node) : estimated_patterns(node) }.uniq.freeze
         end
 
         private
