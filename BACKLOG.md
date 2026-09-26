@@ -149,28 +149,15 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-62. 15 main report. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-63. 15a negative result.
+### 20260922-63. 15a negative result. Done, see BACKLOG-COMPLETE.md.
 
-When nothing beats the original, explain which rewrites were disproved and by which scenario, which indexes the planner declined, and which proposed indexes already existed.
-
-- **Depends on:** 20260922-62.
-- **README:** 15a.
-- **Status:** todo
-
-### 20260922-64. 15b burndown tables.
-
-Render the three burndown sections from the recorded counts.
-
-- **Depends on:** 20260922-61, 20260922-62.
-- **README:** 15b.
-- **Status:** todo
-
-## End to end.
+### 20260922-64. 15b burndown tables. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-65. Full pipeline.
 
 Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
 - **Decided:** The end-to-end test uses a scripted fake LLM, so it runs free in rake. The scripts must be realistic, drawn from a large corpus of responses. **Before building, ask the user questions:** they'll collect responses from several different LLMs to seed the corpus.
+- **Note (2026-09-26):** The user is having another LLM build a large end-to-end query corpus: for each test, the schema, the inserts, the slow query, and the changes that make it fast. Build -65's end-to-end tests on that corpus when it arrives. Don't spend cycles writing our own fixture queries beyond the small prompt pack.
 - **Decided (corpus):** Split into two parts. First, a builder generates a prompt pack: it runs the pipeline on harness fixtures and captures every real LLM prompt (5a-5, 5a-6, 6a, step 7, 10a) to files. The user pastes each prompt into 3 LLMs, 3 replies each, and saves the replies next to the prompts. The fake LLM then replays them. Queries to cover: an ORM-style join (equality plus range, ORDER BY, LIMIT), aggregates with GROUP BY/HAVING, a correlated EXISTS or IN subquery, and keyset pagination (row comparisons are unsupported in v1, so that one tests the refusal path unless it's written without a row comparison).
 
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
@@ -1306,4 +1293,29 @@ The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes
 - **Depends on:** 20260926-33, 20260925-21.
 - **Came from:** Their builds and reviews.
 - **README:** 3d, `quaack run`.
+- **Status:** todo
+
+### 20260926-37. Step 9 fixtures fail to load on realistic schemas.
+
+The prompt pack (20260922-65, part one) ran the pipeline on an ordinary users/products/orders/line_items schema, and every supported query stopped at step 9 with `fixture_load_failed`:
+- **23505, unique violation:** the scenario builder honors unique constraints but not unique indexes created with `CREATE UNIQUE INDEX` (for example `users_email_key`). It also skips columns that have a default, which can collide.
+- **23503, foreign-key violation:** fixture rows reference a parent table the query doesn't name (`orders.user_id` pointing to `users`), and the parent rows are never loaded.
+Both are correctness bugs on realistic setups: a correct rewrite is rejected. Fix the scenario builder so fixtures honor unique indexes (including partial unique indexes and expression unique indexes, or refuse cleanly) and load parent rows for every FK, including FKs to tables outside the query, recursively. Test on the prompt pack's schema (`script/prompt_pack/schema.sql`).
+
+- **Depends on:** 20260922-45, -49.
+- **Came from:** The 20260922-65 prompt pack run.
+- **README:** Step 9.
+- **Status:** todo
+
+### 20260926-38. Report loose ends, part two.
+
+- The `existing` list's DDL redaction has no sentinel coverage (the planted drops carry no literal).
+- `NegativeResult.disproved` fails at `store.read` if `rewrite_round_<n>` is missing for a non-survivor.
+- 15a finds rewrites by counting up until one is missing, so it assumes no gaps.
+- A rewrite that passed steps 9 and 10 but was knocked out by minimax or 14c isn't explained in 15a.
+- LLM call counts aren't passed to the report (part of -65).
+
+- **Depends on:** 20260922-63, -64.
+- **Came from:** Their build and review.
+- **README:** 15a, 15b.
 - **Status:** todo
