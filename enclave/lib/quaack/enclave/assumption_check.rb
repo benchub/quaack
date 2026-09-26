@@ -104,7 +104,7 @@ module Quaack
 
       # The expression's one-statement "SELECT <expression>", deparsed by
       # pg_query with every cast of a constant stripped (Postgres adds
-      # them, as in (0)::numeric), or nil if it doesn't parse as exactly that.
+      # them, as in (0)::numeric) and every IN list written as = ANY, or nil if it doesn't parse as exactly that.
       def normalize(expression)
         parse = PgQuery.parse("SELECT #{expression}")
         return unless parse.tree.stmts.size == 1
@@ -134,7 +134,15 @@ module Quaack
 
       def uncast(node)
         node = node.type_cast.arg while node.node == :type_cast && node.type_cast.arg&.node == :a_const
-        node
+        node.node == :a_expr && node.a_expr.kind == :AEXPR_IN ? any_array(node.a_expr) : node
+      end
+
+      # col IN (a, b) as col = ANY (ARRAY[a, b]), and NOT IN as <> ALL,
+      # the form Postgres stores a CHECK in.
+      def any_array(expr)
+        kind = expr.name.first.string.sval == "=" ? :AEXPR_OP_ANY : :AEXPR_OP_ALL
+        array = PgQuery::Node.new(a_array_expr: PgQuery::A_ArrayExpr.new(elements: expr.rexpr.list.items.to_a))
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name: expr.name.to_a, lexpr: expr.lexpr, rexpr: array))
       end
 
       def text_array(values) = "{#{values.map { %("#{it.gsub(/["\\]/) { |c| "\\#{c}" }}") }.join(",")}}"

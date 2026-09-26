@@ -55,6 +55,14 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  it "reports a timeout as timed out even when server messages aren't in English" do
+    conn.exec("SET lc_messages = 'de_DE.UTF-8'")
+    result = run("SELECT pg_sleep(2)", timeout_ms: 100)
+    expect(result.timed_out).to be(true)
+  ensure
+    conn.exec("RESET lc_messages")
+  end
+
   it "raises an operator's cancel instead of counting it as timed out" do
     other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
     pid = conn.backend_pid
