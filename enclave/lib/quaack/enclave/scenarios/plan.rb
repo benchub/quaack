@@ -25,7 +25,7 @@ module Quaack
 
         def nulls = group(fresh_key, mode: :nulls)
 
-        def empty =group(fresh_key, @topology.roots)
+        def empty = group(fresh_key, @topology.roots)
 
         def copies(hit) = order.map { |t| group(hit.key, [t], copy: 1) }
 
