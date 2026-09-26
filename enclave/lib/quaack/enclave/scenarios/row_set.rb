@@ -13,7 +13,7 @@ module Quaack
         end
 
         # False when the group collides and is left out.
-        def add(group_rows)
+        def add?(group_rows)
           fresh = group_rows.reject { |r| @rows[r.table].include?(r) }
           return false if fresh.any? { |r| collides?(r) }
 

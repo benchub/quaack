@@ -129,7 +129,7 @@ module Quaack
           @dropped = 0
           Plan.new(@topology, @atoms, @pools.keys).scenarios.transform_values do |groups|
             set = RowSet.new(@schema)
-            groups.each { |g| build_group(g)&.then { |rows| @dropped += 1 unless set.add(rows) } }
+            groups.each { |g| build_group(g)&.then { |rows| @dropped += 1 unless set.add?(rows) } }
             set.in_order(order)
           end
         end
