@@ -17,14 +17,22 @@ RSpec.describe "quaack run" do
   let(:hosts) { [] }
   let(:entries) do
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
-      "rewrites_generated" => true }
+      "rewrites_generated" => true, "arena_setup" => true, "index_build" => true, "baseline" => true,
+      "index_baseline" => true, "candidate_runs" => true, "minimax" => true, "result_comparison" => true,
+      "selection" => true }
   end
+  let(:report) do
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
+      "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+  end
+  let(:out) { File.join(home, "r.html") }
   let(:replies) do
     { "status" => [{ "type" => "status", "entries" => entries }],
       "index-payload" => [{ "type" => "index_payload" }],
       "index-feedback" => [{ "type" => "index_feedback", "revise" => false, "refined" => false }],
       "rewrite-payload" => [{ "type" => "rewrite_payload", "query" => "SELECT $1" }],
-      "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 0, "outcome" => "accepted" }] }
+      "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 0, "outcome" => "accepted" }],
+      "report-payload" => [report] }
   end
 
   # Stands in for ssh, at the edge: records each call.
@@ -59,12 +67,16 @@ RSpec.describe "quaack run" do
   before { Quaack::Driver::Runs.new(home).record(run_id, "jump-1") }
   after { FileUtils.rm_rf(home) }
 
-  it "runs the pipeline over ssh to the run's jump host" do
-    status = cli.run(["run", "--run", run_id])
+  it "runs the pipeline over ssh to the run's jump host, from arena-setup through the report" do
+    entries.transform_values! { false }.merge!("index_search_original" => true, "index_generated_original" => true,
+                                               "index_ranking_original" => true, "rewrites_generated" => true)
+    status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stderr.string]).to eq([0, ""])
     expect(hosts).to eq(["jump-1"])
-    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status])
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback arena-setup status index-build baseline
+                                                  index-baseline candidate-runs minimax result-comparison selection
+                                                  report-payload])
     expect(transport.calls.first.last[:args]).to eq(run: run_id)
   end
 
@@ -73,11 +85,11 @@ RSpec.describe "quaack run" do
     File.write(file, "SELECT 2 WHERE $1;\n")
     fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
 
-    status = cli.run(["run", "--run", run_id, "--rewrites", file])
+    status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
     expect([status, stderr.string]).to eq([0, ""])
     expect(transport.calls.map(&:first)).to eq(%w[status index-feedback rewrite-payload rewrite-check status status
-                                                  status])
+                                                  status report-payload])
     expect(transport.calls[3].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
   end
@@ -87,23 +99,11 @@ RSpec.describe "quaack run" do
   end
 
   it "prints the run ID and done on success" do
-    expect([cli.run(["run", "--run", run_id]), stdout.string]).to eq([0, "#{run_id} done\n"])
+    expect([cli.run(["run", "--run", run_id, "--out", out]), stdout.string]).to eq([0, "#{out}\n#{run_id} done\n"])
   end
 
   context "when selection is stored" do
-    let(:report) do
-      { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
-        "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
-    end
-
-    before do
-      entries["selection"] = true
-      replies["report-payload"] = [report]
-    end
-
     it "writes the report to --out and prints its path before done" do
-      out = File.join(home, "r.html")
-
       expect([cli.run(["run", "--run", run_id, "--out", out]), stderr.string]).to eq([0, ""])
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
       expect(File.read(out)).to include("QUAACK report #{run_id}")
@@ -116,7 +116,6 @@ RSpec.describe "quaack run" do
     end
 
     it "takes --out alongside --rewrites, in either order" do
-      out = File.join(home, "r.html")
       fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
 
       expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
