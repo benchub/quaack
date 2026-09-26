@@ -96,6 +96,22 @@ RSpec.describe "quaacks arena-setup, against a real server" do
     expect(arena_values("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq([%w[0]])
   end
 
+  {
+    "libc" => [{ "datlocprovider" => "c", "datlocale" => nil }, ["c", nil, "en_US.utf8", "en_US.utf8"]],
+    "ICU" => [{ "datlocprovider" => "i", "datlocale" => "en-US" }, %w[i en-US en_US.utf8 en_US.utf8]]
+  }.each do |name, (entry, row)|
+    it "builds arena with production's #{name} locale" do
+      record_run_server
+      store.write("inventory", { "database" => { "datname" => sentinels.word, "datcollate" => "en_US.utf8",
+                                                 "datctype" => "en_US.utf8", **entry } })
+
+      expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
+      expect(arena_values("SELECT datlocprovider::text, datlocale, datcollate, datctype FROM pg_database " \
+                          "WHERE datname = current_database()"))
+        .to eq([row])
+    end
+  end
+
   it "drops and rebuilds its own arena on a rerun" do
     record_run_server
     expect(arena_setup.status.exitstatus).to eq(0)
