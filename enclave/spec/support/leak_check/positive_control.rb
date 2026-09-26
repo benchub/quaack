@@ -4,8 +4,10 @@ module LeakCheck
   # The scanner missed a sentinel planted where it must look.
   class BrokenScanner < StandardError; end
 
-  # Plants each needle of a Sentinels in each place the scanner must look,
-  # one at a time, and checks the scanner finds it there. expect_no_leaks
+  # Plants each needle of a Sentinels in each place in PLANTS, one at a
+  # time, and checks the scanner finds it there. It doesn't plant in Array
+  # elements, Hash keys and values, Struct or Data members, or a StringIO's
+  # text; the unit specs in leak_check_spec.rb cover those. expect_no_leaks
   # runs it before every scan, so a scanner that stops looking somewhere
   # fails loudly instead of passing everything.
   module PositiveControl
