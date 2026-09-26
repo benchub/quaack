@@ -36,6 +36,34 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.scenarios[:s1]).not_to be_empty
   end
 
+  it "exercises a keyset row comparison through its leading column, in either direction" do
+    %w[< <= > >=].each do |op|
+      sql = "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) #{op} (5, 10) ORDER BY o.qty, o.id LIMIT 20"
+      builder, result = guard(sql)
+      expect(builder.atoms.map(&:kind)).to eq([:row_comparison])
+      expect(result.untested).to eq([]), op
+      expect(builder.pools.keys).to eq([0])
+    end
+  end
+
+  it "pools a row comparison's leading column by the values that decide it, leaving out the tie" do
+    { "<=" => %i[< >], ">" => %i[> <], "<" => %i[< >] }.each do |op, (satisfies, fails)|
+      builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) #{op} (5, 10)")
+      pool = builder.pools.fetch(0)
+      expect(pool.satisfying.map(&:to_i)).to all(be.send(satisfies, 5)), op
+      expect(pool.failing.map(&:to_i)).to all(be.send(fails, 5)), op
+      # The literal's neighbors, one on each side of the tie.
+      expect((pool.satisfying + pool.failing) & %w[4 6]).to contain_exactly("4", "6"), op
+    end
+  end
+
+  it "gives a row comparison with = or <>, or with an expression in its row, no pool" do
+    builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) = (5, 10) OR (o.qty, o.id) <> (1, 2) " \
+                     "OR (o.qty + 1, o.id) < (5, 10)")
+    expect(builder.atoms.map(&:kind)).to eq(%i[row_comparison row_comparison row_comparison])
+    expect(builder.pools).to eq({})
+  end
+
   it "retries a vacuous atom three times, then reports it untested by its redacted shape" do
     # No row can fail either kind test, since the CHECKs forbid it.
     sql = "SELECT o.id FROM fx.orders o WHERE o.kind = 'SENTINEL_9c' AND o.status = 'open'"

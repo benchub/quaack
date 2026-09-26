@@ -698,6 +698,60 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
   end
 
+  describe "keyset row comparisons" do
+    let(:stats) do
+      statistics(table(orders, { "a" => column(10), "created_at" => column(-1), "r" => column(-1) }, extra: %w[id]))
+    end
+
+    def all_keys(sql) = generate("SELECT 1 FROM public.orders #{sql}", stats, max_key_columns: 10).map(&:key)
+
+    it "keys the tuple's columns in order after the equality columns" do
+      expect(all_keys("WHERE a = 1 AND (created_at, id) < ($1, $2)"))
+        .to eq([[asc("a")], [asc("a"), asc("created_at")], [asc("a"), asc("created_at"), asc("id")]])
+    end
+
+    it "takes the ORDER BY key alone when it starts with the tuple's columns, as ORM pagination writes it" do
+      expect(all_keys("WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT 25"))
+        .to eq([[desc("created_at")], [desc("created_at"), desc("id")]])
+    end
+
+    it "keys the tuple and the ORDER BY separately when ORDER BY doesn't start with it" do
+      expect(all_keys("WHERE (created_at, id) > ('2031-01-01', 5) ORDER BY r"))
+        .to eq([[asc("created_at")], [asc("created_at"), asc("id")], [asc("r")]])
+    end
+
+    it "takes the tuple before a plain range column, and reads a row = as equality on each column" do
+      expect(all_keys("WHERE r > 3 AND (created_at, id) >= ($1, $2)"))
+        .to eq([[asc("created_at")], [asc("created_at"), asc("id")]])
+      expect(all_keys("WHERE (a, id) = (1, 2)").last).to eq([asc("a"), asc("id")])
+    end
+
+    it "reads the tuple written on the right, and keeps an equality column out of it" do
+      expect(all_keys("WHERE ($1, $2) > (created_at, id)").last).to eq([asc("created_at"), asc("id")])
+      expect(all_keys("WHERE id = 5 AND (created_at, id) < ($1, $2)").last).to eq([asc("id"), asc("created_at")])
+    end
+
+    it "keys the tuple on its own when ORDER BY starts with only part of it" do
+      expect(all_keys("WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, r"))
+        .to eq([[asc("created_at")], [asc("created_at"), asc("id")], [desc("created_at")],
+                [desc("created_at"), asc("r")]])
+    end
+
+    it "skips a tuple whose columns come from two tables" do
+      two = statistics(table(orders, { "created_at" => column(-1) }, extra: %w[id]),
+                       table(customers, { "region" => column(40) }, extra: %w[id]))
+      result = generate("SELECT 1 FROM public.orders o, public.customers c WHERE (o.created_at, c.region) < ($1, $2)",
+                        two)
+      expect(result).to eq([])
+    end
+
+    it "skips a tuple with an expression, a non-constant, or <>" do
+      expect(all_keys("WHERE (lower(created_at::text), id) < ($1, $2)")).to eq([])
+      expect(all_keys("WHERE (created_at, id) < ($1, r)")).to eq([])
+      expect(all_keys("WHERE (created_at, id) <> ($1, $2)")).to eq([])
+    end
+  end
+
   describe "ORDER BY" do
     let(:stats) do
       statistics(table(orders, { "a" => column(10), "b" => column(20), "created_at" => column(-1),

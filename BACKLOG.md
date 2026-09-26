@@ -897,14 +897,7 @@ Findings from the build and reviews of 20260922-25:
 
 ### 20260924-30. Include extensions in the 3b schema dump. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-31. Keyset pagination with row comparisons.
-
-**Decided:** Yes, support keyset pagination with row comparisons in v1. (The original question was whether this should be part of the v1 profile.) `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
-
-- **Depends on:** 20260923-33.
-- **Came from:** The review of 20260923-33 and the second review of 20260924-16.
-- **README:** Step 1.
-- **Status:** todo
+### 20260924-31. Keyset pagination with row comparisons. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-1. Index DDL check loose ends.
 
@@ -1330,4 +1323,17 @@ The prompt pack showed two things wrong with what the LLM is sent:
 - **Depends on:** 20260925-4 (index payload), 20260922-37 (rewrite payload).
 - **Came from:** Review of the 20260922-65 prompt pack.
 - **README:** 3b, 5a-5, 6a.
+- **Status:** todo
+
+### 20260926-40. Keyset pagination loose ends.
+
+- Step 9 pools keysets only on the leading column. Scenarios never build the tie case, so a candidate that changes only the tie-breaker value (`(qty, id) < (7, 901)` instead of `(7, 900)`) can pass step 9. Seed tie rows on the leading column, or list it as a v1 limitation. (Steps 10 and 14c may still catch it.)
+- Row comparisons with `=` or `<>`, or with an expression in the column row, get no pool, so 9c may mark them untested.
+- 3e picks no worst-case or typical values for tuple placeholders.
+- No candidate-specific tests for row comparisons in rewrites.
+- The relation-qualifier keyset test sits under a misleading `describe`.
+
+- **Depends on:** 20260924-31.
+- **Came from:** 20260924-31 build and review.
+- **README:** 3e, step 9.
 - **Status:** todo

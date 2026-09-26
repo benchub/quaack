@@ -71,7 +71,7 @@ module Quaack
           return if present?(table, fixed)
 
           pairs = fixed.merge(foreign_keys(table, fixed))
-          free = @schema.columns(table).reject { |col| pairs.key?(col.name) || omitted?(col) }
+          free = @schema.columns(table).reject { |col| pairs.key?(col.name) || omitted?(table, col) }
           add(table, pairs.merge(free.to_h { |col| [col.name, free_value(table, col)] }))
         end
 
@@ -100,10 +100,16 @@ module Quaack
           key
         end
 
-        def omitted?(col) = col.default == "generated" || (!col.default.nil? && !col.default.empty?)
+        # A unique column with a default still needs a distinct value, but a
+        # generated one can't take any.
+        def omitted?(table, col)
+          col.default == "generated" || (!col.default.nil? && !col.default.empty? && !unique?(table, col))
+        end
+
+        def unique?(table, col) = @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
 
         def free_value(table, col)
-          return @values.nth(col, @counter += 1) if @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
+          return @values.nth(col, @counter += 1) if unique?(table, col)
 
           @checks.satisfying(table, col, [@values.typical(col, strict: false)])
         end

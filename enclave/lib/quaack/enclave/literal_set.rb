@@ -53,7 +53,8 @@ module Quaack
     #   a comparison with a plain column of a table in the statistics, such
     #   as an expression or function on the column (lower(c.email) = $1), a
     #   cast placeholder ($1::date), a column of a subquery or CTE, a join
-    #   compared through a subquery, or a LIMIT. An array literal that
+    #   compared through a subquery, a LIMIT, or a literal in a keyset row
+    #   comparison, (a, b) < ($1, $2). An array literal that
     #   isn't one-dimensional counts too.
     # - shared_placeholder: 3g shares it between expressions Postgres
     #   requires to match, so it can feed more than one place.
