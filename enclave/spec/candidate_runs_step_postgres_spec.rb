@@ -61,6 +61,14 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["timed_out"]).to eq([])
     expect(entry["timed_out_count"]).to eq(0)
     expect(valid_count(build["indexes"].keys)).to eq("0")
+
+    # README 14a and 14b, end to end: minimax reads these real runs.
+    run("index-baseline")
+    expect(run("minimax").stdout).to eq(%({"type":"done"}\n))
+    verdicts = stored.read("minimax")["verdicts"]
+    expect(verdicts.keys).to include("rewrite_1:none", *combos)
+    best_combo = combos.min_by { runs[it]["slow"]["total_blocks"] }
+    expect(verdicts[best_combo]["slow"]).to eq("better")
   end
 
   it "drops a candidate that times out and counts it" do

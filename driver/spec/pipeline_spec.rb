@@ -160,6 +160,15 @@ RSpec.describe Quaack::Driver::Pipeline do
       expect(fake.asks.map(&:step)).to eq(%w[6a step7])
     end
 
+    it "treats an empty rewrites file as no step 7: no payload, rewrite-check, or LLM call after 6a" do
+      statuses.push(done.merge("rewrites_generated" => true, "operator_rewrites_checked" => false))
+
+      run_with([])
+
+      expect(subcommands.drop(2)).to eq(%w[status])
+      expect(fake.asks).to eq([])
+    end
+
     it "resumes after 6a with step 7, and skips step 7 once the store says it ran" do
       fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
       statuses.push(done.merge("rewrites_generated" => true, "operator_rewrites_checked" => false),

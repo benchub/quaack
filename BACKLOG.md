@@ -1280,16 +1280,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-26. Scenario and counterexample loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-27. Baseline loose ends.
-
-- If the original times out on a literal set during baseline, that set is only listed in `timed_out`. Decide how 14a and 14b treat that set, and how the report shows it.
-- No real-Postgres test produces an unstable literal. Only the `summarize` unit test covers that path.
-- Nothing in the pipeline calls `quaacks baseline` yet (see -65).
-
-- **Depends on:** 20260922-55.
-- **Came from:** 20260922-55 build and reviews.
-- **README:** Step 13.
-- **Status:** todo
+### 20260926-27. Baseline loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-28. Operator rewrites skip steps 8 to 11. Done, see BACKLOG-COMPLETE.md.
 
@@ -1303,26 +1294,17 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** Step 10; CLAUDE.md Development.
 - **Status:** todo
 
-### 20260926-30. Result comparison loose ends.
+### 20260926-30. Result comparison loose ends. Done, see BACKLOG-COMPLETE.md.
 
-- No test pins `BEGIN READ ONLY` in `ProductionComparison`. Changing it to plain `BEGIN` passes every spec, so a data-modifying CTE could write to the racetrack before the rollback. Add a spec where a write fails as read-only.
-- The row count inside the digest duplicates the separate count comparisons. That's harmless, but untested.
-- A candidate that times out during 14c is discarded (`fail`, `timed_out`). The task only defined partial for the LIMIT case, so this was the builder's choice.
-- Two floats within tolerance, on either side of a rounding boundary, compare as a mismatch. This fails safe.
-- `partial_count` is only tested at 0.
+### 20260926-31. Minimax and operator rewrite loose ends. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-59.
-- **Came from:** 20260922-59 build and review.
-- **README:** 14c.
-- **Status:** todo
 
-### 20260926-31. Minimax and operator rewrite loose ends.
+### 20260926-32. Measurement test gaps.
 
-- No test covers an empty `--rewrites` file (`rewrites: []`): removing the `rewrites.empty?` check stays green. Add a spec asserting no rewrite-check call and no LLM call (from the 20260926-28 review).
-- The timed-out guard in `Minimax.decide` wasn't separately mutation-tested.
-- No end-to-end Postgres test sends a real racetrack run through `quaacks minimax`. The step test uses a hand-built store.
+- No real-Postgres test produces an unstable literal. Making block counts move between runs deterministically, inside a read-only transaction, was hard, so only the `summarize` unit test covers that path.
+- The `rewrites.empty?` check in `Pipeline`'s `generate` has no observable effect, because `OperatorCandidates#run` already returns early. Remove it as a cleanup.
 
-- **Depends on:** 20260922-58, 20260926-28.
-- **Came from:** Their builds and reviews.
-- **README:** 14b, step 7.
+- **Depends on:** 20260926-27, 20260926-31.
+- **Came from:** Their build.
+- **README:** Step 13.
 - **Status:** todo

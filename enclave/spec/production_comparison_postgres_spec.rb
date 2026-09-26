@@ -127,6 +127,14 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(verdict("SELECT 1", "SELECT 1 FROM pg_sleep(2)", timeout_ms: 500)).to eq(%w[fail timed_out])
   end
 
+  it "runs each query read-only, so a candidate can't write" do
+    conn.exec("CREATE SEQUENCE read_only_probe")
+    expect { compare("SELECT 1::int8", "SELECT nextval('read_only_probe')") }
+      .to raise_error(PG::ReadOnlySqlTransaction)
+  ensure
+    conn.exec("DROP SEQUENCE IF EXISTS read_only_probe")
+  end
+
   it "keeps row values out of the verdict" do
     result = compare("SELECT 'SENTINEL_ROW_VALUE'", "SELECT 'OTHER_SENTINEL_VALUE'")
     expect(result.to_h).to eq(result: "fail", rule: "multiset")
