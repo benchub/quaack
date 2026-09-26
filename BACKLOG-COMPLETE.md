@@ -1386,3 +1386,25 @@ The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.
 - **Came from:** Track C and track B build reports.
 - **README:** Step 8.
 - **Status:** done
+
+### 20260922-27. 4b arena setup.
+
+Create arena from `template0` with matching locale settings, load the full schema and extensions, create `clock_anchor()`, keep `VALID` constraints, and disable user triggers only.
+
+- **Depends on:** 20260922-25, 20260922-18, 20260922-24, 20260924-30.
+- **README:** 4b.
+- **Status:** done
+- **Note (from the first build attempt):** Waiting on 20260924-30. The plan once it lands: load the dump through the connection with the `\restrict` and `\unrestrict` lines removed, as one implicit transaction. Drop the empty `public` schema before loading, since the dump runs `CREATE SCHEMA public`. Map the locale provider (`c` to libc, `i` to ICU_LOCALE, `b` to BUILTIN_LOCALE). Name the database from the run ID, with a COMMENT tag, and on a rerun drop and rebuild a tagged database. Reuse Racetrack's anchor code. Run DISABLE TRIGGER USER on every table. Don't create hypopg. The inventory doesn't record the database encoding, so arena gets the run server's default.
+- **Note (from 20260925-7):** The user chose to take the arena database name at `quaacks run-server --arena-db`. Use the recorded name and connect with `RunServer.connect(store, :arena)`, rather than naming the database from the run ID. The COMMENT tag and drop-and-rebuild on a rerun still apply.
+- **Note (from 20260922-26):** Reuse `Racetrack.create_clock_anchor` and `anchor_literal` for arena, perhaps through a shared module.
+
+## Step 5: Plan gate and index candidates.
+
+### 20260926-10. Arena database: handle the dump's `CREATE SCHEMA public`.
+
+When the full dump is loaded into a fresh database, its `CREATE SCHEMA public` clashes with that database's own `public` schema. The 20260924-30 test gets around this by dropping `public` first. Step 4b's arena creation has to handle it the same way. Check whether it already does.
+
+- **Depends on:** 20260924-30.
+- **Came from:** Track F build report.
+- **README:** Step 4b.
+- **Status:** done
