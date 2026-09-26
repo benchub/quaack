@@ -1001,3 +1001,15 @@ Fully qualify the query against production and find its relations. Store the qua
   - `quaacks qualify --run ID` reads `query`, `plan` and `server`, connects to production with libpq, and runs `Relations.check` (qualification through the plan's `search_path`, and the 3a relkind check). Only after every check passes does it store `qualified_query` (a String that still holds literals) and `relations` (an Array of `{schema, name}` in first-named order). It prints only DONE.
   - `CLI::Step` moved to `cli/step.rb`.
   - The review's minor findings became 20260925-18.
+
+### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b).
+
+Dump the schema and build the subset. Store the subset. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-18.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3b.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks schema-dump --run ID` reads `server` and `relations`, and runs `SchemaDump.run` inside `Inventory::Production.read_only`. pg_dump comes from PATH and gets only the host; libpq supplies the rest, the same way the connection gets it. It stores `schema_dump` (namespaces and the full DDL) and `schema_subset` (tables and DDL), and prints only DONE. The 5a-5 payload step will send the subset.
+  - The review's minor findings became 20260925-19.

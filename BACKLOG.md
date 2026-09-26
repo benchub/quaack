@@ -1208,14 +1208,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b).
-
-Dump the schema and build the subset. Store the subset. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-8, 20260922-18.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3b.
-- **Status:** todo
+### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-10. Enclave subcommand: `quaacks statistics` (3c).
 
@@ -1299,6 +1292,17 @@ Minor findings from the first review of 20260925-8:
 - **Depends on:** 20260925-8.
 - **Came from:** The first review of 20260925-8.
 - **README:** Step 1, 3a.
+- **Status:** todo
+
+### 20260925-19. Schema-dump loose ends.
+
+Minor findings from the first review of 20260925-9:
+- **A failure after the writes.** The connection stays idle in transaction through both pg_dump runs. If production's `idle_in_transaction_session_timeout` ends the session, the ROLLBACK in `Inventory::Production.read_only` raises `production_read_failed` after `schema_dump` and `schema_subset` are already stored. Reproduce it with `ALTER ROLE ... SET idle_in_transaction_session_timeout = '1s'` and a fake pg_dump that sleeps 2 seconds. Fix: do the catalog reads, commit, then run pg_dump and write; or delete both entries on a later error.
+- **The transaction test only proves that some transaction is open, not that it's read-only.** Note this, or find a way to check `transaction_read_only`.
+
+- **Depends on:** 20260925-9.
+- **Came from:** The first review of 20260925-9.
+- **README:** 3b.
 - **Status:** todo
 
 ## After version 1.
