@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "counterexamples"
+require_relative "enclave_error"
 require_relative "generator_three"
 require_relative "refinement_round"
 require_relative "rewrite_generation"
@@ -136,7 +137,12 @@ module Quaack
           end
         end
 
-        def message(reply, type) = reply.messages.find { it["type"] == type }
+        # The reply's message of this type. A reply without one fails the
+        # run with the rule no_<type>, as an EnclaveError.
+        def message(reply, type)
+          reply.messages.find { it["type"] == type } ||
+            raise(EnclaveError.new(subcommand: type.tr("_", "-"), rule: "no_#{type}"))
+        end
       end
 
       # README step 11, after steps 9 and 10: status is asked again, then IndexStage's

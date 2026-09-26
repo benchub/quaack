@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/driver/burndown"
+require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
 require_relative "support/fake_llm"
 
@@ -236,6 +237,19 @@ RSpec.describe Quaack::Driver::Pipeline do
       expect(rounds.map { it.last[:args] }).to eq([1, 2, 3].map { { run: "RUN", search: "rewrite_2", round: it } })
       expect(rounds.first.last[:input]).to eq("inserts" => ["INSERT INTO public.t (a) VALUES ($1)"])
       expect(fake.asks.first.body[:messages].first[:content]).to include(%("original":"SELECT 1"))
+    end
+
+    it "fails with a clean rule when a reply lacks the message it expects" do
+      status.merge!(rewrite(1))
+      replies = { "status" => [{ "type" => "status", "entries" => status }], "index-feedback" => [feedback] }
+      transport.define_singleton_method(:call) do |subcommand, **|
+        Data.define(:messages).new(messages: replies.fetch(subcommand, []))
+      end
+
+      expect { run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_rewrite_test") }
+
+      status.merge!(rewrite(1, tested: true))
+      expect { run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_counterexample_payload") }
     end
 
     it "resumes: skips a rewrite that's decided, and step 9 for one already tested" do

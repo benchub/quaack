@@ -15,23 +15,24 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   after { production.server.admin.exec(%(DROP DATABASE IF EXISTS "#{arena_name}" WITH (FORCE))) }
 
-  def ready(sql, arena: true, setup: true)
+  def ready(sql, arena: true, setup: true, status_check: nil)
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
     store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
-    make_arena if arena
+    make_arena(status_check) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
                              "inferred" => false, "warnings" => [], "result_types" => %w[text text])
   end
 
-  def make_arena
+  # status_check, if given, becomes a CHECK on status in the arena.
+  def make_arena(status_check = nil)
     production.server.admin.exec(%(CREATE DATABASE "#{arena_name}"))
     server = production.server
     conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
                       password: TestPostgres::PASSWORD)
-    conn.exec("CREATE TABLE public.orders (id int PRIMARY KEY, note text, status text, total int, " \
-              "created_at timestamptz)")
+    conn.exec("CREATE TABLE public.orders (id int PRIMARY KEY, note text, " \
+              "status text#{" CHECK (#{status_check})" if status_check}, total int, created_at timestamptz)")
   ensure
     conn&.close
   end
@@ -119,8 +120,9 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
 
     it "sends step 9's untested atom shapes" do
-      ready(same)
-      store.write("rewrite_tested_1", "passed" => true, "untested" => ["o.status = $2"], "untested_atoms" => [1])
+      # No row can fail o.status = 'held', so 9c leaves it untested.
+      ready(same, status_check: "status = 'held'")
+      expect(lines(step("rewrite-test", "--search", "rewrite_1")).first).to include("passed" => true)
 
       sent = lines(step("counterexample-payload", "--search", "rewrite_1")).first
 
@@ -130,6 +132,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   describe "counterexample-round (10b and 10c)" do
     let(:note_row) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open')" }
+    let(:dup_rows) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open'), (1, $1, 'open')" }
 
     it "finds a mismatch, binding $n to the real literal, and records the rewrite didn't survive" do
       ready(looser)
@@ -152,9 +155,19 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
-      round(2, note_row)
-      round(3, note_row)
-      expect(stored.read("rewrite_survived_1")).to eq("survived" => true)
+      round(2, dup_rows)
+      round(3, dup_rows)
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => true)
+    end
+
+    it "marks a survivor whose inserts never loaded as having no evidence" do
+      ready(same)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      expect(lines(round(1, dup_rows)).first).to include("load_failed" => true)
+      round(2, dup_rows)
+      round(3, dup_rows)
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => false)
     end
 
     it "refuses a round out of sequence, and any round once survival is decided" do
