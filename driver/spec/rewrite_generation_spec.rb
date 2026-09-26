@@ -42,14 +42,13 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     expect(result).to eq(described_class::Result.new(rewrites: [rewrite], outcomes: [outcome]))
   end
 
-  it "doesn't call the enclave when the LLM proposes nothing" do
+  it "records that 6a ran, with an empty rewrite-check, when the LLM proposes nothing" do
     fake = FakeLLM.new
     fake.reply("6a", { "rewrites" => [] })
 
-    result = described_class.new(client: fake.client(burndown: Quaack::Driver::Burndown.new), rewrite_check:)
-                            .run(payload)
+    described_class.new(client: fake.client(burndown: Quaack::Driver::Burndown.new), rewrite_check:).run(payload)
 
-    expect([sent, result.outcomes]).to eq([[], []])
+    expect(sent).to eq([[]])
   end
 
   it "builds rewrite_check over the transport as `quaacks rewrite-check --run`" do

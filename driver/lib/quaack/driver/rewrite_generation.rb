@@ -16,7 +16,8 @@ module Quaack
     #
     # rewrite_check stands for `quaacks rewrite-check` over the transport.
     # It's called with the LLM's rewrites, in its order, and returns the
-    # enclave's rewrite_outcome messages, one per rewrite.
+    # enclave's rewrite_outcome messages, one per rewrite. It's called even
+    # with none, so the enclave records that 6a ran.
     class RewriteGeneration
       STEP = "6a"
       MAX_TOKENS = 8000
@@ -87,7 +88,7 @@ module Quaack
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
         rewrites = @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA)
                           .fetch("rewrites")
-        Result.new(rewrites:, outcomes: rewrites.empty? ? [] : @rewrite_check.call(rewrites))
+        Result.new(rewrites:, outcomes: @rewrite_check.call(rewrites))
       end
     end
   end

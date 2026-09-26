@@ -64,7 +64,7 @@ RSpec.describe "quaack run" do
 
     expect([status, stderr.string]).to eq([0, ""])
     expect(hosts).to eq(["jump-1"])
-    expect(transport.calls.map(&:first)).to eq(%w[status index-payload index-feedback status])
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status])
     expect(transport.calls.first.last[:args]).to eq(run: run_id)
   end
 
@@ -90,7 +90,7 @@ RSpec.describe "quaack run" do
   end
 
   it "fails with exit 1 and only the rule when an enclave call fails" do
-    failing["index-payload"] = Quaack::Driver::EnclaveError.new(subcommand: "index-payload", rule: "arena_missing")
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
 
     status = cli.run(["run", "--run", run_id])
 

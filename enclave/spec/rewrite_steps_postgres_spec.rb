@@ -70,6 +70,16 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
                "warnings" => [], "result_types" => %w[text text])
     end
 
+    it "records that 6a ran when the LLM proposed no rewrites" do
+      ready
+
+      outcome = rewrite_check(rewrites)
+
+      expect([lines(outcome), outcome.status.exitstatus]).to eq([[{ "type" => "done" }], 0])
+      expect(stored.entry?("rewrites_generated")).to be(true)
+      expect(stored.entry?("rewrite_1")).to be(false)
+    end
+
     it "numbers a later call's survivors after the earlier ones" do
       ready
       rewrite_check(rewrites(rewrite(same)))
