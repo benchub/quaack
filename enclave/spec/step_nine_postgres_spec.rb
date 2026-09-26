@@ -40,6 +40,20 @@ RSpec.describe Quaack::Enclave::StepNine do
     expect(report.inspect).not_to include("SENTINEL_49")
   end
 
+  it "tests an ORM keyset page, passing the expanded form and disproving one that drops the keyset" do
+    keyset = "SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' AND (o.qty, o.id) < (7, 900) " \
+             "ORDER BY o.qty DESC, o.id DESC LIMIT 10"
+    report = described_class.run(
+      conn, keyset,
+      ["SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' AND (o.qty < 7 OR (o.qty = 7 AND o.id < 900)) " \
+       "ORDER BY o.qty DESC, o.id DESC LIMIT 10",
+       "SELECT o.id FROM fx.orders o WHERE o.status = 'SENTINEL_49' ORDER BY o.qty DESC, o.id DESC LIMIT 10"]
+    )
+    expect(report.untested).to eq([])
+    expect(report.results.map { |r| [r.passed, r.scenario] }).to eq([[true, nil], [false, :s1]])
+    expect(report.to_h.to_s).not_to include("SENTINEL_49")
+  end
+
   it "counts the groups left out because they collide on a unique key" do
     expect(run.dropped).to eq(0)
     conn.exec("CREATE TABLE fx.tags (id integer PRIMARY KEY, name text NOT NULL UNIQUE, qty integer)")

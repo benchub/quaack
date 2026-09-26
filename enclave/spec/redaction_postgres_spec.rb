@@ -47,7 +47,11 @@ RSpec.describe Quaack::Enclave::Redaction do
     "a window, an InitPlan, and a function" =>
       "SELECT s.id FROM (SELECT o.id, row_number() OVER (ORDER BY o.id) AS n FROM public.orders o " \
       "WHERE o.customer_id = (SELECT c.id FROM public.customers c WHERE c.email = 'quaack-sentinel-init') " \
-      "OR substr(o.status, 918273604) = 'quaack-sentinel-substr') s WHERE s.n < 918273605"
+      "OR substr(o.status, 918273604) = 'quaack-sentinel-substr') s WHERE s.n < 918273605",
+    "keyset pagination with row comparisons" =>
+      "SELECT o.id, o.created_at FROM public.orders o " \
+      "WHERE (o.status, o.created_at) > ('quaack-sentinel-keyset', '2031-07-19 10:00:00+00') " \
+      "AND (o.customer_id, o.id) <= (918273606, 918273607) ORDER BY o.status, o.created_at LIMIT 918273608"
   }
 
   def sentinels(query) = query.scan(/quaack-sentinel-[a-z0-9-]+|9182736\d\d/).uniq
@@ -246,7 +250,9 @@ RSpec.describe Quaack::Enclave::Redaction do
       "SELECT g FROM generate_series(1, 5) g, unnest(ARRAY['a']) u, LATERAL generate_series(g, 7) h ORDER BY 1",
       "SELECT count(*) FROM public.orders o",
       "SELECT concat('a', 'b')",
-      "SELECT o.id FROM public.orders o WHERE o.status <> 'x' AND o.id < '9' ORDER BY 1"
+      "SELECT o.id FROM public.orders o WHERE o.status <> 'x' AND o.id < '9' ORDER BY 1",
+      "SELECT o.id FROM public.orders o WHERE (o.created_at, o.id) < ('2100-01-01', 1000000) " \
+      "ORDER BY o.created_at DESC, o.id DESC LIMIT 5"
     ]
 
     def run(binding, name = "quaack_3g")

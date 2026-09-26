@@ -75,6 +75,11 @@ module Quaack
     #   can't express, so 5a-4 finds out whether the planner uses it. A
     #   column with both an equality and a range predicate is equality.
     #
+    # - Keyset: a row comparison, (a, b) < ($1, $2) with <, <=, >, or >=,
+    #   whose one row is bare columns of one table and whose other row is
+    #   constants. (a, b) = (x, y) counts as a = x and b = y. <> doesn't
+    #   count.
+    #
     # Building the key. Equality columns come first, most selective first:
     # TableStatistics#equality_selectivity, or null_frac for a column whose
     # only predicate is IS NULL. Unknown selectivity goes last. Ties, and
@@ -86,7 +91,10 @@ module Quaack
     # column and one with the ORDER BY columns, because a scan can't both
     # narrow by the range and come out sorted. Each key is capped at
     # max_key_columns, and every leading prefix is its own candidate,
-    # shortest first.
+    # shortest first. A keyset takes the range column's place with its
+    # columns in order, less any equality columns, and the ORDER BY key
+    # stands alone when it starts with them. Only the first keyset on a
+    # table counts.
     #
     # Join columns. Each table's keys are built twice: once with its join
     # columns (a join condition or USING) counted as equality columns, and
@@ -313,6 +321,35 @@ module Quaack
         end
       end
 
+      # A keyset row comparison, (a, b) < ($1, $2).
+      module Keyset
+        module_function
+
+        # The [table, column] pairs of one row, in order, when each is a
+        # bare column of the same table and the other row is all
+        # constants. Either row may hold the columns. Otherwise nil.
+        def columns(rows, scope)
+          items, values = constants?(rows.first) ? rows.reverse : rows
+          return nil unless constants?(values)
+
+          pairs = items.map { |item| pair(item, scope) }
+          pairs if one_table?(pairs)
+        end
+
+        def one_table?(pairs) = pairs.all? && pairs.map(&:first).uniq(&:object_id).one?
+
+        def constants?(items) = items.all? { |item| constant?(item) }
+
+        def pair(item, scope) = item.column_ref && scope.column(item.column_ref)
+
+        # A literal, a parameter, or a cast of either.
+        def constant?(node)
+          return constant?(node.type_cast.arg) if node.type_cast
+
+          !(node.a_const || node.param_ref).nil?
+        end
+      end
+
       # Each table's columns in some role, in query order, once each.
       class Columns
         def initialize = @lists = Hash.new { |h, k| h[k] = [] }.compare_by_identity
@@ -329,13 +366,14 @@ module Quaack
       class Predicates
         RANGE_OPERATORS = %w[< <= > >=].freeze
 
-        attr_reader :equality, :range, :like
+        attr_reader :equality, :range, :like, :keysets
 
         def initialize(scope)
           @scope = scope
           @equality = Columns.new
           @range = Columns.new
           @like = Columns.new
+          @keysets = Hash.new { |h, k| h[k] = [] }.compare_by_identity
           @kinds = Hash.new { |h, k| h[k] = [] }
         end
 
@@ -375,7 +413,8 @@ module Quaack
         end
 
         def read_operator(operator, expr)
-          if operator == "=" then read_equals(expr.lexpr, expr.rexpr)
+          if expr.lexpr.row_expr && expr.rexpr.row_expr then read_rows(operator, expr)
+          elsif operator == "=" then read_equals(expr.lexpr, expr.rexpr)
           elsif RANGE_OPERATORS.include?(operator) then add_range(against_constant(expr.lexpr, expr.rexpr))
           end
         end
@@ -385,6 +424,17 @@ module Quaack
           else add_equality(against_constant(left, right), :one)
           end
         end
+
+        # (a, b) = (x, y) is a = x and b = y. (a, b) < (x, y), or another
+        # range operator, is a keyset (see Keyset).
+        def read_rows(operator, expr)
+          rows = [expr.lexpr, expr.rexpr].map { |side| side.row_expr.args.to_a }
+          return rows.transpose.each { |l, r| read_equals(l, r) } if operator == "="
+
+          add_keyset(Keyset.columns(rows, @scope)) if RANGE_OPERATORS.include?(operator)
+        end
+
+        def add_keyset(pairs) = pairs && (@keysets[pairs.first.first] << pairs.map(&:last))
 
         def read_in(operator, expr)
           items = expr.rexpr.list.items
@@ -422,12 +472,7 @@ module Quaack
           end
         end
 
-        # A literal, a parameter, or a cast of either.
-        def constant?(node)
-          return constant?(node.type_cast.arg) if node.type_cast
-
-          !(node.a_const || node.param_ref).nil?
-        end
+        def constant?(node) = Keyset.constant?(node)
 
         def array_constant?(node)
           constant?(node) || node.a_array_expr&.elements&.all? { |e| constant?(e) }
@@ -466,6 +511,9 @@ module Quaack
         end
 
         def equality(table) = @predicates.equality[table]
+
+        # The first keyset's columns, in order, or nil.
+        def keyset(table) = @predicates.keysets[table].first
 
         # Range columns that aren't also equality columns: the comparisons
         # first, then the prefix LIKEs, which a plain btree may not serve.
@@ -686,13 +734,22 @@ module Quaack
 
         # What follows the equality columns in each full key.
         def tails(equality_names)
-          range = @uses.range(@table).first
-          range_tail = range ? [IndexCandidate::KeyColumn.new(name: range)] : []
+          range = range_columns(equality_names)
+          range_tail = range.map { |name| IndexCandidate::KeyColumn.new(name:) }
           order_tail = order_columns(equality_names)
           return [range_tail] if order_tail.nil? || order_tail.empty?
-          return [order_tail] if range.nil? || order_tail.first.name == range
+          return [order_tail] if range.empty? || order_tail.map(&:name).first(range.size) == range
 
           [range_tail, order_tail]
+        end
+
+        # A keyset's columns that aren't equality columns, or else the first
+        # range column, or none.
+        def range_columns(equality_names)
+          keyset = @uses.keyset(@table)&.-(equality_names)
+          return keyset unless keyset.nil? || keyset.empty?
+
+          [@uses.range(@table).first].compact
         end
 
         def order_columns(equality_names)
@@ -736,8 +793,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Columns, :Predicates, :Uses, :ColumnRefs, :OrderBy, :OrderTail,
-                       :TableCandidates
+      private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Predicates, :Uses, :ColumnRefs, :OrderBy,
+                       :OrderTail, :TableCandidates
     end
   end
 end

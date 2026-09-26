@@ -47,6 +47,15 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
       expect(result.resolved).to eq({})
     end
 
+    it "qualifies a relation in a subquery inside a keyset row comparison" do
+      result = qualify("SELECT o.id FROM orders o WHERE (o.created_at, o.id) < " \
+                       "((SELECT max(c.created_at) FROM customers c), $1) ORDER BY o.created_at DESC, o.id DESC")
+
+      expect(result.sql).to eq(deparse("SELECT o.id FROM public.orders o WHERE (o.created_at, o.id) < " \
+                                       "((SELECT max(c.created_at) FROM public.customers c), $1) " \
+                                       "ORDER BY o.created_at DESC, o.id DESC"))
+    end
+
     it "keeps the schema it names, even when the search path would pick another" do
       widgets_in("a", "b")
 

@@ -59,10 +59,49 @@ module Quaack
 
       def build(conn, parse, atoms, schema)
         atoms.each_with_index.filter_map do |atom, i|
-          next unless KINDS.include?(atom.kind) && atom.columns.size == 1 && atom.columns[0].table
+          next unless pooled?(atom)
 
           [i, pool(conn, parse, atom, schema)]
         end.to_h
+      end
+
+      # The row comparison operators whose leading column can decide them.
+      ROW_RANGE = %w[< <= > >=].freeze
+
+      # A keyset row comparison with a range operator is pooled through its
+      # leading column, when every element of its column row is a plain
+      # column of a table.
+      def pooled?(atom)
+        return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
+
+        atom.kind == :row_comparison && ROW_RANGE.include?(atom.operator) && atom.bare && atom.columns.all?(&:table)
+      end
+
+      # The probe for a pooled atom (see Probe).
+      def probe(conn, parse, atom, col) = Probe.new(conn, node(parse, atom), col)
+
+      # The test the atom's pool and probe read: the atom's own node, or
+      # for a row comparison, its leading elements' comparison with the tie
+      # made NULL. (a, b) <= (x, y) reads NULLIF(a, x) <= x: true when
+      # a < x, false when a > x, and NULL when a = x, where b decides.
+      def node(parse, atom)
+        node = PredicateAtoms.node(parse, atom)
+        atom.kind == :row_comparison ? lead(node.a_expr) : node
+      end
+
+      def lead(expr)
+        lexpr, rexpr = [expr.lexpr, expr.rexpr].map { |side| side.row_expr.args[0] }
+        lexpr.column_ref ? lexpr = nullif(lexpr, rexpr) : rexpr = nullif(rexpr, lexpr)
+        a_expr(:AEXPR_OP, expr.name.to_a, lexpr, rexpr)
+      end
+
+      def nullif(column, value)
+        a_expr(:AEXPR_NULLIF, [PgQuery::Node.new(string: PgQuery::String.new(sval: "="))],
+               column, value)
+      end
+
+      def a_expr(kind, name, lexpr, rexpr)
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name:, lexpr:, rexpr:))
       end
 
       def boundaries(type) = BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
@@ -70,7 +109,7 @@ module Quaack
       def pool(conn, parse, atom, schema)
         column = atom.columns[0]
         col = schema.column(column.table, column.name)
-        node = PredicateAtoms.node(parse, atom)
+        node = node(parse, atom)
         sorted(conn, node, col) => { satisfying:, failing:, boundaries: }
         Pool.new(column:, type: col.type, oid: col.oid, nullable: col.nullable, satisfying:, failing:, boundaries:)
       end
