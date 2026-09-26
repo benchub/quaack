@@ -15,7 +15,8 @@ module Quaack
     # - memory_bytes: the instance memory, from the memory command, or nil
     #   when no command is configured.
     # - settings: shared_buffers, effective_cache_size, work_mem,
-    #   random_page_cost, and jit.
+    #   random_page_cost, jit, TimeZone, DateStyle, IntervalStyle, and
+    #   default_statistics_target.
     # - parallel_settings: every setting named for parallel query, plus
     #   max_worker_processes and enable_gathermerge.
     # - plan_settings: production's own value of each setting the input

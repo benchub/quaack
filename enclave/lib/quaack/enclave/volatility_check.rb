@@ -9,8 +9,9 @@ module Quaack
   module Enclave
     # README step 3d: abort if the query calls a volatile function anywhere,
     # since a volatile function breaks both rewriting and result comparison.
-    # The inbound check for rewrite candidates ("What goes into the
-    # enclave") calls it too, on SQL with $n placeholders.
+    # The inbound checks for rewrite candidates and index DDL ("What goes
+    # into the enclave") call it too, on SQL with $n placeholders, and on
+    # an index's expressions and predicate.
     #
     #   VolatilityCheck.check(sql, settings, connection)
     #   # => nil, or raises Error "volatile_function: function pg_catalog.random is volatile"
@@ -136,8 +137,11 @@ module Quaack
 
       module_function
 
-      def check(sql, settings, connection)
-        parse = parse(sql)
+      def check(sql, settings, connection) = check_parse(parse(sql), settings, connection)
+
+      # The same check on a parse, for callers that parsed the SQL
+      # themselves or built the parse, such as IndexDdlCheck.
+      def check_parse(parse, settings, connection)
         SupportedSql.check!(parse)
         path = nil
         FunctionCalls.of(parse.tree).uniq.each do |call|

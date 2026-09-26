@@ -37,27 +37,9 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-10. Inbound check for rewrite candidates. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-11. Inbound check for index DDL.
+### 20260922-11. Inbound check for index DDL. Done, see BACKLOG-COMPLETE.md.
 
-Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject anything else, naming the rule it broke.
-
-- **Depends on:** 20260922-1, 20260922-17.
-- **README:** What goes into the enclave.
-- **Status:** todo
-- **Decided:**
-  - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
-  - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
-- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today.
-
-### 20260922-12. Inbound check for step 10 inserts.
-
-Accept only plain `INSERT` statements into tables in the 3b subset schema. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, and anything else that isn't a plain insert.
-
-- **Depends on:** 20260922-1, 20260922-18.
-- **README:** What goes into the enclave.
-- **Note (from the review of 20260922-46):** The arena runner accepts any single InsertStmt, including `WITH ... INSERT`, `ON CONFLICT`, and `RETURNING`. This check is the real guard. It must refuse those forms, plus `set_config`, advisory locks, and any function that isn't immutable.
-- **Status:** todo
-- **Decided:** A plain insert is `INSERT INTO <subset table> (<columns>) VALUES (...), ...`. The values can be constants, casts, `DEFAULT`, and calls to immutable functions that pass the 3d volatility check. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, `WITH`, `OVERRIDING`, and any function that isn't immutable.
+### 20260922-12. Inbound check for step 10 inserts. Done, see BACKLOG-COMPLETE.md.
 
 ## Step 1: Input.
 
@@ -81,26 +63,9 @@ Accept only plain `INSERT` statements into tables in the 3b subset schema. Rejec
 
 ### 20260922-20. 3d volatility check. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-21. 3e literal set.
+### 20260922-21. 3e literal set. Done, see BACKLOG-COMPLETE.md.
 
-Build the slow, worst-case, and typical literal sets and keep them in the governed store.
-
-- **Depends on:** 20260922-14, 20260922-19.
-- **README:** 3e.
-- **Status:** todo
-- **Decided:** Pick values by operator.
-  - **Ranges:** the worst case is the histogram bound that selects the most rows, and the typical value is the middle bound.
-  - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
-  - **`LIKE` and any other operator:** use the slow literal in all three sets.
-
-### 20260922-22. 3f PII and low-cardinality classification.
-
-Classify each column as PII or not, using a configured list and a high-cardinality text heuristic. Mark low-cardinality columns (fewer than 50 distinct values, not PII). Decide which derived scalars and MCV values may leave.
-
-- **Depends on:** 20260922-19.
-- **README:** 3f.
-- **Status:** todo
-- **Decided:** The PII list is a set of `schema.table.column` globs, such as `*.users.email`, in the `quaacks` config file on the jump server. A text column is high-cardinality when it has 50 or more distinct values, the same line 3f uses for low-cardinality. The config can change the threshold.
+### 20260922-22. 3f PII and low-cardinality classification. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-23. 3g redaction. Done, see BACKLOG-COMPLETE.md.
 
@@ -108,46 +73,24 @@ Classify each column as PII or not, using a configured list and a high-cardinali
 
 ## Step 4: Run server.
 
-### 20260922-25. Run server checks.
+### 20260922-25. Run server checks. Done, see BACKLOG-COMPLETE.md.
 
-Verify the run server: same major version and extensions as production plus HypoPG, same planner GUCs and locale settings, superuser access, no other clients, no background jobs, and autovacuum off. Abort and name the failed check.
-
-- **Depends on:** 20260922-16.
-- **README:** Step 4.
-- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
-  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
-  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
-  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
-  - Per-tablespace `random_page_cost`.
-  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
-- **Status:** todo
-- **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
-
-### 20260922-26. 4a racetrack setup.
-
-In the restored racetrack database, create `hypopg`, the `quaack` schema, and `clock_anchor()`.
-
-- **Depends on:** 20260922-25, 20260922-24.
-- **README:** 4a.
-- **Status:** todo
+### 20260922-26. 4a racetrack setup. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-27. 4b arena setup.
 
 Create arena from `template0` with matching locale settings, load the full schema and extensions, create `clock_anchor()`, keep `VALID` constraints, and disable user triggers only.
 
-- **Depends on:** 20260922-25, 20260922-18, 20260922-24.
+- **Depends on:** 20260922-25, 20260922-18, 20260922-24, 20260924-30.
 - **README:** 4b.
 - **Status:** todo
+- **Note (from the first build attempt):** Waiting on 20260924-30. The plan once it lands: load the dump through the connection with the `\restrict` and `\unrestrict` lines removed, as one implicit transaction. Drop the empty `public` schema before loading, since the dump runs `CREATE SCHEMA public`. Map the locale provider (`c` to libc, `i` to ICU_LOCALE, `b` to BUILTIN_LOCALE). Name the database from the run ID, with a COMMENT tag, and on a rerun drop and rebuild a tagged database. Reuse Racetrack's anchor code. Run DISABLE TRIGGER USER on every table. Don't create hypopg. The inventory doesn't record the database encoding, so arena gets the run server's default.
+- **Note (from 20260925-7):** The user chose to take the arena database name at `quaacks run-server --arena-db`. Use the recorded name and connect with `RunServer.connect(store, :arena)`, rather than naming the database from the run ID. The COMMENT tag and drop-and-rebuild on a rerun still apply.
+- **Note (from 20260922-26):** Reuse `Racetrack.create_clock_anchor` and `anchor_literal` for arena, perhaps through a shared module.
 
 ## Step 5: Plan gate and index candidates.
 
-### 20260922-28. 5 plan gate.
-
-`EXPLAIN` the original query on the racetrack with the slow literals and compare canonical forms with the step 1 plan. On mismatch, abort and name stale racetrack statistics as the likely cause.
-
-- **Depends on:** 20260922-26, 20260922-15, 20260922-21, 20260922-23.
-- **README:** Step 5.
-- **Status:** todo
+### 20260922-28. 5 plan gate. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-29. 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
@@ -157,14 +100,7 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ### 20260922-32. 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-33. 5a-5 generator three.
-
-Build the shape-only payload, ask the LLM for up to five candidates it hasn't seen covered, filter them through 5a-3, ask once for replacements of dropped ones, tag partial indexes, and test survivors with 5a-4. Must work for the original query and for rewrites.
-
-- **Depends on:** 20260922-6, 20260922-5, 20260922-11, 20260922-22, 20260922-23, 20260922-29, 20260922-32, 20260923-11.
-- **README:** 5a-5.
-- **Status:** todo
-- **Note:** The `IndexCandidate` shape from 20260923-11 only holds plain column keys. 5a-5 asks the LLM for expression indexes and operator classes such as `text_pattern_ops` and trigram GIN. So this task has to extend the shape with expression keys, opclasses, and probably collations, and teach 5a-3's dedupe to handle them.
+### 20260922-33. 5a-5 generator three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-34. 5a-6 refinement round.
 
@@ -173,17 +109,19 @@ If any LLM candidate went unused or lost to a simpler mechanical candidate, send
 - **Depends on:** 20260922-33.
 - **README:** 5a-6.
 - **Status:** todo
-- **Open questions:** How do we decide "helped less than a simpler mechanical candidate"? Simpler by column count, size, or both?
+- **Decided:** An LLM candidate qualifies for the revision round if the planner didn't use it, or if a mechanical candidate with fewer key and INCLUDE columns (ties broken by smaller estimated size) has a worst-case cost across the literal sets no higher than the LLM candidate's.
 
 ### 20260922-35. 5a-7 combination and ranking. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-36. Step 5 orchestration.
 
 Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order the README gives.
+- **Decided (driver CLI):** `quaack start` (20260926-1) creates the run, and `quaack run --run ID` drives every remaining step in order. It can resume, skipping steps whose outputs are already in the store. Each orchestration task adds its stage to that sequence.
 
 - **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
 - **README:** 5a.
 - **Status:** todo
+- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. Update from 20260925-13: the 5a-5 `index-payload` step (20260925-4) sends it, and Dedupe's low-cardinality input comes from the stored `classification` entry.
 
 ## Steps 6 and 7: Rewrite candidates.
 
@@ -194,7 +132,8 @@ Ask the LLM for rewrites of the redacted query, each stating its transformation 
 - **Depends on:** 20260922-6, 20260922-5, 20260922-10, 20260922-18, 20260922-23.
 - **README:** 6a.
 - **Status:** todo
-- **Open questions:** How many rewrites per run? Assumptions need a structured format for 6b to check them. What's the vocabulary (`NOT NULL`, unique, FK, anything else)?
+- **Decided (wiring):** `quaacks rewrite-payload` sends the redacted query, plan, schema, and stats, reusing the `index_payload` fields where it can. `quaacks rewrite-check` reads the LLM's rewrites on stdin (SQL, transformation, and structured assumptions). It runs the inbound check, 6b, and step 8's structural discards on the racetrack, stores survivors under `rewrite_<n>`, and returns shape-only outcomes.
+- **Decided:** Ask for up to five rewrites per run. Assumptions use a structured format, and the vocabulary is exactly: a `NOT NULL` column, a unique column set, a foreign key, and a `CHECK` constraint. A candidate stating any other kind of assumption is rejected.
 
 ### 20260922-38. 6b assumption check.
 
@@ -203,7 +142,7 @@ Check each stated assumption against `pg_constraint` and `pg_index`, treating `N
 - **Depends on:** 20260922-37.
 - **README:** 6b.
 - **Status:** todo
-- **Open questions:** What happens to an assumption the checker can't express as a catalog check?
+- **Decided:** The vocabulary is fixed by 20260922-37, so an assumption outside it rejects the candidate. A `CHECK` assumption is met only by a validated `CHECK` constraint on that table whose expression, normalized through pg_query, is identical to the stated one. Implied constraints don't count in v1.
 
 ### 20260922-39. 7 operator candidates.
 
@@ -212,7 +151,7 @@ Let operators submit placeholder-based rewrites through the driver. Ask the LLM 
 - **Depends on:** 20260922-37, 20260922-38.
 - **README:** Step 7.
 - **Status:** todo
-- **Open questions:** How do operators submit them: a file, a CLI flag, or a prompt?
+- **Decided:** A file flag on the laptop, `--rewrites <file>`, with one placeholder-SQL rewrite per `;`-terminated statement. They go through the same `quaacks rewrite-check` as 6a's rewrites, flagged as inferred.
 
 ## Step 8: Plan-based pruning.
 
@@ -239,7 +178,7 @@ For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse an
 - **Depends on:** 20260922-41, 20260922-35, 20260922-15.
 - **README:** Step 8.
 - **Status:** todo
-- **Open questions:** Match against the original's plan under the same index configuration, or against the original's bare plan?
+- **Decided:** Compare against the original's plan under the same index configuration.
 
 ## Step 9: Predicate-aware fixtures.
 
@@ -262,6 +201,7 @@ Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row p
 - **Note (from 20260924-5):** 9d reverses each run of consecutive same-table rows. So every table's rows must be contiguous in the fixture, or the reverse load does nothing. Tables with self-referencing FKs fail the reverse load (see 20260924-9).
 - **Status:** todo
 - **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
+- **Decided:** Use the column's DEFAULT if it has one, or else a type-typical value (0, empty string, epoch). For a simple CHECK (column op constant, an IN list, or BETWEEN), pick a value that satisfies it. Refuse a query whose CHECKs are too complex, and list that as unsupported in v1.
 
 ### 20260922-46. 9a, 9b, and 9e arena transaction runner. Done, see BACKLOG-COMPLETE.md.
 
@@ -292,7 +232,7 @@ Ask the LLM for constraint-satisfying inserts that make a candidate and the orig
 - **Depends on:** 20260922-6, 20260922-5, 20260922-12, 20260922-48.
 - **README:** 10a.
 - **Status:** todo
-- **Open questions:** Who writes the parent rows for FK gaps: the enclave script, or the LLM on a retry? The LLM only sees shapes, so how does it write inserts that hit the real literals?
+- **Decided:** The enclave writes FK parent rows mechanically, using the step 9 fixture rules. The LLM writes shape-level inserts with placeholders, and the enclave binds the real literals.
 
 ### 20260922-51. 10b and 10c compare and roll back.
 
@@ -301,7 +241,7 @@ Load the inserts, run the 9d comparator, recheck untested atoms with the 9c test
 - **Depends on:** 20260922-50, 20260922-47, 20260922-48.
 - **README:** 10b and 10c.
 - **Status:** todo
-- **Open questions:** Does a round that finds no mismatch end the rounds early, or do all three always run?
+- **Decided:** All three rounds always run.
 
 ## Step 11: Per-candidate index ranking.
 
@@ -322,7 +262,7 @@ Build every distinct index from 5a and step 11 with raised maintenance settings.
 - **Depends on:** 20260922-35, 20260922-52.
 - **README:** 12a.
 - **Status:** todo
-- **Open questions:** The README hides all built indexes. I assume each measurement then unhides only its own combination. Is that right? What about the GIN and GiST candidates set aside in 5a-3?
+- **Decided:** Each measurement unhides only its own combination. Build and measure the GIN and GiST candidates set aside in 5a-3 too.
 
 ### 20260922-54. 12b run discipline.
 
@@ -331,7 +271,7 @@ Run every measurement statement in a `READ ONLY` transaction with `statement_tim
 - **Depends on:** 20260922-26.
 - **README:** 12b.
 - **Status:** todo
-- **Open questions:** What timeout? What happens when a measurement times out?
+- **Decided:** `statement_timeout` is 3× the original query's baseline time, clamped to at least 5 seconds and at most 5 minutes. We should always be willing to wait 5 seconds, and anything needing more than 5 minutes needs a human. A candidate whose measurement times out is dropped and counted in the report as timed out.
 
 ### 20260922-55. 13 baseline runs.
 
@@ -364,7 +304,8 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Depends on:** 20260922-56, 20260922-57.
 - **README:** 14a and 14b.
 - **Status:** todo
-- **Open questions:** Does "no worse" allow any increase at all, or is it within the 5% threshold?
+- **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
+- **Decided:** "No worse" means an increase within the 5% threshold.
 
 ### 20260922-59. 14c production result comparison.
 
@@ -374,7 +315,7 @@ Run the original and each candidate as plain queries per literal and compare in 
 - **README:** 14c.
 - **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
 - **Status:** todo
-- **Open questions:** Which hash? A plain sum of row hashes can mask duplicates in some cases, so we should pick one carefully.
+- **Decided:** Hash each row, sort the hashes, and hash the sorted list together with the row count.
 
 ### 20260922-60. 14d selection.
 
@@ -395,7 +336,7 @@ Rank candidates per literal and overall with the minimax rule. List untested ato
 - **Depends on:** 20260922-60, 20260922-24.
 - **README:** Step 15.
 - **Status:** todo
-- **Open questions:** Output format (Markdown, HTML, JSON)? Is the explanation LLM-written or templated?
+- **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
 
 ### 20260922-63. 15a negative result.
 
@@ -419,7 +360,7 @@ Render the three burndown sections from the recorded counts.
 
 Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
 
-- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64.
+- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
 - **README:** All.
 - **Status:** todo
 - **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
@@ -473,7 +414,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Came from:** Splitting 20260922-31, at the user's request to build it early.
 - **README:** 5a-2, step 8.
 - **Status:** todo
-- **Open questions:** Do the patterns use estimated rows in place of actual rows, or only the patterns that don't need rows removed?
+- **Decided:** On rewrite plans, run only the patterns that need neither actual rows nor rows removed, and skip the rest. The LLM in step 11 covers the gaps.
 
 ### 20260923-13. Tighten the runtime boundary checker tests. Done, see BACKLOG-COMPLETE.md.
 
@@ -713,6 +654,7 @@ Findings from the reviews of 20260922-20:
   - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
 - **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
 - **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
+- **Index DDL too (from the first review of 20260922-11):** `IndexDdlCheck` reuses this check, so the attribute-notation and domain CHECK gaps reach index DDL. With `evil3(public.orders)` a VOLATILE SQL function, `CREATE INDEX ON public.orders ((orders.evil3))` is accepted, and HypoPG and a real CREATE INDEX both build it, because Postgres inlines the SQL body before its IMMUTABLE check. Postgres still refuses a body with side effects, or a non-SQL function. Fix these gaps here, and list them in the "what it doesn't catch" part of `IndexDdlCheck`'s header.
 
 - **Depends on:** 20260922-20.
 - **Came from:** Both reviews of 20260922-20, and the tests-only review.
@@ -1076,7 +1018,7 @@ Findings from the build and reviews of 20260924-4:
 
 Findings from the build and reviews of 20260922-16:
 - **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
-- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 must also decide whether to compare the run server with these values or with the plan's own Settings.
+- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 (20260922-25) decided: the run server is compared with production's own recorded values.
 - **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
 - **`"memory_command": null` counts as not configured,** but the README says that's `bad_config`.
 - **There's no upper bound on the memory size.**
@@ -1121,7 +1063,7 @@ Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-1
 Findings from the build and reviews of 20260922-19:
 - **pg_stats and pg_stats_ext silently hide columns the operator can't SELECT,** so a role with limited privileges gets missing statistics with no error. Detect this and refuse it, or record it.
 - **Values and names aren't converted to UTF-8,** unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
-- **Confirm the name `few_distinct`** before 20260922-22 (3f) uses it. 3f has to take out PII columns to get the low-cardinality set.
+- **Resolved:** 20260922-22 removed `few_distinct`, and replaced it with `PiiClassification#low_cardinality`.
 - **The pg_stats inherited-filter mutant is killed only by luck:** without the filter, row order decides which duplicate wins.
 - **A column type with a delimiter other than a comma (such as `box`)** would make PgArray raise and abort 3c. That's rare, so list it as unsupported in v1 or skip it.
 
@@ -1130,9 +1072,237 @@ Findings from the build and reviews of 20260922-19:
 - **README:** 3c.
 - **Status:** todo
 
+### 20260924-27. 3f classification loose ends.
+
+Findings from the build and reviews of 20260922-22:
+- **text[], json, and jsonb columns aren't text-like for the heuristic,** so their MCV frequencies leave unless a glob names them. Their values never leave. The reviewer judged this low risk: a frequency vector over a large domain doesn't re-identify anyone. Decide whether they should fail closed as PII anyway.
+- **Expression-index and extended-statistics MCVs are left out of the projection entirely.** If 5a-5 needs them, they'll need rules of their own.
+
+- **Depends on:** 20260922-22.
+- **Came from:** The build and reviews of 20260922-22.
+- **README:** 3f.
+- **Status:** todo
+
+### 20260924-28. 3e literal set loose ends.
+
+Findings from the build and reviews of 20260922-21:
+- **Django date filters get no worst-case or typical value.** psycopg2 writes datetimes and dates as `'...'::timestamptz` and `'...'::date`, and arrays as `'{..}'::bigint[]`. 3g turns these into `$n::type` cast placeholders, and 3e always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- **3g doesn't store the redacted SQL,** so whatever wires 3e in (step 5 or step 9 orchestration) has to pass it in or store it.
+- **The boolean `t`/`f` check at `literal_set.rb:326` survives mutation.** pg_stats always emits `t` or `f`, so either pin it with a planted bad value or drop it.
+
+- **Depends on:** 20260922-21.
+- **Came from:** The build and reviews of 20260922-21.
+- **README:** 3e.
+- **Status:** todo
+
+### 20260924-29. Run server check loose ends.
+
+Findings from the build and reviews of 20260922-25:
+- **Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked.** The inventory doesn't record production's tablespace spcoptions. Record them in step 2, then compare them here.
+- **`shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.** Only pg_extension is.
+- **PGTZ and PGDATESTYLE in the operator's libpq environment** change the session's TimeZone and DateStyle on both connections, so the check compares session values, not server values.
+- **The debug_parallel_query test goes through the recorded-value path,** not the boot_val path its name suggests.
+- **The required superuser bypasses row-level security.** The step 5 plan gate catches that for the original query.
+
+- **Depends on:** 20260922-25.
+- **Came from:** The build and reviews of 20260922-25.
+- **README:** Steps 2 and 4.
+- **Status:** todo
+
+### 20260924-30. Include extensions in the 3b schema dump.
+
+pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b loads into arena fails on columns like `public.citext`. Found while building 20260922-27. The user picked this fix on September 24.
+- For each extension in production's `pg_extension` other than plpgsql, pass a quoted `--extension=<name>` to the full dump. pg_dump then emits `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...`.
+- Add each extension's schema to the full dump's namespaces, so `WITH SCHEMA ext` doesn't fail on a schema that doesn't exist.
+- Test with real pg_dump 18 output: citext in public, and pgcrypto in a separate schema `ext`. Load the dump into a fresh template0 database, and check that it succeeds.
+- Known and accepted: CREATE EXTENSION carries no VERSION, so arena gets the run server's default versions.
+
+- **Depends on:** 20260922-18.
+- **Came from:** The build of 20260922-27.
+- **README:** 3b.
+- **Status:** todo
+
+### 20260924-31. Keyset pagination with row comparisons.
+
+**Question for the user first:** should this be part of the v1 profile? `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
+
+- **Depends on:** 20260923-33.
+- **Came from:** The review of 20260923-33 and the second review of 20260924-16.
+- **README:** Step 1.
+- **Status:** todo
+
+### 20260925-1. Index DDL check loose ends.
+
+Findings from the second review of 20260922-11:
+- **The unparsable sentinel test doesn't exercise the leak path.** In `enclave/spec/index_ddl_check_spec.rb`, the `"unparsable"` case in "a sentinel in the DDL" ends in a trailing AND. So pg_query's message is "syntax error at end of input", which never quotes the sentinel. Plant the syntax error on a sentinel token, such as `... WHERE status = '<sentinel>' '<sentinel>'`. The exact-message test still catches a leak today.
+- **The README doesn't list the index DDL rules.** README "What goes into the enclave" says only "exactly one `CREATE INDEX` statement on a table the query uses". Add the refusals (CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT, TABLESPACE, ON ONLY, an unqualified table, volatile functions, parameters, subqueries, and aggregates). Also say that the index name is dropped and that STABLE is left to Postgres.
+
+- **Depends on:** 20260922-11.
+- **Came from:** The second review of 20260922-11.
+- **README:** What goes into the enclave.
+- **Status:** todo
+
+### 20260925-2. Insert check loose ends.
+
+Minor findings from the first review of 20260922-12:
+- **The variadic arity branch is untested.** Dropping `OR p.provariadic <> 0` in `insert_values.rb` MUTABLE_SQL stays green. Add a test that `concat('a','b')` is refused as `not_immutable`.
+- **The `attisdropped` clause in COLUMNS_SQL is unproven.** Removing it stays green, because dropped columns get unmatchable names. Keep it or drop it.
+- **Implicit coercion is unchecked.** An uncast literal into a column whose type has a volatile input function, or a domain `CHECK` that calls one, runs that function at insert time. The function comes from the production schema, not the LLM. Document this in the README, or check column-type input functions and domain checks.
+- **Values aren't pinned to be deterministic.** TimeZone-dependent timestamptz literals and `'now'`, `'today'` are accepted. Set a fixed TimeZone in the arena session, or refuse the special date and time inputs, or note it in the README.
+
+- **Depends on:** 20260922-12.
+- **Came from:** The first review of 20260922-12.
+- **README:** What goes into the enclave.
+- **Status:** todo
+
+### 20260925-3. Plan gate loose ends.
+
+Minor findings from the first review of 20260922-28:
+- **The `Redaction.binding` call in `plan_gate.rb` is untested.** Deleting it stays green. Add a test that SQL which doesn't bind to the stored map (an extra `$n`, or unredacted SQL) raises `Redaction::Error`.
+- **The guards in `CanonicalPlan#unqualify_type` are untested.** Removing the anchor-only guard or the `names.size > 1` guard stays green. Test them, or drop the guards if stripping `pg_catalog` from every cast is fine.
+
+- **Depends on:** 20260922-28.
+- **Came from:** The first review of 20260922-28.
+- **README:** Step 5.
+- **Status:** todo
+
+### 20260925-4. 5a-5 generator three: the LLM loop. Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-5. Generator three piece one loose ends. Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-6. Enclave subcommand for the mechanical half of step 5. Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-10. Enclave subcommand: `quaacks statistics` (3c). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-11. Enclave subcommand: `quaacks volatility` (3d). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-12. Enclave subcommand: `quaacks literals` (3e). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-13. Enclave subcommand: `quaacks classify` (3f). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-14. Enclave subcommand: `quaacks redact` (3g). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-15. Enclave subcommand: `quaacks anchor` (3h). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a). Done, see BACKLOG-COMPLETE.md.
+
+### 20260925-17. Possible flake in the run-server success test.
+
+`enclave/spec/run_server_postgres_spec.rb:65` needs no other clients on the shared test server. It closes the harness's admin connection, but if another spec in the same process leaves a connection open, the test fails with `run_server_other_clients`. It hasn't happened yet. If it shows up, give that test its own server or close every harness connection first.
+
+- **Depends on:** 20260925-7.
+- **Came from:** The first review of 20260925-7.
+- **README:** 4.
+- **Status:** todo
+
+### 20260925-18. Qualify loose ends.
+
+Minor findings from the first review of 20260925-8:
+- **No read-only transaction.** `steps/qualify.rb` reads production outside a read-only transaction, unlike inventory. Every statement is a fixed catalog SELECT today. Wrap `Relations.check` in `Inventory::Production.read_only`, both for defense in depth and for one snapshot across the lookups.
+- **`"$user"` is the operator's role.** It resolves to the operator's role, not the role of the application that made the plan. Say so in the README, or refuse a `$user` path entry that matches an existing schema other than the operator's own.
+- **The step spec covers one join only.** Add step-level cases for a CTE, a subquery, quoted identifiers, and already-qualified names.
+
+- **Depends on:** 20260925-8.
+- **Came from:** The first review of 20260925-8.
+- **README:** Step 1, 3a.
+- **Status:** todo
+
+### 20260925-19. Schema-dump loose ends.
+
+Minor findings from the first review of 20260925-9:
+- **A failure after the writes.** The connection stays idle in transaction through both pg_dump runs. If production's `idle_in_transaction_session_timeout` ends the session, the ROLLBACK in `Inventory::Production.read_only` raises `production_read_failed` after `schema_dump` and `schema_subset` are already stored. Reproduce it with `ALTER ROLE ... SET idle_in_transaction_session_timeout = '1s'` and a fake pg_dump that sleeps 2 seconds. Fix: do the catalog reads, commit, then run pg_dump and write; or delete both entries on a later error.
+- **The transaction test only proves that some transaction is open, not that it's read-only.** Note this, or find a way to check `transaction_read_only`.
+
+- **Depends on:** 20260925-9.
+- **Came from:** The first review of 20260925-9.
+- **README:** 3b.
+- **Status:** todo
+
+### 20260925-20. Statistics step: test the read failure.
+
+The `statistics` step spec has no `production_read_failed` case, but README 3c promises that the refusal stores nothing. Add a step-level test that pins it end to end.
+
+- **Depends on:** 20260925-10.
+- **Came from:** The first review of 20260925-10.
+- **README:** 3c.
+- **Status:** todo
+
+### 20260925-21. Name the function in a 3d refusal.
+
+README 3d says to abort and say which function caused it. Today the `volatile_function` error line carries only the step, the rule and the SQLSTATE, and 20260925-11 added a README paragraph calling that a v1 limitation. The user decided the function should be named. Function names are schema, so they're shape. Add a whitelisted field, such as `function` holding the schema-qualified name, to the `volatile_function` refusal, for both the step and the other `VolatilityCheck` callers where it makes sense. Remove the README limitation paragraph so 3d no longer contradicts itself. Prove with a sentinel that only the name goes out, never an argument or literal.
+
+- **Depends on:** 20260925-11.
+- **Came from:** The first review of 20260925-11, and the user's decision.
+- **README:** 3d, What leaves the enclave.
+- **Status:** todo
+
+### 20260925-22. Name the missing input when a step's store entry is absent.
+
+The new step subcommands (redact, classify, and others) report a missing upstream entry as `internal_error`. The README says a failure names only its rule, and the rule should name what's missing, such as `missing_plan` or a shared `missing_entry` naming the entry. Fix this in one place, for all the steps. The racetrack-setup success test should also check that `hypopg` exists, and a run with `run_server` but no `clock_anchor` should fail with a clean rule. Also add a test for `quaacks literals` refusing a `volatility` entry that's present but not passed (`literals.rb:27`), which no test covers yet. Also note, or fix, that `redact` writes its entries one at a time, so a crash partway through can leave some of them stored. A rerun overwrites them.
+
+- **Depends on:** 20260925-14.
+- **Came from:** The first reviews of 20260925-14, 20260925-12, and 20260925-16.
+- **README:** Step 3.
+- **Status:** todo
+
+### 20260925-23. Anchor step loose ends.
+
+- **`clock_replacements` can't go straight back into `restore`.** It's stored as string-keyed hashes, but `ClockAnchoring.restore` calls `.anchored` and `.original` on objects. Add a loader (`ClockAnchoring.load_replacements(store)` or similar) that rebuilds them, with a test that round-trips the stored form through `restore`. Step 15 needs this.
+- **The step spec doesn't cover `now() - interval $n`.** Add a case.
+
+- **Depends on:** 20260925-15.
+- **Came from:** The first review of 20260925-15.
+- **README:** 3h.
+- **Status:** todo
+
+### 20260925-24. Index-search loose ends.
+
+- `Dedupe.restore` doesn't check that `considered` matches the lists, so a corrupt entry restores silently.
+- `index_search.rb` finds proposals with `==`, which relies on `IndexCandidate#==` ignoring sources. If SingleCandidateTest ever normalizes a candidate, the lookup gives nil and crashes.
+
+- **Depends on:** 20260925-6.
+- **Came from:** The reviews of 20260925-6.
+- **README:** 5a-3, 5a-4.
+- **Status:** todo
+
+### 20260926-1. Driver finds the jump server with a configured command.
+
+The driver has no way to know which jump server serves a production server. Add a driver config file on the laptop, `~/.quaack/driver.json`, with `jump_command`: a shell one-liner with `{server}` that prints the ssh host, following the pattern of `memory_command` (quoting, timeout, output checks). The operator starts a run from the laptop with something like `quaack start --server <prod> --query <path on jump server> --plan <path on jump server>`. The driver runs `jump_command`, then runs `quaacks intake` remotely over `Transport::Ssh` (the query and plan files stay on the jump server), and remembers run ID to jump host locally, so later commands take only the run ID. Update README "Where QUAACK runs" and step 1.
+
+- **Depends on:** 20260922-5, 20260922-13.
+- **README:** Where QUAACK runs, Step 1.
+- **Decided:** The user chose a driver-side config command over a static map or a `--jump` flag.
+- **Status:** todo
+
+### 20260926-2. Build and record the run server with a configured command.
+
+Add `run_server_command` to the quaacks config on the jump server (`~/.quaack/config.json`). It's given `{server}` and `{run}`, builds or finds the run server from production, and prints JSON `{host, port, racetrack_db, arena_db}`. `quaacks run-server --run ID` with no flags calls it, validates the output the same way it validates the flags, and runs the step 4 checks. Flags still override. Add an optional matching `destroy_command` that `quaacks teardown` calls, so the run server is destroyed too, not just announced. Follow the `memory_command` pattern for quoting, timeouts, and discarding stderr. Nothing the command prints goes out except through the existing rules. Update README step 4 and teardown.
+
+- **Depends on:** 20260925-7, 20260922-66.
+- **README:** 4, Run teardown.
+- **Decided:** The user chose a provision command in the quaacks config over having the operator build the server by hand.
+- **Status:** todo
+
+### 20260926-3. Generator three follow-ups.
+
+- Record the 5a-5 burndown: LLM candidates, plus any replacements asked for dropped ones, with the 5a-3 and 5a-4 reasons (README step 15b table).
+- `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
+
+- **Depends on:** 20260925-4.
+- **Came from:** The build and second review of 20260925-4.
+- **README:** 5a-5, 15b.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
+- **Progress:** Piece one landed on `main` after a build and a first review with nothing blocking. `IndexDdlCheck` now refuses `WITH (...)` (rule `storage_options`). An enclave `GeneratorThree.filter` runs the inbound check, `from_ddl` and Dedupe, and returns an outcome for each DDL. There's a new whitelist type `index_outcome`, and a driver `GeneratorThree` loop with a callable `index_test`. Left: the `index-payload` and `index-test` subcommands, saving the LLM results and partial tags in the store, running 5a-4 on the survivors, the 5a-5 burndown record, and running it for rewrites. Those need 20260925-6 first. The review's minor findings went to 20260925-5.
 
 ### 20260923-6. Test the runtime check's environment scrubbing.
 

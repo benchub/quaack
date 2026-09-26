@@ -4,14 +4,12 @@ require_relative "egress"
 require_relative "error_filter"
 require_relative "store"
 require_relative "cli/refused"
+require_relative "cli/step"
 require_relative "cli/bad_store_base"
 require_relative "cli/arguments"
 require_relative "cli/input"
 require_relative "cli/output"
-require_relative "steps/version"
-require_relative "steps/intake"
-require_relative "steps/teardown"
-require_relative "steps/inventory"
+require_relative "cli/steps"
 
 module Quaack
   module Enclave
@@ -41,45 +39,7 @@ module Quaack
     # when it calls exit or abort (see call_step); and death by
     # the signal for a signal, after its error line (see ErrorFilter.guard).
     class CLI
-      # One subcommand's step. handler responds to call(input:, store:,
-      # options:) and returns an Array of message Hashes. input is the
-      # parsed stdin object if the step takes input (input: true), and nil
-      # otherwise, so stdin is read only for such a step. store is the
-      # Store for --run if the step needs a run (run: true), a new run's
-      # Store if the step starts one (new_run: true), and nil otherwise.
-      # options maps each option the step declares, as its name without the
-      # dashes, to :value or :flag (see Arguments). required names the
-      # options a call must give.
-      #
-      # A step that names a run without opening it (run_id: true) takes
-      # --run too, but gets no Store. It gets the run ID, checked only for
-      # its form, as run_id:, and the store base as store_base:. That's for
-      # teardown, whose run may already be gone.
-      #
-      # A new run is made only once argv and stdin have been read and
-      # checked, so a usage or bad_input refusal never makes one. It's
-      # deleted again unless the call succeeds all the way through its done
-      # line, so a failed call leaves no run behind, and none that holds
-      # inputs the step went on to refuse.
-      Step = Data.define(:handler, :input, :run, :new_run, :run_id, :options, :required) do
-        def initialize(handler:, input: false, run: false, new_run: false, run_id: false, options: {}, required: [])
-          raise ArgumentError, "a step can't both start a run and open one" if run && new_run
-          raise ArgumentError, "a step that names a run can't also open or start one" if run_id && (run || new_run)
-
-          super
-        end
-      end
-
-      # Each subcommand and its step. To add a step, require its file above
-      # and add one line here. The requires are written out, never built
-      # from argv or a directory listing, so argv can't pick a file to load.
-      STEPS = {
-        "version" => Step.new(handler: Steps::Version),
-        "intake" => Step.new(handler: Steps::Intake, new_run: true, options: Steps::Intake::OPTIONS,
-                             required: Steps::Intake::REQUIRED),
-        "teardown" => Step.new(handler: Steps::Teardown, run_id: true),
-        "inventory" => Step.new(handler: Steps::Inventory, run: true)
-      }.freeze
+      # STEPS, each subcommand and its step, is in cli/steps.rb.
 
       # Other names for a subcommand.
       ALIASES = { "--version" => "version" }.freeze

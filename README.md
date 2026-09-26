@@ -110,6 +110,7 @@ Validate the connection to step 1's production server. Then record the following
 - Installed extensions.
 - Instance memory.
 - `shared_buffers`, `effective_cache_size`, `work_mem`, `random_page_cost`, and `jit`.
+- `TimeZone`, `DateStyle`, `IntervalStyle`, and `default_statistics_target`, which change plans or how a literal is read, but which `SETTINGS` never lists.
 - Every parallel setting.
 - Every non-default planner GUC listed in the `SETTINGS` section of the input plan.
 - From `pg_database`: `datcollate`, `datctype`, `datlocprovider`, `datlocale`, and `datcollversion`.
@@ -141,11 +142,15 @@ The inventory stays in the governed store. The step prints only its shape: produ
 
 Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
+The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualification and this check together. It connects to the run's production server the way step 2 does, with the operator's own libpq setup, and reads only the catalog. It resolves each unqualified name through the `search_path` in the input plan's `SETTINGS`, or the default `"$user", public` without one. It stores the qualified query as the run's `qualified_query` entry, and the relations, each once and in the order the query first names them, as `relations`, a list of `{"schema", "name"}` objects. Later steps of 3 read both from there. It prints nothing but its done line, since the driver sees the schema only as 3b's subset. A refusal names only its rule, such as `view_relation`, `unknown_relation`, `unsupported_construct`, or `production_connection_failed`, and stores nothing.
+
 ### 3b. Schema dump.
 
 Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it.
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
+
+The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
 
 ### 3c. Statistics.
 
@@ -153,13 +158,17 @@ Pull planner statistics for the query's tables and their indexes, including exte
 
 These statistics include real values in `most_common_vals` and `histogram_bounds`. That makes them value-class data under the trust boundary, so they stay in the governed store.
 
-Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also lists the columns with fewer than 50 distinct values, which step 3f narrows to the low-cardinality set.
+Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic.
+
+The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not 3b's FK parents. It connects to the production server the way step 2 does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and 3f read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
 
 Unsupported in v1: a table with inheritance children is refused with `inheritance_parent`, because `pg_stats` keeps two rows for each of its columns and QUAACK doesn't choose between them. The element and range statistics in `pg_stats` and the statistics on expressions in `pg_stats_ext_exprs` aren't read.
 
 ### 3d. Function volatility.
 
 Check `provolatile` for every function anywhere in the query, including the select list. If any function is volatile, abort and say which function caused it. A volatile function breaks both rewriting and result comparison.
+
+The driver runs `quaacks volatility --run <run ID>` after `quaacks qualify`. It reads the run's `server`, `plan`, and `qualified_query` entries. It connects to the production server the way step 2 does and reads only the catalog, inside one read-only transaction, resolving unqualified function names through the `search_path` in the input plan's `SETTINGS`, or the default without one. This step is a gate, so all it stores is that the query passed: the run's `volatility` entry, `{"passed": true}`, which later steps can require before they run the query. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `volatile_function`, `unsupported_construct`, `production_connection_failed`, or `production_read_failed`, and stores nothing. For v1 the operator's error line doesn't say which function it was, since error lines carry only the step, rule, and SQLSTATE.
 
 ### 3e. Literals.
 
@@ -171,16 +180,41 @@ Build the literal set that later steps test against. It has three literals:
 
 This literal set is value-class data, so it stays in the governed store. QUAACK runs these values on the racetrack and in arena. No LLM ever sees them.
 
+Each set is keyed by the 3g placeholder numbers, in the same form as the placeholder map, so any set binds the same way the slow values do. Values come from the step 3c statistics for the column each placeholder is compared with, picked by operator:
+
+- **Equality (`=`):** the worst case is the top MCV, and the typical value is the middle histogram bound.
+- **Ranges (`<`, `<=`, `>`, `>=`):** the worst case is the histogram bound that selects the most rows: the last bound for `<` and `<=`, and the first for `>` and `>=`. The typical value is the middle bound. For `BETWEEN`, the worst case is the first and last bounds, and the typical value is the middle bucket: the middle bound and the one after it. A lower bound (`>` or `>=`) and an upper bound (`<` or `<=`) on one column in the same `AND`, such as `created_at >= $1 AND created_at < $2`, are treated like `BETWEEN`, whichever side the column is written on. A range on its own keeps the single-bound rule.
+- **`IN` lists and `= ANY`:** the list keeps its length. In the worst case, each element takes the next most common value. In the typical set, the elements take consecutive bounds around the middle.
+- **`LIKE` and any other operator,** including `<>`, `NOT IN`, and `NOT BETWEEN`: the slow literal in all three sets.
+
+A picked value keeps the placeholder's declared type. A number placeholder widens to `bigint` or `numeric` when the value needs it, such as `20` against a numeric column.
+
+When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
+
+- A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
+- A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
+- A placeholder that 3g shares between expressions, since it can feed more than one place.
+
+The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
+
 ### 3f. PII classification.
 
 Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.
+
+- The configured list is `pii_columns` in the `quaacks` config: `schema.table.column` globs, such as `*.users.email`. A `*` matches within one name part and never crosses a dot. Matching ignores case, so a glob can only match more columns, never fewer.
+- The heuristic flags a column whose type is text-like (text, varchar, char, name, citext, or a domain over one) and that has 50 or more distinct values. A text column whose distinct count is unknown, because it was never analyzed, counts as PII too.
+- The config's `cardinality_threshold` moves the line of 50, here and for low-cardinality below.
 
 This classification doesn't decide whether values get sent, because no values are ever sent. Instead, it controls which derived scalars go out:
 
 - For a PII column, also withhold the MCV frequencies. A frequency vector plus a column name can be enough to re-identify values in a small domain.
 - For every column, PII or not, still send `n_distinct`, `null_frac`, and `correlation`. A single number that summarizes a whole column reveals nothing about any one row.
 
-This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values and isn't classified as PII. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out.
+This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
+
+The driver runs `quaacks classify --run <run ID>` after `quaacks statistics`. It reads the `quaacks` config and the run's `statistics` entry, and doesn't connect to production. It stores the run's `classification` entry, `{"columns", "outbound_statistics"}`: each column's schema, table, name, and whether it's PII and low-cardinality, plus the statistics that may go out. For each column, `outbound_statistics` holds `n_distinct`, `null_frac`, and `correlation`, plus the MCV frequencies (null for a PII column) and the MCV values (null unless the column is low-cardinality). Dedupe (5a-3) reads the low-cardinality columns from there. The step sends none of it and prints nothing but its done line. The 5a-5 payload step sends `outbound_statistics` as part of the payload, so the data leaves only when the LLM needs it. A missing `statistics` entry or a bad config fails, and stores nothing.
+
+This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. The 5a-5 payload step does.
 
 ### 3g. Redaction.
 
@@ -203,6 +237,8 @@ Keep a one-to-one placeholder map in the governed store. The map is value-class 
 
 Rewrite candidates arrive from the driver with placeholders. When the enclave script needs to turn one into a runnable query, use `PREPARE` and bind the real literals as parameters. Never splice strings.
 
+The driver runs `quaacks redact --run <run ID>` after `quaacks classify`. It reads the run's `qualified_query` and `plan` entries, and doesn't connect to production. It stores four entries: `placeholder_map`, which holds the literals and never leaves; `placeholder_shapes`, each placeholder's shape and row counts; `redacted_query`, the qualified query with a placeholder in place of each literal; and `redacted_plan`, `{"explain", "masked", "dropped"}`, the step 1 plan with its literals stripped. The step sends none of them and prints nothing but its done line. The 5a-5 payload step sends the redacted query, plan, and shapes. It computes everything before it writes, so a missing entry or a query it can't redact, such as one with `$n` parameters of its own, fails with only its rule and stores nothing.
+
 ### 3h. Clock anchoring.
 
 In the AST, replace each of these with a schema-qualified call to `quaack.clock_anchor()`:
@@ -217,6 +253,8 @@ In the AST, replace each of these with a schema-qualified call to `quaack.clock_
 
 Leave all other stable functions alone. The step 15 report shows the query with the original functions put back.
 
+The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry and the `search_path` in its `plan` entry's settings, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The literal sets and placeholder map hold values, not clock functions, so they don't change. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
+
 ## 4. Run server.
 
 The operator builds one server for each run of QUAACK. It must meet all of these requirements:
@@ -229,6 +267,14 @@ The operator builds one server for each run of QUAACK. It must meet all of these
 
 Verify every requirement. If any check fails, abort and name the check that failed.
 
+The checks compare the run server with step 2's inventory. A planner setting is any setting `EXPLAIN`'s `SETTINGS` would list, any Query Tuning setting, and `TimeZone`, `DateStyle`, and `IntervalStyle`. Production's value of one is the value step 2 recorded, if it recorded one. Otherwise it's the built-in default, since `SETTINGS` lists every setting that differs from it. The database's name can differ from production's. For quiet, `pg_stat_activity` must show no client other than QUAACK, and if pg_cron is loaded, it must run its jobs from this database and have none active. Schedulers outside Postgres, such as a cron job on another host that connects later, are the operator's to turn off. The error names only the check, such as `run_server_guc_mismatch`.
+
+Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since step 2 doesn't record them.
+
+The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. It connects to the racetrack database with the operator's own libpq setup, as step 2 does for production: the user comes from `PGUSER` or a service in `~/.pg_service.conf`, and the password from `~/.pgpass`. QUAACK stores no credentials. It runs the checks there and nowhere else. Arena doesn't exist yet, since 4b makes it, and the quiet checks already see every database on the server. If every check passes, it records the host, the port, and both database names in the run, and later steps connect with them. It prints nothing but its done line.
+
+It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no step 2 inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
+
 ### 4a. Racetrack.
 
 The racetrack is a clone of production, restored from a production backup at full size. QUAACK never generates its data. Synthetic data can't reproduce production's physical layout: row width, page density, index depth, and how closely heap order matches index order. That layout decides how many blocks a plan touches. Matching production byte for byte is the whole point of the racetrack.
@@ -239,6 +285,8 @@ In the racetrack database:
 
 1. Create the `hypopg` extension.
 2. Create a schema named `quaack` and a function `clock_anchor()`. The function returns `timestamptz`, is marked `STABLE`, and returns the capture time from 3h.
+
+The driver runs `quaacks racetrack-setup --run <run ID>` after `quaacks run-server`. It refuses a run with no recorded run server, then connects to the recorded racetrack database and does both steps above, with the run's `clock_anchor` entry. A `quaack` schema that already holds anything else fails the step and changes nothing. Only when setup succeeds does it store `racetrack_setup`, a marker that later racetrack steps require. It prints nothing but its done line, and a failure names only its rule.
 
 The racetrack holds real production data, including PII. Nothing read from it ever leaves the enclave without going through 3g redaction first.
 
@@ -383,6 +431,8 @@ The enclave script runs the LLM's output through 5a-3 right away. If any candida
 Only ask for partial indexes whose predicates use low-cardinality columns. Tag every partial index candidate with a note: it only works if the predicate's literal is a constant in the application's SQL. A generic plan for a bind parameter can't use a partial index. That tag stays with the candidate all the way into the report.
 
 Then run 5a-4 on the LLM's surviving candidates.
+
+The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from 3g, the schema subset from 3b, the outbound statistics from 3f, and the 5a-4 results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved 5a-3 filter and runs 5a-4 on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
 
 #### 5a-6. Refinement round.
 

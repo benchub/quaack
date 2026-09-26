@@ -64,6 +64,8 @@ RSpec.describe "Dedupe.covers? against the planner" do
 
   def key(name, direction, nulls = nil) = Quaack::Enclave::IndexCandidate::KeyColumn.new(name:, direction:, nulls:)
 
+  def self.expr_key(**) = Quaack::Enclave::IndexCandidate::KeyColumn.new(**)
+
   # existing is the real index's definition after ON t. covered is what
   # Dedupe.covers? must say. It matches whether the planner serves the
   # query with the existing index, except where exception says why not.
@@ -116,7 +118,38 @@ RSpec.describe "Dedupe.covers? against the planner" do
     { name: "an existing index with an opclass", existing: "(s text_pattern_ops)", candidate: { key: ["s"] },
       query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
     { name: "an existing index with a collation", existing: "(s COLLATE \"C\")", candidate: { key: ["s"] },
-      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false }
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
+    # Expression keys, opclasses, and collations (20260922-33), as the LLM
+    # proposes them in 5a-5.
+    { name: "the same expression key, spelled differently", existing: "(lower(s))",
+      candidate: { key: [expr_key(expression: "LOWER( s )")] },
+      query: "SELECT * FROM t ORDER BY lower(s) LIMIT 10", covered: true },
+    { name: "an expression key's prefix", existing: "((a + 1), b)",
+      candidate: { key: [expr_key(expression: "a + 1")] },
+      query: "SELECT * FROM t WHERE a + 1 = 5", covered: true },
+    { name: "an expression key read backward", existing: "(lower(s) DESC)",
+      candidate: { key: [expr_key(expression: "lower(s)")] },
+      query: "SELECT * FROM t ORDER BY lower(s) LIMIT 10", covered: true },
+    { name: "a different expression", existing: "(upper(s))",
+      candidate: { key: [expr_key(expression: "lower(s)")] },
+      query: "SELECT * FROM t ORDER BY lower(s) LIMIT 10", covered: false },
+    { name: "the plain column under an expression on it", existing: "(lower(s))", candidate: { key: ["s"] },
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
+    { name: "the same opclass", existing: "(s text_pattern_ops, a)",
+      candidate: { key: [expr_key(name: "s", opclass: %w[pg_catalog text_pattern_ops])] },
+      query: "SELECT * FROM t WHERE s ~>=~ 'ab' AND s ~<~ 'ac'", covered: true },
+    { name: "an opclass candidate under the default opclass", existing: "(s)",
+      candidate: { key: [expr_key(name: "s", opclass: "text_pattern_ops")] },
+      query: "SELECT * FROM t WHERE s ~>=~ 'ab' AND s ~<~ 'ac'", covered: false },
+    { name: "a plain candidate under an opclass read backward", existing: "(s text_pattern_ops DESC)",
+      candidate: { key: ["s"] },
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
+    { name: "a plain candidate under a collation read backward", existing: "(s COLLATE \"C\" DESC)",
+      candidate: { key: ["s"] },
+      query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
+    { name: "the same collation", existing: "(s COLLATE \"C\")",
+      candidate: { key: [expr_key(name: "s", collation: "C")] },
+      query: "SELECT * FROM t ORDER BY s COLLATE \"C\" LIMIT 10", covered: true }
   ].freeze
 
   cases.each do |c|

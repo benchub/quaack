@@ -58,8 +58,11 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       expect(inventory["extensions"]).to eq("hypopg" => hypopg, "plpgsql" => "1.0")
     end
 
-    it "records the memory and cost settings, as SHOW prints them" do
-      expect(inventory["settings"].keys).to eq(%w[shared_buffers effective_cache_size work_mem random_page_cost jit])
+    # TimeZone and the rest change plans but aren't in EXPLAIN's SETTINGS,
+    # so step 4 can't tell production's value from the plan (README, step 2).
+    it "records the memory and cost settings, and the planner settings SETTINGS never lists, as SHOW prints them" do
+      expect(inventory["settings"].keys).to eq(%w[shared_buffers effective_cache_size work_mem random_page_cost jit
+                                                  TimeZone DateStyle IntervalStyle default_statistics_target])
       expect(inventory["settings"]).to eq(inventory["settings"].keys.to_h { [it, show(it)] })
       expect(inventory["settings"]["work_mem"]).to eq(ProductionServer::WORK_MEM)
     end

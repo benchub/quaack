@@ -865,3 +865,296 @@ Pull planner statistics (including extended statistics), index definitions, and 
 - **Note (from the review of 20260922-32):** Leave out invalid indexes (`indisvalid = false`), or a failed `CREATE INDEX CONCURRENTLY` counts as covering in 5a-3. Also fill `TableStatistics#indexes`, and the low-cardinality set for 3f, in the shapes `Dedupe` takes.
 - **Status:** done
 - **Landed:** Merged into `main` after two clean lean reviews. The entry point is `PlannerStatistics.run(store:, relations:, connection:)`, and `PlannerStatistics.load(store)` reads it back. It stores the `statistics` entry, and returns `Statistics` shapes with `TableStatistics#indexes` filled, plus `few_distinct` (fewer than 50 distinct values) for 3f and Dedupe. Invalid indexes are left out, and inheritance parents are refused. The leftovers went to 20260924-26.
+
+### 20260922-22. 3f PII and low-cardinality classification.
+
+Classify each column as PII or not, using a configured list and a high-cardinality text heuristic. Mark low-cardinality columns (fewer than 50 distinct values, not PII). Decide which derived scalars and MCV values may leave.
+
+- **Depends on:** 20260922-19.
+- **README:** 3f.
+- **Status:** done
+- **Decided:** The PII list is a set of `schema.table.column` globs, such as `*.users.email`, in the `quaacks` config file on the jump server. A text column is high-cardinality when it has 50 or more distinct values, the same line 3f uses for low-cardinality. The config can change the threshold.
+- **Decided (user, September 24):** Low-cardinality also requires a positive pg_stats `n_distinct`, meaning the values repeat. So a small table's unique values, such as 40 emails in a 40-row table, never leave.
+- **Landed:** Merged into `main` after a review, a fix round for the user's rule, and a second review. The entry point is `PiiClassification.run(store:, config:)`, and `.load` reads it back. It stores the `classification` entry with the `outbound_statistics` projection, and `Result#low_cardinality` feeds Dedupe. The config gains `pii_columns` globs and `cardinality_threshold`. `few_distinct` was removed from 3c. The leftovers went to 20260924-27.
+
+### 20260922-21. 3e literal set.
+
+Build the slow, worst-case, and typical literal sets and keep them in the governed store.
+
+- **Depends on:** 20260922-14, 20260922-19.
+- **README:** 3e.
+- **Status:** done
+- **Decided:** Pick values by operator.
+  - **Ranges:** the worst case is the histogram bound that selects the most rows, and the typical value is the middle bound.
+  - **`IN` lists:** each element follows the equality rule, and the list keeps its length.
+  - **`LIKE` and any other operator:** use the slow literal in all three sets.
+- **Decided (builder and main session, where the rules were silent):**
+  - For BETWEEN, and for a lower and an upper range on the same column in the same AND, the typical value is the middle histogram bucket, and the worst case is the first and last bounds.
+  - IN elements take distinct MCVs, and consecutive bounds for the typical set.
+  - An `= ANY` array falls back as a whole.
+  - Only plain `=` counts as equality.
+  - `$n::type` cast placeholders keep the slow literal.
+- **Landed:** Merged into `main` after a review, a fix round for the range-pair blocker, and a second review. The entry point is `LiteralSet.run(store:, sql:)`, and `.load` reads it back. It stores `literal_sets` (slow, worst_case, and typical placeholder maps, plus fallback reasons), and any set binds through `Redaction.binding`. The leftovers went to 20260924-28.
+
+### 20260922-25. Run server checks.
+
+Verify the run server: same major version and extensions as production plus HypoPG, same planner GUCs and locale settings, superuser access, no other clients, no background jobs, and autovacuum off. Abort and name the failed check.
+
+- **Depends on:** 20260922-16.
+- **README:** Step 4.
+- **Note (from the review of 20260923-56):** The 5a-4 runner pins `plan_cache_mode` and `hypopg.enabled` itself, and refuses when HypoPG has hidden indexes. It relies on this step for everything else. The reviewer found these change plans without warning, so compare them with production too:
+  - `enable_*`, the cost GUCs, `geqo`, the collapse limits, and `max_parallel_*`.
+  - The developer GUC `debug_parallel_query`. It moved a baseline cost from 1887 to 2887.
+  - `TimeZone`, `DateStyle`, and `IntervalStyle`, which change how a quoted literal is read.
+  - Per-tablespace `random_page_cost`.
+  - Also note that the required superuser bypasses row-level security. Plans for tables with RLS can differ from production. The step 5 plan gate catches that for the original query.
+- **Status:** done
+- **Decided:** Require that `pg_stat_activity` shows no other client backends. If pg_cron is installed, also require that no job in `cron.job` is active. Document that schedulers outside Postgres are the operator's responsibility.
+- **Decided (builder, accepted by the main session):**
+  - Production's value for a GUC is its own recorded value from step 2, not the plan session's value.
+  - Step 2 also records TimeZone, DateStyle, IntervalStyle, and default_statistics_target, because they aren't EXPLAIN-flagged.
+  - A GUC with no recorded value must be EXPLAIN-flagged and at its boot_val.
+- **Landed:** Merged into `main` after two clean lean reviews. The entry point is `RunServerCheck.run(store:, connection:, own_connections:)`. It raises on the first failure, with a `run_server_*` rule and a message of the form `rule: name`. The leftovers went to 20260924-29.
+
+### 20260922-26. 4a racetrack setup.
+
+In the restored racetrack database, create `hypopg`, the `quaack` schema, and `clock_anchor()`.
+
+- **Depends on:** 20260922-25, 20260922-24.
+- **README:** 4a.
+- **Status:** done
+- **Landed:** Merged into `main` after two clean lean reviews. The entry point is `Racetrack.setup(store:, connection:)`. `quaack.clock_anchor()` is plpgsql, STABLE, PARALLEL SAFE, and COST 1, which matches `now()` and isn't inlined, so plans and runtime pruning match production's `now()` on PG18. A foreign object in the `quaack` schema is refused, checked through pg_depend.
+
+### 20260922-11. Inbound check for index DDL.
+
+Accept exactly one `CREATE INDEX` statement on a table the query uses. Reject anything else, naming the rule it broke.
+
+- **Depends on:** 20260922-1, 20260922-17.
+- **README:** What goes into the enclave.
+- **Status:** done
+- **Decided:**
+  - Reject `CONCURRENTLY`, `TABLESPACE`, and `UNIQUE`.
+  - Don't reject any index method. The user sees real room for improvement in methods beyond btree.
+  - The table name must be schema-qualified. Refuse an unqualified one. Don't resolve it through the search path.
+  - Refuse volatile functions and operators in key expressions and the WHERE predicate, using the 3d rule. Leave STABLE to Postgres: HypoPG (5a-4) and the real CREATE INDEX (step 12) refuse it with exact type resolution. (The first plan was to require IMMUTABLE here, but the catalog lookup can't pick overloads, and `=`, `<`, `||`, and `date_trunc` each have STABLE versions, so almost every partial index would be refused.)
+  - Also reject `NULLS NOT DISTINCT` and `ON ONLY`. Accept `WITH (...)` storage options and `IF NOT EXISTS`.
+  - Drop any index name the DDL gives, so later steps name indexes themselves.
+- **Open questions:** How should later steps treat index methods other than btree? 5a-3 sets GIN and GiST candidates aside today. (Not needed for this task.)
+- **Landed:** Merged into `main` after a build, a first review, and a second review. Both reviews found nothing blocking, so there was no fix round. The builder stopped once to ask about the IMMUTABLE rule, and the user changed it to refuse volatile only.
+  - `IndexDdlCheck.check(sql, tables, settings, connection)` runs these rules in order: `unparsable`, `not_create_index`, `concurrently`, `unique`, `nulls_not_distinct`, `tablespace`, `on_only`, `unqualified_table`, `unknown_relation`, `forbidden_in_index` (parameters, subqueries, and aggregate, window, or grouping calls), `unsupported_construct`, `volatile_function` or `bad_search_path`, and `deparse_mismatch`.
+  - It returns `Accepted(sql:, parse:, table:)`. The SQL has the name, IF NOT EXISTS, and comments dropped. Errors carry a rule and shape-only names, with `cause: nil`.
+  - It reuses `VolatilityCheck.check_parse` (new) and `IndexSql.forbidden` (split out of `check_predicate_node`).
+  - The first review's minor finding (the attribute-notation and domain CHECK gaps reach index DDL) went to 20260923-35. The second review's two minor findings became 20260925-1.
+
+### 20260922-12. Inbound check for step 10 inserts.
+
+Accept only plain `INSERT` statements into tables in the 3b subset schema. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, and anything else that isn't a plain insert.
+
+- **Depends on:** 20260922-1, 20260922-18.
+- **README:** What goes into the enclave.
+- **Note (from the review of 20260922-46):** The arena runner accepts any single InsertStmt, including `WITH ... INSERT`, `ON CONFLICT`, and `RETURNING`. This check is the real guard. It must refuse those forms, plus `set_config`, advisory locks, and any function that isn't immutable.
+- **Status:** done
+- **Decided:** A plain insert is `INSERT INTO <subset table> (<columns>) VALUES (...), ...`. The values can be constants, casts, `DEFAULT`, and calls to immutable functions that pass the 3d volatility check. Reject `INSERT ... SELECT`, `ON CONFLICT`, `RETURNING`, `WITH`, `OVERRIDING`, and any function that isn't immutable.
+- **Landed:** Merged into `main` after a build and a first review. The review found nothing blocking, so there was no fix round and no second review.
+  - `InsertCheck.check(sql, tables, settings, connection)` runs these rules in order: `unparsable`, `not_insert`, `with`, `on_conflict`, `returning`, `overriding`, `missing_columns`, `insert_select`, `alias`, `unqualified_table`, `unknown_relation`, `unknown_column`, `not_plain_value`, `not_immutable` or `bad_search_path`, `volatile_function`, and `deparse_mismatch`. It returns `Accepted(sql:, parse:, table:)`.
+  - Function calls must be IMMUTABLE. Casts are held only to the 3d no-volatile rule, because the date and timestamptz input functions are STABLE.
+  - The review's four minor findings became 20260925-2.
+
+### 20260922-28. 5 plan gate.
+
+`EXPLAIN` the original query on the racetrack with the slow literals and compare canonical forms with the step 1 plan. On mismatch, abort and name stale racetrack statistics as the likely cause.
+
+- **Depends on:** 20260922-26, 20260922-15, 20260922-21, 20260922-23.
+- **README:** Step 5.
+- **Status:** done
+- **Note (from 20260922-26):** CanonicalPlan fingerprints include function names, so a racetrack qual like `created_at > quaack.clock_anchor()` won't match production's `created_at > now()`. Map the anchor back to the original functions (as `ClockAnchoring.restore` does), or normalize both sides, before comparing.
+- **Landed:** Merged into `main` after a build and a first review. The review found nothing blocking, so there was no fix round and no second review.
+  - `CanonicalPlan` now always swaps the clock functions 3h replaces for their anchored form before fingerprinting, and drops `pg_catalog` from casts of `quaack.clock_anchor()`.
+  - `PlanGate.check(store:, connection:, sql:)` takes the redacted, anchored SQL, binds the stored placeholder map, EXPLAINs through `SingleCandidateTest.run`, and raises `plan_gate_bad_plan`, `plan_gate_not_comparable`, or `plan_gate_mismatch_likely_stale_statistics`. The cause is in the rule name, because only the rule leaves the enclave.
+  - Parameter types are inferred by Postgres. The review found no realistic query where that changes the plan.
+  - The review's two minor findings became 20260925-3.
+
+### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4).
+
+Record the run server in the run store and run the step 4 checks against it. `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. Credentials come from the operator's libpq setup (the `PG` environment variables, `~/.pg_service.conf`, `~/.pgpass`), as they do for production. QUAACK stores none. Later racetrack and arena steps connect using what this step recorded. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260922-25, 20260922-16.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** Step 4.
+- **Decided:** The user chose to give the run server at its own step and store it in the run, with the port recorded too.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks run-server` checks its arguments and refuses a run with no inventory. It runs `RunServerCheck` on the racetrack database only, because 4b makes arena. It records the `run_server` entry (host, port, racetrack_db, arena_db) only after every check passes. It prints only DONE.
+  - `RunServer.connect(store, :racetrack | :arena)` opens later steps' connections. A libpq failure becomes `run_server_connection_failed` with no cause.
+  - Refusals: `bad_run_server_host`, `bad_run_server_port`, `bad_run_server_database`, `run_server_same_database`, and `run_server_no_inventory`. IPv6 and Unix sockets are unsupported in v1.
+  - The review's minor finding became 20260925-17.
+
+### 20260925-8. Enclave subcommand: `quaacks qualify` (step 1 qualification and 3a relations).
+
+Fully qualify the query against production and find its relations. Store the qualified query and the relation list. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260922-14, 20260922-17, 20260922-13.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** Step 1, 3a.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks qualify --run ID` reads `query`, `plan` and `server`, connects to production with libpq, and runs `Relations.check` (qualification through the plan's `search_path`, and the 3a relkind check). Only after every check passes does it store `qualified_query` (a String that still holds literals) and `relations` (an Array of `{schema, name}` in first-named order). It prints only DONE.
+  - `CLI::Step` moved to `cli/step.rb`.
+  - The review's minor findings became 20260925-18.
+
+### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b).
+
+Dump the schema and build the subset. Store the subset. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-18.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3b.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks schema-dump --run ID` reads `server` and `relations`, and runs `SchemaDump.run` inside `Inventory::Production.read_only`. pg_dump comes from PATH and gets only the host; libpq supplies the rest, the same way the connection gets it. It stores `schema_dump` (namespaces and the full DDL) and `schema_subset` (tables and DDL), and prints only DONE. The 5a-5 payload step will send the subset.
+  - The review's minor findings became 20260925-19.
+
+### 20260925-10. Enclave subcommand: `quaacks statistics` (3c).
+
+Gather the planner statistics and existing indexes for the query's tables (README 3c). Store them for generators one and two and for Dedupe. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-19.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3c.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks statistics --run ID` reads `server` and `relations` and calls `PlannerStatistics.run`, which reads inside `read_only` and writes the `statistics` entry only after the transaction closes. It prints only DONE. `PlannerStatistics.load` rebuilds the objects.
+  - It uses `relations`, not the subset tables. The review confirmed that no consumer needs statistics for FK parents: 4a's restore brings production's statistics with it.
+  - The review's minor finding became 20260925-20.
+
+### 20260925-11. Enclave subcommand: `quaacks volatility` (3d).
+
+Run the volatility check on the qualified query. Store the result. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260922-20.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3d.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks volatility --run ID` reads `server`, `plan` and `qualified_query`, and runs `VolatilityCheck.check` inside `read_only` with the plan's `search_path`. After the transaction closes it stores the marker `volatility: {"passed" => true}`. It prints only DONE. Stable clock functions pass, for 3h to anchor.
+  - The refusal names only its rule for now. The user wants the function named, so that became 20260925-21.
+
+### 20260925-13. Enclave subcommand: `quaacks classify` (3f).
+
+Classify PII and low-cardinality columns. Store the classification, and send `outbound_statistics` out as `column_stats`. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-10, 20260922-22.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3f.
+- **Status:** done
+- **Decided:** The user changed this: classify stores the stats and sends nothing. The 5a-5 payload step (20260925-4) sends `outbound_statistics`.
+- **Landed:** Merged into `main` after a build, a first review, a fix round for the user's change, and a clean second review.
+  - `quaacks classify --run ID` loads the config, runs `PiiClassification.run`, and stores `classification` (`{columns, outbound_statistics}`). It never touches production, prints only DONE, and stores nothing on failure.
+
+### 20260925-14. Enclave subcommand: `quaacks redact` (3g).
+
+Redact the query. Store the placeholder map and the redacted SQL (the redacted SQL isn't stored today). Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260925-13, 20260922-23.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3g.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks redact --run ID` reads `qualified_query` and `plan`, and runs `Redaction.redact`. It computes everything before the first write, then stores `placeholder_map`, `placeholder_shapes`, `redacted_query`, and `redacted_plan` (`{explain, masked, dropped}`). It prints only DONE and needs no production connection.
+  - The review's minor findings became 20260925-22.
+
+### 20260925-12. Enclave subcommand: `quaacks literals` (3e).
+
+Build the literal set and store it. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-8, 20260925-10, 20260925-14, 20260922-21.
+- **Note (from the first build attempt):** `LiteralSet.run(store:, sql:)` reads 3g's `placeholder_map` and 3c's `statistics`, and checks the redacted SQL against the map. So this step runs after `quaacks redact`, not before it. It reads `placeholder_map`, the redacted SQL, and `statistics`, and refuses cleanly if any is missing. It writes the existing `literal_sets` entry and needs no production connection. It should also refuse unless the `volatility` marker exists.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3e.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks literals --run ID` refuses with `volatility_not_passed` unless `volatility` is `{"passed" => true}`. It then runs `LiteralSet.run(store:, sql: redacted_query)`, which reads `placeholder_map` and `statistics` and writes `literal_sets`. It prints only DONE and needs no production connection.
+  - The review's minor finding went into 20260925-22.
+
+### 20260925-15. Enclave subcommand: `quaacks anchor` (3h).
+
+Anchor the clock in the redacted query. Store the anchored SQL. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-14, 20260922-24.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3h.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks anchor --run ID` runs `ClockAnchoring.anchor(redacted_query, plan settings)`, and stores `anchored_query` (the `sql:` for `PlanGate` and 5a-4) and `clock_replacements` (names only, for `restore`). It prints only DONE. The CLI `STEPS` table moved to `cli/steps.rb`.
+  - The review's minor findings became 20260925-23.
+
+### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a).
+
+Set up the racetrack on the run server recorded by `run-server`, using the stored schema and statistics. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-7, 20260925-9, 20260925-10, 20260922-26.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 4a.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks racetrack-setup --run ID` refuses with `racetrack_setup_no_run_server` when there's no `run_server` entry. Otherwise it connects with `RunServer.connect(store, :racetrack)`, runs `Racetrack.setup` (hypopg and `quaack.clock_anchor()`), and writes `racetrack_setup: true` only on success. It prints only DONE.
+  - The review's minor findings went into 20260925-22.
+
+### 20260925-6. Enclave subcommand for the mechanical half of step 5.
+
+Add `quaacks` subcommands that open the racetrack connection and run the mechanical half of step 5: the plan gate, 5a-1, 5a-2, 5a-3, and 5a-4. They save the mechanical proposals and Dedupe state, the 5a-4 results, and the redacted plan in the governed store, so the 5a-5 subcommands (20260925-4) can read them. The driver side of step 5 is wired in 20260922-36.
+
+- **Depends on:** 20260922-26, 20260922-28, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260925-7 through 20260925-16.
+- **README:** Step 5, 5a.
+- **Note:** `IndexCandidate` and `Dedupe` can't be saved to and read back from the store yet. This task must add that, because the 20260925-4 `index-test` loads the Dedupe state it saves. Key the saved entries per search (for example `index_search_original`, and later `index_search_rewrite_<n>`).
+- **Decided:** The user chose to build this as its own prerequisite task, ahead of the 5a-5 subcommands and 20260922-36.
+- **Status:** done
+- **Landed:** Merged into `main` after a build, a first review with four blocking findings, a fix round, and a clean second review.
+  - `quaacks index-search --run ID [--search original]` refuses without `racetrack_setup`, runs PlanGate on `anchored_query`, builds a Dedupe from the stored statistics and low-cardinality columns, filters generators one and two, and runs SingleCandidateTest on each survivor for each literal set (slow, worst_case, typical). It prints only DONE.
+  - It stores `index_search_original` as `{dedupe, baseline, results}`. Each set gets `{used, total_cost, plan}`, where `plan` is the EXPLAIN redacted through 3g. Candidates can hold real literals, which is allowed inside the store (see the note on 20260925-4).
+  - `IndexStore` round-trips IndexCandidate and Dedupe, through a new `Dedupe.restore`.
+  - The minor findings became 20260925-24. 5a-7 ranking is left for 20260925-4 and 20260922-36.
+
+### 20260925-4. 5a-5 generator three: the LLM loop.
+
+The rest of 20260922-33. Build the shape-only payload, ask the LLM for up to five candidates it hasn't seen covered, filter them through 5a-3, ask once for replacements of dropped ones, tag partial indexes, and test survivors with 5a-4. It must work for the original query and for rewrites.
+
+- **Depends on:** 20260922-33 piece one (landed), 20260925-6.
+- **README:** 5a-5.
+- **Decided:** Use two enclave subcommands. `quaacks index-payload [--candidate ID]` sends the shape-only payload out through egress, using a new whitelisted type. `quaacks index-test` reads the LLM's DDL on stdin and runs `IndexDdlCheck`, then `from_ddl` with `sources: [:llm]`, then Dedupe against the mechanical proposals saved in the store, then 5a-4. It saves the results in the store and returns a shape-only outcome for each candidate: accepted, or dropped with its rule. The driver runs the replacement round by calling `index-test` again.
+- **Note (from the review of 20260925-6):** The stored `index_search_<search>` entries hold real literals. Generator two runs on the unredacted step 1 plan, so partial predicates and key expressions, in `dedupe` proposals, drops, `covered_by`, and `results[].candidate`, can embed real quals such as `status = 'held'`. `index-payload` must not send candidate DDL or predicates as they are. Redact them through 3g, or allow only the 5a-3 low-cardinality values plus an explicit egress check. Add a sentinel test with a partial candidate whose predicate holds a sentinel. `index-test` should save its results under the same per-search key.
+- **Note (from 20260925-13):** `index-payload` must send `classification.outbound_statistics` as the payload's `stats`. By the user's decision, classify stores it and sends nothing.
+- **Note:** The prompt must say plainly that an unqualified table name gets the candidate refused and counts against the LLM.
+- **Note:** `IndexDdlCheck` accepts `WITH (...)` storage options, but `from_ddl` returns nil for them. Strip them or refuse them, so LLM DDL that uses them isn't silently lost. The "proportion" bullet of 20260923-17 can be decided in light of piece one.
+- **Status:** done
+- **Landed (piece two):** Merged into `main` after a build, a first review with two blocking leaks, a fix round, and a clean second review.
+  - `quaacks index-payload` sends the new `index_payload` type: query, placeholders, the plan with `Settings` stripped (the user's decision), schema, mechanical_results, and stats. `CandidateDdlRedaction` masks every constant in candidate DDL as `?`, except an MCV value compared directly with its own low-cardinality column.
+  - `quaacks index-test` reads `{"ddls": [...]}`, filters through the stored Dedupe and GeneratorThree, runs SingleCandidateTest for each set, appends `llm_results`, replaces `dedupe`, and sends `index_outcome` lines. The driver's `index_test` calls the transport.
+  - Left out, and moved to 20260926-3: the 5a-5 burndown record. Rewrite searches come with step 8 and 11.
+
+
+### 20260922-33. 5a-5 generator three.
+
+Build the shape-only payload, ask the LLM for up to five candidates it hasn't seen covered, filter them through 5a-3, ask once for replacements of dropped ones, tag partial indexes, and test survivors with 5a-4. Must work for the original query and for rewrites.
+
+- **Depends on:** 20260922-6, 20260922-5, 20260922-11, 20260922-22, 20260922-23, 20260922-29, 20260922-32, 20260923-11.
+- **README:** 5a-5.
+- **Status:** done
+- **Note:** The `IndexCandidate` shape from 20260923-11 only holds plain column keys. 5a-5 asks the LLM for expression indexes and operator classes such as `text_pattern_ops` and trigram GIN. So this task has to extend the shape with expression keys, opclasses, and probably collations, and teach 5a-3's dedupe to handle them.
+- **Note (from 20260922-11):** The inbound check refuses index DDL whose table name isn't schema-qualified. The LLM prompt must say so plainly: an unqualified table name gets the candidate refused and counts against the LLM, so it should always write the schema.
+- **Progress:** Piece one landed on `main` after a build, a first review, a fix round and a clean second review. `IndexCandidate::KeyColumn` now holds expression keys (normalized through pg_query, redacted like predicates), opclasses and collations (with `pg_catalog` dropped). `from_ddl` and `to_ddl` round-trip them, and Dedupe matches key columns only when all of them agree, including when a btree is read backward. The LLM loop is left, and it's split out as 20260925-4. Close this task when 20260925-4 lands.
+- **Landed:** Covered by piece one of this task and by 20260925-4.
+
+
+### 20260925-5. Generator three piece one loose ends.
+
+Minor findings from the first review of 20260925-4:
+- **`covered_by` going out through egress is untested.** In `enclave/lib/quaack/enclave/generator_three.rb` `messages`, setting `covered_by: nil` stays green. Add a DDL covered by an existing index to the egress sentinel case in `generator_three_postgres_spec.rb`.
+- **The replacement ask can ask for more than five.** `driver/lib/quaack/driver/generator_three.rb` `replacement_ask` asks for `dropped.size` replacements, including `too_many` drops. Cap it at five, and leave `too_many` drops out of the request.
+
+- **Depends on:** 20260925-4 piece one (landed).
+- **Came from:** The first review of 20260925-4.
+- **README:** 5a-5.
+- **Status:** done
+- **Landed:** Both fixes were folded into piece two of 20260925-4.
+

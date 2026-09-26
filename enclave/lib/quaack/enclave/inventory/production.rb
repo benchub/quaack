@@ -25,8 +25,11 @@ module Quaack
       module Production
         # Postgres 17 added pg_database.datlocale.
         OLDEST_MAJOR = 17
-        # README, step 2, in its order.
-        SETTINGS = %w[shared_buffers effective_cache_size work_mem random_page_cost jit].freeze
+        # README, step 2, in its order. The last four change plans, or how
+        # a literal is read, but EXPLAIN's SETTINGS never lists them, so
+        # step 4 (RunServerCheck) needs production's values from here.
+        SETTINGS = %w[shared_buffers effective_cache_size work_mem random_page_cost jit
+                      TimeZone DateStyle IntervalStyle default_statistics_target].freeze
 
         # Each setting's name and value, as SHOW prints it, for the names in
         # the JSON array $1. A name production doesn't know gets NULL.

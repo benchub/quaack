@@ -11,6 +11,8 @@ require "quaack/enclave/store"
 #
 # - orders_pending_idx is partial, and customers_lower_email_idx is on an
 #   expression, so Postgres keeps statistics for its lower(email) column.
+# - customers_email_ff_idx has a WITH option, which IndexCandidate can't
+#   represent.
 # - orders_customer_id_key is a UNIQUE index built CONCURRENTLY. Many orders
 #   share a customer, so the build fails and leaves the index invalid.
 # - orders_status_customer is CREATE STATISTICS (ndistinct, dependencies,
@@ -36,6 +38,7 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
     conn.exec(<<~SQL)
       CREATE INDEX orders_pending_idx ON orders (created_at) WHERE status = 'pending';
       CREATE INDEX customers_lower_email_idx ON customers (lower(email));
+      CREATE INDEX customers_email_ff_idx ON customers (email) WITH (fillfactor = 70);
       CREATE STATISTICS orders_status_customer (ndistinct, dependencies, mcv) ON status, customer_id FROM orders;
     SQL
     expect { conn.exec("CREATE UNIQUE INDEX CONCURRENTLY orders_customer_id_key ON orders (customer_id)") }
@@ -89,6 +92,20 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(orders).to include("schema" => "public", "reltuples" => 20_000.0,
                                 "column_names" => %w[id customer_id status total_cents created_at])
       expect(orders["relpages"]).to be_a(Integer).and be_positive
+    end
+
+    # For 3f's heuristic: the string types, a domain over one, and citext.
+    # An array of text isn't text itself.
+    it "lists the text-like columns, in attnum order" do
+      conn.exec(<<~SQL)
+        CREATE EXTENSION citext;
+        CREATE DOMAIN handle AS varchar(20);
+        CREATE TABLE kinds (a text, b varchar(10), c char(2), d citext, e handle, f text[], g int, h name, i jsonb);
+      SQL
+      run([orders, table("public", "kinds")])
+
+      expect(stored_table("orders")["text_columns"]).to eq(["status"])
+      expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
     end
   end
 
@@ -169,38 +186,15 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect([pending.key.map(&:name), pending.predicate, pending.sources.to_a])
         .to eq([["created_at"], "status = 'pending'::text", [:existing]])
       expect(result.statistics.table(orders).indexes["orders_pkey"].unique).to be(true)
-      expect(result.statistics.table(customers).indexes).to include("customers_lower_email_idx" => nil)
+      lower = result.statistics.table(customers).indexes["customers_lower_email_idx"]
+      expect(lower.key.map(&:expression)).to eq(["lower(email)"])
+      expect(result.statistics.table(customers).indexes).to include("customers_email_ff_idx" => nil)
     end
 
     it "reads back from the store as the same result" do
       result = run
 
       expect(described_class.load(store)).to eq(result)
-    end
-  end
-
-  describe "the few-distinct columns, for 3f" do
-    it "lists each column with fewer than 50 distinct values, as Dedupe's low_cardinality pairs" do
-      expect(run.few_distinct).to eq([[orders, "status"]])
-    end
-
-    # 49 and 50 distinct values: n_distinct is the count itself. 40 rows, each
-    # different: n_distinct is -1, a fraction of the rows, so the count is
-    # 40. A table never analyzed has no count at all.
-    it "counts distinct values the way 5a-1 does, and draws the line at 50" do
-      conn.exec(<<~SQL)
-        CREATE TABLE edges (under int, at int, id int);
-        INSERT INTO edges SELECT i % 49, i % 50, NULL FROM generate_series(1, 5000) AS i;
-        CREATE TABLE small (id int);
-        INSERT INTO small SELECT i FROM generate_series(1, 40) AS i;
-        CREATE TABLE fresh (flag boolean);
-        ANALYZE edges, small;
-      SQL
-      tables = %w[edges small fresh].map { table("public", it) }
-      result = run(tables)
-
-      expect(result.statistics.table(tables[1]).column("id").n_distinct).to eq(-1.0)
-      expect(result.few_distinct).to eq([[tables[0], "under"], [tables[1], "id"]])
     end
   end
 

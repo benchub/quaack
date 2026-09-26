@@ -30,8 +30,8 @@ module Quaack
     #
     # low_cardinality is the columns that README 3f classes as
     # low-cardinality, as [TableName, column name] pairs: fewer than 50
-    # distinct values and not PII. 3f (20260922-22) isn't built yet, so the
-    # caller supplies the pairs. This class doesn't apply 3f's rule itself.
+    # distinct values and not PII. PiiClassification#low_cardinality gives
+    # them. This class doesn't apply 3f's rule itself.
     #
     # Normalizing. IndexCandidate normalizes each definition when it's built:
     # the nulls ordering each direction defaults to, the method's case, and
@@ -83,9 +83,14 @@ module Quaack
     # Trust boundary. A dropped partial candidate's predicate can hold a
     # real literal, and so can a survivor's until 5a-4 runs it. Drop's
     # inspect, to_s, and pp, and this class's, show candidates through
-    # IndexCandidate#inspect, which redacts the predicate. Pattern matching
-    # on a Drop can't reach the predicate either, since IndexCandidate's
-    # deconstruct_keys leaves it out. No error here includes a predicate.
+    # IndexCandidate#inspect, which redacts the predicate and every key
+    # expression. Pattern matching on a Drop can't reach either, since
+    # IndexCandidate's and KeyColumn's deconstruct_keys leave them out. No
+    # error here includes a predicate or an expression. Rule 1 doesn't look
+    # at key expressions. The README (5a-3) scopes the low-cardinality rule
+    # to partial predicates. An expression key comes from an existing
+    # index, which the README treats as schema, so shape data, or from the
+    # LLM, which only ever saw shape data.
     # to_h and the readers still give the raw candidate, so keep them inside
     # the enclave.
     class Dedupe
@@ -110,6 +115,19 @@ module Quaack
         @proposals = []
         @set_aside = []
         @considered = 0
+      end
+
+      # A Dedupe in the state a saved one was in, for a later call that goes
+      # on with the same search (IndexStore reads it from the store). The
+      # lists are taken as given, in order, so the caller must pass what
+      # proposals, set_aside, drops, and considered returned.
+      def self.restore(statistics:, low_cardinality:, proposals:, set_aside:, drops:, considered:) # rubocop:disable Metrics/ParameterLists
+        new(statistics:, low_cardinality:).tap do |search|
+          search.instance_variable_set(:@proposals, proposals.dup)
+          search.instance_variable_set(:@set_aside, set_aside.dup)
+          search.instance_variable_set(:@drops, drops.dup)
+          search.instance_variable_set(:@considered, considered)
+        end
       end
 
       # Every candidate filter has considered. Each one is dropped, set
@@ -149,7 +167,13 @@ module Quaack
       #   so on), since a btree can be read backward. A key with some columns
       #   flipped and some not isn't covered. For any other method, the keys
       #   must match exactly: a multicolumn BRIN, hash, or GiST doesn't serve
-      #   a query the way a btree's leading prefix does.
+      #   a query the way a btree's leading prefix does. Key columns match
+      #   only when their column or expression, opclass, and collation all
+      #   match as KeyColumn normalizes them. So a text_pattern_ops or
+      #   COLLATE "C" key isn't covered by a plain one, or the reverse, and
+      #   neither is an expression on a column by the column. A default
+      #   opclass or collation that's written out doesn't match one that's
+      #   left off (see KeyColumn), so that candidate gets tested.
       # - Every INCLUDE column of the candidate is somewhere in the index,
       #   in its key or its INCLUDE list, in any order. An index-only scan
       #   reads a key column as well as an INCLUDE one. A key column of the
@@ -158,8 +182,8 @@ module Quaack
       #   key columns. A unique index covers a plain candidate like any other.
       #
       # An existing index that IndexCandidate couldn't represent (nil in
-      # TableStatistics#indexes), such as one with an opclass, a collation,
-      # or an expression key, never covers anything. The shape can't say
+      # TableStatistics#indexes), such as one with an opclass that takes
+      # parameters or NULLS NOT DISTINCT, never covers anything. The shape can't say
       # what it serves, so the candidate gets tested.
       def self.covers?(index, candidate) = Coverage.covers?(index, candidate)
 
@@ -275,8 +299,8 @@ module Quaack
         end
 
         def reversed(key_column)
-          IndexCandidate::KeyColumn.new(name: key_column.name, direction: key_column.direction == :asc ? :desc : :asc,
-                                        nulls: key_column.nulls == :first ? :last : :first)
+          key_column.with(direction: key_column.direction == :asc ? :desc : :asc,
+                          nulls: key_column.nulls == :first ? :last : :first)
         end
       end
 

@@ -4,13 +4,15 @@ require "pg_query"
 require_relative "deparse"
 require_relative "table_name"
 require_relative "index_sql"
+require_relative "index_key_sql"
 require_relative "index_methods"
 
 module Quaack
   module Enclave
     # One proposed index, as the mechanical generators emit it (README 5a-1
     # and 5a-2) and as the filter and tests downstream consume it (5a-3,
-    # 5a-4). It has no expression keys, opclasses, or collations.
+    # 5a-4), and as 5a-5 reads the LLM's DDL. A key column can be an
+    # expression, with an opclass and a collation (see KeyColumn).
     #
     #   IndexCandidate.new(
     #     table: TableName.new(schema: "public", name: "orders"),
@@ -87,7 +89,7 @@ module Quaack
       # Reads one CREATE INDEX, as pg_get_indexdef prints it, into a candidate
       # with the given sources. The index name is dropped: TableStatistics
       # keeps it as the key of its indexes map. Returns nil for an index this
-      # shape can't represent: expression keys, opclasses, collations, NULLS
+      # shape can't represent: an opclass with parameters, NULLS
       # NOT DISTINCT, ON ONLY, WITH options, TABLESPACE, CONCURRENTLY, IF NOT
       # EXISTS, an unqualified table, or anything the constructor refuses.
       # Raises ArgumentError if the SQL isn't exactly one CREATE INDEX. No
@@ -136,7 +138,7 @@ module Quaack
             relation:, unique:,
             access_method: access_method.to_s,
             index_params:,
-            index_including_params: include.map { |c| index_param(c, :asc, :last) },
+            index_including_params: include.map { |c| IndexKeySql.index_elem(IndexCandidate::KeyColumn.new(name: c)) },
             where_clause: predicate && IndexSql.parse_predicate(predicate)
           )
         )
@@ -158,17 +160,11 @@ module Quaack
       end
 
       def include_columns(include, key)
-        columns = include.map { |c| column_name(c) }.freeze
+        columns = include.map { |c| IndexKeySql.column_name(c) }.freeze
         both = key.map(&:name) & columns
         raise ArgumentError, "columns in both the key and INCLUDE: #{both.map(&:inspect).join(", ")}" if both.any?
 
         columns
-      end
-
-      def column_name(name)
-        return name.dup.freeze if name.is_a?(String) && !name.empty?
-
-        raise ArgumentError, "column name must be a non-empty String, got #{name.inspect}"
       end
 
       # Any plain identifier, so a method this doesn't know about still works.
@@ -186,43 +182,74 @@ module Quaack
         IndexSql.normalize_predicate(sql)
       end
 
-      def index_params = key.map { |k| index_param(k.name, k.direction, k.nulls) }
+      def index_params = key.map { |k| IndexKeySql.index_elem(k) }
 
       def relation
         PgQuery::RangeVar.new(schemaname: table.schema, relname: table.name, inh: true, relpersistence: "p")
       end
-
-      # Leaves out whatever matches Postgres's defaults, so the DDL reads
-      # the way a person would write it.
-      def index_param(name, direction, nulls)
-        nulls_ordering = if nulls == IndexCandidate::KeyColumn::DEFAULT_NULLS.fetch(direction)
-                           :SORTBY_NULLS_DEFAULT
-                         else
-                           nulls == :first ? :SORTBY_NULLS_FIRST : :SORTBY_NULLS_LAST
-                         end
-        ordering = direction == :desc ? :SORTBY_DESC : :SORTBY_DEFAULT
-        PgQuery::Node.new(index_elem: PgQuery::IndexElem.new(name:, ordering:, nulls_ordering:))
-      end
     end
 
-    # One column of an index key. direction is :asc or :desc. nulls is :first
-    # or :last. When nulls is omitted, it takes Postgres's default for the
-    # direction (last for asc, first for desc), so an explicit default and an
-    # omitted one make equal candidates. Strings work too, in any case.
-    IndexCandidate::KeyColumn = Data.define(:name, :direction, :nulls) do
-      def initialize(name:, direction: :asc, nulls: nil)
-        unless name.is_a?(String) && !name.empty?
-          raise ArgumentError, "column name must be a non-empty String, got #{name.inspect}"
-        end
-
+    # One column of an index key: a column name, or an expression such as
+    # lower(email). direction is :asc or :desc. nulls is :first or :last.
+    # When nulls is omitted, it takes Postgres's default for the direction
+    # (last for asc, first for desc), so an explicit default and an omitted
+    # one make equal candidates. Strings work too, in any case.
+    #
+    #   KeyColumn.new(expression: "lower(email)", opclass: "text_pattern_ops", collation: "C")
+    #
+    # An expression is parsed at construction and stored as pg_query
+    # deparses it, so "LOWER( email )" and "(lower(email))" are equal. One
+    # that's only a column, such as "(email)", becomes that column's name.
+    # It's refused, with ArgumentError, unless it's one expression with no
+    # parameter, subquery, or aggregate, window, or grouping call, as for a
+    # predicate. Casts don't normalize away, and neither does anything else
+    # Postgres would resolve with the catalog. Function volatility isn't
+    # checked here. IndexDdlCheck checks it on the LLM's DDL.
+    #
+    # opclass and collation are qualified names, given as a String for an
+    # unqualified name or an Array of name parts. A leading pg_catalog is
+    # dropped, as pg_get_indexdef leaves it off for a built-in. They're
+    # stored as frozen Arrays, or nil. An opclass with parameters, such as
+    # gist_trgm_ops(siglen=32), isn't held. The shape can't tell a default
+    # opclass or collation written out from one left off, since that needs
+    # the catalog, so (email text_ops) and (email) are different key
+    # columns. pg_get_indexdef leaves defaults off, so an existing index
+    # reads as the plain column, and only a candidate that spells out a
+    # default fails to match it. That only costs one more test in 5a-4.
+    #
+    # An expression can hold a literal, so it's value-class data, like a
+    # predicate: inspect, to_s, pp, and pattern matching leave it out, and
+    # no error message quotes it.
+    IndexCandidate::KeyColumn = Data.define(:name, :expression, :direction, :nulls, :opclass, :collation) do
+      # One keyword per member, which is more than the cop allows.
+      def initialize(name: nil, expression: nil, direction: :asc, nulls: nil, opclass: nil, collation: nil) # rubocop:disable Metrics/ParameterLists
+        name, expression = IndexKeySql.column_or_expression(name, expression)
         direction = pick(:direction, direction, %i[asc desc])
         nulls = pick(:nulls, nulls || IndexCandidate::KeyColumn::DEFAULT_NULLS.fetch(direction), %i[first last])
-        super(name: name.dup.freeze, direction:, nulls:)
+        super(name:, expression:, direction:, nulls:,
+              opclass: IndexKeySql.qualified_name(:opclass, opclass),
+              collation: IndexKeySql.qualified_name(:collation, collation))
       end
 
       # Ascending, with nulls last: what Postgres does when a key column
       # says nothing.
       def default_order? = direction == :asc && nulls == :last
+
+      # Pattern matching sees every member but the expression.
+      def deconstruct_keys(keys) = super.except(:expression)
+
+      undef_method :deconstruct
+
+      def inspect
+        shown = to_h.map do |member, value|
+          "#{member}=#{member == :expression && value ? "<redacted>" : value.inspect}"
+        end
+        "#<data #{self.class} #{shown.join(", ")}>"
+      end
+
+      alias_method :to_s, :inspect
+
+      def pretty_print(pp) = pp.text(inspect)
 
       private
 
