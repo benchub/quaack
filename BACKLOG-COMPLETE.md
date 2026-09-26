@@ -1909,3 +1909,17 @@ The prompt pack showed two things wrong with what the LLM is sent:
 - **Came from:** Review of the 20260922-65 prompt pack.
 - **README:** 3b, 5a-5, 6a.
 - **Status:** done
+
+### 20260926-41. Step 9: support expression unique indexes instead of refusing.
+
+After 20260926-37, a unique index on an expression anywhere in the fixture tables' closure (for example `CREATE UNIQUE INDEX ON users (lower(email))`, which is common in Rails apps) makes step 9 refuse the whole query as `expression_unique_index`. That fails safe, but it refuses many realistic schemas. Support it: evaluate the expression for candidate values (through Postgres, as `ValuePools.probe` does) and keep the evaluated keys distinct. Or, since fixture text values are already distinct, give every column the expression touches a distinct value, and verify the expression values differ.
+
+Also from the review:
+- Values set explicitly on identity columns don't advance the sequence. If ParentRows and a scenario path that leaves the identity column out ever write to the same table, they could collide. Call `setval` after loading, or confirm the two never mix.
+- No test covers INCLUDE columns or partial unique indexes directly.
+- `UNIQUE NULLS NOT DISTINCT` isn't handled.
+
+- **Depends on:** 20260926-37.
+- **Came from:** 20260926-37 build and review.
+- **README:** Step 9.
+- **Status:** done

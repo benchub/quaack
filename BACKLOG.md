@@ -1283,19 +1283,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** 3e, step 9.
 - **Status:** todo
 
-### 20260926-41. Step 9: support expression unique indexes instead of refusing.
-
-After 20260926-37, a unique index on an expression anywhere in the fixture tables' closure (for example `CREATE UNIQUE INDEX ON users (lower(email))`, which is common in Rails apps) makes step 9 refuse the whole query as `expression_unique_index`. That fails safe, but it refuses many realistic schemas. Support it: evaluate the expression for candidate values (through Postgres, as `ValuePools.probe` does) and keep the evaluated keys distinct. Or, since fixture text values are already distinct, give every column the expression touches a distinct value, and verify the expression values differ.
-
-Also from the review:
-- Values set explicitly on identity columns don't advance the sequence. If ParentRows and a scenario path that leaves the identity column out ever write to the same table, they could collide. Call `setval` after loading, or confirm the two never mix.
-- No test covers INCLUDE columns or partial unique indexes directly.
-- `UNIQUE NULLS NOT DISTINCT` isn't handled.
-
-- **Depends on:** 20260926-37.
-- **Came from:** 20260926-37 build and review.
-- **README:** Step 9.
-- **Status:** todo
+### 20260926-41. Step 9: support expression unique indexes instead of refusing. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-42. Report loose ends, part three.
 
@@ -1318,4 +1306,15 @@ Also from the review:
 - **Depends on:** 20260926-39.
 - **Came from:** 20260926-39 build and review.
 - **README:** 5a-5, 6a.
+- **Status:** todo
+
+### 20260926-44. Expression-unique loose ends.
+
+- `RowSet`'s `expression?` guard is untested: inverting it stays green. Add a unit test with a crafted key like `a), (b`, asserting the group is dropped without running the key.
+- There's no perturb-and-retry for colliding expression keys, so the group is dropped.
+- A column an expression reads that the row leaves out (a generated column) counts as NULL when the key is worked out.
+
+- **Depends on:** 20260926-41.
+- **Came from:** 20260926-41 build and review.
+- **README:** Step 9.
 - **Status:** todo
