@@ -1210,14 +1210,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-9. Enclave subcommand: `quaacks schema-dump` (3b). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-10. Enclave subcommand: `quaacks statistics` (3c).
-
-Gather the planner statistics and existing indexes for the subset tables. Store them for generators one and two and for Dedupe. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-8, 20260922-19.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3c.
-- **Status:** todo
+### 20260925-10. Enclave subcommand: `quaacks statistics` (3c). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-11. Enclave subcommand: `quaacks volatility` (3d).
 
@@ -1303,6 +1296,15 @@ Minor findings from the first review of 20260925-9:
 - **Depends on:** 20260925-9.
 - **Came from:** The first review of 20260925-9.
 - **README:** 3b.
+- **Status:** todo
+
+### 20260925-20. Statistics step: test the read failure.
+
+The `statistics` step spec has no `production_read_failed` case, but README 3c promises that the refusal stores nothing. Add a step-level test that pins it end to end.
+
+- **Depends on:** 20260925-10.
+- **Came from:** The first review of 20260925-10.
+- **README:** 3c.
 - **Status:** todo
 
 ## After version 1.
