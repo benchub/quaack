@@ -1323,18 +1323,7 @@ Both of these are minor findings from the 20260922-54 review. First, `rescue PG:
 - **README:** Step 12b.
 - **Status:** todo
 
-### 20260926-6. Step 8 wiring.
-
-The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.rewrite_entry` and `ThreeConfigurationPruning` (20260922-40, -41, -42), along with `rewrite-check` (20260922-37). Wire them together:
-- `quaacks index-search --search rewrite_<n>`.
-- A per-candidate loop: search, rank the rewrite's top three with `IndexRanking`, then prune against `index_ranking_original`.
-- Record the step 8 burndown, including the count of inbound-check rejections (`StructuralDiscard.record`).
-- A driver stage in `Pipeline::STAGES`.
-
-- **Depends on:** 20260922-37, -40, -41, -42, -36.
-- **Came from:** Track C and track B build reports.
-- **README:** Step 8.
-- **Status:** todo
+### 20260926-6. Step 8 wiring. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-7. Wire `quaack run` into the driver CLI. Done, see BACKLOG-COMPLETE.md.
 
@@ -1344,6 +1333,7 @@ These are minor findings from the review of 20260922-34 and -36:
 - If the LLM's 5a-6 answer is empty, `refined` is never set, so every resume asks the LLM again (`refinement_round.rb:57`). Call `index-test --round refinement` with an empty list.
 - After a partial crash, a resume can leave the ranking stale.
 - `index-payload` runs on every resume.
+- Same for 6a: an empty rewrite reply never writes `rewrites_generated`, so every resume asks the LLM again (`rewrite_generation.rb:90`, from the review of 20260926-6).
 - `IndexRanking` entries don't carry the canonical plans that README 5a-7 says they should.
 
 - **Depends on:** 20260922-36.
