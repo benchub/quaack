@@ -39,21 +39,22 @@ module Quaack
         (baseline_ms * 3).ceil.clamp(MIN_MS, MAX_MS)
       end
 
-      def run(connection:, sql:, timeout_ms:)
+      # params are bound values for sql's $n, sent apart from its text.
+      def run(connection:, sql:, timeout_ms:, params: [])
         LOCK.synchronize do
           connection.exec("BEGIN READ ONLY")
           begin
-            timed(connection, sql, timeout_ms)
+            timed(connection, sql, timeout_ms, params)
           ensure
             connection.exec("ROLLBACK")
           end
         end
       end
 
-      def timed(connection, sql, timeout_ms)
+      def timed(connection, sql, timeout_ms, params)
         connection.exec("SET LOCAL statement_timeout = #{Integer(timeout_ms)}")
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
-        Run.new(result: connection.exec_params(sql, []), timed_out: false)
+        Run.new(result: connection.exec_params(sql, params), timed_out: false)
       rescue PG::QueryCanceled
         raise if Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond) - started < timeout_ms
 

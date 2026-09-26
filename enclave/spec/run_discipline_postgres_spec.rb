@@ -31,6 +31,11 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(result.result.getvalue(0, 0)).to eq("42")
   end
 
+  it "passes params as bound values, never in the SQL" do
+    result = described_class.run(connection: conn, sql: "SELECT $1::int + 1", params: ["41"], timeout_ms: 5_000)
+    expect(result.result.getvalue(0, 0)).to eq("42")
+  end
+
   it "runs the statement inside a READ ONLY transaction" do
     expect(run("SELECT current_setting('transaction_read_only')").result.getvalue(0, 0)).to eq("on")
   end
