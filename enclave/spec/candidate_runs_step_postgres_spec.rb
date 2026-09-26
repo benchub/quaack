@@ -14,10 +14,10 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
 
   def run(step, *extra) = quaacks.run(step, "--run", store.run_id, *extra, env: libpq_env)
 
-  def add_rewrite(n, sql, survived: true, pruned: false)
-    stored.write("rewrite_#{n}", "sql" => sql)
-    stored.write("rewrite_survived_#{n}", "survived" => survived)
-    stored.write("rewrite_pruned_#{n}", "discarded" => pruned)
+  def add_rewrite(num, sql, survived: true, pruned: false)
+    stored.write("rewrite_#{num}", "sql" => sql)
+    stored.write("rewrite_survived_#{num}", "survived" => survived)
+    stored.write("rewrite_pruned_#{num}", "discarded" => pruned)
   end
 
   def valid_count(names)

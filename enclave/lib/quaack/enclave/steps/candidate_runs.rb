@@ -37,23 +37,28 @@ module Quaack
         end
 
         def entry(store, connection)
-          timeout_ms = store.read("baseline").fetch("timeout_ms")
-          combinations = store.read("index_build")["combinations"].keys
           timed_out = []
-          candidates = candidates(store).to_h do |search|
-            keys = [nil, *combinations.select { it.start_with?("#{search}:") }]
-            runs = keys.filter_map do |key|
-              label = key || "#{search}:none"
-              sets = Measurement.measure(connection:, store:, sql: store.read(search)["sql"], combination: key,
-                                         timeout_ms:)
-              next timed_out << label && nil if sets.values.any? { it["timed_out"] }
-
-              [key || "none", sets]
-            end
-            [search, runs.to_h]
-          end
+          candidates = candidates(store).to_h { [it, runs(store, connection, it, timed_out)] }
           { "candidates" => candidates.reject { |_, runs| runs.empty? }, "timed_out" => timed_out,
             "timed_out_count" => timed_out.size }
+        end
+
+        # search's runs that didn't time out, by "none" or combination key.
+        # Adds the label of each that did to timed_out.
+        def runs(store, connection, search, timed_out)
+          timeout_ms = store.read("baseline").fetch("timeout_ms")
+          sql = store.read(search)["sql"]
+          combinations(store, search).each_with_object({}) do |key, out|
+            sets = Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)
+            next timed_out << (key || "#{search}:none") if sets.values.any? { it["timed_out"] }
+
+            out[key || "none"] = sets
+          end
+        end
+
+        # nil (every built index hidden), then search's combination keys.
+        def combinations(store, search)
+          [nil, *store.read("index_build")["combinations"].keys.select { it.start_with?("#{search}:") }]
         end
 
         def candidates(store)
