@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
@@ -54,5 +55,21 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.untested).to eq([builder.atoms[1].shape])
     expect(result.retries).to eq(4)
     expect(result.variants).to eq({ 0 => 1, 1 => 3 })
+  end
+
+  it "keeps an atom exercised once exercised, even when a rebuild's fixture no longer exercises it" do
+    # The rebuilds return no rows at all, so they exercise nothing. The
+    # status test, exercised by the first build, must stay exercised.
+    sql = "SELECT o.id FROM fx.orders o WHERE o.kind = 'SENTINEL_9c' AND o.status = 'open'"
+    real = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(sql))
+    rebuilds = Class.new(SimpleDelegator) do
+      def build(variants)
+        scenarios = __getobj__.build(variants)
+        variants.empty? ? scenarios : scenarios.merge(s1: [])
+      end
+    end.new(real)
+    result = described_class.run(runner, rebuilds, sql)
+    expect(result.untested_atoms).to eq([0])
+    expect(result.retries).to eq(3)
   end
 end
