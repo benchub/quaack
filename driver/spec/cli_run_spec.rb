@@ -68,7 +68,7 @@ RSpec.describe "quaack run" do
     expect(transport.calls.first.last[:args]).to eq(run: run_id)
   end
 
-  it "sends the --rewrites file's rewrites through step 7 after the pipeline" do
+  it "sends the --rewrites file's rewrites through step 7 inside the pipeline, before step 8" do
     file = File.join(home, "rewrites.sql")
     File.write(file, "SELECT 2 WHERE $1;\n")
     fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
@@ -76,8 +76,9 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--rewrites", file])
 
     expect([status, stderr.string]).to eq([0, ""])
-    expect(transport.calls.map(&:first).last(2)).to eq(%w[rewrite-payload rewrite-check])
-    expect(transport.calls.last.last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback rewrite-payload rewrite-check status status
+                                                  status])
+    expect(transport.calls[3].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
   end
 

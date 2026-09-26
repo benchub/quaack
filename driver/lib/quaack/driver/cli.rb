@@ -72,8 +72,8 @@ module Quaack
         { run: argv[1], rewrites: argv[3] } if argv[2] == "--rewrites"
       end
 
-      # README step 5 onward, then step 7 if there's a rewrites file, then
-      # prints the run ID and done. The
+      # README step 5 onward, with step 7 after 6a if there's a rewrites
+      # file, then prints the run ID and done. The
       # file is read first, so a bad one fails before the jump server is
       # touched. A failure prints only its rule, as for start.
       def run_command(run:, rewrites:)
@@ -89,8 +89,7 @@ module Quaack
       end
 
       def drive(transport, client, run_id, sqls)
-        Pipeline.new(transport:, client:, run_id:).run
-        operator_rewrites(transport, client, run_id, sqls) if sqls
+        Pipeline.new(transport:, client:, run_id:, rewrites: sqls).run
         @stdout.print "#{run_id} done\n"
         0
       end
@@ -113,16 +112,6 @@ module Quaack
       rescue OperatorCandidates::Error => e
         @rewrites_problem = e.message
         nil
-      end
-
-      # README step 7, on the payload 6a uses.
-      def operator_rewrites(transport, client, run_id, sqls)
-        payload = transport.call("rewrite-payload", args: { run: run_id }).messages
-                           .find { it["type"] == "rewrite_payload" }
-        raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
-
-        OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
-                          .run(payload, sqls)
       end
 
       def usage_error(message)

@@ -141,6 +141,36 @@ RSpec.describe Quaack::Driver::Pipeline do
       expect(fake.asks.map(&:step)).to eq(["6a"])
     end
 
+    def run_with(rewrites) = described_class.new(transport:, client:, run_id: "RUN", rewrites:).run
+
+    it "checks the operator's rewrites (step 7) right after 6a, on the same payload, before step 8" do
+      fake.reply("6a", { "rewrites" => [] })
+      fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+      statuses.push(done.merge("rewrites_generated" => false, "operator_rewrites_checked" => false),
+                    done.merge("rewrites_generated" => true, "operator_rewrites_checked" => true, **rewrite(1)))
+
+      run_with(["SELECT 3"])
+
+      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check rewrite-check status
+                                           index-search index-rank rewrite-prune status status])
+      expect(transport.calls[4].last[:input]).to eq("rewrites" => [{ "sql" => "SELECT 3", "transformation" => "t",
+                                                                     "assumptions" => [] }], "inferred" => true)
+      expect(fake.asks.map(&:step)).to eq(%w[6a step7])
+    end
+
+    it "resumes after 6a with step 7, and skips step 7 once the store says it ran" do
+      fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+      statuses.push(done.merge("rewrites_generated" => true, "operator_rewrites_checked" => false),
+                    done.merge("rewrites_generated" => true, "operator_rewrites_checked" => true))
+
+      run_with(["SELECT 3"])
+      expect(subcommands.drop(2)).to eq(%w[rewrite-payload rewrite-check status status status])
+
+      transport.calls.clear
+      run_with(["SELECT 3"])
+      expect(subcommands.drop(2)).to eq(%w[status])
+    end
+
     it "resumes, skipping 6a and the step 8 outputs already stored" do
       statuses.push(done.merge("rewrites_generated" => true,
                                **rewrite(1, "index_search_rewrite_", "index_ranking_rewrite_", "rewrite_pruned_"),

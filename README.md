@@ -570,7 +570,7 @@ Operators can submit their own rewrites through the driver as plain SQL. They wr
 
 Run the 6b constraint check on operator candidates too. But an unmet inferred assumption only adds a warning to the report. It doesn't reject the candidate, because the operator may know something the schema doesn't capture. The candidate still has to survive steps 8 through 10 like any other.
 
-The operator passes them as `quaack run --run <run ID> --rewrites <file>`, where the file is on the laptop and holds one `;`-terminated statement per rewrite. The driver reads and parses the file before it touches the jump server, so an unreadable or unparseable file, like an unknown run ID, fails at once with a usage error (exit 64). After the pipeline's other steps, it sends the rewrites through `quaacks rewrite-payload` and `rewrite-check` with `"inferred": true`.
+The operator passes them as `quaack run --run <run ID> --rewrites <file>`, where the file is on the laptop and holds one `;`-terminated statement per rewrite. The driver reads and parses the file before it touches the jump server, so an unreadable or unparseable file, like an unknown run ID, fails at once with a usage error (exit 64). Right after 6a, on the same `quaacks rewrite-payload`, it sends the rewrites through `rewrite-check` with `"inferred": true`. The survivors are stored after 6a's, so they go through steps 8 to 11 like 6a's. That call writes the `operator_rewrites_checked` marker, which `quaacks status` reports, so a resumed run doesn't run step 7 again.
 
 ## 8. Plan-based pruning.
 
