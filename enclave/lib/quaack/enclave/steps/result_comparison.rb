@@ -28,16 +28,17 @@ module Quaack
 
         def call(store:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
-          verdicts = verdicts(store, connection)
-          all = verdicts.values.flat_map(&:values)
-          store.write("result_comparison", {
-                        "verdicts" => verdicts,
-                        "discarded" => verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys,
-                        "partial_count" => all.count { it["result"] == "partial" }
-                      })
+          store.write("result_comparison", entry(verdicts(store, connection)))
           []
         ensure
           connection&.close
+        end
+
+        def entry(verdicts)
+          all = verdicts.values.flat_map(&:values)
+          { "verdicts" => verdicts,
+            "discarded" => verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys,
+            "partial_count" => all.count { it["result"] == "partial" } }
         end
 
         def verdicts(store, connection)

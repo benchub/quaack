@@ -79,7 +79,12 @@ module Quaack
       module_function
 
       def compare(connection:, original:, candidate:, params:, timeout_ms:)
-        run = Run.new(connection, params, timeout_ms)
+        by_mode(Run.new(connection, params, timeout_ms), original, candidate)
+      rescue TimedOut
+        fail("timed_out")
+      end
+
+      def by_mode(run, original, candidate)
         original_shape = ResultComparison::Shape.parse(original, :original)
         candidate_shape = ResultComparison::Shape.parse(candidate, :candidate)
         case original_shape.mode
@@ -89,8 +94,6 @@ module Quaack
         else
           candidate_shape.ordered? ? ordered(run, original_shape, candidate_shape) : fail("candidate_unordered")
         end
-      rescue TimedOut
-        fail("timed_out")
       end
 
       def pass = Verdict.new(result: "pass", rule: nil)
@@ -145,13 +148,17 @@ module Quaack
         return fail(rule) if rule
 
         positions = positions(run, original_shape, candidate_shape, expected.types)
-        return fail("unsupported_order") unless positions
-
-        originals = [false, true].map { run.digest(original_shape.with_tiebreaker(positions, descending: it), positions) }
-        return fail("unsupported_order") if originals[0].sorted != originals[1].sorted || originals[0].hidden
+        originals = positions && tiebreaker_runs(run, original_shape, positions)
+        return fail("unsupported_order") unless originals && ties_sound?(*originals)
 
         tiebroken(run, originals, candidate_shape, positions)
       end
+
+      def tiebreaker_runs(run, shape, positions)
+        [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it), positions) }
+      end
+
+      def ties_sound?(ascending, descending) = ascending.sorted == descending.sorted && !ascending.hidden
 
       def positions(run, original_shape, candidate_shape, types)
         catalog = Catalog.new(run.connection)
@@ -198,42 +205,25 @@ module Quaack
 
         private
 
-        def stream(sql, tie_positions)
+        def stream(sql, tie_positions, &)
           started = now
-          hashes = []
-          types = nil
-          ties = {}
-          hidden = false
+          rows = Rows.new(tie_positions)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
-          begin
-            while (result = @connection.get_result)
-              result.check
-              types ||= result.nfields.times.map { result.ftype(it) }
-              result.each_row do |row|
-                key = ResultComparator::Values.key(types, row)
-                hash = Digest::SHA256.digest(JSON.generate(key))
-                hashes << hash
-                yield hash if block_given?
-                hidden ||= hidden?(ties, key, tie_positions) if tie_positions
-              end
-            end
-          rescue PG::QueryCanceled
-            drain
-            raise if now - started < @timeout_ms
+          read(rows, &)
+          rows.digested
+        rescue PG::QueryCanceled
+          drain
+          raise if now - started < @timeout_ms
 
-            raise TimedOut
-          end
-          count = hashes.size
-          Digested.new(types:, count:, sorted: Digest::SHA256.digest("#{count}:#{hashes.sort.join}"),
-                       ordered: Digest::SHA256.digest("#{count}:#{hashes.join}"), hidden:)
+          raise TimedOut
         end
 
-        def hidden?(ties, key, positions)
-          kept = positions.map(&:pred)
-          tie = kept.map { key[it] }
-          rest = key.each_index.reject { kept.include?(it) }.map { key[it] }
-          ties.fetch(tie) { ties[tie] = rest } != rest
+        def read(rows, &)
+          while (result = @connection.get_result)
+            result.check
+            rows.add(result, &)
+          end
         end
 
         def drain
@@ -241,6 +231,43 @@ module Quaack
         end
 
         def now = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
+      end
+
+      # Row hashes gathered from one query.
+      class Rows
+        def initialize(tie_positions)
+          @kept = tie_positions&.map(&:pred)
+          @hashes = []
+          @ties = {}
+          @hidden = false
+        end
+
+        def add(result)
+          @types ||= result.nfields.times.map { result.ftype(it) }
+          result.each_row do |row|
+            key = ResultComparator::Values.key(@types, row)
+            hash = Digest::SHA256.digest(JSON.generate(key))
+            @hashes << hash
+            yield hash if block_given?
+            @hidden ||= hidden?(key) if @kept
+          end
+        end
+
+        def digested
+          count = @hashes.size
+          Digested.new(types: @types, count:, sorted: Digest::SHA256.digest("#{count}:#{@hashes.sort.join}"),
+                       ordered: Digest::SHA256.digest("#{count}:#{@hashes.join}"), hidden: @hidden)
+        end
+
+        private
+
+        # Whether key agrees with an earlier row on the tie columns but
+        # differs in another.
+        def hidden?(key)
+          tie = @kept.map { key[it] }
+          rest = key.each_index.reject { @kept.include?(it) }.map { key[it] }
+          @ties.fetch(tie) { @ties[tie] = rest } != rest
+        end
       end
     end
   end
