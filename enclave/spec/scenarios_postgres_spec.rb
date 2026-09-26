@@ -155,9 +155,20 @@ RSpec.describe Quaack::Enclave::Scenarios do
     loads_every_scenario(build("SELECT id FROM fx.w WHERE v = 'a'"), "fx.w")
   end
 
-  it "refuses a table with an expression unique index" do
-    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL);
+  it "loads every scenario on a table with an expression unique index" do
+    conn.exec("CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL, qty integer);
                CREATE UNIQUE INDEX u_email ON fx.u (lower(email))")
+    scenarios = build("SELECT id FROM fx.u WHERE qty <> 5")
+    # Hit, near miss, and a copy of the hit row: none left out.
+    expect(scenarios[:s3].size).to eq(3)
+    expect(values(scenarios[:s3], "u", "email").map(&:downcase).uniq.size).to eq(3)
+    loads_every_scenario(scenarios, "fx.u")
+  end
+
+  it "refuses an expression unique index that calls a function outside pg_catalog" do
+    conn.exec("CREATE FUNCTION fx.norm(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT lower($1)';
+               CREATE TABLE fx.u (id integer PRIMARY KEY, email text NOT NULL);
+               CREATE UNIQUE INDEX u_email ON fx.u (fx.norm(email))")
     expect { build("SELECT id FROM fx.u WHERE email = 'a'") }
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:expression_unique_index) }
   end
