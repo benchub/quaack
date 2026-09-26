@@ -26,7 +26,9 @@ module Quaack
       # Each entry is { "ddl" => [String], "size", "costs" => { set =>
       # { "before", "after" } }, "used" => { set => [Boolean] }, "partial" }.
       # The DDL can hold a low-cardinality predicate literal, so the entry
-      # stays in the store. Its only line is DONE.
+      # stays in the store. Once 5a-5 has run for the search
+      # (index_generated_<search>), it also writes index_llm_ranked_<search>,
+      # so a resumed step 11 knows its second 5a-7 ran. Its only line is DONE.
       module IndexRank
         OPTIONS = { "search" => :value }.freeze
 
@@ -41,6 +43,7 @@ module Quaack
 
           connection = Enclave::RunServer.connect(store, :racetrack)
           store.write("index_ranking_#{search}", ranking(store, search, connection))
+          store.write("index_llm_ranked_#{search}", true) if store.entry?("index_generated_#{search}")
           []
         ensure
           connection&.close

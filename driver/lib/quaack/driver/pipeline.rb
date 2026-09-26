@@ -32,21 +32,29 @@ module Quaack
         def run(transport:, client:, run_id:, entries:)
           args = { run: run_id, search: SEARCH }
           transport.call("index-search", args:) unless entries["index_search_#{SEARCH}"]
-          payload = transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
-          generate(transport, client, run_id, payload) unless entries["index_generated_#{SEARCH}"]
-          refine(transport, client, run_id, payload)
-          transport.call("index-rank", args:) unless entries["index_ranking_#{SEARCH}"]
+          llm(transport, client, run_id, SEARCH, { generated: entries["index_generated_#{SEARCH}"],
+                                                   ranked: entries["index_ranking_#{SEARCH}"] })
         end
 
-        def generate(transport, client, run_id, payload)
-          index_test = GeneratorThree.index_test(transport, run_id:, search: SEARCH)
+        # 5a-5 unless done[:generated], 5a-6, and 5a-7 unless done[:ranked],
+        # for search.
+        def llm(transport, client, run_id, search, done)
+          args = { run: run_id, search: }
+          payload = transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
+          generate(transport, client, run_id, search, payload) unless done[:generated]
+          refine(transport, client, run_id, search, payload)
+          transport.call("index-rank", args:) unless done[:ranked]
+        end
+
+        def generate(transport, client, run_id, search, payload)
+          index_test = GeneratorThree.index_test(transport, run_id:, search:)
           result = GeneratorThree.new(client:, index_test:).run(payload)
           index_test.call([]) if result.rounds.empty?
         end
 
-        def refine(transport, client, run_id, payload)
-          index_feedback = RefinementRound.index_feedback(transport, run_id:, search: SEARCH)
-          index_test = RefinementRound.index_test(transport, run_id:, search: SEARCH)
+        def refine(transport, client, run_id, search, payload)
+          index_feedback = RefinementRound.index_feedback(transport, run_id:, search:)
+          index_test = RefinementRound.index_test(transport, run_id:, search:)
           RefinementRound.new(client:, index_feedback:, index_test:).run(payload)
         end
       end
@@ -88,7 +96,25 @@ module Quaack
         end
       end
 
-      STAGES = [IndexStage, RewriteStage].freeze
+      # README step 11, after step 8: status is asked again, then IndexStage's
+      # 5a-5, 5a-6, and 5a-7 run for each stored rewrite_<n> it marks
+      # rewrite_step11_<n>: survived steps 9 and 10, and not pruned in step
+      # 8. 5a-5 is skipped once index_generated_rewrite_<n> is stored, and
+      # the second 5a-7 once index_llm_ranked_rewrite_<n> is.
+      module RewriteIndexStage
+        module_function
+
+        def run(transport:, client:, run_id:, **)
+          entries = Pipeline.status(transport, run_id)
+          (1..).lazy.take_while { entries["rewrite_#{it}"] }.select { entries["rewrite_step11_#{it}"] }.each do |n|
+            IndexStage.llm(transport, client, run_id, "rewrite_#{n}",
+                           { generated: entries["index_generated_rewrite_#{n}"],
+                             ranked: entries["index_llm_ranked_rewrite_#{n}"] })
+          end
+        end
+      end
+
+      STAGES = [IndexStage, RewriteStage, RewriteIndexStage].freeze
 
       # The entries `quaacks status` says the run's store holds.
       def self.status(transport, run_id)

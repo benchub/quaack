@@ -60,7 +60,7 @@ RSpec.describe "quaack run" do
 
     expect([status, stderr.string]).to eq([0, ""])
     expect(hosts).to eq(["jump-1"])
-    expect(transport.calls.map(&:first)).to eq(%w[status index-payload index-feedback])
+    expect(transport.calls.map(&:first)).to eq(%w[status index-payload index-feedback status])
     expect(transport.calls.first.last[:args]).to eq(run: run_id)
   end
 

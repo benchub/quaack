@@ -40,7 +40,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
     run
 
-    expect(subcommands).to eq(%w[status index-search index-payload index-test index-feedback index-rank])
+    expect(subcommands).to eq(%w[status index-search index-payload index-test index-feedback index-rank status])
     expect(transport.calls.map { it.last[:args] }.uniq).to eq([{ run: "RUN" }, { run: "RUN", search: "original" }])
     expect(fake.asks.map(&:step)).to eq(["5a-5"])
   end
@@ -52,7 +52,8 @@ RSpec.describe Quaack::Driver::Pipeline do
 
     run
 
-    expect(subcommands).to eq(%w[status index-search index-payload index-test index-feedback index-test index-rank])
+    expect(subcommands)
+      .to eq(%w[status index-search index-payload index-test index-feedback index-test index-rank status])
     expect(transport.calls[5].last[:args]).to include(round: "refinement")
   end
 
@@ -69,13 +70,13 @@ RSpec.describe Quaack::Driver::Pipeline do
 
     run
 
-    expect(subcommands).to eq(%w[status index-payload index-feedback index-rank])
+    expect(subcommands).to eq(%w[status index-payload index-feedback index-rank status])
     expect(fake.asks).to eq([])
 
     entries["index_ranking_original"] = true
     transport.calls.clear
     run
-    expect(subcommands).to eq(%w[status index-payload index-feedback])
+    expect(subcommands).to eq(%w[status index-payload index-feedback status])
   end
 
   describe "step 6a and step 8" do
@@ -121,8 +122,8 @@ RSpec.describe Quaack::Driver::Pipeline do
       run
 
       expect(subcommands.drop(3)).to eq(%w[rewrite-payload rewrite-check status] +
-                                        (%w[index-search index-rank rewrite-prune] * 2))
-      expect(transport.calls.last(6).map { it.last[:args][:search] })
+                                        (%w[index-search index-rank rewrite-prune] * 2) + %w[status])
+      expect(transport.calls.last(7).first(6).map { it.last[:args][:search] })
         .to eq(%w[rewrite_1 rewrite_1 rewrite_1 rewrite_2 rewrite_2 rewrite_2])
       expect(fake.asks.map(&:step)).to eq(["6a"])
     end
@@ -134,8 +135,47 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       run
 
-      expect(subcommands.drop(3)).to eq(%w[index-rank rewrite-prune])
-      expect(transport.calls.last.last[:args]).to eq(run: "RUN", search: "rewrite_2")
+      expect(subcommands.drop(3)).to eq(%w[index-rank rewrite-prune status])
+      expect(transport.calls[-2].last[:args]).to eq(run: "RUN", search: "rewrite_2")
+      expect(fake.asks).to eq([])
+    end
+  end
+
+  describe "step 11" do
+    let(:step8) { %w[index_search_rewrite_ index_ranking_rewrite_ rewrite_pruned_] }
+
+    # A rewrite through step 8, with its step 11 status.
+    def rewrite(number, step11:, generated: false, ranked: false)
+      step8.to_h { ["#{it}#{number}", true] }
+           .merge("rewrite_#{number}" => true, "rewrite_step11_#{number}" => step11,
+                  "index_generated_rewrite_#{number}" => generated, "index_llm_ranked_rewrite_#{number}" => ranked)
+    end
+
+    def searched = transport.calls.drop(1).map { [it.first, it.last[:args][:search]] }
+
+    it "runs 5a-5, 5a-6, and 5a-7 on each rewrite status marks for step 11, after step 8" do
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, **rewrite(1, step11: false), **rewrite(2, step11: true))
+      fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
+
+      run
+
+      expect(searched).to eq([%w[index-payload original], %w[index-feedback original], ["status", nil],
+                              %w[index-payload rewrite_2], %w[index-test rewrite_2], %w[index-feedback rewrite_2],
+                              %w[index-rank rewrite_2]])
+      expect(fake.asks.map(&:step)).to eq(["5a-5"])
+    end
+
+    it "resumes, skipping 5a-5 and the second 5a-7 once they ran" do
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, **rewrite(1, step11: true, generated: true),
+                     **rewrite(2, step11: true, generated: true, ranked: true))
+
+      run
+
+      expect(searched.drop(3)).to eq([%w[index-payload rewrite_1], %w[index-feedback rewrite_1],
+                                      %w[index-rank rewrite_1], %w[index-payload rewrite_2],
+                                      %w[index-feedback rewrite_2]])
       expect(fake.asks).to eq([])
     end
   end
