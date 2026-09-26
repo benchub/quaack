@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "counterexamples"
+require_relative "enclave_error"
 require_relative "generator_three"
 require_relative "refinement_round"
 require_relative "rewrite_generation"
@@ -24,6 +25,7 @@ module Quaack
       # 2. 5a-5: GeneratorThree, on index-payload. If the LLM proposes
       #    nothing, an index-test with no DDL records that 5a-5 ran.
       # 3. 5a-6: RefinementRound, which index-feedback tells whether to run.
+      #    index-payload is fetched only when 5a-5 or 5a-6 asks the LLM.
       # 4. index-rank: 5a-7.
       module IndexStage
         SEARCH = "original"
@@ -41,8 +43,11 @@ module Quaack
         # for search.
         def llm(transport, client, run_id, search, done)
           args = { run: run_id, search: }
-          payload = transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
-          generate(transport, client, run_id, search, payload) unless done[:generated]
+          fetched = nil
+          payload = lambda do
+            fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
+          end
+          generate(transport, client, run_id, search, payload.call) unless done[:generated]
           refine(transport, client, run_id, search, payload)
           transport.call("index-rank", args:) unless done[:ranked]
         end
@@ -132,7 +137,12 @@ module Quaack
           end
         end
 
-        def message(reply, type) = reply.messages.find { it["type"] == type }
+        # The reply's message of this type. A reply without one fails the
+        # run with the rule no_<type>, as an EnclaveError.
+        def message(reply, type)
+          reply.messages.find { it["type"] == type } ||
+            raise(EnclaveError.new(subcommand: type.tr("_", "-"), rule: "no_#{type}"))
+        end
       end
 
       # README step 11, after steps 9 and 10: status is asked again, then IndexStage's

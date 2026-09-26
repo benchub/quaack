@@ -26,7 +26,9 @@ module Quaack
       #                        steps 9 and 10 are done with the rewrite:
       #                        false when step 8 discarded it, step 9
       #                        disproved it, or a round found a mismatch;
-      #                        true after a matching round 3.
+      #                        true after a matching round 3, with
+      #                        "evidence" false if no round's inserts
+      #                        ever loaded, so the report can flag it.
       module Counterexamples
         OPTIONS = { "search" => :value }.freeze
         REQUIRED = %w[search].freeze
@@ -192,11 +194,15 @@ module Quaack
             raise Error, "counterexample_round_out_of_order" unless round == "1" || Integer(round) == last + 1
           end
 
+          # rewrite_round_<n> also says whether any round so far, from round
+          # 1, compared the queries on loaded fixtures ("evidence").
           def finish(store, number, round, outcome)
-            store.write("rewrite_round_#{number}", "round" => Integer(round))
+            evidence = !outcome[:match].nil? || (round != "1" && store.read("rewrite_round_#{number}")["evidence"])
+            store.write("rewrite_round_#{number}", "round" => Integer(round), "evidence" => evidence)
             return Counterexamples.survived(store, number, false) if outcome[:match] == false
+            return unless round == ROUNDS.last
 
-            Counterexamples.survived(store, number, true) if round == ROUNDS.last
+            store.write("rewrite_survived_#{number}", "survived" => true, "evidence" => evidence)
           end
         end
       end

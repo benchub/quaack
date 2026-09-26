@@ -17,7 +17,9 @@ module Quaack
     # the LLM gets the 5a-5 payload and the feedback, and is asked for up to
     # as many revised candidates as fell short. index_test, as in
     # GeneratorThree but called with round: "refinement", filters and tests
-    # them. Only one round, with no replacement ask.
+    # them, even an empty list, which records that the round ran. Only one
+    # round, with no replacement ask. payload may be a callable that
+    # returns it, called only if the LLM is asked.
     #
     # Trust boundary. The prompt carries only the payload and the feedback,
     # both shape data the enclave built for leaving.
@@ -57,13 +59,14 @@ module Quaack
         return nil if !feedback["revise"] || feedback["refined"]
 
         ddls = ask(payload, feedback)
-        Result.new(ddls:, outcomes: ddls.empty? ? [] : @index_test.call(ddls, round: "refinement"))
+        Result.new(ddls:, outcomes: @index_test.call(ddls, round: "refinement"))
       end
 
       private
 
       def ask(payload, feedback)
         short = feedback["candidates"].count { it["shortfall"] }
+        payload = payload.call if payload.respond_to?(:call)
         content = "The payload:\n\n```json\n#{JSON.generate(payload)}\n```\n\n" \
                   "Your candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
                   "Baseline cost per literal set: #{JSON.generate(feedback["baseline"])}\n\n" \

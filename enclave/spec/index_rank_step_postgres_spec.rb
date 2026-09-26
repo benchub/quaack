@@ -31,7 +31,7 @@ RSpec.describe "quaacks index-rank, against a real server" do
     expect(used.size).to be >= 2
     expect(ranking.keys).to eq(%w[top combination])
     expect(ranking["top"].size).to eq([used.size, 3].min)
-    expect(ranking["top"].first.keys).to eq(%w[ddl size costs used partial])
+    expect(ranking["top"].first.keys).to eq(%w[ddl size costs used partial plans])
     worst = ranking["top"].map { |e| e["costs"].values.map { 1 - (it["after"] / it["before"]) }.min }
     expect(worst).to eq(worst.sort.reverse)
     expect(ranking["top"].flat_map { it["ddl"] })
@@ -39,6 +39,12 @@ RSpec.describe "quaacks index-rank, against a real server" do
     expect(ranking["top"].first["costs"].keys).to eq(entry["baseline"].keys)
     expect(ranking["top"].first["costs"].values.first["before"])
       .to eq(entry["baseline"].values.first["total_cost"])
+    kept = ranking["top"] + [ranking["combination"]].compact
+    expect(kept.map { it["plans"].keys }).to all(eq(entry["baseline"].keys))
+    held = JSON.generate(kept.map { it["plans"] })
+    expect(kept.flat_map { it["plans"].values }).to all(be_a(Array))
+    expect(held).to include("$1")
+    expect(LeakCheck.findings(sentinels, stdout: held)).to eq([])
   end
 
   it "refuses an unknown search, and a run with no index search" do
