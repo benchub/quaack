@@ -1833,3 +1833,12 @@ Render the three burndown sections from the recorded counts.
 - **Status:** done
 
 ## End to end.
+
+### 20260924-31. Keyset pagination with row comparisons.
+
+**Decided:** Yes, support keyset pagination with row comparisons in v1. (The original question was whether this should be part of the v1 profile.) `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
+
+- **Depends on:** 20260923-33.
+- **Came from:** The review of 20260923-33 and the second review of 20260924-16.
+- **README:** Step 1.
+- **Status:** done
