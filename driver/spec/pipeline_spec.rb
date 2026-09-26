@@ -52,7 +52,8 @@ RSpec.describe Quaack::Driver::Pipeline do
 
     run
 
-    expect(subcommands).to eq(%w[status index-search index-payload index-test index-feedback index-test index-rank status])
+    expect(subcommands)
+      .to eq(%w[status index-search index-payload index-test index-feedback index-test index-rank status])
     expect(transport.calls[5].last[:args]).to include(round: "refinement")
   end
 

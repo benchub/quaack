@@ -60,15 +60,17 @@ module Quaack
         # through 3g. placeholders stay the original's shapes and rows.
         def message(store, search, entry)
           stats = store.read("classification")["outbound_statistics"]
-          query, plan = if search == "original"
-                          [store.read("redacted_query"), store.read("redacted_plan")["explain"]]
-                        else
-                          [store.read(search)["sql"], entry["baseline"]["slow"]["plan"]]
-                        end
+          query, plan = query_and_plan(store, search, entry)
           { type: :index_payload, query:, placeholders: placeholders(store.read("placeholder_shapes")),
             plan: plan.map { it.except("Settings") },
             schema: store.read("schema_subset"),
             mechanical_results: mechanical(entry, CandidateDdlRedaction.new(stats)), stats: }
+        end
+
+        def query_and_plan(store, search, entry)
+          return [store.read("redacted_query"), store.read("redacted_plan")["explain"]] if search == "original"
+
+          [store.read(search)["sql"], entry["baseline"]["slow"]["plan"]]
         end
 
         def placeholders(shapes)
