@@ -1713,3 +1713,14 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Came from:** Build of 20260926-21.
 - **README:** Step 7.
 - **Status:** done
+
+### 20260922-60. 14d selection.
+
+Keep the top three candidates by total blocks.
+- **Decided:** Rank the candidates that survive minimax by total blocks on the slow literal. Break ties by the sum across all literals.
+
+- **Depends on:** 20260922-58, 20260922-59.
+- **README:** 14d.
+- **Status:** done
+
+## Step 15: Report.

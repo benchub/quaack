@@ -143,16 +143,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-59. 14c production result comparison. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-60. 14d selection.
-
-Keep the top three candidates by total blocks.
-- **Decided:** Rank the candidates that survive minimax by total blocks on the slow literal. Break ties by the sum across all literals.
-
-- **Depends on:** 20260922-58, 20260922-59.
-- **README:** 14d.
-- **Status:** todo
-
-## Step 15: Report.
+### 20260922-60. 14d selection. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-61. Burndown counters. Done, see BACKLOG-COMPLETE.md.
 
