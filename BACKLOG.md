@@ -1315,19 +1315,7 @@ These are minor findings from the review of 20260922-34 and -36:
 - **README:** 5a-6, 5a-7.
 - **Status:** todo
 
-### 20260926-9. Driver start and run server loose ends.
-
-These are minor findings from the review of 20260926-1, 20260926-2 and 20260924-30:
-- `Runs#record` has a run-ID guard that no test covers.
-- The README should show flags in the space-separated form.
-- The docs should say `destroy_command` must be idempotent.
-- The child process for `jump_command` isn't in its own process group, so a timeout doesn't kill what the shell started.
-- Some spec wrote an empty run-ID file into `enclave/`. Find it and make it write to a temp dir.
-
-- **Depends on:** 20260926-1, 20260926-2.
-- **Came from:** Track F review.
-- **README:** Where QUAACK runs, step 4, and teardown.
-- **Status:** todo
+### 20260926-9. Driver start and run server loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-10. Arena database: handle the dump's `CREATE SCHEMA public`. Done, see BACKLOG-COMPLETE.md.
 
@@ -1335,17 +1323,7 @@ These are minor findings from the review of 20260926-1, 20260926-2 and 20260924-
 
 ### 20260926-12. Assumption check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-13. Expression MCV classification: tests for the paths that aren't covered.
-
-These are minor findings from the review of 20260924-27. The code handles each case, but no spec covers it:
-- A partial index whose only PII column appears in its WHERE clause.
-- A definition that won't parse.
-- A definition that names a column the table doesn't have.
-
-- **Depends on:** 20260924-27.
-- **Came from:** 20260924-27 review.
-- **README:** 3f.
-- **Status:** todo
+### 20260926-13. Expression MCV classification: tests for the paths that aren't covered. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline.
 
@@ -1377,19 +1355,7 @@ These are minor findings from the build and reviews of 20260922-44 to -51:
 - **README:** Steps 9 and 10.
 - **Status:** todo
 
-### 20260926-16. `quaack run` loose ends.
-
-These are minor findings from the review of 20260926-7:
-- No spec covers a failing enclave or LLM call (exit 1 and `quaack run failed: <rule>`). Changing the exit code to 0, or narrowing the rescue list, stays green.
-- No spec covers a rewrites file that won't parse.
-- A reply to rewrite-payload with no `rewrite_payload` message passes nil on and crashes with a stack trace.
-- Step 7 runs after the whole pipeline, not next to 6a.
-- Nothing prints on success.
-
-- **Depends on:** 20260926-7.
-- **Came from:** 20260926-7 build report and review.
-- **README:** Step 7.
-- **Status:** todo
+### 20260926-16. `quaack run` loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-17. Arena setup loose ends.
 
@@ -1404,14 +1370,7 @@ These are minor findings from the build and review of 20260922-27:
 - **README:** 4b.
 - **Status:** todo
 
-### 20260926-18. Parallel spec runs remove each other's Postgres containers.
-
-A full rake run died with 1216 enclave failures and "docker rm … removal already in progress". The stale-container cleanup in `spec/support/test_postgres.rb` removes every container labelled `quaack.test-postgres`, including ones that another spec process started a moment ago. Only remove containers whose owner process is gone, for example by labelling each container with its PID and checking whether that process is alive.
-
-- **Depends on:** none.
-- **Came from:** Build of 20260926-12 and -5, with several worktrees running rake at once.
-- **README:** none (see CLAUDE.md, Development).
-- **Status:** todo
+### 20260926-18. Parallel spec runs remove each other's Postgres containers. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-19. Assumption and run discipline loose ends, part two.
 
@@ -1432,4 +1391,16 @@ These are minor findings from the build and review of 20260926-12 and -5:
 - **Depends on:** 20260922-52.
 - **Came from:** 20260922-52 build report and review.
 - **README:** Step 11.
+- **Status:** todo
+
+### 20260926-21. Harness and driver loose ends, part three.
+
+- Test containers: no test covers the "same host label, dead PID, so remove it" path separately from the path for containers with no label (20260926-18 review).
+- The driver's SIGKILL timing test (`Transport limits kills a run that ignores SIGTERM with SIGKILL`) flakes under heavy parallel load.
+- An earlier run hit 1216 enclave failures from containers being removed mid-run, even though main already had the PID-scoped cleanup. The cause is unknown, so watch for it.
+- Step 7 (`--rewrites`) runs after the whole pipeline, not next to 6a (from 20260926-16).
+
+- **Depends on:** 20260926-18, 20260926-16.
+- **Came from:** Builds and reviews of 20260926-18 and -16.
+- **README:** Step 7; CLAUDE.md Development.
 - **Status:** todo
