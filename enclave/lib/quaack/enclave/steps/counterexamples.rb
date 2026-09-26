@@ -114,8 +114,8 @@ module Quaack
 
             [{ type: :counterexample_payload, original: store.read("redacted_query"),
                candidate: { "sql" => store.read(search)["sql"] },
-               placeholders: IndexPayload.placeholders(store.read("placeholder_shapes")),
-               schema: store.read("schema_subset"), untested_atoms: tested["untested"] }]
+               placeholders: IndexPayload.placeholders(store),
+               schema: IndexPayload.schema(store), untested_atoms: tested["untested"] }]
           end
         end
 

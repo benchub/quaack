@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../arena"
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
 require_relative "index_search"
@@ -61,9 +62,9 @@ module Quaack
         def message(store, search, entry)
           stats = store.read("classification")["outbound_statistics"]
           query, plan = query_and_plan(store, search, entry)
-          { type: :index_payload, query:, placeholders: placeholders(store.read("placeholder_shapes")),
+          { type: :index_payload, query:, placeholders: placeholders(store),
             plan: plan.map { it.except("Settings") },
-            schema: store.read("schema_subset"),
+            schema: schema(store),
             mechanical_results: mechanical(entry, CandidateDdlRedaction.new(stats)), stats: }
         end
 
@@ -73,12 +74,24 @@ module Quaack
           [store.read(search)["sql"], entry["baseline"]["slow"]["plan"]]
         end
 
-        def placeholders(shapes)
-          shapes.transform_values do |shape|
+        # Each placeholder's shape, typed as Postgres infers it for the
+        # original query (index_search_original's parameter_types), or by
+        # its 3g type class when that's missing.
+        def placeholders(store)
+          inferred = store.entry?("index_search_original") && store.read("index_search_original")["parameter_types"]
+          store.read("placeholder_shapes").to_h do |n, shape|
             rows = shape["rows"]
-            { "type" => shape["type"], "pattern" => shape["pattern"], "elements" => shape["elements"],
-              "est_rows" => rows["estimated_rows"], "actual_rows" => rows["actual_rows"] }
+            [n, { "type" => (inferred && inferred[n]) || shape["type"], "pattern" => shape["pattern"],
+                  "elements" => shape["elements"], "est_rows" => rows["estimated_rows"],
+                  "actual_rows" => rows["actual_rows"] }]
           end
+        end
+
+        # The schema_subset entry, without pg_dump's \restrict and
+        # \unrestrict token lines, which are noise to the LLM.
+        def schema(store)
+          subset = store.read("schema_subset")
+          subset.merge("ddl" => subset["ddl"].gsub(Arena::RESTRICT, ""))
         end
 
         def mechanical(entry, redaction)
