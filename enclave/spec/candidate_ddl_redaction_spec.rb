@@ -1,0 +1,43 @@
+# frozen_string_literal: true
+
+require "quaack/enclave/candidate_ddl_redaction"
+require "quaack/enclave/index_candidate"
+
+RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
+  let(:sentinel) { "quaack-sentinel-ddl" }
+  let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
+  let(:outbound) do
+    { "tables" => [
+      { "schema" => "public", "name" => "orders",
+        "columns" => [{ "name" => "status", "most_common_vals" => %w[held open 7] },
+                      { "name" => "note", "most_common_vals" => nil }] },
+      { "schema" => "public", "name" => "customers",
+        "columns" => [{ "name" => "tier", "most_common_vals" => [sentinel] }] }
+    ] }
+  end
+  let(:redaction) { described_class.new(outbound) }
+
+  def candidate(predicate: nil, key: ["created_at"])
+    Quaack::Enclave::IndexCandidate.new(table: orders, key:, predicate:, sources: [:plan])
+  end
+
+  it "masks a predicate constant that isn't a low-cardinality value, and keeps one that is" do
+    ddl = redaction.ddl(candidate(predicate: "status = 'held' AND note = '#{sentinel}' AND total = 7"))
+
+    expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
+                      "WHERE status = 'held' AND note = ? AND total = 7")
+  end
+
+  it "masks constants in key expressions" do
+    key = [Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "coalesce(note, '#{sentinel}')")]
+
+    expect(redaction.ddl(candidate(key:))).to eq("CREATE INDEX ON public.orders USING btree (COALESCE(note, ?))")
+  end
+
+  it "allows only values of the candidate's own table, and keeps NULL" do
+    ddl = redaction.ddl(candidate(predicate: "status = '#{sentinel}' OR status IS DISTINCT FROM NULL"))
+
+    expect(ddl).not_to include(sentinel)
+    expect(ddl).to end_with("WHERE status = ? OR status IS DISTINCT FROM NULL")
+  end
+end

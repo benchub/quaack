@@ -16,6 +16,7 @@ require_relative "../steps/literals"
 require_relative "../steps/anchor"
 require_relative "../steps/racetrack_setup"
 require_relative "../steps/index_search"
+require_relative "../steps/index_payload"
 
 module Quaack
   module Enclave
@@ -40,7 +41,8 @@ module Quaack
         "literals" => Step.new(handler: Steps::Literals, run: true),
         "anchor" => Step.new(handler: Steps::Anchor, run: true),
         "racetrack-setup" => Step.new(handler: Steps::RacetrackSetup, run: true),
-        "index-search" => Step.new(handler: Steps::IndexSearch, run: true, options: Steps::IndexSearch::OPTIONS)
+        "index-search" => Step.new(handler: Steps::IndexSearch, run: true, options: Steps::IndexSearch::OPTIONS),
+        "index-payload" => Step.new(handler: Steps::IndexPayload, run: true, options: Steps::IndexPayload::OPTIONS)
       }.freeze
     end
   end
