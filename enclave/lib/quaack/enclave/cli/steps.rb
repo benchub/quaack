@@ -30,6 +30,7 @@ require_relative "../steps/index_build"
 require_relative "../steps/baseline"
 require_relative "../steps/index_baseline"
 require_relative "../steps/candidate_runs"
+require_relative "../steps/minimax"
 
 module Quaack
   module Enclave
@@ -77,7 +78,8 @@ module Quaack
         "index-build" => Step.new(handler: Steps::IndexBuild, run: true),
         "baseline" => Step.new(handler: Steps::Baseline, run: true),
         "index-baseline" => Step.new(handler: Steps::IndexBaseline, run: true),
-        "candidate-runs" => Step.new(handler: Steps::CandidateRuns, run: true)
+        "candidate-runs" => Step.new(handler: Steps::CandidateRuns, run: true),
+        "minimax" => Step.new(handler: Steps::Minimax, run: true)
       }.freeze
     end
   end

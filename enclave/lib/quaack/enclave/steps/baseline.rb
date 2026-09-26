@@ -11,34 +11,34 @@ module Quaack
       # with every index index-build built hidden, measures anchored_query
       # for each 3e literal set (Measurement, combination nil).
       #
-      # The first run's statement_timeout comes from the production
-      # EXPLAIN ANALYZE of step 1: RunDiscipline.timeout_ms of the stored
-      # plan's Execution Time. That's the only baseline there is before the
-      # racetrack has run the query. It writes baseline:
+      # The original gets up to 15 minutes per run (ORIGINAL_TIMEOUT_MS), not
+      # the 3x clamp; a set that still times out counts as infinite in 14b.
+      # It writes baseline:
       #   "sets"       { set name => measurement, as Measurement gives it }
       #   "timed_out"  the set names whose runs timed out
       #   "timeout_ms" for 13a and 14: RunDiscipline.timeout_ms of the
-      #                slowest racetrack baseline run (or the first
-      #                timeout, if every set timed out)
+      #                slowest racetrack baseline run (or MAX_MS, if every
+      #                set timed out)
       # Its only line is DONE.
       module Baseline
+        ORIGINAL_TIMEOUT_MS = 900_000
+
         module_function
 
         def call(store:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
-          first = RunDiscipline.timeout_ms(store.read("plan")[0].fetch("Execution Time"))
           sets = Measurement.measure(connection:, store:, sql: store.read("anchored_query"), combination: nil,
-                                     timeout_ms: first)
-          store.write("baseline", entry(sets, first))
+                                     timeout_ms: ORIGINAL_TIMEOUT_MS)
+          store.write("baseline", entry(sets))
           []
         ensure
           connection&.close
         end
 
-        def entry(sets, first)
+        def entry(sets)
           times = sets.values.reject { it["timed_out"] }.flat_map { it["runs"] }.map { it["execution_ms"] }
           { "sets" => sets, "timed_out" => sets.select { |_, m| m["timed_out"] }.keys,
-            "timeout_ms" => times.empty? ? first : RunDiscipline.timeout_ms(times.max) }
+            "timeout_ms" => times.empty? ? RunDiscipline::MAX_MS : RunDiscipline.timeout_ms(times.max) }
         end
       end
     end
