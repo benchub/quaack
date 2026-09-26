@@ -96,7 +96,7 @@ module Quaack
       end
 
       def disable_user_triggers(conn)
-        conn.exec(USER_TRIGGER_TABLES_SQL).values.each do |schema, table|
+        conn.exec(USER_TRIGGER_TABLES_SQL).each_row do |schema, table|
           conn.exec("ALTER TABLE #{conn.quote_ident(schema)}.#{conn.quote_ident(table)} DISABLE TRIGGER USER")
         end
       end
