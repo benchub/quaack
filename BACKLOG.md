@@ -1179,6 +1179,7 @@ The rest of 20260922-33. Build the shape-only payload, ask the LLM for up to fiv
 - **Depends on:** 20260922-33 piece one (landed), 20260925-6.
 - **README:** 5a-5.
 - **Decided:** Use two enclave subcommands. `quaacks index-payload [--candidate ID]` sends the shape-only payload out through egress, using a new whitelisted type. `quaacks index-test` reads the LLM's DDL on stdin and runs `IndexDdlCheck`, then `from_ddl` with `sources: [:llm]`, then Dedupe against the mechanical proposals saved in the store, then 5a-4. It saves the results in the store and returns a shape-only outcome for each candidate: accepted, or dropped with its rule. The driver runs the replacement round by calling `index-test` again.
+- **Note (from 20260925-13):** `index-payload` must send `classification.outbound_statistics` as the payload's `stats`. By the user's decision, classify stores it and sends nothing.
 - **Note:** The prompt must say plainly that an unqualified table name gets the candidate refused and counts against the LLM.
 - **Note:** `IndexDdlCheck` accepts `WITH (...)` storage options, but `from_ddl` returns nil for them. Strip them or refuse them, so LLM DDL that uses them isn't silently lost. The "proportion" bullet of 20260923-17 can be decided in light of piece one.
 - **Status:** todo
@@ -1224,14 +1225,7 @@ Build the literal set and store it. Each subcommand takes `--run <run ID>`, read
 - **README:** 3e.
 - **Status:** todo
 
-### 20260925-13. Enclave subcommand: `quaacks classify` (3f).
-
-Classify PII and low-cardinality columns. Store the classification, and send `outbound_statistics` out as `column_stats`. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-10, 20260922-22.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3f.
-- **Status:** todo
+### 20260925-13. Enclave subcommand: `quaacks classify` (3f). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-14. Enclave subcommand: `quaacks redact` (3g).
 

@@ -1038,3 +1038,15 @@ Run the volatility check on the qualified query. Store the result. Each subcomma
 - **Landed:** Merged into `main` after a build and a first review with nothing blocking.
   - `quaacks volatility --run ID` reads `server`, `plan` and `qualified_query`, and runs `VolatilityCheck.check` inside `read_only` with the plan's `search_path`. After the transaction closes it stores the marker `volatility: {"passed" => true}`. It prints only DONE. Stable clock functions pass, for 3h to anchor.
   - The refusal names only its rule for now. The user wants the function named, so that became 20260925-21.
+
+### 20260925-13. Enclave subcommand: `quaacks classify` (3f).
+
+Classify PII and low-cardinality columns. Store the classification, and send `outbound_statistics` out as `column_stats`. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-10, 20260922-22.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 3f.
+- **Status:** done
+- **Decided:** The user changed this: classify stores the stats and sends nothing. The 5a-5 payload step (20260925-4) sends `outbound_statistics`.
+- **Landed:** Merged into `main` after a build, a first review, a fix round for the user's change, and a clean second review.
+  - `quaacks classify --run ID` loads the config, runs `PiiClassification.run`, and stores `classification` (`{columns, outbound_statistics}`). It never touches production, prints only DONE, and stores nothing on failure.
