@@ -995,17 +995,7 @@ Findings from the build and reviews of 20260922-19:
 - **README:** 3c.
 - **Status:** todo
 
-### 20260924-27. 3f classification loose ends.
-
-Findings from the build and reviews of 20260922-22:
-- **text[], json, and jsonb columns aren't text-like for the heuristic,** so their MCV frequencies leave unless a glob names them. Their values never leave. The reviewer judged this low risk: a frequency vector over a large domain doesn't re-identify anyone. Decide whether they should fail closed as PII anyway.
-- **Expression-index and extended-statistics MCVs are left out of the projection entirely.** If 5a-5 needs them, they'll need rules of their own.
-
-- **Decided:** Leave text[], json and jsonb as they are: their frequencies may leave, and their values never do. Add rules that send expression-index and extended-statistics MCVs, classified under the rules of their base columns. An expression that touches any PII column is treated as PII.
-- **Depends on:** 20260922-22.
-- **Came from:** The build and reviews of 20260922-22.
-- **README:** 3f.
-- **Status:** todo
+### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-28. 3e literal set loose ends.
 
@@ -1451,4 +1441,16 @@ These are minor findings from the review of 20260922-38:
 - **Depends on:** 20260922-38.
 - **Came from:** Track B review.
 - **README:** 6b.
+- **Status:** todo
+
+### 20260926-13. Expression MCV classification: tests for the paths that aren't covered.
+
+These are minor findings from the review of 20260924-27. The code handles each case, but no spec covers it:
+- A partial index whose only PII column appears in its WHERE clause.
+- A definition that won't parse.
+- A definition that names a column the table doesn't have.
+
+- **Depends on:** 20260924-27.
+- **Came from:** 20260924-27 review.
+- **README:** 3f.
 - **Status:** todo
