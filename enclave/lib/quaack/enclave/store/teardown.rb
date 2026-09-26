@@ -23,6 +23,7 @@ module Quaack
       # BadBase, even with nothing at the run's path.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
+        # A fast path only: the recheck below would say already_gone too.
         return :already_gone unless look_up(run_id, base) { PrivateFiles.lstat(path) }
 
         self.open(run_id, base:, current_uid:).teardown
@@ -32,11 +33,19 @@ module Quaack
         raise
       rescue Error
         # The run went while this call deleted it, as when another teardown
-        # got there first. Anything else is raised again.
-        raise if path.nil? || PrivateFiles.lstat(path)
+        # got there first. Anything else, or a recheck that can't look, is
+        # raised again.
+        raise if path.nil? || still_there?(path)
 
         :already_gone
       end
+
+      def self.still_there?(path)
+        PrivateFiles.lstat(path)
+      rescue SystemCallError
+        true
+      end
+      private_class_method :still_there?
     end
   end
 end

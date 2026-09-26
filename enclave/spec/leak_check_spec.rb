@@ -2,6 +2,7 @@
 
 require "json"
 require "stringio"
+require "tempfile"
 require "pg_query"
 require "quaack/enclave/supported_sql"
 
@@ -101,6 +102,17 @@ RSpec.describe LeakCheck do
     it "refuses a fixed value short enough to show up by chance" do
       expect { LeakCheck::Sentinels.new(extra: { short: "abc" }) }.to raise_error(ArgumentError, /short/)
     end
+
+    it "takes a fixed value of exactly nine characters, and refuses one of eight" do
+      expect(LeakCheck::Sentinels.new(extra: { nine: "q" * 9 }).needles).to include(nine: "q" * 9)
+      expect { LeakCheck::Sentinels.new(extra: { eight: "q" * 8 }) }.to raise_error(ArgumentError, /eight/)
+    end
+
+    it "matches a fixed value without regard to case" do
+      mixed = LeakCheck::Sentinels.new(extra: { email: "Quaack-Fixture-Email" })
+
+      expect(LeakCheck.findings(mixed, stdout: "x quaack-fixture-email x").map(&:sentinel)).to eq([:email])
+    end
   end
 
   describe ".findings" do
@@ -142,6 +154,18 @@ RSpec.describe LeakCheck do
                   key: { sentinels.word => 1 } }
 
       expect(channels(objects:)).to include("deep[0][:a][1][:b]", "number", "date", "key.keys")
+    end
+
+    it "finds a sentinel twenty objects down" do
+      deep = 20.times.reduce(sentinels.text) { |inner, _| LeakCheck::PositiveControl::Hidden.new(inner) }
+
+      expect(channels(objects: { deep: })).to eq(["deep#{".@value" * 20}"])
+    end
+
+    it "finds a sentinel in a later line of a backtrace" do
+      error = clean_error.tap { it.set_backtrace(["clean.rb:1", "#{sentinels.word}.rb:2"]) }
+
+      expect(channels(objects: { e: error })).to include("e.backtrace")
     end
 
     it "finds a sentinel in an error's message, backtrace, and cause" do
@@ -201,6 +225,16 @@ RSpec.describe LeakCheck do
 
       expect(channels(objects: { out: io })).to eq(["out.string"])
       expect { findings(objects: { out: $stdout }) }.to raise_error(ArgumentError, /out.*IO/)
+    end
+
+    it "refuses a Tempfile among the objects, and an IO nested inside one" do
+      tempfile = Tempfile.new("leak").tap { it.write("leak #{sentinels.text}") }
+
+      expect { findings(objects: { out: tempfile }) }.to raise_error(ArgumentError, /\Aout is an IO/)
+      expect { findings(objects: { result: { nested: [$stdout] } }) }
+        .to raise_error(ArgumentError, /result\[:nested\]\[0\].*IO/)
+    ensure
+      tempfile&.close!
     end
 
     it "finds a sentinel in a Struct's or a Data's members that inspect hides" do

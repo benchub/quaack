@@ -98,6 +98,19 @@ RSpec.describe Quaack::Driver::Transport::Ssh do
     expect(EnclaveCommands.ssh_argv(dir)).to eq(["-o", "ConnectTimeout=5", "--", "jump-1.example", "quaacks probe"])
   end
 
+  # Shellwords writes a newline as three bytes, so argv that fits
+  # MAX_ARGV_BYTES can still make a remote command past it. The ssh here
+  # doesn't exist, so a call that got past the check would fail as
+  # not_started instead.
+  it "refuses a remote command whose quoted form holds more than MAX_ARGV_BYTES, before running ssh" do
+    max = Quaack::Driver::Transport::Base::MAX_ARGV_BYTES
+    value = "\n" * (max / 2)
+    transport = described_class.new(host: "jump-1.example", ssh: File.join(dir, "no-ssh"))
+
+    expect { transport.call("probe", args: { query: value }) }
+      .to raise_error(ArgumentError, /remote command holds more than #{max} bytes/)
+  end
+
   it "fails as not_started when there's no ssh to run" do
     expect { described_class.new(host: "jump", ssh: File.join(dir, "no-ssh")).call("version") }
       .to raise_error(Quaack::Driver::EnclaveError, "quaacks version failed: not_started")

@@ -48,7 +48,19 @@ module Quaack
 
         private
 
-        def command(argv) = [@ssh, *@options, "--", @host, Shellwords.join(["quaacks", *argv])]
+        def command(argv) = [@ssh, *@options, "--", @host, remote(argv)]
+
+        def remote(argv) = Shellwords.join(["quaacks", *argv])
+
+        # Quoting can triple a value's bytes, as with a newline, so the
+        # quoted remote command, one argument to ssh, is held to
+        # MAX_ARGV_BYTES too, well under Linux's 128 KiB per argument.
+        def argv(subcommand, args)
+          super.tap do |argv|
+            too_long = remote(argv).bytesize > MAX_ARGV_BYTES
+            refuse("the remote command holds more than #{MAX_ARGV_BYTES} bytes") if too_long
+          end
+        end
       end
     end
   end

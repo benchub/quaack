@@ -122,7 +122,7 @@ module Quaack
         # returned as :skip rather than dropped.
         def line(line)
           return :skip if line == :skip
-          return REFUSED if line.start_with?("{") && Lexical.problem?(line)
+          return REFUSED if line.lstrip.start_with?("{") && Lexical.problem?(line)
           return :skip unless json?(line)
 
           object = strict(line)

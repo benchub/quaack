@@ -178,7 +178,7 @@ module Quaack
       def teardown
         stat = look_up(run_id, File.dirname(path)) { PrivateFiles.lstat(path) }
         return unless stat
-        raise Error, "run #{run_id}: its path isn't a directory, so it wasn't deleted" unless stat.directory?
+        raise BadRun, "run #{run_id}: its path isn't a directory, so it wasn't deleted" unless stat.directory?
 
         begin
           FileUtils.rm_r(path)

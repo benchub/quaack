@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "stringio"
+require "tempfile"
 
 module LeakCheck
   # One sentinel found in one place. channel says where, such as "stderr",
@@ -42,11 +43,21 @@ module LeakCheck
       return @texts << [path, object.inspect] if IMMEDIATE.any? { object.is_a?(it) }
       return unless @seen.add?(object)
 
+      refuse_io(object, path)
+
       describe(object, path)
       children(object, path).each { |child, child_path| visit(child, child_path, depth + 1) }
     end
 
     private
+
+    # An IO's text can't be read back, so it can't be scanned. A Tempfile is
+    # a Delegator, not an IO, so it's checked by name.
+    def refuse_io(object, path)
+      return unless object.is_a?(IO) || object.is_a?(Tempfile)
+
+      raise ArgumentError, "#{path} is an IO, whose text can't be scanned; pass the text it wrote instead"
+    end
 
     # An object's to_s is recorded at its own path, and every other
     # describing method's text at the path plus the method's name.
@@ -106,11 +117,11 @@ module LeakCheck
   # stdout and stderr must be Strings or nil. A StringIO's to_s is only
   # #<StringIO:...>, so passing the capture instead of its text would
   # scan nothing. Among objects, a StringIO's text is scanned, and any
-  # other IO given as an object is refused, since what it holds can't be read.
+  # other IO or Tempfile among them, at any depth, is refused, since what it holds can't be read.
   def findings(sentinels, stdout: nil, stderr: nil, status: nil, objects: {})
     texts = { "stdout" => text_channel("stdout", stdout), "stderr" => text_channel("stderr", stderr) }.compact.to_a
     texts += Texts.of(status, "status") unless status.nil?
-    objects.each { |name, object| texts += Texts.of(scannable(name, object), name.to_s) }
+    objects.each { |name, object| texts += Texts.of(object, name.to_s) }
     texts.flat_map { |channel, text| findings_in(sentinels, channel, text) }
   end
 
@@ -119,12 +130,6 @@ module LeakCheck
 
     raise ArgumentError,
           "#{name} must be a String or nil, not a #{text.class}; pass the text it captured, such as out.string"
-  end
-
-  def scannable(name, object)
-    return object unless object.is_a?(IO)
-
-    raise ArgumentError, "#{name} is an IO, whose text can't be scanned; pass the text it wrote instead"
   end
 
   def findings_in(sentinels, channel, text)
