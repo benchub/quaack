@@ -38,6 +38,7 @@ require_relative "enclave/run_server_check"
 require_relative "enclave/racetrack"
 require_relative "enclave/arena_schema"
 require_relative "enclave/value_pools"
+require_relative "enclave/scenarios"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does

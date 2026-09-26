@@ -183,7 +183,15 @@ module Quaack
           end
         end
 
-        def sides(expr) = [expr.lexpr, expr.rexpr].compact.flat_map { |s| s.list ? s.list.items.to_a : [s] }
+        # A list or an ARRAY[...] gives each element.
+        def sides(expr)
+          [expr.lexpr, expr.rexpr].compact.flat_map do |s|
+            if s.list then s.list.items.to_a
+            elsif s.a_array_expr then s.a_array_expr.elements.to_a
+            else [s]
+            end
+          end
+        end
 
         def select_of(expr)
           tree = PgQuery.parse("SELECT 1").tree

@@ -1,0 +1,126 @@
+# frozen_string_literal: true
+
+require "pg_query"
+require "quaack/enclave/arena_runner"
+require "quaack/enclave/predicate_atoms"
+require "quaack/enclave/scenarios"
+
+# Step 9: scenarios S0 through S6, built from the value pools. Each one must
+# load into arena as is, so every row satisfies every constraint.
+RSpec.describe Quaack::Enclave::Scenarios do
+  let(:conn) { racetrack_and_arena.arena.connection }
+  let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
+
+  before do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA fx;
+      CREATE TABLE fx.customers (id serial PRIMARY KEY, name text NOT NULL,
+        region text NOT NULL DEFAULT 'eu',
+        score integer NOT NULL CHECK (score BETWEEN 3 AND 5),
+        tier text NOT NULL CHECK (tier IN ('gold', 'silver')),
+        code text NOT NULL UNIQUE);
+      CREATE TABLE fx.orders (id integer PRIMARY KEY, customer_id integer NOT NULL REFERENCES fx.customers,
+        status text NOT NULL, qty integer CHECK (qty > 0), note text);
+      CREATE TABLE fx.a (id integer PRIMARY KEY, k integer, v text);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, k integer);
+    SQL
+  end
+
+  let(:join_sql) do
+    "SELECT o.id, c.name FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id " \
+      "WHERE o.status = 'open' AND o.qty >= 3"
+  end
+
+  def build(sql, **) = described_class.build(conn, PgQuery.parse(sql), **)
+
+  def run(rows, sql) = runner.with_fixture(rows) { |tx| tx.query(sql).rows }
+
+  def rows_of(rows, name) = rows.select { |r| r.table.name == name }
+
+  def values(rows, name, column)
+    rows_of(rows, name).map { |r| r.values[r.columns.index(column)] }
+  end
+
+  describe "with a join and predicates" do
+    let(:scenarios) { build(join_sql) }
+
+    it "builds S0 through S6, and each loads, with each table's rows together and parents first" do
+      expect(scenarios.keys).to eq(%i[s0 s1 s2 s3 s4 s5 s6])
+      expect(scenarios[:s0]).to eq([])
+      scenarios.each_value do |rows|
+        names = rows.map { |r| r.table.name }.chunk_while { |x, y| x == y }.map(&:first)
+        expect(names).to eq(names.uniq)
+        expect(names.index("customers")).to be < names.index("orders") if names.include?("orders")
+        expect(run(rows, "SELECT count(*) FROM fx.orders")).to eq([[rows_of(rows, "orders").size.to_s]])
+      end
+    end
+
+    it "gives S1 a hit row, and a near-miss row that each atom's TRUE replacement lets through" do
+      parse = PgQuery.parse(join_sql)
+      atoms = Quaack::Enclave::PredicateAtoms.extract(parse, column_names: {
+                                                        tn("orders") => %w[id customer_id status qty note],
+                                                        tn("customers") => %w[id name region score tier code]
+                                                      })
+      original = run(scenarios[:s1], join_sql).size
+      expect(original).to be >= 1
+      atoms.each_index.reject { |i| atoms[i].kind == :join }.each do |i|
+        loosened = run(scenarios[:s1], Quaack::Enclave::PredicateAtoms.with_true(parse, atoms[i])).size
+        expect(loosened).to be > original
+      end
+    end
+
+    it "keeps NULLs out of S1 and puts them in S2's nullable predicate columns" do
+      expect(scenarios[:s1].flat_map(&:values)).not_to include(nil)
+      expect(values(scenarios[:s2], "orders", "qty")).to include(nil)
+    end
+
+    it "fills required columns the query never names to satisfy their CHECKs, and leaves defaults alone" do
+      rows = rows_of(scenarios[:s1], "customers")
+      expect(values(scenarios[:s1], "customers", "score").map(&:to_i)).to all(be_between(3, 5))
+      expect(values(scenarios[:s1], "customers", "tier")).to all(satisfy { |t| %w[gold silver].include?(t) })
+      expect(rows.flat_map(&:columns)).not_to include("region")
+    end
+
+    it "fans out the non-unique join key in S3" do
+      expect(run(scenarios[:s3], join_sql).size).to be > run(scenarios[:s1], join_sql).size
+    end
+
+    it "puts type boundary values in S5's hit rows" do
+      expect(values(scenarios[:s5], "orders", "qty")).to include("2147483647")
+      expect(run(scenarios[:s5], join_sql).size).to be > run(scenarios[:s1], join_sql).size
+    end
+
+    it "gives S6 a group of one, a group of many, and an empty group" do
+      counts = run(scenarios[:s6], <<~SQL).map { |r| r[0].to_i }
+        SELECT count(o.id) FROM fx.customers c LEFT JOIN fx.orders o ON o.customer_id = c.id GROUP BY c.id
+      SQL
+      expect(counts).to include(0, 1)
+      expect(counts.max).to be >= 3
+    end
+
+    it "takes other pool values for an atom when asked for a variant" do
+      plain = values(build(join_sql)[:s1], "orders", "qty")
+      varied = values(build(join_sql, variants: { 2 => 1 })[:s1], "orders", "qty")
+      expect(varied).not_to eq(plain)
+    end
+  end
+
+  it "puts orphans on both sides of a join with no FK in S4" do
+    sql = "SELECT a.id FROM fx.a a JOIN fx.b b ON a.k = b.k WHERE a.v = 'x'"
+    scenarios = build(sql)
+    count = <<~SQL
+      SELECT (SELECT count(*) FROM fx.a WHERE NOT EXISTS (SELECT FROM fx.b WHERE b.k = a.k)),
+             (SELECT count(*) FROM fx.b WHERE NOT EXISTS (SELECT FROM fx.a WHERE b.k = a.k))
+    SQL
+    s1, s4 = scenarios.values_at(:s1, :s4).map { |rows| run(rows, count)[0].map(&:to_i) }
+    expect(s4.zip(s1)).to all(satisfy { |four, one| four > one })
+  end
+
+  it "refuses a table with a CHECK it can't satisfy simply" do
+    conn.exec("CREATE TABLE fx.c (id integer PRIMARY KEY, lo integer, hi integer, CHECK (lo < hi))")
+    expect { build("SELECT id FROM fx.c WHERE lo = 1") }
+      .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:complex_check) }
+  end
+
+  def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
+end
