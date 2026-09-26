@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pg_query"
 require_relative "table_name"
 require_relative "planner_statistics"
 
@@ -44,8 +45,21 @@ module Quaack
     #   not. nil when the column has no pg_stats row (or no correlation).
     # - most_common_freqs, only for a column that isn't PII. Otherwise nil.
     # - most_common_vals, only for a low-cardinality column. Otherwise nil.
-    # Histogram bounds, avg_width, indexes, extended statistics, and
-    # reltuples never go in. The MCV values of a low-cardinality column are
+    # Each table also gets:
+    # - indexes: for each index, its name, definition, and columns, its
+    #   expressions' pg_stats rows in the same form as a column's.
+    # - extended_statistics: for each CREATE STATISTICS object, its schema,
+    #   name, definition, kinds, n_distinct, and dependencies, and its
+    #   most_common_vals, most_common_val_nulls, most_common_freqs, and
+    #   most_common_base_freqs, nil as below.
+    # Both are classified by their base columns: every column the
+    # definition names (key, expression, or index predicate), found with
+    # pg_query. One that names any PII column, or a column the table
+    # doesn't have, or whose definition won't parse, is PII: none of its
+    # MCV data goes in. Otherwise its frequencies go in, and its values go
+    # in only when every base column is low-cardinality. An index's
+    # expressions are classified together, by all its base columns.
+    # Histogram bounds, avg_width, and reltuples never go in. The MCV values of a low-cardinality column are
     # the only real values it holds, and README 3f lets those leave.
     #
     # The stored entry, classification, holds "columns" (schema, table,
@@ -103,13 +117,75 @@ module Quaack
 
       def outbound(data, columns)
         classes = columns.to_h { [[it["schema"], it["table"], it["column"]], it] }
-        { "tables" => data["tables"].map do |table|
-          { "schema" => table["schema"], "name" => table["name"],
-            "columns" => table["column_names"].map do |column|
-              outbound_column(column, table["columns"][column] || {},
-                              classes.fetch([table["schema"], table["name"], column]))
-            end }
-        end }
+        { "tables" => data["tables"].map { outbound_table(it, classes) } }
+      end
+
+      def outbound_table(table, classes)
+        { "schema" => table["schema"], "name" => table["name"],
+          "columns" => table["column_names"].map do |column|
+            outbound_column(column, table["columns"][column] || {},
+                            classes.fetch([table["schema"], table["name"], column]))
+          end,
+          "indexes" => table["indexes"].map { outbound_index(it, table, classes) },
+          "extended_statistics" => table["extended_statistics"].map { outbound_extended(it, table, classes) } }
+      end
+
+      def outbound_index(index, table, classes)
+        classified = expression_classes(index["definition"], table, classes)
+        { "name" => index["name"], "definition" => index["definition"],
+          "columns" => index["columns"].map { |name, row| outbound_column(name, row, classified) } }
+      end
+
+      MCV_KEYS = %w[most_common_vals most_common_val_nulls most_common_freqs most_common_base_freqs].freeze
+
+      def outbound_extended(object, table, classes)
+        classified = expression_classes(object["definition"], table, classes)
+        object.slice("schema", "name", "definition", "kinds", "n_distinct", "dependencies").merge(
+          MCV_KEYS.to_h do |key|
+            keep = key.end_with?("_vals", "_nulls") ? classified["low_cardinality"] : !classified["pii"]
+            [key, (object[key] if keep)]
+          end
+        )
+      end
+
+      # {"pii", "low_cardinality"} for an index or statistics object, from
+      # the classes of the base columns its definition names.
+      def expression_classes(definition, table, classes)
+        bases = base_columns(definition).map { classes[[table["schema"], table["name"], it]] }
+        return { "pii" => true, "low_cardinality" => false } if bases.empty? || bases.any? { it.nil? || it["pii"] }
+
+        { "pii" => false, "low_cardinality" => bases.all? { it["low_cardinality"] } }
+      end
+
+      # The column names a CREATE INDEX or CREATE STATISTICS definition
+      # names, or [] when it won't parse.
+      def base_columns(definition)
+        names = []
+        collect_names(PgQuery.parse(definition).tree.stmts.first.stmt.to_h, names)
+        names.compact.uniq
+      rescue PgQuery::ParseError
+        []
+      end
+
+      def collect_names(node, names)
+        case node
+        when Hash
+          node.each do |key, value|
+            names << node_name(key, value)
+            collect_names(value, names)
+          end
+        when Array then node.each { collect_names(it, names) }
+        end
+      end
+
+      # The column a ColumnRef, or a plain IndexElem or StatsElem, names.
+      # A ColumnRef that ends in * counts as "*", which no column is, so it
+      # fails closed.
+      def node_name(key, value)
+        case key
+        when :column_ref then value[:fields].last.dig(:string, :sval) || "*"
+        when :index_elem, :stats_elem then value[:name] unless value[:name].to_s.empty?
+        end
       end
 
       def outbound_column(column, row, classified)

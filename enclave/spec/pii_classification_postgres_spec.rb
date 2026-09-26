@@ -232,4 +232,67 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect(outbound(result, orders, "status")["most_common_vals"]).to include(sentinels.word)
     end
   end
+
+  # README 3f: an expression index's pg_stats rows and a CREATE STATISTICS
+  # object's MCV list are classified by the base columns they read. One that
+  # reads any PII column is PII, so none of its MCV data leaves. Its values
+  # leave only when every base column is low-cardinality.
+  describe "expression indexes and extended statistics" do
+    let(:sentinels) { LeakCheck::Sentinels.new }
+    let(:tags) { table("public", "tags") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE tags (id bigint, kind text, secret text);
+        INSERT INTO tags SELECT i, (ARRAY['Red', 'Blue'])[1 + i % 2],
+               CASE WHEN i % 2 = 0 THEN '#{sentinels.text}' ELSE 'other' END FROM generate_series(1, 3000) AS i;
+        CREATE INDEX tags_kind ON tags (lower(kind));
+        CREATE INDEX tags_secret ON tags (lower(secret));
+        CREATE INDEX tags_mixed ON tags ((kind || (id % 100)::text));
+        CREATE STATISTICS tags_kind_ext (mcv) ON kind, (id % 100) FROM tags;
+        CREATE STATISTICS tags_secret_ext (mcv) ON kind, secret FROM tags;
+        CREATE STATISTICS tags_low_ext (mcv) ON kind, lower(kind) FROM tags;
+        ANALYZE tags;
+      SQL
+    end
+
+    def tags_result = classify([tags], with: Quaack::Enclave::Config.new({ "pii_columns" => ["*.tags.secret"] }))
+
+    def outbound_table(res) = res.outbound_statistics["tables"].first
+
+    def index(res, name) = outbound_table(res)["indexes"].find { it["name"] == name }["columns"].first
+
+    def ext(res, name) = outbound_table(res)["extended_statistics"].find { it["name"] == name }
+
+    it "sends an expression index's MCVs, classified by its base columns" do
+      res = tags_result
+
+      expect(index(res, "tags_kind")["most_common_vals"]).to contain_exactly("red", "blue")
+      expect(index(res, "tags_secret").values_at("most_common_freqs", "most_common_vals")).to eq([nil, nil])
+      expect(index(res, "tags_secret")["n_distinct"]).to eq(2.0)
+      expect(index(res, "tags_mixed")["most_common_vals"]).to be_nil
+      expect(index(res, "tags_mixed")["most_common_freqs"]).not_to be_nil
+    end
+
+    it "sends an extended statistics object's MCVs, classified by its base columns" do
+      res = tags_result
+
+      expect(ext(res, "tags_low_ext")["most_common_vals"]).to contain_exactly(%w[Blue blue], %w[Red red])
+      expect(ext(res, "tags_kind_ext")["most_common_vals"]).to be_nil
+      expect(ext(res, "tags_kind_ext")["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+      expect(ext(res, "tags_secret_ext").values_at("most_common_vals", "most_common_freqs",
+                                                   "most_common_base_freqs")).to eq([nil, nil, nil])
+    end
+
+    it "sends none of a PII column's values through an expression" do
+      res = tags_result
+      stored = store.read("statistics")["tables"].first
+      expect(stored["extended_statistics"].find { it["name"] == "tags_secret_ext" }["most_common_vals"].flatten)
+        .to include(sentinels.text)
+
+      LeakCheck.check_scanner!(sentinels)
+      found = LeakCheck.findings(sentinels, objects: { outbound: res.outbound_statistics })
+      expect(found).to eq([])
+    end
+  end
 end
