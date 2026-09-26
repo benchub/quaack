@@ -51,7 +51,7 @@ module Quaack
         <% end %>
         <section id="indexes"><h2>Proposed indexes</h2>
         <table><tr><th>Name</th><th>DDL</th><th>Built size</th><th>Existing index covering it</th><th>Existing indexes it makes redundant</th></tr>
-        <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h i["ddl"] %></td><td><%= size(i["size"]) %></td><td><%= h i["covered_by"] %></td><td><%= h i["makes_redundant"].join(", ") %></td></tr>
+        <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h(i["ddl"] || "(the enclave could not parse this DDL)") %></td><td><%= size(i["size"]) %></td><td><%= h i["covered_by"] %></td><td><%= h i["makes_redundant"].join(", ") %></td></tr>
         <% end %></table></section>
         <section id="negative-result"><% if negative %><h2>Why nothing beat the original</h2>
         <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>

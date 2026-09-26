@@ -70,6 +70,11 @@ RSpec.describe Quaack::Driver::Report do
     expect(html).to include("<td>16 kB</td><td></td><td>t_a_idx</td>")
   end
 
+  it "says so when the enclave couldn't parse a built index's DDL" do
+    payload["indexes"]["quaack_b"]["ddl"] = nil
+    expect(html).to include("<td>quaack_b</td><td>(the enclave could not parse this DDL)</td><td>16 kB</td>")
+  end
+
   it "leaves the negative result empty when a candidate beat the original" do
     expect(html).to include(%(<section id="negative-result"></section>))
   end
