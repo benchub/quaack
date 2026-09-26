@@ -25,6 +25,7 @@ require_relative "../steps/index_test"
 require_relative "../steps/rewrite_payload"
 require_relative "../steps/rewrite_check"
 require_relative "../steps/rewrite_prune"
+require_relative "../steps/index_build"
 
 module Quaack
   module Enclave
@@ -60,7 +61,8 @@ module Quaack
         "rewrite-payload" => Step.new(handler: Steps::RewritePayload, run: true),
         "rewrite-check" => Step.new(handler: Steps::RewriteCheck, run: true, input: true),
         "rewrite-prune" => Step.new(handler: Steps::RewritePrune, run: true, options: Steps::RewritePrune::OPTIONS,
-                                    required: Steps::RewritePrune::REQUIRED)
+                                    required: Steps::RewritePrune::REQUIRED),
+        "index-build" => Step.new(handler: Steps::IndexBuild, run: true)
       }.freeze
     end
   end
