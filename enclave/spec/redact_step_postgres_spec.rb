@@ -65,14 +65,14 @@ RSpec.describe "quaacks redact" do
     expect(LeakCheck.findings(sentinels, stdout: held).join("\n")).to include(sentinels.needles[:text])
   end
 
-  it "refuses a run with no plan entry, storing nothing" do
+  it "refuses a run with no plan entry as missing_plan, storing nothing" do
     fresh = Quaack::Enclave::Store.create(base: quaacks.store_base)
     fresh.write("qualified_query", query)
 
     outcome = redact(fresh.run_id)
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
-      .to eq([%({"type":"error","step":"redact","rule":"internal_error"}\n), "", 70])
+      .to eq([%({"type":"error","step":"redact","rule":"missing_plan"}\n), "", 70])
     expect(entries.map { fresh.entry?(it) }).to all(be(false))
   end
 

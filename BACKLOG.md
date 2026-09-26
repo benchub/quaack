@@ -976,14 +976,7 @@ Minor findings from the first review of 20260922-28:
 
 ### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-17. Possible flake in the run-server success test.
-
-`enclave/spec/run_server_postgres_spec.rb:65` needs no other clients on the shared test server. It closes the harness's admin connection, but if another spec in the same process leaves a connection open, the test fails with `run_server_other_clients`. It hasn't happened yet. If it shows up, give that test its own server or close every harness connection first.
-
-- **Depends on:** 20260925-7.
-- **Came from:** The first review of 20260925-7.
-- **README:** 4.
-- **Status:** todo
+### 20260925-17. Possible flake in the run-server success test. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-18. Qualify loose ends.
 
@@ -1008,14 +1001,7 @@ Minor findings from the first review of 20260925-9:
 - **README:** 3b.
 - **Status:** todo
 
-### 20260925-20. Statistics step: test the read failure.
-
-The `statistics` step spec has no `production_read_failed` case, but README 3c promises that the refusal stores nothing. Add a step-level test that pins it end to end.
-
-- **Depends on:** 20260925-10.
-- **Came from:** The first review of 20260925-10.
-- **README:** 3c.
-- **Status:** todo
+### 20260925-20. Statistics step: test the read failure. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-21. Name the function in a 3d refusal.
 
@@ -1026,14 +1012,7 @@ README 3d says to abort and say which function caused it. Today the `volatile_fu
 - **README:** 3d, What leaves the enclave.
 - **Status:** todo
 
-### 20260925-22. Name the missing input when a step's store entry is absent.
-
-The new step subcommands (redact, classify, and others) report a missing upstream entry as `internal_error`. The README says a failure names only its rule, and the rule should name what's missing, such as `missing_plan` or a shared `missing_entry` naming the entry. Fix this in one place, for all the steps. The racetrack-setup success test should also check that `hypopg` exists, and a run with `run_server` but no `clock_anchor` should fail with a clean rule. Also add a test for `quaacks literals` refusing a `volatility` entry that's present but not passed (`literals.rb:27`), which no test covers yet. Also note, or fix, that `redact` writes its entries one at a time, so a crash partway through can leave some of them stored. A rerun overwrites them.
-
-- **Depends on:** 20260925-14.
-- **Came from:** The first reviews of 20260925-14, 20260925-12, and 20260925-16.
-- **README:** Step 3.
-- **Status:** todo
+### 20260925-22. Name the missing input when a step's store entry is absent. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-23. Anchor step loose ends.
 
@@ -1319,4 +1298,13 @@ The enclave steps exist, but `Pipeline` doesn't run them: `arena-setup` (4b), `i
 - **Depends on:** 20260922-62.
 - **Came from:** 20260922-62 build and review.
 - **README:** Step 15.
+- **Status:** todo
+
+### 20260926-35. Statistics spec restores the pg_stats grant.
+
+The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes `SELECT ON pg_catalog.pg_stats FROM PUBLIC` and never restores it. The container is shared per process, so a later spec that reads pg_stats as a non-superuser could fail depending on test order. Add `GRANT SELECT ON pg_catalog.pg_stats TO PUBLIC` to the `after` block. Also mention the `missing_<entry>` rules in the README.
+
+- **Depends on:** 20260925-20, -22.
+- **Came from:** Review of 20260925-20.
+- **README:** 3c, "What leaves the enclave".
 - **Status:** todo
