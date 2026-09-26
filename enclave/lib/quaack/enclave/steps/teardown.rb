@@ -13,9 +13,9 @@ module Quaack
       # server with it (see RunServerCommand), and a failure there,
       # destroy_command_failed or destroy_command_timed_out, keeps the store
       # so teardown can run again. Without one, it reminds the operator to
-      # destroy the run server. The driver runs it at the end of every run, whether
-      # it succeeded or aborted. After a run kept for debugging, the operator
-      # runs it by hand.
+      # destroy the run server. The operator runs it by hand when a run ends.
+      # Running it from the driver at the end of every run is future work
+      # (20260922-65).
       #
       # The CLI checks the run ID's form but doesn't open the run (run_id:
       # true), since a run that's already gone is torn down too: it prints

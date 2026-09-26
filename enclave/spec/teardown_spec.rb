@@ -125,6 +125,39 @@ RSpec.describe "quaacks teardown" do
     expect(File.symlink?(dangling)).to be(true)
   end
 
+  # The run path is swapped for a file after Store.open checked it and
+  # before the delete, as another process could.
+  it "refuses a run path swapped for a file after it was opened as bad_run, and leaves it" do
+    store = planted_run
+    allow(Quaack::Enclave::Store).to receive(:open).and_wrap_original do |open, *args, **options|
+      open.call(*args, **options).tap do |opened|
+        FileUtils.rm_r(opened.path)
+        File.write(opened.path, "swapped")
+      end
+    end
+
+    expect(teardown("--run", store.run_id)).to eq(70)
+    expect(out.string).to eq(error_line("bad_run"))
+    expect(File.read(store.path)).to eq("swapped")
+  end
+
+  # The base closes to search after Store.open refused the run path, so
+  # the recheck of the path raises EACCES. The refusal still decides.
+  it "keeps open's bad_run when the recheck of the run path can't look" do
+    FileUtils.mkdir_p(base)
+    dangling = File.join(base, "20260923T221500Z-00000004").tap { File.symlink(File.join(dir, sentinels.word), it) }
+    allow(Quaack::Enclave::Store).to receive(:open).and_wrap_original do |open, *args, **options|
+      open.call(*args, **options)
+    ensure
+      File.chmod(0o000, base)
+    end
+
+    expect(teardown("--run", File.basename(dangling))).to eq(70)
+    expect(out.string).to eq(error_line("bad_run"))
+  ensure
+    File.chmod(0o700, base)
+  end
+
   # Two teardowns of one run at once: the stand-in rm_r deletes the run
   # first, as the other call would, and then runs the real rm_r.
   it "succeeds as already_gone when the run vanishes while it's being deleted" do
