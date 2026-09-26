@@ -286,6 +286,8 @@ In the racetrack database:
 1. Create the `hypopg` extension.
 2. Create a schema named `quaack` and a function `clock_anchor()`. The function returns `timestamptz`, is marked `STABLE`, and returns the capture time from 3h.
 
+The driver runs `quaacks racetrack-setup --run <run ID>` after `quaacks run-server`. It refuses a run with no recorded run server, then connects to the recorded racetrack database and does both steps above, with the run's `clock_anchor` entry. A `quaack` schema that already holds anything else fails the step and changes nothing. Only when setup succeeds does it store `racetrack_setup`, a marker that later racetrack steps require. It prints nothing but its done line, and a failure names only its rule.
+
 The racetrack holds real production data, including PII. Nothing read from it ever leaves the enclave without going through 3g redaction first.
 
 ### 4b. Arena.

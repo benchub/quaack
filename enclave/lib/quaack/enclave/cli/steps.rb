@@ -14,6 +14,7 @@ require_relative "../steps/classify"
 require_relative "../steps/redact"
 require_relative "../steps/literals"
 require_relative "../steps/anchor"
+require_relative "../steps/racetrack_setup"
 
 module Quaack
   module Enclave
@@ -36,7 +37,8 @@ module Quaack
         "classify" => Step.new(handler: Steps::Classify, run: true),
         "redact" => Step.new(handler: Steps::Redact, run: true),
         "literals" => Step.new(handler: Steps::Literals, run: true),
-        "anchor" => Step.new(handler: Steps::Anchor, run: true)
+        "anchor" => Step.new(handler: Steps::Anchor, run: true),
+        "racetrack-setup" => Step.new(handler: Steps::RacetrackSetup, run: true)
       }.freeze
     end
   end
