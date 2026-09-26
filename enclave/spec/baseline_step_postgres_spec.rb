@@ -26,6 +26,9 @@ RSpec.describe "quaacks baseline, against a real server" do
 
   it "runs the original three times per set with every built index hidden, stores blocks, sends only done" do
     built_run
+    shown = production.connect
+    Quaack::Enclave::IndexBuild.set_valid(shown, stored.read("index_build")["indexes"].keys, true)
+    shown.close
 
     outcome = run("baseline")
 
