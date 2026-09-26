@@ -36,6 +36,17 @@ module FilterFakes
     def error_field(code) = code == 67 ? sqlstate : ERROR_SENTINEL
   end
 
+  # A 3d refusal, which names the function that caused it.
+  class FunctionError < StandardError
+    attr_reader :rule, :function
+
+    def initialize(rule:, function:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @function = function
+    end
+  end
+
   class ResultError < StandardError
     attr_reader :result
 
@@ -82,6 +93,37 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
       expect(out).to eq(line(step: "3f", rule: "unique_email", sqlstate: "23505"))
       expect_no_leaks(sentinels, stdout: out)
+    end
+
+    it "sends a volatile_function refusal's schema-qualified function name" do
+      error = FilterFakes::FunctionError.new(rule: "volatile_function", function: "pg_catalog.random")
+
+      expect(filter.to_egress(error, step: "volatility"))
+        .to eq(line(step: "volatility", rule: "volatile_function", function: "pg_catalog.random"))
+    end
+
+    it "sends no function for any rule but volatile_function" do
+      error = FilterFakes::FunctionError.new(rule: "unique_email", function: "pg_catalog.random")
+
+      expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "unique_email"))
+    end
+
+    [
+      ["an unqualified name", "random"],
+      ["a sentinel after the name", "pg_catalog.random(#{ERROR_SENTINEL})"],
+      ["a quoted name", '"Sales"."bump me"'],
+      ["a three-part name", "a.b.c"],
+      ["a Symbol", :"pg_catalog.random"],
+      ["a String subclass", Class.new(String).new("pg_catalog.random")]
+    ].each do |label, function|
+      it "drops a function that's #{label}" do
+        error = FilterFakes::FunctionError.new(rule: "volatile_function", function:)
+
+        out = filter.to_egress(error, step: "3d")
+
+        expect(out).to eq(line(step: "3d", rule: "volatile_function"))
+        expect(out).not_to include("SENTINEL")
+      end
     end
 
     it "sends none of an error's text, however it's reached, while the error itself holds every sentinel" do

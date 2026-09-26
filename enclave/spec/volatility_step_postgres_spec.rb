@@ -55,14 +55,16 @@ RSpec.describe "quaacks volatility, against a real server" do
 
   def done = %({"type":"done"}\n)
 
-  def error_line(rule, sqlstate = nil)
-    %({"type":"error","step":"volatility","rule":"#{rule}"#{%(,"sqlstate":"#{sqlstate}") if sqlstate}}\n)
+  def error_line(rule, sqlstate = nil, function: nil)
+    %({"type":"error","step":"volatility","rule":"#{rule}"#{%(,"sqlstate":"#{sqlstate}") if sqlstate}) +
+      %(#{%(,"function":"#{function}") if function}}\n)
   end
 
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
 
-  def expect_failed(outcome, rule, sqlstate = nil)
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([error_line(rule, sqlstate), "", 70])
+  def expect_failed(outcome, rule, sqlstate = nil, function: nil)
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([error_line(rule, sqlstate, function:), "", 70])
     expect(stored.entry?("volatility")).to be(false)
     expect_no_leaks(sentinels, outcome)
   end
@@ -80,20 +82,22 @@ RSpec.describe "quaacks volatility, against a real server" do
   context "with a volatile function in the select list" do
     let(:query) { "SELECT random(), o.id FROM sales.orders o WHERE o.note = '#{sentinels.text}'" }
 
-    it "refuses it as volatile_function and stores nothing" do
+    it "refuses it as volatile_function naming only the function, and stores nothing" do
       pgpass
 
-      expect_failed(volatility, "volatile_function")
+      expect_failed(volatility, "volatile_function", function: "pg_catalog.random")
     end
   end
 
   context "with a volatile function found only through the plan's search_path" do
-    let(:query) { "SELECT o.id FROM sales.orders o WHERE bump(o.id) = 3 AND o.note = '#{sentinels.text}'" }
+    let(:query) do
+      "SELECT o.id FROM sales.orders o WHERE bump(#{sentinels.number}) = 3 AND o.note = '#{sentinels.text}'"
+    end
 
-    it "refuses it as volatile_function and stores nothing" do
+    it "refuses it as volatile_function naming only the function, never its argument, and stores nothing" do
       pgpass
 
-      expect_failed(volatility, "volatile_function")
+      expect_failed(volatility, "volatile_function", function: "sales.bump")
     end
 
     context "without that schema in the search_path" do

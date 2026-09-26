@@ -66,7 +66,7 @@ RSpec.describe "error filtering against real Postgres" do
     expect(filter.to_egress(error, step: "2")).to eq(line(step: "2", rule: "internal_error"))
   end
 
-  it "sends a real VolatilityCheck::Error with its rule" do
+  it "sends a real VolatilityCheck::Error with its rule and function" do
     error = begin
       Quaack::Enclave::VolatilityCheck.check("SELECT random()", nil, conn)
     rescue Quaack::Enclave::VolatilityCheck::Error => e
@@ -74,7 +74,7 @@ RSpec.describe "error filtering against real Postgres" do
     end
     expect(error.message).to include("pg_catalog.random")
 
-    expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "volatile_function"))
+    expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "volatile_function", function: "pg_catalog.random"))
   end
 
   describe ".drop_notices" do

@@ -18,9 +18,10 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
   def path(search_path) = { "search_path" => search_path }
 
-  def volatile_error(detail)
+  def volatile_error(detail, function: nil)
     raise_error(described_class::Error, "volatile_function: #{detail}") do |error|
       expect(error.rule).to eq("volatile_function")
+      expect(error.function).to eq(function) if function
     end
   end
 
@@ -71,7 +72,8 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
   describe "a volatile built-in" do
     it "aborts, naming the function and its schema" do
-      expect { check("SELECT random()") }.to volatile_error("function pg_catalog.random is volatile")
+      expect { check("SELECT random()") }.to volatile_error("function pg_catalog.random is volatile",
+                                                            function: "pg_catalog.random")
       expect { check("SELECT nextval('orders_id_seq')") }.to volatile_error("function pg_catalog.nextval is volatile")
       expect { check("SELECT clock_timestamp()") }
         .to volatile_error("function pg_catalog.clock_timestamp is volatile")
@@ -256,7 +258,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
     it "aborts when a function it calls is volatile, naming both" do
       expect { check("SELECT a.shaky(total_cents) FROM orders") }
-        .to volatile_error("function a.shaky calls volatile function a.step")
+        .to volatile_error("function a.shaky calls volatile function a.step", function: "a.step")
       expect(check("SELECT a.steady(total_cents) FROM orders")).to be_nil
     end
 

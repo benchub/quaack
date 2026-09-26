@@ -21,7 +21,8 @@ module Quaack
       # before they run the query. It's written only after the transaction
       # has closed, so a refusal or a failed read stores nothing. Its only
       # line is DONE. A refusal names only its rule, such as
-      # volatile_function: the error line never names the function.
+      # volatile_function, whose error line also names the volatile
+      # function, schema-qualified (see ErrorFilter), never an argument.
       module Volatility
         ENTRY = "volatility"
 
