@@ -36,7 +36,10 @@ module Quaack
       #                 index }
       #   "results"  => one per tested candidate, in test order (the
       #                 Dedupe's proposals): { "candidate" (as IndexStore
-      #                 saves it, sources merged), "size", "refusal" (nil or
+      #                 saves it, sources merged), "partial_constant_only"
+      #                 (README 5a-5's tag: true for a partial index, which
+      #                 works only when the predicate's literal is a constant
+      #                 in the application's SQL), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>
       #                 { "used", "total_cost", "plan" } } }
       # "plan" is the EXPLAIN redacted through 3g (Redaction.plan) against
@@ -123,7 +126,7 @@ module Quaack
         def result(result, proposals, maps)
           refusal = result.refusal && { "rule" => result.refusal.rule.to_s, "sqlstate" => result.refusal.sqlstate }
           { "candidate" => IndexStore.candidate_plain(proposals.find { it == result.candidate }),
-            "size" => result.size, "refusal" => refusal, "plans" => plans(result.plans, maps) }
+            "partial_constant_only" => !result.candidate.predicate.nil?, "size" => result.size, "refusal" => refusal, "plans" => plans(result.plans, maps) }
         end
       end
     end

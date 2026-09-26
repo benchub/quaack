@@ -68,6 +68,8 @@ RSpec.describe "quaacks index-search, against a real server" do
     used = entry["results"].find { it["plans"].values.any? { |plan| plan["used"] } }
     expect(used["size"]).to be_a(Integer).and be_positive
     expect(entry["results"].map { it["refusal"] }.uniq).to eq([nil])
+    expect(entry["results"].map { it["partial_constant_only"] })
+      .to eq(entry["results"].map { !it["candidate"]["predicate"].nil? })
     ddl = Quaack::Enclave::IndexStore.candidate(used["candidate"]).to_ddl
     expect(used["plans"].transform_values { it["total_cost"] }).to eq(direct_costs(ddl))
   end
