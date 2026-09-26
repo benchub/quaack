@@ -6,6 +6,7 @@ require_relative "driver/burndown"
 require_relative "driver/transport"
 require_relative "driver/llm"
 require_relative "driver/generator_three"
+require_relative "driver/counterexamples"
 
 module Quaack
   # The driver. It runs on an engineer's laptop, outside the production

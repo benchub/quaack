@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+require "json"
+
+module Quaack
+  module Driver
+    # The driver's half of README 10a: asks the LLM for inserts that should
+    # make one candidate and the original return different results.
+    #
+    #   Counterexamples.new(client:).ask(payload)  # => ["INSERT INTO ...", ...]
+    #
+    # payload is the shape-only payload the enclave sent: original (the
+    # redacted query), candidate (its SQL, transformation, and
+    # assumptions), placeholders (each $n's shape), schema (the subset
+    # schema), constraints, and untested_atoms (9c's shapes). It goes to
+    # the LLM as it is. The LLM writes $n where it wants one of the query's
+    # literals, and the enclave binds the real value and fills any
+    # foreign-key gaps (Enclave::Counterexamples).
+    #
+    # Trust boundary. The prompt carries only the payload, which is shape
+    # data, and the LLM's own inserts.
+    class Counterexamples
+      STEP = "10a"
+      MAX_TOKENS = 4000
+
+      SCHEMA = {
+        type: :object,
+        properties: { inserts: { type: :array, items: { type: :string } } },
+        required: [:inserts],
+        additionalProperties: false
+      }.freeze
+
+      SYSTEM = <<~PROMPT
+        You're checking whether a rewrite of a PostgreSQL query returns the same results as the original. You have no database connection. The payload holds only shapes: the original query and the candidate rewrite, with $n placeholders for the original's literals, each placeholder's shape, the candidate's stated transformation and assumptions, the schema, and its constraints.
+
+        Write rows that make the two queries return different results, if you can. Aim at the candidate's assumptions and at the edges its transformation might get wrong: NULLs, duplicates, empty groups, ties, case, and boundary values. untested_atoms lists predicates that fixtures so far never exercised, so make sure your rows exercise each of them, both passing and failing it.
+
+        Write $1, $2, and so on wherever you want the query's own literal: the enclave puts the real value there. You may wrap one in an immutable function, such as upper($1).
+
+        Write each insert as INSERT INTO schema.table (columns) VALUES (...), (...). Always schema-qualify the table and list the columns. Values must be constants, casts, $n, DEFAULT, or immutable function calls on those. Don't use INSERT ... SELECT, WITH, ON CONFLICT, RETURNING, or OVERRIDING: they get the insert refused. The rows must satisfy every constraint. The enclave adds parent rows for any foreign key you leave dangling, but never bypasses a constraint.
+
+        Answer with JSON: {"inserts": ["INSERT INTO ...", ...]}.
+      PROMPT
+
+      def initialize(client:)
+        @client = client
+      end
+
+      def ask(payload)
+        messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
+        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("inserts")
+      end
+    end
+  end
+end
