@@ -56,7 +56,10 @@ RSpec.describe Quaack::Enclave::Steps::Baseline do
     connection = instance_double(PG::Connection, close: nil)
     allow(Quaack::Enclave::RunServer).to receive(:connect).with(store, :racetrack).and_return(connection)
     seen = []
-    allow(Quaack::Enclave::Measurement).to receive(:measure) { |**kw| seen << kw[:timeout_ms] && {} }
+    allow(Quaack::Enclave::Measurement).to receive(:measure) do |**kw|
+      seen << kw[:timeout_ms]
+      {}
+    end
 
     described_class.call(store:)
 

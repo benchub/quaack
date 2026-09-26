@@ -36,12 +36,21 @@ module Quaack
 
       def decide(original:, candidates:)
         base = original.transform_values { it["timed_out"] ? nil : it["total_blocks"] }
-        candidates = candidates.reject { |c| c["sets"].values.any? { it["timed_out"] } }
+        candidates = finished(candidates)
         verdicts = candidates.to_h { [it["label"], verdicts(it, base)] }
         passing = passing(candidates, verdicts)
         discarded = discarded(passing)
         { "survivors" => rank(passing - discarded), "verdicts" => verdicts,
-          "discarded_ties" => discarded.map { it["label"] }, "infinite_sets" => base.select { |_, b| b.nil? }.keys }
+          "discarded_ties" => discarded.map { it["label"] }, "infinite_sets" => infinite(base) }
+      end
+
+      def infinite(base)
+        base.select { |_, b| b.nil? }.keys
+      end
+
+      # Candidates with no timed-out measurement.
+      def finished(candidates)
+        candidates.reject { |c| c["sets"].values.any? { it["timed_out"] } }
       end
 
       def passing(candidates, verdicts)
