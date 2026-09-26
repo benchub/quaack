@@ -34,7 +34,9 @@ module Quaack
       #                    "declined" => [{ "search", "ddl", "reason"
       #                    (unused or the 5a-4 refusal rule), "sqlstate" }],
       #                    "existing" => [{ "search", "ddl", "covered_by"
-      #                    (the existing index's name) }] }
+      #                    (the existing index's name) }],
+      #                    "knocked_out" => [{ "label", "reason" (the 14d
+      #                    excluded reason) }] }
       #   burndown         { "stages", "totals" }, the 15b counts as
       #                    Burndown.read checks them: names and counts only
       #

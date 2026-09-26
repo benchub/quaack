@@ -12,6 +12,7 @@ require_relative "../planner_statistics"
 require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../single_candidate_test"
+require_relative "../structural_discard"
 
 module Quaack
   module Enclave
@@ -44,6 +45,8 @@ module Quaack
       #                 in the application's SQL), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>
       #                 { "used", "total_cost", "plan" } } }
+      #   "parameter_types" => { $n => the type Postgres infers for it }
+      #                 (the original only: 5a-5, 6a, and 9c send it)
       # "plan" is the EXPLAIN redacted through 3g (Redaction.plan) against
       # that set's own literals, so it holds placeholders, never a literal.
       # Raw plans aren't saved.
@@ -112,6 +115,15 @@ module Quaack
           dedupe, candidates = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
           maps = LiteralSet.load(store).sets
           entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:), maps)
+            .merge("parameter_types" => parameter_types(connection, sql))
+        end
+
+        # $n => the type Postgres infers for it in sql, by catalog name
+        # (format_type), or {} if sql doesn't prepare. Shape-class.
+        def parameter_types(connection, sql)
+          oids = StructuralDiscard.parameter_types(connection, sql) || []
+          names = oids.map { connection.exec_params("SELECT format_type($1::oid, NULL)", [it]).getvalue(0, 0) }
+          names.each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
         end
 
         # README step 8: the same search for one rewrite candidate, sql, as

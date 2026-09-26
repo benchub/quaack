@@ -1854,3 +1854,47 @@ Both are correctness bugs on realistic setups: a correct rewrite is rejected. Fi
 - **Came from:** The 20260922-65 prompt pack run.
 - **README:** Step 9.
 - **Status:** done
+
+### 20260926-34. Report loose ends.
+
+- If `IndexCandidate.from_ddl` can't parse a built index's DDL, the report shows an empty cell and doesn't say why.
+- The `StepNine::Report#dropped` count isn't included.
+- "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
+- A plan node with no `Schema` field is matched to a table by name only when exactly one subset table has that name.
+
+- **Depends on:** 20260922-62.
+- **Came from:** 20260922-62 build and review.
+- **README:** Step 15.
+- **Status:** done
+
+### 20260926-35. Statistics spec restores the pg_stats grant.
+
+The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes `SELECT ON pg_catalog.pg_stats FROM PUBLIC` and never restores it. The container is shared per process, so a later spec that reads pg_stats as a non-superuser could fail depending on test order. Add `GRANT SELECT ON pg_catalog.pg_stats TO PUBLIC` to the `after` block. Also mention the `missing_<entry>` rules in the README.
+
+- **Depends on:** 20260925-20, -22.
+- **Came from:** Review of 20260925-20.
+- **README:** 3c, "What leaves the enclave".
+- **Status:** done
+
+### 20260926-36. Pipeline wiring and 3d follow-ups.
+
+- ReportStage's "selection missing" guard can no longer trigger from the pipeline. Remove it, or test it by calling ReportStage directly.
+- The driver's `EnclaveError` doesn't show the new `function` field from a `volatile_function` refusal to the operator (`transport/reply.rb` `error_fields`).
+
+- **Depends on:** 20260926-33, 20260925-21.
+- **Came from:** Their builds and reviews.
+- **README:** 3d, `quaack run`.
+- **Status:** done
+
+### 20260926-38. Report loose ends, part two.
+
+- The `existing` list's DDL redaction has no sentinel coverage (the planted drops carry no literal).
+- `NegativeResult.disproved` fails at `store.read` if `rewrite_round_<n>` is missing for a non-survivor.
+- 15a finds rewrites by counting up until one is missing, so it assumes no gaps.
+- A rewrite that passed steps 9 and 10 but was knocked out by minimax or 14c isn't explained in 15a.
+- LLM call counts aren't passed to the report (part of -65).
+
+- **Depends on:** 20260922-63, -64.
+- **Came from:** Their build and review.
+- **README:** 15a, 15b.
+- **Status:** done

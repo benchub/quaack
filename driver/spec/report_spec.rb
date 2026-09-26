@@ -70,6 +70,11 @@ RSpec.describe Quaack::Driver::Report do
     expect(html).to include("<td>16 kB</td><td></td><td>t_a_idx</td>")
   end
 
+  it "says so when the enclave couldn't parse a built index's DDL" do
+    payload["indexes"]["quaack_b"]["ddl"] = nil
+    expect(html).to include("<td>quaack_b</td><td>(the enclave could not parse this DDL)</td><td>16 kB</td>")
+  end
+
   it "leaves the negative result empty when a candidate beat the original" do
     expect(html).to include(%(<section id="negative-result"></section>))
   end
@@ -136,7 +141,11 @@ RSpec.describe Quaack::Driver::Report do
             "disproved" => [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_<semantics>",
                               "scenario" => "S3", "round" => nil },
                             { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil,
-                              "round" => 2 }],
+                              "round" => 2 },
+                            { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil,
+                              "round" => nil }],
+            "knocked_out" => [{ "label" => "rewrite_5:none", "reason" => "not_better" },
+                              { "label" => "rewrite_6:top:1", "reason" => "result_mismatch" }],
             "declined" => [{ "search" => "original", "ddl" => "CREATE INDEX ON public.t USING btree (a) WHERE a < ?",
                              "reason" => "unused", "sqlstate" => nil },
                            { "search" => "rewrite_1", "ddl" => "CREATE INDEX ON public.t USING gin (b)",
@@ -153,6 +162,14 @@ RSpec.describe Quaack::Driver::Report do
     it "says which rewrites were disproved, and by which scenario or round" do
       expect(section).to include("<li>rewrite_2: disproved in step 9 by scenario S3 (rule null_&lt;semantics&gt;)</li>")
       expect(section).to include("<li>rewrite_3: disproved in step 10, counterexample round 2</li>")
+      expect(section).to include("<li>rewrite_4: disproved in step 10</li>")
+    end
+
+    it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
+      expect(section).to include("<li>rewrite_5:none: passed steps 9 and 10, but minimax found it not better " \
+                                 "than the original</li>")
+      expect(section).to include("<li>rewrite_6:top:1: passed steps 9 and 10, but its results didn't match " \
+                                 "the original's in 14c</li>".gsub("'", "&#39;"))
     end
 
     it "says which indexes the planner declined, and why" do

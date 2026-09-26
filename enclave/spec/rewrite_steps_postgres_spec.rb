@@ -43,7 +43,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(sent["type"]).to eq("rewrite_payload")
       expect(sent["query"]).to eq(stored.read("redacted_query"))
       expect(sent["placeholders"])
-        .to eq(Quaack::Enclave::Steps::IndexPayload.placeholders(stored.read("placeholder_shapes")))
+        .to eq(Quaack::Enclave::Steps::IndexPayload.placeholders(stored))
       expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
       expect(sent["schema"]).to eq(schema_subset)
       expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])

@@ -1258,51 +1258,15 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-34. Report loose ends.
+### 20260926-34. Report loose ends. Done, see BACKLOG-COMPLETE.md.
 
-- If `IndexCandidate.from_ddl` can't parse a built index's DDL, the report shows an empty cell and doesn't say why.
-- The `StepNine::Report#dropped` count isn't included.
-- "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
-- A plan node with no `Schema` field is matched to a table by name only when exactly one subset table has that name.
+### 20260926-35. Statistics spec restores the pg_stats grant. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-62.
-- **Came from:** 20260922-62 build and review.
-- **README:** Step 15.
-- **Status:** todo
-
-### 20260926-35. Statistics spec restores the pg_stats grant.
-
-The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes `SELECT ON pg_catalog.pg_stats FROM PUBLIC` and never restores it. The container is shared per process, so a later spec that reads pg_stats as a non-superuser could fail depending on test order. Add `GRANT SELECT ON pg_catalog.pg_stats TO PUBLIC` to the `after` block. Also mention the `missing_<entry>` rules in the README.
-
-- **Depends on:** 20260925-20, -22.
-- **Came from:** Review of 20260925-20.
-- **README:** 3c, "What leaves the enclave".
-- **Status:** todo
-
-### 20260926-36. Pipeline wiring and 3d follow-ups.
-
-- ReportStage's "selection missing" guard can no longer trigger from the pipeline. Remove it, or test it by calling ReportStage directly.
-- The driver's `EnclaveError` doesn't show the new `function` field from a `volatile_function` refusal to the operator (`transport/reply.rb` `error_fields`).
-
-- **Depends on:** 20260926-33, 20260925-21.
-- **Came from:** Their builds and reviews.
-- **README:** 3d, `quaack run`.
-- **Status:** todo
+### 20260926-36. Pipeline wiring and 3d follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-37. Step 9 fixtures fail to load on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-38. Report loose ends, part two.
-
-- The `existing` list's DDL redaction has no sentinel coverage (the planted drops carry no literal).
-- `NegativeResult.disproved` fails at `store.read` if `rewrite_round_<n>` is missing for a non-survivor.
-- 15a finds rewrites by counting up until one is missing, so it assumes no gaps.
-- A rewrite that passed steps 9 and 10 but was knocked out by minimax or 14c isn't explained in 15a.
-- LLM call counts aren't passed to the report (part of -65).
-
-- **Depends on:** 20260922-63, -64.
-- **Came from:** Their build and review.
-- **README:** 15a, 15b.
-- **Status:** todo
+### 20260926-38. Report loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-39. LLM payload fidelity.
 
@@ -1340,4 +1304,17 @@ Also from the review:
 - **Depends on:** 20260926-37.
 - **Came from:** 20260926-37 build and review.
 - **README:** Step 9.
+- **Status:** todo
+
+### 20260926-42. Report loose ends, part three.
+
+- The StepNine dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
+- "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
+- A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
+- The `knocked_out` test has no case where the stored `rewrite_survived` says `"survived" => false` (changing `== true` to `!= false` stays green).
+- LLM call counts on a resumed run include only calls from the current process.
+
+- **Depends on:** 20260926-34, -38.
+- **Came from:** Their build and review.
+- **README:** Step 15.
 - **Status:** todo

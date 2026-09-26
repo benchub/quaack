@@ -516,7 +516,8 @@ RSpec.describe Quaack::Driver::Transport do
     it "checks the error line's fields with the enclave ErrorFilter's own patterns" do
       source = File.read(File.join(REPO_ROOT, "enclave", "lib", "quaack", "enclave", "error_filter.rb"))
       reply = Quaack::Driver::Transport::Reply
-      { "RULE" => reply::RULE, "STEP" => reply::STEP, "SQLSTATE" => reply::SQLSTATE }.each do |name, pattern|
+      { "RULE" => reply::RULE, "STEP" => reply::STEP, "SQLSTATE" => reply::SQLSTATE,
+        "FUNCTION" => reply::FUNCTION }.each do |name, pattern|
         enclave = source[%r{^\s*#{name} = /(.+)/$}, 1]
 
         expect(pattern.source).to eq(enclave), "#{name} differs from the enclave's #{enclave.inspect}"
@@ -650,6 +651,20 @@ RSpec.describe Quaack::Driver::Transport do
                       %("message":"#{sentinel}"}))
 
       expect([error.step, error.rule, error.sqlstate]).to eq([nil, "unexpected_output", nil])
+      expect(error.full_message(highlight: false)).not_to include(sentinel)
+    end
+
+    it "shows a volatile_function refusal's qualified function name to the operator" do
+      error = refusal(%({"type":"error","step":"volatility","rule":"volatile_function","function":"pg_catalog.random"}))
+
+      expect(error.function).to eq("pg_catalog.random")
+      expect(error.message).to include("function pg_catalog.random")
+    end
+
+    it "drops a function field that isn't one plain qualified name" do
+      error = refusal(%({"type":"error","rule":"volatile_function","function":"pg_catalog.random #{sentinel}"}))
+
+      expect(error.function).to be_nil
       expect(error.full_message(highlight: false)).not_to include(sentinel)
     end
 

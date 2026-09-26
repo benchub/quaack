@@ -150,6 +150,13 @@ module Quaack
       # caller starting afresh.
       def entry?(name) = !PrivateFiles.lstat(entry_path(entry_name(name))).nil?
 
+      # The names of the entries the run holds, in no order.
+      def entry_names
+        Dir.children(path).filter_map { it.delete_suffix(".json") if it.end_with?(".json") }
+      rescue SystemCallError
+        raise Error, "couldn't list the entries of run #{run_id}", cause: nil
+      end
+
       # Returns the entry's data. It won't follow an entry that's a symlink.
       def read(name)
         name = entry_name(name)
