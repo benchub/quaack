@@ -52,6 +52,9 @@ module Quaack
         RULE = /\A[a-z][a-z0-9_]{0,62}\z/
         STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
+        # A volatile_function refusal's function (README 3d), as the
+        # enclave's ErrorFilter shapes it: one unquoted qualified name.
+        FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
 
         # The deepest a message may nest: the default of the JSON.generate
         # that the enclave's egress function writes each line with, so the
@@ -182,7 +185,7 @@ module Quaack
 
         def error_fields(error)
           { rule: shaped(error["rule"], RULE) || "unexpected_output", step: shaped(error["step"], STEP),
-            sqlstate: shaped(error["sqlstate"], SQLSTATE) }
+            sqlstate: shaped(error["sqlstate"], SQLSTATE), function: shaped(error["function"], FUNCTION) }
         end
 
         def shaped(value, pattern) = (value if value.instance_of?(String) && value.match?(pattern))

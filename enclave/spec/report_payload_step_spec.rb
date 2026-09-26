@@ -159,19 +159,25 @@ RSpec.describe "quaacks report-payload" do
         "refusal" => refusal, "plans" => refusal ? {} : { "slow" => { "used" => used, "total_cost" => 1.0 } } }
     end
 
-    def dedupe
+    def dedupe # rubocop:disable Metrics/MethodLength
       existing = "CREATE INDEX orders_created_at_id_idx ON public.orders USING btree (created_at, id)"
       { "proposals" => [], "set_aside" => [], "considered" => 3,
         "drops" => [{ "candidate" => plain("CREATE INDEX ON public.orders USING btree (created_at)"),
+                      "reason" => "covered_by_existing",
+                      "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } },
+                    { "candidate" => plain("CREATE INDEX ON public.orders USING btree (created_at) " \
+                                           "WHERE note = '#{sentinel}'"),
                       "reason" => "covered_by_existing",
                       "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } },
                     { "candidate" => plain("CREATE INDEX ON public.orders USING btree (id)"),
                       "reason" => "duplicate", "covered_by" => nil }] }
     end
 
-    def populate_negative(store) # rubocop:disable Metrics/MethodLength
+    def populate_negative(store) # rubocop:disable Metrics/MethodLength,Metrics/AbcSize
       populate(store)
-      store.write("selection", "top" => [], "excluded" => { "rewrite_1:none" => "worse" }, "infinite_sets" => [])
+      store.write("selection", "top" => [], "infinite_sets" => [],
+                               "excluded" => { "rewrite_1:none" => "not_better", "rewrite_6:none" => "result_mismatch",
+                                               "rewrite_2:none" => "not_better" })
       store.write("rewrite_2", "sql" => "SELECT 1")
       store.write("rewrite_tested_2", "passed" => false, "scenario" => "S3", "rule" => "null_semantics",
                                       "untested" => 0, "untested_atoms" => [])
@@ -181,6 +187,17 @@ RSpec.describe "quaacks report-payload" do
                                       "untested_atoms" => [])
       store.write("rewrite_round_3", "round" => 2, "evidence" => true)
       store.write("rewrite_survived_3", "survived" => false)
+      # rewrite_4 passed step 9, and step 10 disproved it, but its round
+      # entry is missing. rewrite_5 was never stored, so rewrite_6 sits
+      # past a gap. It survived steps 9 and 10, and 14c knocked it out.
+      store.write("rewrite_4", "sql" => "SELECT 4")
+      store.write("rewrite_tested_4", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 0,
+                                      "untested_atoms" => [])
+      store.write("rewrite_survived_4", "survived" => false)
+      store.write("rewrite_6", "sql" => "SELECT 6")
+      store.write("rewrite_tested_6", "passed" => false, "scenario" => "S1", "rule" => "duplicates",
+                                      "untested" => 0, "untested_atoms" => [])
+      store.write("rewrite_survived_6", "survived" => false)
       store.write("index_search_original", "dedupe" => dedupe, "llm_results" => [], "results" => [
                     result("btree (note) WHERE note = '#{sentinel}'", used: false),
                     result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }),
@@ -198,7 +215,10 @@ RSpec.describe "quaacks report-payload" do
       expect(report["negative"]["disproved"]).to eq(
         [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_semantics", "scenario" => "S3",
            "round" => nil },
-         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2 }]
+         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2 },
+         { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => nil },
+         { "rewrite" => "rewrite_6", "step" => "step9", "rule" => "duplicates", "scenario" => "S1",
+           "round" => nil }]
       )
     end
 
@@ -214,8 +234,14 @@ RSpec.describe "quaacks report-payload" do
     it "says which proposed indexes already existed" do
       expect(report["negative"]["existing"]).to eq(
         [{ "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)",
+           "covered_by" => "orders_created_at_id_idx" },
+         { "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (created_at) WHERE note = ?",
            "covered_by" => "orders_created_at_id_idx" }]
       )
+    end
+
+    it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
+      expect(report["negative"]["knocked_out"]).to eq([{ "label" => "rewrite_1:none", "reason" => "not_better" }])
     end
 
     it "never sends a literal value" do

@@ -44,6 +44,9 @@ module Quaack
         # left is an API that isn't answering.
         TRANSIENT_STATUSES = [408, 409].freeze
 
+        # The Burndown each call is counted in, for the report (15b).
+        attr_reader :burndown
+
         def initialize(burndown:, api_key: ENV.fetch(API_KEY_ENV, nil), model: LLM.model, transport: nil,
                        max_retries: Anthropic::Client::DEFAULT_MAX_RETRIES)
           refuse_real_client_in_specs unless transport

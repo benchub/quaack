@@ -28,15 +28,16 @@ module Quaack
       EX_USAGE = 64
       EX_SOFTWARE = 70
 
-      attr_reader :subcommand, :rule, :step, :sqlstate, :exit_status, :signal
+      attr_reader :subcommand, :rule, :step, :sqlstate, :function, :exit_status, :signal
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
-      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, exit_status: nil, signal: nil) # rubocop:disable Metrics/ParameterLists
+      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, function: nil, exit_status: nil, signal: nil) # rubocop:disable Metrics/ParameterLists
         @subcommand = subcommand
         @rule = rule
         @step = step
         @sqlstate = sqlstate
+        @function = function
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -55,6 +56,7 @@ module Quaack
 
       def describe
         details = [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
+                   ("function #{function}" if function),
                    ("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)].compact
         "quaacks #{subcommand} failed: #{rule}#{" (#{details.join(", ")})" unless details.empty?}"
       end

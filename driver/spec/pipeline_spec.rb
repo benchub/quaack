@@ -431,6 +431,18 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
     expect(t.calls.map(&:first).last(2)).to eq(%w[selection report-payload])
   end
 
+  it "puts the client's LLM call counts in the report's burndown" do
+    burndown = Quaack::Driver::Burndown.new
+    burndown.llm_call("5a-5")
+    burndown.llm_call("5a-5")
+    client = FakeLLM.new.client(burndown:)
+    t = transport(done.merge("selection" => true), "report-payload" => [report])
+
+    described_class.new(transport: t, client:, run_id: "RUN", out:).run
+
+    expect(File.read(out)).to include("<li>LLM calls, 5a-5: 2</li>")
+  end
+
   it "fails with no_report when the enclave sends no report" do
     t = transport(done.merge("selection" => true))
 
