@@ -55,6 +55,17 @@ RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
     expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :statement_timeout])
   end
 
+  it "reports a parent row that hits the statement timeout while loading as a load failure, not a disproof" do
+    conn.exec("CREATE TABLE fx.slow (id integer CHECK (length(pg_sleep(1)::text) >= 0))")
+    slow = Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 50)
+    row = Quaack::Enclave::ArenaRunner::FixtureRow.new(
+      table: Quaack::Enclave::TableName.new(schema: "fx", name: "slow"), columns: ["id"], values: ["1"]
+    )
+    prepared = described_class::Prepared.new(rows: [row], inserts: [], refused: [])
+    result = described_class.compare(slow, prepared, original:, candidate: lowered, atoms:, untested: [0])
+    expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :statement_timeout])
+  end
+
   it "skips an untested atom that can't be replaced by TRUE" do
     using = "SELECT o.id FROM fx.orders o JOIN fx.orders p USING (status) WHERE o.status = 'SENTINEL_10b'"
     orders = Quaack::Enclave::TableName.new(schema: "fx", name: "orders")
