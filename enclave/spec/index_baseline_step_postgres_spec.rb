@@ -49,7 +49,7 @@ RSpec.describe "quaacks index-baseline, against a real server" do
   it "records and counts combinations that time out under the baseline timeout" do
     baselined_run
     stored.write("baseline", stored.read("baseline").merge("timeout_ms" => 50))
-    stored.write("anchored_query", "SELECT q.* FROM pg_sleep(0.3), (#{stored.read('anchored_query')}) q")
+    stored.write("anchored_query", "SELECT q.* FROM pg_sleep(0.3), (#{stored.read("anchored_query")}) q")
 
     outcome = run("index-baseline")
 

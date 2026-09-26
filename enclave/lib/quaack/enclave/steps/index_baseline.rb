@@ -20,18 +20,19 @@ module Quaack
         def call(store:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
           build = store.read("index_build")
-          timeout_ms = store.read("baseline").fetch("timeout_ms")
-          sql = store.read("anchored_query")
-          keys = build["combinations"].keys.grep(/\Aoriginal:/)
-          results = keys.to_h do |key|
-            [key, Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)]
-          end
+          results = measure_all(connection, store, build["combinations"].keys.grep(/\Aoriginal:/))
           store.write("index_baseline", "combinations" => results,
                                         "timed_out" => results.select { |_, s| s.values.any? { it["timed_out"] } }.keys)
           []
         ensure
           Enclave::IndexBuild.hide(connection, build["indexes"].keys) if connection && build
           connection&.close
+        end
+
+        def measure_all(connection, store, keys)
+          timeout_ms = store.read("baseline").fetch("timeout_ms")
+          sql = store.read("anchored_query")
+          keys.to_h { [it, Measurement.measure(connection:, store:, sql:, combination: it, timeout_ms:)] }
         end
       end
     end
