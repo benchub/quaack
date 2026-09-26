@@ -72,6 +72,9 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     stored.write("baseline", stored.read("baseline").merge("timeout_ms" => 100))
     add_rewrite(1, "SELECT pg_sleep(0.5), $1::text IS NULL")
     add_rewrite(2, rewrite)
+    # rewrite_20's combination shares rewrite_2's prefix but isn't rewrite_2's.
+    build = stored.read("index_build")
+    stored.write("index_build", build.merge("combinations" => build["combinations"].merge("rewrite_20:top:1" => [])))
 
     outcome = run("candidate-runs")
 
