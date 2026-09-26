@@ -16,7 +16,8 @@ module Quaack
     # object with exactly the keys host, port, racetrack_db, and arena_db.
     # The port may be a whole number or a string of digits. The values are
     # checked as RunServer.record checks the flags. destroy_command destroys
-    # the run server, and what it prints is ignored.
+    # the run server, and what it prints is ignored. It must be idempotent,
+    # since a failed teardown keeps the store so teardown can run again.
     #
     # Errors are RunServer::Error, naming only their rule.
     module RunServerCommand

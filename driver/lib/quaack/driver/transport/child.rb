@@ -20,7 +20,9 @@ module Quaack
       #
       # A child that runs past its deadline, or prints more than the cap, is
       # killed: SIGTERM, then SIGKILL if it's still running GRACE seconds
-      # later. So is one still running when the driver itself stops, as on
+      # later. The child runs in its own process group, and the signals go
+      # to the whole group, so whatever a shell child started dies with it.
+      # So is one still running when the driver itself stops, as on
       # a Ctrl-C.
       module Child
         # What run gives back. limit is nil, or :timeout or
@@ -51,7 +53,7 @@ module Quaack
         end
 
         def start(argv)
-          Open3.popen2([argv.first, argv.first], *argv.drop(1), err: File::NULL)
+          Open3.popen2([argv.first, argv.first], *argv.drop(1), err: File::NULL, pgroup: true)
         rescue SystemCallError
           raise NotStarted, "the command couldn't be started", cause: nil
         end
@@ -79,7 +81,7 @@ module Quaack
         end
 
         def signal(pid, name)
-          Process.kill(name, pid)
+          Process.kill(name, -pid)
         rescue Errno::ESRCH
           nil
         end
