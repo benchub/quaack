@@ -1297,3 +1297,60 @@ Findings from the build and reviews of 20260922-22:
 - **Came from:** The build and reviews of 20260922-22.
 - **README:** 3f.
 - **Status:** done
+
+### 20260922-44. 9 value pools.
+
+Build each atom's pool: a satisfying value, a failing value, boundary values, pattern and case variants, `NULL` for nullable columns, and type boundary values.
+
+- **Depends on:** 20260922-43, 20260922-21, 20260922-19.
+- **README:** Step 9.
+- **Status:** done
+
+### 20260922-45. 9 scenario builder.
+
+Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row per atom, and join partners created or withheld. Every row satisfies every `VALID` constraint.
+
+- **Depends on:** 20260922-44, 20260922-18.
+- **README:** Step 9.
+- **Note (from 20260924-5):** 9d reverses each run of consecutive same-table rows. So every table's rows must be contiguous in the fixture, or the reverse load does nothing. Tables with self-referencing FKs fail the reverse load (see 20260924-9).
+- **Status:** done
+- **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
+- **Decided:** Use the column's DEFAULT if it has one, or else a type-typical value (0, empty string, epoch). For a simple CHECK (column op constant, an IN list, or BETWEEN), pick a value that satisfies it. Refuse a query whose CHECKs are too complex, and list that as unsupported in v1.
+
+### 20260922-48. 9c vacuity guard.
+
+On S1, run the original with and without each atom replaced by `TRUE`. Retry vacuous atoms up to three times with other pool values. Mark any that stay vacuous as untested, by redacted shape.
+
+- **Depends on:** 20260922-43, 20260922-45, 20260922-46, 20260922-47.
+- **README:** 9c.
+- **Status:** done
+
+### 20260922-49. Step 9 orchestration.
+
+Run every scenario through 9a to 9e for each candidate, and report pass or fail with the disproving scenario.
+
+- **Depends on:** 20260922-45, 20260922-46, 20260922-47, 20260922-48.
+- **README:** Step 9.
+- **Status:** done
+
+## Step 10: Adversarial fixtures.
+
+### 20260922-50. 10a counterexample generation.
+
+Ask the LLM for constraint-satisfying inserts that make a candidate and the original return different results, aimed at any untested atoms. Send them through the inbound check. Fill FK gaps by adding parent rows.
+
+- **Depends on:** 20260922-6, 20260922-5, 20260922-12, 20260922-48.
+- **README:** 10a.
+- **Status:** done
+- **Decided:** The enclave writes FK parent rows mechanically, using the step 9 fixture rules. The LLM writes shape-level inserts with placeholders, and the enclave binds the real literals.
+
+### 20260922-51. 10b and 10c compare and roll back.
+
+Load the inserts, run the 9d comparator, recheck untested atoms with the 9c test, and roll back. Up to three rounds per candidate.
+
+- **Depends on:** 20260922-50, 20260922-47, 20260922-48.
+- **README:** 10b and 10c.
+- **Status:** done
+- **Decided:** All three rounds always run.
+
+## Step 11: Per-candidate index ranking.

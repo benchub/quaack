@@ -122,66 +122,21 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ### 20260922-43. 9 predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-44. 9 value pools.
+### 20260922-44. 9 value pools. Done, see BACKLOG-COMPLETE.md.
 
-Build each atom's pool: a satisfying value, a failing value, boundary values, pattern and case variants, `NULL` for nullable columns, and type boundary values.
-
-- **Depends on:** 20260922-43, 20260922-21, 20260922-19.
-- **README:** Step 9.
-- **Status:** todo
-
-### 20260922-45. 9 scenario builder.
-
-Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row per atom, and join partners created or withheld. Every row satisfies every `VALID` constraint.
-
-- **Depends on:** 20260922-44, 20260922-18.
-- **README:** Step 9.
-- **Note (from 20260924-5):** 9d reverses each run of consecutive same-table rows. So every table's rows must be contiguous in the fixture, or the reverse load does nothing. Tables with self-referencing FKs fail the reverse load (see 20260924-9).
-- **Status:** todo
-- **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
-- **Decided:** Use the column's DEFAULT if it has one, or else a type-typical value (0, empty string, epoch). For a simple CHECK (column op constant, an IN list, or BETWEEN), pick a value that satisfies it. Refuse a query whose CHECKs are too complex, and list that as unsupported in v1.
+### 20260922-45. 9 scenario builder. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-46. 9a, 9b, and 9e arena transaction runner. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-47. 9d result comparator. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-48. 9c vacuity guard.
+### 20260922-48. 9c vacuity guard. Done, see BACKLOG-COMPLETE.md.
 
-On S1, run the original with and without each atom replaced by `TRUE`. Retry vacuous atoms up to three times with other pool values. Mark any that stay vacuous as untested, by redacted shape.
+### 20260922-49. Step 9 orchestration. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-43, 20260922-45, 20260922-46, 20260922-47.
-- **README:** 9c.
-- **Status:** todo
+### 20260922-50. 10a counterexample generation. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-49. Step 9 orchestration.
-
-Run every scenario through 9a to 9e for each candidate, and report pass or fail with the disproving scenario.
-
-- **Depends on:** 20260922-45, 20260922-46, 20260922-47, 20260922-48.
-- **README:** Step 9.
-- **Status:** todo
-
-## Step 10: Adversarial fixtures.
-
-### 20260922-50. 10a counterexample generation.
-
-Ask the LLM for constraint-satisfying inserts that make a candidate and the original return different results, aimed at any untested atoms. Send them through the inbound check. Fill FK gaps by adding parent rows.
-
-- **Depends on:** 20260922-6, 20260922-5, 20260922-12, 20260922-48.
-- **README:** 10a.
-- **Status:** todo
-- **Decided:** The enclave writes FK parent rows mechanically, using the step 9 fixture rules. The LLM writes shape-level inserts with placeholders, and the enclave binds the real literals.
-
-### 20260922-51. 10b and 10c compare and roll back.
-
-Load the inserts, run the 9d comparator, recheck untested atoms with the 9c test, and roll back. Up to three rounds per candidate.
-
-- **Depends on:** 20260922-50, 20260922-47, 20260922-48.
-- **README:** 10b and 10c.
-- **Status:** todo
-- **Decided:** All three rounds always run.
-
-## Step 11: Per-candidate index ranking.
+### 20260922-51. 10b and 10c compare and roll back. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-52. 11 LLM index search per candidate.
 
@@ -1453,4 +1408,34 @@ These are minor findings from the review of 20260924-27. The code handles each c
 - **Depends on:** 20260924-27.
 - **Came from:** 20260924-27 review.
 - **README:** 3f.
+- **Status:** todo
+
+### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline.
+
+`StepNine.run`, `Enclave::Counterexamples` and `Driver::Counterexamples` (20260922-44 to -51) have landed, but nothing calls them yet. They need:
+- `quaacks` subcommands for step 9 and for 10b/10c. These read the stored rewrites and candidates, and send only shape-level outcomes.
+- A driver stage in `Pipeline::STAGES` after step 8.
+
+- **Depends on:** 20260922-49, -51, 20260926-6.
+- **Came from:** Track D build report.
+- **README:** Steps 9 and 10.
+- **Status:** todo
+
+### 20260926-15. Scenario builder and counterexample loose ends.
+
+These are minor findings from the build and reviews of 20260922-44 to -51:
+- A statement timeout while loading an LLM's inserts becomes `:statement_timeout`, which isn't in `LOAD_RULES`, so it wrongly disproves the candidate (`arena_runner.rb:214`). Check the step, not the rule.
+- `Counterexamples.covered` skips atoms it can't replace, and no test covers that.
+- Only equality joins between plain columns tie keys together.
+- A join near miss is skipped when a foreign key touches either column.
+- Groups that collide on a unique key are dropped without saying so.
+- Self-joins merge aliases into one row.
+- Domain CHECK constraints are ignored.
+- Bound literals are uncast (bit strings).
+- 3e literal sets and 3c statistics aren't used for pools.
+- The rule that an atom, once exercised, stays exercised across rebuilds has no test.
+
+- **Depends on:** 20260922-51.
+- **Came from:** Track D build report and reviews.
+- **README:** Steps 9 and 10.
 - **Status:** todo
