@@ -152,15 +152,7 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
 - **Decided:** For an unstable literal, use the maximum of the three runs.
 
-### 20260922-59. 14c production result comparison.
-
-Run the original and each candidate as plain queries per literal and compare in the enclave with the 9d rules. Stream and use an order-independent hash with float rounding when results are large. Mark `LIMIT` without `ORDER BY` as partial if it times out. Report any divergence prominently.
-
-- **Depends on:** 20260922-47, 20260922-57.
-- **README:** 14c.
-- **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
-- **Status:** todo
-- **Decided:** Hash each row, sort the hashes, and hash the sorted list together with the row count.
+### 20260922-59. 14c production result comparison. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-60. 14d selection.
 
@@ -1348,4 +1340,17 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260926-21, 20260926-25.
 - **Came from:** Build of 20260926-21 and -25.
 - **README:** Step 10; CLAUDE.md Development.
+- **Status:** todo
+
+### 20260926-30. Result comparison loose ends.
+
+- No test pins `BEGIN READ ONLY` in `ProductionComparison`. Changing it to plain `BEGIN` passes every spec, so a data-modifying CTE could write to the racetrack before the rollback. Add a spec where a write fails as read-only.
+- The row count inside the digest duplicates the separate count comparisons. That's harmless, but untested.
+- A candidate that times out during 14c is discarded (`fail`, `timed_out`). The task only defined partial for the LIMIT case, so this was the builder's choice.
+- Two floats within tolerance, on either side of a rounding boundary, compare as a mismatch. This fails safe.
+- `partial_count` is only tested at 0.
+
+- **Depends on:** 20260922-59.
+- **Came from:** 20260922-59 build and review.
+- **README:** 14c.
 - **Status:** todo
