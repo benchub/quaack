@@ -58,8 +58,12 @@ module Quaack
 
       # One round's outcome: whether the candidate still matched, the
       # verdict's rule and load order when it didn't, and the shapes of
-      # the untested atoms this round's fixture exercised.
-      Round = Data.define(:match, :rule, :load_order, :covered)
+      # the untested atoms this round's fixture exercised. load_failed is
+      # true when the fixture itself failed to load, and then match is nil.
+      Round = Data.define(:match, :rule, :load_order, :covered, :load_failed)
+
+      # The runner rules that mean the fixture, not the candidate, failed.
+      LOAD_RULES = %i[fixture_load_failed reverse_load_failed insert_failed].freeze
 
       module_function
 
@@ -69,19 +73,24 @@ module Quaack
       # untested atom (indexes into atoms, the original's PredicateAtoms),
       # each in its own arena transaction that rolls back. A fixture that
       # fails to load disproves nothing: the round reports the runner's
-      # rule, with match false and nothing covered.
+      # rule, with match nil, load_failed true, and nothing covered. Any
+      # other runner failure, such as the candidate failing to run
+      # (query_failed), disproves it, with match false. Untested atoms
+      # with_true can't replace are skipped.
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
         verdict = ResultComparison.compare_in_both_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)
         Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
-                  covered: covered(runner, prepared, original, atoms, untested))
+                  covered: covered(runner, prepared, original, atoms, untested), load_failed: false)
       rescue ArenaRunner::Error => e
-        Round.new(match: false, rule: e.rule, load_order: nil, covered: [])
+        load_failed = LOAD_RULES.include?(e.rule)
+        Round.new(match: load_failed ? nil : false, rule: e.rule, load_order: nil, covered: [], load_failed:)
       end
 
       def covered(runner, prepared, original, atoms, untested)
         parse = PgQuery.parse(original)
-        loosened = untested.to_h { |i| [i, PredicateAtoms.with_true(parse, atoms[i])] }
+        replaceable = untested.select { |i| atoms[i].replaceable }
+        loosened = replaceable.to_h { |i| [i, PredicateAtoms.with_true(parse, atoms[i])] }
         VacuityGuard.exercised_atoms(runner, prepared.rows, original, loosened, inserts: prepared.inserts)
                     .map { |i| atoms[i].shape }
       end

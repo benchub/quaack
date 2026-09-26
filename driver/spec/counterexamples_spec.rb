@@ -70,5 +70,14 @@ RSpec.describe Quaack::Driver::Counterexamples do
       expect(result.rounds.size).to eq(2)
       expect(result.disproved).to be(true)
     end
+    it "keeps going after a round whose inserts failed to load, without calling it disproved" do
+      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      failed = { "match" => nil, "load_failed" => true, "rule" => "insert_failed", "covered" => [], "refused" => [] }
+      outcomes.push(failed, clean, clean)
+      result = run
+      expect(result.rounds.size).to eq(3)
+      expect(result.disproved).to be(false)
+      expect(fake.asks[1].body[:messages][2][:content]).to include("failed to load (insert_failed)")
+    end
   end
 end

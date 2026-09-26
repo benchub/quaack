@@ -57,14 +57,16 @@ module Quaack
       # (untested atom shapes the round exercised), and refused (each
       # refused insert's index and rule). Every round runs, even a clean
       # one, and each later ask hears how the round before went. A round
-      # that finds a mismatch disproves the candidate, and no more run.
+      # that finds a mismatch (match false) disproves the candidate, and no
+      # more run. A round whose inserts failed to load (load_failed, match
+      # nil) disproves nothing, and the rounds go on.
       def run(payload, compare:)
         messages = [payload_message(payload)]
         rounds = []
         ROUNDS.times do
           inserts = ask_with(messages)
           rounds << Round.new(inserts:, outcome: compare.call(inserts))
-          break unless rounds.last.outcome["match"]
+          break if rounds.last.outcome["match"] == false
 
           messages += follow_up(rounds.last)
         end
@@ -76,7 +78,7 @@ module Quaack
       private
 
       def result(rounds)
-        Result.new(rounds:, disproved: rounds.any? { !it.outcome["match"] },
+        Result.new(rounds:, disproved: rounds.any? { it.outcome["match"] == false },
                    covered: rounds.flat_map { it.outcome["covered"] }.uniq)
       end
 
@@ -93,9 +95,15 @@ module Quaack
         @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("inserts")
       end
 
+      def result_line(outcome)
+        return "The accepted inserts failed to load (#{outcome["rule"]})." if outcome["load_failed"]
+
+        "The accepted inserts gave both queries the same results."
+      end
+
       def feedback(outcome)
         refused = outcome["refused"].map { |r| "insert #{r["index"] + 1} was refused (#{r["rule"]})" }
-        lines = refused + ["The accepted inserts gave both queries the same results."]
+        lines = refused + [result_line(outcome)]
         lines << "They exercised: #{outcome["covered"].join(", ")}." unless outcome["covered"].empty?
         "#{lines.join("\n")}\n\nWrite a new set of inserts that tries something different. " \
           "Answer with JSON: {\"inserts\": [...]}."

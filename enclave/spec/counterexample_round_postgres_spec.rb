@@ -39,11 +39,18 @@ RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
     expect(conn.exec("SELECT count(*) FROM fx.orders").getvalue(0, 0)).to eq("0")
   end
 
-  it "reports an insert that fails to load by the runner's rule" do
+  it "reports an insert that fails to load as a load failure, not a mismatch" do
     prepared = described_class::Prepared.new(
       rows: [], inserts: ["INSERT INTO fx.orders (id, status) VALUES (1, 'a'), (1, 'b')"], refused: []
     )
     result = described_class.compare(runner, prepared, original:, candidate: lowered, atoms:, untested: [0])
-    expect([result.match, result.rule, result.covered]).to eq([false, :insert_failed, []])
+    expect([result.match, result.load_failed, result.rule, result.covered]).to eq([nil, true, :insert_failed, []])
+  end
+  it "still disproves a candidate that fails to run" do
+    prepared = described_class::Prepared.new(rows: [], inserts: ["INSERT INTO fx.orders (id, status) VALUES (1, 'a')"],
+                                             refused: [])
+    result = described_class.compare(runner, prepared, original:, candidate: "SELECT o.id / 0 FROM fx.orders o",
+                                                       atoms:, untested: [0])
+    expect([result.match, result.load_failed, result.rule]).to eq([false, false, :query_failed])
   end
 end
