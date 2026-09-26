@@ -1898,3 +1898,14 @@ The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes
 - **Came from:** Their build and review.
 - **README:** 15a, 15b.
 - **Status:** done
+
+### 20260926-39. LLM payload fidelity.
+
+The prompt pack showed two things wrong with what the LLM is sent:
+- **Placeholder types:** the `created_at` placeholders in the ORM join are typed `text` in the payload, though the plan casts them to `timestamptz`. The payload should give each placeholder the type Postgres infers for it (for example from a PREPARE, as `Measurement` does).
+- **pg_dump's `\restrict` token:** the schema DDL sent to the LLM includes pg_dump's random `\restrict`/`\unrestrict` token lines. They're noise for the LLM, and they change every prompt on every run. Strip them from the schema in payloads.
+
+- **Depends on:** 20260925-4 (index payload), 20260922-37 (rewrite payload).
+- **Came from:** Review of the 20260922-65 prompt pack.
+- **README:** 3b, 5a-5, 6a.
+- **Status:** done

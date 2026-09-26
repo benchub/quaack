@@ -1268,16 +1268,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-38. Report loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-39. LLM payload fidelity.
-
-The prompt pack showed two things wrong with what the LLM is sent:
-- **Placeholder types:** the `created_at` placeholders in the ORM join are typed `text` in the payload, though the plan casts them to `timestamptz`. The payload should give each placeholder the type Postgres infers for it (for example from a PREPARE, as `Measurement` does).
-- **pg_dump's `\restrict` token:** the schema DDL sent to the LLM includes pg_dump's random `\restrict`/`\unrestrict` token lines. They're noise for the LLM, and they change every prompt on every run. Strip them from the schema in payloads.
-
-- **Depends on:** 20260925-4 (index payload), 20260922-37 (rewrite payload).
-- **Came from:** Review of the 20260922-65 prompt pack.
-- **README:** 3b, 5a-5, 6a.
-- **Status:** todo
+### 20260926-39. LLM payload fidelity. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-40. Keyset pagination loose ends.
 
@@ -1317,4 +1308,14 @@ Also from the review:
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
 - **README:** Step 15.
+- **Status:** todo
+
+### 20260926-43. Payload fidelity loose ends.
+
+- Nothing tests the fallback when PREPARE fails (empty `parameter_types`, so the payload falls back to the 3g type class).
+- The rewrite payload spec only checks that it agrees with the index payload, not that the types are correct.
+
+- **Depends on:** 20260926-39.
+- **Came from:** 20260926-39 build and review.
+- **README:** 5a-5, 6a.
 - **Status:** todo
