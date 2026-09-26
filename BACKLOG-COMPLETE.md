@@ -1797,3 +1797,21 @@ The new step subcommands (redact, classify, and others) report a missing upstrea
 - **Came from:** The first reviews of 20260925-14, 20260925-12, and 20260925-16.
 - **README:** Step 3.
 - **Status:** done
+
+### 20260925-21. Name the function in a 3d refusal.
+
+README 3d says to abort and say which function caused it. Today the `volatile_function` error line carries only the step, the rule and the SQLSTATE, and 20260925-11 added a README paragraph calling that a v1 limitation. The user decided the function should be named. Function names are schema, so they're shape. Add a whitelisted field, such as `function` holding the schema-qualified name, to the `volatile_function` refusal, for both the step and the other `VolatilityCheck` callers where it makes sense. Remove the README limitation paragraph so 3d no longer contradicts itself. Prove with a sentinel that only the name goes out, never an argument or literal.
+
+- **Depends on:** 20260925-11.
+- **Came from:** The first review of 20260925-11, and the user's decision.
+- **README:** 3d, What leaves the enclave.
+- **Status:** done
+
+### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline.
+
+The enclave steps exist, but `Pipeline` doesn't run them: `arena-setup` (4b), `index-build` (12a), `baseline` (13), `index-baseline` (13a), `candidate-runs` (14), `minimax` (14a/b), `result-comparison` (14c) and `selection` (14d). Until it does, a real `quaack run` never writes the report. Add resumable stages in README order, with status entries for each step's store output, and put `arena-setup` before steps 9 and 10.
+
+- **Depends on:** 20260922-27, -53, -55, -56, -57, -58, -59, -60, -62.
+- **Came from:** 20260922-62 build report.
+- **README:** Steps 4b and 12-14.
+- **Status:** done

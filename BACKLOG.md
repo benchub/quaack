@@ -475,6 +475,7 @@ Findings from the reviews of 20260922-32 and 20260923-31:
 - **Dead or defensive code:** `left = unwrap(node.lexpr)` in `column_comparison?` is redundant, and the `A_Const` check in `plain_type?` can't be reached through Dedupe.
 - **README 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
 - **Open question for the user:** the rule drops every partial that uses a column that isn't low-cardinality, including partials with no literal at all, like `WHERE deleted_at IS NULL`. Those carry no PII risk and are common. Should they get an exception?
+- **Decided:** Yes. Allow partial indexes whose predicate holds no literal: IS NULL, IS NOT NULL, or a bare boolean column.
 
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
@@ -501,7 +502,7 @@ Findings from both reviews of 20260922-8:
 - **Nothing tests that `write` flushes.** Deleting `out.flush` stays green.
 - **No spec combines `silence_stderr!` with a re-raised signal.**
 - **Most enclave error classes have no `rule` method,** so they go out as `internal_error`. Add rules to `RelationQualifier::Error` and `Store::Error`, and to the ArgumentErrors that stand in for a rule, such as those in PredicateAtoms and IndexCandidate.
-- **Question for the user:** Should rule names be a closed list in the protocol gem, so every new rule is a reviewed change like the whitelist? Today any identifier-shaped word passes, so an error class that copied a one-word value into `rule` would send it.
+- **Decided:** No. Keep the identifier pattern for rule names, not a closed list. (The original question was whether rule names should be a closed list in the protocol gem, so every new rule is a reviewed change like the whitelist? Today any identifier-shaped word passes, so an error class that copied a one-word value into `rule` would send it.
 - **Operators get no detail beyond the rule.** A rule-to-text table on the driver side would give them a readable message without changing the whitelist.
 
 - **Depends on:** 20260922-8.
@@ -628,7 +629,7 @@ Findings from the second review of 20260922-61:
 - **Misuse double-counts instead of being refused.** Calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`, is accepted. Consider deriving `since` from the stored burndown for each search.
 - **`since` and the Dedupe live only in memory.** 5a-5 needs a separate enclave call after the driver's LLM call, so the next process has to rebuild both. Add a note for 20260922-33.
 - **`record_single_candidate_test` doesn't tie its report to the Dedupe's proposals.**
-- **Question for the user:** should drop reasons and total names be closed lists in the protocol gem, like `STAGES`? Today any lowercase word passes, so a one-word value could be stored as a reason.
+- **Decided:** No. Keep the pattern for drop reasons and total names. (The original question was whether they should be closed lists in the protocol gem, like `STAGES`.) Today any lowercase word passes, so a one-word value could be stored as a reason.
 
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
@@ -759,7 +760,7 @@ Findings from the reviews of 20260922-17:
 - **A relation named only in an unused CTE is still checked,** so it can over-refuse, for example `WITH c AS (SELECT id FROM p1) SELECT id FROM ONLY p1`.
 - **`Relations.check` always reads search_path,** where `RelationQualifier.qualify` reads it only when a name has no schema. It doesn't matter in practice.
 - **3b and 3c may need inheritance descendants,** because the scan reads them. `relations` lists only the tables the query names.
-- **A leaf partition named directly is relkind `r`, so it passes.** That's a question for the user.
+- **A leaf partition named directly is relkind `r`, so it passes.** **Decided:** Allow it and treat it as the table it is.
 
 - **Depends on:** 20260922-17.
 - **Came from:** The reviews of 20260922-17.
@@ -851,6 +852,7 @@ Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-1
 - **Masks on planner-made TRUE and FALSE inflate the masked count.**
 - **The broad typmod rule.**
 - **Egress max_nesting:** plans more than about 48 levels deep can't go out. Decide whether to flatten them, raise the limit, or refuse with a clear rule.
+- **Decided:** Refuse with a clear rule, and list it as unsupported in v1.
 - **The 42P18 retry depends on English `lc_messages`.**
 - **Preparing in a failed transaction gives 3B001, not 25P02.**
 - **PredicateAtoms should use 3g's numbering.**
@@ -909,7 +911,7 @@ Findings from the build and reviews of 20260922-25:
 
 ### 20260924-31. Keyset pagination with row comparisons.
 
-**Question for the user first:** should this be part of the v1 profile? `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
+**Decided:** Yes, support keyset pagination with row comparisons in v1. (The original question was whether this should be part of the v1 profile.) `WHERE (created_at, id) > ($1, $2)` is refused today as `unsupported_construct: RowExpr`, because 20260923-33's allowlist leaves out row comparisons. ORMs generate it often for cursor pagination, so it's arguably an ordinary query under the lean v1 profile. If the answer is yes, allow RowExpr only in a row comparison (`(a, b) op (x, y)` with `<`, `<=`, `>`, `>=`, `=`, or `<>`), and check every walker that SupportedSql guards: qualification, volatility, predicate atoms, 3g redaction, and 3e literals, where a row comparison falls back to the slow literal.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The review of 20260923-33 and the second review of 20260924-16.
@@ -1004,14 +1006,7 @@ Minor findings from the first review of 20260925-9:
 
 ### 20260925-20. Statistics step: test the read failure. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-21. Name the function in a 3d refusal.
-
-README 3d says to abort and say which function caused it. Today the `volatile_function` error line carries only the step, the rule and the SQLSTATE, and 20260925-11 added a README paragraph calling that a v1 limitation. The user decided the function should be named. Function names are schema, so they're shape. Add a whitelisted field, such as `function` holding the schema-qualified name, to the `volatile_function` refusal, for both the step and the other `VolatilityCheck` callers where it makes sense. Remove the README limitation paragraph so 3d no longer contradicts itself. Prove with a sentinel that only the name goes out, never an argument or literal.
-
-- **Depends on:** 20260925-11.
-- **Came from:** The first review of 20260925-11, and the user's decision.
-- **README:** 3d, What leaves the enclave.
-- **Status:** todo
+### 20260925-21. Name the function in a 3d refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-22. Name the missing input when a step's store entry is absent. Done, see BACKLOG-COMPLETE.md.
 
@@ -1280,14 +1275,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** Step 13.
 - **Status:** todo
 
-### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline.
-
-The enclave steps exist, but `Pipeline` doesn't run them: `arena-setup` (4b), `index-build` (12a), `baseline` (13), `index-baseline` (13a), `candidate-runs` (14), `minimax` (14a/b), `result-comparison` (14c) and `selection` (14d). Until it does, a real `quaack run` never writes the report. Add resumable stages in README order, with status entries for each step's store output, and put `arena-setup` before steps 9 and 10.
-
-- **Depends on:** 20260922-27, -53, -55, -56, -57, -58, -59, -60, -62.
-- **Came from:** 20260922-62 build report.
-- **README:** Steps 4b and 12-14.
-- **Status:** todo
+### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-34. Report loose ends.
 
@@ -1308,4 +1296,14 @@ The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes
 - **Depends on:** 20260925-20, -22.
 - **Came from:** Review of 20260925-20.
 - **README:** 3c, "What leaves the enclave".
+- **Status:** todo
+
+### 20260926-36. Pipeline wiring and 3d follow-ups.
+
+- ReportStage's "selection missing" guard can no longer trigger from the pipeline. Remove it, or test it by calling ReportStage directly.
+- The driver's `EnclaveError` doesn't show the new `function` field from a `volatile_function` refusal to the operator (`transport/reply.rb` `error_fields`).
+
+- **Depends on:** 20260926-33, 20260925-21.
+- **Came from:** Their builds and reviews.
+- **README:** 3d, `quaack run`.
 - **Status:** todo
