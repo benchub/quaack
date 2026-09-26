@@ -142,7 +142,7 @@ module Quaack
       end
 
       def row_operator?(expr)
-        expr.kind == :AEXPR_OP && expr.name.size == 1 && ROW_COMPARE_OPERATORS.include?(expr.name.first.string&.sval)
+        expr.kind == :AEXPR_OP && ROW_COMPARE_OPERATORS.include?(expr.name.first.string&.sval)
       end
 
       def check!(parse)

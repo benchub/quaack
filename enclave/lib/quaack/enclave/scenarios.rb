@@ -142,7 +142,7 @@ module Quaack
           @probes ||= @pools.keys.to_h do |i|
             column = @atoms[i].columns[0]
             col = @schema.column(column.table, column.name)
-            [i, ValuePools::Probe.new(@conn, ValuePools.node(@parse, @atoms[i]), col)]
+            [i, ValuePools.probe(@conn, @parse, @atoms[i], col)]
           end
         end
 

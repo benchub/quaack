@@ -189,8 +189,10 @@ RSpec.describe Quaack::Enclave::SupportedSql do
     "rows with a qualified operator" =>
       ["SELECT x FROM t WHERE (x, y) OPERATOR(pg_catalog.<) (1, 2)", "RowExpr"],
     "rows with IS DISTINCT FROM" => ["SELECT x FROM t WHERE (x, y) IS DISTINCT FROM (1, 2)", "RowExpr"],
-    "a refused construct inside a row comparison" =>
+    "a refused construct inside a row comparison's right row" =>
       ["SELECT x FROM t WHERE (x, y) < (1, xmlelement(name a))", "XmlExpr"],
+    "a refused construct inside a row comparison's left row" =>
+      ["SELECT x FROM t WHERE (x, xmlelement(name a)) < (1, 2)", "XmlExpr"],
     "a row IN a list" => ["SELECT x FROM t WHERE (x, y) IN ((1, 2))", "RowExpr"],
     "a row in the select list of a comparison's side" => ["SELECT (x, y) FROM t WHERE (x, y) < (1, 2)", "RowExpr"],
     "a row IN a subquery" => ["SELECT x FROM t WHERE (x, y) IN (SELECT 1, 2)", "RowExpr"],

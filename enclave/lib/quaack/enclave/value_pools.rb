@@ -65,9 +65,8 @@ module Quaack
         end.to_h
       end
 
-      # The strict operator a row comparison's leading column decides it
-      # by: (a, b) < (x, y) is true when a < x and false when a > x.
-      LEADS = { "<" => "<", "<=" => "<", ">" => ">", ">=" => ">" }.freeze
+      # The row comparison operators whose leading column can decide them.
+      ROW_RANGE = %w[< <= > >=].freeze
 
       # A keyset row comparison with a range operator is pooled through its
       # leading column, when every element of its column row is a plain
@@ -75,22 +74,35 @@ module Quaack
       def pooled?(atom)
         return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
 
-        atom.kind == :row_comparison && LEADS.key?(atom.operator) && atom.bare && atom.columns.all?(&:table)
+        atom.kind == :row_comparison && ROW_RANGE.include?(atom.operator) && atom.bare && atom.columns.all?(&:table)
       end
+
+      # The probe for a pooled atom (see Probe).
+      def probe(conn, parse, atom, col) = Probe.new(conn, node(parse, atom), col)
 
       # The test the atom's pool and probe read: the atom's own node, or
-      # for a row comparison, its leading columns' strict comparison, such
-      # as a < x for (a, b) <= (x, y).
+      # for a row comparison, its leading elements' comparison with the tie
+      # made NULL. (a, b) <= (x, y) reads NULLIF(a, x) <= x: true when
+      # a < x, false when a > x, and NULL when a = x, where b decides.
       def node(parse, atom)
         node = PredicateAtoms.node(parse, atom)
-        return node unless atom.kind == :row_comparison
-
-        lexpr, rexpr = [node.a_expr.lexpr, node.a_expr.rexpr].map { |side| side.row_expr.args[0] }
-        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name: operator(LEADS.fetch(atom.operator)),
-                                                      lexpr:, rexpr:))
+        atom.kind == :row_comparison ? lead(node.a_expr) : node
       end
 
-      def operator(name) = [PgQuery::Node.new(string: PgQuery::String.new(sval: name))]
+      def lead(expr)
+        lexpr, rexpr = [expr.lexpr, expr.rexpr].map { |side| side.row_expr.args[0] }
+        lexpr.column_ref ? lexpr = nullif(lexpr, rexpr) : rexpr = nullif(rexpr, lexpr)
+        a_expr(:AEXPR_OP, expr.name.to_a, lexpr, rexpr)
+      end
+
+      def nullif(column, value)
+        a_expr(:AEXPR_NULLIF, [PgQuery::Node.new(string: PgQuery::String.new(sval: "="))],
+               column, value)
+      end
+
+      def a_expr(kind, name, lexpr, rexpr)
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name:, lexpr:, rexpr:))
+      end
 
       def boundaries(type) = BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
 

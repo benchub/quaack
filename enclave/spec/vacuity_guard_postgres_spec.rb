@@ -46,6 +46,16 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     end
   end
 
+  it "pools a row comparison's leading column by the values that decide it, leaving out the tie" do
+    { "<=" => %i[< >], ">" => %i[> <], "<" => %i[< >] }.each do |op, (satisfies, fails)|
+      builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) #{op} (5, 10)")
+      pool = builder.pools.fetch(0)
+      expect(pool.satisfying.map(&:to_i)).to all(be.send(satisfies, 5)), op
+      expect(pool.failing.map(&:to_i)).to all(be.send(fails, 5)), op
+      expect([pool.satisfying, pool.failing]).to all(be_any), op
+    end
+  end
+
   it "gives a row comparison with = or <> no pool" do
     builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) = (5, 10) OR (o.qty, o.id) <> (1, 2)")
     expect(builder.atoms.map(&:kind)).to eq(%i[row_comparison row_comparison])

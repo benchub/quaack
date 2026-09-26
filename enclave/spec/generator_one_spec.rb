@@ -726,6 +726,25 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(all_keys("WHERE (a, id) = (1, 2)").last).to eq([asc("a"), asc("id")])
     end
 
+    it "reads the tuple written on the right, and keeps an equality column out of it" do
+      expect(all_keys("WHERE ($1, $2) > (created_at, id)").last).to eq([asc("created_at"), asc("id")])
+      expect(all_keys("WHERE id = 5 AND (created_at, id) < ($1, $2)").last).to eq([asc("id"), asc("created_at")])
+    end
+
+    it "keys the tuple on its own when ORDER BY starts with only part of it" do
+      expect(all_keys("WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, r"))
+        .to eq([[asc("created_at")], [asc("created_at"), asc("id")], [desc("created_at")],
+                [desc("created_at"), asc("r")]])
+    end
+
+    it "skips a tuple whose columns come from two tables" do
+      two = statistics(table(orders, { "created_at" => column(-1) }, extra: %w[id]),
+                       table(customers, { "region" => column(40) }, extra: %w[id]))
+      result = generate("SELECT 1 FROM public.orders o, public.customers c WHERE (o.created_at, c.region) < ($1, $2)",
+                        two)
+      expect(result).to eq([])
+    end
+
     it "skips a tuple with an expression, a non-constant, or <>" do
       expect(all_keys("WHERE (lower(created_at::text), id) < ($1, $2)")).to eq([])
       expect(all_keys("WHERE (created_at, id) < ($1, r)")).to eq([])
