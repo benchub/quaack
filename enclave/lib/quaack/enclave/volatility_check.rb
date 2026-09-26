@@ -55,11 +55,15 @@ module Quaack
     # replaced rather than wrapped, since pg_query's quote the text near
     # the error, which can be a literal.
     module VolatilityCheck
+      # function is set only for volatile_function: the schema-qualified
+      # name of the volatile function the call reaches, from the catalog.
+      # It's schema, so shape, and ErrorFilter sends it on the error line.
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :function
 
-        def initialize(rule, detail)
+        def initialize(rule, detail, function: nil)
           @rule = rule
+          @function = function
           super("#{rule}: #{detail}")
         end
       end
@@ -147,7 +151,7 @@ module Quaack
         FunctionCalls.of(parse.tree).uniq.each do |call|
           schemas = call.schema ? [call.schema] : (path ||= search_path(settings, connection))
           row = volatile(call, schemas, connection)
-          raise Error.new("volatile_function", describe(call, row)) if row
+          raise Error.new("volatile_function", describe(call, row), function: row[2, 2].join(".")) if row
         end
         nil
       end

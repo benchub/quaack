@@ -20,8 +20,11 @@ module Quaack
       column_stats: %i[table column n_distinct null_frac correlation mcv_freqs low_card_values].freeze,
       # A failed step: which step, which rule it broke, and the Postgres
       # SQLSTATE if there was one. Never the error's message text, which can
-      # hold a real value.
-      error: %i[step rule sqlstate].freeze,
+      # hold a real value. function is only on a volatile_function refusal
+      # (README 3d): the volatile function's schema-qualified name, which
+      # is schema and so shape. The enclave's ErrorFilter sends it only if
+      # it's one plain schema.name identifier pair.
+      error: %i[step rule sqlstate function].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

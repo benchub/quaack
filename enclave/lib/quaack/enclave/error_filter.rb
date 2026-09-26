@@ -27,6 +27,10 @@ module Quaack
     #   63 characters, such as 3f, 5a-1, or intake. Otherwise it's left out.
     #   Step names start with a digit and hold hyphens, so they get their own
     #   pattern rather than the rule's.
+    # - The function comes from the error's function method, and is sent
+    #   only when the rule is volatile_function (README 3d). It must be one
+    #   plain, unquoted, schema-qualified name, such as pg_catalog.random.
+    #   Otherwise it's left out, so a quoted name is never sent.
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -36,6 +40,8 @@ module Quaack
       RULE = /\A[a-z][a-z0-9_]{0,62}\z/
       STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
       SQLSTATE = /\A[0-9A-Z]{5}\z/
+      FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
+      FUNCTION_RULE = "volatile_function"
       INTERNAL_ERROR = "internal_error"
       # libpq's PG_DIAG_SQLSTATE, the error field code for the SQLSTATE.
       PG_DIAG_SQLSTATE = "C".ord
@@ -50,8 +56,9 @@ module Quaack
       # The one error line for exception, as a String with no newline. It
       # never raises: anything that goes wrong gives FALLBACK.
       def to_egress(exception, step:)
-        message = { type: :error, step: name(step, STEP), rule: name(ask(exception, :rule), RULE) || INTERNAL_ERROR,
-                    sqlstate: sqlstate(exception) }
+        rule = name(ask(exception, :rule), RULE) || INTERNAL_ERROR
+        message = { type: :error, step: name(step, STEP), rule:, sqlstate: sqlstate(exception),
+                    function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE) }
         line = Egress.serialize(message.compact)
         line.is_a?(String) ? line : FALLBACK
       rescue Exception # rubocop:disable Lint/RescueException
@@ -116,6 +123,8 @@ module Quaack
       # ascii_only? first, since matching raises for invalid bytes or an
       # encoding such as UTF-16 that isn't ASCII compatible.
       def shaped?(value, pattern) = value.instance_of?(String) && value.ascii_only? && value.match?(pattern)
+
+      def shaped_or_nil(value, pattern) = (value if shaped?(value, pattern))
 
       def sqlstate(exception)
         code = ask(exception, :sqlstate)
