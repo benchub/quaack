@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../burndown"
 require_relative "../candidate_ddl_redaction"
 require_relative "../clock_anchoring"
 require_relative "../dedupe"
@@ -34,6 +35,8 @@ module Quaack
       #                    (unused or the 5a-4 refusal rule), "sqlstate" }],
       #                    "existing" => [{ "search", "ddl", "covered_by"
       #                    (the existing index's name) }] }
+      #   burndown         { "stages", "totals" }, the 15b counts as
+      #                    Burndown.read checks them: names and counts only
       #
       # Trust boundary. sql is the anchored query with the 3h functions put
       # back (the 3g redacted query, literals as $n) for an index-only
@@ -52,7 +55,7 @@ module Quaack
              verdicts: store.read("minimax")["verdicts"].slice(*labels),
              measurements: measurements(store, labels), **shapes(store, labels),
              timed_out_count: store.read("candidate_runs")["timed_out_count"],
-             negative: labels.empty? ? NegativeResult.call(store) : nil }]
+             negative: labels.empty? ? NegativeResult.call(store) : nil, burndown: Burndown.read(store) }]
         end
 
         def shapes(store, labels)

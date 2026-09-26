@@ -131,9 +131,10 @@ module Quaack
       # are nested and go out unchecked, so the enclave's ReportPayload
       # step is where this is reviewed. negative is the 15a negative
       # result: rule, scenario, and round names, redacted DDL, SQLSTATEs,
-      # and existing index names.
+      # and existing index names. burndown is the 15b burndown's stages and
+      # totals, as the burndown message carries them.
       report: %i[top excluded infinite_sets verdicts measurements candidates indexes original_plan
-                 timed_out_count negative].freeze,
+                 timed_out_count negative burndown].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

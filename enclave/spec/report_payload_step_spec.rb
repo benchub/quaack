@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "quaack/enclave/burndown"
 require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/index_candidate"
 require "quaack/enclave/index_store"
@@ -79,6 +80,8 @@ RSpec.describe "quaacks report-payload" do
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
                   "Plan" => node("Index Scan", 5, relation: "orders", index: "orders_created_at_id_idx")
                 }] } })
+    Quaack::Enclave::Burndown.record(store, "5a-3", :original, in: 4, dropped: { duplicate: 1 }, out: 3)
+    Quaack::Enclave::Burndown.add_totals(store, hypothetical_explains: 12)
   end
 
   let(:outcome) do
@@ -122,6 +125,14 @@ RSpec.describe "quaacks report-payload" do
     expect(report["indexes"]["quaack_b"]).to include("covered_by" => nil,
                                                      "makes_redundant" => ["orders_created_at_id_idx"])
     expect(report["indexes"]["quaack_c"]["ddl"]).to include("note = ?")
+  end
+
+  it "sends the recorded burndown counts (15b)" do
+    expect(report["burndown"]).to eq(
+      "stages" => { "5a-3" => { "original" => { "in" => 4, "added" => {}, "dropped" => { "duplicate" => 1 },
+                                                "set_aside" => 0, "out" => 3, "extra" => {} } } },
+      "totals" => { "hypothetical_explains" => 12 }
+    )
   end
 
   it "sends plan node shapes with selectivities" do
