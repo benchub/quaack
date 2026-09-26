@@ -17,6 +17,8 @@ require_relative "../steps/anchor"
 require_relative "../steps/racetrack_setup"
 require_relative "../steps/index_search"
 require_relative "../steps/index_feedback"
+require_relative "../steps/index_rank"
+require_relative "../steps/status"
 require_relative "../steps/index_payload"
 require_relative "../steps/index_test"
 
@@ -47,6 +49,8 @@ module Quaack
         "index-payload" => Step.new(handler: Steps::IndexPayload, run: true, options: Steps::IndexPayload::OPTIONS),
         "index-feedback" => Step.new(handler: Steps::IndexFeedback, run: true,
                                      options: Steps::IndexFeedback::OPTIONS),
+        "index-rank" => Step.new(handler: Steps::IndexRank, run: true, options: Steps::IndexRank::OPTIONS),
+        "status" => Step.new(handler: Steps::Status, run: true),
         "index-test" => Step.new(handler: Steps::IndexTest, run: true, input: true, options: Steps::IndexTest::OPTIONS)
       }.freeze
     end

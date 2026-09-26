@@ -325,6 +325,8 @@ Three different generators propose candidate index definitions. The steps run in
 5. If any LLM candidate fell short, 5a-6 gives the LLM one chance to revise.
 6. 5a-7 combines and ranks every candidate that survived, whichever generator it came from.
 
+`quaack run --run <run ID>` drives this order through the enclave script: `quaacks index-search` (the plan gate and 5a-1 through 5a-4), `index-payload` and `index-test` (5a-5), `index-feedback` and `index-test --round refinement` (5a-6), then `index-rank` (5a-7), which tests the used candidates again, ranks and combines them, and stores the result. It can resume: `quaacks status --run <run ID>` says which of these steps' outputs the store already holds, and those steps are skipped.
+
 #### 5a-1. Generator one: from the parse.
 
 For each table in the query:

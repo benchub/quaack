@@ -83,6 +83,9 @@ module Quaack
       # each one's shortfall. Its values are nested and go out unchecked,
       # so the enclave's IndexFeedback step is where this is reviewed.
       index_feedback: %i[revise refined baseline candidates].freeze,
+      # Which step outputs a run's store holds, from `quaacks status`:
+      # entries maps each of a fixed list of entry names to true or false.
+      status: %i[entries].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

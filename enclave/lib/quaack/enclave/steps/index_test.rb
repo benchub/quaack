@@ -33,6 +33,10 @@ module Quaack
       # same form as "results" (see IndexSearch). "baseline" and "results",
       # the mechanical ones, stay as they were.
       #
+      # Without a round, it also writes index_generated_<search>, so `quaacks
+      # status` shows 5a-5 ran; the driver calls it with no DDL when the LLM
+      # proposed none.
+      #
       # With --round refinement (README 5a-6), each tested candidate also
       # carries "round" => "refinement", and the entry gets "refined" =>
       # true, even if nothing survived. Any other round is refused with
@@ -61,8 +65,9 @@ module Quaack
           connection&.close
         end
 
-        def save(store, search, entry, _round)
+        def save(store, search, entry, round)
           store.write("index_search_#{search}", entry)
+          store.write("index_generated_#{search}", true) unless round
         end
 
         def check(store, search, input, options)

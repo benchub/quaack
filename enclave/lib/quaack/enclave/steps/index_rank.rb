@@ -1,0 +1,71 @@
+# frozen_string_literal: true
+
+require_relative "../index_ranking"
+require_relative "../index_store"
+require_relative "../literal_set"
+require_relative "../run_server"
+require_relative "../single_candidate_test"
+require_relative "index_search"
+
+module Quaack
+  module Enclave
+    module Steps
+      # `quaacks index-rank --run <run ID> [--search original]` (README
+      # 5a-7): ranks and combines every candidate of index_search_<search>
+      # the planner used, mechanical and LLM alike, on the racetrack.
+      #
+      # It refuses an unknown search (index_rank_unknown_search) and a run
+      # with no index search for it (index_rank_no_index_search), before
+      # connecting. The store keeps 5a-4's redacted plans but not its
+      # canonical plans, so it tests the used candidates again with 5a-4,
+      # then runs IndexRanking on that report. It writes
+      # index_ranking_<search>:
+      #   "top"         up to three single-index entries, best first
+      #   "combination" the best combination of two or three, or nil
+      # Each entry is { "ddl" => [String], "size", "costs" => { set =>
+      # { "before", "after" } }, "used" => { set => [Boolean] }, "partial" }.
+      # The DDL can hold a low-cardinality predicate literal, so the entry
+      # stays in the store. Its only line is DONE.
+      module IndexRank
+        OPTIONS = { "search" => :value }.freeze
+
+        class Error < IndexSearch::Error; end
+
+        module_function
+
+        def call(store:, options:, **)
+          search = options.fetch("search", "original")
+          raise Error, "index_rank_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_rank_no_index_search" unless store.entry?("index_search_#{search}")
+
+          connection = Enclave::RunServer.connect(store, :racetrack)
+          store.write("index_ranking_#{search}", ranking(store, store.read("index_search_#{search}"), connection))
+          []
+        ensure
+          connection&.close
+        end
+
+        def ranking(store, entry, connection)
+          query = store.read("anchored_query")
+          literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
+          report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry))
+          ranking = IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,
+                                                  results: report.results)
+          { "top" => ranking.top.map { plain(it) }, "combination" => ranking.combination && plain(ranking.combination) }
+        end
+
+        def used(entry)
+          (entry["results"] + (entry["llm_results"] || []))
+            .select { !it["refusal"] && it["plans"].values.any? { |plan| plan["used"] } }
+            .map { IndexStore.candidate(it["candidate"]) }
+        end
+
+        def plain(entry)
+          { "ddl" => entry.ddl, "size" => entry.size,
+            "costs" => entry.costs.transform_values { { "before" => it.before, "after" => it.after } },
+            "used" => entry.used, "partial" => entry.partial }
+        end
+      end
+    end
+  end
+end
