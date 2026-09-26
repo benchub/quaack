@@ -127,15 +127,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-51. 10b and 10c compare and roll back. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-52. 11 LLM index search per candidate.
-
-For each candidate that survived steps 9 and 10, run 5a-5, 5a-3, 5a-4, 5a-6, and 5a-7 using the step 8 results, with the candidate's plan redacted through 3g.
-
-- **Depends on:** 20260922-33, 20260922-34, 20260922-35, 20260922-41, 20260922-51.
-- **README:** Step 11.
-- **Status:** todo
-
-## Steps 12 through 14: Measurement.
+### 20260922-52. 11 LLM index search per candidate. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-53. 12a build and hide indexes.
 
@@ -1430,4 +1422,14 @@ These are minor findings from the build and review of 20260926-12 and -5:
 - **Depends on:** 20260926-12, 20260926-5.
 - **Came from:** Their build report and review.
 - **README:** 6b, 12b.
+- **Status:** todo
+
+### 20260926-20. Step 11 loose ends.
+
+- A rewrite's index payload reuses the original's placeholder row counts, because a rewrite has no EXPLAIN ANALYZE of its own.
+- The driver specs for `RewriteIndexStage` weren't mutation-tested.
+
+- **Depends on:** 20260922-52.
+- **Came from:** 20260922-52 build report and review.
+- **README:** Step 11.
 - **Status:** todo
