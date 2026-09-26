@@ -34,10 +34,12 @@ RSpec.describe Quaack::Driver::Pipeline do
       define_method(:call) do |subcommand, **options|
         first_status = @calls.none? { it.first == "status" }
         @calls << [subcommand, options]
-        if subcommand == "status" && !first_status && statuses.any?
-          next Data.define(:messages).new(messages: [{ "type" => "status", "entries" => statuses.shift }])
-        end
-        Data.define(:messages).new(messages: replies.fetch(subcommand, []))
+        messages = if subcommand == "status" && !first_status && statuses.any?
+                     [{ "type" => "status", "entries" => statuses.shift }]
+                   else
+                     replies.fetch(subcommand, [])
+                   end
+        Data.define(:messages).new(messages:)
       end
     end.new
   end
