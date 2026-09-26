@@ -137,13 +137,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-56. 13a index baselines. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-57. 14 candidate runs.
-
-Run each candidate with its index combinations, using the step 13 process.
-
-- **Depends on:** 20260922-55.
-- **README:** Step 14.
-- **Status:** todo
+### 20260922-57. 14 candidate runs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-58. 14a and 14b metric and minimax rule.
 
@@ -153,6 +147,7 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **README:** 14a and 14b.
 - **Status:** todo
 - **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
+- **Decided (original timeouts):** Baseline gives the original up to 15 minutes per run, not the 3x clamp. If the original still times out on a literal set, that set's count counts as infinite, so any candidate that finishes beats the original there. The report flags that set. The timeout for candidates stays 3x the original, clamped.
 - **Decided:** "No worse" means an increase within the 5% threshold.
 - **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
 - **Decided:** For an unstable literal, use the maximum of the three runs.
@@ -1267,14 +1262,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** What goes into the enclave, and step 1.
 - **Status:** todo
 
-### 20260926-4. Wire run discipline into steps 13 and 14.
-
-`RunDiscipline` (20260922-54) exists, but nothing calls it yet. Steps 13 and 14 have to run every timed statement through it, drop any candidate whose statement timed out, and give the report a count of timed-out candidates.
-
-- **Depends on:** 20260922-54, and the step 13 and 14 tasks.
-- **Came from:** 20260922-54 build report.
-- **README:** Step 12b.
-- **Status:** todo
+### 20260926-4. Wire run discipline into steps 13 and 14. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-5. Run discipline: tell timeouts apart from cancels, and allow one statement only. Done, see BACKLOG-COMPLETE.md.
 
@@ -1367,4 +1355,13 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260922-55.
 - **Came from:** 20260922-55 build and reviews.
 - **README:** Step 13.
+- **Status:** todo
+
+### 20260926-28. Operator rewrites skip steps 8 to 11.
+
+`quaack run --rewrites` runs step 7 after the whole pipeline, so the operator's rewrites never go through step 8 (index search and pruning), steps 9 and 10 (equivalence testing), or step 11. Run step 7 next to 6a, inside or right after `RewriteStage`, before step 8. Add an enclave status marker so a resume doesn't run step 7 again.
+
+- **Depends on:** 20260926-7, 20260926-14.
+- **Came from:** Build of 20260926-21.
+- **README:** Step 7.
 - **Status:** todo

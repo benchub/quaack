@@ -1618,3 +1618,20 @@ Repeat the baseline runs for each index combination kept in 5a.
 - **Depends on:** 20260922-55.
 - **README:** 13a.
 - **Status:** done
+
+### 20260922-57. 14 candidate runs.
+
+Run each candidate with its index combinations, using the step 13 process.
+
+- **Depends on:** 20260922-55.
+- **README:** Step 14.
+- **Status:** done
+
+### 20260926-4. Wire run discipline into steps 13 and 14.
+
+`RunDiscipline` (20260922-54) exists, but nothing calls it yet. Steps 13 and 14 have to run every timed statement through it, drop any candidate whose statement timed out, and give the report a count of timed-out candidates.
+
+- **Depends on:** 20260922-54, and the step 13 and 14 tasks.
+- **Came from:** 20260922-54 build report.
+- **README:** Step 12b.
+- **Status:** done
