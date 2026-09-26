@@ -216,6 +216,8 @@ This classification doesn't decide whether values get sent, because no values ar
 
 This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
 
+Expression-index and extended-statistics MCVs follow the rules of their base columns, the columns their definition names. One that names any PII column counts as PII, so none of its MCV data goes out. Otherwise its MCV frequencies go out, and its MCV values go out only when every base column is low-cardinality. An index's expressions are classified together. text[], json, and jsonb columns aren't text-like for the heuristic, so their MCV frequencies may go out, but their values never do.
+
 The driver runs `quaacks classify --run <run ID>` after `quaacks statistics`. It reads the `quaacks` config and the run's `statistics` entry, and doesn't connect to production. It stores the run's `classification` entry, `{"columns", "outbound_statistics"}`: each column's schema, table, name, and whether it's PII and low-cardinality, plus the statistics that may go out. For each column, `outbound_statistics` holds `n_distinct`, `null_frac`, and `correlation`, plus the MCV frequencies (null for a PII column) and the MCV values (null unless the column is low-cardinality). Dedupe (5a-3) reads the low-cardinality columns from there. The step sends none of it and prints nothing but its done line. The 5a-5 payload step sends `outbound_statistics` as part of the payload, so the data leaves only when the LLM needs it. A missing `statistics` entry or a bad config fails, and stores nothing.
 
 This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. The 5a-5 payload step does.
@@ -562,6 +564,10 @@ The scenarios are:
 - **S4:** Orphan rows on each side of every join that has no FK.
 - **S5:** Type boundary values substituted into the hit rows.
 - **S6:** One group with one row, one group with many rows, and one empty group.
+
+Columns the query never mentions still need values. A column with a `DEFAULT` gets its default. Any other column gets a type-typical value (0, an empty string, the epoch), or, when a `CHECK` constrains it, a value that satisfies the `CHECK`.
+
+Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle between two tables is refused with `fk_cycle`.
 
 Run steps 9a through 9e for each scenario.
 
