@@ -55,6 +55,26 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  it "raises an operator's cancel instead of counting it as timed out" do
+    other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
+    pid = conn.backend_pid
+    canceller = Thread.new do
+      sleep 0.3
+      other.exec_params("SELECT pg_cancel_backend($1)", [pid])
+    end
+    expect { run("SELECT pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  ensure
+    canceller&.join
+    other&.close
+  end
+
+  it "refuses SQL holding more than one statement, so a COMMIT can't end the READ ONLY transaction" do
+    conn.exec("CREATE TABLE rd_m (x int)")
+    expect { run("COMMIT; INSERT INTO rd_m VALUES (1)") }.to raise_error(PG::SyntaxError, /multiple commands/)
+    expect(conn.exec("SELECT count(*) FROM rd_m").getvalue(0, 0)).to eq("0")
+  end
+
   it "runs one statement at a time, never in parallel" do
     other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
     t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)

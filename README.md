@@ -495,7 +495,7 @@ Attach these statements to each candidate. Later steps use them to guide adversa
 
 ### 6b. Assumption check.
 
-Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. Reject any candidate with an unmet assumption before running anything.
+Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. The inbound check plans the candidate first, then this check runs. Reject any candidate with an unmet assumption before anything executes it.
 
 ## 7. Operator candidates.
 
