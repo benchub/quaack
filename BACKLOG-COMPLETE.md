@@ -1408,3 +1408,26 @@ When the full dump is loaded into a fresh database, its `CREATE SCHEMA public` c
 - **Came from:** Track F build report.
 - **README:** Step 4b.
 - **Status:** done
+
+### 20260926-12. Assumption check loose ends.
+
+These are minor findings from the review of 20260922-38:
+- A `check` assumption is compared as-is with `pg_get_constraintdef`, so casts that Postgres adds (`(0)::numeric`) break the match. Normalize the casts.
+- A `NO INHERIT` suffix doesn't parse.
+- A `unique` assumption is met by a unique index on nullable columns (NULLS DISTINCT), which can wrongly pass. Also require NOT NULL or `indnullsnotdistinct`.
+- Deferrable unique indexes count as met.
+- `rewrite-check` plans the SQL before it checks the assumptions. The spec's name and the README 6b order should say so.
+
+- **Depends on:** 20260922-38.
+- **Came from:** Track B review.
+- **README:** 6b.
+- **Status:** done
+
+### 20260926-5. Run discipline: tell timeouts apart from cancels, and allow one statement only.
+
+Both of these are minor findings from the 20260922-54 review. First, `rescue PG::QueryCanceled` counts every cancel as a timeout, so an operator's `pg_cancel_backend` is also recorded as timed out. Check that the error really is a statement timeout. Second, `connection.exec` accepts several statements in one string, so a `COMMIT` in the SQL could end the READ ONLY transaction. Refuse SQL that holds more than one statement, or run it with `exec_params`.
+
+- **Depends on:** 20260922-54.
+- **Came from:** 20260922-54 review, minor findings.
+- **README:** Step 12b.
+- **Status:** done
