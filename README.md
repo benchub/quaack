@@ -2,6 +2,71 @@
 
 QUAACK takes a slow production query and works through it in stages. It proposes rewrites and indexes, throws out any rewrite that changes the query's results, and then ranks the rest by how many buffers they touch on a restored clone of production.
 
+## Overview.
+
+The driver on the engineer's laptop talks to the LLM. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
+
+```mermaid
+flowchart LR
+    subgraph laptop["Engineer's laptop: shapes only"]
+        driver["quaack (driver)<br/>runs the steps, calls the LLM,<br/>builds the report"]
+        llm(["LLM"])
+        driver <--> llm
+    end
+    subgraph enclave["Production enclave: values stay here"]
+        prod[("Production")]
+        subgraph jump["Jump server"]
+            script["quaacks (enclave script)<br/>stateless, one subcommand per call"]
+            egress{{"Egress whitelist"}}
+            store[("Governed store")]
+        end
+        subgraph runsrv["Run server"]
+            racetrack[("Racetrack<br/>full restore + HypoPG")]
+            arena[("Arena<br/>empty schema, fixtures<br/>rolled back")]
+        end
+    end
+    driver -- "ssh: step + untrusted SQL,<br/>checked with pg_query" --> script
+    script --> egress -- "redacted shapes,<br/>pass/fail, block counts" --> driver
+    script <--> store
+    script -- "read-only" --> prod
+    script <--> racetrack
+    script <--> arena
+```
+
+Each run works through the steps below. Blue steps run in the enclave, orange steps run on the driver, and green steps are split between them.
+
+```mermaid
+flowchart TD
+    s1["1. Intake<br/>query, EXPLAIN ANALYZE, server"] --> s2["2. Production inventory"]
+    s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
+    s3 --> s4["4. Run server<br/>racetrack + arena"]
+    s4 --> s5{"5. Plan gate<br/>racetrack plan matches production?"}
+    s5 -- no --> abort(["Abort: statistics don't match"])
+    s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
+    s5 -- yes --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
+    s6a --> s6b["6b. Assumption check<br/>against constraints and indexes"]
+    s5a --> s8
+    s6b --> s8["8. Plan-based pruning<br/>drop rewrites whose plan never changes"]
+    s8 --> s9["9. Predicate-aware fixtures<br/>in arena, compare results"]
+    s9 --> s10["10. Adversarial fixtures<br/>LLM counterexamples, up to 3 rounds"]
+    s10 --> s11["11. Per-rewrite index ranking"]
+    s11 --> s12["12–13. Build hidden indexes,<br/>baseline total blocks"]
+    s12 --> s14["14. Candidate runs<br/>minimax on total blocks, result check, top 3"]
+    s14 --> s15["15. Report and burndown"]
+    s6b -. unmet assumption .-> out(["Discarded"])
+    s8 -. same plan .-> out
+    s9 -. different results .-> out
+    s10 -. different results .-> out
+    s14 -. no win or different results .-> out
+
+    classDef enclave fill:#cfe3ff,stroke:#3b6db3,color:#000
+    classDef driver fill:#ffe0b8,stroke:#b36b12,color:#000
+    classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
+    class s1,s2,s3,s4,s5,s6b,s8,s9,s12,s14 enclave
+    class s6a,s15 driver
+    class s5a,s10,s11 both
+```
+
 ## Trust boundary.
 
 QUAACK splits data into two classes. The code enforces the line between them. It doesn't rely on people following a convention.
