@@ -274,6 +274,31 @@ RSpec.describe TestPostgres do
       end
     end
 
+    it "leaves a container owned by another host, even if its pid isn't alive here" do
+      dead_pid = Process.spawn(RbConfig.ruby, "-e", "exit")
+      Process.wait(dead_pid)
+      foreign, = Open3.capture2("docker", "create", "--label", "#{TestPostgres::LABEL}=1",
+                                "--label", "#{TestPostgres::OWNER_LABEL}=#{dead_pid}",
+                                "--label", "#{TestPostgres::HOST_LABEL}=not-#{Socket.gethostname}",
+                                TestPostgres.image_tag)
+      foreign = foreign.strip
+
+      begin
+        out, status = run_child_spec(child_source)
+
+        expect(status).to be_success, out
+        expect(docker_ids("id=#{foreign}")).to eq([foreign])
+      ensure
+        Open3.capture2e("docker", "rm", "-f", "-v", foreign)
+      end
+    end
+
+    it "labels its container with this host's name" do
+      id = TestPostgres.server.container_id
+      host = TestPostgres.docker("inspect", "--format", "{{index .Config.Labels \"#{TestPostgres::HOST_LABEL}\"}}", id)
+      expect(host).to eq(Socket.gethostname)
+    end
+
     describe "without Docker" do
       let(:source) do
         <<~RUBY
