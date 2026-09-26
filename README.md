@@ -150,7 +150,7 @@ The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualificat
 
 ### 3b. Schema dump.
 
-Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it.
+Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it. `pg_dump --schema` emits no `CREATE EXTENSION`, so also pass `--extension=<name>` for every extension in production's `pg_extension` except `plpgsql`, and add each one's schema to the namespaces, so the dump holds `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...` and loads into arena. It carries no version, so arena gets the run server's default version of each.
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
 

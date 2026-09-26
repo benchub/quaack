@@ -20,7 +20,9 @@ module Quaack
     # The inputs:
     # - relations: the qualified TableNames from Relations.check, the
     #   query's tables. Their schemas, plus public if the database has it,
-    #   are the namespaces.
+    #   plus the schema of each extension but plpgsql, are the namespaces.
+    #   The full dump also names each of those extensions, so it holds
+    #   their CREATE EXTENSION IF NOT EXISTS, with no version.
     # - connection: a PG connection to the production database, for the
     #   catalog and the server's version. Only plain SELECTs are run on it,
     #   and its settings, including its client encoding, are left alone.
@@ -105,6 +107,12 @@ module Quaack
 
       PUBLIC_SQL = "SELECT EXISTS (SELECT FROM pg_catalog.pg_namespace WHERE nspname = 'public')"
 
+      # Every extension but plpgsql, which every database already has, and
+      # its schema. pg_dump emits CREATE EXTENSION only for those named with
+      # --extension when it also has --schema, and arena needs them.
+      EXTENSIONS_SQL = "SELECT e.extname, n.nspname FROM pg_catalog.pg_extension e " \
+                       "JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname <> 'plpgsql'"
+
       FLAGS = %w[--schema-only --no-owner --no-privileges --strict-names --encoding=UTF8].freeze
 
       # How long pg_dump waits for each table's lock before it gives up, so
@@ -121,13 +129,26 @@ module Quaack
               lock_wait_timeout: LOCK_WAIT_TIMEOUT)
         no_secrets!(conninfo)
         tables = ancestors(relations, connection)
-        namespaces = namespaces(relations, connection)
         new_enough!(pg_dump, connection)
-        full = dump(pg_dump, conninfo, namespaces.map { "--schema=#{pattern(it)}" }, lock_wait_timeout:)
+        namespaces, full = full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
         subset = subset_ddl(pg_dump, conninfo, tables, lock_wait_timeout:)
         store.write("schema_dump", { "namespaces" => namespaces, "ddl" => full })
         store.write("schema_subset", { "tables" => tables.map { [it.schema, it.name] }, "ddl" => subset })
         Result.new(namespaces:, tables:)
+      end
+
+      # The full dump's namespaces, with each extension's schema, and its
+      # DDL, with each extension.
+      def full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
+        extensions = extensions(connection)
+        namespaces = (namespaces(relations, connection) + extensions.values).uniq.sort
+        selections = namespaces.map { "--schema=#{pattern(it)}" } + extensions.keys.map { "--extension=#{pattern(it)}" }
+        [namespaces, dump(pg_dump, conninfo, selections, lock_wait_timeout:)]
+      end
+
+      # Each extension's name, but plpgsql's, to its schema's.
+      def extensions(connection)
+        connection.exec_params(EXTENSIONS_SQL, []).values.to_h { |row| row.map { utf8(it) } }
       end
 
       # A libpq keyword that holds a secret: password, sslpassword, and

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "open3"
 require "tmpdir"
 require "quaack/enclave/schema_dump"
 require "quaack/enclave/store"
@@ -186,6 +187,46 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(result.namespaces).to eq(%w[other])
       expect(store.read("schema_dump")["namespaces"]).to eq(%w[other])
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely])
+    end
+  end
+
+  # pg_dump with --schema emits no CREATE EXTENSION, so without --extension
+  # the full dump fails to load on a column of an extension's type.
+  describe "extensions" do
+    let(:target) { "quaack_ext_load_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE EXTENSION citext SCHEMA public;
+        CREATE SCHEMA ext;
+        CREATE EXTENSION pgcrypto SCHEMA ext;
+        CREATE TABLE other.tagged (id int, tag public.citext, salt bytea DEFAULT ext.gen_random_bytes(4));
+      SQL
+    end
+
+    after { admin.exec(%(DROP DATABASE IF EXISTS "#{target}" WITH (FORCE))) }
+
+    it "are in the full dump, with their schemas, so it loads into a fresh template0 database" do
+      result = run([table("other", "tagged")])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(result.namespaces).to eq(%w[ext other public])
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public")
+        .and include("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA ext")
+      expect(ddl).not_to include("plpgsql")
+
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      # The dump's own CREATE SCHEMA public would clash with template0's.
+      PG.connect(**db.connection_params, dbname: target).tap { it.exec("DROP SCHEMA public") }.close
+      out, status = Open3.capture2e("docker", "exec", "-i", TestPostgres.server.container_id, "psql", "-X", "-q",
+                                    "-v", "ON_ERROR_STOP=1", "-U", TestPostgres::USER, "-d", target, stdin_data: ddl)
+      expect(status.success?).to be(true), out
+      loaded = PG.connect(**db.connection_params, dbname: target)
+      type = loaded.exec("SELECT format_type(atttypid, NULL) FROM pg_attribute " \
+                         "WHERE attrelid = 'other.tagged'::regclass AND attname = 'tag'").getvalue(0, 0)
+      expect(type).to eq("citext")
+      loaded.close
     end
   end
 
