@@ -118,6 +118,17 @@ module Quaack
       # exercised; refused [{ index, rule }], each refused insert's 0-based
       # index and rule constant; load_failed true or false.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
+      # The README step 15 report, from `quaacks report-payload`: the 14d
+      # selection (top, excluded, infinite_sets), minimax verdicts, block
+      # counts with hit/read and stability, each top candidate's $n SQL
+      # with the 3h functions put back, its untested atoms and step 10
+      # evidence, each built index's DDL through CandidateDdlRedaction with
+      # its size and catalog coverage, and plan node shapes (type,
+      # relation, index, rows, selectivity; never a condition). Its values
+      # are nested and go out unchecked, so the enclave's ReportPayload
+      # step is where this is reviewed.
+      report: %i[top excluded infinite_sets verdicts measurements candidates indexes original_plan
+                 timed_out_count].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

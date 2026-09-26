@@ -13,7 +13,7 @@ module Quaack
       # orchestration task adds the entries its stage needs.
       module Status
         ENTRIES = %w[index_search_original index_generated_original index_ranking_original
-                     rewrites_generated operator_rewrites_checked index_build].freeze
+                     rewrites_generated operator_rewrites_checked index_build selection].freeze
 
         module_function
 

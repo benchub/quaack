@@ -5,6 +5,7 @@ require_relative "enclave_error"
 require_relative "generator_three"
 require_relative "operator_candidates"
 require_relative "refinement_round"
+require_relative "report"
 require_relative "rewrite_generation"
 
 module Quaack
@@ -12,7 +13,8 @@ module Quaack
     # What `quaack run --run ID` drives: every remaining step of a run, in
     # order, over the transport to the run's jump server.
     #
-    #   Pipeline.new(transport:, client:, run_id:, rewrites: nil).run
+    #   Pipeline.new(transport:, client:, run_id:, rewrites: nil, out: nil).run
+    #   # => the report's path, or nil if none was written (ReportStage)
     #
     # rewrites are the operator's own (README step 7), from `--rewrites`.
     #
@@ -177,6 +179,21 @@ module Quaack
         end
       end
 
+      # README step 15, last: once the store holds selection (14d), the
+      # report message from report-payload rendered as HTML to out. It
+      # writes nothing, and asks for nothing, while selection is missing, or
+      # when there's no out. Rerunning renders it again.
+      module ReportStage
+        module_function
+
+        def run(transport:, run_id:, entries:, out:)
+          return unless out && entries["selection"]
+
+          payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
+          Report.write(payload, run_id:, path: out)
+        end
+      end
+
       STAGES = [IndexStage, RewriteStage, CounterexampleStage, RewriteIndexStage].freeze
 
       # The entries `quaacks status` says the run's store holds.
@@ -189,7 +206,8 @@ module Quaack
         entries["rewrites_generated"] && (rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"])
       end
 
-      def initialize(transport:, client:, run_id:, rewrites: nil)
+      def initialize(transport:, client:, run_id:, rewrites: nil, out: nil)
+        @out = out
         @transport = transport
         @client = client
         @run_id = run_id
@@ -199,7 +217,7 @@ module Quaack
       def run
         entries = self.class.status(@transport, @run_id)
         STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites) }
-        nil
+        ReportStage.run(transport: @transport, run_id: @run_id, entries:, out: @out)
       end
     end
   end
