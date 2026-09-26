@@ -53,9 +53,6 @@ module Quaack
       # only its rule.
       module IndexSearch
         OPTIONS = { "search" => :value }.freeze
-        # The searches the LLM-side steps (5a-5, 5a-6) take; step 11 adds
-        # rewrites.
-        SEARCHES = %w[original].freeze
         # A rewrite search names the rewrite_<n> entry rewrite-check stored.
         REWRITE = /\Arewrite_[1-9][0-9]*\z/
 
@@ -95,6 +92,19 @@ module Quaack
         # Whether search names a search: original, or a stored rewrite_<n>.
         def search?(store, search)
           search == "original" || (REWRITE.match?(search) && store.entry?(search))
+        end
+
+        # Whether the LLM-side steps (5a-5, 5a-6) take search: original, or
+        # (README step 11) a stored rewrite_<n> that survived steps 9 and 10
+        # (rewrite_survived_<n> says survived true) and that step 8 didn't
+        # prune (rewrite_pruned_<n> doesn't say discarded true).
+        def llm_search?(store, search)
+          return search == "original" unless search.is_a?(String) && REWRITE.match?(search) && store.entry?(search)
+
+          n = search.delete_prefix("rewrite_")
+          survived = store.entry?("rewrite_survived_#{n}") && store.read("rewrite_survived_#{n}")["survived"] == true
+          pruned = store.entry?("rewrite_pruned_#{n}") && store.read("rewrite_pruned_#{n}")["discarded"] == true
+          survived && !pruned
         end
 
         # 5a-1 to 5a-4 for the original, on the step 1 plan.

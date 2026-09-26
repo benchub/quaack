@@ -1431,3 +1431,13 @@ Both of these are minor findings from the 20260922-54 review. First, `rescue PG:
 - **Came from:** 20260922-54 review, minor findings.
 - **README:** Step 12b.
 - **Status:** done
+
+### 20260922-52. 11 LLM index search per candidate.
+
+For each candidate that survived steps 9 and 10, run 5a-5, 5a-3, 5a-4, 5a-6, and 5a-7 using the step 8 results, with the candidate's plan redacted through 3g.
+
+- **Depends on:** 20260922-33, 20260922-34, 20260922-35, 20260922-41, 20260922-51.
+- **README:** Step 11.
+- **Status:** done
+
+## Steps 12 through 14: Measurement.
