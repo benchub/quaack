@@ -2,6 +2,7 @@
 
 require_relative "generator_three"
 require_relative "refinement_round"
+require_relative "rewrite_generation"
 
 module Quaack
   module Driver
@@ -50,7 +51,49 @@ module Quaack
         end
       end
 
-      STAGES = [IndexStage].freeze
+      # README 6a and step 8, after step 5:
+      # 1. 6a: RewriteGeneration on rewrite-payload, unless the store says
+      #    it ran (rewrites_generated). Its rewrite-check stores the
+      #    survivors as rewrite_<n>, and status is asked again for them.
+      # 2. Step 8, for each stored rewrite_<n> in order: index-search,
+      #    index-rank, and rewrite-prune, each skipped when its output is
+      #    stored.
+      module RewriteStage
+        STEP8 = { "index-search" => "index_search_rewrite_", "index-rank" => "index_ranking_rewrite_",
+                  "rewrite-prune" => "rewrite_pruned_" }.freeze
+
+        module_function
+
+        def run(transport:, client:, run_id:, entries:)
+          unless entries["rewrites_generated"]
+            generate(transport, client, run_id)
+            entries = Pipeline.status(transport, run_id)
+          end
+          (1..).lazy.take_while { entries["rewrite_#{it}"] }.each { step8(transport, run_id, entries, it) }
+        end
+
+        def generate(transport, client, run_id)
+          payload = transport.call("rewrite-payload", args: { run: run_id }).messages
+                             .find { it["type"] == "rewrite_payload" }
+          RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
+                           .run(payload)
+        end
+
+        def step8(transport, run_id, entries, number)
+          STEP8.each do |subcommand, output|
+            next if entries["#{output}#{number}"]
+
+            transport.call(subcommand, args: { run: run_id, search: "rewrite_#{number}" })
+          end
+        end
+      end
+
+      STAGES = [IndexStage, RewriteStage].freeze
+
+      # The entries `quaacks status` says the run's store holds.
+      def self.status(transport, run_id)
+        transport.call("status", args: { run: run_id }).messages.find { it["type"] == "status" }.fetch("entries")
+      end
 
       def initialize(transport:, client:, run_id:)
         @transport = transport
@@ -59,8 +102,7 @@ module Quaack
       end
 
       def run
-        entries = @transport.call("status", args: { run: @run_id }).messages
-                            .find { it["type"] == "status" }.fetch("entries")
+        entries = self.class.status(@transport, @run_id)
         STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:) }
         nil
       end
