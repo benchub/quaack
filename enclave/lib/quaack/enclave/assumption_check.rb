@@ -119,13 +119,17 @@ module Quaack
         message.class.descriptor.each do |field|
           value = message[field.name]
           if value.is_a?(Google::Protobuf::RepeatedField)
-            value.each_with_index { |item, i| value[i] = uncast(item) if item.is_a?(PgQuery::Node) }
-            value.each { strip_constant_casts(it) if it.is_a?(Google::Protobuf::MessageExts) }
+            value.each_with_index { |item, i| value[i] = stripped(item) if item.is_a?(Google::Protobuf::MessageExts) }
           elsif value.is_a?(Google::Protobuf::MessageExts)
-            message[field.name] = value = uncast(value) if value.is_a?(PgQuery::Node)
-            strip_constant_casts(value)
+            message[field.name] = stripped(value)
           end
         end
+      end
+
+      def stripped(value)
+        value = uncast(value) if value.is_a?(PgQuery::Node)
+        strip_constant_casts(value)
+        value
       end
 
       def uncast(node)
