@@ -17,6 +17,7 @@ require_relative "steps/run_server"
 require_relative "steps/qualify"
 require_relative "steps/schema_dump"
 require_relative "steps/statistics"
+require_relative "steps/volatility"
 
 module Quaack
   module Enclave
@@ -59,7 +60,8 @@ module Quaack
                                  required: Steps::RunServer::REQUIRED),
         "qualify" => Step.new(handler: Steps::Qualify, run: true),
         "schema-dump" => Step.new(handler: Steps::SchemaDump, run: true),
-        "statistics" => Step.new(handler: Steps::Statistics, run: true)
+        "statistics" => Step.new(handler: Steps::Statistics, run: true),
+        "volatility" => Step.new(handler: Steps::Volatility, run: true)
       }.freeze
 
       # Other names for a subcommand.
