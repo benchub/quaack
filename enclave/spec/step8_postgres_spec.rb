@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/burndown"
+require "quaack/enclave/steps/rewrite_prune"
 require_relative "support/index_search_run"
 
 # README step 8, wired: index-search and index-rank for a rewrite search,
@@ -20,7 +21,8 @@ RSpec.describe "quaacks step 8, against a real server" do
   def rewrite(sql) = { "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [] }
 
   def check(*sqls)
-    run("rewrite-check", stdin: JSON.generate("rewrites" => sqls.map { rewrite(it) }))
+    list = sqls.map { it.is_a?(Hash) ? it : rewrite(it) }
+    run("rewrite-check", stdin: JSON.generate("rewrites" => list))
   end
 
   def ready(*sqls)
@@ -34,9 +36,10 @@ RSpec.describe "quaacks step 8, against a real server" do
     run("index-rank", "--search", search)
   end
 
-  it "records the step 8 burndown with the inbound check's rejections" do
+  it "records the step 8 burndown with the inbound check's rejections, not 6a's or 6b's" do
+    bad_assumption = rewrite(same).merge("assumptions" => [{ "kind" => "sorted" }])
     ready("SELECT o.note, o.status FROM public.orders o WHERE o.note = $3", same,
-          "SELECT o.note FROM public.orders o WHERE o.note = $1")
+          "SELECT o.note FROM public.orders o WHERE o.note = $1", bad_assumption)
     check("SELECT o.note, o.status FROM public.orders o WHERE o.nosuch = $1")
 
     expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["rewrites"])
@@ -85,6 +88,12 @@ RSpec.describe "quaacks step 8, against a real server" do
     expect_no_leaks(sentinels, first)
     expect(stored.read("rewrite_pruned_1")).to eq("discarded" => true)
     expect(stored.read("rewrite_pruned_2")).to eq("discarded" => false)
+    # The top three it planned with are the rankings' own, rebuilt as candidates.
+    %w[original rewrite_2].each do |search|
+      ranked = stored.read("index_ranking_#{search}")["top"].flat_map { it["ddl"] }
+      expect(ranked).not_to be_empty
+      expect(Quaack::Enclave::Steps::RewritePrune.top(stored, search).map(&:to_ddl)).to eq(ranked)
+    end
     expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["pruning"])
       .to include("in" => 2, "out" => 1, "dropped" => { "same_plans" => 1 })
   end
