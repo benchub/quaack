@@ -52,13 +52,15 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
       pool = builder.pools.fetch(0)
       expect(pool.satisfying.map(&:to_i)).to all(be.send(satisfies, 5)), op
       expect(pool.failing.map(&:to_i)).to all(be.send(fails, 5)), op
-      expect([pool.satisfying, pool.failing]).to all(be_any), op
+      # The literal's neighbors, one on each side of the tie.
+      expect((pool.satisfying + pool.failing) & %w[4 6]).to contain_exactly("4", "6"), op
     end
   end
 
-  it "gives a row comparison with = or <> no pool" do
-    builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) = (5, 10) OR (o.qty, o.id) <> (1, 2)")
-    expect(builder.atoms.map(&:kind)).to eq(%i[row_comparison row_comparison])
+  it "gives a row comparison with = or <>, or with an expression in its row, no pool" do
+    builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) = (5, 10) OR (o.qty, o.id) <> (1, 2) " \
+                     "OR (o.qty + 1, o.id) < (5, 10)")
+    expect(builder.atoms.map(&:kind)).to eq(%i[row_comparison row_comparison row_comparison])
     expect(builder.pools).to eq({})
   end
 
