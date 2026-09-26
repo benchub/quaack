@@ -23,6 +23,12 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
       ALTER TABLE public.orders ADD CONSTRAINT qty_positive CHECK (qty > 0) NOT VALID;
       ALTER TABLE public.orders ADD CONSTRAINT seller_fk FOREIGN KEY (seller_id) REFERENCES public.customers (id) NOT VALID;
       ALTER TABLE public.orders ADD CONSTRAINT note_nn NOT NULL note NOT VALID;
+      CREATE TABLE public.items (id int PRIMARY KEY, sku text, code text NOT NULL, tag text, ref int NOT NULL,
+                                 price numeric CHECK (price > 0), lot int, CONSTRAINT lot_pos CHECK (lot > 0) NO INHERIT);
+      CREATE UNIQUE INDEX items_sku ON public.items (sku);
+      CREATE UNIQUE INDEX items_code ON public.items (code);
+      CREATE UNIQUE INDEX items_tag ON public.items (tag) NULLS NOT DISTINCT;
+      ALTER TABLE public.items ADD CONSTRAINT items_ref UNIQUE (ref) DEFERRABLE;
     SQL
   end
 
@@ -55,6 +61,18 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
     expect([met?(check("total >= 0")), met?(check("(total >= 0)")), met?(check("total > 0")),
             met?(check("qty > 0")), met?(check("total >= 0; SELECT 1"))])
       .to eq([true, true, false, false, false])
+  end
+
+  it "meets a unique set only when its index keys are NOT NULL or NULLS NOT DISTINCT, and not deferrable" do
+    expect([met?(unique("public.items", "sku")), met?(unique("public.items", "code")),
+            met?(unique("public.items", "tag")), met?(unique("public.items", "ref"))])
+      .to eq([false, true, true, false])
+  end
+
+  it "meets a CHECK despite the casts Postgres adds, and one marked NO INHERIT" do
+    items = ->(expression) { check(expression).merge("table" => "public.items") }
+    expect([met?(items.call("price > 0")), met?(items.call("price > 1")), met?(items.call("lot > 0"))])
+      .to eq([true, false, true])
   end
 
   it "doesn't meet an assumption about a table that doesn't exist" do
