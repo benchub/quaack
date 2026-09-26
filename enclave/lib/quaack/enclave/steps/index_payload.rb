@@ -20,7 +20,8 @@ module Quaack
       #   placeholders $n => { "type", "pattern", "elements", "est_rows",
       #                "actual_rows" }: the 3g shape, and the rows of the
       #                step 1 plan node that consumes it (nil unless exactly one does)
-      #   plan         the redacted step 1 plan's explain (3g)
+      #   plan         the redacted step 1 plan's explain (3g), without its
+      #                Settings, such as search_path, which 5a-5 doesn't need
       #   schema       the schema_subset entry (3b)
       #   mechanical_results
       #                { "baseline" => { set => { "total_cost", "plan" } },
@@ -35,8 +36,8 @@ module Quaack
       # Trust boundary. Every field is shape-class except the candidates'
       # DDL: generator two reads the unredacted plan, so a stored predicate
       # or key expression can hold a real literal. Each DDL goes through
-      # CandidateDdlRedaction, which masks every constant that isn't a
-      # low-cardinality MCV value of the candidate's table (README 3f),
+      # CandidateDdlRedaction, which masks every constant but a predicate value compared directly with its
+      # own low-cardinality column, one of its MCV values (README 3f),
       # the values stats already carries.
       module IndexPayload
         OPTIONS = { "search" => :value }.freeze
@@ -57,7 +58,8 @@ module Quaack
           stats = store.read("classification")["outbound_statistics"]
           { type: :index_payload, query: store.read("redacted_query"),
             placeholders: placeholders(store.read("placeholder_shapes")),
-            plan: store.read("redacted_plan")["explain"], schema: store.read("schema_subset"),
+            plan: store.read("redacted_plan")["explain"].map { it.except("Settings") },
+            schema: store.read("schema_subset"),
             mechanical_results: mechanical(entry, CandidateDdlRedaction.new(stats)), stats: }
         end
 

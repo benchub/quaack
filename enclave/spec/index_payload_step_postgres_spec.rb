@@ -27,6 +27,7 @@ RSpec.describe "quaacks index-payload, against a real server" do
                   "access_method" => "btree", "predicate" => predicate, "unique" => false, "sources" => ["plan"] }
     refusal = { "rule" => "hypopg_refused", "sqlstate" => "42703", "extra" => sentinels.text }
     entry["results"] << entry["results"].first.merge("candidate" => candidate, "refusal" => refusal)
+    entry["dedupe"]["set_aside"] << candidate
     stored.write("index_search_original", entry)
   end
 
@@ -45,7 +46,8 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(sent.keys).to eq(%w[type query placeholders plan schema mechanical_results stats])
     expect(sent["type"]).to eq("index_payload")
     expect(sent["query"]).to eq(stored.read("redacted_query"))
-    expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"])
+    expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
+    expect(sent["plan"].first).to include("Plan")
     expect(sent["schema"]).to eq(schema_subset)
     expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
     shapes = stored.read("placeholder_shapes")
@@ -82,11 +84,14 @@ RSpec.describe "quaacks index-payload, against a real server" do
     outcome = index_payload
     sent = payload(outcome)
 
-    # 3g keeps the plan's search_path setting, which is schema names and so
-    # shape, but this stand-in production server names a schema with the
-    # sentinel. Everything else must be free of it.
-    expect(sent["plan"][0]["Settings"].delete("search_path")).to include(sentinels.text)
-    expect(LeakCheck.findings(sentinels, stdout: JSON.generate(sent), stderr: outcome.stderr)).to eq([])
+    # The stand-in production server's search_path names a schema with the
+    # sentinel, and the step 1 plan's Settings hold it, but they don't go out.
+    expect(JSON.generate(stored.read("redacted_plan"))).to include(sentinels.text)
+    expect_no_leaks(sentinels, outcome)
+    expect(sent["mechanical_results"]["set_aside"].last(2).map { it["ddl"] }).to eq(
+      ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = ? OR status = 'held'",
+       "CREATE INDEX ON public.orders USING btree (COALESCE(note, ?))"]
+    )
     planted = sent["mechanical_results"]["candidates"].last(2)
     expect(planted.map { it["ddl"] }).to eq(
       ["CREATE INDEX ON public.orders USING btree (created_at) WHERE status = ? OR status = 'held'",

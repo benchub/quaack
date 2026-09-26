@@ -13,37 +13,94 @@ module Quaack
     #
     # Generator two reads the unredacted step 1 plan, so a candidate's
     # partial predicate or key expression can hold a real literal. Every
-    # constant in the DDL is masked as ? unless its text is one of the MCV
-    # values the classification lets out for a column of the candidate's own
-    # table: the low-cardinality values of README 3f, which the payload's
-    # stats already carry. NULL has no value and stays.
+    # constant in the DDL is masked as ? unless it's in the predicate,
+    # compared directly (col = const, const <> col, col IN (...), casts
+    # allowed) with a low-cardinality column of the candidate's table, and
+    # its text is one of that column's MCV values: the values README 3f
+    # lets out, which the payload's stats already carry. Key expressions
+    # and function arguments are masked whole. NULL has no value and stays.
     #
     # outbound_statistics is the classification entry's, as
     # PiiClassification stores it.
     class CandidateDdlRedaction
       def initialize(outbound_statistics)
         @allowed = outbound_statistics.fetch("tables").to_h do |table|
-          values = table["columns"].flat_map { it["most_common_vals"] || [] }
-          [[table["schema"], table["name"]], values.to_set]
+          columns = table["columns"].select { it["most_common_vals"] }
+          [[table["schema"], table["name"]], columns.to_h { [it["name"], it["most_common_vals"].to_set] }]
         end
       end
 
       def ddl(candidate)
-        allowed = @allowed.fetch([candidate.table.schema, candidate.table.name], Set.new)
         parse = PgQuery.parse(candidate.to_ddl)
-        NodeRewrite.each(parse.tree) { |node| mask(node, allowed) }
+        stmt = parse.tree.stmts.first.stmt.index_stmt
+        mask_all(stmt.index_params)
+        stmt.where_clause = predicate(stmt.where_clause, allowed(candidate.table))
         PgQuery.deparse(parse.tree)
+      end
+
+      def allowed(table) = @allowed.fetch([table.schema, table.name], {})
+
+      def mask_all(params) = params.each { |param| NodeRewrite.each(param) { mask(it) } }
+
+      # The predicate, with only its comparisons' allowed values kept.
+      def predicate(where_clause, allowed)
+        holder = PgQuery::SelectStmt.new(where_clause:)
+        NodeRewrite.each(holder) { |node| comparison(node, allowed) || mask(node) }
+        holder.where_clause
       end
 
       private
 
-      # A ? for a constant whose text isn't allowed, and nil (walk on) for
-      # every other node.
-      def mask(node, allowed)
-        return unless node.node == :a_const
+      # For col = const, const <> col, or col IN (consts), with col one of
+      # the low-cardinality columns (either side may be cast): masks each
+      # constant that isn't one of col's values, and returns the node so
+      # its children aren't walked again. nil for any other node. Only the
+      # predicate has such comparisons: a key expression is masked whole.
+      def comparison(node, allowed)
+        column, constants = operands(node)
+        values = allowed[column]
+        return unless values
 
-        text = text(node.a_const)
-        return if text.nil? ? node.a_const.isnull : allowed.include?(text)
+        constants.each { |c| masked!(c) unless values.include?(text(c.a_const)) }
+        node
+      end
+
+      # sides of an operator or IN expression, either way round.
+      def operands(node)
+        return unless node.node == :a_expr && %i[AEXPR_OP AEXPR_IN].include?(node.a_expr.kind)
+
+        expr = node.a_expr
+        sides(expr.lexpr, expr.rexpr) || sides(expr.rexpr, expr.lexpr)
+      end
+
+      # [column name, the A_Const nodes] when column is a plain column
+      # reference and other is constants, each maybe cast.
+      def sides(column, other)
+        name = column_name(uncast(column))
+        return unless name
+
+        items = other&.node == :list ? other.list.items.to_a : [other]
+        constants = items.map { const_node(it) }
+        [name, constants] if constants.all?
+      end
+
+      def column_name(node)
+        field = node.column_ref.fields.last if node&.node == :column_ref
+        field.string.sval if field&.node == :string
+      end
+
+      def uncast(node) = node&.node == :type_cast ? node.type_cast.arg : node
+
+      def const_node(node)
+        node = uncast(node)
+        node if node&.node == :a_const
+      end
+
+      def masked!(node) = node.param_ref = PgQuery::ParamRef.new(number: 0)
+
+      # Every constant outside such a comparison is masked, but NULL.
+      def mask(node)
+        return unless node.node == :a_const && !node.a_const.isnull
 
         PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: 0))
       end

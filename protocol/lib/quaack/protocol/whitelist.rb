@@ -71,7 +71,9 @@ module Quaack
       # values of low-cardinality columns; and mechanical_results the 5a-4
       # results, with plans redacted through 3g and each candidate's DDL
       # passed through the enclave's CandidateDdlRedaction, which masks
-      # every constant but those low-cardinality values. Its values are
+      # every constant but a low-cardinality value compared directly with
+      # its own column in the predicate. The plan goes without its Settings.
+      # Its values are
       # nested and go out unchecked, so the enclave's IndexPayload step is
       # where this is reviewed.
       index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,

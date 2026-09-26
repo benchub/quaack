@@ -21,11 +21,20 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
     Quaack::Enclave::IndexCandidate.new(table: orders, key:, predicate:, sources: [:plan])
   end
 
-  it "masks a predicate constant that isn't a low-cardinality value, and keeps one that is" do
-    ddl = redaction.ddl(candidate(predicate: "status = 'held' AND note = '#{sentinel}' AND total = 7"))
+  it "keeps a constant only where it's compared directly with the low-cardinality column it's a value of" do
+    ddl = redaction.ddl(candidate(predicate: "status = 'held' AND note = '#{sentinel}' AND total = 7 " \
+                                             "AND 'open' <> status::text AND status IN ('7', 'x') AND note = 'held'"))
 
     expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
-                      "WHERE status = 'held' AND note = ? AND total = 7")
+                      "WHERE status = 'held' AND note = ? AND total = ? AND 'open' <> status::text " \
+                      "AND status IN ('7', ?) AND note = ?")
+  end
+
+  it "masks a low-cardinality value inside a key expression or function argument" do
+    key = [Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "(status = 'held')")]
+    ddl = redaction.ddl(candidate(key:, predicate: "coalesce(status, 'held') = 'open'"))
+
+    expect(ddl).to eq("CREATE INDEX ON public.orders USING btree ((status = ?)) WHERE COALESCE(status, ?) = ?")
   end
 
   it "masks constants in key expressions" do
