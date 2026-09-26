@@ -106,6 +106,27 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(stored.entry?("rewrite_1")).to be(false)
     end
 
+    it "keeps an operator's inferred rewrite with an unmet assumption, as a warning of its position and kind" do
+      ready
+      unmet = not_null_id.merge("column" => "note")
+
+      outcome = rewrite_check(rewrites(*Array.new(6) { rewrite(same, [not_null_id, unmet]) }, inferred: true))
+
+      warning = [{ "assumption" => 2, "kind" => "not_null" }]
+      expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_1", warning))
+      expect(lines(outcome)[5]["rewrite"]).to eq("rewrite_6")
+      expect_no_leaks(sentinels, outcome)
+      expect(stored.read("rewrite_1").slice("inferred", "warnings")).to eq("inferred" => true, "warnings" => warning)
+    end
+
+    it "checks an operator's rewrite by the same inbound check" do
+      ready
+
+      outcome = rewrite_check(rewrites(rewrite("SELECT o.note FROM public.orders o"), inferred: true))
+
+      expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "column_count_mismatch"))
+    end
+
     it "checks only the first five, marking the rest too_many" do
       ready
 

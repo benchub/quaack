@@ -85,8 +85,8 @@ module Quaack
       # the input. outcome is accepted or rejected. rule is nil or one of
       # the enclave's rule constants. rewrite is nil or the store entry it
       # was saved as, such as rewrite_2. warnings is an Array of
-      # { "kind", "table", "rule" } for unmet inferred assumptions (step 7):
-      # the assumption kind, a table name from the catalog, and a rule.
+      # { "assumption", "kind" }, one per unmet inferred assumption (step
+      # 7): its 1-based position and its kind, from the fixed vocabulary.
       rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
