@@ -129,14 +129,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-52. 11 LLM index search per candidate. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-53. 12a build and hide indexes.
-
-Build every distinct index from 5a and step 11 with raised maintenance settings. Record built sizes. Hide them with `indisvalid`, touching only proposed non-unique indexes, and confirm with `EXPLAIN` that the right set is hidden.
-
-- **Depends on:** 20260922-35, 20260922-52.
-- **README:** 12a.
-- **Status:** todo
-- **Decided:** Each measurement unhides only its own combination. Build and measure the GIN and GiST candidates set aside in 5a-3 too.
+### 20260922-53. 12a build and hide indexes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-54. 12b run discipline. Done, see BACKLOG-COMPLETE.md.
 
@@ -1348,31 +1341,11 @@ These are minor findings from the build and reviews of 20260922-44 to -51:
 
 ### 20260926-16. `quaack run` loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-17. Arena setup loose ends.
-
-These are minor findings from the build and review of 20260922-27:
-- Check with real `pg_dump` 18 output from an ordinary database that the dump runs `CREATE SCHEMA public`, since arena setup drops `public` first. If a dump doesn't, every load fails.
-- Every dump-load error comes out as one rule.
-- The ICU and libc locale mapping is untested.
-- Nothing in the driver pipeline runs `arena-setup`, and the arena steps don't check for its marker.
-
-- **Depends on:** 20260922-27.
-- **Came from:** 20260922-27 build report and review.
-- **README:** 4b.
-- **Status:** todo
+### 20260926-17. Arena setup loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-18. Parallel spec runs remove each other's Postgres containers. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-19. Assumption and run discipline loose ends, part two.
-
-These are minor findings from the build and review of 20260926-12 and -5:
-- A stated `CHECK (col IN (...))` never matches, because Postgres stores it as `col = ANY (ARRAY[...])`. Normalize IN lists to that form.
-- Telling a timeout from a cancel relies on Postgres's English message text, since both use SQLSTATE 57014. A non-English `lc_messages` breaks it. Set `lc_messages` for the session, or find another signal.
-
-- **Depends on:** 20260926-12, 20260926-5.
-- **Came from:** Their build report and review.
-- **README:** 6b, 12b.
-- **Status:** todo
+### 20260926-19. Assumption and run discipline loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-20. Step 11 loose ends.
 
@@ -1406,4 +1379,28 @@ These are minor findings from the build and review of 20260926-12 and -5:
 - **Depends on:** 20260926-14.
 - **Came from:** 20260926-14 build and reviews.
 - **README:** Steps 9 and 10, 15.
+- **Status:** todo
+
+### 20260926-23. Index build loose ends.
+
+These are minor findings from the build and review of 20260922-53:
+- The hiding guard in `IndexBuild.set_valid` is untested: removing the `quaack_` name filter or the unique/primary/exclusion filter keeps every test green. Add a test that tries to hide a primary key and a user unique index named `quaack_x`, and asserts both stay valid.
+- `set_valid` and `valid_names` match on `relname`, not schema.
+- Unqualified DDL makes the lookup of existing indexes miss on rerun.
+- `status` has no `index_build` entry, so a resume can't skip the step, and the pipeline doesn't run it yet.
+- The maintenance settings (1GB, 4 workers) are hard-coded.
+
+- **Depends on:** 20260922-53.
+- **Came from:** 20260922-53 build and review.
+- **README:** 12a.
+- **Status:** todo
+
+### 20260926-24. Assumption and timeout loose ends, part three.
+
+- Postgres may store a one-element IN list as plain `=`, so a stated `x IN ('a')` wouldn't match (this fails safe). Check it, and leave one-element lists as `=` when normalizing.
+- The timeout heuristic counts an operator cancel that lands in the few milliseconds after `timeout_ms` as a timeout. That's harmless.
+
+- **Depends on:** 20260926-19.
+- **Came from:** Review of 20260926-19.
+- **README:** 6b, 12b.
 - **Status:** todo

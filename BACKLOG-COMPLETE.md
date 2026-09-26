@@ -1501,3 +1501,36 @@ These are minor findings from the review of 20260926-7:
 - **Came from:** Track D build report.
 - **README:** Steps 9 and 10.
 - **Status:** done
+
+### 20260926-19. Assumption and run discipline loose ends, part two.
+
+These are minor findings from the build and review of 20260926-12 and -5:
+- A stated `CHECK (col IN (...))` never matches, because Postgres stores it as `col = ANY (ARRAY[...])`. Normalize IN lists to that form.
+- Telling a timeout from a cancel relies on Postgres's English message text, since both use SQLSTATE 57014. A non-English `lc_messages` breaks it. Set `lc_messages` for the session, or find another signal.
+
+- **Depends on:** 20260926-12, 20260926-5.
+- **Came from:** Their build report and review.
+- **README:** 6b, 12b.
+- **Status:** done
+
+### 20260926-17. Arena setup loose ends.
+
+These are minor findings from the build and review of 20260922-27:
+- Check with real `pg_dump` 18 output from an ordinary database that the dump runs `CREATE SCHEMA public`, since arena setup drops `public` first. If a dump doesn't, every load fails.
+- Every dump-load error comes out as one rule.
+- The ICU and libc locale mapping is untested.
+- Nothing in the driver pipeline runs `arena-setup`, and the arena steps don't check for its marker.
+
+- **Depends on:** 20260922-27.
+- **Came from:** 20260922-27 build report and review.
+- **README:** 4b.
+- **Status:** done
+
+### 20260922-53. 12a build and hide indexes.
+
+Build every distinct index from 5a and step 11 with raised maintenance settings. Record built sizes. Hide them with `indisvalid`, touching only proposed non-unique indexes, and confirm with `EXPLAIN` that the right set is hidden.
+
+- **Depends on:** 20260922-35, 20260922-52.
+- **README:** 12a.
+- **Status:** done
+- **Decided:** Each measurement unhides only its own combination. Build and measure the GIN and GiST candidates set aside in 5a-3 too.
