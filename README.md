@@ -325,6 +325,8 @@ Three different generators propose candidate index definitions. The steps run in
 5. If any LLM candidate fell short, 5a-6 gives the LLM one chance to revise.
 6. 5a-7 combines and ranks every candidate that survived, whichever generator it came from.
 
+`quaack run --run <run ID>` drives this order through the enclave script: `quaacks index-search` (the plan gate and 5a-1 through 5a-4), `index-payload` and `index-test` (5a-5), `index-feedback` and `index-test --round refinement` (5a-6), then `index-rank` (5a-7), which tests the used candidates again, ranks and combines them, and stores the result. It can resume: `quaacks status --run <run ID>` says which of these steps' outputs the store already holds, and those steps are skipped.
+
 #### 5a-1. Generator one: from the parse.
 
 For each table in the query:
@@ -455,6 +457,8 @@ Otherwise, send the LLM the 5a-4 results for its own candidates:
 Then ask it to revise. A model that sees the planner ignored its partial index, or that its four-column key lost to a two-column prefix, can usually fix the problem on a second try.
 
 This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run 5a-3 and 5a-4 on whatever comes back. Do only one round.
+
+An LLM candidate fell short if the planner didn't use it, or if a simpler mechanical candidate did at least as well. Simpler means fewer key and `INCLUDE` columns, with ties broken by smaller estimated size. At least as well means its worst-case cost across the set of literals is no higher. The driver gets the feedback from `quaacks index-feedback --run <run ID> [--search original]`, which sends one `index_feedback` message: whether to revise, whether the round already ran, the baseline cost per literal set, and each of the LLM's 5a-5 candidates with its DDL redacted as in 5a-5, its 5a-4 results, its shortfall, and the simpler mechanical candidate that beat it, if any. The LLM's revisions go to `quaacks index-test` with `--round refinement`, which tags their results and records that the round ran.
 
 #### 5a-7. Combination and ranking.
 
