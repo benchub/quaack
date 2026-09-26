@@ -254,6 +254,12 @@ module Quaack
         seq_scan(node) + filtered_index_scan(node) + bitmap_combination(node) + sort(node) +
           nested_loop(node) + hash_join(node) + aggregate(node)
       end
+
+      # The patterns that read neither actual rows nor rows removed, for a
+      # plain EXPLAIN, in the same order.
+      def estimated_patterns(node)
+        bitmap_combination(node) + sort(node) + aggregate(node)
+      end
     end
 
     private_constant :GeneratorTwoPatterns
