@@ -1490,3 +1490,14 @@ These are minor findings from the review of 20260926-7:
 - **Came from:** 20260926-7 build report and review.
 - **README:** Step 7.
 - **Status:** done
+
+### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline.
+
+`StepNine.run`, `Enclave::Counterexamples` and `Driver::Counterexamples` (20260922-44 to -51) have landed, but nothing calls them yet. They need:
+- `quaacks` subcommands for step 9 and for 10b/10c. These read the stored rewrites and candidates, and send only shape-level outcomes.
+- A driver stage in `Pipeline::STAGES` after step 8.
+
+- **Depends on:** 20260922-49, -51, 20260926-6.
+- **Came from:** Track D build report.
+- **README:** Steps 9 and 10.
+- **Status:** done

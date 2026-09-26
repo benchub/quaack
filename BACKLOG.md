@@ -1325,16 +1325,7 @@ These are minor findings from the review of 20260922-34 and -36:
 
 ### 20260926-13. Expression MCV classification: tests for the paths that aren't covered. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline.
-
-`StepNine.run`, `Enclave::Counterexamples` and `Driver::Counterexamples` (20260922-44 to -51) have landed, but nothing calls them yet. They need:
-- `quaacks` subcommands for step 9 and for 10b/10c. These read the stored rewrites and candidates, and send only shape-level outcomes.
-- A driver stage in `Pipeline::STAGES` after step 8.
-
-- **Depends on:** 20260922-49, -51, 20260926-6.
-- **Came from:** Track D build report.
-- **README:** Steps 9 and 10.
-- **Status:** todo
+### 20260926-14. Wire steps 9 and 10 into the CLI and the pipeline. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-15. Scenario builder and counterexample loose ends.
 
@@ -1403,4 +1394,16 @@ These are minor findings from the build and review of 20260926-12 and -5:
 - **Depends on:** 20260926-18, 20260926-16.
 - **Came from:** Builds and reviews of 20260926-18 and -16.
 - **README:** Step 7; CLAUDE.md Development.
+- **Status:** todo
+
+### 20260926-22. Steps 9 and 10 wiring loose ends.
+
+- A rewrite whose inserts failed to load in every round is still marked survived, with no fixture ever compared. The report should flag it (from the 20260926-14 review).
+- A resume restarts step 10 at round 1, which repeats LLM calls.
+- The driver doesn't check that a reply holds the message it expects (`rewrite_test`, `counterexample_payload`), so a missing one crashes.
+- The payload's untested-atom test seeds the store directly rather than getting the atoms from a real step 9 run.
+
+- **Depends on:** 20260926-14.
+- **Came from:** 20260926-14 build and reviews.
+- **README:** Steps 9 and 10, 15.
 - **Status:** todo
