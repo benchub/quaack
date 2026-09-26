@@ -33,6 +33,7 @@ require_relative "../steps/candidate_runs"
 require_relative "../steps/minimax"
 require_relative "../steps/result_comparison"
 require_relative "../steps/selection"
+require_relative "../steps/report_payload"
 
 module Quaack
   module Enclave
@@ -83,7 +84,8 @@ module Quaack
         "candidate-runs" => Step.new(handler: Steps::CandidateRuns, run: true),
         "minimax" => Step.new(handler: Steps::Minimax, run: true),
         "result-comparison" => Step.new(handler: Steps::ResultComparison, run: true),
-        "selection" => Step.new(handler: Steps::Selection, run: true)
+        "selection" => Step.new(handler: Steps::Selection, run: true),
+        "report-payload" => Step.new(handler: Steps::ReportPayload, run: true)
       }.freeze
     end
   end

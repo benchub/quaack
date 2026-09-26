@@ -8,9 +8,10 @@ module Quaack
     class CLI
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file>\n       " \
-              "quaack run --run <ID> [--rewrites <file>]\n"
+              "quaack run --run <ID> [--rewrites <file>] [--out <path>]\n"
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
+      RUN_OPTIONAL = %w[--rewrites --out].freeze
 
       # transport builds the transport to a jump host, and client the LLM
       # client. Specs pass fakes for both, since they're the edges.
@@ -64,32 +65,42 @@ module Quaack
         1
       end
 
-      # { run:, rewrites: } from `--run ID [--rewrites <file>]`, or nil.
+      # { run:, rewrites:, out: } from `--run ID [--rewrites <file>]
+      # [--out <path>]`, the optional ones in either order, or nil. out
+      # defaults to ./quaack-<run>.html.
       def run_options(argv)
-        return unless [2, 4].include?(argv.size) && argv[0] == "--run"
-        return { run: argv[1], rewrites: nil } if argv.size == 2
+        return unless argv.size.even? && argv[0] == "--run"
 
-        { run: argv[1], rewrites: argv[3] } if argv[2] == "--rewrites"
+        options = optional(argv.drop(2)) or return
+        { run: argv[1], rewrites: options["--rewrites"], out: options["--out"] || "./quaack-#{argv[1]}.html" }
+      end
+
+      # The optional run options as a Hash, or nil if one repeats or is unknown.
+      def optional(argv)
+        pairs = argv.each_slice(2).to_a
+        pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { RUN_OPTIONAL.include?(it.first) }
       end
 
       # README step 5 onward, with step 7 after 6a if there's a rewrites
       # file, then prints the run ID and done. The
       # file is read first, so a bad one fails before the jump server is
       # touched. A failure prints only its rule, as for start.
-      def run_command(run:, rewrites:)
+      def run_command(run:, rewrites:, out:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
         sqls = read_rewrites(rewrites) if rewrites
         return usage_error(@rewrites_problem) if rewrites && !sqls
 
-        drive(@transport.call(host), @client.call, run, sqls)
+        drive(@transport.call(host), @client.call, run, sqls, out)
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
         1
       end
 
-      def drive(transport, client, run_id, sqls)
-        Pipeline.new(transport:, client:, run_id:, rewrites: sqls).run
+      # Prints the report's path, if the pipeline wrote one, before done.
+      def drive(transport, client, run_id, sqls, out)
+        path = Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out:).run
+        @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"
         0
       end

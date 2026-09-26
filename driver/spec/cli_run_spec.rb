@@ -90,6 +90,40 @@ RSpec.describe "quaack run" do
     expect([cli.run(["run", "--run", run_id]), stdout.string]).to eq([0, "#{run_id} done\n"])
   end
 
+  context "when selection is stored" do
+    let(:report) do
+      { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
+        "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+    end
+
+    before do
+      entries["selection"] = true
+      replies["report-payload"] = [report]
+    end
+
+    it "writes the report to --out and prints its path before done" do
+      out = File.join(home, "r.html")
+
+      expect([cli.run(["run", "--run", run_id, "--out", out]), stderr.string]).to eq([0, ""])
+      expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
+      expect(File.read(out)).to include("QUAACK report #{run_id}")
+    end
+
+    it "writes the report to ./quaack-<run>.html by default" do
+      expect(Dir.chdir(home) { cli.run(["run", "--run", run_id]) }).to eq(0)
+      expect(stdout.string).to end_with("./quaack-#{run_id}.html\n#{run_id} done\n")
+      expect(File.exist?(File.join(home, "quaack-#{run_id}.html"))).to be(true)
+    end
+
+    it "takes --out alongside --rewrites, in either order" do
+      out = File.join(home, "r.html")
+      fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+      expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
+      expect(File.exist?(out)).to be(true)
+    end
+  end
+
   it "fails with exit 1 and only the rule when an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
 

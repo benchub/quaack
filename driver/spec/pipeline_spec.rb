@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
@@ -320,5 +322,58 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       expect(ninth_on).to eq(%w[counterexample-payload] + (["counterexample-round"] * 3))
     end
+  end
+end
+
+RSpec.describe Quaack::Driver::Pipeline, "report stage" do
+  let(:dir) { Dir.mktmpdir("quaack-report") }
+  let(:out) { File.join(dir, "report.html") }
+  let(:report) do
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
+      "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+  end
+  let(:done) do
+    { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
+      "rewrites_generated" => true }
+  end
+
+  def transport(entries, replies = {})
+    all = { "status" => [{ "type" => "status", "entries" => entries }],
+            "index-feedback" => [{ "type" => "index_feedback", "revise" => false }] }.merge(replies)
+    Class.new do
+      attr_reader :calls
+
+      define_method(:initialize) { @calls = [] }
+      define_method(:call) do |subcommand, **options|
+        @calls << [subcommand, options]
+        Data.define(:messages).new(messages: all.fetch(subcommand, []))
+      end
+    end.new
+  end
+
+  after { FileUtils.rm_rf(dir) }
+
+  def pipeline(transport) = described_class.new(transport:, client: nil, run_id: "RUN", out:)
+
+  it "writes the report from report-payload last, once selection is stored, and returns its path" do
+    t = transport(done.merge("selection" => true), "report-payload" => [report])
+
+    expect(pipeline(t).run).to eq(out)
+    expect(t.calls.last).to eq(["report-payload", { args: { run: "RUN" } }])
+    expect(File.read(out)).to include("<h1>QUAACK report RUN</h1>")
+  end
+
+  it "writes no report while selection isn't stored" do
+    t = transport(done.merge("selection" => false), "report-payload" => [report])
+
+    expect(pipeline(t).run).to be_nil
+    expect(t.calls.map(&:first)).not_to include("report-payload")
+    expect(File.exist?(out)).to be(false)
+  end
+
+  it "fails with no_report when the enclave sends no report" do
+    t = transport(done.merge("selection" => true))
+
+    expect { pipeline(t).run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("no_report") }
   end
 end
