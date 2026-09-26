@@ -108,35 +108,11 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ### 20260922-36. Step 5 orchestration. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-37. 6a rewrite generation.
+### 20260922-37. 6a rewrite generation. Done, see BACKLOG-COMPLETE.md.
 
-Ask the LLM for rewrites of the redacted query, each stating its transformation and every assumption it relies on. Send candidates through the inbound check.
+### 20260922-38. 6b assumption check. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-6, 20260922-5, 20260922-10, 20260922-18, 20260922-23.
-- **README:** 6a.
-- **Status:** todo
-- **Decided (wiring):** `quaacks rewrite-payload` sends the redacted query, plan, schema, and stats, reusing the `index_payload` fields where it can. `quaacks rewrite-check` reads the LLM's rewrites on stdin (SQL, transformation, and structured assumptions). It runs the inbound check, 6b, and step 8's structural discards on the racetrack, stores survivors under `rewrite_<n>`, and returns shape-only outcomes.
-- **Decided:** Ask for up to five rewrites per run. Assumptions use a structured format, and the vocabulary is exactly: a `NOT NULL` column, a unique column set, a foreign key, and a `CHECK` constraint. A candidate stating any other kind of assumption is rejected.
-
-### 20260922-38. 6b assumption check.
-
-Check each stated assumption against `pg_constraint` and `pg_index`, treating `NOT VALID` constraints as absent. Reject candidates with unmet assumptions.
-
-- **Depends on:** 20260922-37.
-- **README:** 6b.
-- **Status:** todo
-- **Decided:** The vocabulary is fixed by 20260922-37, so an assumption outside it rejects the candidate. A `CHECK` assumption is met only by a validated `CHECK` constraint on that table whose expression, normalized through pg_query, is identical to the stated one. Implied constraints don't count in v1.
-
-### 20260922-39. 7 operator candidates.
-
-Let operators submit placeholder-based rewrites through the driver. Ask the LLM to infer their transformation and assumptions, marked as inferred. Unmet inferred assumptions only add a report warning.
-
-- **Depends on:** 20260922-37, 20260922-38.
-- **README:** Step 7.
-- **Status:** todo
-- **Decided:** A file flag on the laptop, `--rewrites <file>`, with one placeholder-SQL rewrite per `;`-terminated statement. They go through the same `quaacks rewrite-check` as 6a's rewrites, flagged as inferred.
-
-## Step 8: Plan-based pruning.
+### 20260922-39. 7 operator candidates. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-40. 8 structural discards. Done, see BACKLOG-COMPLETE.md.
 
@@ -1461,4 +1437,18 @@ The output-type check compares only type OIDs, so a `varchar(10)` column and a `
 - **Depends on:** 20260922-40.
 - **Came from:** Track C build report.
 - **README:** Step 8.
+- **Status:** todo
+
+### 20260926-12. Assumption check loose ends.
+
+These are minor findings from the review of 20260922-38:
+- A `check` assumption is compared as-is with `pg_get_constraintdef`, so casts that Postgres adds (`(0)::numeric`) break the match. Normalize the casts.
+- A `NO INHERIT` suffix doesn't parse.
+- A `unique` assumption is met by a unique index on nullable columns (NULLS DISTINCT), which can wrongly pass. Also require NOT NULL or `indnullsnotdistinct`.
+- Deferrable unique indexes count as met.
+- `rewrite-check` plans the SQL before it checks the assumptions. The spec's name and the README 6b order should say so.
+
+- **Depends on:** 20260922-38.
+- **Came from:** Track B review.
+- **README:** 6b.
 - **Status:** todo
