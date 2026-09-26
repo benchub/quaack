@@ -1292,19 +1292,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-22. Steps 9 and 10 wiring loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-23. Index build loose ends.
-
-These are minor findings from the build and review of 20260922-53:
-- The hiding guard in `IndexBuild.set_valid` is untested: removing the `quaack_` name filter or the unique/primary/exclusion filter keeps every test green. Add a test that tries to hide a primary key and a user unique index named `quaack_x`, and asserts both stay valid.
-- `set_valid` and `valid_names` match on `relname`, not schema.
-- Unqualified DDL makes the lookup of existing indexes miss on rerun.
-- `status` has no `index_build` entry, so a resume can't skip the step, and the pipeline doesn't run it yet.
-- The maintenance settings (1GB, 4 workers) are hard-coded.
-
-- **Depends on:** 20260922-53.
-- **Came from:** 20260922-53 build and review.
-- **README:** 12a.
-- **Status:** todo
+### 20260926-23. Index build loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-24. Assumption and timeout loose ends, part three. Done, see BACKLOG-COMPLETE.md.
 

@@ -1677,3 +1677,17 @@ Run the original and each candidate as plain queries per literal and compare in 
 - **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
 - **Status:** done
 - **Decided:** Hash each row, sort the hashes, and hash the sorted list together with the row count.
+
+### 20260926-23. Index build loose ends.
+
+These are minor findings from the build and review of 20260922-53:
+- The hiding guard in `IndexBuild.set_valid` is untested: removing the `quaack_` name filter or the unique/primary/exclusion filter keeps every test green. Add a test that tries to hide a primary key and a user unique index named `quaack_x`, and asserts both stay valid.
+- `set_valid` and `valid_names` match on `relname`, not schema.
+- Unqualified DDL makes the lookup of existing indexes miss on rerun.
+- `status` has no `index_build` entry, so a resume can't skip the step, and the pipeline doesn't run it yet.
+- The maintenance settings (1GB, 4 workers) are hard-coded.
+
+- **Depends on:** 20260922-53.
+- **Came from:** 20260922-53 build and review.
+- **README:** 12a.
+- **Status:** done
