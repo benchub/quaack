@@ -1218,7 +1218,8 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 Build the literal set and store it. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
 
-- **Depends on:** 20260925-8, 20260922-21.
+- **Depends on:** 20260925-8, 20260925-10, 20260925-14, 20260922-21.
+- **Note (from the first build attempt):** `LiteralSet.run(store:, sql:)` reads 3g's `placeholder_map` and 3c's `statistics`, and checks the redacted SQL against the map. So this step runs after `quaacks redact`, not before it. It reads `placeholder_map`, the redacted SQL, and `statistics`, and refuses cleanly if any is missing. It writes the existing `literal_sets` entry and needs no production connection. It should also refuse unless the `volatility` marker exists.
 - **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
 - **README:** 3e.
 - **Status:** todo
@@ -1236,7 +1237,7 @@ Classify PII and low-cardinality columns. Store the classification, and send `ou
 
 Redact the query. Store the placeholder map and the redacted SQL (the redacted SQL isn't stored today). Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
 
-- **Depends on:** 20260925-12, 20260925-13, 20260922-23.
+- **Depends on:** 20260925-8, 20260925-13, 20260922-23.
 - **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
 - **README:** 3g.
 - **Status:** todo
