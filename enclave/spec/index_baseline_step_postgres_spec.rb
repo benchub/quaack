@@ -28,9 +28,13 @@ RSpec.describe "quaacks index-baseline, against a real server" do
 
   it "measures the original under each of its combinations, leaves every index hidden, sends only done" do
     baselined_run
+    build = stored.read("index_build")
+    build["combinations"]["rewrite_1:top:1"] = build["combinations"].fetch("original:top:1")
+    stored.write("index_build", build)
 
     outcome = run("index-baseline")
 
+    expect(stored.read("index_baseline")["combinations"]).not_to have_key("rewrite_1:top:1")
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
     expect_no_leaks(sentinels, outcome)
     result = stored.read("index_baseline")
