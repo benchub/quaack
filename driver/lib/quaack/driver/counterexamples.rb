@@ -46,9 +46,59 @@ module Quaack
         @client = client
       end
 
-      def ask(payload)
-        messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
+      ROUNDS = 3
+
+      Round = Data.define(:inserts, :outcome)
+      Result = Data.define(:rounds, :disproved, :covered)
+
+      # README 10a to 10c, up to three rounds. compare stands for the
+      # enclave's 10b and 10c over the transport: it takes a round's
+      # inserts and returns its outcome, a Hash with match, rule, covered
+      # (untested atom shapes the round exercised), and refused (each
+      # refused insert's index and rule). Every round runs, even a clean
+      # one, and each later ask hears how the round before went. A round
+      # that finds a mismatch disproves the candidate, and no more run.
+      def run(payload, compare:)
+        messages = [payload_message(payload)]
+        rounds = []
+        ROUNDS.times do
+          inserts = ask_with(messages)
+          rounds << Round.new(inserts:, outcome: compare.call(inserts))
+          break unless rounds.last.outcome["match"]
+
+          messages += follow_up(rounds.last)
+        end
+        result(rounds)
+      end
+
+      def ask(payload) = ask_with([payload_message(payload)])
+
+      private
+
+      def result(rounds)
+        Result.new(rounds:, disproved: rounds.any? { !it.outcome["match"] },
+                   covered: rounds.flat_map { it.outcome["covered"] }.uniq)
+      end
+
+      def follow_up(round)
+        [{ role: :assistant, content: JSON.generate("inserts" => round.inserts) },
+         { role: :user, content: feedback(round.outcome) }]
+      end
+
+      def payload_message(payload)
+        { role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }
+      end
+
+      def ask_with(messages)
         @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("inserts")
+      end
+
+      def feedback(outcome)
+        refused = outcome["refused"].map { |r| "insert #{r["index"] + 1} was refused (#{r["rule"]})" }
+        lines = refused + ["The accepted inserts gave both queries the same results."]
+        lines << "They exercised: #{outcome["covered"].join(", ")}." unless outcome["covered"].empty?
+        "#{lines.join("\n")}\n\nWrite a new set of inserts that tries something different. " \
+          "Answer with JSON: {\"inserts\": [...]}."
       end
     end
   end

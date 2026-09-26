@@ -5,7 +5,9 @@ require "pg_query"
 require_relative "arena_fixture"
 require_relative "arena_schema"
 require_relative "insert_check"
+require_relative "result_comparison"
 require_relative "scenarios"
+require_relative "vacuity_guard"
 require_relative "counterexamples/parent_rows"
 
 module Quaack
@@ -54,7 +56,35 @@ module Quaack
         alias_method :to_s, :inspect
       end
 
+      # One round's outcome: whether the candidate still matched, the
+      # verdict's rule and load order when it didn't, and the shapes of
+      # the untested atoms this round's fixture exercised.
+      Round = Data.define(:match, :rule, :load_order, :covered)
+
       module_function
+
+      # 10b and 10c. Runs 9d's comparison on the prepared fixture, in both
+      # load orders (ResultComparison.compare_in_both_orders: the parent
+      # rows reverse, the inserts keep their order), then 9c's test for each
+      # untested atom (indexes into atoms, the original's PredicateAtoms),
+      # each in its own arena transaction that rolls back. A fixture that
+      # fails to load disproves nothing: the round reports the runner's
+      # rule, with match false and nothing covered.
+      def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
+        verdict = ResultComparison.compare_in_both_orders(runner, prepared.rows, original:, candidate:,
+                                                                                 inserts: prepared.inserts)
+        Round.new(match: verdict.match?, rule: verdict.rule, load_order: verdict.load_order,
+                  covered: covered(runner, prepared, original, atoms, untested))
+      rescue ArenaRunner::Error => e
+        Round.new(match: false, rule: e.rule, load_order: nil, covered: [])
+      end
+
+      def covered(runner, prepared, original, atoms, untested)
+        parse = PgQuery.parse(original)
+        loosened = untested.to_h { |i| [i, PredicateAtoms.with_true(parse, atoms[i])] }
+        VacuityGuard.exercised_atoms(runner, prepared.rows, original, loosened, inserts: prepared.inserts)
+                    .map { |i| atoms[i].shape }
+      end
 
       def prepare(conn, inserts, placeholder_map:, tables:, settings: nil)
         accepted, refused = check(conn, inserts, placeholder_map, tables, settings)

@@ -34,4 +34,41 @@ RSpec.describe Quaack::Driver::Counterexamples do
     system = fake.asks.first.body[:system]
     expect(system).to include("$1", "untested_atoms", "every constraint", "schema-qualif")
   end
+
+  describe "the rounds" do
+    let(:outcomes) { [] }
+    let(:compared) { [] }
+    let(:compare) do
+      lambda do |inserts|
+        compared << inserts
+        outcomes.shift or raise "compare called more often than scripted"
+      end
+    end
+
+    def clean(covered: [], refused: []) = { "match" => true, "rule" => nil, "covered" => covered, "refused" => refused }
+
+    def run = described_class.new(client:).run(payload, compare:)
+
+    it "runs all three rounds when none finds a mismatch, telling the LLM how each went" do
+      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      outcomes.push(clean(refused: [{ "index" => 0, "rule" => "insert_select" }]),
+                    clean(covered: ["o.status = $1"]), clean)
+      result = run
+      expect(compared).to eq([["INSERT 0"], ["INSERT 1"], ["INSERT 2"]])
+      expect(result.disproved).to be(false)
+      expect(result.covered).to eq(["o.status = $1"])
+      second = fake.asks[1].body[:messages]
+      expect(second.map { it[:role] }).to eq(%i[user assistant user])
+      expect(second[1][:content]).to include("INSERT 0")
+      expect(second[2][:content]).to include("insert_select", "same results")
+    end
+
+    it "stops once a round disproves the candidate" do
+      2.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      outcomes.push(clean, { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
+      result = run
+      expect(result.rounds.size).to eq(2)
+      expect(result.disproved).to be(true)
+    end
+  end
 end

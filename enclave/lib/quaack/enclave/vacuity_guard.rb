@@ -84,8 +84,11 @@ module Quaack
         [loosened, unreplaceable]
       end
 
-      def exercised_atoms(runner, rows, sql, loosened)
-        runner.with_fixture(rows) do |tx|
+      # The atoms, of those loosened maps to their loosened queries, whose
+      # loosened query changes the original's result on this fixture. 10b
+      # reuses it on its counterexamples.
+      def exercised_atoms(runner, rows, sql, loosened, inserts: [])
+        runner.with_fixture(rows, inserts:) do |tx|
           base = multiset(tx.query(sql))
           loosened.reject { |_, query| multiset(tx.query(query)) == base }.keys
         end
