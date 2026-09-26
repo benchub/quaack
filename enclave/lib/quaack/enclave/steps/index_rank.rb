@@ -10,8 +10,9 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-rank --run <run ID> [--search original]` (README
-      # 5a-7): ranks and combines every candidate of index_search_<search>
+      # `quaacks index-rank --run <run ID> [--search original|rewrite_<n>]`
+      # (README 5a-7, and step 8 for a rewrite, ranked with its own query):
+      # ranks and combines every candidate of index_search_<search>
       # the planner used, mechanical and LLM alike, on the racetrack.
       #
       # It refuses an unknown search (index_rank_unknown_search) and a run
@@ -35,18 +36,19 @@ module Quaack
 
         def call(store:, options:, **)
           search = options.fetch("search", "original")
-          raise Error, "index_rank_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_rank_unknown_search" unless search.is_a?(String) && IndexSearch.search?(store, search)
           raise Error, "index_rank_no_index_search" unless store.entry?("index_search_#{search}")
 
           connection = Enclave::RunServer.connect(store, :racetrack)
-          store.write("index_ranking_#{search}", ranking(store, store.read("index_search_#{search}"), connection))
+          store.write("index_ranking_#{search}", ranking(store, search, connection))
           []
         ensure
           connection&.close
         end
 
-        def ranking(store, entry, connection)
-          query = store.read("anchored_query")
+        def ranking(store, search, connection)
+          entry = store.read("index_search_#{search}")
+          query = IndexSearch.query(store, search)
           literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
           report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry))
           ranking = IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,

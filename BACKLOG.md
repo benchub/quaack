@@ -162,6 +162,7 @@ Build every distinct index from 5a and step 11 with raised maintenance settings.
 ### 20260922-55. 13 baseline runs.
 
 Run the original three times per literal set with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks and the hit-versus-read split. Mark a literal unstable if the count moves, and record each run's plan.
+- **Decided:** For an unstable literal, 14a and 14b use the maximum of the three runs, for the original and for the candidates alike. The report flags that literal.
 
 - **Depends on:** 20260922-53, 20260922-54.
 - **README:** Step 13.
@@ -192,6 +193,8 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **Status:** todo
 - **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
 - **Decided:** "No worse" means an increase within the 5% threshold.
+- **Decided:** Two candidates tie when their total blocks on the slow literal are within 5% of each other. Discard the one with the larger index footprint.
+- **Decided:** For an unstable literal, use the maximum of the three runs.
 
 ### 20260922-59. 14c production result comparison.
 
@@ -206,6 +209,7 @@ Run the original and each candidate as plain queries per literal and compare in 
 ### 20260922-60. 14d selection.
 
 Keep the top three candidates by total blocks.
+- **Decided:** Rank the candidates that survive minimax by total blocks on the slow literal. Break ties by the sum across all literals.
 
 - **Depends on:** 20260922-58, 20260922-59.
 - **README:** 14d.

@@ -16,12 +16,14 @@ require_relative "../single_candidate_test"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-search --run <run ID> [--search original]` (README 5,
-      # 5a-1 to 5a-4): the mechanical half of the index search, on the
-      # racetrack that `quaacks racetrack-setup` set up.
+      # `quaacks index-search --run <run ID> [--search original|rewrite_<n>]`
+      # (README 5, 5a-1 to 5a-4, and step 8): the mechanical half of the
+      # index search, on the racetrack that `quaacks racetrack-setup` set up.
+      # A rewrite search runs rewrite_entry on the stored rewrite's SQL, with
+      # no plan gate.
       #
-      # It refuses an unknown search (index_search_unknown_search; only
-      # original exists until rewrites do) and a run with no racetrack_setup
+      # It refuses an unknown search (index_search_unknown_search: neither
+      # original nor a stored rewrite_<n>) and a run with no racetrack_setup
       # marker (index_search_no_racetrack_setup), before connecting. Then,
       # on one racetrack connection: the plan gate on anchored_query; 5a-1
       # on the parse of anchored_query and 5a-2 on the step 1 plan, each
@@ -51,7 +53,11 @@ module Quaack
       # only its rule.
       module IndexSearch
         OPTIONS = { "search" => :value }.freeze
+        # The searches the LLM-side steps (5a-5, 5a-6) take; step 11 adds
+        # rewrites.
         SEARCHES = %w[original].freeze
+        # A rewrite search names the rewrite_<n> entry rewrite-check stored.
+        REWRITE = /\Arewrite_[1-9][0-9]*\z/
 
         class Error < StandardError
           attr_reader :rule
@@ -66,13 +72,29 @@ module Quaack
 
         def call(store:, options:, **)
           search = check(store, options.fetch("search", "original"))
-          sql = store.read("anchored_query")
           connection = Enclave::RunServer.connect(store, :racetrack)
-          PlanGate.check(store:, connection:, sql:)
-          store.write("index_search_#{search}", original_entry(store, connection, sql))
+          store.write("index_search_#{search}", search_entry(store, connection, search))
           []
         ensure
           connection&.close
+        end
+
+        # The search's entry: the original's behind the plan gate, or a
+        # stored rewrite's (README step 8).
+        def search_entry(store, connection, search)
+          return rewrite_entry(store, connection, store.read(search)["sql"]) unless search == "original"
+
+          sql = store.read("anchored_query")
+          PlanGate.check(store:, connection:, sql:)
+          original_entry(store, connection, sql)
+        end
+
+        # The search's query: anchored_query, or the rewrite's SQL.
+        def query(store, search) = search == "original" ? store.read("anchored_query") : store.read(search)["sql"]
+
+        # Whether search names a search: original, or a stored rewrite_<n>.
+        def search?(store, search)
+          search == "original" || (REWRITE.match?(search) && store.entry?(search))
         end
 
         # 5a-1 to 5a-4 for the original, on the step 1 plan.
@@ -107,7 +129,7 @@ module Quaack
 
         # The refusals made before connecting. Returns the search.
         def check(store, search)
-          raise Error, "index_search_unknown_search" unless SEARCHES.include?(search)
+          raise Error, "index_search_unknown_search" unless search.is_a?(String) && search?(store, search)
           raise Error, "index_search_no_racetrack_setup" unless store.entry?("racetrack_setup")
 
           search
