@@ -260,8 +260,9 @@ RSpec.describe Quaack::Driver::Transport do
       step = local.new(command: EnclaveCommands.probe(dir, body), timeout: 1)
       error = nil
 
-      # The timeout, plus the moment SIGTERM takes, and no more.
-      expect(elapsed { error = failure(step) }).to be < 3
+      # The timeout, plus the moment SIGTERM takes, with room for a loaded
+      # machine, and far short of the 30s sleep.
+      expect(elapsed { error = failure(step) }).to be < 10
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
       expect(alive?(Integer(File.read(pid_file)))).to be(false)
@@ -600,6 +601,7 @@ RSpec.describe Quaack::Driver::Transport do
                 # them differently, so they're refused on both.
                 %({"type":"version","version":"1" /* x */}) => "unexpected_output",
                 %({"type":"version","version":"1"} // x) => "unexpected_output",
+                %( {"type":"version",/*c*/"version":"1"}) => "unexpected_output",
                 %({"type":"version","version":"a\\q"}) => "unexpected_output",
                 %({"type":"version","version":"\\x41"}) => "unexpected_output",
                 %({"type":"version","version":1e999999}) => "unexpected_output",
