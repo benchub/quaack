@@ -46,6 +46,30 @@ RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
     result = described_class.compare(runner, prepared, original:, candidate: lowered, atoms:, untested: [0])
     expect([result.match, result.load_failed, result.rule, result.covered]).to eq([nil, true, :insert_failed, []])
   end
+  it "reports an insert that hits the statement timeout as a load failure, not a disproof" do
+    slow = Quaack::Enclave::ArenaRunner.new(conn, statement_timeout_ms: 50)
+    prepared = described_class::Prepared.new(
+      rows: [], inserts: ["INSERT INTO fx.orders (id, status) SELECT 1, pg_sleep(1)::text"], refused: []
+    )
+    result = described_class.compare(slow, prepared, original:, candidate: lowered, atoms:, untested: [0])
+    expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :statement_timeout])
+  end
+
+  it "skips an untested atom that can't be replaced by TRUE" do
+    using = "SELECT o.id FROM fx.orders o JOIN fx.orders p USING (status) WHERE o.status = 'SENTINEL_10b'"
+    orders = Quaack::Enclave::TableName.new(schema: "fx", name: "orders")
+    using_atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(using), column_names: { orders => %w[id status] })
+    fixed = using_atoms.each_index.reject { |i| using_atoms[i].replaceable }
+    expect(fixed).not_to be_empty
+    prepared = described_class::Prepared.new(
+      rows: [], inserts: ["INSERT INTO fx.orders (id, status) VALUES (1, 'SENTINEL_10b'), (2, 'other')"], refused: []
+    )
+    result = described_class.compare(runner, prepared, original: using, candidate: using, atoms: using_atoms,
+                                                       untested: using_atoms.each_index.to_a)
+    expect(result.covered).not_to include(*fixed.map { |i| using_atoms[i].shape })
+    expect(result.covered).not_to be_empty
+  end
+
   it "still disproves a candidate that fails to run" do
     prepared = described_class::Prepared.new(rows: [], inserts: ["INSERT INTO fx.orders (id, status) VALUES (1, 'a')"],
                                              refused: [])
