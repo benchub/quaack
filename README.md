@@ -150,6 +150,8 @@ Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the qu
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
 
+The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
+
 ### 3c. Statistics.
 
 Pull planner statistics for the query's tables and their indexes, including extended statistics. Also pull current index definitions and sizes, which the report uses for its redundancy check.
