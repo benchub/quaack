@@ -102,28 +102,11 @@ Create arena from `template0` with matching locale settings, load the full schem
 
 ### 20260922-33. 5a-5 generator three. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-34. 5a-6 refinement round.
-
-If any LLM candidate went unused or lost to a simpler mechanical candidate, send the LLM its own 5a-4 results and ask for one revision. Filter and test what comes back. Only one round.
-
-- **Depends on:** 20260922-33.
-- **README:** 5a-6.
-- **Status:** todo
-- **Decided:** An LLM candidate qualifies for the revision round if the planner didn't use it, or if a mechanical candidate with fewer key and INCLUDE columns (ties broken by smaller estimated size) has a worst-case cost across the literal sets no higher than the LLM candidate's.
+### 20260922-34. 5a-6 refinement round. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-35. 5a-7 combination and ranking. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-36. Step 5 orchestration.
-
-Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order the README gives.
-- **Decided (driver CLI):** `quaack start` (20260926-1) creates the run, and `quaack run --run ID` drives every remaining step in order. It can resume, skipping steps whose outputs are already in the store. Each orchestration task adds its stage to that sequence.
-
-- **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
-- **README:** 5a.
-- **Status:** todo
-- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. Update from 20260925-13: the 5a-5 `index-payload` step (20260925-4) sends it, and Dedupe's low-cardinality input comes from the stored `classification` entry.
-
-## Steps 6 and 7: Rewrite candidates.
+### 20260922-36. Step 5 orchestration. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-37. 6a rewrite generation.
 
@@ -155,32 +138,11 @@ Let operators submit placeholder-based rewrites through the driver. Ask the LLM 
 
 ## Step 8: Plan-based pruning.
 
-### 20260922-40. 8 structural discards.
+### 20260922-40. 8 structural discards. Done, see BACKLOG-COMPLETE.md.
 
-Discard candidates that fail to plan on the racetrack, or whose output column count or types differ from the original. Count inbound-check rejections here too, for the report.
+### 20260922-41. 8 mechanical index search per candidate. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-10, 20260922-23, 20260922-26.
-- **README:** Step 8.
-- **Status:** todo
-
-### 20260922-41. 8 mechanical index search per candidate.
-
-For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse and racetrack plan. Save the 5a-4 results for step 11.
-
-- **Depends on:** 20260922-40, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260923-12.
-- **README:** Step 8.
-- **Status:** todo
-
-### 20260922-42. 8 three-configuration pruning.
-
-`EXPLAIN` each candidate with no hypothetical indexes, with the original's top three, and with its own top three. Discard it only if its canonical plan matches the original's in all three.
-
-- **Depends on:** 20260922-41, 20260922-35, 20260922-15.
-- **README:** Step 8.
-- **Status:** todo
-- **Decided:** Compare against the original's plan under the same index configuration.
-
-## Step 9: Predicate-aware fixtures.
+### 20260922-42. 8 three-configuration pruning. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-43. 9 predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
@@ -399,15 +361,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 
 ### 20260923-11. Index candidate and statistics shapes. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-12. 5a-2 on rewrite plans.
-
-20260922-31 builds generator two from the production plan only. The task also wanted it to run on rewrites, with the racetrack plan. A racetrack plain `EXPLAIN` has no actual rows and no rows removed, so most of the patterns can't fire there. Decide how the patterns work on estimates, then build it.
-
-- **Depends on:** 20260922-31, 20260922-26.
-- **Came from:** Splitting 20260922-31, at the user's request to build it early.
-- **README:** 5a-2, step 8.
-- **Status:** todo
-- **Decided:** On rewrite plans, run only the patterns that need neither actual rows nor rows removed, and skip the rest. The LLM in step 11 covers the gaps.
+### 20260923-12. 5a-2 on rewrite plans. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-13. Tighten the runtime boundary checker tests. Done, see BACKLOG-COMPLETE.md.
 
@@ -1071,6 +1025,7 @@ Findings from the build and reviews of 20260922-22:
 - **text[], json, and jsonb columns aren't text-like for the heuristic,** so their MCV frequencies leave unless a glob names them. Their values never leave. The reviewer judged this low risk: a frequency vector over a large domain doesn't re-identify anyone. Decide whether they should fail closed as PII anyway.
 - **Expression-index and extended-statistics MCVs are left out of the projection entirely.** If 5a-5 needs them, they'll need rules of their own.
 
+- **Decided:** Leave text[], json and jsonb as they are: their frequencies may leave, and their values never do. Add rules that send expression-index and extended-statistics MCVs, classified under the rules of their base columns. An expression that touches any PII column is treated as PII.
 - **Depends on:** 20260922-22.
 - **Came from:** The build and reviews of 20260922-22.
 - **README:** 3f.
@@ -1102,18 +1057,7 @@ Findings from the build and reviews of 20260922-25:
 - **README:** Steps 2 and 4.
 - **Status:** todo
 
-### 20260924-30. Include extensions in the 3b schema dump.
-
-pg_dump with `--schema` emits no CREATE EXTENSION. So the full dump that 4b loads into arena fails on columns like `public.citext`. Found while building 20260922-27. The user picked this fix on September 24.
-- For each extension in production's `pg_extension` other than plpgsql, pass a quoted `--extension=<name>` to the full dump. pg_dump then emits `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...`.
-- Add each extension's schema to the full dump's namespaces, so `WITH SCHEMA ext` doesn't fail on a schema that doesn't exist.
-- Test with real pg_dump 18 output: citext in public, and pgcrypto in a separate schema `ext`. Load the dump into a fresh template0 database, and check that it succeeds.
-- Known and accepted: CREATE EXTENSION carries no VERSION, so arena gets the run server's default versions.
-
-- **Depends on:** 20260922-18.
-- **Came from:** The build of 20260922-27.
-- **README:** 3b.
-- **Status:** todo
+### 20260924-30. Include extensions in the 3b schema dump. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-31. Keyset pagination with row comparisons.
 
@@ -1264,23 +1208,9 @@ The new step subcommands (redact, classify, and others) report a missing upstrea
 - **README:** 5a-3, 5a-4.
 - **Status:** todo
 
-### 20260926-1. Driver finds the jump server with a configured command.
+### 20260926-1. Driver finds the jump server with a configured command. Done, see BACKLOG-COMPLETE.md.
 
-The driver has no way to know which jump server serves a production server. Add a driver config file on the laptop, `~/.quaack/driver.json`, with `jump_command`: a shell one-liner with `{server}` that prints the ssh host, following the pattern of `memory_command` (quoting, timeout, output checks). The operator starts a run from the laptop with something like `quaack start --server <prod> --query <path on jump server> --plan <path on jump server>`. The driver runs `jump_command`, then runs `quaacks intake` remotely over `Transport::Ssh` (the query and plan files stay on the jump server), and remembers run ID to jump host locally, so later commands take only the run ID. Update README "Where QUAACK runs" and step 1.
-
-- **Depends on:** 20260922-5, 20260922-13.
-- **README:** Where QUAACK runs, Step 1.
-- **Decided:** The user chose a driver-side config command over a static map or a `--jump` flag.
-- **Status:** todo
-
-### 20260926-2. Build and record the run server with a configured command.
-
-Add `run_server_command` to the quaacks config on the jump server (`~/.quaack/config.json`). It's given `{server}` and `{run}`, builds or finds the run server from production, and prints JSON `{host, port, racetrack_db, arena_db}`. `quaacks run-server --run ID` with no flags calls it, validates the output the same way it validates the flags, and runs the step 4 checks. Flags still override. Add an optional matching `destroy_command` that `quaacks teardown` calls, so the run server is destroyed too, not just announced. Follow the `memory_command` pattern for quoting, timeouts, and discarding stderr. Nothing the command prints goes out except through the existing rules. Update README step 4 and teardown.
-
-- **Depends on:** 20260925-7, 20260922-66.
-- **README:** 4, Run teardown.
-- **Decided:** The user chose a provision command in the quaacks config over having the operator build the server by hand.
-- **Status:** todo
+### 20260926-2. Build and record the run server with a configured command. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-3. Generator three follow-ups.
 
@@ -1464,4 +1394,71 @@ Both of these are minor findings from the 20260922-54 review. First, `rescue PG:
 - **Depends on:** 20260922-54.
 - **Came from:** 20260922-54 review, minor findings.
 - **README:** Step 12b.
+- **Status:** todo
+
+### 20260926-6. Step 8 wiring.
+
+The step 8 library pieces have landed: `StructuralDiscard`, `Steps::IndexSearch.rewrite_entry` and `ThreeConfigurationPruning` (20260922-40, -41, -42), along with `rewrite-check` (20260922-37). Wire them together:
+- `quaacks index-search --search rewrite_<n>`.
+- A per-candidate loop: search, rank the rewrite's top three with `IndexRanking`, then prune against `index_ranking_original`.
+- Record the step 8 burndown, including the count of inbound-check rejections (`StructuralDiscard.record`).
+- A driver stage in `Pipeline::STAGES`.
+
+- **Depends on:** 20260922-37, -40, -41, -42, -36.
+- **Came from:** Track C and track B build reports.
+- **README:** Step 8.
+- **Status:** todo
+
+### 20260926-7. Wire `quaack run` into the driver CLI.
+
+Add `quaack run --run ID [--rewrites <file>]` to `driver/lib/quaack/driver/cli.rb`. It looks up the jump host with `Runs#host` (20260926-1), builds `Transport::Ssh` and the LLM client, and calls `Pipeline#run` (20260922-36). If `--rewrites` is given, it sends the file through `OperatorCandidates.from_file` (20260922-39).
+
+- **Depends on:** 20260926-1, 20260922-36, 20260922-39.
+- **Came from:** Track A, B, and F build reports.
+- **README:** Where QUAACK runs, and step 7.
+- **Status:** todo
+
+### 20260926-8. Step 5 orchestration loose ends.
+
+These are minor findings from the review of 20260922-34 and -36:
+- If the LLM's 5a-6 answer is empty, `refined` is never set, so every resume asks the LLM again (`refinement_round.rb:57`). Call `index-test --round refinement` with an empty list.
+- After a partial crash, a resume can leave the ranking stale.
+- `index-payload` runs on every resume.
+- `IndexRanking` entries don't carry the canonical plans that README 5a-7 says they should.
+
+- **Depends on:** 20260922-36.
+- **Came from:** 20260922-34 and -36 build report and review.
+- **README:** 5a-6, 5a-7.
+- **Status:** todo
+
+### 20260926-9. Driver start and run server loose ends.
+
+These are minor findings from the review of 20260926-1, 20260926-2 and 20260924-30:
+- `Runs#record` has a run-ID guard that no test covers.
+- The README should show flags in the space-separated form.
+- The docs should say `destroy_command` must be idempotent.
+- The child process for `jump_command` isn't in its own process group, so a timeout doesn't kill what the shell started.
+- Some spec wrote an empty run-ID file into `enclave/`. Find it and make it write to a temp dir.
+
+- **Depends on:** 20260926-1, 20260926-2.
+- **Came from:** Track F review.
+- **README:** Where QUAACK runs, step 4, and teardown.
+- **Status:** todo
+
+### 20260926-10. Arena database: handle the dump's `CREATE SCHEMA public`.
+
+When the full dump is loaded into a fresh database, its `CREATE SCHEMA public` clashes with that database's own `public` schema. The 20260924-30 test gets around this by dropping `public` first. Step 4b's arena creation has to handle it the same way. Check whether it already does.
+
+- **Depends on:** 20260924-30.
+- **Came from:** Track F build report.
+- **README:** Step 4b.
+- **Status:** todo
+
+### 20260926-11. Structural discard: compare typmods.
+
+The output-type check compares only type OIDs, so a `varchar(10)` column and a `varchar(20)` column count as the same. Decide whether a difference in typmod should count as an output mismatch.
+
+- **Depends on:** 20260922-40.
+- **Came from:** Track C build report.
+- **README:** Step 8.
 - **Status:** todo

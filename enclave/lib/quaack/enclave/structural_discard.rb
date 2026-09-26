@@ -16,7 +16,10 @@ module Quaack
     # original and each candidate are one statement with the original's $n
     # placeholders, as RewriteCandidateCheck accepts them. literals are the
     # slow literal set's values, in parameter order, each a String or nil.
-    # Each candidate is prepared with the extended protocol, its output
+    # Each candidate is prepared with the extended protocol and the
+    # original's parameter types (param_types), so one that leaves out a
+    # placeholder, or uses one where its type can't be inferred, reads it
+    # as the original does. Its output
     # columns read with describe, and then planned with EXPLAIN EXECUTE and
     # the literals, so it plans with real values. Any Postgres error on the
     # way, at prepare or at plan, counts as failed_to_plan. The output
@@ -41,12 +44,13 @@ module Quaack
       module_function
 
       def check(connection, original:, candidates:, literals:)
-        expected = output_types(connection, original)
+        param_types = parameter_types(connection, original)
+        expected = param_types && output_types(connection, original)
         raise Error, "the original query doesn't describe on the racetrack", cause: nil unless expected
 
         dropped = { failed_to_plan: 0, output_mismatch: 0 }
         kept = candidates.select do |sql|
-          reason = reason(connection, sql, literals, expected)
+          reason = reason(connection, sql, literals, expected, param_types:)
           dropped[reason] += 1 if reason
           reason.nil?
         end
@@ -59,8 +63,8 @@ module Quaack
                                                    dropped:, out: result.kept.size)
       end
 
-      def reason(connection, sql, literals, expected)
-        types = output_types(connection, sql) { planned?(connection, literals) }
+      def reason(connection, sql, literals, expected, param_types: [])
+        types = output_types(connection, sql, param_types:) { planned?(connection, literals) }
         return :failed_to_plan unless types
 
         :output_mismatch unless types == expected
@@ -69,12 +73,23 @@ module Quaack
       # The statement's output type OIDs, or nil on a Postgres error. With
       # a block, it also has to return true while the statement is
       # prepared.
-      def output_types(connection, sql)
-        connection.prepare(STATEMENT, sql)
+      def output_types(connection, sql, param_types: [], &plan)
+        described(connection, sql, param_types, plan) { |d| Array.new(d.nfields) { |i| d.ftype(i) } }
+      end
+
+      # The statement's parameter type OIDs, in $n order, or nil on a
+      # Postgres error.
+      def parameter_types(connection, sql)
+        described(connection, sql, [], nil) { |d| Array.new(d.nparams) { |i| d.paramtype(i) } }
+      end
+
+      # The block's result for the prepared statement's description, or nil
+      # on a Postgres error or when plan, if given, returns false.
+      def described(connection, sql, param_types, plan)
+        connection.prepare(STATEMENT, sql, param_types)
         begin
-          described = connection.describe_prepared(STATEMENT)
-          types = Array.new(described.nfields) { |i| described.ftype(i) }
-          types if !block_given? || yield
+          result = yield connection.describe_prepared(STATEMENT)
+          result if plan.nil? || plan.call
         ensure
           connection.exec("DEALLOCATE #{STATEMENT}")
         end

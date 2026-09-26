@@ -21,6 +21,8 @@ require_relative "../steps/index_rank"
 require_relative "../steps/status"
 require_relative "../steps/index_payload"
 require_relative "../steps/index_test"
+require_relative "../steps/rewrite_payload"
+require_relative "../steps/rewrite_check"
 
 module Quaack
   module Enclave
@@ -51,7 +53,9 @@ module Quaack
                                      options: Steps::IndexFeedback::OPTIONS),
         "index-rank" => Step.new(handler: Steps::IndexRank, run: true, options: Steps::IndexRank::OPTIONS),
         "status" => Step.new(handler: Steps::Status, run: true),
-        "index-test" => Step.new(handler: Steps::IndexTest, run: true, input: true, options: Steps::IndexTest::OPTIONS)
+        "index-test" => Step.new(handler: Steps::IndexTest, run: true, input: true, options: Steps::IndexTest::OPTIONS),
+        "rewrite-payload" => Step.new(handler: Steps::RewritePayload, run: true),
+        "rewrite-check" => Step.new(handler: Steps::RewriteCheck, run: true, input: true)
       }.freeze
     end
   end
