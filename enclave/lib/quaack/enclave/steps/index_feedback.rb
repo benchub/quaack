@@ -40,7 +40,7 @@ module Quaack
 
         def call(store:, options:, **)
           search = options.fetch("search", "original")
-          raise Error, "index_feedback_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_feedback_unknown_search" unless IndexSearch.llm_search?(store, search)
           raise Error, "index_feedback_no_index_search" unless store.entry?("index_search_#{search}")
 
           entry = store.read("index_search_#{search}")

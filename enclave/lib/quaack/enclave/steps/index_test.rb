@@ -71,7 +71,7 @@ module Quaack
         end
 
         def check(store, search, input, options)
-          raise Error, "index_test_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_test_unknown_search" unless IndexSearch.llm_search?(store, search)
           raise Error, "index_test_unknown_round" unless [nil, *ROUNDS].include?(options["round"])
           raise Error, "index_test_no_index_search" unless store.entry?("index_search_#{search}")
 

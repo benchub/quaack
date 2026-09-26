@@ -7,7 +7,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-payload --run <run ID> [--search original]` (README
+      # `quaacks index-payload --run <run ID> [--search original|rewrite_<n>]` (README
       # 5a-5): sends the shape-only payload the driver gives the LLM, as one
       # index_payload message. It doesn't connect to anything.
       #
@@ -48,17 +48,25 @@ module Quaack
 
         def call(store:, options:, **)
           search = options.fetch("search", "original")
-          raise Error, "index_payload_unknown_search" unless IndexSearch::SEARCHES.include?(search)
+          raise Error, "index_payload_unknown_search" unless IndexSearch.llm_search?(store, search)
           raise Error, "index_payload_no_index_search" unless store.entry?("index_search_#{search}")
 
-          [message(store, store.read("index_search_#{search}"))]
+          [message(store, search, store.read("index_search_#{search}"))]
         end
 
-        def message(store, entry)
+        # For a rewrite (README step 11), query is the rewrite's SQL, which
+        # holds only the original's $n and literals the LLM wrote, and plan
+        # is its slow-literal plan as index-search stored it, redacted
+        # through 3g. placeholders stay the original's shapes and rows.
+        def message(store, search, entry)
           stats = store.read("classification")["outbound_statistics"]
-          { type: :index_payload, query: store.read("redacted_query"),
-            placeholders: placeholders(store.read("placeholder_shapes")),
-            plan: store.read("redacted_plan")["explain"].map { it.except("Settings") },
+          query, plan = if search == "original"
+                          [store.read("redacted_query"), store.read("redacted_plan")["explain"]]
+                        else
+                          [store.read(search)["sql"], entry["baseline"]["slow"]["plan"]]
+                        end
+          { type: :index_payload, query:, placeholders: placeholders(store.read("placeholder_shapes")),
+            plan: plan.map { it.except("Settings") },
             schema: store.read("schema_subset"),
             mechanical_results: mechanical(entry, CandidateDdlRedaction.new(stats)), stats: }
         end
