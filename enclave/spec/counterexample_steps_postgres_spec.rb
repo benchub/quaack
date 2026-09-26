@@ -15,11 +15,12 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   after { production.server.admin.exec(%(DROP DATABASE IF EXISTS "#{arena_name}" WITH (FORCE))) }
 
-  def ready(sql, arena: true)
+  def ready(sql, arena: true, setup: true)
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
     store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
     make_arena if arena
+    store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
                              "inferred" => false, "warnings" => [], "result_types" => %w[text text])
   end
@@ -86,6 +87,14 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect([before, after].map { it.slice("rewrite_tested_1", "rewrite_survived_1") })
         .to eq([{ "rewrite_tested_1" => false, "rewrite_survived_1" => false },
                 { "rewrite_tested_1" => true, "rewrite_survived_1" => true }])
+    end
+
+    it "refuses to test, or run a round, before the arena is set up (4b)" do
+      ready(same, setup: false)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      expect(lines(step("rewrite-test", "--search", "rewrite_1")).first["rule"]).to eq("rewrite_test_no_arena_setup")
+      expect(lines(round(1)).first["rule"]).to eq("counterexample_round_no_arena_setup")
     end
 
     it "refuses a search that isn't a stored rewrite" do

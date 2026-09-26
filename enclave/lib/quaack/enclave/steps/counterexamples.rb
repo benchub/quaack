@@ -44,6 +44,11 @@ module Quaack
         end
 
         # The original and the candidate, each with its $n bound.
+        # Refuses (<prefix>_no_arena_setup) a run whose arena 4b hasn't set up.
+        def arena!(store, prefix)
+          raise Error, "#{prefix}_no_arena_setup" unless store.entry?("arena_setup")
+        end
+
         def queries(store, search)
           map = Redaction.placeholder_map(store)
           [store.read("anchored_query"), store.read(search)["sql"]].map { Enclave::Counterexamples.bind(it, map) }
@@ -78,6 +83,7 @@ module Quaack
           end
 
           def test(store, search)
+            Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
             report = StepNine.run(connection, original, [candidate])
@@ -136,6 +142,8 @@ module Quaack
             tested = "rewrite_tested_#{number}"
             raise Error, "counterexample_round_untested" unless store.entry?(tested) && store.read(tested)["passed"]
             raise Error, "counterexample_round_bad_round" unless ROUNDS.include?(round)
+
+            Counterexamples.arena!(store, "counterexample_round")
 
             inserts(input)
           end
