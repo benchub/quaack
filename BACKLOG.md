@@ -129,7 +129,7 @@ Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order th
 - **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
 - **README:** 5a.
 - **Status:** todo
-- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. That will need a whitelist type. Neither is wired up yet.
+- **Note (from 20260922-22):** Feed `PiiClassification#low_cardinality` into Dedupe, and send `outbound_statistics` through egress. Update from 20260925-13: the 5a-5 `index-payload` step (20260925-4) sends it, and Dedupe's low-cardinality input comes from the stored `classification` entry.
 
 ## Steps 6 and 7: Rewrite candidates.
 
