@@ -12,6 +12,10 @@ module Quaack
     # - memory_command: the one-line shell command that prints the production
     #   server's instance memory (see Inventory::Memory). Without it, step 2
     #   records the memory as unknown.
+    # - run_server_command and destroy_command: one-line shell commands that
+    #   build or find, and destroy, the run's run server (see
+    #   RunServerCommand). Without them, the operator passes the run server
+    #   to `quaacks run-server` as flags, and destroys it by hand.
     # - pii_columns: README 3f's configured PII list, an Array of
     #   schema.table.column globs, such as "*.users.email". Each glob has
     #   exactly three non-empty parts. A * matches any run of characters
@@ -82,11 +86,12 @@ module Quaack
 
       private_class_method :read, :parse
 
-      attr_reader :memory_command, :pii_columns, :cardinality_threshold
+      attr_reader :memory_command, :run_server_command, :destroy_command, :pii_columns, :cardinality_threshold
 
       def initialize(object)
-        @memory_command = object["memory_command"]
-        raise Error, "bad_config" unless @memory_command.nil? || one_line?(@memory_command)
+        @memory_command = command(object, "memory_command")
+        @run_server_command = command(object, "run_server_command")
+        @destroy_command = command(object, "destroy_command")
 
         @pii_columns = object.fetch("pii_columns", []).freeze
         raise Error, "bad_config" unless @pii_columns.instance_of?(Array)
@@ -103,6 +108,14 @@ module Quaack
       end
 
       private
+
+      # The one-line command at key, or nil if it isn't set.
+      def command(object, key)
+        value = object[key]
+        raise Error, "bad_config" unless value.nil? || one_line?(value)
+
+        value
+      end
 
       # One glob's three parts, each as a Regexp.
       def glob(text)

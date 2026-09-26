@@ -50,6 +50,14 @@ RSpec.describe Quaack::Enclave::Config do
     expect(config.load(path).memory_command).to be_nil
   end
 
+  it "reads the run server and destroy commands, and has neither by default" do
+    expect([config.load(path).run_server_command, config.load(path).destroy_command]).to eq([nil, nil])
+    write(%({"run_server_command": "make-rs {server} {run}", "destroy_command": "rm-rs {run}"}))
+
+    expect([config.load(path).run_server_command, config.load(path).destroy_command])
+      .to eq(["make-rs {server} {run}", "rm-rs {run}"])
+  end
+
   describe "the PII columns and the cardinality threshold, for README 3f" do
     let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
 
@@ -96,6 +104,9 @@ RSpec.describe Quaack::Enclave::Config do
     "has a memory command on more than one line" => %({"memory_command": "echo 1\\necho 2"}),
     "has a memory command with a carriage return" => %({"memory_command": "echo 1\\recho 2"}),
     "has a memory command with a NUL" => %({"memory_command": "echo 1\\u0000"}),
+    "has a run server command on two lines" => %({"run_server_command": "a\\nb"}),
+    "has a destroy command that isn't a string" => %({"destroy_command": ["rm"]}),
+    "has a blank destroy command" => %({"destroy_command": " "}),
     "has PII columns that aren't a list" => %({"pii_columns": "*.users.email"}),
     "has a PII glob that isn't a string" => %({"pii_columns": [1]}),
     "has a PII glob with two parts" => %({"pii_columns": ["users.email"]}),
