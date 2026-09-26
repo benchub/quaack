@@ -68,13 +68,16 @@ module Quaack
         def run(store, entry, ddls, connection)
           dedupe = IndexStore.dedupe(entry["dedupe"], statistics: PlannerStatistics.load(store).statistics,
                                                       low_cardinality: PiiClassification.load(store).low_cardinality)
-          tables = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
-          result = GeneratorThree.filter(ddls, dedupe:, tables:, settings: store.read("plan")[0]["Settings"],
-                                               connection:)
-          report = SingleCandidateTest.run(connection, query: store.read("anchored_query"),
-                                                       literal_sets: IndexSearch.values(LiteralSet.load(store).sets),
-                                                       candidates: result.survivors)
-          [result, report, dedupe]
+          result = GeneratorThree.filter(ddls, dedupe:, tables: tables(store),
+                                               settings: store.read("plan")[0]["Settings"], connection:)
+          [result, test(store, connection, result.survivors), dedupe]
+        end
+
+        def tables(store) = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
+
+        def test(store, connection, candidates)
+          literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
+          SingleCandidateTest.run(connection, query: store.read("anchored_query"), literal_sets:, candidates:)
         end
 
         def updated(entry, dedupe, report, maps)

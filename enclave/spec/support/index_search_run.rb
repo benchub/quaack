@@ -64,12 +64,15 @@ RSpec.shared_context "an index search run" do
     Quaack::Enclave::PiiClassification.run(store:, config: Quaack::Enclave::Config.new({}))
   end
 
-  def redact_and_anchor(explain)
-    redacted = Quaack::Enclave::Redaction.redact(PgQuery.parse(query), explain)
+  def store_redacted(redacted)
     redacted.store(store)
     store.write("redacted_query", redacted.query.sql)
-    store.write("redacted_plan", { "explain" => redacted.plan.explain, "masked" => redacted.plan.masked,
-                                   "dropped" => redacted.plan.dropped })
+    store.write("redacted_plan", redacted.plan.to_h.transform_keys(&:name))
+  end
+
+  def redact_and_anchor(explain)
+    redacted = Quaack::Enclave::Redaction.redact(PgQuery.parse(query), explain)
+    store_redacted(redacted)
     Quaack::Enclave::LiteralSet.run(store:, sql: redacted.query.sql)
     Quaack::Enclave::Steps::Anchor.call(store:)
   end

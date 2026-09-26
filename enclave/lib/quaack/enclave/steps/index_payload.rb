@@ -79,7 +79,7 @@ module Quaack
           refusal = result["refusal"]
           candidate(result["candidate"], redaction).merge(
             "partial_constant_only" => !result["candidate"]["predicate"].nil?, "size" => result["size"],
-            "refusal" => refusal && refusal.slice("rule", "sqlstate"), "plans" => result["plans"]
+            "refusal" => refusal&.slice("rule", "sqlstate"), "plans" => result["plans"]
           )
         end
 

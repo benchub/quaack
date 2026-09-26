@@ -126,7 +126,8 @@ module Quaack
         def result(result, proposals, maps)
           refusal = result.refusal && { "rule" => result.refusal.rule.to_s, "sqlstate" => result.refusal.sqlstate }
           { "candidate" => IndexStore.candidate_plain(proposals.find { it == result.candidate }),
-            "partial_constant_only" => !result.candidate.predicate.nil?, "size" => result.size, "refusal" => refusal, "plans" => plans(result.plans, maps) }
+            "partial_constant_only" => !result.candidate.predicate.nil?, "size" => result.size,
+            "refusal" => refusal, "plans" => plans(result.plans, maps) }
         end
       end
     end
