@@ -25,7 +25,7 @@ module Quaack
                                         "timed_out" => results.select { |_, s| s.values.any? { it["timed_out"] } }.keys)
           []
         ensure
-          Enclave::IndexBuild.hide(connection, build["indexes"].keys) if connection && build
+          Enclave::IndexBuild.hide_all(connection, build) if connection && build
           connection&.close
         end
 

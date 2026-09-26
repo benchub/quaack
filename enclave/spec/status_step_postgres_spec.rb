@@ -17,7 +17,7 @@ RSpec.describe "quaacks status, against a real server" do
     prepare
     expect(status).to eq("type" => "status", "entries" => {
                            "index_search_original" => false, "index_generated_original" => false,
-                           "index_ranking_original" => false, "rewrites_generated" => false
+                           "index_ranking_original" => false, "rewrites_generated" => false, "index_build" => false
                          })
 
     index_search
@@ -26,6 +26,12 @@ RSpec.describe "quaacks status, against a real server" do
 
     index_test(JSON.generate("ddls" => []))
     quaacks.run("index-rank", "--run", store.run_id, env: libpq_env)
-    expect(status["entries"].values).to eq([true, true, true, false])
+    expect(status["entries"].values).to eq([true, true, true, false, false])
+  end
+
+  it "says whether index_build is in the store" do
+    prepare
+    store.write("index_build", "indexes" => {}, "combinations" => {})
+    expect(status["entries"]["index_build"]).to be(true)
   end
 end

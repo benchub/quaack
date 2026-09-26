@@ -80,7 +80,7 @@ module Quaack
       def show(connection, build, combination, sql, params)
         return IndexBuild.show_only(connection, build, combination, sql:, params:) if combination
 
-        IndexBuild.hide(connection, build["indexes"].keys)
+        IndexBuild.hide_all(connection, build)
         IndexBuild.confirm(connection, build, [], sql:, params:)
       end
 
