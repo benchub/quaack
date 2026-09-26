@@ -7,28 +7,40 @@ module Quaack
     # The quaack command line, run by an engineer on their laptop.
     class CLI
       USAGE = "Usage: quaack --version\n       " \
-              "quaack start --server <name> --query <file> --plan <file>\n"
+              "quaack start --server <name> --query <file> --plan <file>\n       " \
+              "quaack run --run <ID> [--rewrites <file>]\n"
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
 
-      def initialize(stdout: $stdout, stderr: $stderr)
+      # transport builds the transport to a jump host, and client the LLM
+      # client. Specs pass fakes for both, since they're the edges.
+      def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil)
         @stdout = stdout
         @stderr = stderr
+        @home = home
+        @transport = transport || ->(host) { Transport::Ssh.new(host:) }
+        @client = client || -> { LLM::Client.new(burndown: Burndown.new) }
       end
 
       def run(argv)
         if argv == ["--version"]
           @stdout.print "quaack #{VERSION}\n"
           0
-        elsif argv.first == "start" && (options = start_options(argv.drop(1)))
-          start(options)
         else
-          @stderr.print USAGE
-          EX_USAGE
+          subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
         end
       end
 
       private
+
+      # The exit status of a well-formed start or run, or nil.
+      def subcommand(argv)
+        if argv.first == "start" && (options = start_options(argv.drop(1)))
+          start(options)
+        elsif argv.first == "run" && (options = run_options(argv.drop(1)))
+          run_command(**options)
+        end
+      end
 
       # The start options as a Hash, or nil unless argv is each of them
       # exactly once, with a value.
@@ -50,6 +62,68 @@ module Quaack
       rescue Start::Error, EnclaveError => e
         @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule : e.message}\n"
         1
+      end
+
+      # { run:, rewrites: } from `--run ID [--rewrites <file>]`, or nil.
+      def run_options(argv)
+        return unless [2, 4].include?(argv.size) && argv[0] == "--run"
+        return { run: argv[1], rewrites: nil } if argv.size == 2
+
+        { run: argv[1], rewrites: argv[3] } if argv[2] == "--rewrites"
+      end
+
+      # README step 5 onward, then step 7 if there's a rewrites file. The
+      # file is read first, so a bad one fails before the jump server is
+      # touched. A failure prints only its rule, as for start.
+      def run_command(run:, rewrites:)
+        require_run
+        host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
+        sqls = read_rewrites(rewrites) if rewrites
+        return usage_error(@rewrites_problem) if rewrites && !sqls
+
+        drive(@transport.call(host), @client.call, run, sqls)
+      rescue EnclaveError, LLM::Error, OperatorCandidates::Error => e
+        @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
+        1
+      end
+
+      def drive(transport, client, run_id, sqls)
+        Pipeline.new(transport:, client:, run_id:).run
+        operator_rewrites(transport, client, run_id, sqls) if sqls
+        0
+      end
+
+      def require_run
+        require_relative "burndown"
+        require_relative "enclave_error"
+        require_relative "llm"
+        require_relative "operator_candidates"
+        require_relative "pipeline"
+        require_relative "runs"
+        require_relative "transport/ssh"
+      end
+
+      def read_rewrites(path)
+        OperatorCandidates.from_file(path)
+      rescue SystemCallError, IOError
+        @rewrites_problem = "can't read the rewrites file"
+        nil
+      rescue OperatorCandidates::Error => e
+        @rewrites_problem = e.message
+        nil
+      end
+
+      # README step 7, on the payload 6a uses.
+      def operator_rewrites(transport, client, run_id, sqls)
+        payload = transport.call("rewrite-payload", args: { run: run_id }).messages
+                           .find { it["type"] == "rewrite_payload" }
+        OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
+                          .run(payload, sqls)
+      end
+
+      def usage_error(message)
+        @stderr.print "quaack run: #{message}\n"
+        EX_USAGE
       end
     end
   end
