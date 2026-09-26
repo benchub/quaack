@@ -130,6 +130,24 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    it "moves an identity sequence past the fixture's explicit values, so an insert that leaves it out fits" do
+      inserts = ['INSERT INTO "Fixture Space".counters (label) VALUES (\'x\')']
+      rows = runner.with_fixture([row(counters, { "id" => "1" }), row(counters, { "id" => "5" })], inserts:) do |tx|
+        tx.query('SELECT id FROM "Fixture Space".counters ORDER BY id').rows
+      end
+
+      expect(rows).to eq([%w[1], %w[5], %w[6]])
+    end
+
+    it "keeps the sequence within its bounds when the fixture's value is below its minimum" do
+      inserts = ['INSERT INTO "Fixture Space".counters (label) VALUES (\'x\')']
+      rows = runner.with_fixture([row(counters, { "id" => "-5", "label" => "a" })], inserts:) do |tx|
+        tx.query('SELECT id FROM "Fixture Space".counters ORDER BY id').rows
+      end
+
+      expect(rows).to eq([%w[-5], %w[2]])
+    end
+
     it "retries with rebuilt rows after a rollback, on the same connection" do
       sql = 'SELECT "Code" FROM "Fixture Space"."Parent Rows"'
 

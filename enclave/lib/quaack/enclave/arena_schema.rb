@@ -32,24 +32,24 @@ module Quaack
       # A foreign key: columns of the child reference parent_columns of
       # parent, a TableName.
       ForeignKey = Data.define(:columns, :parent, :parent_columns)
-      # Each table's primary key, unique constraints, and unique indexes (as
-      # lists of column names), foreign keys, and validated CHECK
-      # expressions, as pg_get_constraintdef prints them. A partial unique
-      # index counts as always unique, which is conservative.
-      # expression_unique is whether a unique index has an expression key.
-      Constraints = Data.define(:uniques, :foreign_keys, :checks, :expression_unique)
-
-      # Unique indexes no constraint owns: their key columns (not INCLUDE
-      # ones), and whether any key is an expression.
-      UNIQUE_INDEXES_SQL = <<~SQL
-        SELECT array_to_json(ARRAY(SELECT a.attname FROM unnest(i.indkey::int2[]) WITH ORDINALITY k(n, o)
-                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n
-                 WHERE k.o <= i.indnkeyatts ORDER BY k.o)),
-               i.indexprs IS NOT NULL
-        FROM pg_index i
-        WHERE i.indrelid = $1::regclass AND i.indisunique AND i.indisvalid
-          AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid AND c.conrelid = i.indrelid)
-      SQL
+      # A unique index with an expression key: the columns it reads (keys,
+      # expressions, and predicate), each key as pg_get_indexdef prints it,
+      # and whether NULL keys collide.
+      ExpressionUnique = Data.define(:columns, :keys, :nulls_not_distinct)
+      # Each table's primary key, unique constraints, and plain unique
+      # indexes (as lists of key column names, not INCLUDE ones), foreign
+      # keys, validated CHECK expressions as pg_get_constraintdef prints
+      # them, expression unique indexes, and the plain keys whose NULLs
+      # collide (NULLS NOT DISTINCT). A partial unique index counts as
+      # always unique, which is conservative. user_function is whether an
+      # expression unique index calls a function outside pg_catalog, which
+      # step 9 won't evaluate.
+      Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
+                                :user_function) do
+        # Whether a unique key or expression unique index reads the column,
+        # so it needs a distinct value per row.
+        def distinct?(name) = (uniques + expressions.map(&:columns)).any? { |u| u.include?(name) }
+      end
 
       CONSTRAINTS_SQL = <<~SQL
         SELECT c.contype,
@@ -88,17 +88,9 @@ module Quaack
       def self.read_constraints(conn, table)
         rows = conn.exec_params(CONSTRAINTS_SQL, [regclass(conn, table)]).values
         of = rows.group_by(&:first)
-        indexes, expression_unique = unique_indexes(conn, table)
-        Constraints.new(uniques: keys(of) + indexes,
-                        expression_unique:,
+        Constraints.new(**UniqueIndexes.read(conn, regclass(conn, table), keys(of)),
                         foreign_keys: of.fetch("f", []).map { |r| foreign_key(r) },
                         checks: checks(conn, table, of))
-      end
-
-      # The unique indexes' column lists, and whether any has an expression.
-      def self.unique_indexes(conn, table)
-        rows = conn.exec_params(UNIQUE_INDEXES_SQL, [regclass(conn, table)]).values
-        [rows.map { |cols, _| JSON.parse(cols) }, rows.any? { |_, expr| expr == "t" }]
       end
 
       def self.keys(of) = (of.fetch("p", []) + of.fetch("u", [])).map { |r| JSON.parse(r[1]) }
@@ -142,3 +134,4 @@ module Quaack
 end
 
 require_relative "arena_schema/domain_checks"
+require_relative "arena_schema/unique_indexes"

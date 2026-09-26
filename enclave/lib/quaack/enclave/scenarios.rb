@@ -51,8 +51,11 @@ module Quaack
     # a generated value per group (an identity key too, when a key class
     # ties it to another column), and a unique column one per distinct
     # row, even with a DEFAULT. A unique index counts, a partial one as
-    # always unique; an expression unique index raises
-    # Error(:expression_unique_index). Another column with a DEFAULT (or
+    # always unique. Every column an expression unique index reads counts as
+    # unique too, and RowSet evaluates the index's keys in Postgres to catch
+    # rows whose expression values still collide (lower('A') = lower('a')).
+    # An expression unique index that calls a function outside pg_catalog
+    # raises Error(:expression_unique_index). Another column with a DEFAULT (or
     # an identity) is left out, so the default
     # applies. The rest take the type's typical value (0, '', the epoch),
     # or a value that satisfies the column's CHECKs. S1 has no NULLs but
@@ -120,7 +123,7 @@ module Quaack
           @conn = conn
           @parse = parse
           @schema = ArenaSchema.load_closure(conn, Scenarios.query_tables(parse.tree))
-          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).expression_unique }
+          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
 
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
           @pools = ValuePools.build(conn, parse, @atoms, @schema)
@@ -134,7 +137,7 @@ module Quaack
           @identities = {}
           @dropped = 0
           Plan.new(@topology, @atoms, @pools.keys).scenarios.transform_values do |groups|
-            set = RowSet.new(@schema)
+            set = RowSet.new(@schema, @conn)
             groups.each { |g| build_group(g)&.then { |rows| @dropped += 1 unless set.add?(rows) } }
             set.in_order(order)
           end
@@ -190,7 +193,7 @@ module Quaack
         end
 
         def free_value(table, col, mode)
-          return UNIQUE if @schema.constraints(table).uniques.any? { |u| u.include?(col.name) }
+          return UNIQUE if @schema.constraints(table).distinct?(col.name)
           return :omit if col.default
 
           @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col, strict: false)])
