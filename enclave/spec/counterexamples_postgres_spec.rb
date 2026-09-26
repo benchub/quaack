@@ -63,4 +63,17 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.inserts.size).to eq(1)
     expect(prepared.refused.to_s).not_to include("SENTINEL_10a")
   end
+
+  it "builds a parent whose domain column rejects the type-typical value, from the column's CHECK" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN fx.code AS integer CHECK (VALUE > 1000);
+      CREATE TABLE fx.regions (id integer PRIMARY KEY, code fx.code NOT NULL CHECK (code > 5000));
+      CREATE TABLE fx.depots (id integer PRIMARY KEY, region_id integer NOT NULL REFERENCES fx.regions);
+    SQL
+    prepared = described_class.prepare(conn, ["INSERT INTO fx.depots (id, region_id) VALUES (1, 4)"],
+                                       placeholder_map: map, tables: %w[regions depots].map { tn(it) })
+    expect(prepared.refused).to eq([])
+    expect(load(prepared, "SELECT r.code FROM fx.depots d JOIN fx.regions r ON r.id = d.region_id"))
+      .to eq([["5001"]])
+  end
 end
