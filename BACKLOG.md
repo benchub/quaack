@@ -1227,14 +1227,7 @@ Build the literal set and store it. Each subcommand takes `--run <run ID>`, read
 
 ### 20260925-13. Enclave subcommand: `quaacks classify` (3f). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-14. Enclave subcommand: `quaacks redact` (3g).
-
-Redact the query. Store the placeholder map and the redacted SQL (the redacted SQL isn't stored today). Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-8, 20260925-13, 20260922-23.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3g.
-- **Status:** todo
+### 20260925-14. Enclave subcommand: `quaacks redact` (3g). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-15. Enclave subcommand: `quaacks anchor` (3h).
 
@@ -1302,6 +1295,15 @@ README 3d says to abort and say which function caused it. Today the `volatile_fu
 - **Depends on:** 20260925-11.
 - **Came from:** The first review of 20260925-11, and the user's decision.
 - **README:** 3d, What leaves the enclave.
+- **Status:** todo
+
+### 20260925-22. Name the missing input when a step's store entry is absent.
+
+The new step subcommands (redact, classify, and others) report a missing upstream entry as `internal_error`. The README says a failure names only its rule, and the rule should name what's missing, such as `missing_plan` or a shared `missing_entry` naming the entry. Fix this in one place, for all the steps. Also note, or fix, that `redact` writes its entries one at a time, so a crash partway through can leave some of them stored. A rerun overwrites them.
+
+- **Depends on:** 20260925-14.
+- **Came from:** The first review of 20260925-14.
+- **README:** Step 3.
 - **Status:** todo
 
 ## After version 1.
