@@ -1294,27 +1294,9 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-19. Assumption and run discipline loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-20. Step 11 loose ends.
+### 20260926-20. Step 11 loose ends. Done, see BACKLOG-COMPLETE.md.
 
-- A rewrite's index payload reuses the original's placeholder row counts, because a rewrite has no EXPLAIN ANALYZE of its own.
-- The driver specs for `RewriteIndexStage` weren't mutation-tested.
-
-- **Depends on:** 20260922-52.
-- **Came from:** 20260922-52 build report and review.
-- **README:** Step 11.
-- **Status:** todo
-
-### 20260926-21. Harness and driver loose ends, part three.
-
-- Test containers: no test covers the "same host label, dead PID, so remove it" path separately from the path for containers with no label (20260926-18 review).
-- The driver's SIGKILL timing test (`Transport limits kills a run that ignores SIGTERM with SIGKILL`) flakes under heavy parallel load.
-- An earlier run hit 1216 enclave failures from containers being removed mid-run, even though main already had the PID-scoped cleanup. The cause is unknown, so watch for it.
-- Step 7 (`--rewrites`) runs after the whole pipeline, not next to 6a (from 20260926-16).
-
-- **Depends on:** 20260926-18, 20260926-16.
-- **Came from:** Builds and reviews of 20260926-18 and -16.
-- **README:** Step 7; CLAUDE.md Development.
-- **Status:** todo
+### 20260926-21. Harness and driver loose ends, part three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-22. Steps 9 and 10 wiring loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -1334,15 +1316,7 @@ These are minor findings from the build and review of 20260922-53:
 
 ### 20260926-24. Assumption and timeout loose ends, part three. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-25. Pipeline loose ends, part four.
-
-- A resumed run restarts step 10 at round 1. Continuing mid-way would need the earlier rounds' LLM conversation.
-- The sentinel check in `index_rank_step_postgres_spec.rb` doesn't bite by itself. Plant a sentinel literal in the fixture's literal sets.
-
-- **Depends on:** 20260926-8, 20260926-22.
-- **Came from:** Their build and review.
-- **README:** 5a-7, step 10.
-- **Status:** todo
+### 20260926-25. Pipeline loose ends, part four. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-26. Scenario and counterexample loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
@@ -1364,4 +1338,14 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260926-7, 20260926-14.
 - **Came from:** Build of 20260926-21.
 - **README:** Step 7.
+- **Status:** todo
+
+### 20260926-29. Remaining test-infrastructure unknowns.
+
+- The 1216-failure run is still unexplained. Two guesses, neither confirmed: spec processes in different PID namespaces or sandboxes on the same hostname, where `kill(0)` returns ESRCH; or containers dying outside our code, such as a Docker Desktop restart or OOM. Watch for a repeat.
+- A resumed run still restarts step 10 at round 1 (from 20260926-25).
+
+- **Depends on:** 20260926-21, 20260926-25.
+- **Came from:** Build of 20260926-21 and -25.
+- **README:** Step 10; CLAUDE.md Development.
 - **Status:** todo
