@@ -58,16 +58,37 @@ RSpec.describe Quaack::Enclave::Minimax do
     expect(out["discarded_ties"]).to eq(["big"])
   end
 
+  it "ties candidates exactly 5% apart on the slow literal" do
+    out = described_class.decide(original: sets(200), candidates: [candidate("a", 100, footprint: 900),
+                                                                   candidate("b", 105, footprint: 100)])
+    expect(out["survivors"].map { it["label"] }).to eq(["b"])
+  end
+
+  it "resolves chained ties greedily by footprint, so a discarded candidate knocks out nobody" do
+    out = described_class.decide(original: sets(200), candidates: [candidate("a", 100, footprint: 10),
+                                                                   candidate("b", 104, footprint: 5),
+                                                                   candidate("c", 108, footprint: 1)])
+    expect(out["survivors"].map { it["label"] }).to eq(%w[a c])
+    expect(out["discarded_ties"]).to eq(["b"])
+  end
+
+  it "skips a candidate with a timed-out measurement" do
+    c = { "label" => "t", "footprint" => 0, "sets" => sets(50).merge("typical" => { "timed_out" => true }) }
+    out = described_class.decide(original:, candidates: [c, candidate("ok", 50)])
+    expect(out["survivors"].map { it["label"] }).to eq(["ok"])
+    expect(out["verdicts"]).not_to have_key("t")
+  end
+
   it "does not tie candidates more than 5% apart" do
     out = described_class.decide(original:, candidates: [candidate("a", 50, footprint: 900),
                                                          candidate("b", 53, footprint: 100)])
     expect(out["survivors"].map { it["label"] }).to eq(%w[a b])
   end
 
-  it "breaks equal slow blocks by the sum across literals" do
+  it "keeps the smaller sum across literals when footprint and slow blocks are equal" do
     out = described_class.decide(original:, candidates: [candidate("a", 50, typical: 100),
                                                          candidate("b", 50, typical: 90)])
-    expect(out["survivors"].map { it["label"] }).to eq(%w[b a])
+    expect(out["survivors"].map { it["label"] }).to eq(%w[b])
     expect(out["survivors"].first).to include("slow_blocks" => 50, "total_blocks_sum" => 240, "footprint" => 0)
   end
 

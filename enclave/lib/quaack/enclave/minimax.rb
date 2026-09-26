@@ -36,6 +36,7 @@ module Quaack
 
       def decide(original:, candidates:)
         base = original.transform_values { it["timed_out"] ? nil : it["total_blocks"] }
+        candidates = candidates.reject { |c| c["sets"].values.any? { it["timed_out"] } }
         verdicts = candidates.to_h { [it["label"], verdicts(it, base)] }
         passing = passing(candidates, verdicts)
         discarded = discarded(passing)
@@ -55,9 +56,14 @@ module Quaack
         base.to_h { |set, blocks| [set, verdict(candidate["sets"].fetch(set)["total_blocks"], blocks)] }
       end
 
-      # The survivors that tie another with a smaller footprint.
+      # Greedy by footprint (then slow blocks): a survivor is discarded when
+      # it ties one already kept, so a discarded one knocks out nobody.
       def discarded(passing)
-        passing.select { |a| passing.any? { |b| tie?(a, b) && b["footprint"] < a["footprint"] } }
+        kept = []
+        passing.sort_by { [it["footprint"], it["slow_blocks"], it["total_blocks_sum"]] }.each do |a|
+          kept << a if kept.none? { |b| tie?(a, b) }
+        end
+        passing - kept
       end
 
       def survives?(verdicts)

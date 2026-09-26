@@ -49,8 +49,20 @@ RSpec.describe "quaacks minimax" do
 end
 
 RSpec.describe Quaack::Enclave::Steps::Baseline do
-  it "gives the original 15 minutes per run" do
-    expect(described_class::ORIGINAL_TIMEOUT_MS).to eq(900_000)
+  it "gives the original's measurement 15 minutes per run" do
+    quaacks = LeakCheck::Quaacks.new
+    store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+    store.write("anchored_query", "SELECT 1")
+    connection = instance_double(PG::Connection, close: nil)
+    allow(Quaack::Enclave::RunServer).to receive(:connect).with(store, :racetrack).and_return(connection)
+    seen = []
+    allow(Quaack::Enclave::Measurement).to receive(:measure) { |**kw| seen << kw[:timeout_ms] && {} }
+
+    described_class.call(store:)
+
+    expect(seen).to eq([900_000])
+  ensure
+    quaacks&.remove
   end
 
   it "clamps the candidates' timeout when every set timed out" do
