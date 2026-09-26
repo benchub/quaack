@@ -14,7 +14,8 @@ module Quaack
     #
     # - not_null: a validated NOT NULL or primary key constraint on the column.
     # - unique: a valid unique index on the table, with no predicate and no
-    #   expression, whose key columns are all among the stated ones.
+    #   expression, not deferrable, whose key columns are all among the
+    #   stated ones and are all validated NOT NULL (or NULLS NOT DISTINCT).
     # - foreign_key: a validated foreign key from the table to
     #   references_table, pairing the same columns.
     # - check: a validated CHECK on the table whose expression, deparsed
@@ -39,7 +40,12 @@ module Quaack
       UNIQUE = <<~SQL.freeze
         SELECT 1 FROM pg_catalog.pg_index i
         WHERE i.indrelid = #{RELATION} AND i.indisunique AND i.indisvalid
-          AND i.indpred IS NULL AND i.indexprs IS NULL
+          AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indimmediate
+          AND (i.indnullsnotdistinct OR NOT EXISTS (
+            SELECT 1 FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS u(k, n)
+            WHERE u.n <= i.indnkeyatts AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_constraint c
+              WHERE c.conrelid = i.indrelid AND c.contype IN ('n', 'p') AND c.convalidated AND u.k = ANY (c.conkey))))
           AND NOT EXISTS (
             SELECT 1 FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS u(k, n)
             JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.k
@@ -93,18 +99,38 @@ module Quaack
         return false unless stated
 
         connection.exec_params(CHECK, table).column_values(0)
-                  .any? { normalize(it.delete_prefix("CHECK ")) == stated }
+                  .any? { normalize(it.delete_prefix("CHECK ").delete_suffix(" NO INHERIT")) == stated }
       end
 
       # The expression's one-statement "SELECT <expression>", deparsed by
-      # pg_query, or nil if it doesn't parse as exactly that.
+      # pg_query with every cast of a constant stripped (Postgres adds
+      # them, as in (0)::numeric), or nil if it doesn't parse as exactly that.
       def normalize(expression)
         parse = PgQuery.parse("SELECT #{expression}")
         return unless parse.tree.stmts.size == 1
 
-        parse.deparse
+        strip_constant_casts(parse.tree)
+        PgQuery.deparse(parse.tree)
       rescue PgQuery::ParseError
         nil
+      end
+
+      def strip_constant_casts(message)
+        message.class.descriptor.each do |field|
+          value = message[field.name]
+          if value.is_a?(Google::Protobuf::RepeatedField)
+            value.each_with_index { |item, i| value[i] = uncast(item) if item.is_a?(PgQuery::Node) }
+            value.each { strip_constant_casts(it) if it.is_a?(Google::Protobuf::MessageExts) }
+          elsif value.is_a?(Google::Protobuf::MessageExts)
+            message[field.name] = value = uncast(value) if value.is_a?(PgQuery::Node)
+            strip_constant_casts(value)
+          end
+        end
+      end
+
+      def uncast(node)
+        node = node.type_cast.arg while node.node == :type_cast && node.type_cast.arg&.node == :a_const
+        node
       end
 
       def text_array(values) = "{#{values.map { %("#{it.gsub(/["\\]/) { |c| "\\#{c}" }}") }.join(",")}}"
