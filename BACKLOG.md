@@ -194,6 +194,7 @@ Rank candidates per literal and overall with the minimax rule. List untested ato
 - **README:** Step 15.
 - **Status:** todo
 - **Decided:** The report is written to a file on the laptop, `./quaack-<run>.html` or `--out <path>`, and its path is printed.
+- **Note:** Scenario groups dropped on a unique-key collision are counted in `StepNine::Report#dropped` (20260926-15), but the count isn't sent to the driver yet. Add it here if the report shows it.
 - **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
 
 ### 20260922-63. 15a negative result.
@@ -1349,15 +1350,7 @@ These are minor findings from the build and review of 20260922-53:
 - **README:** 12a.
 - **Status:** todo
 
-### 20260926-24. Assumption and timeout loose ends, part three.
-
-- Postgres may store a one-element IN list as plain `=`, so a stated `x IN ('a')` wouldn't match (this fails safe). Check it, and leave one-element lists as `=` when normalizing.
-- The timeout heuristic counts an operator cancel that lands in the few milliseconds after `timeout_ms` as a timeout. That's harmless.
-
-- **Depends on:** 20260926-19.
-- **Came from:** Review of 20260926-19.
-- **README:** 6b, 12b.
-- **Status:** todo
+### 20260926-24. Assumption and timeout loose ends, part three. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-25. Pipeline loose ends, part four.
 
@@ -1369,17 +1362,7 @@ These are minor findings from the build and review of 20260922-53:
 - **README:** 5a-7, step 10.
 - **Status:** todo
 
-### 20260926-26. Scenario and counterexample loose ends, part two.
-
-- `counterexamples/parent_rows.rb` calls `Values#typical` in strict mode, so a parent row whose domain column fails the typical value is refused with `unsupported_type` (this fails safe). Pass `strict: false`, and add a test.
-- The `dropped` group count isn't carried through to the driver's report.
-- A timeout during the fixture load step (as opposed to the insert step) has no direct test.
-- The typed-binding item from 20260926-15 was judged stale (untyped binding works for bit strings) but wasn't independently checked.
-
-- **Depends on:** 20260926-15.
-- **Came from:** 20260926-15 build and review.
-- **README:** Steps 9 and 10.
-- **Status:** todo
+### 20260926-26. Scenario and counterexample loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-27. Baseline loose ends.
 
