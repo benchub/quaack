@@ -178,7 +178,7 @@ For each remaining candidate, run 5a-1, 5a-2, 5a-3, and 5a-4 on its own parse an
 - **Depends on:** 20260922-41, 20260922-35, 20260922-15.
 - **README:** Step 8.
 - **Status:** todo
-- **Open questions:** Match against the original's plan under the same index configuration, or against the original's bare plan?
+- **Decided:** Compare against the original's plan under the same index configuration.
 
 ## Step 9: Predicate-aware fixtures.
 
@@ -232,7 +232,7 @@ Ask the LLM for constraint-satisfying inserts that make a candidate and the orig
 - **Depends on:** 20260922-6, 20260922-5, 20260922-12, 20260922-48.
 - **README:** 10a.
 - **Status:** todo
-- **Open questions:** Who writes the parent rows for FK gaps: the enclave script, or the LLM on a retry? The LLM only sees shapes, so how does it write inserts that hit the real literals?
+- **Decided:** The enclave writes FK parent rows mechanically, using the step 9 fixture rules. The LLM writes shape-level inserts with placeholders, and the enclave binds the real literals.
 
 ### 20260922-51. 10b and 10c compare and roll back.
 
@@ -241,7 +241,7 @@ Load the inserts, run the 9d comparator, recheck untested atoms with the 9c test
 - **Depends on:** 20260922-50, 20260922-47, 20260922-48.
 - **README:** 10b and 10c.
 - **Status:** todo
-- **Open questions:** Does a round that finds no mismatch end the rounds early, or do all three always run?
+- **Decided:** All three rounds always run.
 
 ## Step 11: Per-candidate index ranking.
 
@@ -262,16 +262,9 @@ Build every distinct index from 5a and step 11 with raised maintenance settings.
 - **Depends on:** 20260922-35, 20260922-52.
 - **README:** 12a.
 - **Status:** todo
-- **Open questions:** The README hides all built indexes. I assume each measurement then unhides only its own combination. Is that right? What about the GIN and GiST candidates set aside in 5a-3?
+- **Decided:** Each measurement unhides only its own combination. Build and measure the GIN and GiST candidates set aside in 5a-3 too.
 
-### 20260922-54. 12b run discipline.
-
-Run every measurement statement in a `READ ONLY` transaction with `statement_timeout`, one at a time.
-
-- **Depends on:** 20260922-26.
-- **README:** 12b.
-- **Status:** todo
-- **Decided:** `statement_timeout` is 3× the original query's baseline time, clamped to at least 5 seconds and at most 5 minutes. We should always be willing to wait 5 seconds, and anything needing more than 5 minutes needs a human. A candidate whose measurement times out is dropped and counted in the report as timed out.
+### 20260922-54. 12b run discipline. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-55. 13 baseline runs.
 
@@ -305,7 +298,7 @@ Compare on total blocks only, with a 5% threshold. A candidate must beat the ori
 - **README:** 14a and 14b.
 - **Status:** todo
 - **Note (from the review of 20260922-26):** The plpgsql `quaack.clock_anchor()` adds about 0.2 µs per row in a per-row filter, compared with `now()`: 70 ms against 27 ms on 187k rows. Plans don't change, but anchored runtimes carry that fixed extra cost, which shrinks a candidate's apparent speedup. Lean on blocks rather than time alone, or account for the cost.
-- **Open questions:** Does "no worse" allow any increase at all, or is it within the 5% threshold?
+- **Decided:** "No worse" means an increase within the 5% threshold.
 
 ### 20260922-59. 14c production result comparison.
 
@@ -315,7 +308,7 @@ Run the original and each candidate as plain queries per literal and compare in 
 - **README:** 14c.
 - **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
 - **Status:** todo
-- **Open questions:** Which hash? A plain sum of row hashes can mask duplicates in some cases, so we should pick one carefully.
+- **Decided:** Hash each row, sort the hashes, and hash the sorted list together with the row count.
 
 ### 20260922-60. 14d selection.
 
@@ -336,7 +329,7 @@ Rank candidates per literal and overall with the minimax rule. List untested ato
 - **Depends on:** 20260922-60, 20260922-24.
 - **README:** Step 15.
 - **Status:** todo
-- **Open questions:** Output format (Markdown, HTML, JSON)? Is the explanation LLM-written or templated?
+- **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
 
 ### 20260922-63. 15a negative result.
 
@@ -1453,4 +1446,22 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
 - **README:** What goes into the enclave, and step 1.
+- **Status:** todo
+
+### 20260926-4. Wire run discipline into steps 13 and 14.
+
+`RunDiscipline` (20260922-54) exists, but nothing calls it yet. Steps 13 and 14 have to run every timed statement through it, drop any candidate whose statement timed out, and give the report a count of timed-out candidates.
+
+- **Depends on:** 20260922-54, and the step 13 and 14 tasks.
+- **Came from:** 20260922-54 build report.
+- **README:** Step 12b.
+- **Status:** todo
+
+### 20260926-5. Run discipline: tell timeouts apart from cancels, and allow one statement only.
+
+Both of these are minor findings from the 20260922-54 review. First, `rescue PG::QueryCanceled` counts every cancel as a timeout, so an operator's `pg_cancel_backend` is also recorded as timed out. Check that the error really is a statement timeout. Second, `connection.exec` accepts several statements in one string, so a `COMMIT` in the SQL could end the READ ONLY transaction. Refuse SQL that holds more than one statement, or run it with `exec_params`.
+
+- **Depends on:** 20260922-54.
+- **Came from:** 20260922-54 review, minor findings.
+- **README:** Step 12b.
 - **Status:** todo

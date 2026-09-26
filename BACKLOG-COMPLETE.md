@@ -1158,3 +1158,11 @@ Minor findings from the first review of 20260925-4:
 - **Status:** done
 - **Landed:** Both fixes were folded into piece two of 20260925-4.
 
+### 20260922-54. 12b run discipline.
+
+Run every measurement statement in a `READ ONLY` transaction with `statement_timeout`, one at a time.
+
+- **Depends on:** 20260922-26.
+- **README:** 12b.
+- **Status:** done
+- **Decided:** `statement_timeout` is 3× the original query's baseline time, clamped to at least 5 seconds and at most 5 minutes. We should always be willing to wait 5 seconds, and anything needing more than 5 minutes needs a human. A candidate whose measurement times out is dropped and counted in the report as timed out.

@@ -69,12 +69,40 @@ module Quaack
           sql = store.read("anchored_query")
           connection = Enclave::RunServer.connect(store, :racetrack)
           PlanGate.check(store:, connection:, sql:)
-          dedupe, candidates, maps = mechanical(store, sql)
-          report = SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:)
-          store.write("index_search_#{search}", entry(dedupe, report, maps))
+          store.write("index_search_#{search}", original_entry(store, connection, sql))
           []
         ensure
           connection&.close
+        end
+
+        # 5a-1 to 5a-4 for the original, on the step 1 plan.
+        def original_entry(store, connection, sql)
+          dedupe, candidates = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
+          maps = LiteralSet.load(store).sets
+          entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:), maps)
+        end
+
+        # README step 8: the same search for one rewrite candidate, sql, as
+        # the inbound check accepted it, with the original's $n. 5a-1 runs on
+        # its parse, and 5a-2 on its plain EXPLAIN on the racetrack with the
+        # slow literals (analyzed: false, since a rewrite has no production
+        # EXPLAIN ANALYZE). Its Dedupe is its own, so 5a-3 compares only
+        # against existing indexes and its own proposals. 5a-4 runs the
+        # rewrite. It returns the entry, in the index_search_<search> form,
+        # for the caller to store. There's no plan gate: the rewrite has no
+        # production plan to compare with.
+        def rewrite_entry(store, connection, sql)
+          maps = LiteralSet.load(store).sets
+          literal_sets = values(maps)
+          dedupe, candidates = mechanical(store, sql, plan: slow_plan(connection, sql, literal_sets), analyzed: false)
+          entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:), maps)
+        end
+
+        # The query's plain EXPLAIN with the slow literals.
+        def slow_plan(connection, sql, literal_sets)
+          report = SingleCandidateTest.run(connection, query: sql, literal_sets: literal_sets.slice("slow"),
+                                                       candidates: [])
+          report.baseline.plans.fetch("slow").raw_plan
         end
 
         # The refusals made before connecting. Returns the search.
@@ -86,13 +114,14 @@ module Quaack
         end
 
         # 5a-1 and 5a-2, each filtered by the search's Dedupe as soon as
-        # it's produced. Returns the Dedupe, the survivors, and the 3e sets, for 5a-4.
-        def mechanical(store, sql)
+        # it's produced. plan is the EXPLAIN 5a-2 reads, and analyzed says
+        # whether it has actual rows. Returns the Dedupe and the survivors.
+        def mechanical(store, sql, plan:, analyzed:)
           statistics = PlannerStatistics.load(store).statistics
           dedupe = Dedupe.new(statistics:, low_cardinality: PiiClassification.load(store).low_cardinality)
           survivors = dedupe.filter(GeneratorOne.candidates(PgQuery.parse(sql), statistics)) +
-                      dedupe.filter(GeneratorTwo.candidates(store.read("plan"), statistics:, schemas: schemas(store)))
-          [dedupe, survivors, LiteralSet.load(store).sets]
+                      dedupe.filter(GeneratorTwo.candidates(plan, statistics:, schemas: schemas(store), analyzed:))
+          [dedupe, survivors]
         end
 
         def schemas(store) = store.read("relations").map { it["schema"] }.uniq
