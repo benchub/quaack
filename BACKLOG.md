@@ -147,16 +147,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-61. Burndown counters. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-62. 15 main report.
-
-Rank candidates per literal and overall with the minimax rule. List untested atoms and whether step 10 covered them. For each index, give built size, prefix coverage, and redundancy. Explain why the winner touches fewer blocks using only plans and selectivities. Show the query with the 3h functions put back.
-
-- **Depends on:** 20260922-60, 20260922-24.
-- **README:** Step 15.
-- **Status:** todo
-- **Decided:** The report is written to a file on the laptop, `./quaack-<run>.html` or `--out <path>`, and its path is printed.
-- **Note:** Scenario groups dropped on a unique-key collision are counted in `StepNine::Report#dropped` (20260926-15), but the count isn't sent to the driver yet. Add it here if the report shows it.
-- **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
+### 20260922-62. 15 main report. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-63. 15a negative result.
 
@@ -1307,4 +1298,25 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
 - **README:** Step 13.
+- **Status:** todo
+
+### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline.
+
+The enclave steps exist, but `Pipeline` doesn't run them: `arena-setup` (4b), `index-build` (12a), `baseline` (13), `index-baseline` (13a), `candidate-runs` (14), `minimax` (14a/b), `result-comparison` (14c) and `selection` (14d). Until it does, a real `quaack run` never writes the report. Add resumable stages in README order, with status entries for each step's store output, and put `arena-setup` before steps 9 and 10.
+
+- **Depends on:** 20260922-27, -53, -55, -56, -57, -58, -59, -60, -62.
+- **Came from:** 20260922-62 build report.
+- **README:** Steps 4b and 12-14.
+- **Status:** todo
+
+### 20260926-34. Report loose ends.
+
+- If `IndexCandidate.from_ddl` can't parse a built index's DDL, the report shows an empty cell and doesn't say why.
+- The `StepNine::Report#dropped` count isn't included.
+- "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
+- A plan node with no `Schema` field is matched to a table by name only when exactly one subset table has that name.
+
+- **Depends on:** 20260922-62.
+- **Came from:** 20260922-62 build and review.
+- **README:** Step 15.
 - **Status:** todo

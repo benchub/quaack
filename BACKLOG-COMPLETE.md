@@ -1759,3 +1759,14 @@ Keep the top three candidates by total blocks.
 - **Came from:** Their builds and reviews.
 - **README:** 14b, step 7.
 - **Status:** done
+
+### 20260922-62. 15 main report.
+
+Rank candidates per literal and overall with the minimax rule. List untested atoms and whether step 10 covered them. For each index, give built size, prefix coverage, and redundancy. Explain why the winner touches fewer blocks using only plans and selectivities. Show the query with the 3h functions put back.
+
+- **Depends on:** 20260922-60, 20260922-24.
+- **README:** Step 15.
+- **Status:** done
+- **Decided:** The report is written to a file on the laptop, `./quaack-<run>.html` or `--out <path>`, and its path is printed.
+- **Note:** Scenario groups dropped on a unique-key collision are counted in `StepNine::Report#dropped` (20260926-15), but the count isn't sent to the driver yet. Add it here if the report shows it.
+- **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
