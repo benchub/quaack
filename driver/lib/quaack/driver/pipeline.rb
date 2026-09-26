@@ -179,6 +179,37 @@ module Quaack
         end
       end
 
+      # README step 4b, before steps 9 and 10, which refuse without the
+      # arena: arena-setup, unless the store holds arena_setup.
+      module ArenaStage
+        module_function
+
+        def run(transport:, run_id:, entries:, **)
+          transport.call("arena-setup", args: { run: run_id }) unless entries["arena_setup"]
+        end
+      end
+
+      # README 12a to 14d, after step 11, in order: each step whose output
+      # isn't stored. Earlier stages don't write these outputs, so the
+      # entries from the start of the run still hold. It returns them with
+      # the steps it ran marked done, for ReportStage.
+      module MeasurementStage
+        STEPS = { "index-build" => "index_build", "baseline" => "baseline", "index-baseline" => "index_baseline",
+                  "candidate-runs" => "candidate_runs", "minimax" => "minimax",
+                  "result-comparison" => "result_comparison", "selection" => "selection" }.freeze
+
+        module_function
+
+        def run(transport:, run_id:, entries:, **)
+          STEPS.each_with_object(entries.dup) do |(subcommand, output), done|
+            next if done[output]
+
+            transport.call(subcommand, args: { run: run_id })
+            done[output] = true
+          end
+        end
+      end
+
       # README step 15, last: once the store holds selection (14d), the
       # report message from report-payload rendered as HTML to out. It
       # writes nothing, and asks for nothing, while selection is missing, or
@@ -194,7 +225,7 @@ module Quaack
         end
       end
 
-      STAGES = [IndexStage, RewriteStage, CounterexampleStage, RewriteIndexStage].freeze
+      STAGES = [IndexStage, RewriteStage, ArenaStage, CounterexampleStage, RewriteIndexStage].freeze
 
       # The entries `quaacks status` says the run's store holds.
       def self.status(transport, run_id)
@@ -217,6 +248,7 @@ module Quaack
       def run
         entries = self.class.status(@transport, @run_id)
         STAGES.each { it.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites) }
+        entries = MeasurementStage.run(transport: @transport, run_id: @run_id, entries:)
         ReportStage.run(transport: @transport, run_id: @run_id, entries:, out: @out)
       end
     end

@@ -7,6 +7,10 @@ require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
 require_relative "support/fake_llm"
 
+# Steps 4b and 12a to 14d, all stored, for specs about other steps.
+MEASURED = %w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
+              selection].to_h { [it, true] }.freeze
+
 RSpec.describe Quaack::Driver::Pipeline do
   let(:fake) { FakeLLM.new }
   let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
@@ -14,7 +18,7 @@ RSpec.describe Quaack::Driver::Pipeline do
   let(:feedback) { { "type" => "index_feedback", "revise" => false, "refined" => false } }
   let(:entries) do
     { "index_search_original" => false, "index_generated_original" => false, "index_ranking_original" => false,
-      "rewrites_generated" => true }
+      "rewrites_generated" => true }.merge(MEASURED)
   end
 
   # Stands in for the ssh transport, at the edge: records each call and
@@ -96,6 +100,7 @@ RSpec.describe Quaack::Driver::Pipeline do
   describe "step 6a and step 8" do
     let(:done) do
       { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true }
+        .merge(MEASURED)
     end
     let(:rewrite_payload) { { "type" => "rewrite_payload", "query" => "SELECT 1" } }
     let(:statuses) { [] }
@@ -247,7 +252,7 @@ RSpec.describe Quaack::Driver::Pipeline do
   describe "steps 9 and 10" do
     let(:done) do
       { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
-        "rewrites_generated" => true }
+        "rewrites_generated" => true }.merge(MEASURED)
     end
     let(:status) { done }
     let(:tests) { [] }
@@ -325,6 +330,62 @@ RSpec.describe Quaack::Driver::Pipeline do
   end
 end
 
+RSpec.describe Quaack::Driver::Pipeline, "steps 4b and 12a to 14d" do
+  let(:done) do
+    { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
+      "rewrites_generated" => true }
+  end
+  let(:chain) { %w[index-build baseline index-baseline candidate-runs minimax result-comparison selection] }
+  let(:failing) { {} }
+  let(:transport) do
+    all = { "status" => [{ "type" => "status", "entries" => done }],
+            "index-feedback" => [{ "type" => "index_feedback", "revise" => false }],
+            "rewrite-test" => [{ "type" => "rewrite_test", "passed" => false }] }
+    f = failing
+    Class.new do
+      attr_reader :calls
+
+      define_method(:initialize) { @calls = [] }
+      define_method(:call) do |subcommand, **options|
+        @calls << [subcommand, options]
+        raise f[subcommand] if f.key?(subcommand)
+
+        Data.define(:messages).new(messages: all.fetch(subcommand, []))
+      end
+    end.new
+  end
+
+  def run = described_class.new(transport:, client: nil, run_id: "RUN").run
+
+  it "runs arena-setup before steps 9 and 10, and 12a to 14d in order after step 11" do
+    done.merge!("rewrite_1" => true, "index_search_rewrite_1" => true, "index_ranking_rewrite_1" => true,
+                "rewrite_pruned_1" => true)
+
+    run
+
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback arena-setup rewrite-test status] +
+                                               chain)
+    args = transport.calls.drop(2).map { it.last[:args] }
+    expect(args.uniq).to eq([{ run: "RUN" }, { run: "RUN", search: "rewrite_1" }])
+  end
+
+  it "resumes: skips each step whose output is stored" do
+    done.merge!("arena_setup" => true, "index_build" => true, "baseline" => true, "minimax" => true)
+
+    run
+
+    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback status index-baseline candidate-runs
+                                                  result-comparison selection])
+  end
+
+  it "stops the run at a failing step, with its rule" do
+    failing["baseline"] = Quaack::Driver::EnclaveError.new(subcommand: "baseline", rule: "baseline_failed")
+
+    expect { run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("baseline_failed") }
+    expect(transport.calls.map(&:first).last(2)).to eq(%w[index-build baseline])
+  end
+end
+
 RSpec.describe Quaack::Driver::Pipeline, "report stage" do
   let(:dir) { Dir.mktmpdir("quaack-report") }
   let(:out) { File.join(dir, "report.html") }
@@ -334,7 +395,7 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
   end
   let(:done) do
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
-      "rewrites_generated" => true }
+      "rewrites_generated" => true }.merge(MEASURED)
   end
 
   def transport(entries, replies = {})
@@ -363,12 +424,11 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
     expect(File.read(out)).to include("<h1>QUAACK report RUN</h1>")
   end
 
-  it "writes no report while selection isn't stored" do
+  it "writes the report right after this run's selection step stores selection" do
     t = transport(done.merge("selection" => false), "report-payload" => [report])
 
-    expect(pipeline(t).run).to be_nil
-    expect(t.calls.map(&:first)).not_to include("report-payload")
-    expect(File.exist?(out)).to be(false)
+    expect(pipeline(t).run).to eq(out)
+    expect(t.calls.map(&:first).last(2)).to eq(%w[selection report-payload])
   end
 
   it "fails with no_report when the enclave sends no report" do
