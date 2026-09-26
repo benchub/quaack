@@ -24,8 +24,9 @@ RSpec.describe "quaacks index-search, against a real server" do
   let(:sentinels) { ProductionServer.sentinels }
   let!(:production) { ProductionServer.create(sentinels) }
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
+  let(:select_list) { "o.note, o.status" }
   let(:query) do
-    "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held'"
+    "SELECT #{select_list} FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held'"
   end
   let(:store) { Quaack::Enclave::Store.create(base: quaacks.store_base) }
 
@@ -97,6 +98,32 @@ RSpec.describe "quaacks index-search, against a real server" do
 
   def sources(candidate) = candidate.sources.map(&:to_s).sort
 
+  # The costs a direct EXPLAIN gives for each literal set, bound in $n
+  # order, with ddl as the only hypothetical index (or none).
+  def direct_costs(ddl)
+    conn = production.connect
+    conn.exec("SET plan_cache_mode = force_custom_plan")
+    conn.exec("SELECT hypopg_create_index(#{conn.escape_literal(ddl)})") if ddl
+    conn.prepare("q", stored.read("anchored_query"))
+    stored.read("literal_sets").except("fallbacks").transform_values { explain_cost(conn, it) }
+  ensure
+    conn&.close
+  end
+
+  def explain_cost(conn, map)
+    values = map.keys.sort_by { Integer(it.delete_prefix("$")) }.map { conn.escape_literal(map[it]["value"]) }
+    JSON.parse(conn.exec("EXPLAIN (FORMAT JSON) EXECUTE q(#{values.join(", ")})").getvalue(0,
+                                                                                           0))[0]["Plan"]["Total Cost"]
+  end
+
+  # Makes the statistics name a column the table doesn't have, so generator
+  # one INCLUDEs it for SELECT o.* and HypoPG refuses those candidates.
+  def add_ghost_column
+    statistics = stored.read("statistics")
+    statistics["tables"][0]["column_names"] << "ghost"
+    stored.write("statistics", statistics)
+  end
+
   def restored_search(entry)
     Quaack::Enclave::IndexStore.dedupe(
       entry["dedupe"], statistics: Quaack::Enclave::PlannerStatistics.load(stored).statistics,
@@ -118,10 +145,41 @@ RSpec.describe "quaacks index-search, against a real server" do
     tested = entry["results"].map { Quaack::Enclave::IndexStore.candidate(it["candidate"]) }
     expect(tested).to eq(search.proposals)
     expect(entry["results"].map { it["candidate"]["sources"] }).to eq(search.proposals.map { sources(it) })
-    expect(entry["baseline"].keys).to eq(%w[slow worst_case typical])
+    expect(entry["baseline"].transform_values { it["total_cost"] }).to eq(direct_costs(nil))
     used = entry["results"].find { it["plans"].values.any? { |plan| plan["used"] } }
     expect(used["size"]).to be_a(Integer).and be_positive
-    expect(used["plans"]["slow"]["total_cost"]).to be < entry["baseline"]["slow"]
+    expect(entry["results"].map { it["refusal"] }.uniq).to eq([nil])
+    ddl = Quaack::Enclave::IndexStore.candidate(used["candidate"]).to_ddl
+    expect(used["plans"].transform_values { it["total_cost"] }).to eq(direct_costs(ddl))
+  end
+
+  it "stores each plan redacted through 3g, with placeholders where the sentinel literal was" do
+    prepare
+    index_search
+
+    entry = stored.read("index_search_original")
+    plans = [*entry["baseline"].values, *entry["results"].flat_map { it["plans"].values }].map { it["plan"] }
+    held = JSON.generate(plans)
+    expect(plans).to all(be_a(Array))
+    expect(held).to include("$1")
+    expect(LeakCheck.findings(sentinels, stdout: held)).to eq([])
+    expect(LeakCheck.findings(sentinels, stdout: JSON.generate(stored.read("plan")))).not_to eq([])
+  end
+
+  context "when the query selects every column" do
+    let(:select_list) { "o.*" }
+
+    it "records a candidate HypoPG refuses, with its rule and SQLSTATE" do
+      prepare
+      add_ghost_column
+
+      index_search
+
+      refusals = stored.read("index_search_original")["results"].filter_map { it["refusal"] }
+      expect(refusals).not_to be_empty
+      expect(refusals.uniq).to eq([{ "rule" => "hypopg_refused", "sqlstate" => refusals.first["sqlstate"] }])
+      expect(refusals.first["sqlstate"]).to match(/\A[0-9A-Z]{5}\z/)
+    end
   end
 
   it "accepts --search original, and refuses any other search" do

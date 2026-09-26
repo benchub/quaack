@@ -9,6 +9,7 @@ require_relative "../literal_set"
 require_relative "../pii_classification"
 require_relative "../plan_gate"
 require_relative "../planner_statistics"
+require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../single_candidate_test"
 
@@ -31,14 +32,16 @@ module Quaack
       # succeeds:
       #   "dedupe"   => the Dedupe, as IndexStore saves it, so 5a-5's
       #                 index-test can go on with the same search
-      #   "baseline" => { set name => total cost with no hypothetical index }
+      #   "baseline" => { set name => a plan, as below, with no hypothetical
+      #                 index }
       #   "results"  => one per tested candidate, in test order (the
       #                 Dedupe's proposals): { "candidate" (as IndexStore
       #                 saves it, sources merged), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>
-      #                 { "used", "total_cost" } } }
-      # Canonical and raw plans aren't saved: the raw ones hold literals,
-      # and 5a-7 measures its own.
+      #                 { "used", "total_cost", "plan" } } }
+      # "plan" is the EXPLAIN redacted through 3g (Redaction.plan) against
+      # that set's own literals, so it holds placeholders, never a literal.
+      # Raw plans aren't saved.
       #
       # The racetrack is production data and candidates can hold literals,
       # so nothing here goes out. Its only line is DONE, and a failure names
@@ -63,9 +66,9 @@ module Quaack
           sql = store.read("anchored_query")
           connection = Enclave::RunServer.connect(store, :racetrack)
           PlanGate.check(store:, connection:, sql:)
-          dedupe, candidates = mechanical(store, sql)
-          report = SingleCandidateTest.run(connection, query: sql, literal_sets: literal_sets(store), candidates:)
-          store.write("index_search_#{search}", entry(dedupe, report))
+          dedupe, candidates, maps = mechanical(store, sql)
+          report = SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:)
+          store.write("index_search_#{search}", entry(dedupe, report, maps))
           []
         ensure
           connection&.close
@@ -80,39 +83,47 @@ module Quaack
         end
 
         # 5a-1 and 5a-2, each filtered by the search's Dedupe as soon as
-        # it's produced. Returns the Dedupe and the survivors, for 5a-4.
+        # it's produced. Returns the Dedupe, the survivors, and the 3e sets, for 5a-4.
         def mechanical(store, sql)
           statistics = PlannerStatistics.load(store).statistics
           dedupe = Dedupe.new(statistics:, low_cardinality: PiiClassification.load(store).low_cardinality)
           survivors = dedupe.filter(GeneratorOne.candidates(PgQuery.parse(sql), statistics)) +
                       dedupe.filter(GeneratorTwo.candidates(store.read("plan"), statistics:, schemas: schemas(store)))
-          [dedupe, survivors]
+          [dedupe, survivors, LiteralSet.load(store).sets]
         end
 
         def schemas(store) = store.read("relations").map { it["schema"] }.uniq
 
         # Each 3e set's values, in parameter order, as SingleCandidateTest
         # takes them.
-        def literal_sets(store)
-          LiteralSet.load(store).sets.transform_values do |map|
+        def values(maps)
+          maps.transform_values do |map|
             map.keys.sort_by { Integer(it.delete_prefix("$")) }.map { map[it]["value"] }
           end
         end
 
-        def entry(dedupe, report)
+        def entry(dedupe, report, maps)
           proposals = dedupe.proposals
-          { "dedupe" => IndexStore.dedupe_plain(dedupe),
-            "baseline" => report.baseline.plans.transform_values(&:total_cost),
-            "results" => report.results.map { result(it, proposals) } }
+          { "dedupe" => IndexStore.dedupe_plain(dedupe), "baseline" => plans(report.baseline.plans, maps),
+            "results" => report.results.map { result(it, proposals, maps) } }
+        end
+
+        # Each set's plan: whether it used the candidate, its cost, and the
+        # plan redacted through 3g against that set's own literals, so each
+        # of them is its placeholder and any other literal is masked.
+        def plans(plans, maps)
+          plans.to_h do |set, plan|
+            [set, { "used" => plan.used, "total_cost" => plan.total_cost,
+                    "plan" => Redaction.plan(plan.raw_plan, maps.fetch(set)).explain }]
+          end
         end
 
         # The candidate as the Dedupe holds it now, with the sources later
         # generators merged in.
-        def result(result, proposals)
+        def result(result, proposals, maps)
           refusal = result.refusal && { "rule" => result.refusal.rule.to_s, "sqlstate" => result.refusal.sqlstate }
           { "candidate" => IndexStore.candidate_plain(proposals.find { it == result.candidate }),
-            "size" => result.size, "refusal" => refusal,
-            "plans" => result.plans.transform_values { { "used" => it.used, "total_cost" => it.total_cost } } }
+            "size" => result.size, "refusal" => refusal, "plans" => plans(result.plans, maps) }
         end
       end
     end
