@@ -29,6 +29,7 @@ require_relative "../steps/counterexamples"
 require_relative "../steps/index_build"
 require_relative "../steps/baseline"
 require_relative "../steps/index_baseline"
+require_relative "../steps/candidate_runs"
 
 module Quaack
   module Enclave
@@ -75,7 +76,8 @@ module Quaack
                                            required: Steps::Counterexamples::Round::REQUIRED),
         "index-build" => Step.new(handler: Steps::IndexBuild, run: true),
         "baseline" => Step.new(handler: Steps::Baseline, run: true),
-        "index-baseline" => Step.new(handler: Steps::IndexBaseline, run: true)
+        "index-baseline" => Step.new(handler: Steps::IndexBaseline, run: true),
+        "candidate-runs" => Step.new(handler: Steps::CandidateRuns, run: true)
       }.freeze
     end
   end
