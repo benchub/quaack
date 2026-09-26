@@ -1196,15 +1196,7 @@ Minor findings from the first review of 20260925-4:
 - **README:** 5a-5.
 - **Status:** todo
 
-### 20260925-6. Enclave subcommand for the mechanical half of step 5.
-
-Add `quaacks` subcommands that open the racetrack connection and run the mechanical half of step 5: the plan gate, 5a-1, 5a-2, 5a-3, and 5a-4. They save the mechanical proposals and Dedupe state, the 5a-4 results, and the redacted plan in the governed store, so the 5a-5 subcommands (20260925-4) can read them. The driver side of step 5 is wired in 20260922-36.
-
-- **Depends on:** 20260922-26, 20260922-28, 20260922-29, 20260922-30, 20260922-31, 20260922-32, 20260925-7 through 20260925-16.
-- **README:** Step 5, 5a.
-- **Note:** `IndexCandidate` and `Dedupe` can't be saved to and read back from the store yet. This task must add that, because the 20260925-4 `index-test` loads the Dedupe state it saves. Key the saved entries per search (for example `index_search_original`, and later `index_search_rewrite_<n>`).
-- **Decided:** The user chose to build this as its own prerequisite task, ahead of the 5a-5 subcommands and 20260922-36.
-- **Status:** todo
+### 20260925-6. Enclave subcommand for the mechanical half of step 5. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-7. Enclave subcommand: `quaacks run-server` (step 4). Done, see BACKLOG-COMPLETE.md.
 
@@ -1293,6 +1285,16 @@ The new step subcommands (redact, classify, and others) report a missing upstrea
 - **Depends on:** 20260925-15.
 - **Came from:** The first review of 20260925-15.
 - **README:** 3h.
+- **Status:** todo
+
+### 20260925-24. Index-search loose ends.
+
+- `Dedupe.restore` doesn't check that `considered` matches the lists, so a corrupt entry restores silently.
+- `index_search.rb` finds proposals with `==`, which relies on `IndexCandidate#==` ignoring sources. If SingleCandidateTest ever normalizes a candidate, the lookup gives nil and crashes.
+
+- **Depends on:** 20260925-6.
+- **Came from:** The reviews of 20260925-6.
+- **README:** 5a-3, 5a-4.
 - **Status:** todo
 
 ## After version 1.
