@@ -366,7 +366,7 @@ Render the three burndown sections from the recorded counts.
 
 Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
 
-- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64.
+- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
 - **README:** All.
 - **Status:** todo
 - **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
@@ -1295,6 +1295,24 @@ The new step subcommands (redact, classify, and others) report a missing upstrea
 - **Depends on:** 20260925-6.
 - **Came from:** The reviews of 20260925-6.
 - **README:** 5a-3, 5a-4.
+- **Status:** todo
+
+### 20260926-1. Driver finds the jump server with a configured command.
+
+The driver has no way to know which jump server serves a production server. Add a driver config file on the laptop, `~/.quaack/driver.json`, with `jump_command`: a shell one-liner with `{server}` that prints the ssh host, following the pattern of `memory_command` (quoting, timeout, output checks). The operator starts a run from the laptop with something like `quaack start --server <prod> --query <path on jump server> --plan <path on jump server>`. The driver runs `jump_command`, then runs `quaacks intake` remotely over `Transport::Ssh` (the query and plan files stay on the jump server), and remembers run ID to jump host locally, so later commands take only the run ID. Update README "Where QUAACK runs" and step 1.
+
+- **Depends on:** 20260922-5, 20260922-13.
+- **README:** Where QUAACK runs, Step 1.
+- **Decided:** The user chose a driver-side config command over a static map or a `--jump` flag.
+- **Status:** todo
+
+### 20260926-2. Build and record the run server with a configured command.
+
+Add `run_server_command` to the quaacks config on the jump server (`~/.quaack/config.json`). It's given `{server}` and `{run}`, builds or finds the run server from production, and prints JSON `{host, port, racetrack_db, arena_db}`. `quaacks run-server --run ID` with no flags calls it, validates the output the same way it validates the flags, and runs the step 4 checks. Flags still override. Add an optional matching `destroy_command` that `quaacks teardown` calls, so the run server is destroyed too, not just announced. Follow the `memory_command` pattern for quoting, timeouts, and discarding stderr. Nothing the command prints goes out except through the existing rules. Update README step 4 and teardown.
+
+- **Depends on:** 20260925-7, 20260922-66.
+- **README:** 4, Run teardown.
+- **Decided:** The user chose a provision command in the quaacks config over having the operator build the server by hand.
 - **Status:** todo
 
 ## After version 1.
