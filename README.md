@@ -35,6 +35,8 @@ QUAACK has two parts:
 
 The driver calls the enclave script over ssh, passing a subcommand for the step to run plus its arguments. The script reads what it needs from the governed store, does the work, writes any new state back to the store, and prints its result. Nothing stays in memory between calls.
 
+The driver finds the jump server with `jump_command` in its config file on the laptop, `~/.quaack/driver.json`. It's a one-line shell command in which every `{server}` becomes the production server name, as one shell word. `/bin/sh` runs it with no stdin, its stderr thrown away, and a 30-second timeout, and it must print one ssh host name and nothing else. `quaack start` runs it, then runs `quaacks intake` on that host (step 1), and records which jump server holds the run in `~/.quaack/runs/<run ID>.json`, so later commands, such as `quaack run --run <ID>`, take only the run ID.
+
 Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
 
 Everything the enclave script prints goes through the egress function, including error messages. Postgres errors can include real values, such as the key in a unique-violation message, so errors get filtered too. That's where the trust boundary is enforced. 
@@ -82,7 +84,7 @@ Inside the enclave, the enclave script keeps its data in three places:
 
 All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
 
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory and prints a reminder to destroy the run server, which the enclave can't do itself. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
+When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory. If the quaacks config sets `destroy_command`, a one-line shell command given `{server}` and `{run}` like `run_server_command` (step 4), teardown first runs it to destroy the run server, ignores what it prints, and reports `next_step` `none`. If it fails, teardown fails with `destroy_command_failed` or `destroy_command_timed_out` and keeps the store, so it can run again. Without `destroy_command`, or for a run that's already gone, it prints a reminder to destroy the run server by hand. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
 
 ## 1. Input.
 
@@ -95,6 +97,8 @@ QUAACK takes three inputs:
 The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from 3g.
 
 To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for 3h. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
+
+The operator usually starts this from the laptop instead, with `quaack start --server <name> --query <file> --plan <file>`, where the files are paths on the jump server. The driver finds the jump server with `jump_command` (see "Where QUAACK runs"), runs `quaacks intake` there over ssh, and prints the run ID. The files stay on the jump server.
 
 The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL`. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
 
@@ -146,7 +150,7 @@ The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualificat
 
 ### 3b. Schema dump.
 
-Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it.
+Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it. `pg_dump --schema` emits no `CREATE EXTENSION`, so also pass `--extension=<name>` for every extension in production's `pg_extension` except `plpgsql`, and add each one's schema to the namespaces, so the dump holds `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...` and loads into arena. It carries no version, so arena gets the run server's default version of each.
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
 
@@ -272,6 +276,8 @@ The checks compare the run server with step 2's inventory. A planner setting is 
 Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since step 2 doesn't record them.
 
 The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. It connects to the racetrack database with the operator's own libpq setup, as step 2 does for production: the user comes from `PGUSER` or a service in `~/.pg_service.conf`, and the password from `~/.pgpass`. QUAACK stores no credentials. It runs the checks there and nowhere else. Arena doesn't exist yet, since 4b makes it, and the quiet checks already see every database on the server. If every check passes, it records the host, the port, and both database names in the run, and later steps connect with them. It prints nothing but its done line.
+
+The operator can set `run_server_command` in the quaacks config (`~/.quaack/config.json`) instead of passing the flags. It's a one-line shell command in which every `{server}` becomes the run's production server name and every `{run}` the run ID, each as one shell word. `/bin/sh` runs it on the jump server with no stdin, its stderr thrown away, and a one-hour timeout. It builds or finds the run server from production and prints one JSON object with exactly the keys `host`, `port`, `racetrack_db`, and `arena_db`. `quaacks run-server --run <run ID>` with any flag missing calls it, and each flag given overrides its value. The values are checked as the flags are. A failure is `run_server_command_failed`, `run_server_command_timed_out`, or `run_server_command_bad_output`, and nothing the command prints goes out.
 
 It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no step 2 inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
 

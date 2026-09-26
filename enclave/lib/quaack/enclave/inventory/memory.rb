@@ -2,6 +2,7 @@
 
 require "shellwords"
 require_relative "error"
+require_relative "../shell_command"
 
 module Quaack
   module Enclave
@@ -46,91 +47,8 @@ module Quaack
         # Runs template with host filled in, and returns the memory it gives,
         # in bytes.
         def bytes(template, host, timeout: TIMEOUT)
-          parse(Command.output(template.gsub(HOST) { Shellwords.escape(host) }, timeout))
-        end
-
-        # Runs one command in its own process group, so a timeout stops
-        # everything it started, not just the shell.
-        module Command
-          module_function
-
-          # The command's stdout, once it has exited with success.
-          def output(command, timeout)
-            deadline = now + timeout
-            IO.pipe do |reader, writer|
-              pid = spawn(command, writer)
-              run(pid, reader, deadline)
-            ensure
-              stop(pid)
-            end
-          end
-
-          def spawn(command, writer)
-            Process.spawn("/bin/sh", "-c", command, in: File::NULL, out: writer, err: File::NULL, pgroup: true)
-          rescue SystemCallError
-            raise Error, "memory_command_failed", cause: nil
-          ensure
-            writer.close
-          end
-
-          def run(pid, reader, deadline)
-            text = read(reader, deadline)
-            raise Error, "memory_command_failed" unless wait(pid, deadline).success?
-
-            text
-          end
-
-          # Reads until the command closes its stdout, which it may leave
-          # open for a child it started.
-          def read(reader, deadline)
-            text = +""
-            loop do
-              chunk = read_some(reader, deadline)
-              return text if chunk.nil?
-
-              text << chunk
-              raise Error, "memory_command_bad_output" if text.bytesize > MAX_OUTPUT
-            end
-          end
-
-          def read_some(reader, deadline)
-            left = deadline - now
-            timed_out! unless left.positive? && reader.wait_readable(left)
-            reader.read_nonblock(MAX_OUTPUT, exception: false).then { it == :wait_readable ? +"" : it }
-          end
-
-          def wait(pid, deadline)
-            loop do
-              _, status = Process.wait2(pid, Process::WNOHANG)
-              return status if status
-
-              timed_out! unless now < deadline
-              sleep 0.01
-            end
-          end
-
-          # Kills the command's whole process group, whatever it left
-          # running, and reaps the shell if it hasn't been.
-          def stop(pid)
-            return unless pid
-
-            begin
-              Process.kill(:KILL, -pid)
-            rescue Errno::ESRCH, Errno::EPERM
-              nil
-            end
-            reap(pid)
-          end
-
-          def reap(pid)
-            Process.wait(pid)
-          rescue Errno::ECHILD
-            nil
-          end
-
-          def timed_out! = raise(Error, "memory_command_timed_out")
-
-          def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          command = template.gsub(HOST) { Shellwords.escape(host) }
+          parse(ShellCommand.output(command, timeout:, max_output: MAX_OUTPUT, error: Error, prefix: "memory_command"))
         end
       end
     end

@@ -2,13 +2,17 @@
 
 require_relative "../run_server"
 require_relative "../run_server_check"
+require_relative "../run_server_command"
+require_relative "../config"
+require_relative "../cli/refused"
 
 module Quaack
   module Enclave
     module Steps
-      # `quaacks run-server --run <run ID> --host <host> --port <port>
-      # --racetrack-db <name> --arena-db <name>` (README, step 4): checks the
-      # run server the operator built against the run's step 2 inventory,
+      # `quaacks run-server --run <run ID> [--host <host>] [--port <port>]
+      # [--racetrack-db <name>] [--arena-db <name>]` (README, step 4): checks
+      # the run server, given by the flags or by the configured
+      # run_server_command (see RunServerCommand), against the run's step 2 inventory,
       # and records it in the run's run_server entry (see RunServer), for
       # later steps to connect with (RunServer.connect).
       #
@@ -26,18 +30,33 @@ module Quaack
       # a failed check names only its rule.
       module RunServer
         OPTIONS = { "host" => :value, "port" => :value, "racetrack-db" => :value, "arena-db" => :value }.freeze
-        REQUIRED = OPTIONS.keys.freeze
+        # With run_server_command in the quaacks config, no flag is needed.
+        REQUIRED = [].freeze
 
         module_function
 
         def call(store:, options:, **)
-          entry = Enclave::RunServer.record(host: options["host"], port: options["port"],
-                                            racetrack_db: options["racetrack-db"], arena_db: options["arena-db"])
+          entry = entry(store, options)
           raise Enclave::RunServer::Error, "run_server_no_inventory" unless store.entry?("inventory")
 
           check(store, entry)
           store.write("run_server", entry)
           []
+        end
+
+        # From the flags when all four are given. Otherwise from the
+        # configured run_server_command, each given flag overriding its
+        # value, or usage without one.
+        def entry(store, options)
+          if OPTIONS.keys.all? { options.key?(it) }
+            return Enclave::RunServer.record(host: options["host"], port: options["port"],
+                                             racetrack_db: options["racetrack-db"], arena_db: options["arena-db"])
+          end
+
+          command = Config.load.run_server_command
+          raise CLI::Refused, "usage" unless command
+
+          RunServerCommand.entry(command, server: store.read("server"), run: store.run_id, overrides: options)
         end
 
         def check(store, entry)

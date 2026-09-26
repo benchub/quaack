@@ -1,14 +1,19 @@
 # frozen_string_literal: true
 
 require_relative "../store/teardown"
+require_relative "../config"
+require_relative "../run_server_command"
 
 module Quaack
   module Enclave
     module Steps
       # `quaacks teardown --run <run ID>` (README, "Where QUAACK runs"):
-      # deletes the run's governed store directory when the run ends, and
-      # reminds the operator to destroy the run server, which the enclave
-      # can't do itself. The driver runs it at the end of every run, whether
+      # deletes the run's governed store directory when the run ends. With
+      # destroy_command in the quaacks config, it first destroys the run
+      # server with it (see RunServerCommand), and a failure there,
+      # destroy_command_failed or destroy_command_timed_out, keeps the store
+      # so teardown can run again. Without one, it reminds the operator to
+      # destroy the run server. The driver runs it at the end of every run, whether
       # it succeeded or aborted. After a run kept for debugging, the operator
       # runs it by hand.
       #
@@ -42,18 +47,41 @@ module Quaack
         end
 
         NEXT_STEP = "destroy_run_server"
+        # What's left once destroy_command has destroyed the run server.
+        NOTHING_LEFT = "none"
 
         module_function
 
         def call(run_id:, store_base:, **)
+          destroyed = destroyed?(run_id, store_base)
           result = Store.teardown(run_id, base: store_base)
-          [{ type: :teardown, run_id:, store: result, next_step: NEXT_STEP }]
+          [{ type: :teardown, run_id:, store: result, next_step: destroyed ? NOTHING_LEFT : NEXT_STEP }]
         rescue Store::BadRun
           raise Error, "bad_run", cause: nil
         rescue Store::BadBase
           raise Error, "bad_store_base", cause: nil
         rescue Store::Error
           raise Error, "teardown_failed", cause: nil
+        end
+
+        # Runs the configured destroy_command for a run that's still there,
+        # before its store goes, since the command is given the run's server.
+        # Whether it ran. A run that's gone, or isn't one, is left to
+        # Store.teardown, and its run server to the operator.
+        def destroyed?(run_id, store_base)
+          command = Config.load.destroy_command
+          store = open_run(run_id, store_base) if command
+          return false unless store
+
+          server = store.entry?("server") ? store.read("server") : ""
+          RunServerCommand.destroy(command, server:, run: run_id)
+          true
+        end
+
+        def open_run(run_id, store_base)
+          Store.open(run_id, base: store_base)
+        rescue Store::Error
+          nil
         end
       end
     end

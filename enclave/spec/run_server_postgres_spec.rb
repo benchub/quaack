@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "shellwords"
 require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
 require_relative "support/production_server"
@@ -124,6 +125,51 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect_failed(run_server(host: "#{sentinels.word} x"), "bad_run_server_host")
       expect_failed(run_server(port: "0"), "bad_run_server_port")
       expect_failed(run_server(arena: "#{sentinels.word};"), "bad_run_server_database")
+    end
+
+    describe "with run_server_command in the quaacks config" do
+      def configure(command)
+        FileUtils.mkdir_p(File.join(quaacks.home, ".quaack"))
+        File.write(File.join(quaacks.home, ".quaack", "config.json"), JSON.generate("run_server_command" => command))
+      end
+
+      def printing(object) = "printf '%s' #{Shellwords.escape(JSON.generate(object))}"
+
+      def made = { host: production.host, port: production.port, racetrack_db: production.name, arena_db: }
+
+      def run_bare(*flags)
+        quaacks.run("run-server", "--run", store.run_id, *flags,
+                    env: libpq_env(PGUSER: production.user))
+      end
+
+      before do
+        store.write("server", "prod 1")
+        record_inventory
+        pgpass
+        TestPostgres.server.close_admin
+      end
+
+      it "records the run server the command prints, given the server and the run" do
+        args = File.join(quaacks.home, "args")
+        configure("printf '%s|%s' {server} {run} > #{args}; #{printing(made)}")
+
+        expect(run_bare.stdout).to eq(done)
+        expect(File.read(args)).to eq("prod 1|#{store.run_id}")
+        expect(stored.read("run_server")).to eq(made.transform_keys(&:to_s))
+      end
+
+      it "lets a flag override what the command prints" do
+        configure(printing(made.merge(racetrack_db: "postgres")))
+
+        expect(run_bare("--racetrack-db", production.name).stdout).to eq(done)
+        expect(stored.read("run_server")["racetrack_db"]).to eq(production.name)
+      end
+
+      it "fails a failing command as run_server_command_failed, without its output" do
+        configure("echo #{sentinels.word}; exit 1")
+
+        expect_failed(run_bare, "run_server_command_failed")
+      end
     end
 
     it "refuses a call missing an option as usage" do

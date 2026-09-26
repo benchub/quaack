@@ -213,5 +213,45 @@ RSpec.describe "quaacks teardown" do
       expect(quaacks.runs).to eq([])
       expect_no_leaks(sentinels, outcome)
     end
+
+    describe "with destroy_command in the quaacks config" do
+      let(:store) { Quaack::Enclave::Store.create(base: quaacks.store_base).tap { it.write("server", "prod 1") } }
+      let(:gone) { File.join(quaacks.home, "gone") }
+
+      def configure(command)
+        FileUtils.mkdir_p(File.join(quaacks.home, ".quaack"))
+        File.write(File.join(quaacks.home, ".quaack", "config.json"), JSON.generate("destroy_command" => command))
+      end
+
+      it "destroys the run server with the server and the run, then deletes the store, with nothing left to do" do
+        configure("printf '%s|%s|' {server} {run} > #{gone}; ls #{quaacks.store_base} >> #{gone}")
+
+        outcome = quaacks.run("teardown", "--run", store.run_id)
+
+        line = %({"type":"teardown","run_id":"#{store.run_id}","store":"deleted","next_step":"none"}\n)
+        expect(outcome.stdout).to eq("#{line}#{done}")
+        expect(File.read(gone)).to eq("prod 1|#{store.run_id}|#{store.run_id}\n")
+        expect(quaacks.runs).to eq([])
+      end
+
+      it "fails a failing command as destroy_command_failed, without its output, and keeps the store" do
+        configure("echo #{sentinels.word}; exit 1")
+
+        outcome = quaacks.run("teardown", "--run", store.run_id)
+
+        expect([outcome.stdout, outcome.status.exitstatus]).to eq([error_line("destroy_command_failed"), 70])
+        expect(quaacks.runs).to eq([store.run_id])
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "leaves destroying to the operator for a run that's already gone" do
+        configure("touch #{gone}")
+        run_id = store.run_id
+        FileUtils.rm_rf(store.path)
+
+        expect(quaacks.run("teardown", "--run", run_id).stdout).to eq(teardown_line(run_id, "already_gone") + done)
+        expect(File.exist?(gone)).to be(false)
+      end
+    end
   end
 end
