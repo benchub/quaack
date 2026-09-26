@@ -36,6 +36,22 @@ RSpec.describe Quaack::Enclave::VacuityGuard do
     expect(result.scenarios[:s1]).not_to be_empty
   end
 
+  it "exercises a keyset row comparison through its leading column, in either direction" do
+    %w[< <= > >=].each do |op|
+      sql = "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) #{op} (5, 10) ORDER BY o.qty, o.id LIMIT 20"
+      builder, result = guard(sql)
+      expect(builder.atoms.map(&:kind)).to eq([:row_comparison])
+      expect(result.untested).to eq([]), op
+      expect(builder.pools.keys).to eq([0])
+    end
+  end
+
+  it "gives a row comparison with = or <> no pool" do
+    builder, = guard("SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) = (5, 10) OR (o.qty, o.id) <> (1, 2)")
+    expect(builder.atoms.map(&:kind)).to eq(%i[row_comparison row_comparison])
+    expect(builder.pools).to eq({})
+  end
+
   it "retries a vacuous atom three times, then reports it untested by its redacted shape" do
     # No row can fail either kind test, since the CHECKs forbid it.
     sql = "SELECT o.id FROM fx.orders o WHERE o.kind = 'SENTINEL_9c' AND o.status = 'open'"

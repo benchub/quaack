@@ -242,6 +242,18 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       end
     end
 
+    it "for each literal of a keyset row comparison, and binds and runs every set" do
+      sql, result = literal_sets("SELECT r.id FROM public.readings r WHERE (r.k, r.id) > (5, 10) " \
+                                 "ORDER BY r.k, r.id LIMIT 20")
+
+      expect(sql).to include("(r.k, r.id) > ($1, $2)")
+      expect(result.sets["worst_case"]).to eq(result.sets["slow"])
+      expect(result.sets["typical"]).to eq(result.sets["slow"])
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "unsupported_shape", "$2" => "unsupported_shape",
+                                                   "$3" => "unsupported_shape")
+      rows(sql, result.sets["typical"])
+    end
+
     it "for a placeholder that more than one expression shares" do
       sql, result = literal_sets("SELECT count(*) FROM public.readings r GROUP BY r.k = 5 HAVING r.k = 5")
 

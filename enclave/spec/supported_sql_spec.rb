@@ -90,7 +90,10 @@ RSpec.describe Quaack::Enclave::SupportedSql do
     "ORDER BY, LIMIT, and OFFSET" => "SELECT x FROM t ORDER BY x DESC, y USING < LIMIT 10 OFFSET 5",
     "LIMIT ALL" => "SELECT x FROM t LIMIT ALL",
     "FETCH FIRST" => "SELECT x FROM t ORDER BY x OFFSET 1 ROWS FETCH FIRST 3 ROWS ONLY",
-    "FETCH FIRST WITH TIES" => "SELECT x FROM t ORDER BY x FETCH FIRST ROWS WITH TIES"
+    "FETCH FIRST WITH TIES" => "SELECT x FROM t ORDER BY x FETCH FIRST ROWS WITH TIES",
+    "keyset row comparisons" =>
+      "SELECT x FROM t WHERE (t.created_at, t.id) < ($1, $2) OR (x, y) <= (1, 'a') OR (x, y) > ($1, 2) " \
+      "OR (x, y) >= (1, 2) OR (x, y) = (1, 2) OR (x, y) <> (1, 2) OR ROW(x, y, z) > ROW(1, 2, 3)"
   }.freeze
 
   describe "a supported query" do
@@ -107,7 +110,8 @@ RSpec.describe Quaack::Enclave::SupportedSql do
       used = Hash.new { |hash, key| hash[key] = Set.new }
       supported.each_value { |sql| uses(PgQuery.parse(sql).tree, used) }
 
-      expect(used[:nodes]).to eq(described_class::NODES.keys.to_set)
+      expect(used[:nodes]).to eq(described_class::NODES.keys.to_set << PgQuery::RowExpr)
+      expect(used[:row_operators]).to eq(described_class::ROW_COMPARE_OPERATORS.to_set)
       expect(used[:kinds]).to eq(described_class::A_EXPR_KINDS.to_set)
       expect(used[:sublinks]).to eq(described_class::SUBLINK_TYPES.to_set)
       expect(used[:syntax]).to eq(described_class::SQL_SYNTAX_FUNCTIONS.to_set)
@@ -126,10 +130,15 @@ RSpec.describe Quaack::Enclave::SupportedSql do
     def record(node, used)
       used[:nodes] << node.class
       case node
-      when PgQuery::A_Expr then used[:kinds] << node.kind
+      when PgQuery::A_Expr then record_expression(node, used)
       when PgQuery::SubLink then used[:sublinks] << node.sub_link_type
       when PgQuery::FuncCall then used[:syntax] << syntax_name(node) if node.funcformat == :COERCE_SQL_SYNTAX
       end
+    end
+
+    def record_expression(expr, used)
+      used[:kinds] << expr.kind
+      used[:row_operators] << expr.name.first.string.sval if expr.lexpr&.row_expr
     end
 
     def syntax_name(func) = func.funcname.map { |name| name.string.sval }.join(".")
@@ -170,7 +179,20 @@ RSpec.describe Quaack::Enclave::SupportedSql do
        "SELECT * FROM c", "CTESearchClause"],
     "ROW" => ["SELECT ROW(1, 2)", "RowExpr"],
     "ROW after a supported item" => ["SELECT 1, 2, ROW(1, 2)", "RowExpr"],
-    "a row comparison" => ["SELECT x FROM t WHERE (x, y) < (1, 2)", "RowExpr"],
+    "a row compared with a subquery" => ["SELECT x FROM t WHERE (x, y) < (SELECT 1, 2)", "RowExpr"],
+    "a row compared with a non-row" => ["SELECT x FROM t WHERE (x, y) = x", "RowExpr"],
+    "a non-row compared with a row" => ["SELECT x FROM t WHERE x = (1, 2)", "RowExpr"],
+    "rows of different lengths" => ["SELECT x FROM t WHERE (x, y) < (1, 2, 3)", "RowExpr"],
+    "a row of one" => ["SELECT x FROM t WHERE ROW(x) < ROW(1)", "RowExpr"],
+    "a nested row" => ["SELECT x FROM t WHERE (x, (y, z)) < (1, (2, 3))", "RowExpr"],
+    "rows with another operator" => ["SELECT x FROM t WHERE (x, y) @> (1, 2)", "RowExpr"],
+    "rows with a qualified operator" =>
+      ["SELECT x FROM t WHERE (x, y) OPERATOR(pg_catalog.<) (1, 2)", "RowExpr"],
+    "rows with IS DISTINCT FROM" => ["SELECT x FROM t WHERE (x, y) IS DISTINCT FROM (1, 2)", "RowExpr"],
+    "a refused construct inside a row comparison" =>
+      ["SELECT x FROM t WHERE (x, y) < (1, xmlelement(name a))", "XmlExpr"],
+    "a row IN a list" => ["SELECT x FROM t WHERE (x, y) IN ((1, 2))", "RowExpr"],
+    "a row in the select list of a comparison's side" => ["SELECT (x, y) FROM t WHERE (x, y) < (1, 2)", "RowExpr"],
     "a row IN a subquery" => ["SELECT x FROM t WHERE (x, y) IN (SELECT 1, 2)", "RowExpr"],
     "GROUPING SETS" => ["SELECT x FROM t GROUP BY GROUPING SETS ((x), ())", "GroupingSet"],
     "ROLLUP" => ["SELECT x FROM t GROUP BY ROLLUP (x)", "GroupingSet"],

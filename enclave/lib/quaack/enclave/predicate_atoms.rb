@@ -51,6 +51,11 @@ module Quaack
     # - :like: LIKE and ILIKE, with or without NOT or ESCAPE.
     # - :in: IN and NOT IN lists, = ANY, and <> ALL.
     # - :null_test: IS NULL and IS NOT NULL.
+    # - :row_comparison: a keyset row comparison, (a, b) < ($1, $2), with
+    #   any operator SupportedSql allows for one, as one atom. <> is
+    #   negated. Its column side is the row whose elements hold columns,
+    #   and bare is true when each element is just a column. Nothing picks
+    #   values for it, so the value pools and 3e's literal feeds skip it.
     # - :other: the rest, such as a boolean column, a function call,
     #   EXISTS, x IN (SELECT ...), IS TRUE, other operators, or two
     #   columns of one relation.
@@ -592,8 +597,10 @@ module Quaack
         def self.of(node) = Syntax.test(node)
 
         # Each side that has a column is a plain column.
+        # A row's side counts element by element.
         def bare?
-          sides = (operands + constants).reject { |side| ColumnRefs.free?(side) }
+          sides = (operands + constants).flat_map { |side| side.row_expr ? side.row_expr.args.to_a : [side] }
+          sides = sides.reject { |side| ColumnRefs.free?(side) }
           sides.any? && sides.all?(&:column_ref)
         end
       end
@@ -656,7 +663,8 @@ module Quaack
         end
 
         def operator(opname, expr)
-          if opname == "=" then symmetric(:equality, opname, false, expr)
+          if expr.lexpr.row_expr && expr.rexpr.row_expr then symmetric(:row_comparison, opname, opname == "<>", expr)
+          elsif opname == "=" then symmetric(:equality, opname, false, expr)
           elsif opname == "<>" then symmetric(:equality, opname, true, expr)
           elsif RANGE.include?(opname) then symmetric(:range, opname, false, expr)
           else other(opname, [expr.lexpr, expr.rexpr])

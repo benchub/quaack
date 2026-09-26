@@ -59,18 +59,45 @@ module Quaack
 
       def build(conn, parse, atoms, schema)
         atoms.each_with_index.filter_map do |atom, i|
-          next unless KINDS.include?(atom.kind) && atom.columns.size == 1 && atom.columns[0].table
+          next unless pooled?(atom)
 
           [i, pool(conn, parse, atom, schema)]
         end.to_h
       end
+
+      # The strict operator a row comparison's leading column decides it
+      # by: (a, b) < (x, y) is true when a < x and false when a > x.
+      LEADS = { "<" => "<", "<=" => "<", ">" => ">", ">=" => ">" }.freeze
+
+      # A keyset row comparison with a range operator is pooled through its
+      # leading column, when every element of its column row is a plain
+      # column of a table.
+      def pooled?(atom)
+        return atom.columns.size == 1 && !atom.columns[0].table.nil? if KINDS.include?(atom.kind)
+
+        atom.kind == :row_comparison && LEADS.key?(atom.operator) && atom.bare && atom.columns.all?(&:table)
+      end
+
+      # The test the atom's pool and probe read: the atom's own node, or
+      # for a row comparison, its leading columns' strict comparison, such
+      # as a < x for (a, b) <= (x, y).
+      def node(parse, atom)
+        node = PredicateAtoms.node(parse, atom)
+        return node unless atom.kind == :row_comparison
+
+        lexpr, rexpr = [node.a_expr.lexpr, node.a_expr.rexpr].map { |side| side.row_expr.args[0] }
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name: operator(LEADS.fetch(atom.operator)),
+                                                      lexpr:, rexpr:))
+      end
+
+      def operator(name) = [PgQuery::Node.new(string: PgQuery::String.new(sval: name))]
 
       def boundaries(type) = BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
 
       def pool(conn, parse, atom, schema)
         column = atom.columns[0]
         col = schema.column(column.table, column.name)
-        node = PredicateAtoms.node(parse, atom)
+        node = node(parse, atom)
         sorted(conn, node, col) => { satisfying:, failing:, boundaries: }
         Pool.new(column:, type: col.type, oid: col.oid, nullable: col.nullable, satisfying:, failing:, boundaries:)
       end
