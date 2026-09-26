@@ -81,6 +81,29 @@ RSpec.describe Quaack::Driver::Start do
     expect { start(jump_timeout: 0.3) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")
   end
 
+  it "kills what jump_command started, not just its shell, on a timeout" do
+    pid_file = File.join(dir, "sleep.pid")
+    configure("sleep 30 & echo $! > #{pid_file}; wait")
+    expect { start(jump_timeout: 0.5) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")
+
+    pid = Integer(File.read(pid_file))
+    alive = 20.times.all? do
+      Process.kill(0, pid)
+      sleep 0.05
+      true
+    rescue Errno::ESRCH
+      false
+    end
+    Process.kill("KILL", pid) if alive
+    expect(alive).to be(false)
+  end
+
+  it "refuses to record a run ID that isn't one, and writes nothing" do
+    runs = Quaack::Driver::Runs.new(home)
+    expect { runs.record("../x", "jump-1") }.to raise_error(ArgumentError, "not a run ID")
+    expect(Dir.exist?(File.join(home, ".quaack", "runs"))).to be(false)
+  end
+
   it "refuses a run ID that isn't one, and records nothing" do
     configure("echo jump-1")
     remote_intake(run_id: "../../etc/x")
