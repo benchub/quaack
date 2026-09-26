@@ -1087,3 +1087,15 @@ Anchor the clock in the redacted query. Store the anchored SQL. Each subcommand 
 - **Landed:** Merged into `main` after a build and a first review with nothing blocking.
   - `quaacks anchor --run ID` runs `ClockAnchoring.anchor(redacted_query, plan settings)`, and stores `anchored_query` (the `sql:` for `PlanGate` and 5a-4) and `clock_replacements` (names only, for `restore`). It prints only DONE. The CLI `STEPS` table moved to `cli/steps.rb`.
   - The review's minor findings became 20260925-23.
+
+### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a).
+
+Set up the racetrack on the run server recorded by `run-server`, using the stored schema and statistics. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
+
+- **Depends on:** 20260925-7, 20260925-9, 20260925-10, 20260922-26.
+- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
+- **README:** 4a.
+- **Status:** done
+- **Landed:** Merged into `main` after a build and a first review with nothing blocking.
+  - `quaacks racetrack-setup --run ID` refuses with `racetrack_setup_no_run_server` when there's no `run_server` entry. Otherwise it connects with `RunServer.connect(store, :racetrack)`, runs `Racetrack.setup` (hypopg and `quaack.clock_anchor()`), and writes `racetrack_setup: true` only on success. It prints only DONE.
+  - The review's minor findings went into 20260925-22.

@@ -1223,14 +1223,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-15. Enclave subcommand: `quaacks anchor` (3h). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a).
-
-Set up the racetrack on the run server recorded by `run-server`, using the stored schema and statistics. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-7, 20260925-9, 20260925-10, 20260922-26.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 4a.
-- **Status:** todo
+### 20260925-16. Enclave subcommand: `quaacks racetrack-setup` (4a). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-17. Possible flake in the run-server success test.
 
@@ -1284,10 +1277,10 @@ README 3d says to abort and say which function caused it. Today the `volatile_fu
 
 ### 20260925-22. Name the missing input when a step's store entry is absent.
 
-The new step subcommands (redact, classify, and others) report a missing upstream entry as `internal_error`. The README says a failure names only its rule, and the rule should name what's missing, such as `missing_plan` or a shared `missing_entry` naming the entry. Fix this in one place, for all the steps. Also add a test for `quaacks literals` refusing a `volatility` entry that's present but not passed (`literals.rb:27`), which no test covers yet. Also note, or fix, that `redact` writes its entries one at a time, so a crash partway through can leave some of them stored. A rerun overwrites them.
+The new step subcommands (redact, classify, and others) report a missing upstream entry as `internal_error`. The README says a failure names only its rule, and the rule should name what's missing, such as `missing_plan` or a shared `missing_entry` naming the entry. Fix this in one place, for all the steps. The racetrack-setup success test should also check that `hypopg` exists, and a run with `run_server` but no `clock_anchor` should fail with a clean rule. Also add a test for `quaacks literals` refusing a `volatility` entry that's present but not passed (`literals.rb:27`), which no test covers yet. Also note, or fix, that `redact` writes its entries one at a time, so a crash partway through can leave some of them stored. A rerun overwrites them.
 
 - **Depends on:** 20260925-14.
-- **Came from:** The first reviews of 20260925-14 and 20260925-12.
+- **Came from:** The first reviews of 20260925-14, 20260925-12, and 20260925-16.
 - **README:** Step 3.
 - **Status:** todo
 
