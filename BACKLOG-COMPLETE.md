@@ -1667,3 +1667,13 @@ Run each candidate with its index combinations, using the step 13 process.
 - **Came from:** Their build and review.
 - **README:** 5a-7, step 10.
 - **Status:** done
+
+### 20260922-59. 14c production result comparison.
+
+Run the original and each candidate as plain queries per literal and compare in the enclave with the 9d rules. Stream and use an order-independent hash with float rounding when results are large. Mark `LIMIT` without `ORDER BY` as partial if it times out. Report any divergence prominently.
+
+- **Depends on:** 20260922-47, 20260922-57.
+- **README:** 14c.
+- **Note (from the reviews of 20260922-47):** 9d runs the ordered comparison twice, once with an ascending tiebreaker and once with a descending one. It refuses WITH TIES, and it refuses originals whose own result depends on how ties break. README 14c says to "add the same tiebreaker here before hashing", so hashing needs the same treatment.
+- **Status:** done
+- **Decided:** Hash each row, sort the hashes, and hash the sorted list together with the row count.

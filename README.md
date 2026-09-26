@@ -794,7 +794,7 @@ The measurement runs in steps 13 and 14 use `EXPLAIN ANALYZE`, which runs the qu
 
 The enclave script compares the results itself, using the 9d comparator and its rules. Rows never leave the enclave. Only pass or fail goes to the driver.
 
-Production-size results may be too big to hold in memory. In that case, stream the rows and compare hashes. Use a hash that ignores row order, such as hashing each row and adding up the row hashes, so that two queries returning the same rows in a different order still match. Where 9d adds a tiebreaker to an `ORDER BY`, add the same tiebreaker here before hashing. A hash can't apply 9d's float tolerance, so round float columns to that tolerance before hashing them.
+Production-size results may be too big to hold in memory. In that case, stream the rows and compare hashes. Use a hash that ignores row order: hash each row, sort the row hashes, and hash the sorted list together with the row count, so that two queries returning the same rows in a different order still match. Where 9d compares in order, hash the row hashes in their order instead. Where 9d adds a tiebreaker to an `ORDER BY`, add the same tiebreaker here before hashing. A hash can't apply 9d's float tolerance, so round float columns to that tolerance before hashing them.
 
 The one exception is 9d's rule for `LIMIT` with no `ORDER BY`, which runs the original without its `LIMIT`. At production size, that query could return millions of rows. Try it under `statement_timeout`. If it times out, check only that the candidate returns the expected number of rows, and mark the comparison as partial in the report.
 
