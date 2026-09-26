@@ -225,10 +225,8 @@ module TestPostgres
   def remove_stale_containers
     format = "{{.ID}} {{.Label \"#{OWNER_LABEL}\"}} {{.Label \"#{HOST_LABEL}\"}}"
     docker("ps", "-a", "--filter", "label=#{LABEL}", "--format", format).lines.map(&:split).each do |id, pid, host|
-      next if host && host != Socket.gethostname
-      next if process_alive?(Integer(pid.to_s, exception: false))
-
-      docker("rm", "-f", "-v", id)
+      foreign = host && host != Socket.gethostname
+      docker("rm", "-f", "-v", id) unless foreign || process_alive?(Integer(pid.to_s, exception: false))
     end
   end
 
