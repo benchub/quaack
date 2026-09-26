@@ -1579,3 +1579,12 @@ These are minor findings from the build and reviews of 20260922-44 to -51:
 - **Came from:** Track D build report and reviews.
 - **README:** Steps 9 and 10.
 - **Status:** done
+
+### 20260922-55. 13 baseline runs.
+
+Run the original three times per literal set with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks and the hit-versus-read split. Mark a literal unstable if the count moves, and record each run's plan.
+- **Decided:** For an unstable literal, 14a and 14b use the maximum of the three runs, for the original and for the candidates alike. The report flags that literal.
+
+- **Depends on:** 20260922-53, 20260922-54.
+- **README:** Step 13.
+- **Status:** done

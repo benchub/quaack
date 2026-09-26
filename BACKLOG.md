@@ -133,14 +133,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260922-54. 12b run discipline. Done, see BACKLOG-COMPLETE.md.
 
-### 20260922-55. 13 baseline runs.
-
-Run the original three times per literal set with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks and the hit-versus-read split. Mark a literal unstable if the count moves, and record each run's plan.
-- **Decided:** For an unstable literal, 14a and 14b use the maximum of the three runs, for the original and for the candidates alike. The report flags that literal.
-
-- **Depends on:** 20260922-53, 20260922-54.
-- **README:** Step 13.
-- **Status:** todo
+### 20260922-55. 13 baseline runs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-56. 13a index baselines.
 
@@ -1386,4 +1379,15 @@ These are minor findings from the build and review of 20260922-53:
 - **Depends on:** 20260926-15.
 - **Came from:** 20260926-15 build and review.
 - **README:** Steps 9 and 10.
+- **Status:** todo
+
+### 20260926-27. Baseline loose ends.
+
+- If the original times out on a literal set during baseline, that set is only listed in `timed_out`. Decide how 14a and 14b treat that set, and how the report shows it.
+- No real-Postgres test produces an unstable literal. Only the `summarize` unit test covers that path.
+- Nothing in the pipeline calls `quaacks baseline` yet (see -65).
+
+- **Depends on:** 20260922-55.
+- **Came from:** 20260922-55 build and reviews.
+- **README:** Step 13.
 - **Status:** todo
