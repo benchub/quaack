@@ -109,13 +109,14 @@ If any LLM candidate went unused or lost to a simpler mechanical candidate, send
 - **Depends on:** 20260922-33.
 - **README:** 5a-6.
 - **Status:** todo
-- **Open questions:** How do we decide "helped less than a simpler mechanical candidate"? Simpler by column count, size, or both?
+- **Decided:** An LLM candidate qualifies for the revision round if the planner didn't use it, or if a mechanical candidate with fewer key and INCLUDE columns (ties broken by smaller estimated size) has a worst-case cost across the literal sets no higher than the LLM candidate's.
 
 ### 20260922-35. 5a-7 combination and ranking. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260922-36. Step 5 orchestration.
 
 Wire the plan gate and 5a-1 through 5a-7 together in the driver, in the order the README gives.
+- **Decided (driver CLI):** `quaack start` (20260926-1) creates the run, and `quaack run --run ID` drives every remaining step in order. It can resume, skipping steps whose outputs are already in the store. Each orchestration task adds its stage to that sequence.
 
 - **Depends on:** 20260922-28, 20260922-30, 20260922-31, 20260922-32, 20260922-33, 20260922-34, 20260922-35.
 - **README:** 5a.
@@ -131,6 +132,7 @@ Ask the LLM for rewrites of the redacted query, each stating its transformation 
 - **Depends on:** 20260922-6, 20260922-5, 20260922-10, 20260922-18, 20260922-23.
 - **README:** 6a.
 - **Status:** todo
+- **Decided (wiring):** `quaacks rewrite-payload` sends the redacted query, plan, schema, and stats, reusing the `index_payload` fields where it can. `quaacks rewrite-check` reads the LLM's rewrites on stdin (SQL, transformation, and structured assumptions). It runs the inbound check, 6b, and step 8's structural discards on the racetrack, stores survivors under `rewrite_<n>`, and returns shape-only outcomes.
 - **Decided:** Ask for up to five rewrites per run. Assumptions use a structured format, and the vocabulary is exactly: a `NOT NULL` column, a unique column set, a foreign key, and a `CHECK` constraint. A candidate stating any other kind of assumption is rejected.
 
 ### 20260922-38. 6b assumption check.
@@ -149,7 +151,7 @@ Let operators submit placeholder-based rewrites through the driver. Ask the LLM 
 - **Depends on:** 20260922-37, 20260922-38.
 - **README:** Step 7.
 - **Status:** todo
-- **Open questions:** How do operators submit them: a file, a CLI flag, or a prompt?
+- **Decided:** A file flag on the laptop, `--rewrites <file>`, with one placeholder-SQL rewrite per `;`-terminated statement. They go through the same `quaacks rewrite-check` as 6a's rewrites, flagged as inferred.
 
 ## Step 8: Plan-based pruning.
 
@@ -199,6 +201,7 @@ Build scenarios S0 through S6 from the pools, with hit rows, one near-miss row p
 - **Note (from 20260924-5):** 9d reverses each run of consecutive same-table rows. So every table's rows must be contiguous in the fixture, or the reverse load does nothing. Tables with self-referencing FKs fail the reverse load (see 20260924-9).
 - **Status:** todo
 - **Open questions:** This is likely the largest task in the backlog, so we'll probably split it when we pick it up. How do we satisfy `CHECK` constraints and required columns the query never mentions?
+- **Decided:** Use the column's DEFAULT if it has one, or else a type-typical value (0, empty string, epoch). For a simple CHECK (column op constant, an IN list, or BETWEEN), pick a value that satisfies it. Refuse a query whose CHECKs are too complex, and list that as unsupported in v1.
 
 ### 20260922-46. 9a, 9b, and 9e arena transaction runner. Done, see BACKLOG-COMPLETE.md.
 
@@ -411,7 +414,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 - **Came from:** Splitting 20260922-31, at the user's request to build it early.
 - **README:** 5a-2, step 8.
 - **Status:** todo
-- **Open questions:** Do the patterns use estimated rows in place of actual rows, or only the patterns that don't need rows removed?
+- **Decided:** On rewrite plans, run only the patterns that need neither actual rows nor rows removed, and skip the rest. The LLM in step 11 covers the gaps.
 
 ### 20260923-13. Tighten the runtime boundary checker tests. Done, see BACKLOG-COMPLETE.md.
 
