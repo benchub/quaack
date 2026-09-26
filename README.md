@@ -235,6 +235,8 @@ Keep a one-to-one placeholder map in the governed store. The map is value-class 
 
 Rewrite candidates arrive from the driver with placeholders. When the enclave script needs to turn one into a runnable query, use `PREPARE` and bind the real literals as parameters. Never splice strings.
 
+The driver runs `quaacks redact --run <run ID>` after `quaacks classify`. It reads the run's `qualified_query` and `plan` entries, and doesn't connect to production. It stores four entries: `placeholder_map`, which holds the literals and never leaves; `placeholder_shapes`, each placeholder's shape and row counts; `redacted_query`, the qualified query with a placeholder in place of each literal; and `redacted_plan`, `{"explain", "masked", "dropped"}`, the step 1 plan with its literals stripped. The step sends none of them and prints nothing but its done line. The 5a-5 payload step sends the redacted query, plan, and shapes. It computes everything before it writes, so a missing entry or a query it can't redact, such as one with `$n` parameters of its own, fails with only its rule and stores nothing.
+
 ### 3h. Clock anchoring.
 
 In the AST, replace each of these with a schema-qualified call to `quaack.clock_anchor()`:
