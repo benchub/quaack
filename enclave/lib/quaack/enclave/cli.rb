@@ -20,6 +20,7 @@ require_relative "steps/statistics"
 require_relative "steps/volatility"
 require_relative "steps/classify"
 require_relative "steps/redact"
+require_relative "steps/literals"
 
 module Quaack
   module Enclave
@@ -65,7 +66,8 @@ module Quaack
         "statistics" => Step.new(handler: Steps::Statistics, run: true),
         "volatility" => Step.new(handler: Steps::Volatility, run: true),
         "classify" => Step.new(handler: Steps::Classify, run: true),
-        "redact" => Step.new(handler: Steps::Redact, run: true)
+        "redact" => Step.new(handler: Steps::Redact, run: true),
+        "literals" => Step.new(handler: Steps::Literals, run: true)
       }.freeze
 
       # Other names for a subcommand.
