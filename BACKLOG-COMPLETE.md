@@ -1363,3 +1363,13 @@ Add `quaack run --run ID [--rewrites <file>]` to `driver/lib/quaack/driver/cli.r
 - **Came from:** Track A, B, and F build reports.
 - **README:** Where QUAACK runs, and step 7.
 - **Status:** done
+
+### 20260926-11. Structural discard: compare typmods.
+
+The output-type check compares only type OIDs, so a `varchar(10)` column and a `varchar(20)` column count as the same. Decide whether a difference in typmod should count as an output mismatch.
+- **Decided:** No. Compare OIDs only, so the task is dropped.
+
+- **Depends on:** 20260922-40.
+- **Came from:** Track C build report.
+- **README:** Step 8.
+- **Status:** dropped

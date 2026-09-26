@@ -222,6 +222,7 @@ Rank candidates per literal and overall with the minimax rule. List untested ato
 - **Depends on:** 20260922-60, 20260922-24.
 - **README:** Step 15.
 - **Status:** todo
+- **Decided:** The report is written to a file on the laptop, `./quaack-<run>.html` or `--out <path>`, and its path is printed.
 - **Decided:** HTML output. The explanation is templated from the measurements, not LLM-written.
 
 ### 20260922-63. 15a negative result.
@@ -245,6 +246,7 @@ Render the three burndown sections from the recorded counts.
 ### 20260922-65. Full pipeline.
 
 Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
+- **Decided:** The end-to-end test uses a scripted fake LLM, so it runs free in rake. The scripts must be realistic, drawn from a large corpus of responses. **Before building, ask the user questions:** they'll collect responses from several different LLMs to seed the corpus.
 
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
 - **README:** All.
@@ -1368,14 +1370,7 @@ When the full dump is loaded into a fresh database, its `CREATE SCHEMA public` c
 - **README:** Step 4b.
 - **Status:** todo
 
-### 20260926-11. Structural discard: compare typmods.
-
-The output-type check compares only type OIDs, so a `varchar(10)` column and a `varchar(20)` column count as the same. Decide whether a difference in typmod should count as an output mismatch.
-
-- **Depends on:** 20260922-40.
-- **Came from:** Track C build report.
-- **README:** Step 8.
-- **Status:** todo
+### 20260926-11. Structural discard: compare typmods. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20260926-12. Assumption check loose ends.
 
