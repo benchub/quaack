@@ -211,14 +211,15 @@ module Quaack
       end
 
       # README step 15, last: once the store holds selection (14d), the
-      # report message from report-payload rendered as HTML to out. It
-      # writes nothing, and asks for nothing, while selection is missing, or
-      # when there's no out. Rerunning renders it again.
+      # report message from report-payload rendered as HTML to out.
+      # MeasurementStage has stored selection by the time it runs. It writes
+      # nothing, and asks for nothing, when there's no out. Rerunning
+      # renders it again.
       module ReportStage
         module_function
 
-        def run(transport:, run_id:, entries:, out:)
-          return unless out && entries["selection"]
+        def run(transport:, run_id:, out:, **)
+          return unless out
 
           payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
           Report.write(payload, run_id:, path: out)
