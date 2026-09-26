@@ -1289,17 +1289,7 @@ The read-failure test in `enclave/spec/statistics_step_postgres_spec.rb` revokes
 - **README:** 3d, `quaack run`.
 - **Status:** todo
 
-### 20260926-37. Step 9 fixtures fail to load on realistic schemas.
-
-The prompt pack (20260922-65, part one) ran the pipeline on an ordinary users/products/orders/line_items schema, and every supported query stopped at step 9 with `fixture_load_failed`:
-- **23505, unique violation:** the scenario builder honors unique constraints but not unique indexes created with `CREATE UNIQUE INDEX` (for example `users_email_key`). It also skips columns that have a default, which can collide.
-- **23503, foreign-key violation:** fixture rows reference a parent table the query doesn't name (`orders.user_id` pointing to `users`), and the parent rows are never loaded.
-Both are correctness bugs on realistic setups: a correct rewrite is rejected. Fix the scenario builder so fixtures honor unique indexes (including partial unique indexes and expression unique indexes, or refuse cleanly) and load parent rows for every FK, including FKs to tables outside the query, recursively. Test on the prompt pack's schema (`script/prompt_pack/schema.sql`).
-
-- **Depends on:** 20260922-45, -49.
-- **Came from:** The 20260922-65 prompt pack run.
-- **README:** Step 9.
-- **Status:** todo
+### 20260926-37. Step 9 fixtures fail to load on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-38. Report loose ends, part two.
 
@@ -1336,4 +1326,18 @@ The prompt pack showed two things wrong with what the LLM is sent:
 - **Depends on:** 20260924-31.
 - **Came from:** 20260924-31 build and review.
 - **README:** 3e, step 9.
+- **Status:** todo
+
+### 20260926-41. Step 9: support expression unique indexes instead of refusing.
+
+After 20260926-37, a unique index on an expression anywhere in the fixture tables' closure (for example `CREATE UNIQUE INDEX ON users (lower(email))`, which is common in Rails apps) makes step 9 refuse the whole query as `expression_unique_index`. That fails safe, but it refuses many realistic schemas. Support it: evaluate the expression for candidate values (through Postgres, as `ValuePools.probe` does) and keep the evaluated keys distinct. Or, since fixture text values are already distinct, give every column the expression touches a distinct value, and verify the expression values differ.
+
+Also from the review:
+- Values set explicitly on identity columns don't advance the sequence. If ParentRows and a scenario path that leaves the identity column out ever write to the same table, they could collide. Call `setval` after loading, or confirm the two never mix.
+- No test covers INCLUDE columns or partial unique indexes directly.
+- `UNIQUE NULLS NOT DISTINCT` isn't handled.
+
+- **Depends on:** 20260926-37.
+- **Came from:** 20260926-37 build and review.
+- **README:** Step 9.
 - **Status:** todo
