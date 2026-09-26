@@ -103,19 +103,19 @@ module Quaack
 
       # Unhides the combination named key and hides every other index in
       # build, then confirms with EXPLAIN. Returns the combination's names.
-      def show_only(connection, build, key, sql:)
+      def show_only(connection, build, key, sql:, params: [])
         visible = build["combinations"].fetch(key)
         hide(connection, build["indexes"].keys - visible)
         set_valid(connection, visible, true)
-        confirm(connection, build, visible, sql:)
+        confirm(connection, build, visible, sql:, params:)
         visible
       end
 
       # Raises unless the catalog shows exactly visible as valid among
       # build's indexes, and a plain EXPLAIN of sql uses none of the rest.
-      def confirm(connection, build, visible, sql:)
+      def confirm(connection, build, visible, sql:, params: [])
         hidden = build["indexes"].keys - visible
-        used = index_names(JSON.parse(connection.exec("EXPLAIN (FORMAT JSON) #{sql}").getvalue(0, 0)))
+        used = index_names(JSON.parse(connection.exec_params("EXPLAIN (FORMAT JSON) #{sql}", params).getvalue(0, 0)))
         raise Error, "index_build_hidden_index_used" if used.intersect?(hidden)
 
         valid = valid_names(connection, build["indexes"].keys)
