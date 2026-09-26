@@ -1212,14 +1212,7 @@ Add `quaacks` subcommands that open the racetrack connection and run the mechani
 
 ### 20260925-10. Enclave subcommand: `quaacks statistics` (3c). Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-11. Enclave subcommand: `quaacks volatility` (3d).
-
-Run the volatility check on the qualified query. Store the result. Each subcommand takes `--run <run ID>`, reads its inputs from the governed store, saves its output there, and sends only whitelisted shape through egress. Reuse an existing whitelist type where one fits. Add the subcommand to the README.
-
-- **Depends on:** 20260925-8, 20260922-20.
-- **Came from:** The builder of 20260925-6 found that no enclave subcommands exist for steps 3 and 4, so their outputs never reach the store.
-- **README:** 3d.
-- **Status:** todo
+### 20260925-11. Enclave subcommand: `quaacks volatility` (3d). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-12. Enclave subcommand: `quaacks literals` (3e).
 
@@ -1305,6 +1298,15 @@ The `statistics` step spec has no `production_read_failed` case, but README 3c p
 - **Depends on:** 20260925-10.
 - **Came from:** The first review of 20260925-10.
 - **README:** 3c.
+- **Status:** todo
+
+### 20260925-21. Name the function in a 3d refusal.
+
+README 3d says to abort and say which function caused it. Today the `volatile_function` error line carries only the step, the rule and the SQLSTATE, and 20260925-11 added a README paragraph calling that a v1 limitation. The user decided the function should be named. Function names are schema, so they're shape. Add a whitelisted field, such as `function` holding the schema-qualified name, to the `volatile_function` refusal, for both the step and the other `VolatilityCheck` callers where it makes sense. Remove the README limitation paragraph so 3d no longer contradicts itself. Prove with a sentinel that only the name goes out, never an argument or literal.
+
+- **Depends on:** 20260925-11.
+- **Came from:** The first review of 20260925-11, and the user's decision.
+- **README:** 3d, What leaves the enclave.
 - **Status:** todo
 
 ## After version 1.
