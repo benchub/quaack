@@ -117,6 +117,15 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
         .to eq("original" => stored.read("redacted_query"), "candidate" => { "sql" => same }, "untested_atoms" => [])
       expect_no_leaks(sentinels, outcome)
     end
+
+    it "sends step 9's untested atom shapes" do
+      ready(same)
+      store.write("rewrite_tested_1", "passed" => true, "untested" => ["o.status = $2"], "untested_atoms" => [1])
+
+      sent = lines(step("counterexample-payload", "--search", "rewrite_1")).first
+
+      expect(sent["untested_atoms"]).to eq(["o.status = $2"])
+    end
   end
 
   describe "counterexample-round (10b and 10c)" do
@@ -143,8 +152,21 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
+      round(2, note_row)
       round(3, note_row)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => true)
+    end
+
+    it "refuses a round out of sequence, and any round once survival is decided" do
+      ready(looser)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      expect(lines(round(3, note_row)).first["rule"]).to eq("counterexample_round_out_of_order")
+      expect(stored.entry?("rewrite_survived_1")).to be(false)
+      round(1, note_row)
+      expect(lines(round(2, note_row)).first["rule"]).to eq("counterexample_round_decided")
+      expect(lines(round(1, note_row)).first["rule"]).to eq("counterexample_round_decided")
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
     end
 
     it "refuses a round before step 9 passed, and a round number outside 1 to 3" do

@@ -144,6 +144,7 @@ module Quaack
             raise Error, "counterexample_round_bad_round" unless ROUNDS.include?(round)
 
             Counterexamples.arena!(store, "counterexample_round")
+            sequence!(store, number, round)
 
             inserts(input)
           end
@@ -182,7 +183,17 @@ module Quaack
             store.read("schema_subset")["tables"].map { |schema, name| TableName.new(schema:, name:) }
           end
 
+          # Round 1 may always start (a resumed run starts over); a later
+          # round needs the one before it recorded in rewrite_round_<n>.
+          def sequence!(store, number, round)
+            raise Error, "counterexample_round_decided" if store.entry?("rewrite_survived_#{number}")
+
+            last = store.entry?("rewrite_round_#{number}") ? store.read("rewrite_round_#{number}")["round"] : 0
+            raise Error, "counterexample_round_out_of_order" unless round == "1" || Integer(round) == last + 1
+          end
+
           def finish(store, number, round, outcome)
+            store.write("rewrite_round_#{number}", "round" => Integer(round))
             return Counterexamples.survived(store, number, false) if outcome[:match] == false
 
             Counterexamples.survived(store, number, true) if round == ROUNDS.last
