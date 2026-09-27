@@ -813,8 +813,8 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [:set_notice_receiver, 1] => [:connection_unusable, :transaction, nil],
         [:exec, 1] => [:begin_failed, :begin, nil],
         [:exec, 2] => [:begin_failed, :begin, nil],
-        [:exec_params, 2] => [:fixture_load_failed, :load, 1],
-        [:transaction_status, 2] => [:fixture_load_failed, :load, 0]
+        [:exec_params, 4] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        [:transaction_status, 4] => [:fixture_load_failed, :load, 0]
       }
 
       cases.each do |(method, call), expected|
