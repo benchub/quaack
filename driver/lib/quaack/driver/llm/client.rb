@@ -43,6 +43,9 @@ module Quaack
         # 408 is a timeout and 409 a lock. The gem retries both, so what's
         # left is an API that isn't answering.
         TRANSIENT_STATUSES = [408, 409].freeze
+        # Ends every system prompt that asks for a schema. Structured output
+        # holds the API to the schema anyway; this helps other providers.
+        JSON_ONLY = "Reply with only the JSON object, with no code fences, commentary, or trailing text."
 
         # The Burndown each call is counted in, for the report (15b).
         attr_reader :burndown
@@ -64,6 +67,7 @@ module Quaack
         # text as JSON, for a prompt that asks for JSON itself.
         def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false) # rubocop:disable Metrics/ParameterLists
           params = { model: @model, max_tokens: max_tokens, messages: messages }
+          system = [system, JSON_ONLY].compact.join("\n\n") if schema
           params[:system_] = system if system
           params[:output_config] = { format_: { type: :json_schema, schema: schema } } if schema
           text = reply(params, step, timeout: nonstreaming_timeout(max_tokens))
@@ -140,10 +144,24 @@ module Quaack
         # The message leaves the reply out, and so does the parser's, which
         # quotes it. Replies carry only shapes, but a message has no need
         # for one.
+        # Some models wrap the JSON in a code fence or add prose around it,
+        # so this falls back to the longest span from the first { to a }
+        # that parses.
         def parse_json(text)
           JSON.parse(text)
         rescue JSON::ParserError
-          raise Error.new("llm_bad_response", "the reply wasn't valid JSON"), cause: nil
+          embedded_json(text) or raise Error.new("llm_bad_response", "the reply wasn't valid JSON"), cause: nil
+        end
+
+        def embedded_json(text)
+          start = text.index("{") or return nil
+          ends = (start...text.size).select { text[it] == "}" }.reverse
+          ends.each do |stop|
+            return JSON.parse(text[start..stop])
+          rescue JSON::ParserError
+            next
+          end
+          nil
         end
       end
     end

@@ -57,8 +57,11 @@ module PromptPack
   SENTINELS = STAMPS.merge(STAMPS.to_h { |k, v| [:"#{k}_date", v[0, 10]] }, before_id: BEFORE_ID).freeze
 
   # order is the query's ORDER BY over its output columns, for the 6a
-  # placeholder rewrite (Placeholder.wrapped).
-  Query = Data.define(:name, :sql, :rewrites, :indexes, :order)
+  # placeholder rewrite (Placeholder.wrapped). bug is a [from, to] edit to
+  # the 6a prompt's query text that makes the second, subtly wrong 6a
+  # placeholder rewrite (Placeholder.buggy), so 10a has a real
+  # counterexample to find.
+  Query = Data.define(:name, :sql, :rewrites, :indexes, :order, :bug)
 
   QUERIES = [
     Query.new(
@@ -70,7 +73,8 @@ module PromptPack
                  "JOIN public.users u ON u.id = o.user_id AND u.country = $1 " \
                  "WHERE o.created_at >= $2 AND o.created_at < $3 ORDER BY o.created_at DESC LIMIT $4;"],
       indexes: ["CREATE INDEX ON public.users (name, id)", "CREATE INDEX ON orders (status)"],
-      order: "created_at DESC"
+      order: "created_at DESC",
+      bug: ["WHERE u.country = $1", "WHERE u.country = $1 AND u.name IS NOT NULL"]
     ),
     Query.new(
       name: "group_having",
@@ -79,7 +83,8 @@ module PromptPack
       rewrites: ["SELECT o.user_id, count(*) AS order_count, sum(o.total_cents) AS spent FROM public.orders o " \
                  "WHERE o.status = $1 GROUP BY o.user_id HAVING count(o.id) > $2 ORDER BY spent DESC;"],
       indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (status)"],
-      order: "spent DESC"
+      order: "spent DESC",
+      bug: ["WHERE o.status = $1", "WHERE o.status = $1 AND o.total_cents >= 0"]
     ),
     Query.new(
       name: "correlated_exists",
@@ -91,7 +96,8 @@ module PromptPack
                  "(SELECT li.product_id FROM public.line_items li JOIN public.orders o ON o.id = li.order_id " \
                  "WHERE o.created_at >= $2 AND li.quantity >= $3) ORDER BY p.id;"],
       indexes: ["CREATE INDEX ON public.products (name)", "CREATE INDEX ON line_items (quantity)"],
-      order: "id"
+      order: "id",
+      bug: ["WHERE p.category = $1", "WHERE p.category = $1 AND p.sku <> p.name"]
     ),
     Query.new(
       name: "keyset_pagination",
@@ -100,7 +106,8 @@ module PromptPack
       rewrites: ["SELECT o.id, o.created_at, o.total_cents FROM public.orders o WHERE o.created_at <= $1 " \
                  "AND (o.created_at < $1 OR o.id < $2) ORDER BY o.created_at DESC, o.id DESC LIMIT $3;"],
       indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (created_at)"],
-      order: "created_at DESC, id DESC"
+      order: "created_at DESC, id DESC",
+      bug: ["o.id) < ($1, $2)", "o.id) < ($1, $2) AND o.updated_at <= o.created_at"]
     )
   ].freeze
 
@@ -132,7 +139,7 @@ module PromptPack
       case step
       when "5a-5" then { "indexes" => messages.size == 1 ? query.indexes : [] }
       when "5a-6" then { "indexes" => [] }
-      when "6a" then { "rewrites" => [wrapped(first, query)] }
+      when "6a" then { "rewrites" => [wrapped(first, query), buggy(first, query)] }
       when "step7" then { "rewrites" => Array.new(json_in(first)["rewrites"].size) { inferred } }
       when "10a" then { "inserts" => [] }
       else raise "no placeholder for step #{step}"
@@ -142,8 +149,25 @@ module PromptPack
     # The query itself in a materialized CTE, so its plan differs from the
     # original's, and step 8 doesn't prune it. The outer query keeps the
     # order, so step 9 passes it, and 10a and step 11 get asked.
-    def wrapped(content, query)
-      { "sql" => "WITH r AS MATERIALIZED (#{json_in(content).fetch("query")}) SELECT * FROM r ORDER BY #{query.order}",
+    def wrapped(content, query) = in_cte(json_in(content).fetch("query"), query)
+
+    # The same wrapper around the query with query.bug applied: an extra
+    # condition that looks harmless but drops rows real data can hold, the
+    # kind of slip an LLM makes. It tests a column the original never
+    # mentions, so step 9's fixtures, which give such columns a typical
+    # value that passes it, don't catch it, and 10a gets asked to disprove
+    # it. (A changed bound or a dropped condition on the original's own
+    # atoms is caught at step 9.) The wrapper keeps step 8 from pruning it.
+    def buggy(content, query)
+      sql = json_in(content).fetch("query")
+      from, to = query.bug
+      raise "#{query.name}: #{from} isn't in the 6a query" unless sql.include?(from)
+
+      in_cte(sql.sub(from, to), query)
+    end
+
+    def in_cte(sql, query)
+      { "sql" => "WITH r AS MATERIALIZED (#{sql}) SELECT * FROM r ORDER BY #{query.order}",
         "transformation" => "placeholder", "assumptions" => [] }
     end
 

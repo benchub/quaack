@@ -168,6 +168,34 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(fake.asks.first.body[:output_config]).to eq(format: { type: :json_schema, schema: schema })
     end
 
+    it "ends the system prompt with the JSON-only line when there's a schema" do
+      fake.reply("5a-5", { "ddl" => [] })
+      ask(system: "You propose indexes.", schema: schema)
+
+      expect(fake.asks.first.body[:system]).to eq("You propose indexes.\n\n#{described_class::JSON_ONLY}")
+      expect(described_class::JSON_ONLY)
+        .to eq("Reply with only the JSON object, with no code fences, commentary, or trailing text.")
+    end
+
+    it "leaves the system prompt as it is without a schema" do
+      fake.reply("6a", [])
+      ask("6a", system: "You rewrite SQL.", json: true)
+
+      expect(fake.asks.first.body[:system]).to eq("You rewrite SQL.")
+    end
+
+    it "reads the JSON object out of a code fence with prose around it" do
+      fake.reply("5a-5", "Here you go:\n\n```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```\n\nHope that helps.")
+
+      expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
+    end
+
+    it "reads a bare JSON object followed by trailing prose" do
+      fake.reply("5a-5", "{\"ddl\": []}\nThese cover the filter.")
+
+      expect(ask(schema: schema)).to eq("ddl" => [])
+    end
+
     it "parses the text as JSON when asked, without a schema" do
       fake.reply("6a", [{ "sql" => "SELECT 1" }])
 
