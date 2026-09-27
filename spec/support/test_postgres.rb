@@ -90,7 +90,14 @@ module TestPostgres
       @counter = 0
     end
 
-    def admin = @admin ||= PG.connect(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
+    # An admin connection a spec left inside a transaction is replaced
+    # rather than failing every later example. A dead one isn't checked
+    # for here: drop reports it as ConnectionLost, which is how a spec that
+    # forked finds out its child must end with exit!.
+    def admin
+      close_admin if @admin && !@admin.finished? && @admin.transaction_status != PG::PQTRANS_IDLE
+      @admin ||= PG.connect(host: host, port: port, dbname: "postgres", user: USER, password: PASSWORD)
+    end
 
     # Closes the admin connection, for a spec whose code under test must
     # see no other client on the server. The next use of admin opens a new
