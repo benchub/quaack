@@ -68,6 +68,17 @@ RSpec.describe Quaack::Enclave::Burndown do
     expect(described_class.read(store).dig("stages", "5a-4", "original", "dropped")).to eq("never_used" => 1)
   end
 
+  it "counts an unused candidate set aside for 12a as set aside, not dropped (20260927-11)" do
+    unused = candidate(key: ["c"])
+    tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
+                                                            literal_sets: { slow: ["5"] },
+                                                            candidates: [candidate(key: ["a"]), unused])
+    described_class.record_single_candidate_test(store, tested, search: :original, set_aside: [unused])
+
+    expect(described_class.read(store).dig("stages", "5a-4", "original"))
+      .to include("in" => 2, "dropped" => {}, "set_aside" => 1, "out" => 1)
+  end
+
   it "records only 5a-4, so it takes no stage" do
     expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "5a-5") }
       .to raise_error(ArgumentError, /unknown keyword: :stage/)

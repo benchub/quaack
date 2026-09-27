@@ -98,9 +98,11 @@ module Quaack
       # set, and the rest are dropped as never_used or, if HypoPG wouldn't
       # create them, hypopg_refused. Each plan with a hypothetical index adds
       # one to the hypothetical_explains total. The baseline's plans have
-      # none, so they don't count.
-      def record_single_candidate_test(store, report, search:)
-        add(store, [["5a-4", search, Adapters.tested_counts(report)]], Adapters.tested_totals(report))
+      # none, so they don't count. set_aside is the unused candidates held
+      # for 12a to build for real (IndexSearch's "set_aside"), which count
+      # as set aside rather than never_used.
+      def record_single_candidate_test(store, report, search:, set_aside: [])
+        add(store, [["5a-4", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
       end
 
       # Records one LLM round, 5a-5 or 5a-6, as one record. A round filters
@@ -167,13 +169,16 @@ module Quaack
             set_aside: dedupe.set_aside.size, out: dedupe.proposals.size }
         end
 
-        def tested_counts(report)
+        def tested_counts(report, set_aside = [])
           results = report.results
           used = results.count(&:used?)
           refused = results.count(&:refusal)
-          dropped = { never_used: results.size - used - refused, hypopg_refused: refused }.reject { |_, n| n.zero? }
-          { in: results.size, dropped:, out: used }
+          held = held(results, set_aside)
+          dropped = { never_used: results.size - used - refused - held, hypopg_refused: refused }
+          { in: results.size, dropped: dropped.reject { |_, n| n.zero? }, set_aside: held, out: used }
         end
+
+        def held(results, set_aside) = results.count { !it.used? && !it.refusal && set_aside.include?(it.candidate) }
 
         def tested_totals(report) = { hypothetical_explains: report.results.sum { it.plans.size } }
 

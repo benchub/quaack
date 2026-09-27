@@ -271,14 +271,14 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "resolves an alias" do
       expect(keys(generate("SELECT o.id FROM public.orders o WHERE o.status = 1", stats)))
-        .to eq([["orders", %w[status], %w[id]], ["orders", %w[status], []]])
+        .to eq([["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []]])
     end
 
     it "resolves a column qualified by the table name or by schema and table name" do
       sql = "SELECT orders.id FROM public.orders WHERE orders.status = 1 AND public.orders.region = 2"
 
       expect(keys(generate(sql, stats)).last(2))
-        .to eq([["orders", %w[region status], %w[id]], ["orders", %w[region status], []]])
+        .to eq([["orders", %w[region status id], []], ["orders", %w[region status], []]])
     end
 
     it "doesn't resolve the table name once the table has an alias" do
@@ -543,7 +543,8 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
             "ON s.id = o.customer_id"
 
       expect(keys(generate(sql, stats)))
-        .to eq([["orders", %w[customer_id], []], ["customers", %w[region], %w[id]], ["customers", %w[region], []]])
+        .to eq([["orders", %w[customer_id], []], ["customers", %w[region], %w[id]], ["customers", %w[region id], []],
+                ["customers", %w[region], []]])
     end
 
     it "gives the tables inside a CTE their own candidates, before the query, a set operation read per branch" do
@@ -552,16 +553,17 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
             "SELECT 1 FROM public.orders o WHERE o.status = 1 AND o.customer_id IN (SELECT id FROM c)"
 
       expect(keys(generate(sql, stats)))
-        .to eq([["customers", %w[region], %w[id]], ["customers", %w[region], []],
-                ["orders", %w[status], %w[id]], ["orders", %w[status], []]])
+        .to eq([["customers", %w[region], %w[id]], ["customers", %w[region id], []], ["customers", %w[region], []],
+                ["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []]])
     end
 
     it "reads a CTE that a set operation branch names as the CTE, not a table" do
       sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1) " \
             "SELECT id FROM c UNION SELECT id FROM public.orders WHERE status = 2"
 
-      expect(keys(generate(sql, stats))).to eq([["customers", %w[region], %w[id]], ["customers", %w[region], []],
-                                                ["orders", %w[status], %w[id]], ["orders", %w[status], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["customers", %w[region], %w[id]], ["customers", %w[region id], []], ["customers", %w[region], []],
+                ["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []]])
     end
   end
 
@@ -574,27 +576,31 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     it "puts * into INCLUDE as every column of every table" do
       sql = "SELECT * FROM public.orders o JOIN public.customers c ON c.id = o.status"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], %w[id total]], ["orders", %w[status], []],
-                                                ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[id total]], ["orders", %w[status id total], []], ["orders", %w[status], []],
+                ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
     end
 
     it "puts t.* into INCLUDE as every column of that table only" do
       sql = "SELECT c.*, o.id FROM public.orders o JOIN public.customers c ON c.id = o.status"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], %w[id]], ["orders", %w[status], []],
-                                                ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[id]], ["orders", %w[status id], []], ["orders", %w[status], []],
+                ["customers", %w[id], %w[name]], ["customers", %w[id], []]])
     end
 
     it "reads columns inside expressions, in query order, once each" do
       sql = "SELECT sum(total), lower(o.id::text), total + 1 FROM public.orders o WHERE status = 1"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], %w[total id]], ["orders", %w[status], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[total id]], ["orders", %w[status total id], []], ["orders", %w[status], []]])
     end
 
     it "reads every argument of a function" do
       sql = "SELECT coalesce(id, total, region) FROM public.orders WHERE status = 1"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], %w[id total]], ["orders", %w[status], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["orders", %w[status], %w[id total]], ["orders", %w[status id total], []], ["orders", %w[status], []]])
     end
 
     it "doesn't read the columns of a subquery in the select list" do
@@ -882,7 +888,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       sql = "SELECT created_at AS id FROM public.orders o WHERE a = 1 ORDER BY o.id DESC"
 
       expect(generate(sql, stats).last(2))
-        .to eq([btree(orders, [asc("a"), desc("id")], %w[created_at]), btree(orders, [asc("a"), desc("id")])])
+        .to eq([btree(orders, [asc("a"), desc("id"), asc("created_at")]), btree(orders, [asc("a"), desc("id")])])
     end
 
     it "builds the key from ORDER BY alone when nothing else counts" do
@@ -1087,7 +1093,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       sql = "SELECT status, count(*) FROM public.orders WHERE a = 12 GROUP BY status"
 
       expect(generate(sql, stats))
-        .to eq([btree(orders, %w[a], %w[status]), btree(orders, %w[a]), btree(orders, %w[a status])])
+        .to eq([btree(orders, %w[a], %w[status]), btree(orders, %w[a status]), btree(orders, %w[a])])
     end
 
     it "keys GROUP BY alone when nothing else counts, and apart from a range column" do
@@ -1099,7 +1105,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "leaves GROUP BY out of the key when an item is an expression" do
       expect(generate("SELECT 1 FROM public.orders WHERE a = 1 GROUP BY lower(status)", stats).map(&:key))
-        .to eq([[asc("a")], [asc("a")]])
+        .to eq([[asc("a")], [asc("a"), asc("status")], [asc("a")]])
     end
   end
 
@@ -1114,6 +1120,21 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(generate(sql, stats)).to eq([btree(orders, %w[b], %w[a total region]), btree(orders, %w[b]),
                                           btree(orders, %w[b a], %w[total region]), btree(orders, %w[b a]),
                                           btree(orders, %w[b a region], %w[total]), btree(orders, %w[b a region])])
+    end
+
+    it "also proposes the INCLUDE columns moved into the key when the leading column is low-cardinality (e2e 055)" do
+      stats = statistics(table(orders, { "status" => column(4), "total_cents" => column(5000) }, extra: %w[id]))
+      sql = "SELECT sum(total_cents) FROM public.orders WHERE status = 'shipped'"
+
+      expect(generate(sql, stats)).to eq([btree(orders, %w[status], %w[total_cents]),
+                                          btree(orders, %w[status total_cents]), btree(orders, %w[status])])
+    end
+
+    it "doesn't move INCLUDE columns into the key when the leading column isn't low-cardinality" do
+      stats = statistics(table(orders, { "status" => column(50), "total_cents" => column(5000) }, extra: %w[id]))
+      sql = "SELECT sum(total_cents) FROM public.orders WHERE status = 'shipped'"
+
+      expect(generate(sql, stats)).to eq([btree(orders, %w[status], %w[total_cents]), btree(orders, %w[status])])
     end
 
     it "adds no INCLUDE when a filter column outside key and INCLUDE leaves the index not covering" do
@@ -1132,12 +1153,13 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       sql = "SELECT o.id FROM public.orders o JOIN public.customers c USING (region) WHERE o.a = 1"
 
       expect(keys(generate(sql, stats).select { |c| c.table == orders }))
-        .to eq([["orders", %w[a], []], ["orders", %w[a region], %w[id]], ["orders", %w[a region], []]])
+        .to eq([["orders", %w[a], []], ["orders", %w[a region], %w[id]], ["orders", %w[a region id], []],
+                ["orders", %w[a region], []]])
     end
 
     it "also proposes the bare key when INCLUDE makes the index covering" do
       expect(generate("SELECT id FROM public.orders WHERE a = 1 ORDER BY a", stats))
-        .to eq([btree(orders, %w[a], %w[id]), btree(orders, %w[a])])
+        .to eq([btree(orders, %w[a], %w[id]), btree(orders, %w[a id]), btree(orders, %w[a])])
     end
 
     it "adds no INCLUDE when WHERE and HAVING columns outside the key keep it from covering" do
@@ -1161,7 +1183,8 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       result = generate(range_sql, stats(correlation: 0.9))
 
       expect(result).to eq([btree(orders, %w[a]), btree(orders, %w[a created_at], %w[id]),
-                            btree(orders, %w[a created_at]), brin(orders, "created_at")])
+                            btree(orders, %w[a created_at id]), btree(orders, %w[a created_at]),
+                            brin(orders, "created_at")])
       expect(result.last.include).to eq([])
       expect(result.last.sources).to eq(Set[:parse])
     end
@@ -1280,6 +1303,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(generate(sql, stats)).to eq([
                                            btree(orders, %w[status]),
                                            btree(orders, ["status", desc("created_at")], %w[id]),
+                                           btree(orders, ["status", desc("created_at"), "id"]),
                                            btree(orders, ["status", desc("created_at")]),
                                            brin(orders, "created_at")
                                          ])

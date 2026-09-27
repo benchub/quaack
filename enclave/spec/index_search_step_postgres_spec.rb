@@ -74,6 +74,38 @@ RSpec.describe "quaacks index-search, against a real server" do
     expect(used["plans"].transform_values { it["total_cost"] }).to eq(direct_costs(ddl))
   end
 
+  context "when a candidate leads with a low-cardinality column (e2e 055)" do
+    let(:query) { "SELECT sum(o.total) FROM public.orders o WHERE o.status = 'held'" }
+
+    # 80% of orders are held, as 80% of e2e 055's are shipped.
+    def seed(conn)
+      conn.exec(<<~SQL)
+        CREATE TABLE public.orders (id int PRIMARY KEY, note text, status text, total int, created_at timestamptz);
+        INSERT INTO public.orders
+        SELECT i, repeat('n', 200), CASE WHEN i % 5 = 0 THEN 'open' ELSE 'held' END, i % 100, now()
+        FROM generate_series(1, 20000) AS i;
+        ANALYZE public.orders;
+      SQL
+    end
+
+    it "sets aside each unused key-only B-tree candidate on a low-cardinality leading column for 12a" do
+      prepare
+
+      index_search
+
+      entry = stored.read("index_search_original")
+      unused = entry["results"].reject { |r| r["refusal"] || r["plans"].values.any? { it["used"] } }
+      expected = unused.map { it["candidate"] }.select do |c|
+        c["access_method"] == "btree" && c["include"].empty? && c["predicate"].nil? && !c["unique"] &&
+          c["key"].first["name"] == "status"
+      end
+      expect(expected).not_to be_empty
+      expect(entry["set_aside"]).to eq(expected)
+      expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] })
+        .to eq([[%w[status total], []], [["status"], []]])
+    end
+  end
+
   it "stores each plan redacted through 3g, with placeholders where the sentinel literal was" do
     prepare
     index_search

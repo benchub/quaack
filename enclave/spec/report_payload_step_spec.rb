@@ -200,11 +200,14 @@ RSpec.describe "quaacks report-payload" do
       store.write("rewrite_tested_6", "passed" => false, "scenario" => "S1", "rule" => "duplicates",
                                       "untested" => 0, "untested_atoms" => [])
       store.write("rewrite_survived_6", "survived" => false)
-      store.write("index_search_original", "dedupe" => dedupe, "llm_results" => [], "results" => [
-                    result("btree (note) WHERE note = '#{sentinel}'", used: false),
-                    result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }),
-                    result("btree (id, note)", used: true)
-                  ])
+      # btree (status) is unused but set aside for 12a (20260927-11), so it isn't declined.
+      results = [result("btree (status)", used: false),
+                 result("btree (note) WHERE note = '#{sentinel}'", used: false),
+                 result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }),
+                 result("btree (id, note)", used: true)]
+      store.write("index_search_original",
+                  "dedupe" => dedupe, "llm_results" => [], "results" => results,
+                  "set_aside" => [plain("CREATE INDEX ON public.orders USING btree (status)")])
     end
 
     let(:outcome) do
