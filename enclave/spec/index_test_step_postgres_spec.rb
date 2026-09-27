@@ -49,6 +49,25 @@ RSpec.describe "quaacks index-test, against a real server" do
     expect(tested.first["size"]).to be_positive
   end
 
+  context "when a literal's type differs from the one Postgres would infer (e2e 020)" do
+    let(:query) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+        "AND o.created_at::date > now()::date - 7"
+    end
+
+    it "tests the accepted DDL, preparing with the literal's type" do
+      prepare
+      index_search
+
+      outcome = index_test(ddls(partial))
+
+      expect([outcome.stdout, outcome.status.exitstatus])
+        .to eq([%({"type":"index_outcome","index":1,"outcome":"accepted","rule":null,"covered_by":null,) +
+                %("partial_constant_only":true}\n{"type":"done"}\n), 0])
+      expect(stored.read("index_search_original")["llm_results"].size).to eq(1)
+    end
+  end
+
   it "saves the Dedupe, so the replacement round sees the first round's survivors, and adds its results" do
     prepare
     index_search

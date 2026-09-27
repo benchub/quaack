@@ -93,7 +93,9 @@ module Quaack
 
         def test(store, connection, candidates)
           literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
-          SingleCandidateTest.run(connection, query: store.read("anchored_query"), literal_sets:, candidates:)
+          query = store.read("anchored_query")
+          SingleCandidateTest.run(connection, query:, literal_sets:, candidates:,
+                                              types: IndexSearch.types(store, query))
         end
 
         def updated(entry, dedupe, report, maps, round)
