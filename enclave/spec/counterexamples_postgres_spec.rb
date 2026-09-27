@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/arena_runner"
+require "pg_query"
 require "quaack/enclave/counterexamples"
+require "quaack/enclave/predicate_atoms"
 
 # 10a, the enclave's half: bind the real literals into the LLM's
 # shape-level inserts, send them through the inbound check, and fill
@@ -83,5 +85,36 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.refused).to eq([])
     expect(load(prepared, "SELECT r.code FROM fx.depots d JOIN fx.regions r ON r.id = d.region_id"))
       .to eq([["5001"]])
+  end
+
+  describe "an insert that sets a GENERATED ALWAYS key (task 20260927-24)" do
+    before { conn.exec("CREATE TABLE fx.accounts (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text)") }
+
+    def accounts(*inserts)
+      described_class.prepare(conn, inserts, placeholder_map: map, tables: [tn("accounts")])
+    end
+
+    def compare(prepared)
+      sql = "SELECT a.id FROM fx.accounts a"
+      atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql),
+                                                      column_names: { tn("accounts") => %w[id name] })
+      described_class.compare(runner, prepared, original: sql, candidate: "#{sql} WHERE a.name IS NOT NULL",
+                                                atoms:, untested: [])
+    end
+
+    it "loads with OVERRIDING SYSTEM VALUE, keeping the id it sets, and disproves" do
+      prepared = accounts("INSERT INTO fx.accounts (id, name) OVERRIDING SYSTEM VALUE VALUES (4242, NULL)")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT id, name FROM fx.accounts")).to eq([["4242", nil]])
+      expect(compare(prepared).match).to be(false)
+    end
+
+    it "fails its round cleanly as a load failure when the id collides" do
+      prepared = accounts("INSERT INTO fx.accounts (id, name) OVERRIDING SYSTEM VALUE VALUES (7, 'a')",
+                          "INSERT INTO fx.accounts (id, name) OVERRIDING SYSTEM VALUE VALUES (7, NULL)")
+      expect(prepared.refused).to eq([])
+      result = compare(prepared)
+      expect([result.match, result.load_failed, result.rule]).to eq([nil, true, :insert_failed])
+    end
   end
 end

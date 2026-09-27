@@ -39,7 +39,66 @@ RSpec.describe PipelineReplay do
             expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
           end
         end
+
+        it "finds the wrong rewrite whenever the 6a reply holds the wrong condition" do
+          expect(outcome.wrong).not_to be_empty if outcome.rewrites_text.to_s.include?(described_class.condition(query))
+        end
       end
+    end
+  end
+
+  # Task 20260927-24: Replies alone, over temporary reply roots.
+  describe "Replies" do
+    def body(text, rounds = 1)
+      follow = [{ role: :assistant, content: "{}" }, { role: :user, content: "again" }]
+      { system: "S", messages: [{ role: :user, content: text }] + (follow * (rounds - 1)) }
+    end
+
+    def save(root, dir, reply: "{}", prompt: nil)
+      FileUtils.mkdir_p(File.join(root, "q", dir))
+      File.write(File.join(root, "q", dir, "reply-t-1.md"), reply)
+      File.write(File.join(root, "q", dir, "prompt.md"), prompt) if prompt
+    end
+
+    let(:variant) { PipelineReplay::Variant.new(llm: "t", k: 1) }
+
+    it "names 10a asks by rewrite and round, three numbers per rewrite, so an early disproof shifts nothing" do
+      replies = PipelineReplay::Replies.new("q", variant, roots: [])
+      replies.for("6a", body("x"))
+      # Rewrite 1 runs all three rounds, rewrite 2 is disproved in round
+      # one, and rewrite 3 is disproved in round two.
+      [1, 2, 3, 1, 1, 2].each { replies.for("10a", body("x", it)) }
+      expect(replies.log.map { it.split(":").first }).to eq(%w[6a-1 10a-1 10a-2 10a-3 10a-4 10a-7 10a-8])
+    end
+
+    it "checks a reply's prompt against the prompt.md in the root it came from, then the corpus" do
+      Dir.mktmpdir do |root|
+        sent = PromptPack.prompt(PipelineReplay::Replies::Ask.new(body("x")))
+        save(root, "6a-1", prompt: sent)
+        save(root, "10a-1", prompt: sent.sub("# System\n\nS", "# System\n\nchanged"))
+        replies = PipelineReplay::Replies.new("q", variant, roots: [root])
+        replies.for("6a", body("x"))
+        replies.for("10a", body("x"))
+        expect(replies.drift).to eq(["10a-1: the system prompt sent differs from #{File.join(root, "q", "10a-1",
+                                                                                             "prompt.md")}"])
+      end
+    end
+  end
+
+  describe ".wrong" do
+    let(:query) { PromptPack::QUERIES.find { it.name == "orm_join" } }
+
+    it "reads the rewrites with the client's tolerant JSON parse, skipping a stray example object" do
+      text = <<~TEXT
+        For example, {"sql": "SELECT 1 WHERE u.name IS NOT NULL"} would be wrong. Here are mine:
+        {"rewrites": [{"sql": "SELECT 1", "transformation": "t", "assumptions": []},
+                      {"sql": "SELECT 2 WHERE u.name IS NOT NULL", "transformation": "t", "assumptions": []}]}
+      TEXT
+      expect(described_class.wrong(query, text)).to eq([2])
+    end
+
+    it "finds nothing when there's no 6a reply, or it doesn't parse" do
+      expect([described_class.wrong(query, nil), described_class.wrong(query, "no json")]).to eq([[], []])
     end
   end
 
@@ -55,13 +114,23 @@ RSpec.describe PipelineReplay do
     end
 
     it "fall back to all empty answers for a query with no replies" do
-      expect(described_class.variants("orm_join")).to eq([described_class::EMPTY])
+      expect(described_class.variants("keyset_pagination")).to eq([described_class::EMPTY])
     end
 
     it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
       outcome = run("group_having")
       expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
-                                     "10a-1: empty answer (no reply)")
+                                     "10a-1: empty answer (no reply)", "10a-7: empty answer (no reply)")
+      # 10a-4 disproves in round one, so the operator rewrite's rounds are
+      # still 10a-7 to 10a-9, as the pack numbers them.
+      expect(outcome.log.grep(/\A10a-[56]:/)).to be_empty
+      expect(outcome.wrong).to eq([2])
+      expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
+    end
+
+    it "load a 10a-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it disproves (orm_join)" do
+      outcome = run("orm_join")
+      expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed")
       expect(outcome.wrong).to eq([2])
       expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
     end
