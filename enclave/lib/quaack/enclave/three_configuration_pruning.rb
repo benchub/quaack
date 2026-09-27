@@ -30,19 +30,21 @@ module Quaack
     # The planning runs in SingleCandidateTest sessions, so it has 5a-4's
     # transaction, settings, fresh prepares, and cleanup, and its errors.
     # The result is a Boolean, so nothing from the plans or literals leaves.
+    # types, if given, holds :original and :rewrite, each query's placeholder
+    # types for SingleCandidateTest (its literals' types).
     module ThreeConfigurationPruning
       module_function
 
-      def discard?(connection, original:, rewrite:, literal_sets:, top:)
+      def discard?(connection, original:, rewrite:, literal_sets:, top:, types: {}) # rubocop:disable Metrics/ParameterLists
         configurations = [[], top.fetch(:original), top.fetch(:rewrite)]
-        original_plans = plans(connection, original, literal_sets, configurations)
-        rewrite_plans = plans(connection, rewrite, literal_sets, configurations)
+        original_plans = plans(connection, original, literal_sets, configurations, types[:original])
+        rewrite_plans = plans(connection, rewrite, literal_sets, configurations, types[:rewrite])
         original_plans.zip(rewrite_plans).all? { |a, b| same?(a, b) }
       end
 
       # One Measurement per configuration.
-      def plans(connection, query, literal_sets, configurations)
-        SingleCandidateTest.session(connection, query:, literal_sets:) do |session|
+      def plans(connection, query, literal_sets, configurations, types = nil)
+        SingleCandidateTest.session(connection, query:, literal_sets:, types:) do |session|
           configurations.map { session.measure(it) }
         end
       end

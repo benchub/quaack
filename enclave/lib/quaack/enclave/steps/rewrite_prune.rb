@@ -55,10 +55,13 @@ module Quaack
         end
 
         def discard?(store, connection, search)
+          original = store.read("anchored_query")
+          rewrite = RewriteEntry.run_sql(store.read(search))
           ThreeConfigurationPruning.discard?(
-            connection, original: store.read("anchored_query"), rewrite: RewriteEntry.run_sql(store.read(search)),
-                        literal_sets: IndexSearch.values(LiteralSet.load(store).sets),
-                        top: { original: top(store, "original"), rewrite: top(store, search) }
+            connection, original:, rewrite:, literal_sets: IndexSearch.values(LiteralSet.load(store).sets),
+                        top: { original: top(store, "original"), rewrite: top(store, search) },
+                        types: { original: IndexSearch.types(store, original),
+                                 rewrite: IndexSearch.types(store, rewrite) }
           )
         end
 

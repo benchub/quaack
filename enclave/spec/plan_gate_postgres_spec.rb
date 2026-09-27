@@ -100,6 +100,13 @@ RSpec.describe Quaack::Enclave::PlanGate do
     expect(error.message).to include("plan_gate_mismatch_likely_stale_statistics").and include("statistics")
   end
 
+  it "prepares each placeholder with its literal's type (e2e 020, 031)" do
+    sql = prepare_run("SELECT o.id FROM public.orders o WHERE o.created_at::date > now()::date - 7 " \
+                      "AND o.id <> 4242.0")
+
+    expect(described_class.check(store:, connection: conn, sql:)).to be_nil
+  end
+
   it "explains with the slow literals" do
     sql = prepare_run("SELECT o.id FROM public.orders o WHERE o.status = 'failed'")
     make_statistics_stale

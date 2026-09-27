@@ -98,6 +98,25 @@ RSpec.describe "quaacks step 8, against a real server" do
       .to include("in" => 2, "out" => 1, "dropped" => { "same_plans" => 1 })
   end
 
+  context "when a literal's type differs from the one Postgres would infer (e2e 020)" do
+    let(:query) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+        "AND o.created_at::date > now()::date - 7"
+    end
+    let(:swapped) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.created_at::date > now()::date - $2 AND o.note = $1"
+    end
+
+    it "checks, searches, ranks, and prunes a rewrite, preparing with the literals' types" do
+      ready(swapped)
+      expect(stored.entry?("rewrite_1")).to be(true)
+      %w[original rewrite_1].each { search_and_rank(it) }
+
+      expect(done?(run("rewrite-prune", "--search", "rewrite_1"))).to be(true)
+      expect(stored.read("rewrite_pruned_1")).to eq("discarded" => true)
+    end
+  end
+
   it "refuses to prune before both rankings exist" do
     ready(same)
     search_and_rank("rewrite_1")
