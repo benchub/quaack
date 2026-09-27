@@ -702,6 +702,8 @@ Run the original and every remaining candidate through the result comparator. Th
 
 - **No `ORDER BY`:** compare results as multisets.
 - **`ORDER BY` that doesn't give a total order:** for this run only, add a tiebreaker to both queries. Use the driving table's PK, or all output columns. Keep the `LIMIT`.
+  - The tiebreaker runs both ways, ascending and descending. The original must return the same rows both ways, or its `LIMIT` cuts through a tied group, and the comparison refuses with `unsupported_order`. The candidate must match the original in both runs.
+  - It fails closed, with `unsupported_order`, when a column, domain, or range type in the database uses a nondeterministic collation, or either query names one in a `COLLATE`. It also refuses when a query has a `LIMIT` or `OFFSET` and a column btree can't order, such as `json`, is left out of the tiebreaker, or when the original has rows equal on every tiebreaker column that differ in a left-out one. `FETCH FIRST ... WITH TIES` is refused outright.
 - **`LIMIT` with no `ORDER BY`:** run the original once without the `LIMIT`. The candidate's rows must be a subset of those rows, with the expected row count.
 - **Float aggregates:** compare with a tolerance.
 - **Built queries must round-trip.** Dropping the `LIMIT` or adding a tiebreaker means deparsing a changed tree. That SQL must parse back to the same tree, or the comparison refuses with `deparse_mismatch`. That's unsupported in v1.

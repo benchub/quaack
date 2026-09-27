@@ -71,7 +71,7 @@ module Quaack
                   AND a.atttypid NOT IN (SELECT oid FROM pg_type WHERE typtype = 'e'))))
         SQL
 
-        # A nondeterministic collation that a column or domain uses, or that
+        # A nondeterministic collation that a column, domain, or range uses, or that
         # a COLLATE clause in either query names (%<names>s). Text it
         # compares equal, such as 'a' and 'A', can print differently, and a
         # result can't say which columns use it.
@@ -80,6 +80,7 @@ module Quaack
           WHERE NOT c.collisdeterministic
             AND (c.oid IN (SELECT attcollation FROM pg_attribute)
               OR c.oid IN (SELECT typcollation FROM pg_type)
+              OR c.oid IN (SELECT rngcollation FROM pg_range)
               OR c.collname IN (%<names>s))
         SQL
 
