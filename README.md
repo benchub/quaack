@@ -237,6 +237,8 @@ These statistics include real values in `most_common_vals` and `histogram_bounds
 
 Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic, and which have a date, timestamp, or timestamptz type, for 3h's clock literals.
 
+This step captures each table's `reltuples` and `relpages`, not `relallvisible`, which the planner uses to price index-only scans. v1 assumes production is vacuumed normally, so its visibility map is current, and that the racetrack is fully vacuumed and analyzed after restore (4a). QUAACK doesn't capture or restore `relallvisible`.
+
 The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not 3b's FK parents. It connects to the production server the way step 2 does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and 3f read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
 
 Unsupported in v1: a table with inheritance children is refused with `inheritance_parent`, because `pg_stats` keeps two rows for each of its columns and QUAACK doesn't choose between them. The element and range statistics in `pg_stats` and the statistics on expressions in `pg_stats_ext_exprs` aren't read.
@@ -369,6 +371,8 @@ It refuses rather than guesses. The host must be a hostname or an IPv4 address (
 The racetrack is a clone of production, restored from a production backup at full size. QUAACK never generates its data. Synthetic data can't reproduce production's physical layout: row width, page density, index depth, and how closely heap order matches index order. That layout decides how many blocks a plan touches. Matching production byte for byte is the whole point of the racetrack.
 
 The restore also brings production's statistics with it. That's why the racetrack can do the hypothetical-index planning too. No separate statistics-only database is needed.
+
+v1 assumes the racetrack is fully vacuumed and analyzed after the restore, so its visibility map, and with it `relallvisible` and the price of index-only scans, is current, as production's is assumed to be. QUAACK doesn't capture or restore `relallvisible` (3c).
 
 In the racetrack database:
 
