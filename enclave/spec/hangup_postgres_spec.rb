@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "tmpdir"
 
 # When the driver goes away mid-step (its ssh session drops, or its
 # timeout fires), quaacks cancels the running query, which rolls back its
@@ -85,5 +86,26 @@ RSpec.describe "quaacks on hangup" do
 
     expect_stopped_and_rolled_back(waiter)
     stdout.close
+  end
+
+  it "runs a step to completion when stdout is a regular file" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "out")
+      quick = <<~RUBY
+        require "quaack/enclave"
+        cli = Quaack::Enclave::CLI
+        handler = lambda do |**|
+          sleep 0.5
+          [{ type: :version, version: "1" }]
+        end
+        exit cli.main(ARGV, steps: { "probe" => cli::Step.new(handler:) })
+      RUBY
+      pid = Process.spawn(RbConfig.ruby, "-I", File.join(GEM_ROOT, "lib"), "-e", quick, "probe",
+                          in: File::NULL, out: path)
+      _, status = Process.wait2(pid)
+
+      expect(status.success?).to be(true), "quaacks exited with #{status.inspect}"
+      expect(File.read(path)).to match(/"type":\s*"done"/)
+    end
   end
 end
