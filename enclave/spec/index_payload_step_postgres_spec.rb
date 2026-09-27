@@ -72,6 +72,18 @@ RSpec.describe "quaacks index-payload, against a real server" do
 
       expect(types).to eq("$1" => "text", "$2" => "timestamp with time zone", "$3" => "timestamp with time zone")
     end
+
+    it "falls back to each placeholder's 3g type class when the query didn't prepare" do
+      searched
+      entry = stored.read("index_search_original")
+      stored.write("index_search_original", entry.merge("parameter_types" => {}))
+
+      types = payload(index_payload)["placeholders"].transform_values { it["type"] }
+
+      expect(types).to eq(stored.read("placeholder_shapes").transform_values { it["type"] })
+      expect(types.values).to all(be_a(String))
+      expect(types["$2"]).not_to eq("timestamp with time zone")
+    end
   end
 
   it "strips pg_dump's restrict and unrestrict lines from the schema DDL" do

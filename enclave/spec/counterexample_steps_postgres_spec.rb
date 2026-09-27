@@ -103,6 +103,30 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(lines(step("rewrite-test", "--search", "rewrite_9")).first["rule"]).to eq("rewrite_test_unknown_search")
     end
+
+    context "with now() and an anchor far from the real clock (README 3h)" do
+      let(:query) do
+        "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
+          "AND o.created_at < now()"
+      end
+
+      it "runs the candidate's anchored_sql, so an equivalent candidate passes" do
+        ready(same)
+        conn = PG.connect(host: production.server.host, port: production.server.port, dbname: arena_name,
+                          user: TestPostgres::USER, password: TestPostgres::PASSWORD)
+        conn.exec("CREATE SCHEMA quaack")
+        conn.exec("CREATE FUNCTION quaack.clock_anchor() RETURNS pg_catalog.timestamptz LANGUAGE sql IMMUTABLE " \
+                  "AS $$SELECT '2000-01-01 00:00:00+00'::pg_catalog.timestamptz$$")
+        conn.close
+        candidate = "SELECT o.note, o.status FROM public.orders o WHERE o.created_at < %s AND o.status = $2 " \
+                    "AND o.note = $1"
+        store.write("rewrite_1", store.read("rewrite_1").merge("sql" => format(candidate, "now()"),
+                                                               "anchored_sql" => format(candidate,
+                                                                                        "quaack.clock_anchor()")))
+
+        expect(lines(step("rewrite-test", "--search", "rewrite_1")).first).to include("passed" => true)
+      end
+    end
   end
 
   describe "counterexample-payload (10a)" do

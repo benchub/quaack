@@ -177,7 +177,9 @@ RSpec.describe "quaacks report-payload" do
       populate(store)
       store.write("selection", "top" => [], "infinite_sets" => [],
                                "excluded" => { "rewrite_1:none" => "not_better", "rewrite_6:none" => "result_mismatch",
-                                               "rewrite_2:none" => "not_better" })
+                                               "rewrite_2:none" => "not_better",
+                                               # No rewrite_survived_7, so it never survived.
+                                               "rewrite_7:none" => "footprint_tie" })
       store.write("rewrite_2", "sql" => "SELECT 1")
       store.write("rewrite_tested_2", "passed" => false, "scenario" => "S3", "rule" => "null_semantics",
                                       "untested" => 0, "untested_atoms" => [])

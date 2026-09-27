@@ -356,6 +356,14 @@ RSpec.describe Quaack::Enclave::Store do
       end
     end
 
+    # json doesn't count an empty innermost container toward max_nesting.
+    it "raises reading a file nested deeper than MAX_DEPTH around an empty innermost Array" do
+      depth = Quaack::Enclave::PlainData::MAX_DEPTH + 1
+      File.write(File.join(store.path, "plan.json"), "#{"[" * depth}#{"]" * depth}")
+
+      expect_store_error(/plan.*#{store.run_id}.*nested too deep to read\z/) { store.read("plan") }
+    end
+
     sentinel_object = Object.new.tap { |o| o.define_singleton_method(:to_s) { STORE_SENTINEL } }
     [
       ["an object", -> { sentinel_object }],

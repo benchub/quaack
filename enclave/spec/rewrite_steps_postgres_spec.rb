@@ -49,6 +49,23 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
       expect_no_leaks(sentinels, outcome)
     end
+
+    context "with a timestamptz range, after index-search" do
+      let(:query) do
+        "SELECT o.note FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+          "AND o.created_at >= '2026-09-01' AND o.created_at < '2026-09-02'"
+      end
+
+      it "types each placeholder as Postgres infers it for the query" do
+        ready
+        index_search
+
+        sent = JSON.parse(quaacks.run("rewrite-payload", "--run", store.run_id).stdout.lines.first)
+
+        expect(sent["placeholders"].transform_values { it["type"] })
+          .to eq("$1" => "text", "$2" => "timestamp with time zone", "$3" => "timestamp with time zone")
+      end
+    end
   end
 
   describe "rewrite-check" do
