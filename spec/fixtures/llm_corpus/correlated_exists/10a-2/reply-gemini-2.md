@@ -1,0 +1,8 @@
+{
+  "inserts": [
+    "INSERT INTO public.users (id, email, name, country, status, created_at) VALUES (1, 'user1@example.com', NULL, 'US', 'active', '2026-01-01T00:00:00Z')",
+    "INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) VALUES (1, 1, 'completed', 1000, $3, '2026-01-01T00:00:00Z')",
+    "INSERT INTO public.products (id, sku, name, category, price_cents) VALUES (1, 'SKU-1', 'Product 1', $1, 1000)",
+    "INSERT INTO public.line_items (id, order_id, product_id, quantity, unit_price_cents) VALUES (1, 1, 1, $4, 1000), (2, 1, 1, $4, 1000)"
+  ]
+}
