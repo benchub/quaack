@@ -205,7 +205,8 @@ module Quaack
       end
 
       def literal_sets?(sets)
-        sets.is_a?(Hash) && !sets.empty? && sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
+        sets.is_a?(Hash) && !sets.empty? &&
+          sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
       end
 
       def literal?(value)
@@ -243,6 +244,16 @@ module Quaack
         Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
       end
 
+      # Runs the block with every value read as the String Postgres sends,
+      # whatever type map the caller set, and puts the caller's back.
+      def string_results(connection)
+        type_map = connection.type_map_for_results
+        connection.type_map_for_results = PG::TypeMapAllStrings.new
+        yield
+      ensure
+        connection.type_map_for_results = type_map
+      end
+
       # A candidate whose to_ddl the deparse guard refuses, such as one with
       # a name over 63 bytes, is refused on its own instead of stopping the
       # run.
@@ -253,7 +264,10 @@ module Quaack
         false
       end
 
-      def unrenderable
+      # The refused Measurement if any candidate is unrenderable, or nil.
+      def unrenderable(candidates)
+        return if candidates.all? { renderable?(it) }
+
         Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :unrenderable, sqlstate: nil))
       end
 
@@ -288,14 +302,9 @@ module Quaack
 
         def open(&)
           previous = @connection.set_notice_receiver { nil }
-          type_map = @connection.type_map_for_results
           begin
-            # Every value is read as the String Postgres sends, whatever
-            # type map the caller set.
-            @connection.type_map_for_results = PG::TypeMapAllStrings.new
-            within(&)
+            SingleCandidateTest.string_results(@connection) { within(&) }
           ensure
-            @connection.type_map_for_results = type_map
             @connection.set_notice_receiver(&previous)
           end
         end
@@ -309,10 +318,14 @@ module Quaack
           raise Error, :session_closed unless @open
 
           SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
+          SingleCandidateTest.unrenderable(candidates) || created(candidates)
+        end
+
+        private
+
+        def created(candidates)
           indexes = []
           candidates.each do |candidate|
-            return SingleCandidateTest.unrenderable unless SingleCandidateTest.renderable?(candidate)
-
             oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
             return SingleCandidateTest.refused(sqlstate) if oid.nil?
 
@@ -320,8 +333,6 @@ module Quaack
           end
           Measurement.new(sizes: indexes.map { |i| i[2] }.freeze, plans: plans(indexes), refusal: nil)
         end
-
-        private
 
         def within
           failed = true
