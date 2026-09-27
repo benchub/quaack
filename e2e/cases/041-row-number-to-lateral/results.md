@@ -5,8 +5,8 @@ Category: `none`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 3000 | 3059 | 3018 | - | - |
-| silver customers | 27000 | 27442 | 27128 | - | - |
+| slow (from the plan) | 3000 | 3059 | 3018 | 3059 | 3018 |
+| silver customers | 27000 | 27442 | 27128 | 27442 | 27128 |
 
 Every claim holds.
 

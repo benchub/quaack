@@ -41,7 +41,7 @@ SELECT i,
        timestamptz '2025-01-01 00:00:00+00' + i * interval '1 minute'
 FROM generate_series(1, 500000) AS i;
 
-CREATE INDEX customers_tier_idx ON public.customers (tier) INCLUDE (email);
+CREATE INDEX customers_tier_idx ON public.customers (tier) INCLUDE (id, email);
 CREATE INDEX orders_customer_total_idx ON public.orders (customer_id, total_cents);
 
 VACUUM ANALYZE;

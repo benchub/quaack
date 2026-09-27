@@ -6,7 +6,7 @@
 
 ## Setup.
 
-Case 001's `customers` and `orders`. `customers (tier) INCLUDE (email)` and `orders (customer_id, total_cents)` already exist: the indexes generator one would propose for this query.
+Case 001's `customers` and `orders`. `customers (tier) INCLUDE (id, email)` and `orders (customer_id, total_cents)` already exist: generator one's candidates for each table (equality or join columns, then the range column, then the rest of the select list as `INCLUDE`).
 
 ## Slow query (`slow.sql`).
 
@@ -14,7 +14,7 @@ Gold customers with a big order. The join returns one row per qualifying order, 
 
 ## Expected result.
 
-The obvious rewrite is `EXISTS` (`fast.sql`), which is correct. Stated assumption: `customers.id` is unique. But with these indexes, Postgres 18 already plans the `DISTINCT` join about as well as the semi-join, so 14a and 14b must reject the rewrite. The generator-one indexes already exist, so 5a-3 drops them as duplicates. QUAACK should report a negative result (15a) that names the rewrite and why it lost.
+The obvious rewrite is `EXISTS` (`fast.sql`), which is correct. Stated assumption: `customers.id` is unique. But with these indexes, Postgres 18 already plans the `DISTINCT` join about as well as the semi-join, so 14a and 14b must reject the rewrite. The generator-one indexes already exist, so 5a-3 drops them as duplicates. `indexes.sql` tries `orders (total_cents) INCLUDE (customer_id)`, a range-first alternative, which doesn't help either. QUAACK should report a negative result (15a) that names the rewrite and why it lost.
 
 ## Proof.
 

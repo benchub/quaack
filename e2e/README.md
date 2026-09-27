@@ -7,14 +7,14 @@ The cases are the corpus for the end-to-end test in BACKLOG task 20260922-65. Th
 ## Running it.
 
 ```
-ruby e2e/verify.rb             # every case, a few minutes each batch
+ruby e2e/verify.rb             # every case, about 25 minutes
 ruby e2e/verify.rb 001 046     # only cases whose directory starts with these
 ruby e2e/verify.rb --write     # also rewrite each results.md, and CASES.md after a full run
 ```
 
 It needs Docker and the standard library, nothing else. It starts its own throwaway `postgres:18` container with autovacuum off (as README step 4 requires of the run server), labeled `quaack.e2e`, loads each case into a fresh database that it drops afterwards, and removes the container and its volume at exit. A container left by a crashed run is removed by the next one. Set `QUAACK_E2E_IMAGE` to use another image, such as the HypoPG one from `spec/support/postgres/`. The proofs don't need HypoPG, because they build real indexes.
 
-It isn't part of `rake`: the full run takes around 15 minutes.
+It isn't part of `rake`, because of that run time.
 
 ## A case.
 
@@ -42,7 +42,7 @@ Each `results.md` ends with the bound for BACKLOG 20260922-65. For `index`, `rew
 | `index` | A new index is the fix. | With the index, the query returns the same results, touches more than 5% fewer total blocks on the slow literals, and no more on any other 14b set. |
 | `rewrite` | A rewrite is the fix, using existing indexes. | The rewrite returns the same results on every set, and wins as above. |
 | `both` | Only a rewrite plus a new index wins. | Same results with and without the index. Rewrite plus index wins as above, and beats the rewrite alone and the index alone by more than 5% each. |
-| `none` | Nothing should be accepted (15a). | Any tempting rewrite still returns the same results. Neither it, nor the strongest index candidate, nor both together, pass 14a and 14b. The generator-one candidates for these queries already exist in the schema, so 5a-3 drops them. |
+| `none` | Nothing should be accepted (15a). | `indexes.sql` is required and holds the strongest index candidate known. Any tempting rewrite still returns the same results. Neither the rewrite, nor the index, nor both together, pass 14a and 14b. |
 | `trap` | A tempting rewrite is wrong. | Its results differ from the original's on at least one literal set, so the data really does disprove it. |
 | `refused` | QUAACK v1 must refuse the query. | Only that the query runs on Postgres. |
 

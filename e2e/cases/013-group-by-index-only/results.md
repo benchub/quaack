@@ -7,7 +7,7 @@ Category: `index`.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | slow (from the plan) | 4 | 2505 | - | 6 | - |
 | another tenant | 4 | 2505 | - | 6 | - |
-| tenant with no tickets | 0 | 3 | - | 3 | - |
+| tenant with no tickets | 0 | 6 | - | 3 | - |
 
 Every claim holds.
 

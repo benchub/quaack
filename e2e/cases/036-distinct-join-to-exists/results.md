@@ -5,9 +5,9 @@ Category: `none`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 550 | 3628 | 3628 | - | - |
-| a lower threshold | 1000 | 3628 | 3628 | - | - |
-| nobody qualifies | 0 | 3633 | 3627 | - | - |
+| slow (from the plan) | 550 | 3013 | 3013 | 3013 | 3013 |
+| a lower threshold | 1000 | 3013 | 3013 | 3013 | 3013 |
+| nobody qualifies | 0 | 3018 | 3012 | 9 | 3 |
 
 Every claim holds.
 

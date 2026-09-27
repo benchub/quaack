@@ -1,11 +1,11 @@
 {
-  "title": "EXCEPT over a big table",
-  "category": "none",
+  "title": "EXCEPT whose second arm is a range scan",
+  "category": "index",
   "compare": "multiset",
   "features": [
     "EXCEPT set operation",
-    "anti-join rewrite",
-    "set operations treat NULLs as equal: NOT NULL assumption (6b)"
+    "range-only arm: generator one keys on the range column (5a-1)",
+    "INCLUDE column for an index-only scan"
   ],
   "literal_sets": [
     {

@@ -111,6 +111,9 @@ module E2E
 
   # Runs one case: equivalence on every literal set, then total blocks.
   class Runner
+    # The same full-table statistics that each schema.sql builds with.
+    ANALYZE = "SET default_statistics_target = 10000; ANALYZE;"
+
     Row = Struct.new(:set, :rows, :orig, :rewrite, :orig_idx, :rewrite_idx, :minimax)
 
     def initialize(postgres, kase)
@@ -167,12 +170,12 @@ module E2E
       return {} unless @case.indexes
 
       before = index_names
-      sql("#{@case.indexes}\nANALYZE;")
+      sql("#{@case.indexes}\n#{ANALYZE}")
       yield
     ensure
       if @case.indexes
         added = index_names - before
-        sql("#{added.map { |n| "DROP INDEX #{n};" }.join}ANALYZE;") unless added.empty?
+        sql("#{added.map { |n| "DROP INDEX #{n};" }.join}#{ANALYZE}") unless added.empty?
       end
     end
 
@@ -299,9 +302,11 @@ module E2E
       beats(failures, :rewrite_idx, :orig_idx, "the new index alone")
     end
 
-    # Nothing may pass 14a and 14b: the tempting rewrite, the tempting
-    # index, or both together.
+    # Nothing may pass 14a and 14b: the tempting rewrite, the strongest index
+    # candidate, or both together. Without an index to try, the claim that
+    # no index wins would go unchecked.
     def check_none(failures)
+      failures << "a none case needs indexes.sql with its strongest index candidate" unless @case.indexes
       equivalent(failures)
       FIXES.each do |column, what|
         failures << "#{what} would be accepted" if slow_row[column] && accepted?(column)
