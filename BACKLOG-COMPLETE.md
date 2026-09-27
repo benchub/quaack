@@ -2484,3 +2484,17 @@ Now that runs are stable, 086 measures 1013 blocks against a bound of 1007, ever
 - **Came from:** The 20260927-6 investigation.
 - **README:** none.
 - **Status:** done
+
+### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters.
+
+`SingleCandidateTest#explain` (`single_candidate_test.rb:419`) prepares the query without parameter types, so Postgres guesses wrong:
+- e2e 020, 048, 099 fail with `prepare_failed` 42883: `now()::date - $1` resolves as date minus date.
+- 031 fails with `explain_failed` 22P02: `4242.0` won't bind to an inferred bigint.
+- 091 is probably a plan-gate mismatch on `substring(... FROM $1 FOR $2)`.
+
+Use the original literal's type for each placeholder (from the placeholder map, or cast the placeholder the way the original literal was written). Check every other PREPARE site (the plan gate, index search) for the same bug. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-4, step 5 plan gate.
+- **Status:** done

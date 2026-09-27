@@ -1100,19 +1100,7 @@ A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_gu
 
 ### 20260927-1. Set operations crash generator one (5a-1). Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters.
-
-`SingleCandidateTest#explain` (`single_candidate_test.rb:419`) prepares the query without parameter types, so Postgres guesses wrong:
-- e2e 020, 048, 099 fail with `prepare_failed` 42883: `now()::date - $1` resolves as date minus date.
-- 031 fails with `explain_failed` 22P02: `4242.0` won't bind to an inferred bigint.
-- 091 is probably a plan-gate mismatch on `substring(... FROM $1 FOR $2)`.
-
-Use the original literal's type for each placeholder (from the placeholder map, or cast the placeholder the way the original literal was written). Check every other PREPARE site (the plan gate, index search) for the same bug. Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-4, step 5 plan gate.
-- **Status:** todo
+### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key.
 
@@ -1211,4 +1199,17 @@ Fix: add the INCLUDE only when it makes the index truly covering for that table 
 - **Depends on:** 20260927-12.
 - **Came from:** The 20260927-12 investigation.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099.
+
+- **e2e 020:** `started_at >= current_date - 1 GROUP BY user_id`. Its one candidate is declined as unused (bound 94). Diagnose it: clock anchoring's effect on the predicate, or 5a-1's choice.
+- **e2e 099:** the top fix touches 13 blocks against a bound of 12. Is it a ranking issue or the bound?
+- **Weak sentinel test:** the "failed typed prepare error free of the literal" test can't catch a regression, because the sentinel never reaches PREPARE.
+- **Type names:** `Redaction.prepare` and `Binding#prepare_sql` interpolate type names unchecked. They're safe only because the set is fixed. Add an allowlist.
+- **SELECT only:** `Redaction.one_statement?` doesn't require a SELECT.
+
+- **Depends on:** 20260927-2.
+- **Came from:** 20260927-2 build and review.
+- **README:** 5a-4.
 - **Status:** todo
