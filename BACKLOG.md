@@ -1174,20 +1174,14 @@ These are minor findings from the review of 20260927-23:
 - **README:** Teardown.
 - **Status:** todo
 
-### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts.
-
-Multi-turn prompts in `spec/fixtures/llm_corpus` (5a-5-2, 5a-6, later 10a rounds) hold `# User`, `# Assistant`, `# User` sections. Pasted into a chat window, the model can't tell the `# Assistant` section is its own earlier turn. Make `script/prompt_pack/run.rb` also write a `chat.md` next to each multi-turn `prompt.md`: one message that quotes the earlier turn plainly ("Earlier you replied with this: ...") and then gives the follow-up. Update the corpus README to say to paste `chat.md` when it exists, and to explain that the assistant turn is a planted reply. For example, 5a-5-2's planted reply holds an unqualified index so that the replacement ask happens.
-
-- **Depends on:** 20260922-65.
-- **Came from:** User, 2026-09-27, while collecting corpus replies.
-- **README:** none.
-- **Status:** todo
+### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-27. Replay wrong-rewrite spec gaps.
 
 These are minor findings from the review of 20260927-24:
 - The per-query spec "finds the wrong rewrite whenever the 6a reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
 - `PipelineReplay.wrong` matching the whole rewrite hash (`to_s`) instead of its `"sql"` field survives mutation.
+- From the review of 20260927-26: `spec/prompt_pack_chat_spec.rb` doesn't check that "You were asked:" labels the first ask and "Your reply:" labels the planted reply. Swapping them stays green.
 
 - **Depends on:** 20260927-24.
 - **Came from:** Review of 20260927-24.

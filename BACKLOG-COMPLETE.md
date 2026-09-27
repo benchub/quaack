@@ -2713,3 +2713,12 @@ These are findings from the build and reviews of 20260922-65, part three:
 - **Came from:** Build and reviews of 20260922-65, part three.
 - **README:** All.
 - **Status:** done
+
+### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts.
+
+Multi-turn prompts in `spec/fixtures/llm_corpus` (5a-5-2, 5a-6, later 10a rounds) hold `# User`, `# Assistant`, `# User` sections. Pasted into a chat window, the model can't tell the `# Assistant` section is its own earlier turn. Make `script/prompt_pack/run.rb` also write a `chat.md` next to each multi-turn `prompt.md`: one message that quotes the earlier turn plainly ("Earlier you replied with this: ...") and then gives the follow-up. Update the corpus README to say to paste `chat.md` when it exists, and to explain that the assistant turn is a planted reply. For example, 5a-5-2's planted reply holds an unqualified index so that the replacement ask happens.
+
+- **Depends on:** 20260922-65.
+- **Came from:** User, 2026-09-27, while collecting corpus replies.
+- **README:** none.
+- **Status:** done
