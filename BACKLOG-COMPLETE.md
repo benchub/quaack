@@ -1923,3 +1923,73 @@ Also from the review:
 - **Came from:** 20260926-37 build and review.
 - **README:** Step 9.
 - **Status:** done
+
+### 20260924-13. Leak-test helper loose ends.
+
+Findings from the reviews of 20260922-9:
+- **A Tempfile slips past the IO refusal.** Tempfile is a Delegator, so `is_a?(IO)` is false, and a Tempfile holding a sentinel returns no findings. Refuse Tempfile too. A File nested inside an object is also neither scanned nor refused.
+- **The positive control doesn't plant in Array elements, Hash keys and values, Struct or Data members, or a StringIO's `#string`,** though its comment says it does. The unit specs catch those breaks. Add the plants, or reword the comment.
+- **Surviving mutants:**
+  - `MAX_DEPTH` 24 → 10
+  - case-insensitive `extra:` needles
+  - scanning only the first backtrace line
+  - `MIN_EXTRA` 9 → 4
+  - the `seen` set, which only affects speed
+- **`pg` isn't a runtime dependency of quaacks,** so `LeakCheck::Quaacks` can't run subcommands that connect to Postgres. The first task with such a step (20260922-16) must add `pg` to the quaacks gemspec and to `ENCLAVE_ALLOWED_GEMS`.
+- **The harness schema has no JSON column,** so the fixture can't plant the JSON sentinel in stored rows.
+
+- **Depends on:** 20260922-9.
+- **Came from:** Both reviews of 20260922-9.
+- **README:** Trust boundary.
+- **Status:** done
+- **Note:** The `pg` item is resolved. 20260922-16 made pg a runtime dependency of quaacks.
+
+### 20260924-14. LLM client loose ends.
+
+Findings from the builds and reviews of 20260922-6:
+- **Streaming.** Non-streaming requests are capped at the gem's limit: 21,333 max_tokens for the default model, and lower for some models. Add streaming if a step ever needs bigger outputs.
+- **Lazy-load `anthropic`.** Requiring it adds about 0.5s to every driver CLI start, even for commands that never call the LLM.
+- **A driver config file** for the model and similar settings. Today config comes only from code and the environment.
+- **Surviving mutants in `driver/lib/quaack/driver/llm/client.rb`:**
+  - `limit = MODEL_NONSTREAMING_TOKENS[...]` → `nil`. The per-model limit is never tested. Try `model: "claude-opus-4-0"` with `max_tokens: 8193`.
+  - `ENV[ALLOW_REAL_ENV] == "1"` → truthy. Nothing tests `QUAACK_ALLOW_REAL_LLM=yes` against the client guard. The root suite and child processes rely on that guard alone.
+  - `ENV[SPECS_ENV] == "1"` → truthy. Nothing tests `QUAACK_SPECS=0`.
+  - `e.message` passed through with extra text. Messages are matched by prefix only.
+- **The `NoNetwork` prepend is only in the driver suite.** The root suite and child processes get only the client-level guard. Consider sharing it.
+- **The workload-identity token exchange bypasses `PooledNetRequester`.** It calls `Net::HTTP` directly when a client is built with no key and federation credentials exist. Our client always passes a key, so only a spec that builds `Anthropic::Client` directly could reach it.
+- **`calculate_nonstreaming_timeout` isn't in the gem's `rbi/` or `sig/`,** so a 1.x update could rename it. The specs would go red, but note this when bumping the gem.
+
+- **Depends on:** 20260922-6.
+- **Came from:** The builds and both reviews of 20260922-6.
+- **README:** Where QUAACK runs, 15b.
+- **Status:** done
+
+### 20260924-17. Teardown loose ends.
+
+Findings from the reviews of 20260922-66:
+- **The rule is wrong when the recheck fails.** If the recheck `lstat` inside `Store.teardown`'s `rescue Error` raises a `SystemCallError`, such as EACCES after the base's mode changes mid-call, the raw Errno escapes as `internal_error`, where it should be `bad_store_base` or `teardown_failed`.
+- **The rule is wrong after a race.** If the run path is swapped for a non-directory between `open`'s check and the delete, the path is left alone, as it should be, but the rule is `teardown_failed`, not `bad_run`.
+- **A doc comment describes unbuilt behavior.** The top of `steps/teardown.rb` says the driver runs teardown at the end of every run. That's future work (20260922-65).
+- **A redundant check.** `return :already_gone unless PrivateFiles.lstat(path)` is an equivalent mutant, because the recheck already covers it. Keep it as a fast path with a comment, or drop it.
+
+- **Depends on:** 20260922-66.
+- **Came from:** The reviews of 20260922-66.
+- **README:** Where QUAACK runs.
+- **Status:** done
+
+### 20260924-20. Driver transport loose ends.
+
+Findings from the reviews of 20260922-5:
+- **A timeout doesn't stop the remote `quaacks`.** It kills only the local ssh process. With `-T`, the remote side gets no SIGHUP, and it can keep running queries on the jump server until it next writes. Options: run the remote side under `timeout`, or have the enclave CLI exit when stdin or stdout closes.
+- **Over ssh, a remote quaacks killed by a signal shows up as ssh exit 255,** so `killed?` is false. The error line still decides the rule.
+- **Lexical is skipped when a line starts with whitespace,** so json 2.9.1 and 3.0.2 read ` {"type":"error",/*c*/"rule":"zz"}` differently. Check `line.lstrip`, or run Lexical on every line.
+- **A child that closes stdout and then reads the rest of stdin hangs until the timeout,** because Pump stops writing on stdout EOF.
+- **A grandchild holding stdout makes a call wait out the whole timeout** (3,600s by default) and then report success.
+- **MAX_ARGV_BYTES doesn't bound the escaped ssh remote command.** Shellwords turns a newline into 3 bytes, so a value that passes can exceed Linux's 128 KiB per-argument limit and show up as `incomplete`. Cap the escaped length for Ssh.
+- **Three Pump mutants are caught only by hanging the suite.** Add a per-example timeout to the driver specs.
+- **The timeout test expects under 3s against a 1s timeout,** which could flake on a loaded machine.
+
+- **Depends on:** 20260922-5.
+- **Came from:** The reviews of 20260922-5.
+- **README:** Where QUAACK runs.
+- **Status:** done
