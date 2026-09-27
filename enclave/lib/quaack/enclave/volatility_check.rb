@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "function_calls"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
+require_relative "volatility_check_cast_sql"
 
 module Quaack
   module Enclave
@@ -40,7 +41,19 @@ module Quaack
     #   type's input function is volatile. A cast from an unknown literal,
     #   such as 'x'::sometype, calls the input function, and so does a cast
     #   through text, and the parse can't always tell which kind of cast it
-    #   is.
+    #   is. A cast to a domain also counts the functions its CHECK
+    #   constraints call. So one volatile cast to a common type, such as
+    #   int, makes every cast to it abort.
+    # - A qualified column, t.f, is volatile if any function named f that
+    #   takes a row (a composite type, record, anyelement, anycompatible, or "any") as its one argument is,
+    #   since it may be attribute notation for f(t).
+    #
+    # What it doesn't catch: it trusts provolatile, so a function declared
+    # STABLE whose body calls nextval is accepted, and its sequence advance
+    # survives ROLLBACK. It accepts STABLE functions that read other
+    # tables, such as table_to_xml, which is fine in v1 since the rows stay
+    # in the enclave. And it can't see what Postgres adds while it analyzes
+    # the query (see FunctionCalls).
     #
     # A name with a schema is looked up in that schema only. Any other is
     # looked up in every schema of the plan's search path, which
@@ -91,6 +104,19 @@ module Quaack
         LIMIT 1
       SQL
 
+      # t.f can call a function f of one argument, a row: one whose first
+      # argument is a composite type, or record, anyelement, anycompatible,
+      # or "any", never internal, anyarray, or a handler type. Every schema
+      # in the path counts, since the parse doesn't say what t is.
+      ATTRIBUTE_SQL = FUNCTION_SQL.sub("ORDER BY", <<~SQL.chomp)
+        AND EXISTS (SELECT FROM pg_catalog.pg_type at
+                    WHERE at.oid = p.proargtypes[0]
+                      AND (at.typtype = 'c' OR at.oid IN ('record'::pg_catalog.regtype,
+                           'anyelement'::pg_catalog.regtype, 'anycompatible'::pg_catalog.regtype,
+                           '"any"'::pg_catalog.regtype)))
+        ORDER BY
+      SQL
+
       OPERATOR_SQL = <<~SQL
         SELECT pg_catalog.quote_ident(n.nspname), o.oprname, pg_catalog.quote_ident(fn.nspname),
                pg_catalog.quote_ident(f.proname)
@@ -103,41 +129,7 @@ module Quaack
         LIMIT 1
       SQL
 
-      # A domain's base type can be another domain, so the base types are
-      # followed all the way down.
-      CAST_SQL = <<~SQL
-        WITH RECURSIVE named AS (
-          SELECT t.oid, n.nspname, t.typname
-          FROM pg_catalog.pg_type t
-          JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
-          WHERE n.nspname = ANY ($1::text[]) AND t.typname = $2
-        ), target (named, oid) AS (
-          SELECT oid, oid FROM named
-          UNION
-          SELECT target.named, t.typbasetype
-          FROM target JOIN pg_catalog.pg_type t ON t.oid = target.oid
-          WHERE t.typbasetype <> 0
-        ), called (named, oid) AS (
-          SELECT target.named, c.castfunc
-          FROM target
-          JOIN pg_catalog.pg_type t ON t.oid = target.oid
-          JOIN pg_catalog.pg_cast c ON c.casttarget IN (t.oid, t.typarray)
-          UNION ALL
-          SELECT target.named, t.typinput::oid
-          FROM target JOIN pg_catalog.pg_type t ON t.oid = target.oid
-        )
-        SELECT pg_catalog.quote_ident(named.nspname), pg_catalog.quote_ident(named.typname),
-               pg_catalog.quote_ident(fn.nspname), pg_catalog.quote_ident(f.proname)
-        FROM called
-        JOIN named ON named.oid = called.named
-        JOIN pg_catalog.pg_proc f ON f.oid = called.oid
-        JOIN pg_catalog.pg_namespace fn ON fn.oid = f.pronamespace
-        WHERE f.provolatile = 'v'
-        ORDER BY pg_catalog.array_position($1::text[], named.nspname::text), named.oid, f.oid
-        LIMIT 1
-      SQL
-
-      SQL_BY_KIND = { function: FUNCTION_SQL, operator: OPERATOR_SQL, cast: CAST_SQL }.freeze
+      SQL_BY_KIND = { function: FUNCTION_SQL, attribute: ATTRIBUTE_SQL, operator: OPERATOR_SQL, cast: CAST_SQL }.freeze
 
       module_function
 
@@ -171,6 +163,7 @@ module Quaack
       def volatile(call, schemas, connection)
         params = [RelationQualifier.text_array(schemas), call.name]
         params << call.arity.to_s if call.arity
+        params << "1" if call.kind == :attribute
         rows = connection.exec_params(SQL_BY_KIND.fetch(call.kind), params)
         rows.ntuples.zero? ? nil : rows.values.first
       end
@@ -179,7 +172,7 @@ module Quaack
         schema, name, function_schema, function = row
         called = "#{function_schema}.#{function}"
         case call.kind
-        when :function
+        when :function, :attribute
           own = "#{schema}.#{name}"
           own == called ? "function #{own} is volatile" : "function #{own} calls volatile function #{called}"
         when :operator then "operator #{schema}.#{name} calls volatile function #{called}"

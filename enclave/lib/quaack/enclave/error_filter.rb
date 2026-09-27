@@ -61,6 +61,8 @@ module Quaack
                     function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE) }
         line = Egress.serialize(message.compact)
         line.is_a?(String) ? line : FALLBACK
+      rescue SignalException
+        raise
       rescue Exception # rubocop:disable Lint/RescueException
         FALLBACK
       end
@@ -136,6 +138,8 @@ module Quaack
       # if the method raises.
       def ask(object, method, *)
         object.public_send(method, *) if object.respond_to?(method)
+      rescue SignalException
+        raise
       rescue Exception # rubocop:disable Lint/RescueException
         nil
       end
@@ -145,6 +149,8 @@ module Quaack
       def write(out, line)
         out.write("#{line}\n")
         out.flush
+      rescue SignalException
+        raise
       rescue Exception # rubocop:disable Lint/RescueException
         nil
       end

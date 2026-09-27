@@ -5,6 +5,7 @@ require "strscan"
 require_relative "deparse"
 require_relative "supported_sql"
 require_relative "table_name"
+require_relative "relation_qualifier/errors"
 
 module Quaack
   module Enclave
@@ -40,6 +41,14 @@ module Quaack
     # skipped. The first remaining schema with a pg_class entry of that name
     # wins, whatever its relkind. Step 3a checks the relkind.
     #
+    # Known limits: "$user" and the USAGE check use the role QUAACK
+    # connects as, so if the plan's session ran as another role, resolution
+    # can differ. The implicit pg_temp at the front of the path is ignored,
+    # so a temp relation in the plan's session that shadowed a real one
+    # isn't seen. Only relation names are qualified: functions, types,
+    # operators, collations, and names inside string literals such as
+    # 'orders'::regclass still resolve through search_path.
+    #
     # The result's sql is the rewritten query, deparsed by pg_query, parse
     # is that SQL's own parse, and resolved maps each name that had no
     # schema to the table it now names. The deparser can write SQL that
@@ -52,8 +61,6 @@ module Quaack
     # the text near the error, which can be a literal, so they're replaced
     # rather than wrapped.
     module RelationQualifier
-      class Error < StandardError; end
-
       Result = Data.define(:sql, :parse, :resolved)
 
       DEFAULT_SEARCH_PATH = '"$user", public'
@@ -94,7 +101,7 @@ module Quaack
       def parse(sql)
         PgQuery.parse(sql).tap { |parse| SupportedSql.check!(parse) }
       rescue PgQuery::ParseError
-        raise Error, "the query doesn't parse", cause: nil
+        raise Unparsable, "the query doesn't parse", cause: nil
       end
 
       # Every RangeVar with no schema that isn't a reference to a CTE in
@@ -133,7 +140,9 @@ module Quaack
       def search_path(settings, connection)
         raw = settings&.fetch("search_path", nil) || DEFAULT_SEARCH_PATH
         user = connection.exec("SELECT current_user").getvalue(0, 0)
-        schemas = split_identifiers(raw).map { |name| name == "$user" ? user : name }
+        # An empty or all-whitespace path is empty, as Postgres reads it.
+        names = raw.match?(/\A\s*\z/) ? [] : split_identifiers(raw)
+        schemas = names.map { |name| name == "$user" ? user : name }
         schemas.include?("pg_catalog") ? schemas : ["pg_catalog", *schemas]
       end
 
@@ -149,7 +158,7 @@ module Quaack
           names << truncate(next_identifier(scanner, raw))
           scanner.skip(/\s*/)
           break if scanner.eos?
-          raise Error, "search_path #{raw} isn't a list of identifiers" unless scanner.skip(/,/)
+          raise BadSearchPath, "search_path #{raw} isn't a list of identifiers" unless scanner.skip(/,/)
         end
         names
       end
@@ -157,12 +166,12 @@ module Quaack
       def next_identifier(scanner, raw)
         if scanner.skip(/"/)
           quoted = scanner.scan(/(?:[^"]|"")*/)
-          raise Error, "search_path #{raw} has an unterminated quote" unless scanner.skip(/"/)
+          raise BadSearchPath, "search_path #{raw} has an unterminated quote" unless scanner.skip(/"/)
 
           quoted.gsub('""', '"')
         else
           unquoted = scanner.scan(/[^,\s]+/)
-          raise Error, "search_path #{raw} has an empty entry" unless unquoted
+          raise BadSearchPath, "search_path #{raw} has an empty entry" unless unquoted
 
           unquoted.tr("A-Z", "a-z")
         end
@@ -186,7 +195,7 @@ module Quaack
         return TableName.new(schema: rows.getvalue(0, 0), name:) if rows.ntuples == 1
 
         raise Error, "relation #{name} isn't schema qualified, and no schema in the search path " \
-                     "(#{path.join(", ")}) has it"
+                     "(#{path.map { |schema| %("#{schema.gsub('"', '""')}") }.join(", ")}) has it"
       end
     end
   end

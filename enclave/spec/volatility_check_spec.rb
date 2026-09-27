@@ -364,6 +364,9 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
           FINALFUNC = a.shaky_rank, FINALFUNC_EXTRA, HYPOTHETICAL)
       SQL
       sql = "SELECT a.hrank(3) WITHIN GROUP (ORDER BY id) FROM orders"
+      fixture = conn.exec("SELECT provariadic::int, pronargs FROM pg_proc WHERE oid = 'a.hrank'::regproc").values
+
+      expect(fixture).to eq([%w[0 2]])
 
       expect(conn.exec(sql).ntuples).to eq(1)
       expect { check(sql) }.to volatile_error("function a.hrank calls volatile function a.shaky_rank")
@@ -546,6 +549,20 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       expect { check("SELECT 1::a.pair_dd") }.to volatile_error("cast to a.pair_dd calls volatile function a.to_pair")
     end
 
+    it "doesn't take a call with two arguments for a cast" do
+      expect(check("SELECT a.pair(1, 2)")).to be_nil
+    end
+
+    it "aborts on a cast to a domain whose CHECK calls a volatile function" do
+      function("a.valid(int)", "VOLATILE", returns: "boolean", body: "SELECT true")
+      function("a.calm_valid(int)", "STABLE", returns: "boolean", body: "SELECT true")
+      conn.exec("CREATE DOMAIN a.checked AS int CHECK (a.valid(VALUE))")
+      conn.exec("CREATE DOMAIN a.calm_checked AS int CHECK (a.calm_valid(VALUE))")
+
+      expect { check("SELECT 1::a.checked") }.to volatile_error("cast to a.checked calls volatile function a.valid")
+      expect(check("SELECT 1::a.calm_checked")).to be_nil
+    end
+
     it "aborts on a function-style cast" do
       expect { check("SELECT a.pair(1)") }.to volatile_error("cast to a.pair calls volatile function a.to_pair")
       expect(check("SELECT a.calm_pair(1)")).to be_nil
@@ -563,6 +580,35 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
       expect(conn.exec("SELECT 'x'::a.loud::text").getvalue(0, 0)).to eq("x")
       expect { check("SELECT 'x'::a.loud") }.to volatile_error("cast to a.loud calls volatile function a.loud_in")
+    end
+  end
+
+  # t.f calls the function f on t's row, when t has no column f.
+  describe "attribute notation" do
+    before do
+      function("public.bumpo(public.orders)", "VOLATILE")
+      function("public.calmo(public.orders)", "STABLE")
+      function("a.status(int)", "VOLATILE")
+    end
+
+    it "aborts when it calls a volatile function on the row" do
+      sql = "SELECT o.bumpo FROM orders o"
+
+      expect(conn.exec(sql).nfields).to eq(1)
+      expect { check(sql) }.to volatile_error("function public.bumpo is volatile")
+      expect { check("SELECT public.orders.bumpo FROM public.orders") }
+        .to volatile_error("function public.bumpo is volatile")
+    end
+
+    it "passes a stable one, and a column whose name a function takes only a plain value" do
+      expect(check("SELECT o.calmo FROM orders o")).to be_nil
+      expect(check("SELECT o.status FROM orders o", path("a, public"))).to be_nil
+    end
+
+    # pg_catalog.system and bernoulli are volatile, but take internal,
+    # which a row can never be passed as.
+    it "passes a column named like a volatile built-in that can't take a row" do
+      expect(check("SELECT o.system, o.bernoulli, o.array_shuffle FROM orders o")).to be_nil
     end
   end
 
@@ -612,6 +658,21 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       expect { check("SELECT 1 OPERATOR(#{odd}.%%%) 2") }
         .to volatile_error(%(operator "we,ird""{x}".%%% calls volatile function "we,ird""{x}".op))
       expect { check('SELECT 1::a."Pair"') }.to volatile_error(%(cast to a."Pair" calls volatile function a."To Pair"))
+    end
+
+    it "quotes the operator's function, and the cast's type schema and function schema" do
+      odd = conn.quote_ident('we,ird"{x}')
+      conn.exec("CREATE SCHEMA #{odd}")
+      function(%(#{odd}."Op Fn"(x int, y int)), "VOLATILE", returns: "boolean", body: "SELECT true")
+      conn.exec(%(CREATE OPERATOR a.%%% (LEFTARG = int, RIGHTARG = int, FUNCTION = #{odd}."Op Fn")))
+      conn.exec("CREATE TYPE #{odd}.duo AS (x int)")
+      function("#{odd}.to_duo(int)", "VOLATILE", returns: "#{odd}.duo", body: "SELECT ROW($1)::#{odd}.duo")
+      conn.exec("CREATE CAST (int AS #{odd}.duo) WITH FUNCTION #{odd}.to_duo(int)")
+
+      expect { check("SELECT 1 OPERATOR(a.%%%) 2") }
+        .to volatile_error(%(operator a.%%% calls volatile function "we,ird""{x}"."Op Fn"))
+      expect { check("SELECT 1::#{odd}.duo") }
+        .to volatile_error(%(cast to "we,ird""{x}".duo calls volatile function "we,ird""{x}".to_duo))
     end
 
     it "never quotes the query's literals" do

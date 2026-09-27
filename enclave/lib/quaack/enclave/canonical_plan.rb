@@ -74,7 +74,15 @@ module Quaack
       # not comparable?. The canonical form keeps only a digest of the
       # identity, since a partial index's predicate holds a literal. Without
       # hypothetical_indexes, the "<oid>" is just dropped, and indexes that
-      # HypoPG names the same match.
+      # HypoPG names the same match. The oid is read in decimal.
+      #
+      # A real index whose name starts with "<digits>" is taken for a
+      # hypothetical one, so without a map "<123>orders_pkey" matches
+      # orders_pkey. Real names like that are unlikely, so it's left alone.
+      #
+      # The digest covers a partial index's predicate, literal and all, and
+      # a short literal could be guessed from it. It stays in the enclave
+      # today, but any step that sends a canonical form out must not send it.
       NAMES = ["Parent Relationship", "Subplan Name", "Relation Name", "CTE Name", "Function Name", "Index Name",
                "Join Type", "Strategy", "Partial Mode", "Scan Direction"].freeze
 
@@ -165,7 +173,7 @@ module Quaack
         def names(plan_node)
           names = NAMES.filter_map { |key| [key, plan_node[key]] if plan_node[key] }.to_h
           index = names["Index Name"]
-          names["Index Name"] = hypothetical(index, Integer(index[HYPOTHETICAL_INDEX, 1])) if hypothetical?(index)
+          names["Index Name"] = hypothetical(index, Integer(index[HYPOTHETICAL_INDEX, 1], 10)) if hypothetical?(index)
           names
         end
 

@@ -8,6 +8,12 @@ require "quaack/enclave/egress"
 # Egress.serialize returns, or in anything it raises.
 EGRESS_SENTINEL = "SENTINEL-8f3a2c-orders.email"
 
+# Answers each_key and [] like a Hash holding an error message, but isn't one.
+EGRESS_HASH_LIKE = Class.new do
+  def each_key(&) = %i[type step].each(&)
+  def [](key) = { type: :error, step: EGRESS_SENTINEL }[key]
+end
+
 RSpec.describe Quaack::Enclave::Egress do
   let(:egress) { described_class }
   let(:whitelist) { Quaack::Protocol::WHITELIST }
@@ -120,7 +126,8 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a type named by a field", { type: :step, step: EGRESS_SENTINEL }],
       ["a String", EGRESS_SENTINEL],
       ["an Array", [%i[type error], [:step, EGRESS_SENTINEL]]],
-      ["nil", nil]
+      ["nil", nil],
+      ["a Hash-like object with each_key and []", EGRESS_HASH_LIKE.new]
     ].each do |name, message|
       it "sends nothing for #{name}" do
         expect(egress.serialize(message)).to be_nil

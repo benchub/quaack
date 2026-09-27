@@ -16,7 +16,8 @@ module Quaack
     # ALL, BETWEEN, LIKE and its kin, IS DISTINCT FROM, NULLIF, a simple
     # CASE, JOIN USING and NATURAL JOIN, and ORDER BY USING. A call with
     # one argument may be a cast to the type of that name, as in int4(x),
-    # so it's also listed as one. The parse should use only what
+    # so it's also listed as one. A qualified column, t.f, may be attribute
+    # notation for f(t), so it's listed as an :attribute call. The parse should use only what
     # SupportedSql lists, which VolatilityCheck makes sure of.
     #
     # The SQL-value functions, such as CURRENT_TIMESTAMP, aren't listed,
@@ -46,7 +47,7 @@ module Quaack
       HANDLERS = {
         PgQuery::FuncCall => :function_call, PgQuery::A_Expr => :a_expr, PgQuery::TypeCast => :type_cast,
         PgQuery::SubLink => :sublink, PgQuery::CaseExpr => :simple_case, PgQuery::JoinExpr => :join,
-        PgQuery::SortBy => :sort_by
+        PgQuery::SortBy => :sort_by, PgQuery::ColumnRef => :column_ref
       }.freeze
 
       module_function
@@ -73,6 +74,16 @@ module Quaack
         count = func.args.size + (func.agg_within_group ? func.agg_order.size : 0)
         function = call_to(:function, func.funcname, count)
         count == 1 ? [function, call_to(:cast, func.funcname, nil)] : [function]
+      end
+
+      # t.f may be attribute notation, a call of the function f on t's row,
+      # since the parse can't tell it from a column. Its kind is :attribute,
+      # and it's looked up by name only, so it never has a schema.
+      def column_ref(ref)
+        last = ref.fields.last
+        return [] unless ref.fields.size > 1 && last&.string
+
+        [Call.new(kind: :attribute, schema: nil, name: last.string.sval, arity: nil)]
       end
 
       def a_expr(expr)

@@ -92,6 +92,22 @@ RSpec.describe Quaack::Enclave::Store do
       File.chmod(0o700, closed, base)
     end
 
+    it "gives each kind of failure a rule, so the error line names more than internal_error" do
+      file = File.join(@tmp, "file").tap { File.write(it, "") }
+      failures = [
+        -> { described_class.create(base: file) },
+        -> { described_class.open("20260101T000000Z-abcdef12", base: @tmp) },
+        -> { described_class.open("not a run id", base: @tmp) }
+      ]
+      rules = failures.map do |attempt|
+        attempt.call
+      rescue described_class::Error => e
+        e.rule
+      end
+
+      expect(rules).to eq(%w[bad_store_base bad_run store_error])
+    end
+
     it "keeps its base checks private" do
       expect { described_class::BaseChecks }.to raise_error(NameError, /private constant/)
     end
