@@ -173,11 +173,12 @@ module Quaack
           results = report.results
           used = results.count(&:used?)
           refused = results.count(&:refusal)
-          held = results.count { |r| !r.used? && !r.refusal && set_aside.include?(r.candidate) }
+          held = held(results, set_aside)
           dropped = { never_used: results.size - used - refused - held, hypopg_refused: refused }
-                    .reject { |_, n| n.zero? }
-          { in: results.size, dropped:, set_aside: held, out: used }
+          { in: results.size, dropped: dropped.reject { |_, n| n.zero? }, set_aside: held, out: used }
         end
+
+        def held(results, set_aside) = results.count { !it.used? && !it.refusal && set_aside.include?(it.candidate) }
 
         def tested_totals(report) = { hypothetical_explains: report.results.sum { it.plans.size } }
 

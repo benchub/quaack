@@ -14,6 +14,7 @@ require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../single_candidate_test"
 require_relative "../structural_discard"
+require_relative "../unused_set_aside"
 
 module Quaack
   module Enclave
@@ -48,7 +49,7 @@ module Quaack
       #                 { "used", "total_cost", "plan" } } }
       #   "set_aside" => the tested candidates (as IndexStore saves them)
       #                 that 5a-4 found unused but that 12a builds for real
-      #                 anyway (see unused_set_aside)
+      #                 anyway (see UnusedSetAside)
       #   "parameter_types" => { $n => the type Postgres infers for it }
       #                 (the original only: 5a-5, 6a, and 9c send it)
       # "plan" is the EXPLAIN redacted through 3g (Redaction.plan) against
@@ -153,7 +154,8 @@ module Quaack
           types = types(store, sql)
           plan = slow_plan(connection, sql, literal_sets, types)
           dedupe, candidates = mechanical(store, sql, plan:, analyzed: false)
-          entry(store, dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:, types:), maps)
+          entry(store, dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:, types:),
+                maps)
         end
 
         # The query's plain EXPLAIN with the slow literals.
@@ -194,33 +196,11 @@ module Quaack
 
         def entry(store, dedupe, report, maps)
           proposals = dedupe.proposals
-          set_aside = unused_set_aside(report, PiiClassification.load(store).low_cardinality)
+          set_aside = UnusedSetAside.select(report, PiiClassification.load(store).low_cardinality)
+                                    .map { |c| IndexStore.candidate_plain(proposals.find { it == c }) }
           { "dedupe" => IndexStore.dedupe_plain(dedupe), "baseline" => plans(report.baseline.plans, maps),
             "results" => report.results.map { result(it, proposals, maps) },
-            "set_aside" => set_aside.map { |c| IndexStore.candidate_plain(proposals.find { it == c }) } }
-        end
-
-        # The candidates 5a-4 found unused that 12a builds for real anyway
-        # (20260927-11): a non-unique, non-partial B-tree with no INCLUDE
-        # whose leading key is a bare column 3f classes as low-cardinality.
-        # B-tree deduplication makes such an index far smaller than HypoPG
-        # estimates, so the planner may well use the real one.
-        def unused_set_aside(report, low_cardinality)
-          report.results.reject { it.used? || it.refusal }.map(&:candidate).select do |c|
-            lead = c.key.first
-            c.access_method == :btree && c.include.empty? && c.predicate.nil? && !c.unique &&
-              lead.expression.nil? && low_cardinality.include?([c.table, lead.name])
-          end
-        end
-
-        # Each set's plan: whether it used the candidate, its cost, and the
-        # plan redacted through 3g against that set's own literals, so each
-        # of them is its placeholder and any other literal is masked.
-        def plans(plans, maps)
-          plans.to_h do |set, plan|
-            [set, { "used" => plan.used, "total_cost" => plan.total_cost,
-                    "plan" => Redaction.plan(plan.raw_plan, maps.fetch(set)).explain }]
-          end
+            "set_aside" => set_aside }
         end
 
         # The candidate as the Dedupe holds it now, with the sources later

@@ -88,21 +88,21 @@ RSpec.describe "quaacks index-search, against a real server" do
       SQL
     end
 
-  it "sets aside each unused key-only B-tree candidate on a low-cardinality leading column for 12a" do
-    prepare
+    it "sets aside each unused key-only B-tree candidate on a low-cardinality leading column for 12a" do
+      prepare
 
-    index_search
+      index_search
 
-    entry = stored.read("index_search_original")
-    unused = entry["results"].reject { |r| r["refusal"] || r["plans"].values.any? { it["used"] } }
-    expected = unused.map { it["candidate"] }.select do |c|
-      c["access_method"] == "btree" && c["include"].empty? && c["predicate"].nil? && !c["unique"] &&
-        c["key"].first["name"] == "status"
+      entry = stored.read("index_search_original")
+      unused = entry["results"].reject { |r| r["refusal"] || r["plans"].values.any? { it["used"] } }
+      expected = unused.map { it["candidate"] }.select do |c|
+        c["access_method"] == "btree" && c["include"].empty? && c["predicate"].nil? && !c["unique"] &&
+          c["key"].first["name"] == "status"
+      end
+      expect(expected).not_to be_empty
+      expect(entry["set_aside"]).to eq(expected)
+      expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] }).to eq([[["status"], []]])
     end
-    expect(expected).not_to be_empty
-    expect(entry["set_aside"]).to eq(expected)
-    expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] }).to eq([[["status"], []]])
-  end
   end
 
   it "stores each plan redacted through 3g, with placeholders where the sentinel literal was" do
