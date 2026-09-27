@@ -30,7 +30,9 @@ module Quaack
     #   port, dbname, user, or service, as a Hash. pg_dump runs with the
     #   operator's own libpq setup on the jump server (PGUSER, ~/.pgpass,
     #   ~/.pg_service.conf), and QUAACK stores no credentials, so a secret
-    #   (password, sslpassword, oauth_client_secret) is refused: pg_dump's
+    #   (password, sslpassword, oauth_client_secret, or a dbname that is a
+    #   connection string) is refused, as is a key that is not a plain
+    #   keyword (bad_conninfo_key): pg_dump's
     #   command line is visible to others on the jump server. Until the
     #   production inventory (20260922-16) lands, the caller passes these in.
     # - pg_dump: the command, as an argv prefix. It's pg_dump on PATH by
@@ -113,7 +115,7 @@ module Quaack
       EXTENSIONS_SQL = "SELECT e.extname, n.nspname FROM pg_catalog.pg_extension e " \
                        "JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname <> 'plpgsql'"
 
-      FLAGS = %w[--schema-only --no-owner --no-privileges --strict-names --encoding=UTF8].freeze
+      FLAGS = %w[--schema-only --no-owner --no-privileges --strict-names --encoding=UTF8 --no-password].freeze
 
       # How long pg_dump waits for each table's lock before it gives up, so
       # a long ACCESS EXCLUSIVE lock on production fails the step instead of
@@ -127,7 +129,8 @@ module Quaack
 
       def run(store:, relations:, connection:, conninfo:, pg_dump: ["pg_dump"], # rubocop:disable Metrics/ParameterLists
               lock_wait_timeout: LOCK_WAIT_TIMEOUT)
-        no_secrets!(conninfo)
+        Checks.no_secrets!(conninfo)
+        Checks.not_sql_ascii!(connection)
         tables = ancestors(relations, connection)
         new_enough!(pg_dump, connection)
         namespaces, full = full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
@@ -151,14 +154,36 @@ module Quaack
         connection.exec_params(EXTENSIONS_SQL, []).values.to_h { |row| row.map { utf8(it) } }
       end
 
-      # A libpq keyword that holds a secret: password, sslpassword, and
-      # oauth_client_secret today. passfile only names a file, so it's fine.
-      SECRET_KEY = /(?:password|secret)\z/
+      # Refusals made before anything is dumped.
+      module Checks
+        module_function
 
-      def no_secrets!(conninfo)
-        return unless conninfo.any? { |key, _| SECRET_KEY.match?(key.to_s) }
+        # A libpq keyword that holds a secret: password, sslpassword, and
+        # oauth_client_secret today. passfile only names a file, so it's fine.
+        SECRET_KEY = /(?:password|secret)\z/
 
-        raise Error.new("secret_in_conninfo", "pg_dump gets its secrets from the operator's own libpq setup")
+        # A libpq keyword is lower case letters and underscores.
+        PLAIN_KEY = /\A[a-z_]+\z/
+
+        # libpq reads a dbname holding = or a URI as a connection string.
+        CONNECTION_STRING = /=|\A[a-z]+:/i
+
+        def no_secrets!(conninfo)
+          unless conninfo.keys.all? { PLAIN_KEY.match?(it.to_s) }
+            raise Error.new("bad_conninfo_key", "a conninfo key must be a plain libpq keyword")
+          end
+          return unless conninfo.any? do |key, value|
+            SECRET_KEY.match?(key.to_s) || (key.to_s == "dbname" && CONNECTION_STRING.match?(value.to_s))
+          end
+
+          raise Error.new("secret_in_conninfo", "pg_dump gets its secrets from the operator's own libpq setup")
+        end
+
+        def not_sql_ascii!(connection)
+          encoding = connection.exec_params("SELECT pg_encoding_to_char(encoding) FROM pg_database " \
+                                            "WHERE datname = current_database()", []).getvalue(0, 0)
+          raise Error.new("sql_ascii_database", "a SQL_ASCII database isn't supported") if encoding == "SQL_ASCII"
+        end
       end
 
       # The relations' schemas, plus public if the database has one, since
