@@ -27,14 +27,18 @@ module Quaack
       BREAKDOWNS = %w[added dropped extra].freeze
       FIELDS = %w[in added dropped set_aside out extra].freeze
 
+      # No real count comes near this, so a larger Integer, such as a
+      # production value passed in by mistake, is refused.
+      MAX_COUNT = 10**12
+
       module_function
 
       # Whether stages and totals are a whole burndown, as JSON reads it
       # back: stages maps each of STAGES to its searches, and each search to
       # a record with exactly FIELDS. totals maps each work total to its
       # count. Every name is a String matching NAME, every count an Integer
-      # of zero or more, and every record adds up (see adds_up?). This is the
-      # one check on what a burndown may carry, for the enclave's store and
+      # from zero up to below MAX_COUNT, and every record adds up (see
+      # adds_up?). This is the one check on what a burndown may carry, for the enclave's store and
       # its egress function both.
       def valid?(stages:, totals:)
         counts?(totals) && stages.is_a?(Hash) &&
@@ -48,7 +52,7 @@ module Quaack
       end
 
       def record?(record)
-        record.is_a?(Hash) && record.keys.sort == FIELDS.sort &&
+        record.is_a?(Hash) && record.keys.all?(String) && record.keys.sort == FIELDS.sort &&
           COUNTS.all? { count?(record[it]) } && BREAKDOWNS.all? { counts?(record[it]) } && adds_up?(record)
       end
 
@@ -60,7 +64,7 @@ module Quaack
         hash.is_a?(Hash) && hash.all? { |name, value| name.is_a?(String) && NAME.match?(name) && yield(value) }
       end
 
-      def count?(count) = count.is_a?(Integer) && count >= 0
+      def count?(count) = count.is_a?(Integer) && count >= 0 && count < MAX_COUNT
 
       private_class_method :record?, :counts?, :names?, :count?
     end

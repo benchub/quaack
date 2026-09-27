@@ -71,6 +71,16 @@ RSpec.describe Quaack::Protocol::Burndown do
       expect(valid?(with_record("bob@example.com"))).to be(false)
     end
 
+    it "refuses a record that mixes String and Symbol keys, without raising" do
+      expect(valid?(with_record(record.except("extra").merge(extra: {})))).to be(false)
+    end
+
+    it "refuses a count of 10**12 or more, which is no real count" do
+      expect(valid?({}, { "fixture_loads" => (10**12) - 1 })).to be(true)
+      expect(valid?({}, { "fixture_loads" => 10**12 })).to be(false)
+      expect(valid?(with_record(record.merge("in" => 10**15, "out" => 10**15)))).to be(false)
+    end
+
     it "refuses a record that doesn't add up" do
       expect(valid?(with_record(record.merge("out" => 4)))).to be(false)
       expect(valid?(with_record(record.merge("set_aside" => 0)))).to be(false)
