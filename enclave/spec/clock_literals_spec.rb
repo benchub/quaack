@@ -57,6 +57,22 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     end
   end
 
+  describe "restore with an unrelated $n::date next to an anchored one" do
+    let(:sql) { "SELECT $1::date AS a, $2::date AS b FROM public.orders" }
+    let(:result) { anchor(sql, map("2020-01-01", "today")) }
+
+    it "leaves the unrelated cast alone and puts the anchored one back" do
+      expect(result.sql).to eq(deparse("SELECT $1::date AS a, (#{today})::date AS b FROM public.orders"))
+      expect(restore(result)).to eq(deparse(sql))
+    end
+
+    it "refuses when the anchored cast is gone, even though an unrelated $n::date is there" do
+      expect { described_class.restore(deparse(sql), result.replacements, result.added_names) }
+        .to raise_error(described_class::Error,
+                        "restore_mismatch: the SQL has fewer clock anchors than the replacements")
+    end
+  end
+
   describe "a literal compared with a date or timestamp column" do
     it "casts the anchor to the column's type, and restore puts the placeholder back" do
       sql = "SELECT o.id FROM public.orders o WHERE o.created_at >= $1 AND o.created_at < $2 AND o.status = $3"

@@ -63,7 +63,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
       expect_no_leaks(sentinels, outcome)
       held = stored.read("rewrite_1")
-      expect(held.keys).to eq(%w[sql transformation assumptions inferred warnings result_types])
+      expect(held.keys).to eq(%w[sql transformation assumptions inferred warnings result_types anchored_sql])
       expect(held["sql"]).to include("public.orders")
       expect(held.slice("transformation", "assumptions", "inferred", "warnings", "result_types"))
         .to eq("transformation" => "t #{sentinels.text}", "assumptions" => [not_null_id], "inferred" => false,

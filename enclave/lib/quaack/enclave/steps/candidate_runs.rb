@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../rewrite_entry"
 require_relative "../index_build"
 require_relative "../measurement"
 require_relative "../run_server"
@@ -47,7 +48,7 @@ module Quaack
         # Adds the label of each that did to timed_out.
         def runs(store, connection, search, timed_out)
           timeout_ms = store.read("baseline").fetch("timeout_ms")
-          sql = store.read(search)["sql"]
+          sql = RewriteEntry.run_sql(store.read(search))
           combinations(store, search).each_with_object({}) do |key, out|
             sets = Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)
             next timed_out << (key || "#{search}:none") if sets.values.any? { it["timed_out"] }

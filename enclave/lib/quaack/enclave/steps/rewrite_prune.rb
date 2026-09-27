@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../rewrite_entry"
 require_relative "../burndown"
 require_relative "../index_store"
 require_relative "../literal_set"
@@ -55,7 +56,7 @@ module Quaack
 
         def discard?(store, connection, search)
           ThreeConfigurationPruning.discard?(
-            connection, original: store.read("anchored_query"), rewrite: store.read(search)["sql"],
+            connection, original: store.read("anchored_query"), rewrite: RewriteEntry.run_sql(store.read(search)),
                         literal_sets: IndexSearch.values(LiteralSet.load(store).sets),
                         top: { original: top(store, "original"), rewrite: top(store, search) }
           )
