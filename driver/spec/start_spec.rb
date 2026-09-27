@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "shellwords"
 require "tmpdir"
 require "quaack/driver/start"
 
@@ -22,15 +23,37 @@ RSpec.describe Quaack::Driver::Start do
     File.write(File.join(home, ".quaack", "driver.json"), JSON.generate("jump_command" => command))
   end
 
-  def remote_intake(run_id: self.run_id)
+  # A remote quaacks that answers intake with the probe below, and version
+  # as the real enclave script does, with version.
+  def remote_intake(run_id: self.run_id, version: nil)
     body = "File.write(#{File.join(dir, "got").inspect}, JSON.generate(inputs[:options])); " \
            "[{ type: :run, run_id: #{run_id.inspect} }]"
     command = EnclaveCommands.probe(dir, body, options: { "query" => :value, "plan" => :value, "server" => :value })
     # The probe step answers as intake: the wrapper swaps the subcommand.
     bin = EnclaveCommands.remote_quaacks(File.join(dir, "remote-bin"), command)
     wrapper = File.join(bin, "quaacks")
-    File.write(wrapper, File.read(wrapper).sub("exec ", "[ \"$1\" = intake ] || exit 9; shift; exec ")
+    File.write(wrapper, File.read(wrapper).sub("exec ", "#{version_answer(version)}[ \"$1\" = intake ] || exit 9; " \
+                                                        "shift; exec ")
                                           .sub(" \"$@\"", " probe \"$@\""))
+  end
+
+  # Shell that answers `quaacks version`: with the real script, or, given a
+  # version, with a version line naming it.
+  def version_answer(version)
+    reply = if version
+              "printf '%s\\n' '{\"type\":\"version\",\"version\":\"#{version}\"}' '{\"type\":\"done\"}'"
+            else
+              "#{Shellwords.join(EnclaveCommands.quaacks)} version"
+            end
+    "if [ \"$1\" = version ]; then #{reply}; exit; fi\n"
+  end
+
+  it "checks the jump server's quaacks version before intake, and refuses a mismatch" do
+    configure("echo jump-1")
+    remote_intake(version: "0.0.9")
+
+    expect { start }.to raise_error(Quaack::Driver::EnclaveVersion::Mismatch, /jump-1 has quaacks 0\.0\.9/)
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
   def start(server: "prod-1", **)

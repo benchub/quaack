@@ -60,7 +60,7 @@ module Quaack
         require_relative "start"
         @stdout.print "#{Start.new.call(**options)}\n"
         0
-      rescue Start::Error, EnclaveError => e
+      rescue Start::Error, EnclaveError, EnclaveVersion::Mismatch => e
         @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
       end
@@ -94,8 +94,10 @@ module Quaack
         sqls = read_rewrites(rewrites) if rewrites
         return usage_error(@rewrites_problem) if rewrites && !sqls
 
-        drive(@transport.call(host), @client.call, run, sqls, { out:, keep: })
-      rescue EnclaveError, LLM::Error, OperatorCandidates::Error => e
+        transport = @transport.call(host)
+        EnclaveVersion.check!(transport, host)
+        drive(transport, @client.call, run, sqls, { out:, keep: })
+      rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
         1
       end
@@ -114,6 +116,7 @@ module Quaack
       def require_run
         require_relative "burndown"
         require_relative "enclave_error"
+        require_relative "enclave_version"
         require_relative "llm"
         require_relative "operator_candidates"
         require_relative "pipeline"
