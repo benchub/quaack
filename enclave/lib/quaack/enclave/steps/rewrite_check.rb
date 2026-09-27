@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../assumption_check"
+require_relative "../clock_anchoring"
 require_relative "../literal_set"
 require_relative "../rewrite_assumptions"
 require_relative "../rewrite_candidate_check"
@@ -42,6 +43,13 @@ module Quaack
       #                    assumption (step 7): its 1-based position in
       #                    "assumptions" and its kind; always [] for 6a
       #   "result_types"   its output column types, as regtype text
+      #   "anchored_sql"   "sql" with its clock anchored as the original's
+      #                    is (README 3h), with the same placeholder map and
+      #                    column types; what later steps run, plan, and
+      #                    bind (see RewriteEntry). "sql" keeps the clock as
+      #                    written, for the payloads and the report. A
+      #                    candidate ClockAnchoring refuses is rejected by
+      #                    that error's rule.
       # The transformation and assumptions come from the LLM, so they're
       # kept in the store only, never sent.
       #
@@ -114,7 +122,7 @@ module Quaack
           sql, types, warnings = checked(rewrite, context)
           name = save(context, rewrite, sql, types, warnings)
           { type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }
-        rescue RewriteCandidateCheck::Error, Rejected => e
+        rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
           rejected(index, e.rule)
         end
 
@@ -166,8 +174,16 @@ module Quaack
           store.write(name, "sql" => sql, "transformation" => rewrite["transformation"],
                             "assumptions" => rewrite["assumptions"], "inferred" => context[:inferred],
                             "warnings" => warnings,
-                            "result_types" => types)
+                            "result_types" => types, "anchored_sql" => anchored(sql, context))
           name
+        end
+
+        # sql anchored as the original is (README 3h), or raises
+        # ClockAnchoring::Error.
+        def anchored(sql, context)
+          store = context[:store]
+          ClockAnchoring.anchor(sql, context[:settings], placeholder_map: store.read("placeholder_map"),
+                                                         statistics: store.read("statistics")).sql
         end
       end
     end

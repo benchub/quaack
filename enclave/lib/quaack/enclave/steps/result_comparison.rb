@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../rewrite_entry"
 require_relative "../literal_set"
 require_relative "../measurement"
 require_relative "../production_comparison"
@@ -46,7 +47,7 @@ module Quaack
           original = store.read("anchored_query")
           sets = LiteralSet.load(store).sets
           store.read("candidate_runs")["candidates"].keys.to_h do |search|
-            sql = store.read(search)["sql"]
+            sql = RewriteEntry.run_sql(store.read(search))
             [search, sets.to_h { |set, map| [set, verdict(connection, original, sql, map, timeout_ms)] }]
           end
         end
