@@ -54,6 +54,17 @@ RSpec.describe Quaack::Enclave::StepNine do
     expect(report.to_h.to_s).not_to include("SENTINEL_49")
   end
 
+  it "disproves a keyset candidate that changes only the tie-breaker value" do
+    keyset = "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) < (7, 900) ORDER BY o.qty DESC, o.id DESC LIMIT 10"
+    report = described_class.run(
+      conn, keyset,
+      ["SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) < (7, 901) ORDER BY o.qty DESC, o.id DESC LIMIT 10",
+       "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) < (7, 899) ORDER BY o.qty DESC, o.id DESC LIMIT 10",
+       "SELECT o.id FROM fx.orders o WHERE (o.qty, o.id) <= (7, 899) ORDER BY o.qty DESC, o.id DESC LIMIT 10"]
+    )
+    expect(report.results.map(&:passed)).to eq([false, false, true])
+  end
+
   it "counts the groups left out because they collide on a unique key" do
     expect(run.dropped).to eq(0)
     conn.exec("CREATE TABLE fx.tags (id integer PRIMARY KEY, name text NOT NULL UNIQUE, qty integer)")

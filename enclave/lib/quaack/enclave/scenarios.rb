@@ -10,6 +10,7 @@ require_relative "scenarios/checks"
 require_relative "scenarios/picker"
 require_relative "scenarios/plan"
 require_relative "scenarios/row_set"
+require_relative "scenarios/ties"
 require_relative "scenarios/topology"
 require_relative "scenarios/values"
 
@@ -136,12 +137,16 @@ module Quaack
           @picker = Picker.new(@pools, probes, @checks, variants)
           @identities = {}
           @dropped = 0
-          Plan.new(@topology, @atoms, @pools.keys).scenarios.transform_values do |groups|
-            set = RowSet.new(@schema, @conn)
-            groups.each { |g| build_group(g)&.then { |rows| @dropped += 1 unless set.add?(rows) } }
-            set.in_order(order)
+          ties = tie_groups
+          Plan.new(@topology, @atoms, @pools.keys).scenarios.to_h do |name, groups|
+            [name, fill(groups.filter_map { |g| build_group(g) } + (TIE_SCENARIOS.include?(name) ? ties : []))]
           end
         end
+
+        # The scenarios that build on S1's near misses, and so take the
+        # keyset tie rows too.
+        TIE_SCENARIOS = %i[s1 s2 s3 s4 s5].freeze
+        TIE_KEY = 50_000
 
         private
 
@@ -152,6 +157,33 @@ module Quaack
             column = @atoms[i].columns[0]
             col = @schema.column(column.table, column.name)
             [i, ValuePools.probe(@conn, @parse, @atoms[i], col)]
+          end
+        end
+
+        def fill(row_groups)
+          set = RowSet.new(@schema, @conn)
+          row_groups.each { |rows| @dropped += 1 unless set.add?(rows) }
+          set.in_order(order)
+        end
+
+        # For each pooled keyset row comparison, groups whose row ties it on
+        # its leading columns (see Ties): a hit on the keyset's table and its
+        # ancestors, with the tie columns set. A tie that would set a join
+        # key or generated column, or break a CHECK, is left out.
+        def tie_groups
+          keysets = @atoms.values_at(*@pools.keys)
+          Ties.all(@conn, @parse, keysets, @schema).each_with_index.filter_map do |(table, set), n|
+            next unless tie_allowed?(table, set)
+
+            build_group(Scenarios.group(TIE_KEY + n, @topology.ancestors(table)))&.then do |rows|
+              Ties.apply(rows, table, set)
+            end
+          end
+        end
+
+        def tie_allowed?(table, overrides)
+          overrides.none? do |name, v|
+            @topology.keyed?(table, name) || !@checks.allows?(table, @schema.column(table, name), v)
           end
         end
 

@@ -55,6 +55,8 @@ module Quaack
         found
       end
 
+      # SupportedSql has already refused a FROM item that isn't one plain
+      # FuncCall (such as FROM current_user or FROM coalesce(1, 2)).
       def calls(range)
         range.functions.map { |item| item.list.items.first.func_call.funcname.map { |part| part.string.sval } }
       end
