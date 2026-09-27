@@ -2101,3 +2101,12 @@ A set-returning function in FROM can hide a view or foreign table from 3a's rela
 - **Came from:** Build of 20260924-15.
 - **README:** 3h.
 - **Status:** done
+
+### 20260926-51. Hangup watcher kills steps when stdout is a file or tty.
+
+`Hangup.during` watches stdout with `IO.select` for the reader going away. A regular file is readable at once, so `quaacks probe > out.json` sends HUP immediately and every step fails. A read-write tty becomes readable on a keypress. Start the watcher only when `out.stat.pipe? || out.stat.socket?`, and test both cases.
+
+- **Depends on:** 20260926-45.
+- **Came from:** Review of the -45 hangup item.
+- **README:** Where QUAACK runs.
+- **Status:** done
