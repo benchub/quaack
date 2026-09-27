@@ -410,6 +410,20 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
                         '("pg_catalog", "public") has it')
     end
 
+    it "gives each failure a rule, so the error line names more than internal_error" do
+      rules = [
+        -> { qualify("SELECT * FROM nowhere_table", settings_for("public")) },
+        -> { qualify("SELECT * FROM orders", { "search_path" => '"public' }) },
+        -> { qualify("SELECT FROM (") }
+      ].map do |attempt|
+        attempt.call
+      rescue described_class::Error => e
+        e.rule
+      end
+
+      expect(rules).to eq(%w[unresolved_relation bad_search_path query_unparsable])
+    end
+
     it "never puts the query's literals in the message" do
       sentinel = "QUAACK_SENTINEL_7f3a"
       errors = [

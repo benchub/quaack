@@ -2,6 +2,7 @@
 
 require "json"
 require "stringio"
+require "tmpdir"
 require "quaack/enclave/error_filter"
 
 # Stands in for a real production value. It must never show up in anything
@@ -364,6 +365,42 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       expect(raised { filter.guard(step: "3f", out:) { raise ERROR_SENTINEL } }).to eq(described_class::EX_SOFTWARE)
     end
 
+    # A signal that arrives while guard is already reporting an error must
+    # still end the process, not leave guard returning EX_SOFTWARE.
+    describe "a signal that arrives while it reports an error" do
+      it "raises one that arrives while it asks the error for its rule" do
+        error = RuntimeError.new(ERROR_SENTINEL)
+        def error.rule = raise(Interrupt)
+
+        expect(raised { filter.guard(step: "3f", out:) { raise error } }).to be_a(Interrupt)
+      end
+
+      it "raises one that arrives inside the egress function" do
+        allow(Quaack::Enclave::Egress).to receive(:serialize).and_raise(SignalException, "TERM")
+
+        expect(raised { filter.guard(step: "3f", out:) { raise ERROR_SENTINEL } }).to be_a(SignalException)
+      end
+
+      it "raises one that arrives while it writes the line" do
+        loud = Object.new
+        def loud.write(*) = raise(Interrupt)
+
+        expect(raised { filter.guard(step: "3f", out: loud) { raise ERROR_SENTINEL } }).to be_a(Interrupt)
+      end
+    end
+
+    it "flushes the line it writes" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "out")
+        File.open(path, "w") do |file|
+          file.sync = false
+          filter.guard(step: "3f", out: file) { raise ERROR_SENTINEL }
+
+          expect(File.read(path)).to eq("#{line(step: "3f", rule: "internal_error")}\n")
+        end
+      end
+    end
+
     it "still returns a nonzero status when it can't write the error line" do
       closed = StringIO.new.tap(&:close)
       status = nil
@@ -392,6 +429,16 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
       expect(out).to eq("#{line(step: "loop", rule: "internal_error")}\n")
       expect(status.termsig).to eq(Signal.list.fetch("TERM"))
+    end
+
+    it "prints nothing to stderr for the re-raised signal once stderr is silenced" do
+      out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-r", "quaack/enclave/error_filter", "-e", <<~RUBY)
+        Quaack::Enclave::ErrorFilter.silence_stderr!
+        Quaack::Enclave::ErrorFilter.guard(step: "loop") { raise Interrupt, #{ERROR_SENTINEL.dump} }
+      RUBY
+
+      expect([out, err]).to eq(["#{line(step: "loop", rule: "internal_error")}\n", ""])
+      expect(status.termsig).to eq(Signal.list.fetch("INT"))
     end
   end
 

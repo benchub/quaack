@@ -5,6 +5,7 @@ require "strscan"
 require_relative "deparse"
 require_relative "supported_sql"
 require_relative "table_name"
+require_relative "relation_qualifier/errors"
 
 module Quaack
   module Enclave
@@ -60,8 +61,6 @@ module Quaack
     # the text near the error, which can be a literal, so they're replaced
     # rather than wrapped.
     module RelationQualifier
-      class Error < StandardError; end
-
       Result = Data.define(:sql, :parse, :resolved)
 
       DEFAULT_SEARCH_PATH = '"$user", public'
@@ -102,7 +101,7 @@ module Quaack
       def parse(sql)
         PgQuery.parse(sql).tap { |parse| SupportedSql.check!(parse) }
       rescue PgQuery::ParseError
-        raise Error, "the query doesn't parse", cause: nil
+        raise Unparsable, "the query doesn't parse", cause: nil
       end
 
       # Every RangeVar with no schema that isn't a reference to a CTE in
@@ -159,7 +158,7 @@ module Quaack
           names << truncate(next_identifier(scanner, raw))
           scanner.skip(/\s*/)
           break if scanner.eos?
-          raise Error, "search_path #{raw} isn't a list of identifiers" unless scanner.skip(/,/)
+          raise BadSearchPath, "search_path #{raw} isn't a list of identifiers" unless scanner.skip(/,/)
         end
         names
       end
@@ -167,12 +166,12 @@ module Quaack
       def next_identifier(scanner, raw)
         if scanner.skip(/"/)
           quoted = scanner.scan(/(?:[^"]|"")*/)
-          raise Error, "search_path #{raw} has an unterminated quote" unless scanner.skip(/"/)
+          raise BadSearchPath, "search_path #{raw} has an unterminated quote" unless scanner.skip(/"/)
 
           quoted.gsub('""', '"')
         else
           unquoted = scanner.scan(/[^,\s]+/)
-          raise Error, "search_path #{raw} has an empty entry" unless unquoted
+          raise BadSearchPath, "search_path #{raw} has an empty entry" unless unquoted
 
           unquoted.tr("A-Z", "a-z")
         end

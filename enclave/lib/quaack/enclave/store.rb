@@ -31,14 +31,23 @@ module Quaack
     # name, which are shape, and never carry a file's contents or a stored
     # value, so they have no cause.
     class Store
-      class Error < StandardError; end
+      # Each kind's rule is for ErrorFilter's error line.
+      class Error < StandardError
+        def rule = "store_error"
+      end
+
       # What open raises for a run path that isn't a run directory it would
       # open, so what teardown raises for one it won't delete.
-      class BadRun < Error; end
+      class BadRun < Error
+        def rule = "bad_run"
+      end
+
       # What create, open, and teardown raise for a base they can't use:
       # one they can't make or look in, such as a file or one under a
       # directory they can't search, or one that's linked (LINKED_BASE).
-      class BadBase < Error; end
+      class BadBase < Error
+        def rule = "bad_store_base"
+      end
 
       # What read raises for an entry that isn't there, such as a step's
       # upstream entry when the step that writes it hasn't run. Its rule,
