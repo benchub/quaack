@@ -149,6 +149,7 @@ Diagnosed on the runs of 2026-09-26/27. Each is a candidate backlog task. None i
 - Cause: `GeneratorOne::Input.select` (enclave/lib/quaack/enclave/generator_one.rb:157) raises `ArgumentError: generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)`. Intake and every step 3 check accept a top-level `UNION`/`INTERSECT`/`EXCEPT` (with or without ALL, or a CTE over one), so the run gets as far as 5a and dies there.
 - Repro: `ruby e2e/run.rb 097`, or any `SELECT id FROM t WHERE a = 1 INTERSECT SELECT id FROM t WHERE b = 2`.
 - Fix direction: run 5a-1 per arm, or refuse set operations cleanly at intake and list them as unsupported in v1.
+- Later (20260927-8): after 20260927-1, 097's top fix measured 384 blocks against a bound of 118. The top fix was already the case's index, `orders (created_at) INCLUDE (customer_id)`. The extra blocks were heap fetches from an index-only scan with `relallvisible` at 0, the harness race that 20260927-6 fixed with a CHECKPOINT before VACUUM. With that fix, 097 passes at 118 blocks, both before and after 20260927-8.
 
 ### B. 5a-4 prepares the query with untyped parameters.
 
