@@ -32,7 +32,9 @@ module PipelineReplay
   # What one replayed run did. log has one line per ask: its directory and
   # whether it was replayed or fell back. drift names replayed asks whose
   # prompt doesn't match the saved prompt.md.
-  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift)
+  # wrong holds the numbers n of the replayed 6a rewrites, stored as
+  # rewrite_<n>, whose SQL carries the query's subtly wrong condition.
+  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong)
 
   module_function
 
@@ -40,6 +42,7 @@ module PipelineReplay
   def variants(query, roots: ROOTS)
     found = roots.flat_map { Dir.glob(File.join(it, query, "*", "reply-*.md")) }.filter_map do |path|
       m = REPLY.match(File.basename(path))
+      warn "pipeline replay: ignoring #{path}, not named reply-<llm>-<k>.md" unless m
       Variant.new(llm: m[:llm], k: m[:k].to_i) if m
     end
     found.empty? ? [EMPTY] : found.uniq.sort_by(&:to_s)
@@ -63,7 +66,7 @@ module PipelineReplay
   # The replies seam E2ERun::CaseLLM calls, as `for(step, body)`: the saved
   # reply text for this ask, or nil for the empty answer.
   class Replies
-    attr_reader :log, :drift
+    attr_reader :log, :drift, :rewrites_text
 
     def initialize(query, variant, roots: ROOTS)
       @query = query
@@ -79,7 +82,9 @@ module PipelineReplay
       path = @variant.llm && @roots.map { File.join(it, @query, dir, "reply-#{@variant}.md") }.find { File.file?(it) }
       @log << "#{dir}: #{path ? "replayed" : "empty answer (no reply)"}"
       check_prompt(dir, body) if path
-      path && File.read(path)
+      text = path && File.read(path)
+      @rewrites_text = text if step == "6a" && text
+      text
     end
 
     private
@@ -128,7 +133,16 @@ module PipelineReplay
     client = E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new)
     error = drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites, out:).run }
     Outcome.new(variant:, error:, report: error ? nil : report(transport, run_id),
-                entries: Quaack::Driver::Pipeline.status(transport, run_id), log: replies.log, drift: replies.drift)
+                entries: Quaack::Driver::Pipeline.status(transport, run_id), log: replies.log, drift: replies.drift,
+                wrong: wrong(query, replies.rewrites_text))
+  end
+
+  # The 6a rewrites become rewrite_1, rewrite_2, and so on, in reply order.
+  # Their SQL is read out of the reply text only to tell which are wrong.
+  def wrong(query, text)
+    condition = query.bug.last.delete_prefix(query.bug.first).delete_prefix(" AND ")
+    sqls = text.to_s.scan(/"sql":\s*"((?:[^"\\]|\\.)*)"/).flatten
+    sqls.each_index.select { sqls[it].include?(condition) }.map { it + 1 }
   end
 
   # nil, or the EnclaveError or LLM::Error that ended the run.

@@ -26,10 +26,13 @@ RSpec.describe PipelineReplay do
         end
 
         it "never reports the subtly wrong rewrite as a winning fix" do
-          wrong = query.bug.last.delete_prefix(query.bug.first).delete_prefix(" AND ")
-          candidates = outcome.report ? outcome.report.fetch("candidates") : []
-          winners = candidates.select { |c| outcome.report.fetch("top").any? { it["label"] == c["label"] } }
-          expect(winners.map { it["sql"] }).to all(satisfy { !it.include?(wrong) })
+          # Disproved at step 9 or 10: never marked for step 11, and so
+          # never measured, ranked, or listed as a candidate.
+          labels = outcome.report ? (outcome.report["top"] + outcome.report["candidates"]).map { it["label"] } : []
+          outcome.wrong.each do |n|
+            expect(outcome.entries["rewrite_step11_#{n}"]).to be(false)
+            expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
+          end
         end
       end
     end
@@ -54,6 +57,7 @@ RSpec.describe PipelineReplay do
       outcome = run("group_having")
       expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
                                      "10a-1: empty answer (no reply)")
+      expect(outcome.wrong).to eq([2])
       expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
     end
 
