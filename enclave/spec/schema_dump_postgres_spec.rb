@@ -343,6 +343,24 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     end
   end
 
+  # SQL_ASCII names have no known encoding, so they can't be read as UTF-8.
+  it "refuses a SQL_ASCII database" do
+    admin = TestPostgres.server.admin
+    ascii = "quaack_sql_ascii_#{Process.pid}"
+    admin.exec("CREATE DATABASE #{ascii} ENCODING 'SQL_ASCII' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0")
+    ascii_conn = PG.connect(**db.connection_params, dbname: ascii)
+    ascii_conn.exec("CREATE TABLE public.menu (id int)")
+
+    expect do
+      described_class.run(store:, relations: [table("public", "menu")], connection: ascii_conn,
+                          conninfo: { dbname: ascii, user: TestPostgres::USER }, pg_dump:)
+    end.to refused("sql_ascii_database", "a SQL_ASCII database isn't supported")
+    nothing_stored
+  ensure
+    ascii_conn&.close
+    admin&.exec("DROP DATABASE IF EXISTS #{ascii} WITH (FORCE)")
+  end
+
   describe "the connection parameters" do
     it "reach pg_dump as one libpq connection string, whatever their values hold" do
       odd = "quaack_it's \\odd_#{Process.pid}"
@@ -368,6 +386,33 @@ RSpec.describe Quaack::Enclave::SchemaDump do
           end)
         nothing_stored
         expect(error).to be_a(described_class::Error)
+        expect_no_leaks(sentinels, objects: { error: })
+      end
+    end
+
+    # A key libpq wouldn't take as written could still be meant as one.
+    [:PASSWORD, "password ", "a=password"].each do |key|
+      it "refuses a key that isn't a plain libpq keyword (#{key.inspect})" do
+        sentinels = LeakCheck::Sentinels.new
+        error = nil
+        expect { run([table("sales", "items")], conninfo: { **conninfo, key => sentinels.text }) }
+          .to(refused("bad_conninfo_key", "a conninfo key must be a plain libpq keyword") { |e| error = e })
+        nothing_stored
+        expect_no_leaks(sentinels, objects: { error: })
+      end
+    end
+
+    # libpq reads a dbname holding = or a URI as a whole connection string,
+    # which can carry a password.
+    ["postgresql://u:%s@h/db", "dbname=db password=%s"].each do |form|
+      it "refuses a dbname that's a connection string (#{form.inspect})" do
+        sentinels = LeakCheck::Sentinels.new
+        error = nil
+        expect { run([table("sales", "items")], conninfo: { **conninfo, dbname: format(form, sentinels.word) }) }
+          .to(refused("secret_in_conninfo", "pg_dump gets its secrets from the operator's own libpq setup") do |e|
+            error = e
+          end)
+        nothing_stored
         expect_no_leaks(sentinels, objects: { error: })
       end
     end
@@ -413,6 +458,17 @@ RSpec.describe Quaack::Enclave::SchemaDump do
             .to refused("pg_dump_missing", "pg_dump couldn't be run, or didn't say its version")
         end
         nothing_stored
+      end
+    end
+
+    it "runs with --no-password, so it never prompts" do
+      Dir.mktmpdir do |dir|
+        args = File.join(dir, "args")
+        recording = fake_pg_dump(dir, "pg_dump (PostgreSQL) 18.4", "echo \"$@\" >> '#{args}'; exit 1")
+        expect do
+          run([table("sales", "items")], pg_dump: recording)
+        end.to refused("pg_dump_failed", "pg_dump exited with status 1")
+        expect(File.read(args).split).to include("--no-password")
       end
     end
 

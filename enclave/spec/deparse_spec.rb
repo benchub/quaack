@@ -96,6 +96,12 @@ RSpec.describe Quaack::Enclave::Deparse do
       expect(described_class.faithfully(changed)).to eq("SELECT a FROM public.t")
     end
 
+    # The added parentheses can push the tree past pg_query's depth limit.
+    it "refuses a query too deep to deparse, rather than raise something else" do
+      predicate = (1..150).reduce("e") { |inner, _| "(#{inner} OR b) IS TRUE" }
+      expect { described_class.faithfully(tree("SELECT 1 FROM t WHERE #{predicate}")) }.to refused
+    end
+
     repros.each do |name, sql|
       it "refuses #{name}" do
         expect { described_class.faithfully(tree(sql)) }.to refused

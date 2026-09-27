@@ -223,7 +223,9 @@ Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the qu
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
 
-The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
+The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing. `pg_dump` runs with `--no-password`, so it never prompts.
+
+Unsupported in v1: a `SQL_ASCII` database is refused with `sql_ascii_database`, since its names have no known encoding.
 
 ### 3c. Statistics.
 
@@ -330,6 +332,8 @@ In the AST, replace each of these with a schema-qualified call to `quaack.clock_
 Leave all other stable functions alone. The step 15 report shows the query with the original functions put back.
 
 The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry and the `search_path` in its `plan` entry's settings, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The literal sets and placeholder map hold values, not clock functions, so they don't change. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
+
+Unsupported in v1: a clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
 
 ## 4. Run server.
 

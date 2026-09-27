@@ -61,10 +61,9 @@ module Quaack
       # back in the locale's encoding, which may not be UTF-8.
       #
       # The open and the fstat after it would refuse anything the lstat
-      # does, so no test can tell the lstat is there. It stays so that
-      # nothing but a regular file is ever opened: opening a device node
-      # can do something by itself. Pinning that would take a device node
-      # in the store, and only root can make one.
+      # does. The lstat stays so that nothing but a regular file is ever
+      # opened: opening a device node can do something by itself. The
+      # store spec pins it with a stand-in lstat.
       def read(file)
         raise Errno::EINVAL, "not a regular file" unless File.lstat(file).file?
 

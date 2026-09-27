@@ -114,6 +114,8 @@ module Quaack
       extend BaseChecks
       include BaseChecks
 
+      private_constant :BaseChecks
+
       # The run ID usually comes from argv, so it must be exactly in the
       # RUN_ID form before it goes into a path.
       def self.run_path(run_id, base)

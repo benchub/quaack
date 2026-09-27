@@ -84,10 +84,10 @@ module Quaack
     # can be TRUE. A USING column can't be replaced, because USING also
     # merges the two columns into one, so replaceable is false and with_true
     # raises ArgumentError. The deparsed SQL must parse back to the changed
-    # tree, or with_true raises Deparse::Error (rule deparse_mismatch). A
-    # query with a construct pg_query deparses wrong, such as
-    # (a = 1) IS NOT DISTINCT FROM (b AND c), is refused that way for every
-    # atom but those that replace the whole construct.
+    # tree, or with_true raises Deparse::Error (rule deparse_mismatch).
+    # Deparse::Parentheses puts back the parentheses the deparser leaves
+    # out. A construct it still deparses differently, such as 't'::boolean,
+    # is refused that way for every atom but those that replace it whole.
     #
     # Shapes aren't guarded. They're for the report, and they can come out
     # wrong the same way: that atom's shape reads a = $1 IS NOT DISTINCT
@@ -243,8 +243,14 @@ module Quaack
 
         # The atom's SQL, with every constant replaced, and with the
         # parentheses the deparser leaves out (20260924-4). A shape is only
-        # reported, so it isn't checked by parsing it back.
-        def shape(node) = PgQuery.deparse_expr(Deparse::Parentheses.add!(replace(Tree.copy(node))))
+        # reported, so it isn't checked by parsing it back. PgQuery.deparse_expr
+        # would strip a subquery's own "SELECT WHERE ", so only the prefix goes.
+        def shape(node)
+          where = Deparse::Parentheses.add!(replace(Tree.copy(node)))
+          select = PgQuery::SelectStmt.new(where_clause: where, limit_option: :LIMIT_OPTION_DEFAULT, op: :SETOP_NONE)
+          PgQuery.deparse(PgQuery::ParseResult.new(stmts: [PgQuery::RawStmt.new(stmt: PgQuery::Node.from(select))]))
+                 .delete_prefix(Deparse::EXPRESSION_PREFIX)
+        end
 
         private
 
