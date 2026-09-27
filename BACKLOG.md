@@ -659,92 +659,23 @@ Findings from the reviews of 20260922-35:
 
 ### 20260924-14. LLM client loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-15. 3h clock anchoring loose ends.
-
-Findings from the builds and reviews of 20260922-24 and 20260924-12:
-- **Restore LLM candidates by anchored form, not by position.** `restore` finds added names by slot number. That's sound for queries with the same structure, but a restructured rewrite candidate (README step 15) usually gives `restore_mismatch`. Rarely, it could strip a name the author wrote that happens to match. A candidate that swaps the anchors gets mislabeled, and `quaack.clock_anchor()::date` without pg_catalog raises. This is needed if the report shows candidate SQL.
-- **`'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` literals also read the clock,** as in `created_at > 'today'::date - 7`. That needs a README change, or a decision from the user.
-- **Three-part names:** `db.pg_catalog.now()`.
-- **Refusing pg_temp and `$user` before pg_catalog is stricter than Postgres.**
-- **ImplicitName differs from Postgres for some scalar subqueries.** It reads the raw parse, and Postgres reads the analyzed target list. For example, `(SELECT * FROM (SELECT 1 AS z) q)` is `z` in Postgres but `?column?` here, `(SELECT t.* FROM ...)` is `z` but `t` here, and `(VALUES (1))` is `column1` but `?column?` here. Anchoring stays correct, because inner slots keep their own names. Fix the code, or narrow the doc comment's claim.
-- **Surviving mutants:**
-  - `figure_sub_link`: removing `return NONE unless target` survives. Add `(VALUES (1))` to the oracle list.
-  - `figure_sub_link`: the weak-name path `target.name.empty? ? figure(target.val) : strong(target.name)` survives. `(SELECT 1)::text` kills it.
-  - `clock_anchoring.rb` `split_path`: dropping `cause: nil` from the `bad_search_path` raise survives.
-
-- **Depends on:** 20260924-12.
-- **Came from:** The reviews of 20260922-24 and 20260924-12.
-- **README:** 3h.
-- **Status:** todo
+### 20260924-15. 3h clock anchoring loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-16. Finish 3g redaction, part two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-17. Teardown loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-18. Governed store loose ends, part two.
+### 20260924-18. Governed store loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
-Minor findings from the second review of 20260923-34:
-- **Nothing tests that create makes nothing through a linked `~/.quaack`.** In `Store.create`, replacing the first `in_base(...) { PrivateFiles.make_directories(base) }` with a plain call survives: the second check still raises BadBase, but `target/runs` gets created. Add a store case where the parent is linked and the target has no `runs`, and assert the target stays empty.
-- **The pre-open lstat's condition isn't pinned.** `unless File.lstat(file).file?` → `if File.lstat(file).directory?` survives. Stub `File.lstat` to return a FIFO's stat for a real regular-file entry, and expect a refusal. Also fix the `PrivateFiles.read` comment, which says no test can tell the lstat is there.
-- **`Store::BaseChecks` is a public constant.** Its methods are private, but it could be `private_constant`.
-- **A base directly under macOS `/tmp` is refused,** because `/tmp` is a symlink. Only a custom test base can hit this. `standalone_require_spec` falls back to `/tmp` when `TMPDIR` is unset.
-
-- **Depends on:** 20260923-34.
-- **Came from:** Second review of 20260923-34.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-
-### 20260924-19. 3a relations loose ends.
-
-Findings from the reviews of 20260922-17:
-- **A function in FROM can hide a view or foreign table.** With `CREATE FUNCTION public.f() RETURNS SETOF public.order_view LANGUAGE sql STABLE AS 'SELECT * FROM public.order_view'`, `SELECT * FROM f()` passes with relations `[]`, while EXPLAIN shows the base table scanned. Non-inlined functions have the same gap. README 3a says to list relations with pg_query, so this matches the letter of the README. But 3b and 3c may need the relations the plan actually scans. Decide whether to refuse set-returning functions in FROM, or to read relations from the plan.
-- **A relation named only in an unused CTE is still checked,** so it can over-refuse, for example `WITH c AS (SELECT id FROM p1) SELECT id FROM ONLY p1`.
-- **`Relations.check` always reads search_path,** where `RelationQualifier.qualify` reads it only when a name has no schema. It doesn't matter in practice.
-- **3b and 3c may need inheritance descendants,** because the scan reads them. `relations` lists only the tables the query names.
-- **A leaf partition named directly is relkind `r`, so it passes.** **Decided:** Allow it and treat it as the table it is.
-
-- **Depends on:** 20260922-17.
-- **Came from:** The reviews of 20260922-17.
-- **README:** 3a.
-- **Status:** todo
+### 20260924-19. 3a relations loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-20. Driver transport loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-21. 9d Shape deparses without the round-trip guard. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-22. 3b schema dump loose ends.
+### 20260924-22. 3b schema dump loose ends. Done, see BACKLOG-COMPLETE.md.
 
-Findings from the build and reviews of 20260922-18:
-- **The subset DDL can't restore into an empty arena on its own.** `pg_dump --table` emits no `CREATE SCHEMA`, types, domains, enums, functions used in defaults or CHECKs, or extensions. That matters for 4b and step 10.
-- **A query table that's a partition needs its parent.** Its dump carries `ALTER TABLE ONLY <parent> ATTACH PARTITION`.
-- **The full dump covers only the query's namespaces plus public,** so a cross-schema FK ancestor is in the subset but not in the full dump. That follows the README, but it's worth knowing.
-- **Add `--no-password` (`-w`),** so pg_dump never prompts.
-- **A SQL_ASCII database with non-ASCII names crashes as `internal_error`.** It fails closed. Refuse SQL_ASCII by name, and list it as unsupported in v1.
-- **In EUC_JP or WIN1252 databases, tables aren't in UTF-8 byte order.** Sort in Ruby after transcoding.
-- **Near-miss secret keys aren't refused,** such as `"password "`, `PASSWORD`, or keys holding `=`. Require keys to match `/\A[a-z_]+\z/`.
-- **Untested paths:** the subset dump's lock-wait timeout, a signal-killed pg_dump beyond the message, and an empty conninfo.
-- **A password can hide in a dbname URI.**
-- **Both dumps are held in memory.**
-
-- **Depends on:** 20260922-18.
-- **Came from:** The build and reviews of 20260922-18.
-- **README:** 3b.
-- **Status:** todo
-
-### 20260924-23. Deparse loose ends.
-
-Findings from the build and reviews of 20260924-4:
-- **`'t'::boolean` and `'f'::boolean` are still refused.** The deparser prints them as `true` and `false`, which parse to a different tree.
-- **Shapes turn `EXISTS (SELECT WHERE x)` into `EXISTS (x)`,** because `deparse_expr` strips every `SELECT WHERE `.
-- **Very deep queries raise RuntimeError instead of deparse_mismatch.** The wrappers can push a tree past pg_query's encode limit of 1,000, for example `(e OR b) IS TRUE` nested 150 times. It fails closed as `internal_error`, but callers that rescue only `Deparse::Error` (generator two, index SQL, relations, and the rewrite candidate check) abort instead of skipping. Rescue the encode error in `faithful_parse`, and raise `Error`.
-- **Stale comments:** `predicate_atoms.rb` lines 82–89, `index_candidate.rb` lines 52–55, and `deparse.rb` lines 15–21, which don't mention Parentheses.
-- **Four mutants refuse rare SQL without a test noticing:** the `b_expr` edits at `parentheses.rb` line 156 (three variants), and `operator_level(..., subquery: true)` at line 300. Pin them if it's cheap.
-- **The deparse_spec matrix adds about 20s** to the enclave suite.
-
-- **Depends on:** 20260924-4.
-- **Came from:** The build and reviews of 20260924-4.
-- **README:** Step 1.
-- **Status:** todo
+### 20260924-23. Deparse loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-24. Production inventory loose ends.
 
@@ -1260,7 +1191,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-45. Driver, LLM client and harness items left from 20260924-13, -14, -20.
 
 These were skipped as needing a design choice or a larger rework:
-- **Remote quaacks on timeout:** when the driver's timeout fires, the remote `quaacks` keeps running. Choose between wrapping it in a remote `timeout`, or making the enclave exit when stdin/stdout close. **Needs a user decision.**
+- **Remote quaacks on timeout:** when the driver's timeout fires, the remote `quaacks` keeps running. **Decided:** The enclave exits on hangup. `quaacks` notices when its stdin/stdout close (ssh dropping), cancels any running query, and stops.
 - **Lazy-load `anthropic`:** it adds about 0.5s to every CLI start. Loading it lazily touches load order and the boundary checks.
 - **Pump/Child rework:** covers a child that closes stdout and then reads stdin, and a grandchild that holds stdout open.
 - **Per-example timeout for driver specs:** needs tuning so it doesn't cause flakes.
@@ -1281,4 +1212,38 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-14.
 - **Came from:** Prompt pack regeneration.
 - **README:** Step 10.
+- **Status:** todo
+
+### 20260926-47. Refuse user-defined set-returning functions in FROM.
+
+A set-returning function in FROM can hide a view or foreign table from 3a's relation checks (`SELECT * FROM f()` where `f` reads a view).
+- **Decided:** Allow built-in (pg_catalog) set-returning functions such as `generate_series` and `unnest`. Refuse user-defined functions in FROM, and list that as unsupported in v1.
+
+- **Depends on:** 20260924-19.
+- **Came from:** Build of 20260924-19.
+- **README:** 3a, step 1.
+- **Status:** todo
+
+### 20260926-48. Anchor clock-reading date literals.
+
+`'now'`, `'today'`, `'yesterday'` and `'tomorrow'` as date or timestamp literals read the clock, just as `now()` does, but 3h doesn't anchor them.
+- **Decided:** Anchor them. Rewrite them to the `clock_anchor()` equivalent, as 3h does for `now()` and `current_date`, so runs are reproducible.
+
+- **Depends on:** 20260924-15.
+- **Came from:** Build of 20260924-15.
+- **README:** 3h.
+- **Status:** todo
+
+### 20260926-49. Schema dump, clock anchoring and deparse items left over.
+
+- A dbname like `app:prod` is refused as `secret_in_conninfo`. That's rare, but a false refusal.
+- Restore LLM candidates by their anchored form, not by position. This is a large redesign.
+- The subset DDL doesn't restore into an empty arena on its own (schemas, types, extensions), and a partitioned query table needs its parent in the dump.
+- The schema-dump paths for lock-wait timeout, signal kill and empty conninfo are untested.
+- Table sort order for EUC_JP and WIN1252 databases.
+- Pin the four surviving `parentheses.rb` mutants. The deparse matrix adds about 20s to the suite.
+
+- **Depends on:** 20260924-15, -22, -23.
+- **Came from:** Build and review of those tasks.
+- **README:** 3b, 3h, step 1.
 - **Status:** todo
