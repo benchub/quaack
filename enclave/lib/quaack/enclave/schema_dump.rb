@@ -165,8 +165,9 @@ module Quaack
         # A libpq keyword is lower case letters and underscores.
         PLAIN_KEY = /\A[a-z_]+\z/
 
-        # libpq reads a dbname holding = or a URI as a connection string.
-        CONNECTION_STRING = /=|\A[a-z]+:/i
+        # libpq reads a dbname holding = or a postgres:// or postgresql:// URI
+        # as a connection string. Its URI prefix match is case sensitive.
+        CONNECTION_STRING = %r{=|\Apostgres(?:ql)?://}
 
         def no_secrets!(conninfo)
           unless conninfo.keys.all? { PLAIN_KEY.match?(it.to_s) }

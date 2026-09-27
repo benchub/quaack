@@ -37,6 +37,21 @@ RSpec.describe "quaacks executable" do
     end
   end
 
+  it "silences stdout and stderr before it loads the enclave, so nothing printed while loading gets out" do
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, "quaack"))
+      # Stands in for the enclave: it prints while loading, then fails to
+      # define CLI, so the exe dies with a backtrace.
+      File.write(File.join(dir, "quaack", "enclave.rb"),
+                 "puts 'SENTINEL_LOAD_OUT'\nwarn 'SENTINEL_LOAD_ERR'\n$stdout.write 'SENTINEL_LOAD_DOLLAR'\n")
+
+      out, err, status = run_ruby("-I", dir, exe, "--version")
+
+      expect([out, err]).to eq(["", ""])
+      expect(status.exitstatus).not_to eq(0)
+    end
+  end
+
   # CLI.main, the method the exe runs, with a test step plugged into the
   # steps table. The step's body is Ruby run inside the step.
   describe "CLI.main with a test step" do

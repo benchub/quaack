@@ -415,6 +415,7 @@ Minor findings from the reviews of 20260922-10:
 - **Depends on:** 20260922-10.
 - **Came from:** The reviews of 20260922-10.
 - **README:** What goes into the enclave.
+- **Landed (2026-09-26):** tests killing the `.last(1)` mutants. Still open: moving to `Relations.check`.
 - **Status:** todo
 - **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
 
@@ -430,6 +431,7 @@ Findings from the reviews of 20260922-4 and 20260923-53:
 - **Depends on:** 20260923-53.
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
 - **README:** Where QUAACK runs.
+- **Landed (2026-09-26):** stdout is claimed and stderr silenced before `require`, and `Store#parse` runs `PlainData.check`. Still open: `Input::MAX_BYTES` and element caps (a sizing choice), the slow scan, and cancel on SIGTERM.
 - **Status:** todo
 
 ### 20260924-1. 5a-4 loose ends.
@@ -938,6 +940,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
 - **README:** Step 13.
+- **Landed (2026-09-26):** removed the dead `rewrites.empty?` check. Still open: a real-Postgres test that produces an unstable literal.
 - **Status:** todo
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
@@ -969,17 +972,10 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
 - **README:** Step 15.
+- **Landed (2026-09-26):** the knocked_out missing-entry test. Still open: the StepNine dropped count, per-round covered shapes, schema-less plan nodes, and LLM counts on resume.
 - **Status:** todo
 
-### 20260926-43. Payload fidelity loose ends.
-
-- Nothing tests the fallback when PREPARE fails (empty `parameter_types`, so the payload falls back to the 3g type class).
-- The rewrite payload spec only checks that it agrees with the index payload, not that the types are correct.
-
-- **Depends on:** 20260926-39.
-- **Came from:** 20260926-39 build and review.
-- **README:** 5a-5, 6a.
-- **Status:** todo
+### 20260926-43. Payload fidelity loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-44. Expression-unique loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -998,6 +994,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260924-13, -14, -20.
 - **Came from:** The build of those tasks.
 - **README:** Where QUAACK runs, LLM client.
+- **Landed (2026-09-27):** NoNetwork is shared with the root suite, and the LLM error text is pinned. **Needs a decision:** lazy-loading `anthropic` breaks `runtime_boundary_spec` (it expects every driver file to load the gem). Change that spec to build a client first, or keep the eager load. Still open: the Pump/Child rework, per-example timeouts, the JSON harness column, and streaming.
 - **Status:** todo
 
 ### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
@@ -1018,6 +1015,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
 - **README:** 3b, 3h, step 1.
+- **Landed (2026-09-27):** the `app:prod` false refusal is fixed (libpq's exact rule), and the parentheses mutants are pinned. The lock-wait and signal tests already existed. Still open: empty conninfo (no defined behavior), candidates restored by anchored form, subset DDL restore, and EUC_JP/WIN1252 sort order.
 - **Status:** todo
 
 ### 20260926-50. FROM functions: non-FuncCall items crash. Done, see BACKLOG-COMPLETE.md.
@@ -1035,6 +1033,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
 - **README:** 3h.
+- **Landed (2026-09-26):** end-to-end clock tests for step 9 and candidate-runs. Still open: dropping the `anchored_sql` fallback.
 - **Status:** todo
 
 ### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
@@ -1064,6 +1063,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
 - **README:** Step 9.
+- **Landed (2026-09-26):** a realistic-schema keyset test (expanded form and dropped keyset). Still open: `=`/`<>` pools, perturb-and-retry, the generated-column item, and the tie-breaker gap (see 20260926-59).
 - **Status:** todo
 
 ### 20260926-56. Items left from 20260923-27, -28, -35, -38.
@@ -1103,4 +1103,16 @@ It writes a summary table and fails clearly on crashes. Any real QUAACK bug it f
 - **Depends on:** 20260926-33, 20260926-57, the e2e corpus.
 - **Came from:** User direction, 2026-09-26.
 - **README:** All.
+- **Status:** todo
+
+### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
+
+
+### 20260926-60. A fixture load failure in the vacuity guard crashes step 9.
+
+A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_guard.rb:91, from step_nine.rb:41) raises `ArenaRunner::Error` out of `StepNine.run` instead of producing a clean per-candidate outcome. Decide how 9c should treat a scenario that won't load: skip it and mark its atoms untested, or refuse the candidate with a rule. Then handle it, with a test.
+
+- **Depends on:** 20260922-48, 20260926-59.
+- **Came from:** Build of 20260926-59.
+- **README:** Step 9.
 - **Status:** todo

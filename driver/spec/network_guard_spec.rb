@@ -2,7 +2,7 @@
 
 require "anthropic"
 
-# spec/support/no_network.rb stops the anthropic gem's HTTP requester, the
+# The root spec/support/no_network.rb stops the anthropic gem's HTTP requester, the
 # one way its requests reach the network, so no spec can call the real API,
 # even through Anthropic::Client directly. The client points at a closed
 # local port, so if the guard were missing the request still couldn't reach

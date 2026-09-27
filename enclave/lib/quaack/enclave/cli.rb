@@ -65,10 +65,11 @@ module Quaack
       EX_USAGE = 64
 
       # What exe/quaacks runs. It silences stderr, takes stdout for the CLI
-      # alone, and runs argv.
-      def self.main(argv, steps: STEPS)
+      # alone, and runs argv. out, if given, is stdout already claimed, as
+      # exe/quaacks does before it loads the enclave.
+      def self.main(argv, steps: STEPS, out: nil)
         ErrorFilter.silence_stderr!
-        out = claim_stdout!
+        out ||= claim_stdout!
         Hangup.during(out) { new(steps:, stdin: $stdin, out:).run(argv) }
       end
 

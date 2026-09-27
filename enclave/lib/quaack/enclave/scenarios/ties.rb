@@ -29,13 +29,20 @@ module Quaack
         end
 
         # rows with table's row given the overrides, or nil when the row
-        # leaves one of their columns out (a generated column).
-        def apply(rows, table, overrides)
+        # leaves one of their columns out and it isn't an identity (a
+        # generated column). An omitted identity column is set explicitly,
+        # since the runner overrides identities.
+        def apply(rows, table, overrides, schema)
           row = rows.find { |r| r.table == table }
-          return nil unless (overrides.keys - row.columns).empty?
+          missing = overrides.keys - row.columns
+          return nil unless missing.all? { |name| schema.column(table, name).default == "identity" }
 
-          tied = row.with(values: row.columns.zip(row.values).map { |name, v| overrides.fetch(name, v) })
+          tied = tie(row, row.columns + missing, overrides)
           rows.map { |other| other.equal?(row) ? tied : other }
+        end
+
+        def tie(row, columns, overrides)
+          row.with(columns:, values: columns.zip(row.values).map { |name, v| overrides.fetch(name, v) })
         end
 
         def overrides(conn, parse, atom, schema)

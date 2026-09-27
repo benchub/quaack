@@ -176,7 +176,7 @@ module Quaack
             next unless tie_allowed?(table, set)
 
             build_group(Scenarios.group(TIE_KEY + n, @topology.ancestors(table)))&.then do |rows|
-              Ties.apply(rows, table, set)
+              Ties.apply(rows, table, set, @schema)
             end
           end
         end

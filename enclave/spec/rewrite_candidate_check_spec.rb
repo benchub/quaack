@@ -158,10 +158,11 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
     {
       "the select list" => ["SELECT $1, $9 FROM orders", 9],
+      "the select list, before good ones" => ["SELECT $9, $1, $2 FROM orders", 9],
       "a keyset row comparison" => ["SELECT id FROM orders WHERE (total_cents, id) < ($1, $4)", 4],
       "a subquery" => ["SELECT $2 FROM orders WHERE id IN (SELECT id FROM orders WHERE id = $3 OR id = $5)", 5]
     }.each do |where, (sql, bad)|
-      it "finds a bad placeholder after good ones, in #{where}" do
+      it "finds a bad placeholder among good ones, in #{where}" do
         expect { check(sql) }
           .to rejected("bad_placeholder", "bad_placeholder: $#{bad} isn't one of the original's $1 to $3")
       end
@@ -207,9 +208,10 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
     {
       "a join" => "SELECT o.id FROM public.orders o JOIN public.order_view v ON v.id = o.id",
+      "a join, before the table" => "SELECT v.id FROM public.order_view v JOIN public.orders o ON v.id = o.id",
       "a subquery" => "SELECT id FROM orders WHERE id IN (SELECT id FROM order_view)"
     }.each do |where, sql|
-      it "refuses a view that comes after a table, in #{where}" do
+      it "refuses a view alongside a table, in #{where}" do
         mixed = described_class::Original.new(
           relations: [table_name("public", "orders"), table_name("public", "order_view")], placeholders: 0
         )
