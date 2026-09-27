@@ -2091,3 +2091,13 @@ A set-returning function in FROM can hide a view or foreign table from 3a's rela
 - **Came from:** Build of 20260924-19.
 - **README:** 3a, step 1.
 - **Status:** done
+
+### 20260926-48. Anchor clock-reading date literals.
+
+`'now'`, `'today'`, `'yesterday'` and `'tomorrow'` as date or timestamp literals read the clock, just as `now()` does, but 3h doesn't anchor them.
+- **Decided:** Anchor them. Rewrite them to the `clock_anchor()` equivalent, as 3h does for `now()` and `current_date`, so runs are reproducible.
+
+- **Depends on:** 20260924-15.
+- **Came from:** Build of 20260924-15.
+- **README:** 3h.
+- **Status:** done

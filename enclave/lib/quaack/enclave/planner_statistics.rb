@@ -34,6 +34,9 @@ module Quaack
     # - text_columns: the text-like columns, in attnum order: those whose
     #   type is in Postgres's string category (text, varchar, char, name,
     #   citext, or a domain over one), for 3f's heuristic.
+    # - clock_columns: each column whose type, or its domain's base type, is
+    #   date, timestamp, or timestamptz, mapped to that type, for 3h's
+    #   clock literals.
     # - columns: each column's own pg_stats row (inherited = false), keyed by
     #   name, with null_frac, avg_width, n_distinct, most_common_vals,
     #   most_common_freqs, histogram_bounds, and correlation. The value

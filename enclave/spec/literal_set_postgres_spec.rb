@@ -262,6 +262,19 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(result.fallbacks["worst_case"]).to eq("$1" => "shared_placeholder")
     end
 
+    # 3h anchors these (ClockLiterals), so a picked value would stand for
+    # a different time than the anchored query's.
+    it "for a clock-reading literal compared with a timestamp column, but not for a text one" do
+      sql, result = literal_sets("SELECT o.id FROM public.orders o WHERE o.created_at >= ' Yesterday' " \
+                                 "AND o.status = 'today'")
+
+      expect(sql).to end_with("o.created_at >= $1 AND o.status = $2")
+      expect(values(result, "worst_case")["$1"]).to eq(" Yesterday")
+      expect(result.fallbacks["worst_case"]).to eq("$1" => "clock_literal")
+      expect(result.fallbacks["typical"]["$1"]).to eq("clock_literal")
+      expect(values(result, "worst_case")["$2"]).to eq(pg_stats("orders", "status", "most_common_vals").first)
+    end
+
     it "for a statistics value that doesn't read as the placeholder's type" do
       sql, = literal_sets("SELECT r.id FROM public.readings r WHERE r.k = 5")
       statistics = store.read("statistics")

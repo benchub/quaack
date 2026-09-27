@@ -1209,15 +1209,7 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-47. Refuse user-defined set-returning functions in FROM. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-48. Anchor clock-reading date literals.
-
-`'now'`, `'today'`, `'yesterday'` and `'tomorrow'` as date or timestamp literals read the clock, just as `now()` does, but 3h doesn't anchor them.
-- **Decided:** Anchor them. Rewrite them to the `clock_anchor()` equivalent, as 3h does for `now()` and `current_date`, so runs are reproducible.
-
-- **Depends on:** 20260924-15.
-- **Came from:** Build of 20260924-15.
-- **README:** 3h.
-- **Status:** todo
+### 20260926-48. Anchor clock-reading date literals. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-49. Schema dump, clock anchoring and deparse items left over.
 
@@ -1249,4 +1241,17 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-45.
 - **Came from:** Review of the -45 hangup item.
 - **README:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260926-52. Anchor the clock in rewrite candidates too.
+
+The original is anchored (3h: `now()`, `current_date`, and since 20260926-48 the `'now'`/`'today'`/`'yesterday'`/`'tomorrow'` literals), but LLM and operator rewrite candidates bind the raw placeholder values and call the real clock functions. For a query whose `'now'` literal is compared against a timestamp column, steps 9, 13, 14 and 14c can then see spurious differences between the anchored original and a candidate. The other words differ only across a day boundary or with a pinned anchor. Apply the same anchoring (functions and clock-literal placeholders) to every candidate before it's tested or measured, and test a `'now'` query end to end through a candidate.
+
+Also from the review of -48:
+- `restored_node` now accepts any type_cast, which weakens restore's mismatch detection. Add a restore spec with an unrelated `$n::date` next to an anchored one.
+- Clock words typed another way (a function argument, an expression on a column, a domain over a domain) aren't anchored, and are listed as unsupported in v1.
+
+- **Depends on:** 20260926-48, 20260922-24.
+- **Came from:** 20260926-48 build and review.
+- **README:** 3h, steps 9-14.
 - **Status:** todo
