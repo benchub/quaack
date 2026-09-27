@@ -142,9 +142,24 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       end
     end
 
-    it "refuses a set operation" do
-      expect { generate("SELECT 1 FROM public.orders UNION SELECT 2 FROM public.customers", stats) }
-        .to raise_error(ArgumentError, /set operation/)
+    ["UNION", "UNION ALL", "INTERSECT", "EXCEPT"].each do |op|
+      it "treats each branch of #{op} as its own query and unions the candidates" do
+        sql = "SELECT 1 FROM public.orders WHERE status = 1 #{op} SELECT 2 FROM public.customers WHERE id = 3"
+
+        expect(keys(generate(sql, stats))).to contain_exactly(["orders", %w[status], []], ["customers", %w[id], []])
+      end
+    end
+
+    it "handles nested set operations and drops duplicate candidates" do
+      sql = "(SELECT 1 FROM public.orders WHERE status = 1 UNION SELECT 1 FROM public.orders WHERE status = 2) " \
+            "EXCEPT SELECT 2 FROM public.customers WHERE id = 3"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], []], ["customers", %w[id], []]])
+    end
+
+    it "refuses an unqualified relation inside a set operation branch" do
+      expect { generate("SELECT 1 FROM public.orders UNION SELECT 1 FROM customers", stats) }
+        .to raise_error(ArgumentError, /customers isn't schema qualified/)
     end
 
     it "refuses an unqualified relation, naming it" do
@@ -1044,7 +1059,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       cases = [
         ["SELECT '#{sentinel}' FROM orders", ArgumentError], ["SELECT '#{sentinel}'; SELECT 1", refused],
         ["DELETE FROM public.orders WHERE note = '#{sentinel}'", refused],
-        ["SELECT '#{sentinel}' UNION SELECT '#{sentinel}'", ArgumentError],
+        ["SELECT '#{sentinel}' FROM a UNION SELECT '#{sentinel}'", ArgumentError],
         ["SELECT '#{sentinel}' INTO public.x", refused],
         ["WITH d AS (DELETE FROM public.orders WHERE note = '#{sentinel}' RETURNING 1) SELECT 1", refused]
       ]
