@@ -374,6 +374,17 @@ RSpec.describe Quaack::Enclave::Relations do
       expect { check("SELECT * FROM no_such_function()") }.to rejected("user_function_in_from")
     end
 
+    {
+      "SELECT * FROM current_user" => "SQLValueFunction",
+      "SELECT * FROM coalesce(1, 2)" => "CoalesceExpr",
+      "SELECT * FROM ROWS FROM (current_date) r" => "SQLValueFunction"
+    }.each do |sql, node|
+      it "refuses a FROM item that isn't a plain function call cleanly: #{sql}" do
+        expect { check(sql) }
+          .to rejected("unsupported_construct", "unsupported_construct: RangeFunction over #{node}")
+      end
+    end
+
     it "leaves scalar functions in SELECT and WHERE alone" do
       expect(check("SELECT view_rows() FROM orders WHERE lower(status) = 'x'").relations)
         .to eq([table_name("public", "orders")])
