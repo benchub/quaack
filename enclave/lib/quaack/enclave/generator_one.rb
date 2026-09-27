@@ -34,7 +34,10 @@ module Quaack
     # EXISTS), as a query of its own, after the query it's in, and each CTE
     # body, before it. A set operation there is read per branch. There, a
     # column compared by = with an outer query's column (one qualified by a
-    # name that isn't in the subquery's FROM) is held to one value, as by
+    # name or schema and table that isn't in the subquery's FROM, or
+    # unqualified when the subquery's FROM is only plain tables and none
+    # has it; one that an inner table has resolves to it, as in Postgres)
+    # is held to one value, as by
     # = const. A reference to a CTE isn't a table. A subquery or function
     # in FROM has no table's columns, so its columns are skipped in the
     # query it's in, but a join to one still counts for the table on the
@@ -54,7 +57,8 @@ module Quaack
     # BitmapOr. A constant is a literal, a parameter ($1), or a cast of
     # either. A value is a constant, or, for = and the range operators and
     # BETWEEN, any expression that names no column of a table in this FROM
-    # clause, such as now(), $1 - interval '1 day', or a column of a
+    # clause and calls no built-in volatile function (random(), nextval()),
+    # such as now(), $1 - interval '1 day', or a column of a
     # subquery, a function, or an outer query.
     #
     # Outer joins. An outer join makes a table nullable when the table is on
@@ -300,6 +304,7 @@ module Quaack
           @using = []
           @nullable = Set.new.compare_by_identity
           @names = []
+          @opaque = false
           select.from_clause.each { |item| read_item(item) }
         end
 
@@ -320,12 +325,21 @@ module Quaack
         end
 
         # A column of an outer query: qualified by a name that no item in
-        # this FROM clause has. Inside a correlated subquery, it's fixed
-        # for each run, like a constant.
+        # this FROM clause has, by a schema and table that no table here
+        # is, or unqualified when this FROM clause is only plain tables and
+        # none of them has it. Inside a correlated subquery, it's fixed for
+        # each run, like a constant.
         def outer?(ref)
-          qualifier = ref.fields.to_a[0...-1]
-          qualifier.size == 1 && !@names.include?(qualifier.first.string&.sval)
+          *qualifier, name = ref.fields.map { |f| f.string&.sval }
+          case qualifier
+          in [] then unqualified_outer?(name)
+          in [refname] then !@names.include?(refname)
+          in [_, _] then owners(qualifier).empty?
+          else false
+          end
         end
+
+        def unqualified_outer?(name) = !@opaque && tables.none? { |t| t.stats.column_names.include?(name) }
 
         # The one [table, column] pair a ColumnRef that isn't a star means,
         # or nil.
@@ -352,7 +366,9 @@ module Quaack
           @names << item_name(item)
           if item.join_expr then read_join(item.join_expr)
           elsif item.range_var && !item.range_var.schemaname.empty? then [add_table(item.range_var)]
-          else []
+          else
+            @opaque = true
+            []
           end
         end
 
@@ -440,6 +456,12 @@ module Quaack
       # How Predicates tells a column from a value. It needs @scope, and
       # @collations for the COLLATEs it sees.
       module Values
+        # Built-in volatile functions. A call to one changes from row to
+        # row, so an index can't seek to it. Step 3d refuses a query that
+        # calls any volatile function, and this is a backstop.
+        VOLATILE_FUNCTIONS = %w[random random_normal gen_random_uuid uuidv4 uuidv7 clock_timestamp timeofday
+                                nextval setval currval lastval txid_current pg_sleep].freeze
+
         private
 
         # The ColumnRef of a bare column compared with a value, on either
@@ -471,10 +493,20 @@ module Quaack
         end
 
         def value?(node)
-          return false if null_literal?(node)
+          return false if null_literal?(node) || volatile?(node)
           return true if constant?(node)
 
           ColumnRefs.in(node).none? { |ref| ref.fields.any?(&:a_star) || @scope.column(ref) }
+        end
+
+        def volatile?(node)
+          case node
+          when PgQuery::FuncCall
+            VOLATILE_FUNCTIONS.include?(node.funcname.last.string.sval) || volatile?(node.args)
+          when Google::Protobuf::RepeatedField then node.any? { |n| volatile?(n) }
+          when Google::Protobuf::MessageExts then node.class.descriptor.any? { |f| volatile?(f.get(node)) }
+          else false
+          end
         end
 
         # A NULL literal matches no row under = or a range operator, so it

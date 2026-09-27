@@ -631,6 +631,8 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
 
     it "counts a comparison with an expression that names no column of a table in FROM" do
       expect(equality_columns("f = now()")).to eq(%w[f])
+      expect(equality_columns("a = 1 AND f = random() AND r > pg_catalog.clock_timestamp()")).to eq(%w[a])
+      expect(equality_columns("a = 1 AND f = nextval('s') + 1")).to eq(%w[a])
       expect(equality_columns("r >= date_trunc('day', now()) AND r < date_trunc('day', now()) + interval '1 day'"))
         .to eq(%w[r])
       expect(equality_columns("r >= $1 - make_interval(days => 3)")).to eq(%w[r])
@@ -1042,6 +1044,30 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(keys(generate(sql, stats).select { |c| c.table == orders }))
         .to eq([["orders", %w[customer_id], []], ["orders", %w[customer_id id], %w[body]],
                 ["orders", %w[customer_id id], []]])
+    end
+
+    it "treats a schema-qualified outer column as outer, so it pins the inner column" do
+      sql = "SELECT public.customers.id, ARRAY(SELECT o.body FROM public.orders o " \
+            "WHERE o.customer_id = public.customers.id ORDER BY o.id) FROM public.customers"
+
+      expect(keys(generate(sql, stats).select { |c| c.table == orders }).map { |_, key, _| key })
+        .to include(%w[customer_id id])
+    end
+
+    it "treats an unqualified column no inner table has as outer, so it pins the inner column" do
+      sql = "SELECT c.id, ARRAY(SELECT o.body FROM public.orders o WHERE o.customer_id = email ORDER BY o.id) " \
+            "FROM public.customers c"
+
+      expect(keys(generate(sql, stats).select { |c| c.table == orders }).map { |_, key, _| key })
+        .to include(%w[customer_id id])
+    end
+
+    it "doesn't treat an unqualified column as outer when the inner FROM has a subquery that may hold it" do
+      sql = "SELECT c.id, ARRAY(SELECT o.body FROM public.orders o, (SELECT 1 AS email) x " \
+            "WHERE o.customer_id = email ORDER BY o.id) FROM public.customers c"
+
+      expect(keys(generate(sql, stats).select { |c| c.table == orders }).map { |_, key, _| key })
+        .not_to include(%w[customer_id id])
     end
 
     it "keys a correlated subquery in WHERE on its correlated column" do
