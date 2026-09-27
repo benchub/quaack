@@ -305,53 +305,11 @@ Findings from the reviews of 20260922-31:
 
 ### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-26. Egress loose ends.
+### 20260923-26. Egress loose ends. Done, see BACKLOG-COMPLETE.md.
 
-Minor findings from the second review of 20260922-7:
-- **A String subclass as a Hash key isn't tested.** Changing `[String, Symbol].include?(key.class)` in `plain_hash` to `is_a?` checks stays green, and it's a real leak: `rule: { Class.new(String) { def to_s = "SENTINEL" }.new("a") => 1 }` then sends the sentinel. Add it to the table of values that must raise.
-- **A Hash-like message isn't tested.** Changing `message.is_a?(Hash)` to `message.respond_to?(:each_key)` stays green. Add an object with `each_key` and `[]`, or `ENV`, to the "sends nothing" table.
-- **Deep nesting and cycles raise `SystemStackError`.** Fixed by 20260923-32 through the shared `PlainData.check`. Drop this item. A 100,000-deep Array or a self-containing Array recurses in `plain` before JSON's nesting limit applies. Nothing leaks, but the contract says `Egress::Error`, and `SystemStackError` isn't a `StandardError`. Add a depth cap in `plain`.
-- **Error filtering (20260922-8) must catch `Egress::Error`, and must never print the cause chain of the errors it filters.**
+### 20260923-27. Qualify relations loose ends. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260922-7.
-- **Came from:** Both reviews of 20260922-7.
-- **README:** Trust boundary.
-- **Status:** todo
-
-### 20260923-27. Qualify relations loose ends.
-
-Findings from both reviews and the builder of 20260922-14:
-- **Other names depend on search_path too.** Unqualified functions, types in casts and column definitions, operators, collations, and text search configurations all resolve through `search_path`. So do relation names in string literals, such as `'t'::regclass`, `nextval('seq')`, and `to_regclass('t')`. None of them are rewritten. This matters for 3d, which looks functions up in `pg_catalog`, and for replaying the query on the racetrack.
-- **`SELECT ... INTO new_table` aborts** because its target resolves nowhere. That's a safe abort, but intake (20260922-13) or the inbound check should reject it with a clear rule.
-- **A multi-statement input is accepted,** and every statement gets qualified. Intake (20260922-13) should accept exactly one statement.
-- **The role used to resolve names.** `"$user"` and the USAGE check use the role QUAACK connects as. If the operator's plan session ran as a different role, resolution could differ. Document this in the operator docs, or take the role as an input.
-- **An empty search_path written by hand** as `""` or all whitespace aborts with "has an empty entry", but Postgres treats it as an empty path. EXPLAIN never writes that form.
-- **The abort message** joins schemas with ", ", so a schema named `weird, schema` looks like two schemas.
-- **Deparse drops formatting.** The output is pg_query's deparse even when nothing changed, so comments and layout are lost.
-
-- **Depends on:** 20260922-14.
-- **Came from:** Both reviews of 20260922-14, and its builder's notes.
-- **README:** Step 1.
-- **Status:** todo
-- **Note (from the review of 20260922-17):** RelationQualifier ignores the implicit `pg_temp` at the front of the search path. So a temp view named `orders` in the plan's session would resolve to `public.orders`. The enclave session has no temp relations, so this only matters if the plan's own session had one shadowing a real relation.
-
-### 20260923-28. Canonical plan loose ends.
-
-Minor findings from the second review of 20260922-15:
-- **`Integer()` reads a leading zero as octal.** A real index named `"<09>fake"` raises `ArgumentError`, and `"<010>fake"` is read as oid 8. Use `Integer(..., 10)`.
-- **A real index whose name starts with `<digits>` is treated as hypothetical.** Without a map, a real `"<123>orders_pkey"` compares equal to `orders_pkey`. It's unlikely, so document it.
-- **Surviving mutants:**
-  - An empty map treated like no map. `hypothetical_indexes: {}` with a `<oid>` index should make the plan not comparable.
-  - The `\A` anchor dropped from `HYPOTHETICAL_INDEX`.
-  - An Array of pairs accepted as the map.
-- **The "two sessions" Postgres spec never gets two oids,** because `hypopg_reset()` runs after the extra index is made. Fix the setup or the comment.
-- **The digest covers a partial predicate's literal.** A short literal could be guessed from the hash. It stays in the enclave today, but any step that sends a canonical form out must know this.
-- **Merge `PlanExpression`'s parse helper with `CanonicalPlan`'s own parse step.**
-
-- **Depends on:** 20260922-15.
-- **Came from:** Second review of 20260922-15, and its builder's notes.
-- **README:** Step 1.
-- **Status:** todo
+### 20260923-28. Canonical plan loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-29. Finish predicate atom extraction. Done, see BACKLOG-COMPLETE.md.
 
@@ -389,26 +347,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 
 ### 20260923-34. Governed store loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-35. Volatility check loose ends.
-
-Findings from the reviews of 20260922-20:
-- **Domain CHECK constraints aren't checked.** A domain whose CHECK calls a volatile function passes. That's realistic, because a validator function is VOLATILE unless someone marks it otherwise.
-- **Attribute notation isn't checked.** `t.f` is a plain ColumnRef, so it's still missed. The review of 20260922-10 confirmed it: with `bumpo(public.orders)` VOLATILE, `SELECT o.bumpo FROM orders o` is accepted. The allowlist refuses `(t).f`.
-- **One volatile cast to a common type poisons every cast to it.** For example, `CREATE CAST (x AS int)` with a volatile function makes every `::int` abort. None of the catalogs checked have one.
-- **TABLESAMPLE is moot now.** The allowlist (20260923-33) refuses it before the volatility check runs.
-- **Mislabeled STABLE functions get through.** The check trusts `provolatile`, so a function declared STABLE whose body calls `nextval` is accepted, and the sequence advance survives ROLLBACK. That's a labeling error in the production schema, but it breaks what the arena runner relies on. Record it as a known limitation, or look into checking the bodies of SQL functions.
-- **STABLE functions that read other tables are accepted.** Examples are `table_to_xml` and a STABLE SQL function reading an unrelated table. The review of 20260922-10 judged this fine for version 1, since the rows stay in the enclave. Note it in the module doc.
-- **Surviving mutants:**
-  - Three `quote_ident` columns aren't pinned: `OPERATOR_SQL` `f.proname`, and `CAST_SQL` `named.nspname` and `fn.nspname`.
-  - `count == 1 ?` can become `>= 1` without any test failing. Under that change, `a.pair(1, 2)` would falsely abort.
-- **The hypothetical-set test** should assert its fixture is non-variadic (`provariadic = 0`, `pronargs = 2`) so it can't go vacuous without anyone noticing.
-- **The parse can't see things Postgres adds on its own:** implicit casts, the source type's output function in I/O casts, the default-opclass operators behind DISTINCT, GROUP BY, and ORDER BY, and column defaults. The reviewer judged these exotic.
-- **Index DDL too (from the first review of 20260922-11):** `IndexDdlCheck` reuses this check, so the attribute-notation and domain CHECK gaps reach index DDL. With `evil3(public.orders)` a VOLATILE SQL function, `CREATE INDEX ON public.orders ((orders.evil3))` is accepted, and HypoPG and a real CREATE INDEX both build it, because Postgres inlines the SQL body before its IMMUTABLE check. Postgres still refuses a body with side effects, or a non-SQL function. Fix these gaps here, and list them in the "what it doesn't catch" part of `IndexDdlCheck`'s header.
-
-- **Depends on:** 20260922-20.
-- **Came from:** Both reviews of 20260922-20, and the tests-only review.
-- **README:** 3d.
-- **Status:** todo
+### 20260923-35. Volatility check loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-36. 5a-3 loose ends.
 
@@ -440,20 +379,7 @@ Minor findings from the second review of 20260922-46:
 - **README:** Step 9.
 - **Status:** todo
 
-### 20260923-38. Error filtering loose ends.
-
-Findings from both reviews of 20260922-8:
-- **A signal that arrives while `guard` is already reporting an error gets swallowed.** The `rescue Exception` clauses in `write`, `ask`, and `to_egress` catch an asynchronous SignalException, so `guard` returns 70 and a caller's loop carries on. Re-raise SignalException in those clauses too.
-- **Nothing tests that `write` flushes.** Deleting `out.flush` stays green.
-- **No spec combines `silence_stderr!` with a re-raised signal.**
-- **Most enclave error classes have no `rule` method,** so they go out as `internal_error`. Add rules to `RelationQualifier::Error` and `Store::Error`, and to the ArgumentErrors that stand in for a rule, such as those in PredicateAtoms and IndexCandidate.
-- **Decided:** No. Keep the identifier pattern for rule names, not a closed list. (The original question was whether rule names should be a closed list in the protocol gem, so every new rule is a reviewed change like the whitelist? Today any identifier-shaped word passes, so an error class that copied a one-word value into `rule` would send it.
-- **Operators get no detail beyond the rule.** A rule-to-text table on the driver side would give them a readable message without changing the whitelist.
-
-- **Depends on:** 20260922-8.
-- **Came from:** Both reviews of 20260922-8.
-- **README:** Trust boundary.
-- **Status:** todo
+### 20260923-38. Error filtering loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-39. Finish 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
@@ -1171,4 +1097,19 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
 - **README:** Step 9.
+- **Status:** todo
+
+### 20260926-56. Items left from 20260923-27, -28, -35, -38.
+
+- **Qualify only relations? (needs a decision):** functions, types, operators, and names inside string literals aren't qualified. Rewrite them, or refuse them?
+- **Comments and layout:** deparse drops comments and layout.
+- **Shared parse helper:** merge PlanExpression's parse helper with CanonicalPlan's parse step. This is a refactor only, and it changes a shared signature.
+- **ArgumentError rules:** give rules to the ArgumentErrors raised in PredicateAtoms and IndexCandidate. For IndexCandidate, the question is whether to change the error class that callers rescue.
+- **Operator messages:** a driver-side table mapping rules to text for operators. The texts need deciding.
+- **The `"any"` attribute match:** a column named exactly like a volatile `"any"` function (`pg_restore_*_stats`) still aborts. This was kept on purpose.
+- **Known volatility limits:** a volatile cast to a common type makes every cast to it abort; provolatile is trusted; STABLE functions that read other tables pass.
+
+- **Depends on:** 20260923-27, -28, -35, -38.
+- **Came from:** Their build and reviews.
+- **README:** 3a, 3d, step 1.
 - **Status:** todo
