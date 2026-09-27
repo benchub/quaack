@@ -1108,19 +1108,7 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-9. 5a-7 ranking and combining are stricter than the README.
-
-e2e 025 and 066 fail because of how `IndexRanking` reads the worst-case rule:
-- A candidate the planner doesn't use for the worst-case literal gets a worst-case reduction of 0, so a marginal index that helps every set by about 5% outranks one that cuts the slow set by 4x (025).
-- `combine` adds a second index only if the worst case improves, so a needed pair is never built (066).
-
-README 5a-7 says to keep adding indexes "as long as each addition lowers the cost further".
-- **Decided (2026-09-27):** follow README 5a-7: keep adding while cost drops without making any set worse, and break worst-case ties on the next-worst set. (The original question was whether to combine while an addition lowers cost without making any set worse, and when worst-case reductions tie, compare the next-worst set before falling back to size? That changes how the worst-case rule is read.
-
-- **Depends on:** 20260922-35.
-- **Came from:** The 20260927-6 investigation.
-- **README:** 5a-7.
-- **Status:** todo
+### 20260927-9. 5a-7 ranking and combining are stricter than the README. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-10. Capture and restore relallvisible. Done, see BACKLOG-COMPLETE.md.
 
