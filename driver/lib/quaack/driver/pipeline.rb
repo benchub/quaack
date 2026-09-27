@@ -102,7 +102,7 @@ module Quaack
             RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
                              .run(payload)
           end
-          return if rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"]
+          return if rewrites.nil? || entries["operator_rewrites_checked"]
           raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
 
           OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
