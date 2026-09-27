@@ -120,7 +120,7 @@ Everything the enclave script prints goes through the egress function, including
 All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pg_query and rejects anything that isn't what it claims to be:
 
 - **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see step 1) is refused too. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
-- **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses.
+- **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses, named with its schema. Reject `CONCURRENTLY`, `UNIQUE`, `NULLS NOT DISTINCT`, `TABLESPACE`, `ON ONLY`, `WITH (...)` storage options, and an unqualified table. Reject a key expression or predicate that uses a `$n` parameter, a subquery, an aggregate or window call, a construct outside the supported SQL list, or a volatile function, operator, or cast (the 3d check). The index name is dropped. A STABLE function is left to Postgres and HypoPG, which refuse it when they build the index.
 - **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b.
 
 A rejected input fails with a message that says which rule it broke. The script then runs the accepted input only in the ways the steps below describe.
