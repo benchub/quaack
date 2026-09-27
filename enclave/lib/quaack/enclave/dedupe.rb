@@ -55,8 +55,10 @@ module Quaack
     #    low-cardinality column's values may leave the enclave, so a
     #    constant anywhere else drops the partial, when unsure:
     #    'ssn' = 'ssn', status = lower('bob@x.com'), lower(status) = 'x',
-    #    or a bare true. A predicate with no constants, such as flag or
-    #    status IS NULL, needs only the column check. Every stored
+    #    or a bare true. A predicate with no constants needs only the
+    #    column check, except that one made only of bare columns tested as
+    #    col IS NULL, col IS NOT NULL, col, or NOT col, joined by AND (such
+    #    as deleted_at IS NULL), passes on any column: it holds no values. Every stored
     #    predicate parses again, since IndexCandidate refuses one that
     #    pg_query can't deparse faithfully (see Deparse). This comes first,
     #    because it's the trust-boundary check (README 5a-3): until a
@@ -229,7 +231,7 @@ module Quaack
       end
 
       def partial_not_low_cardinality?(candidate)
-        return false if candidate.predicate.nil?
+        return false if candidate.predicate.nil? || PredicateCheck.literal_free?(candidate.predicate)
 
         PredicateCheck.predicate_columns(candidate.predicate).any? do |column|
           !@low_cardinality.include?([candidate.table, column])

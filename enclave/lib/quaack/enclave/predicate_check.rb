@@ -119,6 +119,31 @@ module Quaack
       # The list after IN, or BETWEEN's two bounds.
       def constant_list?(node) = node.is_a?(PgQuery::List) && node.items.all? { |item| constant?(item) }
 
+      # Whether the predicate holds no literal and is only an AND of bare
+      # columns tested as col IS NULL, col IS NOT NULL, col, or NOT col.
+      # Such a predicate carries no values, only column names, so its
+      # columns needn't be low-cardinality (20260923-36).
+      def literal_free?(sql) = literal_free_node?(IndexSql.parse_predicate(sql))
+
+      def literal_free_node?(node)
+        case node = unwrap(node)
+        when PgQuery::ColumnRef then node.fields.size == 1 && !unwrap(node.fields.first).is_a?(PgQuery::A_Star)
+        when PgQuery::NullTest then literal_free_column?(node.arg)
+        when PgQuery::BoolExpr then literal_free_bool?(node)
+        else false
+        end
+      end
+
+      def literal_free_bool?(node)
+        case node.boolop
+        when :AND_EXPR then node.args.all? { |arg| literal_free_node?(arg) }
+        when :NOT_EXPR then literal_free_column?(node.args.first)
+        else false
+        end
+      end
+
+      def literal_free_column?(node) = unwrap(node).is_a?(PgQuery::ColumnRef) && literal_free_node?(node)
+
       def unwrap(node) = node.is_a?(PgQuery::Node) ? node.public_send(node.node) : node
 
       def children(message)

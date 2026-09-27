@@ -662,7 +662,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     it "doesn't count a LIKE that starts with a wildcard or an escape, or isn't a constant, or ILIKE" do
       ["note LIKE '%abc'", "note LIKE '_bc%'", "note LIKE '\\%x'", "note LIKE $1", "note ILIKE 'abc%'",
        "note NOT LIKE 'abc%'", "r NOT BETWEEN 1 AND 2", "r BETWEEN 1 AND s", "note LIKE ''", "r < s",
-       "r > now()"].each do |where|
+       "r > now()", "note LIKE 'abc%' ESCAPE '!'", "a = NULL", "NULL = a"].each do |where|
         expect(equality_columns(where)).to be_nil, where
       end
     end
@@ -763,6 +763,11 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     it "appends the ORDER BY columns after the equality columns, keeping direction and nulls ordering" do
       expect(key_for("WHERE a = 1 ORDER BY created_at DESC, total NULLS FIRST, id DESC NULLS LAST"))
         .to eq([asc("a"), desc("created_at"), asc("total", nulls: :first), desc("id", nulls: :last)])
+    end
+
+    it "reads a column ORDER BY repeats only at its first place, even when the repeat isn't next to it" do
+      expect(key_for("WHERE a IN (1, 2) ORDER BY a, created_at, a DESC")).to eq([asc("a"), asc("created_at")])
+      expect(key_for("ORDER BY created_at, created_at DESC")).to eq([asc("created_at")])
     end
 
     it "reads an explicit ASC as ascending" do
@@ -912,6 +917,11 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         .to eq([asc("a"), desc("created_at")])
     end
 
+    it "matches an output alias case-sensitively, as Postgres does" do
+      expect(generate('SELECT created_at AS "ID" FROM public.orders WHERE a = 1 ORDER BY id', stats).last.key)
+        .to eq([asc("a"), asc("id")])
+    end
+
     it "leaves ORDER BY out when an ordinal or alias names an expression" do
       expect(generate("SELECT id + 1 FROM public.orders WHERE a = 1 ORDER BY 1", stats).last.key).to eq([asc("a")])
       expect(generate("SELECT id + 1 AS total FROM public.orders WHERE a = 1 ORDER BY total", stats).last.key)
@@ -989,6 +999,10 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     it "leaves BRIN out for an equality column or a column without statistics" do
       expect(brins("SELECT 1 FROM public.orders WHERE r = 1", stats(correlation: 0.99))).to eq([])
       expect(brins("SELECT 1 FROM public.orders WHERE id > 1", stats(correlation: 0.99))).to eq([])
+    end
+
+    it "leaves BRIN out for a prefix LIKE, which BRIN can't serve" do
+      expect(brins("SELECT 1 FROM public.orders WHERE created_at LIKE 'abc%'", stats(correlation: 0.99))).to eq([])
     end
 
     it "considers every range column, not only the one in the key" do

@@ -109,7 +109,8 @@ module Quaack
     # order. * and t.* mean every column. WHERE, HAVING, and ORDER BY
     # columns outside the key aren't added.
     #
-    # BRIN. For each range column whose |correlation| is at least
+    # BRIN. For each comparison range column (not a prefix LIKE, which BRIN
+    # can't serve) whose |correlation| is at least
     # brin_min_correlation, on a table whose reltuples is at least
     # brin_min_reltuples, there's also a single-column BRIN, with no
     # ordering and no INCLUDE. It comes after the table's btrees.
@@ -472,7 +473,11 @@ module Quaack
           end
         end
 
-        def constant?(node) = Keyset.constant?(node)
+        # A NULL literal matches no row under = or a range operator, so it
+        # doesn't count.
+        def constant?(node) = Keyset.constant?(node) && !null_literal?(node)
+
+        def null_literal?(node) = node.type_cast ? null_literal?(node.type_cast.arg) : node.a_const&.isnull == true
 
         def array_constant?(node)
           constant?(node) || node.a_array_expr&.elements&.all? { |e| constant?(e) }
@@ -518,6 +523,9 @@ module Quaack
         # Range columns that aren't also equality columns: the comparisons
         # first, then the prefix LIKEs, which a plain btree may not serve.
         def range(table) = (@predicates.range[table] | @predicates.like[table]) - equality(table)
+
+        # The range columns without the prefix LIKEs, which BRIN can't serve.
+        def comparison_range(table) = @predicates.range[table] - equality(table)
 
         # Held to one value, by = const or IN with one item. Postgres drops
         # such a column from a sort. It doesn't for IS NULL.
@@ -617,7 +625,8 @@ module Quaack
         def for(table)
           return nil unless @items.all? { |item| item && item[0].equal?(table) }
 
-          @items.map { |item| item.drop(1) }
+          # Postgres reads a repeated column only at its first place.
+          @items.map { |item| item.drop(1) }.uniq(&:first)
         end
 
         private
@@ -782,7 +791,7 @@ module Quaack
         def brins
           return [] unless @stats.reltuples >= @limits[:brin_min_reltuples]
 
-          @uses.range(@table).select { |name| correlated?(name) }.map do |name|
+          @uses.comparison_range(@table).select { |name| correlated?(name) }.map do |name|
             IndexCandidate.new(table: @table.name, key: [name], access_method: :brin, sources: [:parse])
           end
         end

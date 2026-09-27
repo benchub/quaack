@@ -41,7 +41,9 @@ module Quaack
       # when every MCV is t or f, a literal in one of the spellings in
       # BOOLEAN_SPELLINGS (true, yes, on, 1, and so on, in any case) matches
       # as t or f. A text column whose only MCVs are t and f gets the same
-      # treatment, which is wrong for it but rare. Nothing strips spaces
+      # treatment (a text, varchar, "char", or char(1) column), which is
+      # wrong for it but rare, and only misreads literals such as 'true' or
+      # '1' that match no rows in it. Nothing strips spaces
       # otherwise: pg_stats keeps char(n)'s padding ("ab  "), so 'ab' misses
       # a bpchar MCV. This can't know the column's type, so it can't fix that.
       def mcv_frequency(literal_text)

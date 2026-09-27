@@ -163,7 +163,7 @@ module Quaack
         number = Float(reltuples) if reltuples.is_a?(Numeric) && reltuples.real?
         return number if number&.finite?
 
-        raise ArgumentError, "reltuples must be a finite number, got #{reltuples.inspect}"
+        raise ArgumentError, "reltuples must be a finite number"
       end
 
       def names_of(column_names)
