@@ -20,7 +20,7 @@ RSpec.describe Quaack::Enclave::ImplicitName do
     "coalesce(a, 1)", "greatest(a, 1)", "least(1, 2)", "CURRENT_DATE", "CURRENT_TIME", "current_time(1)",
     "CURRENT_TIMESTAMP", "current_timestamp(2)", "LOCALTIME", "localtime(2)", "LOCALTIMESTAMP",
     "localtimestamp(3)", "CURRENT_USER", "SESSION_USER", "USER", "CURRENT_ROLE", "CURRENT_CATALOG",
-    "CURRENT_SCHEMA", "(1 + 1)::int8::text", "CASE WHEN true THEN 1 END::text"
+    "CURRENT_SCHEMA", "(1 + 1)::int8::text", "CASE WHEN true THEN 1 END::text", "(VALUES (1))", "(SELECT 1)::text"
   ].each do |expression|
     it "names #{expression} the way Postgres does" do
       sql = "SELECT #{expression} #{from}"

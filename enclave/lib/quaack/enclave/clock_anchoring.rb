@@ -152,8 +152,21 @@ module Quaack
       def anchored_node(node)
         raise Error.new("clock_anchor_in_query", "the query already calls #{ANCHOR}") if anchor_call?(node)
 
+        refuse_database_qualified!(node)
+
         sql = ClockFunctions.anchored_sql(node)
         sql && expression(sql)
+      end
+
+      # db.pg_catalog.now() reads the clock when db is the current database.
+      def refuse_database_qualified!(node)
+        return unless node.func_call&.funcname&.length == 3
+
+        trimmed = PgQuery::Node.decode(PgQuery::Node.encode(node))
+        trimmed.func_call.funcname.shift
+        return unless ClockFunctions.anchored_sql(trimmed)
+
+        raise Error.new("database_qualified_function", "a clock function named with its database isn't supported")
       end
 
       def record(node)

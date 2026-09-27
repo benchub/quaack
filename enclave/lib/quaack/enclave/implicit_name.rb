@@ -13,8 +13,13 @@ module Quaack
     # keyword gives a strong name. A cast gives its type's name, but only
     # when what it casts has no strong name of its own, and CASE gives
     # "case" only when its ELSE has none. COLLATE takes its argument's
-    # name, and a scalar subquery takes its first column's. Anything else
+    # name, and a scalar subquery takes its first column's
+    # ("column1" for VALUES). Anything else
     # has no name, and the column is "?column?".
+    #
+    # A subquery whose first column is * or t.* is named from the parse,
+    # so it can differ from Postgres, which reads the analyzed columns.
+    # Anchoring stays sound, because inner slots keep their own names.
     #
     # It covers what SupportedSql lists. Clock anchoring (3h) uses it only
     # to see whether anchoring changed a name, and Postgres itself checks
@@ -87,16 +92,19 @@ module Quaack
         return strong(SUBLINK_NAMES[link.sub_link_type]) if SUBLINK_NAMES.key?(link.sub_link_type)
         return NONE unless link.sub_link_type == :EXPR_SUBLINK
 
-        target = first_target(link.subselect.select_stmt)
+        first_column(link.subselect.select_stmt)
+      end
+
+      # A set operation's columns are named by its leftmost SELECT, and
+      # VALUES names them column1 and on.
+      def first_column(select)
+        select = select.larg until select.op == :SETOP_NONE
+        return strong("column1") unless select.values_lists.empty?
+
+        target = select.target_list.first&.res_target
         return NONE unless target
 
         strong(target.name.empty? ? of(target.val) : target.name)
-      end
-
-      # A set operation's columns are named by its leftmost SELECT.
-      def first_target(select)
-        select = select.larg until select.op == :SETOP_NONE
-        select.target_list.first&.res_target
       end
 
       def figure_a_array_expr(_) = strong("array")

@@ -331,6 +331,8 @@ Leave all other stable functions alone. The step 15 report shows the query with 
 
 The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry and the `search_path` in its `plan` entry's settings, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The literal sets and placeholder map hold values, not clock functions, so they don't change. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
 
+Unsupported in v1: a clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
+
 ## 4. Run server.
 
 The operator builds one server for each run of QUAACK. It must meet all of these requirements:

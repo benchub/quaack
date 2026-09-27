@@ -220,7 +220,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "leaves a function of the same name in another schema, or one with arguments" do
       sql = 'SELECT public.now(), a.statement_timestamp(), "NOW"(), now(1), pg_catalog.now(1), ' \
-            "mydb.pg_catalog.now(), pg_catalog.x.now(), public.localtime()"
+            "mydb.public.now(), pg_catalog.x.now(), public.localtime()"
       result = anchor(sql)
       expect(result.sql).to eq(deparse(sql))
       expect(result.replacements).to eq([])
@@ -342,6 +342,15 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
 
     it "refuses a search_path it can't read" do
       expect { anchor("SELECT now()", path('public, "x')) }.to anchor_error("bad_search_path")
+    end
+
+    it "refuses a function named with a database, which could hide a clock read" do
+      expect { anchor("SELECT db.pg_catalog.now()") }.to anchor_error("database_qualified_function")
+    end
+
+    it "drops the parser's error as the cause of a bad search_path" do
+      expect { anchor("SELECT now()", path('public, "x')) }
+        .to raise_error(described_class::Error) { |error| expect(error.cause).to be_nil }
     end
   end
 
