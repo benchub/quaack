@@ -32,8 +32,11 @@ RSpec.describe "quaack run" do
       "index-feedback" => [{ "type" => "index_feedback", "revise" => false, "refined" => false }],
       "rewrite-payload" => [{ "type" => "rewrite_payload", "query" => "SELECT $1" }],
       "rewrite-check" => [{ "type" => "rewrite_outcome", "index" => 0, "outcome" => "accepted" }],
-      "report-payload" => [report] }
+      "report-payload" => [report],
+      "teardown" => [{ "type" => "teardown", "run_id" => run_id, "store" => "deleted",
+                       "next_step" => "destroy_run_server" }] }
   end
+  let(:torn) { "quaack: deleted the store for run #{run_id}. Destroy the run server for run #{run_id} now.\n" }
 
   # Stands in for ssh, at the edge: records each call.
   let(:failing) { {} }
@@ -72,11 +75,11 @@ RSpec.describe "quaack run" do
                                                "index_ranking_original" => true, "rewrites_generated" => true)
     status = cli.run(["run", "--run", run_id, "--out", out])
 
-    expect([status, stderr.string]).to eq([0, ""])
+    expect([status, stderr.string]).to eq([0, torn])
     expect(hosts).to eq(["jump-1"])
     expect(transport.calls.map(&:first)).to eq(%w[status index-feedback arena-setup status index-build baseline
                                                   index-baseline candidate-runs minimax result-comparison selection
-                                                  report-payload])
+                                                  report-payload teardown])
     expect(transport.calls.first.last[:args]).to eq(run: run_id)
   end
 
@@ -87,9 +90,9 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
-    expect([status, stderr.string]).to eq([0, ""])
+    expect([status, stderr.string]).to eq([0, torn])
     expect(transport.calls.map(&:first)).to eq(%w[status index-feedback rewrite-payload rewrite-check status status
-                                                  status report-payload])
+                                                  status report-payload teardown])
     expect(transport.calls[3].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
   end
@@ -104,7 +107,7 @@ RSpec.describe "quaack run" do
 
   context "when selection is stored" do
     it "writes the report to --out and prints its path before done" do
-      expect([cli.run(["run", "--run", run_id, "--out", out]), stderr.string]).to eq([0, ""])
+      expect([cli.run(["run", "--run", run_id, "--out", out]), stderr.string]).to eq([0, torn])
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
       expect(File.read(out)).to include("QUAACK report #{run_id}")
     end
@@ -128,7 +131,33 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: arena_missing\n"])
+    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
+  end
+
+  it "tears the run down after an enclave call fails" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
+    cli.run(["run", "--run", run_id])
+    expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
+  end
+
+  it "fails with exit 1 and the teardown rule when teardown fails after a good run" do
+    failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed")
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, stdout.string]).to eq([1, ""])
+    expect(stderr.string).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
+                                "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
+                                "quaack run failed: teardown_failed\n")
+  end
+
+  it "skips teardown with --keep, in any position, and prints the command to run later" do
+    [["--keep", "--out", out], ["--out", out, "--keep"]].each do |options|
+      expect(cli.run(["run", "--run", run_id, *options])).to eq(0)
+    end
+    expect(transport.calls.map(&:first)).not_to include("teardown")
+    expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
+                                "quaacks teardown --run #{run_id}\n" * 2)
   end
 
   it "fails with exit 1 and only the rule when an LLM call fails" do
@@ -136,7 +165,7 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: llm_auth\n"])
   end
 
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
@@ -144,7 +173,7 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: no_rewrite_payload\n"])
+    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: no_rewrite_payload\n"])
     expect(fake.asks).to eq([])
   end
 

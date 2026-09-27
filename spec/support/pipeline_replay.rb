@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 require "json"
+require "stringio"
 require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/enclave_error"
 require "quaack/driver/llm/error"
 require "quaack/driver/pipeline"
+require "quaack/driver/teardown"
 require "quaack/driver/transport/local"
 require_relative "../../script/prompt_pack/run"
 require_relative "../../e2e/run"
@@ -34,7 +36,7 @@ module PipelineReplay
   # prompt doesn't match the saved prompt.md.
   # wrong holds the numbers n of the replayed 6a rewrites, stored as
   # rewrite_<n>, whose SQL carries the query's subtly wrong condition.
-  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong)
+  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong, :store_left, :teardown)
 
   module_function
 
@@ -120,7 +122,8 @@ module PipelineReplay
     transport = Quaack::Driver::Transport::Local.new(command: PromptPack::QUAACKS)
     run_id = PromptPack.intake(transport, home, server, query, prod)
     PromptPack.setup(transport, run_id, server, racetrack)
-    pipeline(transport, run_id, query, variant, File.join(home, "report.html"))
+    outcome = pipeline(transport, run_id, query, variant, File.join(home, "report.html"))
+    outcome.with(store_left: File.exist?(File.join(home, ".quaack", "runs", run_id)))
   end
 
   def drop(server, databases)
@@ -128,13 +131,23 @@ module PipelineReplay
     databases.each { server.admin.exec(%(DROP DATABASE IF EXISTS "#{it}" WITH (FORCE))) }
   end
 
+  # The Pipeline and what's read back from the store, then the run's
+  # teardown, as `quaack run` does it (Driver::Teardown), with its message.
   def pipeline(transport, run_id, query, variant, out)
+    stderr = StringIO.new
+    outcome = Quaack::Driver::Teardown.around(transport:, run_id:, stderr:) do
+      replayed(transport, run_id, query, variant, out)
+    end
+    outcome.with(teardown: stderr.string)
+  end
+
+  def replayed(transport, run_id, query, variant, out)
     replies = Replies.new(query.name, variant)
     client = E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new)
     error = drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites, out:).run }
     Outcome.new(variant:, error:, report: error ? nil : report(transport, run_id),
-                entries: Quaack::Driver::Pipeline.status(transport, run_id), log: replies.log, drift: replies.drift,
-                wrong: wrong(query, replies.rewrites_text))
+                entries: Quaack::Driver::Pipeline.status(transport, run_id), log: replies.log,
+                drift: replies.drift, wrong: wrong(query, replies.rewrites_text), store_left: nil, teardown: nil)
   end
 
   # The 6a rewrites become rewrite_1, rewrite_2, and so on, in reply order.
