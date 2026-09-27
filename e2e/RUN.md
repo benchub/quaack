@@ -6,109 +6,109 @@ judged. Other categories are recorded as INFO.
 
 | Case | Category | Verdict | Detail | Seconds |
 | --- | --- | --- | --- | ---: |
-| 001-cross-table-or | both | INFO | no fix selected (declined: unused 5); needs the LLM | 12 |
-| 002-missing-fk-index | index | PASS | top original:top:2 13 blocks <= bound 22 | 12 |
-| 003-composite-equality-range | index | PASS | top original:top:3 13 blocks <= bound 19 | 10 |
-| 004-sort-under-limit | index | PASS | top original:top:1 23 blocks <= bound 23 | 12 |
-| 005-covering-include | index | PASS | top original:top:1 11 blocks <= bound 11 | 11 |
-| 006-partial-low-cardinality | index | PASS | top original:top:1 4 blocks <= bound 52 | 10 |
+| 001-cross-table-or | both | INFO | no fix selected (declined: unused 9; existing: covered 3); needs the LLM | 13 |
+| 002-missing-fk-index | index | PASS | top original:top:1 7 blocks <= bound 22 | 13 |
+| 003-composite-equality-range | index | PASS | top original:top:1 4 blocks <= bound 19 | 10 |
+| 004-sort-under-limit | index | PASS | top original:top:1 4 blocks <= bound 23 | 12 |
+| 005-covering-include | index | PASS | top original:top:1 11 blocks <= bound 11 | 10 |
+| 006-partial-low-cardinality | index | PASS | top original:top:1 4 blocks <= bound 52 | 11 |
 | 007-expression-lower-email | index | LLM | no fix selected (no candidates), bound 4; the case's index comes from the LLM (5a-5) | 11 |
-| 008-like-prefix-pattern-ops | index | LLM | no fix selected (declined: unused 1; existing: covered 1), bound 8; the case's index comes from the LLM (5a-5) | 12 |
+| 008-like-prefix-pattern-ops | index | LLM | no fix selected (declined: unused 1; existing: covered 2), bound 8; the case's index comes from the LLM (5a-5) | 11 |
 | 009-trigram-gin-infix | index | LLM | no fix selected (no candidates), bound 28; the case's index comes from the LLM (5a-5) | 11 |
 | 010-jsonb-containment-gin | index | LLM | no fix selected (no candidates), bound 804; the case's index comes from the LLM (5a-5) | 10 |
-| 011-brin-append-only | index | PASS | top original:top:2 26 blocks <= bound 136 | 11 |
+| 011-brin-append-only | index | PASS | top original:top:3 11 blocks <= bound 136 | 11 |
 | 012-join-inner-side | index | PASS | top original:combination 97 blocks <= bound 146 | 25 |
-| 013-group-by-index-only | index | FAIL | top original:top:1 13 blocks > bound 6 | 11 |
+| 013-group-by-index-only | index | PASS | top original:top:2 6 blocks <= bound 6 | 11 |
 | 014-bitmapand-to-composite | index | PASS | top original:top:1 7 blocks <= bound 289 | 12 |
-| 015-or-single-table | index | FAIL | no fix selected (no candidates), bound 8 | 12 |
-| 016-is-null-high-cardinality | index | PASS | top original:top:1 25 blocks <= bound 2508 | 11 |
+| 015-or-single-table | index | PASS | top original:top:1 8 blocks <= bound 8 | 13 |
+| 016-is-null-high-cardinality | index | PASS | top original:top:2 22 blocks <= bound 2508 | 10 |
 | 017-mixed-direction-sort | index | PASS | top original:top:1 13 blocks <= bound 13 | 11 |
-| 018-in-list | index | PASS | top original:top:1 140 blocks <= bound 140 | 10 |
-| 019-mcv-skew-minimax | index | PASS | top original:top:3 253 blocks <= bound 253 | 10 |
-| 020-clock-anchor-current-date | index | FAIL | stopped at index-search, rule prepare_failed, step index-search, SQLSTATE 42883 | 5 |
+| 018-in-list | index | PASS | top original:top:1 17 blocks <= bound 140 | 10 |
+| 019-mcv-skew-minimax | index | PASS | top original:top:3 4 blocks <= bound 253 | 10 |
+| 020-clock-anchor-current-date | index | PASS | top original:top:1 40 blocks <= bound 94 | 10 |
 | 021-distinct-on-latest | index | PASS | top original:top:1 17 blocks <= bound 17 | 10 |
-| 022-window-running-total | index | PASS | top original:top:1 509 blocks <= bound 511 | 10 |
-| 023-limit-without-order-by | index | PASS | top original:top:1 8 blocks <= bound 8 | 10 |
-| 024-between-numeric-range | index | PASS | top original:top:1 8 blocks <= bound 51 | 10 |
-| 025-nested-loop-inner-filter | index | FAIL | top original:top:1 4984 blocks > bound 2618 | 14 |
-| 026-selectivity-ordering | index | PASS | top original:top:1 4 blocks <= bound 4 | 10 |
-| 027-lateral-topn-needs-index | index | FAIL | no fix selected (declined: unused 1), bound 3635 | 17 |
-| 028-cte-materialized-fence | rewrite | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 029-cte-referenced-twice | rewrite | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
+| 022-window-running-total | index | PASS | top original:top:1 7 blocks <= bound 511 | 10 |
+| 023-limit-without-order-by | index | PASS | top original:top:1 4 blocks <= bound 8 | 10 |
+| 024-between-numeric-range | index | PASS | top original:top:2 5 blocks <= bound 51 | 10 |
+| 025-nested-loop-inner-filter | index | FAIL | top original:top:1 4984 blocks > bound 2618 | 15 |
+| 026-selectivity-ordering | index | PASS | top original:top:3 4 blocks <= bound 4 | 11 |
+| 027-lateral-topn-needs-index | index | PASS | top original:combination 3023 blocks <= bound 3635 | 17 |
+| 028-cte-materialized-fence | rewrite | INFO | top original:top:1 4872 blocks; needs the LLM | 13 |
+| 029-cte-referenced-twice | rewrite | INFO | no fix selected (no candidates); needs the LLM | 12 |
 | 030-date-trunc-to-range | rewrite | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 031-numeric-literal-on-bigint | rewrite | FAIL | stopped at index-search, rule explain_failed, step index-search, SQLSTATE 22P02 | 7 |
+| 031-numeric-literal-on-bigint | rewrite | INFO | no fix selected (declined: unused 1; existing: covered 2); needs the LLM | 12 |
 | 032-coalesce-wrapper | rewrite | INFO | no fix selected (no candidates); needs the LLM | 10 |
 | 033-arithmetic-on-column | rewrite | INFO | no fix selected (no candidates); needs the LLM | 9 |
-| 034-not-in-to-not-exists | rewrite | INFO | no fix selected (no candidates); needs the LLM | 1722 |
-| 035-count-to-exists | rewrite | INFO | no fix selected (no candidates); needs the LLM | 14 |
-| 036-distinct-join-to-exists | none | INFO | no fix selected (declined: unused 4; existing: covered 3); needs the LLM | 12 |
-| 037-redundant-fk-join | rewrite | INFO | no fix selected (declined: unused 3; existing: covered 1); needs the LLM | 12 |
-| 038-correlated-avg-to-join | rewrite | INFO | no fix selected (no candidates); needs the LLM | 33 |
-| 039-scalar-counts-to-filter | rewrite | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 040-correlated-running-sum-to-window | rewrite | INFO | no fix selected (declined: unused 1); needs the LLM | 11 |
-| 041-row-number-to-lateral | none | INFO | no fix selected (existing: covered 1); needs the LLM | 13 |
-| 042-duplicate-subquery-to-lateral | rewrite | INFO | no fix selected (no candidates); needs the LLM | 15 |
-| 043-or-across-join-indexed | rewrite | INFO | no fix selected (declined: unused 2); needs the LLM | 12 |
-| 044-in-subquery-distinct | rewrite | INFO | top original:top:1 20 blocks; needs the LLM | 12 |
-| 045-having-to-where | none | INFO | no fix selected (no candidates); needs the LLM | 11 |
-| 046-date-cast-plus-index | both | INFO | no fix selected (declined: unused 1); needs the LLM | 11 |
-| 047-not-in-plus-index | both | INFO | no fix selected (no candidates); needs the LLM | 605 |
-| 048-recursive-cte-plus-index | both | FAIL | stopped at index-search, rule prepare_failed, step index-search, SQLSTATE 42883 | 6 |
-| 049-arithmetic-plus-composite | both | INFO | no fix selected (no candidates); needs the LLM | 10 |
-| 050-materialized-cte-plus-index | both | INFO | no fix selected (no candidates); needs the LLM | 10 |
+| 034-not-in-to-not-exists | rewrite | INFO | no fix selected (no candidates); needs the LLM | 2303 |
+| 035-count-to-exists | rewrite | INFO | top original:combination 3013 blocks; needs the LLM | 17 |
+| 036-distinct-join-to-exists | none | INFO | no fix selected (declined: unused 4; existing: covered 5); needs the LLM | 12 |
+| 037-redundant-fk-join | rewrite | INFO | no fix selected (declined: unused 4; existing: covered 2); needs the LLM | 12 |
+| 038-correlated-avg-to-join | rewrite | INFO | top original:top:1 18526 blocks; needs the LLM | 39 |
+| 039-scalar-counts-to-filter | rewrite | INFO | top original:top:1 435 blocks; needs the LLM | 12 |
+| 040-correlated-running-sum-to-window | rewrite | INFO | top original:combination 1901 blocks; needs the LLM | 11 |
+| 041-row-number-to-lateral | none | INFO | no fix selected (declined: unused 1; existing: covered 6); needs the LLM | 12 |
+| 042-duplicate-subquery-to-lateral | rewrite | INFO | top original:combination 5712 blocks; needs the LLM | 19 |
+| 043-or-across-join-indexed | rewrite | INFO | no fix selected (declined: unused 4; existing: covered 4); needs the LLM | 13 |
+| 044-in-subquery-distinct | rewrite | INFO | top original:top:1 20 blocks; needs the LLM | 13 |
+| 045-having-to-where | none | INFO | no fix selected (existing: covered 2); needs the LLM | 12 |
+| 046-date-cast-plus-index | both | INFO | no fix selected (declined: unused 1); needs the LLM | 12 |
+| 047-not-in-plus-index | both | INFO | no fix selected (no candidates); needs the LLM | 827 |
+| 048-recursive-cte-plus-index | both | INFO | top original:top:2 8663 blocks; needs the LLM | 16 |
+| 049-arithmetic-plus-composite | both | INFO | top original:top:1 125 blocks; needs the LLM | 10 |
+| 050-materialized-cte-plus-index | both | INFO | top original:top:1 1414 blocks; needs the LLM | 11 |
 | 051-scalar-counts-plus-index | both | INFO | top original:top:3 5884 blocks; needs the LLM | 14 |
-| 052-running-sum-plus-index | both | INFO | top original:top:1 5473 blocks; needs the LLM | 24 |
+| 052-running-sum-plus-index | both | INFO | top original:top:1 328 blocks; needs the LLM | 24 |
 | 053-extract-plus-index | both | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 054-already-optimal | none | INFO | no fix selected (existing: covered 2); needs the LLM | 11 |
-| 055-low-selectivity | index | FAIL | no fix selected (declined: unused 1), bound 417 | 11 |
+| 054-already-optimal | none | INFO | no fix selected (existing: covered 4); needs the LLM | 12 |
+| 055-low-selectivity | index | FAIL | no fix selected (declined: unused 2), bound 417 | 12 |
 | 056-small-lookup-table | none | INFO | no fix selected (declined: unused 1); needs the LLM | 8 |
-| 057-not-in-nullable-trap | trap | INFO | no fix selected (declined: unused 1); needs the LLM | 8 |
-| 058-union-all-overlap-trap | trap | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
-| 059-or-to-union-no-key-trap | trap | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 060-left-to-inner-join-trap | trap | INFO | top original:top:3 4966 blocks; needs the LLM | 14 |
+| 057-not-in-nullable-trap | trap | INFO | no fix selected (declined: unused 1; existing: covered 1); needs the LLM | 8 |
+| 058-union-all-overlap-trap | trap | INFO | top original:combination 31 blocks; needs the LLM | 16 |
+| 059-or-to-union-no-key-trap | trap | INFO | no fix selected (declined: unused 1; existing: covered 2); needs the LLM | 13 |
+| 060-left-to-inner-join-trap | trap | INFO | top original:top:3 4966 blocks; needs the LLM | 15 |
 | 061-drop-distinct-trap | trap | INFO | top original:top:2 690 blocks; needs the LLM | 13 |
-| 062-count-column-trap | trap | INFO | no fix selected (existing: covered 1); needs the LLM | 12 |
+| 062-count-column-trap | trap | INFO | top original:top:1 7 blocks; needs the LLM | 12 |
 | 063-date-between-trap | trap | INFO | no fix selected (existing: covered 1); needs the LLM | 9 |
-| 064-max-to-order-limit-trap | trap | INFO | no fix selected (existing: covered 1); needs the LLM | 8 |
-| 065-in-to-join-trap | trap | INFO | no fix selected (existing: covered 1); needs the LLM | 12 |
-| 066-index-combination | index | FAIL | top original:top:3 10324 blocks > bound 7153 | 28 |
-| 067-any-array-unqualified | index | PASS | top original:top:1 39 blocks <= bound 39 | 12 |
-| 068-except-range-arm | index | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
-| 069-float-avg-tolerance | rewrite | INFO | no fix selected (declined: unused 1); needs the LLM | 23 |
-| 070-keyset-pagination-index | index | FAIL | top original:top:1 5 blocks > bound 4 | 12 |
+| 064-max-to-order-limit-trap | trap | INFO | no fix selected (existing: covered 2); needs the LLM | 8 |
+| 065-in-to-join-trap | trap | INFO | top original:top:1 1031 blocks; needs the LLM | 13 |
+| 066-index-combination | index | FAIL | top original:top:1 11165 blocks > bound 7153 | 29 |
+| 067-any-array-unqualified | index | PASS | top original:top:1 10 blocks <= bound 39 | 12 |
+| 068-except-range-arm | index | PASS | top original:combination 58 blocks <= bound 554 | 14 |
+| 069-float-avg-tolerance | rewrite | INFO | top original:top:1 75403 blocks; needs the LLM | 26 |
+| 070-keyset-pagination-index | index | PASS | top original:top:3 4 blocks <= bound 4 | 12 |
 | 071-grouping-sets-refused | refused | PASS | refused with unsupported_construct | 1 |
 | 072-fetch-with-ties | index | PASS | top original:top:1 5 blocks <= bound 124 | 10 |
-| 073-right-join-using | index | FAIL | no fix selected (declined: unused 1), bound 257 | 14 |
-| 074-full-join-reconcile | rewrite | INFO | no fix selected (declined: unused 5); needs the LLM | 13 |
-| 075-natural-join-only | index | FAIL | stopped at statistics, rule inheritance_parent, step statistics | 3 |
-| 076-generate-series-ordinality | index | FAIL | no fix selected (no candidates), bound 162 | 17 |
-| 077-unnest-array-join | index | PASS | top original:top:1 13 blocks <= bound 15 | 11 |
-| 078-cross-join-subquery | index | FAIL | no fix selected (no candidates), bound 10 | 12 |
-| 079-ordered-set-aggregates | index | PASS | top original:top:1 21 blocks <= bound 43 | 12 |
-| 080-named-window-frame | index | PASS | top original:top:1 506 blocks <= bound 508 | 10 |
-| 081-boolean-tests | index | PASS | top original:top:1 4 blocks <= bound 39 | 11 |
+| 073-right-join-using | index | PASS | top original:top:2 251 blocks <= bound 257 | 13 |
+| 074-full-join-reconcile | rewrite | INFO | no fix selected (declined: unused 6); needs the LLM | 13 |
+| 075-natural-join-only | index | PASS | top original:top:1 411 blocks <= bound 411 | 9 |
+| 076-generate-series-ordinality | index | PASS | top original:top:1 64 blocks <= bound 162 | 18 |
+| 077-unnest-array-join | index | PASS | top original:top:1 13 blocks <= bound 15 | 12 |
+| 078-cross-join-subquery | index | PASS | top original:top:1 8 blocks <= bound 10 | 12 |
+| 079-ordered-set-aggregates | index | PASS | top original:top:1 24 blocks <= bound 43 | 12 |
+| 080-named-window-frame | index | PASS | top original:top:1 7 blocks <= bound 508 | 10 |
+| 081-boolean-tests | index | PASS | top original:top:1 4 blocks <= bound 39 | 12 |
 | 082-is-not-true-trap | trap | INFO | top original:top:1 39 blocks; needs the LLM | 11 |
 | 083-greatest-to-or | rewrite | INFO | no fix selected (no candidates); needs the LLM | 10 |
 | 084-not-distinct-from-to-equals | rewrite | INFO | no fix selected (no candidates); needs the LLM | 10 |
 | 085-is-distinct-from-trap | trap | INFO | no fix selected (no candidates); needs the LLM | 10 |
-| 086-between-forms-and-negations | index | FAIL | top original:top:1 1013 blocks > bound 1007 | 12 |
-| 087-all-to-min-trap | trap | INFO | no fix selected (no candidates); needs the LLM | 9 |
+| 086-between-forms-and-negations | index | PASS | top original:top:1 1007 blocks <= bound 1007 | 12 |
+| 087-all-to-min-trap | trap | INFO | no fix selected (existing: covered 2); needs the LLM | 10 |
 | 088-array-subscript-expression | index | LLM | no fix selected (no candidates), bound 603; the case's index comes from the LLM (5a-5) | 10 |
-| 089-array-subquery | index | FAIL | no fix selected (existing: covered 1), bound 22 | 16 |
-| 090-collate-c-prefix | index | FAIL | no fix selected (no candidates), bound 90 | 10 |
-| 091-substring-to-like | rewrite | FAIL | stopped at index-search, rule plan_gate_mismatch_likely_stale_statistics, step index-search | 7 |
+| 089-array-subquery | index | PASS | top original:top:1 14 blocks <= bound 22 | 17 |
+| 090-collate-c-prefix | index | PASS | top original:top:1 18 blocks <= bound 90 | 11 |
+| 091-substring-to-like | rewrite | INFO | no fix selected (no candidates); needs the LLM | 11 |
 | 092-at-time-zone-to-range | rewrite | INFO | no fix selected (no candidates); needs the LLM | 12 |
-| 093-clock-functions | index | FAIL | no fix selected (no candidates), bound 49 | 10 |
-| 094-named-and-variadic-arguments | index | FAIL | no fix selected (no candidates), bound 127 | 10 |
-| 095-offset-nulls-last | index | PASS | top original:top:1 6 blocks <= bound 6 | 11 |
-| 096-group-by-distinct-order-using | index | FAIL | top original:top:1 2511 blocks > bound 12 | 12 |
-| 097-intersect | index | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
-| 098-except-all-trap | trap | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
-| 099-values-join | index | FAIL | stopped at index-search, rule prepare_failed, step index-search, SQLSTATE 42883 | 6 |
-| 100-intersect-all-trap | trap | FAIL | stopped at index-search, rule internal_error, step index-search | 7 |
+| 093-clock-functions | index | PASS | top original:top:2 29 blocks <= bound 49 | 10 |
+| 094-named-and-variadic-arguments | index | PASS | top original:top:2 84 blocks <= bound 127 | 10 |
+| 095-offset-nulls-last | index | PASS | top original:top:1 4 blocks <= bound 6 | 11 |
+| 096-group-by-distinct-order-using | index | PASS | top original:top:2 6 blocks <= bound 12 | 11 |
+| 097-intersect | index | PASS | top original:top:2 118 blocks <= bound 118 | 13 |
+| 098-except-all-trap | trap | INFO | top original:top:3 2006 blocks; needs the LLM | 15 |
+| 099-values-join | index | PASS | top original:top:1 10 blocks <= bound 12 | 12 |
+| 100-intersect-all-trap | trap | INFO | no fix selected (existing: covered 2); needs the LLM | 12 |
 | 101-similar-to-refused | refused | PASS | refused with unsupported_construct | 1 |
 
-101 cases: FAIL 28, INFO 42, LLM 5, PASS 26.
+101 cases: FAIL 3, INFO 49, LLM 5, PASS 44.
 
 <!-- notes: kept by run.rb -->
 
