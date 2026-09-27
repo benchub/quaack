@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "../rewrite_entry"
 require_relative "../dedupe"
 require_relative "../generator_one"
 require_relative "../generator_two"
@@ -82,7 +83,7 @@ module Quaack
         # The search's entry: the original's behind the plan gate, or a
         # stored rewrite's (README step 8).
         def search_entry(store, connection, search)
-          return rewrite_entry(store, connection, store.read(search)["sql"]) unless search == "original"
+          return rewrite_entry(store, connection, RewriteEntry.run_sql(store.read(search))) unless search == "original"
 
           sql = store.read("anchored_query")
           PlanGate.check(store:, connection:, sql:)
@@ -90,7 +91,9 @@ module Quaack
         end
 
         # The search's query: anchored_query, or the rewrite's SQL.
-        def query(store, search) = search == "original" ? store.read("anchored_query") : store.read(search)["sql"]
+        def query(store, search)
+          search == "original" ? store.read("anchored_query") : RewriteEntry.run_sql(store.read(search))
+        end
 
         # Whether search names a search: original, or a stored rewrite_<n>.
         def search?(store, search)

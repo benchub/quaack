@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "../rewrite_entry"
 require_relative "../arena_runner"
 require_relative "../counterexamples"
 require_relative "../redaction"
@@ -53,7 +54,7 @@ module Quaack
 
         def queries(store, search)
           map = Redaction.placeholder_map(store)
-          [store.read("anchored_query"), store.read(search)["sql"]].map { Enclave::Counterexamples.bind(it, map) }
+          [store.read("anchored_query"), RewriteEntry.run_sql(store.read(search))].map { Enclave::Counterexamples.bind(it, map) }
         end
 
         def survived(store, number, survived)
