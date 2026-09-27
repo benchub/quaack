@@ -79,7 +79,9 @@ module Quaack
     #   hypothetical one, so such DDL fails there instead of here. A STABLE
     #   function has no side effects, so nothing unsafe runs.
     # - It trusts provolatile, so a function mislabeled STABLE or IMMUTABLE
-    #   isn't caught, the same as the rewrite check.
+    #   isn't caught, the same as the rewrite check. Attribute notation,
+    #   (orders.f), is checked like f(orders), and a cast to a domain
+    #   counts its CHECK constraints' functions (see VolatilityCheck).
     # - Whether the columns exist, and whether the index method and
     #   operator classes fit them. Postgres checks those when the index is
     #   made.

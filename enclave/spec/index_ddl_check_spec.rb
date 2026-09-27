@@ -283,6 +283,13 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
       end
     end
 
+    it "refuses attribute notation that calls a volatile function on the row" do
+      conn.exec("CREATE FUNCTION public.evil3(public.orders) RETURNS int LANGUAGE sql VOLATILE AS $$SELECT 1$$")
+
+      expect { check("CREATE INDEX ON public.orders ((orders.evil3))") }
+        .to rejected("volatile_function", "volatile_function: function public.evil3 is volatile")
+    end
+
     it "looks up an unqualified function in the plan's search path" do
       expect { check("CREATE INDEX ON public.orders ((bump(status)))", { "search_path" => "sales" }) }
         .to rejected("volatile_function", "volatile_function: function sales.bump is volatile")
