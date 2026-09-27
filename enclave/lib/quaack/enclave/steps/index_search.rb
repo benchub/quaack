@@ -203,6 +203,16 @@ module Quaack
             "set_aside" => set_aside }
         end
 
+        # Each set's plan: whether it used the candidate, its cost, and the
+        # plan redacted through 3g against that set's own literals, so each
+        # of them is its placeholder and any other literal is masked.
+        def plans(plans, maps)
+          plans.to_h do |set, plan|
+            [set, { "used" => plan.used, "total_cost" => plan.total_cost,
+                    "plan" => Redaction.plan(plan.raw_plan, maps.fetch(set)).explain }]
+          end
+        end
+
         # The candidate as the Dedupe holds it now, with the sources later
         # generators merged in.
         def result(result, proposals, maps)
