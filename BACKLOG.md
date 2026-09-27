@@ -1161,19 +1161,7 @@ These are minor findings from the review of 20260927-21:
 
 ### 20260927-23. Driver calls run teardown (20260922-65, part four). Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-24. Corpus replay loose ends.
-
-These are findings from the build and reviews of 20260922-65, part three:
-- Ask numbering shifts after a disproof. The counterexample loop stops at the first round that finds a mismatch, so later 10a asks get lower numbers than the prompt pack gave them, and their replies go to the wrong asks. Key replies by rewrite and round, not by a per-step count.
-- orm_join's wrong rewrite (`u.name IS NOT NULL`) can't be disproved. `users.id` is `GENERATED ALWAYS`, and 10a refuses `OVERRIDING`. Either let 10a inserts set identity keys, or change orm_join's planted bug in the generator and the corpus README.
-  - **Decided (2026-09-27):** Let 10a inserts use `OVERRIDING SYSTEM VALUE`, so they can set identity keys. They only load into the throwaway arena, and step 9 fixtures already use it. Update README step 10 and the insert check.
-- The drift check compares only the system prompt, and it reads `prompt.md` only from the corpus, not the planted root.
-- `PipelineReplay.wrong` finds `"sql"` strings with a regex, not a JSON parse. Assert that `wrong` isn't empty wherever a variant has a wrong rewrite.
-
-- **Depends on:** 20260922-65 part three.
-- **Came from:** Build and reviews of 20260922-65, part three.
-- **README:** All.
-- **Status:** todo
+### 20260927-24. Corpus replay loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-25. Teardown loose ends.
 
@@ -1192,5 +1180,16 @@ Multi-turn prompts in `spec/fixtures/llm_corpus` (5a-5-2, 5a-6, later 10a rounds
 
 - **Depends on:** 20260922-65.
 - **Came from:** User, 2026-09-27, while collecting corpus replies.
+- **README:** none.
+- **Status:** todo
+
+### 20260927-27. Replay wrong-rewrite spec gaps.
+
+These are minor findings from the review of 20260927-24:
+- The per-query spec "finds the wrong rewrite whenever the 6a reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
+- `PipelineReplay.wrong` matching the whole rewrite hash (`to_s`) instead of its `"sql"` field survives mutation.
+
+- **Depends on:** 20260927-24.
+- **Came from:** Review of 20260927-24.
 - **README:** none.
 - **Status:** todo
