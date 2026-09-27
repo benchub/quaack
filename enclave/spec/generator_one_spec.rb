@@ -540,7 +540,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["customers", %w[region], %w[id]]])
     end
 
-    it "gives the tables inside a CTE their own candidates, before the query, with a set operation there read per branch" do
+    it "gives the tables inside a CTE their own candidates, before the query, a set operation read per branch" do
       sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1 " \
             "UNION SELECT id FROM public.orders WHERE status = 2) " \
             "SELECT 1 FROM public.orders o WHERE o.status = 1 AND o.customer_id IN (SELECT id FROM c)"
@@ -1016,11 +1016,10 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
             "FROM public.orders o WHERE o.customer_id = c.id ORDER BY o.created_at DESC, o.id DESC LIMIT 3) r " \
             "WHERE c.tier = 'gold' ORDER BY c.id"
 
-      expect(generate(sql, stats).select { |c| c.table == orders }).to eq([
-        btree(orders, %w[customer_id], %w[id created_at]),
-        btree(orders, [asc("customer_id"), desc("created_at")], %w[id]),
-        btree(orders, [asc("customer_id"), desc("created_at"), desc("id")])
-      ])
+      expected = [btree(orders, %w[customer_id], %w[id created_at]),
+                  btree(orders, [asc("customer_id"), desc("created_at")], %w[id]),
+                  btree(orders, [asc("customer_id"), desc("created_at"), desc("id")])]
+      expect(generate(sql, stats).select { |c| c.table == orders }).to eq(expected)
     end
 
     it "keys a subquery in the select list on the correlated column, then its own ORDER BY" do

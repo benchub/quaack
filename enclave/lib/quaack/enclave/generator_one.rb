@@ -183,13 +183,15 @@ module Quaack
         # SELECT itself followed by the SELECTs nested in it (a subquery
         # in FROM or in an expression), and theirs in turn.
         def selects(select)
-          ctes = select.with_clause&.ctes.to_a.flat_map { |cte| selects(cte.common_table_expr.ctequery.select_stmt) }
-          body = if select.op == :SETOP_NONE
-                   [select] + nested(select, top: true).flat_map { |inner| selects(inner) }
-                 else
-                   selects(select.larg) + selects(select.rarg)
-                 end
-          ctes + body
+          cte_selects(select) + if select.op == :SETOP_NONE
+                                  [select] + nested(select, top: true).flat_map { |inner| selects(inner) }
+                                else
+                                  selects(select.larg) + selects(select.rarg)
+                                end
+        end
+
+        def cte_selects(select)
+          select.with_clause&.ctes.to_a.flat_map { |cte| selects(cte.common_table_expr.ctequery.select_stmt) }
         end
 
         def nested(node, top: false)
@@ -352,11 +354,8 @@ module Quaack
         end
 
         def item_name(item)
-          if item.range_var then item.range_var.alias&.aliasname || item.range_var.relname
-          elsif item.range_subselect then item.range_subselect.alias&.aliasname
-          elsif item.range_function then item.range_function.alias&.aliasname
-          elsif item.join_expr then item.join_expr.alias&.aliasname
-          end
+          node = item.range_var || item.range_subselect || item.range_function || item.join_expr
+          node.alias&.aliasname || (node.relname if item.range_var)
         end
 
         def read_join(join)
@@ -435,11 +434,60 @@ module Quaack
         def [](table) = @lists[table]
       end
 
+      # How Predicates tells a column from a value. It needs @scope, and
+      # @collations for the COLLATEs it sees.
+      module Values
+        private
+
+        # The ColumnRef of a bare column compared with a value, on either
+        # side, or nil. A value is a constant, or an expression that names
+        # no column of a table in this FROM clause: now(), $1 - interval,
+        # an outer query's column, or a column of a subquery or function
+        # in FROM. It's the same for each row of the table, so an index
+        # can seek to it.
+        def against_value(left, right)
+          if bare(left) && value?(right) then bare(left)
+          elsif bare(right) && value?(left) then bare(right)
+          end
+        end
+
+        # The ColumnRef of a column, bare or under COLLATE. A COLLATE's
+        # collation is recorded for the column.
+        def bare(node)
+          return node.column_ref if node.column_ref
+
+          collate = node.collate_clause
+          ref = collate&.arg&.column_ref
+          record_collation(ref, collate) if ref
+          ref
+        end
+
+        def record_collation(ref, collate)
+          table, name = @scope.column(ref)
+          @collations[[table.object_id, name]] ||= collate.collname.map { |n| n.string.sval } if table
+        end
+
+        def value?(node)
+          return false if null_literal?(node)
+          return true if constant?(node)
+
+          ColumnRefs.in(node).none? { |ref| ref.fields.any?(&:a_star) || @scope.column(ref) }
+        end
+
+        # A NULL literal matches no row under = or a range operator, so it
+        # doesn't count.
+        def constant?(node) = Keyset.constant?(node) && !null_literal?(node)
+
+        def null_literal?(node) = node.type_cast ? null_literal?(node.type_cast.arg) : node.a_const&.isnull == true
+      end
+
       # Reads the WHERE and JOIN ... ON conjuncts into equality and range
       # columns. It records how each equality column is held: :one (= const,
       # or IN with one item), :null (IS NULL), :many (IN, = ANY), or :join
       # (a join condition or USING).
       class Predicates
+        include Values
+
         RANGE_OPERATORS = %w[< <= > >=].freeze
 
         attr_reader :equality, :range, :like, :keysets
@@ -546,42 +594,6 @@ module Quaack
           outer = pairs.one? && @scope.outer?(found[0] ? right : left)
           pairs.each { |pair| add_equality_pair(pair, outer ? :one : :join) }
         end
-
-        # The ColumnRef of a bare column compared with a value, on either
-        # side, or nil. A value is a constant, or an expression that names
-        # no column of a table in this FROM clause: now(), $1 - interval,
-        # an outer query's column, or a column of a subquery or function
-        # in FROM. It's the same for each row of the table, so an index
-        # can seek to it.
-        def against_value(left, right)
-          if bare(left) && value?(right) then bare(left)
-          elsif bare(right) && value?(left) then bare(right)
-          end
-        end
-
-        # The ColumnRef of a column, bare or under COLLATE. A COLLATE's
-        # collation is recorded for the column.
-        def bare(node)
-          return node.column_ref if node.column_ref
-
-          ref = node.collate_clause&.arg&.column_ref
-          pair = ref && @scope.column(ref)
-          @collations[[pair[0].object_id, pair[1]]] ||= node.collate_clause.collname.map { |n| n.string.sval } if pair
-          ref
-        end
-
-        def value?(node)
-          return false if null_literal?(node)
-          return true if constant?(node)
-
-          ColumnRefs.in(node).none? { |ref| ref.fields.any?(&:a_star) || @scope.column(ref) }
-        end
-
-        # A NULL literal matches no row under = or a range operator, so it
-        # doesn't count.
-        def constant?(node) = Keyset.constant?(node) && !null_literal?(node)
-
-        def null_literal?(node) = node.type_cast ? null_literal?(node.type_cast.arg) : node.a_const&.isnull == true
 
         def array_constant?(node)
           constant?(node) || node.a_array_expr&.elements&.all? { |e| constant?(e) }
@@ -762,9 +774,13 @@ module Quaack
         def item(sort)
           direction = DIRECTIONS[sort.sortby_dir]
           collate = sort.node.collate_clause
-          ref = collate ? collate.arg.column_ref : column_ref(sort.node)
-          pair = direction && ref && @scope.column_or_using(ref)
+          pair = direction && sort_column(sort.node, collate)
           pair && [*pair, direction, NULLS.fetch(sort.sortby_nulls), collate&.collname&.map { |n| n.string.sval }]
+        end
+
+        def sort_column(node, collate)
+          ref = collate ? collate.arg.column_ref : column_ref(node)
+          ref && @scope.column_or_using(ref)
         end
 
         def column_ref(node)
@@ -894,14 +910,18 @@ module Quaack
         end
 
         def with_group(range_tail, order_tail, range, equality_names)
-          tails = if order_tail.nil? || order_tail.empty? then [range_tail]
-                  elsif range.empty? || order_tail.map(&:name).first(range.size) == range then [order_tail]
-                  else [range_tail, order_tail]
-                  end
+          tails = range_and_order(range_tail, order_tail, range)
           group = group_columns(equality_names)
           return tails if group.empty?
 
           tails == [[]] ? [group] : tails + [group]
+        end
+
+        def range_and_order(range_tail, order_tail, range)
+          return [range_tail] if order_tail.nil? || order_tail.empty?
+          return [order_tail] if range.empty? || order_tail.map(&:name).first(range.size) == range
+
+          [range_tail, order_tail]
         end
 
         # The GROUP BY columns that aren't equality columns, so a scan on
@@ -960,8 +980,8 @@ module Quaack
         end
       end
 
-      private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Predicates, :Uses, :ColumnRefs, :OrderBy,
-                       :GroupBy, :OrderTail, :TableCandidates
+      private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Values, :Predicates, :Uses, :ColumnRefs,
+                       :OrderBy, :GroupBy, :OrderTail, :TableCandidates
     end
   end
 end
