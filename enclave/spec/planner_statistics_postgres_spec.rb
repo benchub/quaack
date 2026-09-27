@@ -107,6 +107,19 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(stored_table("orders")["text_columns"]).to eq(["status"])
       expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
     end
+
+    # For 3h's clock literals: the date and timestamp columns, by their
+    # type, a domain's by its base type.
+    it "maps the date and timestamp columns to their types" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN day AS date;
+        CREATE TABLE times (a date, b timestamp(3), c timestamptz, d day, e time, f text, g date[]);
+      SQL
+      run([table("public", "times")])
+
+      expect(stored_table("times")["clock_columns"])
+        .to eq("a" => "date", "b" => "timestamp", "c" => "timestamptz", "d" => "date")
+    end
   end
 
   describe "the stored indexes" do

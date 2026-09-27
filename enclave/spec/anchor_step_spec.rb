@@ -9,10 +9,17 @@ RSpec.describe "quaacks anchor" do
   let(:quaacks) { LeakCheck::Quaacks.new }
   let(:query) { "SELECT o.id, now() FROM public.orders o WHERE o.created_at > CURRENT_DATE - $1" }
   let(:search_path) { '"$user", public' }
+  let(:placeholder_map) { { "$1" => { "value" => "7", "type" => "integer" } } }
+  let(:statistics) do
+    { "tables" => [{ "schema" => "public", "name" => "orders", "column_names" => %w[id created_at],
+                     "clock_columns" => { "created_at" => "timestamptz" } }] }
+  end
   let(:store) do
     Quaack::Enclave::Store.create(base: quaacks.store_base).tap do |store|
       store.write("redacted_query", query)
       store.write("plan", [{ "Plan" => {}, "Settings" => { "search_path" => search_path } }])
+      store.write("placeholder_map", placeholder_map)
+      store.write("statistics", statistics)
     end
   end
 
@@ -35,6 +42,25 @@ RSpec.describe "quaacks anchor" do
                          { "original" => "current_date", "anchored" => "quaack.clock_anchor()::pg_catalog.date" }],
       "added_names" => [{ "slot" => 1, "name" => "now" }]
     )
+  end
+
+  context "when the query compares a column with a clock-reading literal" do
+    let(:query) { "SELECT o.id FROM public.orders o WHERE o.created_at >= $1 AND o.id = $2" }
+    let(:placeholder_map) do
+      { "$1" => { "value" => "yesterday", "type" => "unknown" }, "$2" => { "value" => "7", "type" => "integer" } }
+    end
+
+    it "anchors it from the placeholder map and the column's type, recording only the placeholder" do
+      expect(anchor.status.exitstatus).to eq(0)
+      expect(stored.read("anchored_query")).to eq(
+        "SELECT o.id FROM public.orders o WHERE o.created_at >= " \
+        "(quaack.clock_anchor()::pg_catalog.date - 1)::timestamp with time zone AND o.id = $2"
+      )
+      expect(stored.read("clock_replacements")["replacements"]).to eq(
+        [{ "original" => "$1", "anchored" => "(quaack.clock_anchor()::pg_catalog.date - 1)::timestamp with time zone" }]
+      )
+      expect(stored.read("clock_replacements").to_s).not_to include("yesterday")
+    end
   end
 
   context "when the plan's search_path puts a schema before pg_catalog" do

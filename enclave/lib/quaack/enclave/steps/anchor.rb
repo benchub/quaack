@@ -8,16 +8,18 @@ module Quaack
       # `quaacks anchor --run <run ID>` (README 3h): anchors the clock in the
       # run's redacted query (see ClockAnchoring).
       #
-      # It runs after `quaacks redact`. It reads redacted_query and the
-      # search_path in plan's Settings, and doesn't touch production. It
+      # It runs after `quaacks redact`. It reads redacted_query, the
+      # search_path in plan's Settings, placeholder_map for the clock-reading
+      # literals, and statistics for the column types they're compared with
+      # (see ClockLiterals). It doesn't touch production. It
       # writes two entries: anchored_query, the SQL the run server runs
       # (PlanGate.check and 5a-4 take it); and clock_replacements,
       # {"replacements" => [{"original", "anchored"}], "added_names" =>
       # [{"slot", "name"}]}, which ClockAnchoring.restore takes to put the
       # original functions back for the step 15 report. Both are shape: the
       # literals are already placeholders, and the replacements are
-      # function names. The literal sets and placeholder map hold values,
-      # not clock functions, so nothing there changes. Everything is
+      # function names, or the placeholder a clock literal was. The words
+      # themselves are never written. Everything is
       # computed before the first write, so a refusal stores nothing.
       #
       # It sends nothing itself. Its only line is DONE.
@@ -25,12 +27,17 @@ module Quaack
         module_function
 
         def call(store:, **)
-          result = ClockAnchoring.anchor(store.read("redacted_query"), store.read("plan")[0]["Settings"])
+          result = anchored(store)
           replacements = { "replacements" => result.replacements.map { it.to_h.transform_keys(&:to_s) },
                            "added_names" => result.added_names.map { it.to_h.transform_keys(&:to_s) } }
           store.write("anchored_query", result.sql)
           store.write("clock_replacements", replacements)
           []
+        end
+
+        def anchored(store)
+          ClockAnchoring.anchor(store.read("redacted_query"), store.read("plan")[0]["Settings"],
+                                placeholder_map: store.read("placeholder_map"), statistics: store.read("statistics"))
         end
       end
     end

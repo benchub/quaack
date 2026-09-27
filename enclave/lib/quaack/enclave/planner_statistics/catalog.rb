@@ -21,8 +21,17 @@ module Quaack
         # A column is text-like when its type is in the string category:
         # text, varchar, char, name, citext, and any domain over one, since
         # a domain takes its base type's category.
+        #
+        # A column is a clock column when its type, or a domain's base type,
+        # is date, timestamp, or timestamptz: 3h anchors a clock literal
+        # compared with one (see ClockLiterals).
         COLUMNS_SQL = <<~SQL
-          SELECT a.attname, t.typcategory = 'S'
+          SELECT a.attname, t.typcategory = 'S',
+                 CASE COALESCE(NULLIF(t.typbasetype, 0), t.oid)
+                   WHEN 'pg_catalog.date'::pg_catalog.regtype THEN 'date'
+                   WHEN 'pg_catalog.timestamp'::pg_catalog.regtype THEN 'timestamp'
+                   WHEN 'pg_catalog.timestamptz'::pg_catalog.regtype THEN 'timestamptz'
+                 END
           FROM pg_catalog.pg_attribute a
           JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
           WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
@@ -81,6 +90,7 @@ module Quaack
           columns = connection.exec_params(COLUMNS_SQL, [oid]).values
           { "column_names" => columns.map(&:first),
             "text_columns" => columns.filter_map { |name, text| name if text == "t" },
+            "clock_columns" => columns.filter_map { |name, _, clock| [name, clock] if clock }.to_h,
             "columns" => pg_stats(connection, table.schema, table.name),
             "indexes" => indexes(connection, table.schema, oid),
             "extended_statistics" => extended(connection, oid) }

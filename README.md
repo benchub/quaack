@@ -235,7 +235,7 @@ Pull planner statistics for the query's tables and their indexes, including exte
 
 These statistics include real values in `most_common_vals` and `histogram_bounds`. That makes them value-class data under the trust boundary, so they stay in the governed store.
 
-Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic.
+Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic, and which have a date, timestamp, or timestamptz type, for 3h's clock literals.
 
 The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not 3b's FK parents. It connects to the production server the way step 2 does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and 3f read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
 
@@ -272,6 +272,7 @@ When a set can't get a value, the placeholder keeps its slow literal there, and 
 - A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
 - A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
 - A placeholder that 3g shares between expressions, since it can feed more than one place.
+- A clock-reading literal, such as `'today'`, compared with a date or timestamp column, since 3h anchors it.
 
 The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
 
@@ -331,11 +332,15 @@ In the AST, replace each of these with a schema-qualified call to `quaack.clock_
 - `localtimestamp`
 - `localtime`
 
-Leave all other stable functions alone. The step 15 report shows the query with the original functions put back.
+Leave all other stable functions alone.
 
-The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry and the `search_path` in its `plan` entry's settings, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The literal sets and placeholder map hold values, not clock functions, so they don't change. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
+The string literals `'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` read the clock too, where Postgres reads them as a date or timestamp, so they're anchored the same way. Case and surrounding whitespace don't matter, as in Postgres. By 3h each literal is a 3g placeholder, so the word comes from the placeholder map, and the placeholder is replaced when it's cast to `date`, `timestamp`, or `timestamptz` (such as `'today'::date` or `timestamp 'now'`, which 3g keeps as `$1::date`), or compared with a column whose type, from 3c, is one of those. `'now'` is `quaack.clock_anchor()`, `'today'` is its date, and `'yesterday'` and `'tomorrow'` are that date minus or plus one day, each cast to the target type, so `'today'` as a timestamp is midnight in the session's time zone. `'now'` cast to `time` or `timetz` is anchored too. A real date, such as `'2024-01-01'`, or a longer string such as `'today 12:00'`, is left alone.
 
-Unsupported in v1: a clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
+The step 15 report shows the query with the original functions, and the placeholders the clock literals were, put back.
+
+The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry, the `search_path` in its `plan` entry's settings, and its `placeholder_map` and `statistics` entries for the clock literals, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The placeholder map doesn't change: a clock literal's placeholder stays in it, and a rewrite that still uses it binds the word. Its replacement records only the placeholder. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
+
+Unsupported in v1: a clock literal typed any other way, such as an argument to a function that takes a date, or compared with an expression on a column or with a column of a domain over a domain, is left alone and reads the clock. A clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
 
 ## 4. Run server.
 

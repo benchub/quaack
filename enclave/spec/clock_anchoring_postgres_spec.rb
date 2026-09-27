@@ -2,6 +2,7 @@
 
 require "json"
 require "quaack/enclave/clock_anchoring"
+require "quaack/enclave/redaction"
 
 # Each replacement has to keep the original's type, precision, and value,
 # or the anchored query means something else. These run both on real
@@ -197,6 +198,65 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
         expect(anchored.column_values(1)).to eq(["2000"])
         expect(anchored.values).to eq(original.values)
       end
+    end
+  end
+
+  # 20260926-48: 'now', 'today', 'yesterday', and 'tomorrow', after 3g has
+  # made them placeholders, must anchor to what Postgres reads them as.
+  describe "the clock-reading literals" do
+    before do
+      stand_in("SELECT pg_catalog.now()")
+      conn.exec("SET TimeZone = 'Pacific/Chatham'")
+    end
+
+    let(:statistics) do
+      { "tables" => [{ "schema" => "public", "name" => "orders",
+                       "column_names" => %w[id customer_id status total_cents created_at],
+                       "clock_columns" => { "created_at" => "timestamptz" } }] }
+    end
+
+    # The original's rows and the anchored query's, bound with the slow
+    # literals, in one transaction so now() and the stand-in agree.
+    def both(sql)
+      anchored, bound = anchor_and_bind(sql)
+      conn.exec("BEGIN")
+      bound.prepare(conn, "quaack_q")
+      [anchored, conn.exec(sql).values, bound.execute(conn, "quaack_q").values]
+    ensure
+      conn.exec("COMMIT")
+      conn.exec("DEALLOCATE ALL")
+    end
+
+    def anchor_and_bind(sql)
+      redacted = Quaack::Enclave::Redaction.query(PgQuery.parse(sql))
+      anchored = described_class.anchor(redacted.sql, nil, placeholder_map: redacted.placeholder_map, statistics:)
+      [anchored, Quaack::Enclave::Redaction.binding(anchored.sql, redacted.placeholder_map)]
+    end
+
+    it "gives each word's value as a date, timestamp, and timestamptz" do
+      casts = %w[now today yesterday tomorrow].product(%w[date timestamp timestamptz timestamp(0)])
+                                              .map { |word, type| "'#{word}'::#{type}" } +
+              ["' Today '::date", "timestamp 'TOMORROW'", "'now'::time", "'now'::timetz"]
+      anchored, original, bound = both("SELECT #{casts.join(", ")}")
+      expect(anchored.replacements.length).to eq(casts.length)
+      expect(bound).to eq(original)
+    end
+
+    it "reads the anchor, not the clock" do
+      stand_in("SELECT '2026-03-17 03:04:05+00'::timestamptz")
+      conn.exec("SET TimeZone = 'America/Los_Angeles'")
+      _, _, bound = both("SELECT 'yesterday'::date, 'today'::timestamp, 'tomorrow'::timestamptz, 'now'::timestamptz")
+      expect(bound).to eq([["2026-03-15", "2026-03-16 00:00:00", "2026-03-17 00:00:00-07", "2026-03-16 20:04:05-07"]])
+    end
+
+    it "anchors a word compared with a timestamptz column" do
+      conn.exec("INSERT INTO orders (customer_id, status, total_cents, created_at) " \
+                "SELECT 1, 'anchor', 1, now() - interval '1 hour'")
+      sql = "SELECT count(*) FROM public.orders o WHERE o.created_at >= 'yesterday' AND o.created_at < 'tomorrow' " \
+            "AND o.status = 'anchor'"
+      anchored, original, bound = both(sql)
+      expect(anchored.replacements.map(&:original)).to eq(%w[$1 $2])
+      expect([bound, original]).to eq([[["1"]], [["1"]]])
     end
   end
 

@@ -3,6 +3,8 @@
 require "pg_query"
 require_relative "anchored_names"
 require_relative "clock_functions"
+require_relative "clock_literals"
+require_relative "literal_set"
 require_relative "deparse"
 require_relative "node_rewrite"
 require_relative "relation_qualifier"
@@ -40,6 +42,12 @@ module Quaack
     #   CURRENT_DATE          -> quaack.clock_anchor()::pg_catalog.date
     #   LOCALTIMESTAMP[(p)]   -> quaack.clock_anchor()::pg_catalog.timestamp[(p)]
     #   LOCALTIME[(p)]        -> quaack.clock_anchor()::pg_catalog.time[(p)]
+    #
+    # Clock-reading literals ('now', 'today', 'yesterday', 'tomorrow') are
+    # anchored too, when placeholder_map, 3g's map, holds them and they're
+    # read as a date or timestamp; statistics, 3c's entry, gives the column
+    # types for that. See ClockLiterals. Their replacements record the
+    # placeholder, as $1 or $1::date, so they're shape as well.
     #
     # Nothing else changes: not CURRENT_TIME, not clock_timestamp() or
     # timeofday(), which 3d refuses as volatile, and no other function.
@@ -105,17 +113,22 @@ module Quaack
 
       module_function
 
-      def anchor(sql, settings)
+      def anchor(sql, settings, placeholder_map: {}, statistics: nil)
         tree = parse(sql).tap { |result| SupportedSql.check!(result) }.tree
+        found = clock_literals(sql, placeholder_map, statistics)
         names = AnchoredNames.implicit_names(tree)
-        originals = anchor_tree(tree)
+        originals = anchor_tree(tree, found)
         check_search_path!(settings) if originals.any? { |node| unqualified_call?(node) }
-        result(tree, originals, AnchoredNames.keep(tree, names))
+        result(tree, originals.map { |node| record(node, found) }, AnchoredNames.keep(tree, names))
       end
 
-      def result(tree, originals, added_names)
+      def clock_literals(sql, placeholder_map, statistics)
+        ClockLiterals.find(placeholder_map, statistics) { LiteralSet.feeds(parse(sql), it) }
+      end
+
+      def result(tree, replacements, added_names)
         anchored = Deparse.faithful_parse(tree)
-        Result.new(sql: anchored.query, parse: anchored, replacements: originals.map { |node| record(node) },
+        Result.new(sql: anchored.query, parse: anchored, replacements:,
                    added_names:)
       end
 
@@ -142,20 +155,20 @@ module Quaack
       end
 
       # Anchors the tree in place, and returns the nodes it replaced.
-      def anchor_tree(tree)
+      def anchor_tree(tree, found)
         originals = []
-        NodeRewrite.each(tree) { |node| anchored_node(node)&.tap { originals << node } }
+        NodeRewrite.each(tree) { |node| anchored_node(node, found)&.tap { originals << node } }
         originals
       end
 
       # The node that replaces node, or nil when it isn't replaced.
-      def anchored_node(node)
+      def anchored_node(node, found)
         raise Error.new("clock_anchor_in_query", "the query already calls #{ANCHOR}") if anchor_call?(node)
 
         refuse_database_qualified!(node)
 
         sql = ClockFunctions.anchored_sql(node)
-        sql && expression(sql)
+        sql ? expression(sql) : ClockLiterals.anchored_node(node, found)
       end
 
       # db.pg_catalog.now() reads the clock when db is the current database.
@@ -169,15 +182,16 @@ module Quaack
         raise Error.new("database_qualified_function", "a clock function named with its database isn't supported")
       end
 
-      def record(node)
+      def record(node, found)
         Replacement.new(original: Deparse.expression(node),
-                        anchored: Deparse.expression(anchored_node(node)))
+                        anchored: Deparse.expression(anchored_node(node, found)))
       end
 
       # The original that goes back in node's place, or nil when node
-      # isn't one anchor made. Only an anchor call, or a cast of one, can be.
+      # isn't one anchor made. Only an anchor call, or a cast (of one, or
+      # for a clock literal, of an expression over one), can be.
       def restored_node(node, pending)
-        return unless anchor_call?(node) || (node.type_cast && anchor_call?(node.type_cast.arg))
+        return unless anchor_call?(node) || node.type_cast
         return expression(pending.shift.last) if pending.any? && comparable(node) == pending.first.first
 
         mismatch!("the SQL's clock anchors don't match the replacements") if anchor_call?(node)

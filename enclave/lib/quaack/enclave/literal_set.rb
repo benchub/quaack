@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "clock_literals"
 require_relative "pg_array"
 require_relative "planner_statistics"
 require_relative "predicate_atoms"
@@ -63,6 +64,8 @@ module Quaack
     #   statistics don't have, such as the top MCV of a unique column, or
     #   an IN element past the end of the MCV list.
     # - type_mismatch: the value doesn't read as the placeholder's type.
+    # - clock_literal: a clock-reading word, such as 'today', compared with
+    #   a date or timestamp column, which 3h anchors (see ClockLiterals).
     #
     # Types: a picked value is pg_stats's text for it, and keeps the
     # placeholder's declared type, so Binding declares it as it declares
@@ -108,11 +111,22 @@ module Quaack
       def run(store:, sql:)
         map = Redaction.placeholder_map(store)
         Redaction.binding(sql, map)
-        tables = Tables.new(store.read(PlannerStatistics::ENTRY))
-        feeds = Feeds.new(PgQuery.parse(sql), tables.column_names).feeds
-        result = Picker.new(map, feeds, tables).result
+        statistics = store.read(PlannerStatistics::ENTRY)
+        tables = Tables.new(statistics)
+        result = Picker.new(map, feeds_for(PgQuery.parse(sql), tables, map, statistics), tables).result
         store.write(ENTRY, result.sets.merge("fallbacks" => result.fallbacks))
         result
+      end
+
+      # "$n" => Feed, or a Symbol for why it feeds no column predicate,
+      # for each placeholder in parse. ClockLiterals takes it too.
+      def feeds(parse, column_names) = Feeds.new(parse, column_names).feeds
+
+      # The feeds, with each clock literal 3h anchors kept slow.
+      def feeds_for(parse, tables, map, statistics)
+        feeds = feeds(parse, tables.column_names)
+        clock = ClockLiterals.find(map, statistics) { feeds }.types.keys
+        feeds.merge(clock.to_h { ["$#{it}", :clock_literal] })
       end
 
       def load(store)
