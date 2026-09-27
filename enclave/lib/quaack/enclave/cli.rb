@@ -2,6 +2,7 @@
 
 require_relative "egress"
 require_relative "error_filter"
+require_relative "hangup"
 require_relative "store"
 require_relative "cli/refused"
 require_relative "cli/step"
@@ -36,8 +37,9 @@ module Quaack
     #
     # Exit statuses: 0 on success; 64 (EX_USAGE) when the CLI refuses the
     # call (see Refused); 70 (EX_SOFTWARE) when a step fails, including
-    # when it calls exit or abort (see call_step); and death by
-    # the signal for a signal, after its error line (see ErrorFilter.guard).
+    # when it calls exit or abort (see call_step); and death by the signal
+    # for a signal, after its error line (see ErrorFilter.guard). When the
+    # driver goes away mid-step, that's SIGHUP (see Hangup).
     class CLI
       # STEPS, each subcommand and its step, is in cli/steps.rb.
 
@@ -66,7 +68,8 @@ module Quaack
       # alone, and runs argv.
       def self.main(argv, steps: STEPS)
         ErrorFilter.silence_stderr!
-        new(steps:, stdin: $stdin, out: claim_stdout!).run(argv)
+        out = claim_stdout!
+        Hangup.during(out) { new(steps:, stdin: $stdin, out:).run(argv) }
       end
 
       # Points STDOUT, file descriptor 1, at the null device for the rest of
