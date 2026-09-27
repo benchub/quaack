@@ -465,6 +465,7 @@ Findings from the reviews of 20260922-13:
 - **Depends on:** 20260922-13.
 - **Came from:** Both reviews of 20260922-13.
 - **README:** Step 1.
+- **Landed (2026-09-26):** the `FUTURE_SLACK` boundary test, the undeclared-option check in `CLI::Step`, the README step 1 text, and the NOFOLLOW doc. Still open: an orphan-run sweeper and the signal windows (see 20260922-66), and checking the query against the plan.
 - **Status:** todo
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
@@ -490,6 +491,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Depends on:** 20260922-47.
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
 - **README:** 9d.
+- **Landed (2026-09-26):** the range-collation check and the README tiebreaker text. **Needs a decision:** an exact check for ties at a cut, and comparing intervals by value.
 - **Status:** todo
 
 ### 20260924-8. Burndown loose ends.
@@ -505,6 +507,7 @@ Findings from the second review of 20260922-61:
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
 - **README:** 15b.
+- **Landed (2026-09-26):** mixed keys return false, and counts are capped at 10**12. **Needs a decision:** refusing misuse such as a double `record_dedupe` or a stale `since`, deriving `since` from the stored burndown, and tying `record_single_candidate_test` to the Dedupe's proposals. Also, 5a-4's new `unrenderable` refusal is counted as `hypopg_refused`.
 - **Status:** todo
 
 ### 20260924-9. Load-order loose ends.
@@ -520,6 +523,7 @@ Findings from both reviews of 20260924-5:
 - **Depends on:** 20260924-5.
 - **Came from:** Both reviews of 20260924-5.
 - **README:** 9d.
+- **Landed (2026-09-26):** the reverse-only query_failed test and the README gaps text. **Needs a decision:** a third load order, and keeping self-referencing FK tables in forward order.
 - **Status:** todo
 
 ### 20260924-10. 5a-7 loose ends.
@@ -673,6 +677,7 @@ Minor findings from the first review of 20260922-12:
 - **Depends on:** 20260922-12.
 - **Came from:** The first review of 20260922-12.
 - **README:** What goes into the enclave.
+- **Landed (2026-09-26):** the variadic test and README notes on unchecked coercions. **Needs a decision:** fix the arena TimeZone, or refuse special date inputs, instead of just documenting them.
 - **Status:** todo
 
 ### 20260925-3. Plan gate loose ends.
@@ -724,18 +729,10 @@ Minor findings from the first review of 20260925-8:
 - **Depends on:** 20260925-8.
 - **Came from:** The first review of 20260925-8.
 - **README:** Step 1, 3a.
+- **Landed (2026-09-26):** the qualify step case and the `$user` README note. **Needs a decision:** add the `Production.read_only` wrapper to qualify without a failing test first, since no test can observe it. Still open: refusing a `$user` entry that matches another schema.
 - **Status:** todo
 
-### 20260925-19. Schema-dump loose ends.
-
-Minor findings from the first review of 20260925-9:
-- **A failure after the writes.** The connection stays idle in transaction through both pg_dump runs. If production's `idle_in_transaction_session_timeout` ends the session, the ROLLBACK in `Inventory::Production.read_only` raises `production_read_failed` after `schema_dump` and `schema_subset` are already stored. Reproduce it with `ALTER ROLE ... SET idle_in_transaction_session_timeout = '1s'` and a fake pg_dump that sleeps 2 seconds. Fix: do the catalog reads, commit, then run pg_dump and write; or delete both entries on a later error.
-- **The transaction test only proves that some transaction is open, not that it's read-only.** Note this, or find a way to check `transaction_read_only`.
-
-- **Depends on:** 20260925-9.
-- **Came from:** The first review of 20260925-9.
-- **README:** 3b.
-- **Status:** todo
+### 20260925-19. Schema-dump loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-20. Statistics step: test the read failure. Done, see BACKLOG-COMPLETE.md.
 
@@ -743,15 +740,7 @@ Minor findings from the first review of 20260925-9:
 
 ### 20260925-22. Name the missing input when a step's store entry is absent. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-23. Anchor step loose ends.
-
-- **`clock_replacements` can't go straight back into `restore`.** It's stored as string-keyed hashes, but `ClockAnchoring.restore` calls `.anchored` and `.original` on objects. Add a loader (`ClockAnchoring.load_replacements(store)` or similar) that rebuilds them, with a test that round-trips the stored form through `restore`. Step 15 needs this.
-- **The step spec doesn't cover `now() - interval $n`.** Add a case.
-
-- **Depends on:** 20260925-15.
-- **Came from:** The first review of 20260925-15.
-- **README:** 3h.
-- **Status:** todo
+### 20260925-23. Anchor step loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-24. Index-search loose ends.
 

@@ -2339,3 +2339,24 @@ Findings from both reviews of 20260922-8:
 - **Came from:** Both reviews of 20260922-8.
 - **README:** Trust boundary.
 - **Status:** done
+
+### 20260925-19. Schema-dump loose ends.
+
+Minor findings from the first review of 20260925-9:
+- **A failure after the writes.** The connection stays idle in transaction through both pg_dump runs. If production's `idle_in_transaction_session_timeout` ends the session, the ROLLBACK in `Inventory::Production.read_only` raises `production_read_failed` after `schema_dump` and `schema_subset` are already stored. Reproduce it with `ALTER ROLE ... SET idle_in_transaction_session_timeout = '1s'` and a fake pg_dump that sleeps 2 seconds. Fix: do the catalog reads, commit, then run pg_dump and write; or delete both entries on a later error.
+- **The transaction test only proves that some transaction is open, not that it's read-only.** Note this, or find a way to check `transaction_read_only`.
+
+- **Depends on:** 20260925-9.
+- **Came from:** The first review of 20260925-9.
+- **README:** 3b.
+- **Status:** done
+
+### 20260925-23. Anchor step loose ends.
+
+- **`clock_replacements` can't go straight back into `restore`.** It's stored as string-keyed hashes, but `ClockAnchoring.restore` calls `.anchored` and `.original` on objects. Add a loader (`ClockAnchoring.load_replacements(store)` or similar) that rebuilds them, with a test that round-trips the stored form through `restore`. Step 15 needs this.
+- **The step spec doesn't cover `now() - interval $n`.** Add a case.
+
+- **Depends on:** 20260925-15.
+- **Came from:** The first review of 20260925-15.
+- **README:** 3h.
+- **Status:** done
