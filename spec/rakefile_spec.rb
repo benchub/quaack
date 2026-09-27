@@ -209,6 +209,47 @@ RSpec.describe "the Rakefile" do
       end
     end
 
+    # Local rake is the only check, so personal RSpec options must not be
+    # able to filter specs out, such as the boundary specs.
+    describe "with personal RSpec options that exclude a suite's specs" do
+      let(:exclude) { %(--exclude-pattern "**/foo_spec.rb") }
+
+      def run_foo(env = {})
+        scratch_tree(%w[. foo]) do |dir|
+          yield dir if block_given?
+          Open3.capture2e(env, RbConfig.ruby, "-S", "rake", "spec", chdir: dir)
+        end
+      end
+
+      def expect_foo_ran(out, status)
+        expect(status).to be_success, out
+        expect(runs(out).keys).to contain_exactly("root", "foo")
+      end
+
+      it "ignores a .rspec-local" do
+        expect_foo_ran(*run_foo { |dir| File.write(File.join(dir, "foo", ".rspec-local"), exclude) })
+      end
+
+      it "ignores SPEC_OPTS" do
+        expect_foo_ran(*run_foo("SPEC_OPTS" => exclude))
+      end
+
+      it "ignores ~/.rspec" do
+        Dir.mktmpdir do |home|
+          File.write(File.join(home, ".rspec"), exclude)
+
+          expect_foo_ran(*run_foo("HOME" => home, "XDG_CONFIG_HOME" => nil))
+        end
+      end
+
+      it "still reads the suite's own .rspec" do
+        out, status = run_foo { |dir| File.write(File.join(dir, "foo", ".rspec"), exclude) }
+
+        expect(status).not_to be_success, out
+        expect(out).to include("Spec suites failed: foo/spec (exit 1)")
+      end
+    end
+
     it "passes without the root suite when the root has no spec/ folder" do
       out, status = run_without_root(%w[foo])
 
