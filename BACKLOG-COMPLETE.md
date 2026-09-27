@@ -2540,3 +2540,16 @@ Details are in `e2e/RUN.md`.
 - **Came from:** 20260927-1 build and review.
 - **README:** 5a-1.
 - **Status:** done
+
+### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099.
+
+- **e2e 020:** `started_at >= current_date - 1 GROUP BY user_id`. Its one candidate is declined as unused (bound 94). Diagnose it: clock anchoring's effect on the predicate, or 5a-1's choice.
+- **e2e 099:** the top fix touches 13 blocks against a bound of 12. Is it a ranking issue or the bound?
+- **Weak sentinel test:** the "failed typed prepare error free of the literal" test can't catch a regression, because the sentinel never reaches PREPARE.
+- **Type names:** `Redaction.prepare` and `Binding#prepare_sql` interpolate type names unchecked. They're safe only because the set is fixed. Add an allowlist.
+- **SELECT only:** `Redaction.one_statement?` doesn't require a SELECT.
+
+- **Depends on:** 20260927-2.
+- **Came from:** 20260927-2 build and review.
+- **README:** 5a-4.
+- **Status:** done

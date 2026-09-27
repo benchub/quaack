@@ -1167,18 +1167,7 @@ Fix: add the INCLUDE only when it makes the index truly covering for that table 
 - **README:** 5a-1.
 - **Status:** todo
 
-### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099.
-
-- **e2e 020:** `started_at >= current_date - 1 GROUP BY user_id`. Its one candidate is declined as unused (bound 94). Diagnose it: clock anchoring's effect on the predicate, or 5a-1's choice.
-- **e2e 099:** the top fix touches 13 blocks against a bound of 12. Is it a ranking issue or the bound?
-- **Weak sentinel test:** the "failed typed prepare error free of the literal" test can't catch a regression, because the sentinel never reaches PREPARE.
-- **Type names:** `Redaction.prepare` and `Binding#prepare_sql` interpolate type names unchecked. They're safe only because the set is fixed. Add an allowlist.
-- **SELECT only:** `Redaction.one_statement?` doesn't require a SELECT.
-
-- **Depends on:** 20260927-2.
-- **Came from:** 20260927-2 build and review.
-- **README:** 5a-4.
-- **Status:** todo
+### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-15. 5a-1 generation loose ends.
 
@@ -1192,4 +1181,13 @@ These are minor findings from the review of 20260927-3 to -8:
 - **Depends on:** 20260927-5.
 - **Came from:** Review of 20260927-3 to -8.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-16. one_statement? lets data-modifying CTEs and SELECT INTO through.
+
+`Redaction.one_statement?` accepts `WITH d AS (DELETE ... RETURNING 1) SELECT ...` and `SELECT ... INTO t2`, because both parse as a SelectStmt. SingleCandidateTest rolls back, so writes should be undone. Check whether its transaction is READ ONLY, and consider refusing non-SELECT CTEs and `into_clause` (intake's allowlist probably already refuses these in the original query; check). e2e 020 now passes after 20260927-5, and 099 passes after 20260927-2.
+
+- **Depends on:** 20260927-14.
+- **Came from:** Review of 20260927-14.
+- **README:** 5a-4.
 - **Status:** todo
