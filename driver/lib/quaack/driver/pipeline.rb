@@ -148,7 +148,8 @@ module Quaack
           round = 0
           lambda do |inserts|
             round += 1
-            reply = transport.call("counterexample-round", args: args.merge(round:), input: { "inserts" => inserts })
+            reply = transport.call("counterexample-round", args: args.merge(round: round.to_s),
+                                                           input: { "inserts" => inserts })
             message(reply, "counterexample_round")
           end
         end

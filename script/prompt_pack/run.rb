@@ -104,16 +104,6 @@ module PromptPack
     )
   ].freeze
 
-  # Transport::Local, but an Integer option value goes out as a String.
-  # Pipeline's CounterexampleStage passes counterexample-round's round as
-  # an Integer, which Transport::Base refuses, so without this no run gets
-  # past the first 10a ask.
-  class Transport < Quaack::Driver::Transport::Local
-    def call(subcommand, args: {}, input: nil)
-      super(subcommand, args: args.transform_values { it.is_a?(Integer) ? it.to_s : it }, input:)
-    end
-  end
-
   # FakeLLM, but it answers every ask with a placeholder made from the ask
   # itself, and keeps every ask for the pack.
   class CapturingLLM < FakeLLM
@@ -226,7 +216,7 @@ module PromptPack
   # Pipeline. Returns the LLM asks, and nil or the EnclaveError that
   # stopped the run.
   def pipeline(home, server, query, prod, racetrack)
-    transport = Transport.new(command: QUAACKS)
+    transport = Quaack::Driver::Transport::Local.new(command: QUAACKS)
     run_id = intake(transport, home, server, query, prod)
     setup(transport, run_id, server, racetrack)
     llm = CapturingLLM.new(query)

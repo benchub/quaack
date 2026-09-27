@@ -5,11 +5,17 @@ require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
+require "quaack/driver/transport/base"
 require_relative "support/fake_llm"
 
 # Steps 4b and 12a to 14d, all stored, for specs about other steps.
 MEASURED = %w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
               selection].to_h { [it, true] }.freeze
+
+# Builds a call's argv with the real Transport::Base, so a fake transport
+# raises ArgumentError for args the enclave's CLI can't take, as the ssh
+# transport would.
+CHECK_ARGV = ->(subcommand, options) { Quaack::Driver::Transport::Base.new.send(:argv, subcommand, options.fetch(:args, {})) }
 
 RSpec.describe Quaack::Driver::Pipeline do
   let(:fake) { FakeLLM.new }
@@ -22,7 +28,8 @@ RSpec.describe Quaack::Driver::Pipeline do
   end
 
   # Stands in for the ssh transport, at the edge: records each call and
-  # answers with the enclave's messages for that subcommand.
+  # answers with the enclave's messages for that subcommand. It checks
+  # each call's args with CHECK_ARGV.
   # Status replies after the first, in order, when a spec needs status to
   # change during the run. Otherwise every status call answers entries.
   let(:later_statuses) { [] }
@@ -38,6 +45,7 @@ RSpec.describe Quaack::Driver::Pipeline do
       define_method(:initialize) { @calls = [] }
 
       define_method(:call) do |subcommand, **options|
+        CHECK_ARGV.call(subcommand, options)
         first_status = @calls.none? { it.first == "status" }
         @calls << [subcommand, options]
         messages = if subcommand == "status" && !first_status && statuses.any?
@@ -272,6 +280,7 @@ RSpec.describe Quaack::Driver::Pipeline do
         define_method(:initialize) { @calls = [] }
 
         define_method(:call) do |subcommand, **options|
+          CHECK_ARGV.call(subcommand, options)
           @calls << [subcommand, options]
           messages = case subcommand
                      when "status" then [{ "type" => "status", "entries" => state }]
@@ -301,7 +310,7 @@ RSpec.describe Quaack::Driver::Pipeline do
 
       expect(ninth_on).to eq(%w[rewrite-test rewrite-test counterexample-payload] + (["counterexample-round"] * 3))
       rounds = transport.calls.select { it.first == "counterexample-round" }
-      expect(rounds.map { it.last[:args] }).to eq([1, 2, 3].map { { run: "RUN", search: "rewrite_2", round: it } })
+      expect(rounds.map { it.last[:args] }).to eq([1, 2, 3].map { { run: "RUN", search: "rewrite_2", round: it.to_s } })
       expect(rounds.first.last[:input]).to eq("inserts" => ["INSERT INTO public.t (a) VALUES ($1)"])
       expect(fake.asks.first.body[:messages].first[:content]).to include(%("original":"SELECT 1"))
     end
