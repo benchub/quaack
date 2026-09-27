@@ -163,9 +163,10 @@ Wire every step together in the driver, from intake through the report and teard
 
 - **Decided (replay, 2026-09-27):** A rake spec runs the four prompt-pack queries through the full pipeline, with the fake LLM replaying the corpus. It replays every saved reply separately, not just one per LLM. A prompt with no saved replies yet falls back to the e2e runner's valid empty answer, and the output notes that.
 
-- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
+- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2, 20260927-23.
 - **README:** All.
 - **Status:** todo
+- **Landed (part three, 2026-09-27):** `spec/pipeline_replay_spec.rb` replays the corpus through the full pipeline in rake. Still open: the driver doesn't call teardown (20260927-23). Leftovers are in 20260927-24.
 - **Note:** `e2e/cases/` holds 100 cases for this test to run QUAACK against, each with its schema and data, slow query, and expected outcome (new index, rewrite, both, negative result, trap to disprove, or refusal). `ruby e2e/verify.rb` proves each case against Postgres 18. See `e2e/README.md`.
 - **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
   - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
@@ -1177,4 +1178,33 @@ These are minor findings from the review of 20260927-21:
 - **Depends on:** 20260927-21.
 - **Came from:** Review of 20260927-21.
 - **README:** LLM client.
+- **Status:** todo
+
+### 20260927-23. Driver calls run teardown (20260922-65, part four).
+
+The enclave's `quaacks teardown --run <id>` exists (20260922-66), but nothing in `driver/lib` calls it. Do the driver work listed in the -66 note under 20260922-65:
+- Call teardown at the end of every run: on success, on abort, on exception, and on signals where possible.
+- Require the `teardown` line, followed by the done line.
+- Treat `store: "already_gone"` as success.
+- On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand.
+- Turn `next_step: "destroy_run_server"` into a plain operator message.
+- Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command.
+Then make `spec/pipeline_replay_spec.rb` assert that each run calls teardown.
+
+- **Depends on:** 20260922-66.
+- **Came from:** Build of 20260922-65, part three.
+- **README:** Teardown.
+- **Status:** todo
+
+### 20260927-24. Corpus replay loose ends.
+
+These are findings from the build and reviews of 20260922-65, part three:
+- Ask numbering shifts after a disproof. The counterexample loop stops at the first round that finds a mismatch, so later 10a asks get lower numbers than the prompt pack gave them, and their replies go to the wrong asks. Key replies by rewrite and round, not by a per-step count.
+- orm_join's wrong rewrite (`u.name IS NOT NULL`) can't be disproved. `users.id` is `GENERATED ALWAYS`, and 10a refuses `OVERRIDING`. Either let 10a inserts set identity keys, or change orm_join's planted bug in the generator and the corpus README.
+- The drift check compares only the system prompt, and it reads `prompt.md` only from the corpus, not the planted root.
+- `PipelineReplay.wrong` finds `"sql"` strings with a regex, not a JSON parse. Assert that `wrong` isn't empty wherever a variant has a wrong rewrite.
+
+- **Depends on:** 20260922-65 part three.
+- **Came from:** Build and reviews of 20260922-65, part three.
+- **README:** All.
 - **Status:** todo
