@@ -134,6 +134,21 @@ RSpec.describe "the statistics input" do
         expect(%w[t f].map { |t| stats.mcv_frequency(t) }).to eq([0.5, 0.25])
       end
 
+      it "doesn't read boolean spellings into a two-value MCV list that isn't only t and f" do
+        numbers = with_mcvs(%w[1 0], [0.6, 0.4])
+        mixed = with_mcvs(%w[x t], [0.6, 0.4])
+
+        expect(%w[true false 1 0].map { |t| numbers.mcv_frequency(t) }).to eq([nil, nil, 0.6, 0.4])
+        expect(%w[true yes t].map { |t| mixed.mcv_frequency(t) }).to eq([nil, nil, 0.4])
+      end
+
+      it "refuses a reltuples that isn't a finite number without quoting it" do
+        expect { table({}, reltuples: Float::INFINITY) }
+          .to raise_error(ArgumentError) { |e| expect(e.message).not_to include("Infinity") }
+        expect { table({}, reltuples: Complex(98_765, 1)) }
+          .to raise_error(ArgumentError, "reltuples must be a finite number")
+      end
+
       it "gives an MCV's frequency by its exact text, and nil for anything else" do
         stats = with_mcvs(%w[delivered shipped], [0.5, 0.25])
 
