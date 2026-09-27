@@ -1089,15 +1089,7 @@ These were skipped as needing a design choice or a larger rework:
 ### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260926-60. A fixture load failure in the vacuity guard crashes step 9.
-
-A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_guard.rb:91, from step_nine.rb:41) raises `ArenaRunner::Error` out of `StepNine.run` instead of producing a clean per-candidate outcome. Decide how 9c should treat a scenario that won't load: skip it and mark its atoms untested, or refuse the candidate with a rule. Then handle it, with a test.
-- **Decided (2026-09-27):** scenarios must never crash QUAACK. Skip a scenario that won't load and mark the atoms it would have tested as untested.
-
-- **Depends on:** 20260922-48, 20260926-59.
-- **Came from:** Build of 20260926-59.
-- **README:** Step 9.
-- **Status:** todo
+### 20260926-60. A fixture load failure in the vacuity guard crashes step 9. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-1. Set operations crash generator one (5a-1). Done, see BACKLOG-COMPLETE.md.
 
@@ -1130,14 +1122,7 @@ README 5a-7 says to keep adding indexes "as long as each addition lowers the cos
 - **README:** 5a-7.
 - **Status:** todo
 
-### 20260927-10. Capture and restore relallvisible.
-
-The planner prices index-only scans from `pg_class.relallvisible`. The enclave captures only `reltuples` and `relpages`, so index-only pricing on the racetrack depends on whether it has been vacuumed, not on production. Capture `relallvisible` in the statistics step. **Decided (2026-09-27):** neither, for v1. Assume production is vacuumed normally and the racetrack is fully analyzed and vacuumed after restore. Document these assumptions in the README (3c, 4a).
-
-- **Depends on:** 20260922-17.
-- **Came from:** The 20260927-6 investigation.
-- **README:** 3c, 4a.
-- **Status:** todo
+### 20260927-10. Capture and restore relallvisible. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-11. HypoPG size ignores B-tree deduplication.
 
@@ -1177,6 +1162,8 @@ In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and
 ### 20260927-18. Make step 9 scenarios load instead of skipping them.
 
 20260926-60 skips a step 9 scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
+
+Also: 9d still disproves every candidate when a scenario won't load (`:fixture_load_failed`). That fails safe for v1, but it rejects correct rewrites; once scenarios load, it stops mattering. And add a guard-level spec that a `:query`-step `ArenaRunner::Error` isn't swallowed by `VacuityGuard.loaded_exercised_atoms` (today, removing the step check stays green).
 
 - **Depends on:** 20260926-60.
 - **Came from:** User direction, 2026-09-27.

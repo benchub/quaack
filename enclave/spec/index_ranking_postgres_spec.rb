@@ -127,12 +127,39 @@ RSpec.describe Quaack::Enclave::IndexRanking do
   end
 
   # With both indexes, s = 10 uses the one on s and s = 0 uses the one on
-  # b, whose cost doesn't depend on s. So the worst case is no better.
-  it "keeps no combination that doesn't lower the worst case, though each index is used" do
+  # b, whose cost doesn't depend on s. So the worst case is no better, but
+  # the slow set is, and no set is worse (README 5a-7, 20260927-9).
+  it "combines an index that lowers one set's cost without making any set worse" do
     ranking = ranked(skewed, skewed_sets, [on_s, on_b])
+    pair = ranking.combination
 
     expect(used_together(skewed, skewed_sets, [on_b, on_s])).to eq(slow: [false, true], worst: [true, false])
-    expect(ranking.combination).to be_nil
+    expect(pair.candidates).to eq([on_b, on_s])
+    expect(pair.costs[:slow].after).to be < ranking.top.first.costs[:slow].after
+    expect(pair.costs[:worst].after).to be <= ranking.top.first.costs[:worst].after
+  end
+
+  # u's g holds 0 for 90% of rows, and each other value for 100 rows.
+  # Neither index is used for g = 0, so both tie on the worst case at 0.
+  # The one on (g, h) is bigger but cuts g = 7 more, so the next-worst set
+  # puts it first, ahead of size (20260927-9, e2e 025).
+  it "breaks a tie in the worst case on the next-worst set before size" do
+    conn.exec(<<~SQL)
+      CREATE TABLE u (g int, h int);
+      INSERT INTO u SELECT CASE WHEN i % 10 = 0 THEN (i / 10) % 100 + 1 ELSE 0 END, i
+      FROM generate_series(1, 100000) AS i;
+      SET default_statistics_target = 1000;
+      ANALYZE u;
+      RESET default_statistics_target;
+    SQL
+    on_g = candidate("u", key: ["g"])
+    on_gh = candidate("u", key: %w[g h])
+    ranking = ranked("SELECT * FROM u WHERE g = $1 AND h < $2",
+                     { slow: %w[7 1000], worst: %w[0 100001] }, [on_g, on_gh])
+
+    expect(ranking.top.map(&:worst_reduction)).to all(be_within(1e-9).of(0.0))
+    expect(ranking.top.map(&:candidates)).to eq([[on_gh], [on_g]])
+    expect(ranking.top.first.size).to be > ranking.top.last.size
   end
 
   # With both indexes, the planner uses only one of them.
