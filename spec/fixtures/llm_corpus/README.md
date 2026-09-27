@@ -15,7 +15,7 @@ All four run through the whole pipeline to the report. Each has an operator rewr
 
 The generator's made-up 6a reply holds two rewrites, both wrapped in a MATERIALIZED CTE so step 8 keeps them. The first is the query itself, so it's exactly equivalent and has no counterexample. The second adds one harmless-looking condition that drops rows real data can hold, so it's wrong, and its 10a prompts ask for a real counterexample. Step 9's fixtures don't catch it, since the condition tests a column the original never mentions:
 
-- `orm_join`: `AND u.name IS NOT NULL` (`users.name` is nullable).
+- `orm_join`: `AND u.name IS NOT NULL` (`users.name` is nullable). `users.id` is `GENERATED ALWAYS`, so a counterexample that sets ids writes `OVERRIDING SYSTEM VALUE`, which step 10 allows.
 - `group_having`: `AND o.total_cents >= 0` (drops refunds from the counts and sums).
 - `correlated_exists`: `AND p.sku <> p.name`.
 - `keyset_pagination`: `AND o.updated_at <= o.created_at`.
@@ -30,7 +30,7 @@ The steps:
 - `5a-6`: the index refinement round (RefinementRound).
 - `6a`: query rewrites (RewriteGeneration).
 - `step7`: inferring what the operator's own rewrites assume (OperatorCandidates).
-- `10a`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`10a-4` is the second rewrite's first round).
+- `10a`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`10a-4` is the second rewrite's first round). Each rewrite keeps its block of three numbers even if an earlier one is disproved before its third round, so the pipeline replay finds each reply by rewrite and round.
 - `step11-5a-5` and `step11-5a-6`: step 11's index asks for each rewrite that survived steps 9 and 10, the same prompts as 5a-5 and 5a-6 but for the rewrite. They're numbered on across rewrites too, so with two survivors, `step11-5a-5-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
 
 ## How to fill it

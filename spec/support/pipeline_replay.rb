@@ -5,8 +5,11 @@ require "stringio"
 require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/enclave_error"
+require "quaack/driver/counterexamples"
 require "quaack/driver/llm/error"
+require "quaack/driver/llm/reply_json"
 require "quaack/driver/pipeline"
+require "quaack/driver/rewrite_generation"
 require "quaack/driver/teardown"
 require "quaack/driver/transport/local"
 require_relative "../../script/prompt_pack/run"
@@ -35,8 +38,10 @@ module PipelineReplay
   # whether it was replayed or fell back. drift names replayed asks whose
   # prompt doesn't match the saved prompt.md.
   # wrong holds the numbers n of the replayed 6a rewrites, stored as
-  # rewrite_<n>, whose SQL carries the query's subtly wrong condition.
-  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong, :store_left, :teardown)
+  # rewrite_<n>, whose SQL carries the query's subtly wrong condition, and
+  # rewrites_text the replayed 6a reply's text, or nil.
+  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong, :rewrites_text, :store_left,
+                        :teardown)
 
   module_function
 
@@ -51,17 +56,34 @@ module PipelineReplay
   end
 
   # The directory the prompt pack gives each ask, in order: its step, with
-  # step11- for a 5a ask after 6a, and a per-query count of that name.
+  # step11- for a 5a ask after 6a, and a per-query count of that name. A
+  # 10a ask is named by rewrite and round instead (task 20260927-24): each
+  # rewrite gets a block of Counterexamples::ROUNDS numbers, in rewrite
+  # order, so one disproved early doesn't shift the next rewrite's asks.
+  # The pack's per-step count gives the same names, since its placeholder
+  # replies never disprove, so every rewrite runs all its rounds.
   class Namer
+    ROUNDS = Quaack::Driver::Counterexamples::ROUNDS
+
     def initialize
       @counts = Hash.new(0)
       @rewrites = false
+      @rewrite = 0
     end
 
-    def next(step)
+    def next(step, body)
+      return counterexample(body) if step == "10a"
+
       @rewrites ||= step == "6a"
       name = @rewrites && step.start_with?("5a-") ? "step11-#{step}" : step
       "#{name}-#{@counts[name] += 1}"
+    end
+
+    # A round's ask holds one user turn per round so far.
+    def counterexample(body)
+      round = body[:messages].count { it[:role].to_s == "user" }
+      @rewrite += 1 if round == 1
+      "10a-#{((@rewrite - 1) * ROUNDS) + round}"
     end
   end
 
@@ -80,10 +102,10 @@ module PipelineReplay
     end
 
     def for(step, body)
-      dir = @namer.next(step)
+      dir = @namer.next(step, body)
       path = @variant.llm && @roots.map { File.join(it, @query, dir, "reply-#{@variant}.md") }.find { File.file?(it) }
       @log << "#{dir}: #{path ? "replayed" : "empty answer (no reply)"}"
-      check_prompt(dir, body) if path
+      check_prompt(dir, body, File.dirname(path)) if path
       text = path && File.read(path)
       @rewrites_text = text if step == "6a" && text
       text
@@ -91,9 +113,10 @@ module PipelineReplay
 
     private
 
-    def check_prompt(dir, body)
-      saved = File.join(CORPUS, @query, dir, "prompt.md")
-      return @drift << "#{dir}: no saved prompt.md" unless File.file?(saved)
+    # The prompt.md next to the reply, or else the corpus one.
+    def check_prompt(dir, body, reply_dir)
+      saved = [File.join(reply_dir, "prompt.md"), File.join(CORPUS, @query, dir, "prompt.md")].find { File.file?(it) }
+      return @drift << "#{dir}: no saved prompt.md" unless saved
 
       sent = system_section(PromptPack.prompt(Ask.new(body)))
       @drift << "#{dir}: the system prompt sent differs from #{saved}" unless sent == system_section(File.read(saved))
@@ -146,16 +169,32 @@ module PipelineReplay
     client = E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new)
     error = drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites, out:).run }
     Outcome.new(variant:, error:, report: error ? nil : report(transport, run_id),
-                entries: Quaack::Driver::Pipeline.status(transport, run_id), log: replies.log,
-                drift: replies.drift, wrong: wrong(query, replies.rewrites_text), store_left: nil, teardown: nil)
+                entries: Quaack::Driver::Pipeline.status(transport, run_id), store_left: nil, teardown: nil,
+                **read_back(query, replies))
+  end
+
+  def read_back(query, replies)
+    text = replies.rewrites_text
+    { log: replies.log, drift: replies.drift, wrong: wrong(query, text), rewrites_text: text }
   end
 
   # The 6a rewrites become rewrite_1, rewrite_2, and so on, in reply order.
-  # Their SQL is read out of the reply text only to tell which are wrong.
+  # Their SQL is read out of the reply text, with the client's own
+  # tolerant parse, only to tell which are wrong.
   def wrong(query, text)
-    condition = query.bug.last.delete_prefix(query.bug.first).delete_prefix(" AND ")
-    sqls = text.to_s.scan(/"sql":\s*"((?:[^"\\]|\\.)*)"/).flatten
-    sqls.each_index.select { sqls[it].include?(condition) }.map { it + 1 }
+    sqls = rewrites(text).map { it.is_a?(Hash) ? it["sql"].to_s : "" }
+    sqls.each_index.select { sqls[it].include?(condition(query)) }.map { it + 1 }
+  end
+
+  # The subtly wrong condition query.bug adds.
+  def condition(query) = query.bug.last.delete_prefix(query.bug.first).delete_prefix(" AND ")
+
+  def rewrites(text)
+    return [] unless text
+
+    Quaack::Driver::LLM::ReplyJSON.parse(text, Quaack::Driver::RewriteGeneration::SCHEMA)["rewrites"]
+  rescue Quaack::Driver::LLM::Error
+    []
   end
 
   # nil, or the EnclaveError or LLM::Error that ended the run.

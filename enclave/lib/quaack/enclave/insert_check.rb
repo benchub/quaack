@@ -35,8 +35,11 @@ module Quaack
     #    the text near the error, so it's replaced, not wrapped.
     # 2. not_insert: it isn't exactly one statement, or that statement
     #    isn't an INSERT.
-    # 3. with, on_conflict, returning, and overriding, in that order: it
-    #    uses WITH, ON CONFLICT, RETURNING, or OVERRIDING.
+    # 3. with, on_conflict, and returning, in that order: it uses WITH, ON
+    #    CONFLICT, or RETURNING. OVERRIDING SYSTEM VALUE and OVERRIDING USER
+    #    VALUE are allowed (task 20260927-24), so a counterexample can set a
+    #    GENERATED ALWAYS identity key, as step 9's fixture rows do. The
+    #    inserts load only into the throwaway arena.
     # 4. missing_columns: it has no column list, DEFAULT VALUES included.
     # 5. insert_select: its rows aren't a bare VALUES list, as with INSERT
     #    ... SELECT, or VALUES with ORDER BY, LIMIT, or a set operation.
@@ -99,8 +102,7 @@ module Quaack
       REFUSED_FORMS = [
         ["with", "WITH", ->(stmt) { !stmt.with_clause.nil? }],
         ["on_conflict", "ON CONFLICT", ->(stmt) { !stmt.on_conflict_clause.nil? }],
-        ["returning", "RETURNING", ->(stmt) { !stmt.returning_list.empty? }],
-        ["overriding", "OVERRIDING", ->(stmt) { stmt.override != :OVERRIDING_NOT_SET }]
+        ["returning", "RETURNING", ->(stmt) { !stmt.returning_list.empty? }]
       ].freeze
 
       # A SelectStmt that's nothing but a VALUES list, once the list is

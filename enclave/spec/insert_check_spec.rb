@@ -68,7 +68,12 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "an array" => "INSERT INTO sales.items (id, tags) VALUES (1, ARRAY['x', 'y']), (2, '{z}'), (3, ARRAY[]::text[])",
       "immutable calls" => "INSERT INTO sales.items (id, sku) VALUES (1, lower('A')), (2, public.steady(upper('b')))",
       "an identity DEFAULT" => "INSERT INTO public.orders (id, customer_id, status, total_cents, created_at) " \
-                               "VALUES (DEFAULT, 1, 'open', 100, '2024-01-01T00:00:00Z'::timestamptz)"
+                               "VALUES (DEFAULT, 1, 'open', 100, '2024-01-01T00:00:00Z'::timestamptz)",
+      # Task 20260927-24: a counterexample may set a GENERATED ALWAYS key.
+      "OVERRIDING SYSTEM VALUE" => "INSERT INTO public.customers (id, name, email, created_at) " \
+                                   "OVERRIDING SYSTEM VALUE VALUES (900001, 'n', 'o@x', '2024-01-01'::date)",
+      "OVERRIDING USER VALUE" => "INSERT INTO public.customers (id, name, email, created_at) " \
+                                 "OVERRIDING USER VALUE VALUES (900001, 'n', 'o@x', '2024-01-01'::date)"
     }.each do |what, sql|
       it "accepts #{what}" do
         conn.exec("INSERT INTO public.customers (name, email, created_at) VALUES ('c', 'c@x', now())")
@@ -117,9 +122,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     {
       "with" => ["WITH x AS (SELECT 1) INSERT INTO sales.items (id) VALUES (1)", "WITH"],
       "on_conflict" => ["INSERT INTO sales.items (id) VALUES (1) ON CONFLICT DO NOTHING", "ON CONFLICT"],
-      "returning" => ["INSERT INTO sales.items (id) VALUES (1) RETURNING id", "RETURNING"],
-      "overriding" => ["INSERT INTO public.customers (id, email, created_at) OVERRIDING SYSTEM VALUE " \
-                       "VALUES (1, 'e', now())", "OVERRIDING"]
+      "returning" => ["INSERT INTO sales.items (id) VALUES (1) RETURNING id", "RETURNING"]
     }.each do |rule, (sql, name)|
       it "refuses #{rule}" do
         expect { check(sql) }.to rejected(rule, "#{rule}: #{name} isn't allowed")

@@ -35,6 +35,14 @@ RSpec.describe Quaack::Driver::Counterexamples do
     expect(system).to include("$1", "untested_atoms", "every constraint", "schema-qualif")
   end
 
+  it "tells the LLM it may set an identity key with OVERRIDING SYSTEM VALUE (task 20260927-24)" do
+    fake.reply("10a", { "inserts" => [] })
+    described_class.new(client:).ask(payload)
+    system = fake.asks.first.body[:system]
+    expect(system).to include("OVERRIDING SYSTEM VALUE")
+    expect(system).not_to include("RETURNING, or OVERRIDING")
+  end
+
   describe "the rounds" do
     let(:outcomes) { [] }
     let(:compared) { [] }
