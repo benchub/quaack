@@ -502,6 +502,15 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
       end
 
+      it "refuses when a range type uses one" do
+        conn.exec("CREATE TYPE loose_range AS RANGE (subtype = text, collation = loose)")
+        conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
+        original = "SELECT loose_range(w, w, '[]') AS r FROM words ORDER BY grp, id LIMIT 1"
+        candidate = "SELECT loose_range(w, w, '[]') AS r FROM words ORDER BY grp LIMIT 1"
+
+        expect(fields(compare(original, candidate, rows: word_rows("w")))).to include(rule: :unsupported_order)
+      end
+
       it "doesn't refuse when one only exists" do
         conn.exec("CREATE TABLE words (id integer, grp integer, w text)")
         sql = "SELECT id, w FROM words ORDER BY grp, id"

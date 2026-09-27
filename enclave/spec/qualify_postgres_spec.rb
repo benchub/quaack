@@ -81,6 +81,31 @@ RSpec.describe "quaacks qualify, against a real server" do
     expect_no_leaks(sentinels, outcome)
   end
 
+  context "with a CTE, a subquery, a quoted name, and an already-qualified one" do
+    let(:query) do
+      <<~SQL.chomp
+        WITH recent AS (SELECT id FROM "Mixed Case" WHERE note = '#{sentinels.text}')
+        SELECT r.id FROM recent r WHERE r.id IN (SELECT id FROM items) AND EXISTS (SELECT FROM public.orders)
+      SQL
+    end
+
+    it "qualifies the tables and leaves the CTE's name alone" do
+      pgpass
+      conn = production.connect
+      conn.exec(%(CREATE TABLE sales."Mixed Case" (id int, note text)))
+      conn.close
+
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("qualified_query")).to eq(<<~SQL.chomp.tr("\n", " "))
+        WITH recent AS (SELECT id FROM sales."Mixed Case" WHERE note = '#{sentinels.text}')
+        SELECT r.id FROM recent r WHERE r.id IN (SELECT id FROM public.items) AND EXISTS (SELECT FROM public.orders)
+      SQL
+      expect(stored.read("relations")).to eq([{ "schema" => "sales", "name" => "Mixed Case" },
+                                              { "schema" => "public", "name" => "items" },
+                                              { "schema" => "public", "name" => "orders" }])
+    end
+  end
+
   context "without a search_path in the plan's SETTINGS" do
     let(:plan_settings) { {} }
 

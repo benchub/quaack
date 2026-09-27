@@ -232,6 +232,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "set_config" => ["set_config('a.b', 'c', false)", "function pg_catalog.set_config is volatile, not immutable"],
       "pg_advisory_lock" => ["pg_advisory_lock(1)::text",
                              "function pg_catalog.pg_advisory_lock is volatile, not immutable"],
+      "a variadic call with more arguments than its declared ones" =>
+        ["concat('a', 'b', 'c')", "function pg_catalog.concat is stable, not immutable"],
       "a volatile function of our own" => ["public.bump('a')", "function public.bump is volatile, not immutable"],
       "one nested in an immutable call" => ["lower(now()::text)",
                                             "function pg_catalog.now is stable, not immutable"]

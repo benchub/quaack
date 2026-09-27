@@ -85,7 +85,7 @@ module Quaack
     #
     #   A nondeterministic collation breaks the principle for text, and a
     #   result can't say which columns use one. So it's unsupported_order
-    #   whenever a column or domain in the database uses one, or a COLLATE
+    #   whenever a column, domain, or range type in the database uses one, or a COLLATE
     #   clause in either query names one.
     # - LIMIT or OFFSET with no ORDER BY: subset. Any rows are a valid
     #   answer. Run the original as written for the expected row count,

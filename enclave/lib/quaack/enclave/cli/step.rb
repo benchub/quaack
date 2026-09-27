@@ -28,6 +28,9 @@ module Quaack
           raise ArgumentError, "a step can't both start a run and open one" if run && new_run
           raise ArgumentError, "a step that names a run can't also open or start one" if run_id && (run || new_run)
 
+          undeclared = required - options.keys
+          raise ArgumentError, "a step can't require an option it doesn't declare" unless undeclared.empty?
+
           super
         end
       end
