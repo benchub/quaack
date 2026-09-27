@@ -369,6 +369,32 @@ RSpec.describe Quaack::Enclave::Dedupe do
       expect(search.filter([candidate(["customer_id"], predicate: "status.status = 'open'")])).to eq([])
     end
 
+    # 20260923-36: a predicate with no literal carries no values, so its
+    # columns needn't be low-cardinality.
+    it "keeps a no-literal partial on any bare column: IS NULL, IS NOT NULL, or a boolean column" do
+      ["deleted_at IS NULL", "note IS NOT NULL", "archived", "NOT archived",
+       "deleted_at IS NULL AND archived"].each do |predicate|
+        expect(search.filter([candidate(["customer_id"], predicate:)]).size).to eq(1), predicate
+      end
+    end
+
+    it "still drops a no-literal partial that isn't only null tests and boolean columns" do
+      ["note = email", "lower(note) IS NULL", "orders.note IS NULL", "note IS NULL OR archived",
+       "archived IS TRUE"].each do |predicate|
+        expect(search.filter([candidate(["customer_id"], predicate:)])).to eq([]), predicate
+      end
+    end
+
+    it "still drops a partial with a literal on a column that isn't low-cardinality, and never shows it" do
+      sentinel = "quaack-sentinel-n0l1t"
+      ["note = '#{sentinel}'", "note IS NULL AND note = '#{sentinel}'"].each do |predicate|
+        s = search
+        expect(s.filter([candidate(["customer_id"], predicate:)])).to eq([]), predicate
+        expect(s.drops.map(&:reason)).to eq([:partial_not_low_cardinality])
+        [s.drops.inspect, s.inspect].each { |text| expect(text).not_to include(sentinel) }
+      end
+    end
+
     it "finds columns anywhere in the predicate, such as inside a function call" do
       s = search
       expect(s.filter([candidate(["customer_id"], predicate: "lower(note) IS NULL")])).to eq([])

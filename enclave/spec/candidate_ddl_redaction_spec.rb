@@ -49,4 +49,12 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
     expect(ddl).not_to include(sentinel)
     expect(ddl).to end_with("WHERE status = ? OR status IS DISTINCT FROM NULL")
   end
+
+  # 20260923-36: Dedupe now lets a no-literal partial through on any column.
+  it "passes a no-literal partial on a non-low-cardinality column through with nothing to mask" do
+    ddl = redaction.ddl(candidate(predicate: "note IS NULL AND deleted_at IS NOT NULL AND NOT archived"))
+
+    expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
+                      "WHERE note IS NULL AND deleted_at IS NOT NULL AND NOT archived")
+  end
 end
