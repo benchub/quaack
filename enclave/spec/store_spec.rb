@@ -92,6 +92,18 @@ RSpec.describe Quaack::Enclave::Store do
       File.chmod(0o700, closed, base)
     end
 
+    it "keeps its base checks private" do
+      expect { described_class::BaseChecks }.to raise_error(NameError, /private constant/)
+    end
+
+    it "makes nothing through a linked parent of the base" do
+      target = File.join(@tmp, "target").tap { Dir.mkdir(it, 0o700) }
+      link = File.join(@tmp, "link").tap { File.symlink(target, it) }
+
+      expect { described_class.create(base: File.join(link, "runs")) }.to raise_error(described_class::BadBase)
+      expect(Dir.children(target)).to eq([])
+    end
+
     it "names the run with a UTC timestamp and eight random hex characters" do
       before = Time.now.utc
       run_id = store.run_id
@@ -474,6 +486,17 @@ RSpec.describe Quaack::Enclave::Store do
 
       expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
       expect(File).to have_received(:lstat).with(linked)
+    end
+
+    # The reverse: a regular file whose lstat reads as a FIFO. Only the
+    # lstat before the open can refuse it.
+    it "refuses an entry whose lstat before the open isn't a regular file" do
+      entry = File.join(store.path, "inputs.json")
+      store.write("inputs", [])
+      fifo = File.lstat(File.join(@tmp, "fifo").tap { File.mkfifo(it) })
+      allow(File).to(receive(:lstat).and_wrap_original { |lstat, path| path == entry ? fifo : lstat.call(path) })
+
+      expect_store_error(/\Acouldn't read entry inputs in run #{store.run_id}\z/) { store.read("inputs") }
     end
   end
 
