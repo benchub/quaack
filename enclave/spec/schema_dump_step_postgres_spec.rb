@@ -115,7 +115,9 @@ RSpec.describe "quaacks schema-dump, against a real server" do
   end
 
   # While pg_dump runs, the step's own connection still holds the
-  # transaction its catalog reads ran in: Production.read_only's.
+  # transaction its catalog reads ran in: Production.read_only's. This
+  # shows only that some transaction is open, not that it's read-only:
+  # another session can't see transaction_read_only.
   it "reads the catalog inside a transaction" do
     pgpass
     states = File.join(quaacks.home, "states")
@@ -128,6 +130,19 @@ RSpec.describe "quaacks schema-dump, against a real server" do
 
     expect(schema_dump.stdout).to eq(done)
     expect(File.read(states).split("\n")).to eq(["idle in transaction"])
+  end
+
+  # The step's connection sits idle in its transaction while pg_dump runs.
+  # If production ends the session, the transaction's end fails, after
+  # both dumps are done.
+  it "stores nothing when the transaction fails after the dumps" do
+    pgpass
+    conn = production.connect
+    conn.exec(%(ALTER ROLE "#{production.user}" IN DATABASE "#{production.name}" SET idle_in_transaction_session_timeout = '1s'))
+    conn.close
+    container_pg_dump(before: %([ "$1" = --version ] || sleep 2))
+
+    expect_failed(schema_dump, "production_read_failed")
   end
 
   it "refuses a pg_dump older than the server as pg_dump_too_old, and stores nothing" do

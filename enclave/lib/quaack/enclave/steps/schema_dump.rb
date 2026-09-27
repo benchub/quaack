@@ -29,15 +29,29 @@ module Quaack
       # have succeeded, so a failure stores nothing. Its only line is DONE. A
       # refusal names only its rule.
       module SchemaDump
+        # Holds SchemaDump's entries until the read-only transaction has
+        # ended. The connection sits idle in that transaction while pg_dump
+        # runs, and production can end the session, so the transaction's
+        # end can still fail after both dumps are done. Writing only then
+        # keeps that failure from leaving entries behind.
+        class Pending
+          attr_reader :entries
+
+          def initialize = @entries = {}
+          def write(name, data) = @entries[name] = data
+        end
+
         module_function
 
         def call(store:, **)
           host = store.read("server")
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
           connection = Enclave::Inventory::Production.connect(host)
+          pending = Pending.new
           Enclave::Inventory::Production.read_only(connection) do
-            Enclave::SchemaDump.run(store:, relations:, connection:, conninfo: { host: })
+            Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: { host: })
           end
+          pending.entries.each { |name, data| store.write(name, data) }
           []
         ensure
           connection&.close
