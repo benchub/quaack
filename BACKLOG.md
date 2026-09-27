@@ -1191,7 +1191,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-45. Driver, LLM client and harness items left from 20260924-13, -14, -20.
 
 These were skipped as needing a design choice or a larger rework:
-- **Remote quaacks on timeout:** when the driver's timeout fires, the remote `quaacks` keeps running. **Decided:** The enclave exits on hangup. `quaacks` notices when its stdin/stdout close (ssh dropping), cancels any running query, and stops.
+- **Remote quaacks on timeout:** when the driver's timeout fires, the remote `quaacks` keeps running. **Landed:** The enclave exits on hangup. `quaacks` notices when its stdin/stdout close (ssh dropping), cancels any running query, and stops.
 - **Lazy-load `anthropic`:** it adds about 0.5s to every CLI start. Loading it lazily touches load order and the boundary checks.
 - **Pump/Child rework:** covers a child that closes stdout and then reads stdin, and a grandchild that holds stdout open.
 - **Per-example timeout for driver specs:** needs tuning so it doesn't cause flakes.
@@ -1240,4 +1240,13 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-47.
 - **Came from:** 20260926-47 review.
 - **README:** 3a.
+- **Status:** todo
+
+### 20260926-51. Hangup watcher kills steps when stdout is a file or tty.
+
+`Hangup.during` watches stdout with `IO.select` for the reader going away. A regular file is readable at once, so `quaacks probe > out.json` sends HUP immediately and every step fails. A read-write tty becomes readable on a keypress. Start the watcher only when `out.stat.pipe? || out.stat.socket?`, and test both cases.
+
+- **Depends on:** 20260926-45.
+- **Came from:** Review of the -45 hangup item.
+- **README:** Where QUAACK runs.
 - **Status:** todo
