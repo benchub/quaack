@@ -1236,15 +1236,15 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-51. Hangup watcher kills steps when stdout is a file or tty. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-52. Anchor the clock in rewrite candidates too.
+### 20260926-52. Anchor the clock in rewrite candidates too. Done, see BACKLOG-COMPLETE.md.
 
-The original is anchored (3h: `now()`, `current_date`, and since 20260926-48 the `'now'`/`'today'`/`'yesterday'`/`'tomorrow'` literals), but LLM and operator rewrite candidates bind the raw placeholder values and call the real clock functions. For a query whose `'now'` literal is compared against a timestamp column, steps 9, 13, 14 and 14c can then see spurious differences between the anchored original and a candidate. The other words differ only across a day boundary or with a pinned anchor. Apply the same anchoring (functions and clock-literal placeholders) to every candidate before it's tested or measured, and test a `'now'` query end to end through a candidate.
 
-Also from the review of -48:
-- `restored_node` now accepts any type_cast, which weakens restore's mismatch detection. Add a restore spec with an unrelated `$n::date` next to an anchored one.
-- Clock words typed another way (a function argument, an expression on a column, a domain over a domain) aren't anchored, and are listed as unsupported in v1.
+### 20260926-53. Candidate clock anchoring loose ends.
 
-- **Depends on:** 20260926-48, 20260922-24.
-- **Came from:** 20260926-48 build and review.
-- **README:** 3h, steps 9-14.
+- Step 9 (counterexamples) and steps 13 and 14 use the anchored candidate SQL, but only 14c has its own end-to-end clock test.
+- `RewriteEntry.run_sql` falls back to `"sql"` for entries without `anchored_sql`. Only hand-written spec fixtures and stores from before the change hit that path. Consider requiring `anchored_sql` and updating the fixtures (about 30 writes).
+
+- **Depends on:** 20260926-52.
+- **Came from:** 20260926-52 build and review.
+- **README:** 3h.
 - **Status:** todo

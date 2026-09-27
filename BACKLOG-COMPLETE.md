@@ -2110,3 +2110,16 @@ A set-returning function in FROM can hide a view or foreign table from 3a's rela
 - **Came from:** Review of the -45 hangup item.
 - **README:** Where QUAACK runs.
 - **Status:** done
+
+### 20260926-52. Anchor the clock in rewrite candidates too.
+
+The original is anchored (3h: `now()`, `current_date`, and since 20260926-48 the `'now'`/`'today'`/`'yesterday'`/`'tomorrow'` literals), but LLM and operator rewrite candidates bind the raw placeholder values and call the real clock functions. For a query whose `'now'` literal is compared against a timestamp column, steps 9, 13, 14 and 14c can then see spurious differences between the anchored original and a candidate. The other words differ only across a day boundary or with a pinned anchor. Apply the same anchoring (functions and clock-literal placeholders) to every candidate before it's tested or measured, and test a `'now'` query end to end through a candidate.
+
+Also from the review of -48:
+- `restored_node` now accepts any type_cast, which weakens restore's mismatch detection. Add a restore spec with an unrelated `$n::date` next to an anchored one.
+- Clock words typed another way (a function argument, an expression on a column, a domain over a domain) aren't anchored, and are listed as unsupported in v1.
+
+- **Depends on:** 20260926-48, 20260922-24.
+- **Came from:** 20260926-48 build and review.
+- **README:** 3h, steps 9-14.
+- **Status:** done
