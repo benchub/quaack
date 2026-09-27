@@ -765,6 +765,11 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         .to eq([asc("a"), desc("created_at"), asc("total", nulls: :first), desc("id", nulls: :last)])
     end
 
+    it "reads a column ORDER BY repeats only at its first place, even when the repeat isn't next to it" do
+      expect(key_for("WHERE a IN (1, 2) ORDER BY a, created_at, a DESC")).to eq([asc("a"), asc("created_at")])
+      expect(key_for("ORDER BY created_at, created_at DESC")).to eq([asc("created_at")])
+    end
+
     it "reads an explicit ASC as ascending" do
       expect(key_for("WHERE a = 1 ORDER BY created_at ASC")).to eq([asc("a"), asc("created_at")])
     end

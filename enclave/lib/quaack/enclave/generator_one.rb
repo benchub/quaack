@@ -625,7 +625,8 @@ module Quaack
         def for(table)
           return nil unless @items.all? { |item| item && item[0].equal?(table) }
 
-          @items.map { |item| item.drop(1) }
+          # Postgres reads a repeated column only at its first place.
+          @items.map { |item| item.drop(1) }.uniq(&:first)
         end
 
         private
