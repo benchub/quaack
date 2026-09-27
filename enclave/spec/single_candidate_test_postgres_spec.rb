@@ -698,14 +698,33 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
       expect(conn.exec("SELECT to_regclass('ev')::text").getvalue(0, 0)).to eq("ev")
     end
 
-    it "keeps a failed typed prepare's error free of the literal" do
-      error = begin
-        described_class.run(conn, query: "SELECT * FROM ev WHERE d = $1", literal_sets: { slow: [sentinel] },
+    it "refuses a statement that isn't a SELECT, running nothing" do
+      expect do
+        described_class.run(conn, query: "DELETE FROM ev WHERE id > $1", literal_sets: { slow: ["0"] },
                                   candidates: [], types: ["integer"])
+      end.to raise_error(described_class::Error) { expect(it.rule).to eq(:prepare_failed) }
+      expect(conn.exec("SELECT count(*) FROM ev").getvalue(0, 0)).to eq("1000")
+    end
+
+    it "refuses a type name that isn't a plain one, running nothing" do
+      types = ["integer) AS SELECT $1; CREATE TABLE quaack_pwned (); PREPARE quaack_x (integer"]
+      expect do
+        described_class.run(conn, query: "SELECT * FROM ev WHERE id = $1", literal_sets: { slow: ["1"] },
+                                  candidates: [], types:)
+      end.to raise_error(described_class::Error) { expect(it.rule).to eq(:prepare_failed) }
+      expect(conn.exec("SELECT to_regclass('quaack_pwned')::text").getvalue(0, 0)).to be_nil
+    end
+
+    # The sentinel is in the SQL, so Postgres's message quotes it:
+    # invalid input syntax for type integer: "<sentinel>".
+    it "keeps a failed typed prepare's error free of the SQL's text" do
+      error = begin
+        described_class.run(conn, query: "SELECT * FROM ev WHERE id = $1 + '#{sentinel}'::integer",
+                                  literal_sets: { slow: ["1"] }, candidates: [], types: ["integer"])
       rescue described_class::Error => e
         e
       end
-      expect(error.rule).to eq(:prepare_failed)
+      expect([error.rule, error.sqlstate]).to eq([:prepare_failed, "22P02"])
       expect([error.message, error.inspect, error.cause.inspect].join).not_to include(sentinel)
       expect(leftovers).to eq(clean)
     end
