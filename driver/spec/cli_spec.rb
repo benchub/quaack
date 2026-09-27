@@ -51,6 +51,23 @@ RSpec.describe "quaack executable" do
       expect([out, err, status.exitstatus]).to eq(["", "quaack start failed: jump_command_failed\n", 1])
     end
 
+    # The enclave's error line carries only the rule, so the driver adds the
+    # parser note itself.
+    it "names the parser's Postgres version when intake can't parse the query" do
+      e = env
+      File.write(File.join(dir, "bin", "ssh"), <<~SH)
+        #!/bin/sh
+        printf '{"type":"error","step":"intake","rule":"query_unparsable"}\\n'
+        exit 70
+      SH
+      out, err, status = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start failed: query_unparsable (pg_query parses with the Postgres 17 grammar; " \
+                    "Postgres 18-only syntax isn't supported yet)\n", 1])
+    end
+
     it "rejects missing options with the usage message" do
       out, err, status = run_ruby(exe, "start", "--server", "p")
 

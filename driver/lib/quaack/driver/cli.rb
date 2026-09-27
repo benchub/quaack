@@ -61,7 +61,7 @@ module Quaack
         @stdout.print "#{Start.new.call(**options)}\n"
         0
       rescue Start::Error, EnclaveError => e
-        @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule : e.message}\n"
+        @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
       end
 
