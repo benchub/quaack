@@ -9,7 +9,9 @@ One directory per fixture query, each run through the real pipeline against a th
 - `orm_join`: an ORM-style join, with equality plus a range, ORDER BY, and LIMIT.
 - `group_having`: aggregates with GROUP BY and HAVING.
 - `correlated_exists`: a correlated EXISTS subquery.
-- `keyset_pagination`: `WHERE (created_at, id) < (...) ORDER BY created_at DESC, id DESC LIMIT n`. The enclave refuses row comparisons today, so this one has no prompts yet.
+- `keyset_pagination`: `WHERE (created_at, id) < (...) ORDER BY created_at DESC, id DESC LIMIT n`.
+
+All four run through the whole pipeline to the report. Each has an operator rewrite, so step 7 is asked. For `orm_join` and `correlated_exists`, step 8 prunes the operator rewrite, so only the 6a rewrite reaches 10a and step 11. For `group_having` and `keyset_pagination`, both do.
 
 Each query directory holds one directory per LLM ask, named `<step>-<n>`, where n counts that step's asks within the query in order. Each of those holds a `prompt.md`. If the pipeline stopped before its end, `stopped.md` says at which step and why, and the prompts for steps after it are missing.
 
@@ -19,7 +21,8 @@ The steps:
 - `5a-6`: the index refinement round (RefinementRound).
 - `6a`: query rewrites (RewriteGeneration).
 - `step7`: inferring what the operator's own rewrites assume (OperatorCandidates).
-- `10a`: counterexample inserts (Counterexamples), up to three rounds.
+- `10a`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`10a-4` is the second rewrite's first round).
+- `step11-5a-5` and `step11-5a-6`: step 11's index asks for each rewrite that survived steps 9 and 10, the same prompts as 5a-5 and 5a-6 but for the rewrite. They're numbered on across rewrites too, so with two survivors, `step11-5a-5-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
 
 ## How to fill it
 

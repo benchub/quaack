@@ -56,7 +56,9 @@ module PromptPack
   STAMPS = { since: SINCE, until: UNTIL, before: BEFORE, min_quantity_since: MIN_QUANTITY_SINCE }.freeze
   SENTINELS = STAMPS.merge(STAMPS.to_h { |k, v| [:"#{k}_date", v[0, 10]] }, before_id: BEFORE_ID).freeze
 
-  Query = Data.define(:name, :sql, :rewrites, :indexes)
+  # order is the query's ORDER BY over its output columns, for the 6a
+  # placeholder rewrite (Placeholder.wrapped).
+  Query = Data.define(:name, :sql, :rewrites, :indexes, :order)
 
   QUERIES = [
     Query.new(
@@ -67,14 +69,17 @@ module PromptPack
       rewrites: ["SELECT o.id, o.total_cents, o.created_at, u.email FROM public.orders o " \
                  "JOIN public.users u ON u.id = o.user_id AND u.country = $1 " \
                  "WHERE o.created_at >= $2 AND o.created_at < $3 ORDER BY o.created_at DESC LIMIT $4;"],
-      indexes: ["CREATE INDEX ON public.users (name, id)", "CREATE INDEX ON orders (status)"]
+      indexes: ["CREATE INDEX ON public.users (name, id)", "CREATE INDEX ON orders (status)"],
+      order: "created_at DESC"
     ),
     Query.new(
       name: "group_having",
       sql: "SELECT o.user_id, count(*) AS order_count, sum(o.total_cents) AS spent FROM public.orders o " \
            "WHERE o.status = 'shipped' GROUP BY o.user_id HAVING count(*) > 1 ORDER BY spent DESC",
-      rewrites: [],
-      indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (status)"]
+      rewrites: ["SELECT o.user_id, count(*) AS order_count, sum(o.total_cents) AS spent FROM public.orders o " \
+                 "WHERE o.status = $1 GROUP BY o.user_id HAVING count(o.id) > $2 ORDER BY spent DESC;"],
+      indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (status)"],
+      order: "spent DESC"
     ),
     Query.new(
       name: "correlated_exists",
@@ -85,16 +90,29 @@ module PromptPack
       rewrites: ["SELECT p.id, p.sku, p.name FROM public.products p WHERE p.category = $1 AND p.id IN " \
                  "(SELECT li.product_id FROM public.line_items li JOIN public.orders o ON o.id = li.order_id " \
                  "WHERE o.created_at >= $2 AND li.quantity >= $3) ORDER BY p.id;"],
-      indexes: ["CREATE INDEX ON public.products (name)", "CREATE INDEX ON line_items (quantity)"]
+      indexes: ["CREATE INDEX ON public.products (name)", "CREATE INDEX ON line_items (quantity)"],
+      order: "id"
     ),
     Query.new(
       name: "keyset_pagination",
       sql: "SELECT o.id, o.created_at, o.total_cents FROM public.orders o " \
            "WHERE (o.created_at, o.id) < ('#{BEFORE}', #{BEFORE_ID}) ORDER BY o.created_at DESC, o.id DESC LIMIT 25",
-      rewrites: [],
-      indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (created_at)"]
+      rewrites: ["SELECT o.id, o.created_at, o.total_cents FROM public.orders o WHERE o.created_at <= $1 " \
+                 "AND (o.created_at < $1 OR o.id < $2) ORDER BY o.created_at DESC, o.id DESC LIMIT $3;"],
+      indexes: ["CREATE INDEX ON public.orders (updated_at)", "CREATE INDEX ON orders (created_at)"],
+      order: "created_at DESC, id DESC"
     )
   ].freeze
+
+  # Transport::Local, but an Integer option value goes out as a String.
+  # Pipeline's CounterexampleStage passes counterexample-round's round as
+  # an Integer, which Transport::Base refuses, so without this no run gets
+  # past the first 10a ask.
+  class Transport < Quaack::Driver::Transport::Local
+    def call(subcommand, args: {}, input: nil)
+      super(subcommand, args: args.transform_values { it.is_a?(Integer) ? it.to_s : it }, input:)
+    end
+  end
 
   # FakeLLM, but it answers every ask with a placeholder made from the ask
   # itself, and keeps every ask for the pack.
@@ -124,7 +142,7 @@ module PromptPack
       case step
       when "5a-5" then { "indexes" => messages.size == 1 ? query.indexes : [] }
       when "5a-6" then { "indexes" => [] }
-      when "6a" then { "rewrites" => [wrapped(first)] }
+      when "6a" then { "rewrites" => [wrapped(first, query)] }
       when "step7" then { "rewrites" => Array.new(json_in(first)["rewrites"].size) { inferred } }
       when "10a" then { "inserts" => [] }
       else raise "no placeholder for step #{step}"
@@ -132,9 +150,10 @@ module PromptPack
     end
 
     # The query itself in a materialized CTE, so its plan differs from the
-    # original's, and step 8 doesn't prune it before 10a.
-    def wrapped(content)
-      { "sql" => "WITH r AS MATERIALIZED (#{json_in(content).fetch("query")}) SELECT * FROM r",
+    # original's, and step 8 doesn't prune it. The outer query keeps the
+    # order, so step 9 passes it, and 10a and step 11 get asked.
+    def wrapped(content, query)
+      { "sql" => "WITH r AS MATERIALIZED (#{json_in(content).fetch("query")}) SELECT * FROM r ORDER BY #{query.order}",
         "transformation" => "placeholder", "assumptions" => [] }
     end
 
@@ -207,7 +226,7 @@ module PromptPack
   # Pipeline. Returns the LLM asks, and nil or the EnclaveError that
   # stopped the run.
   def pipeline(home, server, query, prod, racetrack)
-    transport = Quaack::Driver::Transport::Local.new(command: QUAACKS)
+    transport = Transport.new(command: QUAACKS)
     run_id = intake(transport, home, server, query, prod)
     setup(transport, run_id, server, racetrack)
     llm = CapturingLLM.new(query)
@@ -255,8 +274,12 @@ module PromptPack
     stopped = File.join(dir, "stopped.md")
     error ? File.write(stopped, stopped(error, asks.size)) : FileUtils.rm_f(stopped)
     counts = Hash.new(0)
+    rewrites = false
     kept = asks.map do |ask|
-      name = "#{ask.step}-#{counts[ask.step] += 1}"
+      # 5a asks after 6a are step 11's, for the surviving rewrites.
+      rewrites ||= ask.step == "6a"
+      step = rewrites && ask.step.start_with?("5a-") ? "step11-#{ask.step}" : ask.step
+      name = "#{step}-#{counts[step] += 1}"
       FileUtils.mkdir_p(File.join(dir, name))
       File.write(File.join(dir, name, "prompt.md"), prompt(ask))
       name
