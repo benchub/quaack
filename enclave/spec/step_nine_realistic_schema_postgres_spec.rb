@@ -44,6 +44,22 @@ RSpec.describe Quaack::Enclave::StepNine do
     expect(report.results.map { [it.passed, it.scenario] }).to eq([[true, nil], [false, :s1]])
   end
 
+  it "disproves a keyset page on orders whose candidate changes only the tie-breaker (identity id)" do
+    page = "SELECT o.id FROM shop.orders o WHERE o.status = 'shipped' AND (o.created_at, o.id) < " \
+           "('2026-09-01 00:00:00+00', 900) ORDER BY o.created_at DESC, o.id DESC LIMIT 20"
+    report = described_class.run(conn, page, [page, page.sub("900)", "901)")])
+    expect(report.untested).to eq([])
+    expect(report.results.map(&:passed)).to eq([true, false])
+  end
+
+  it "disproves a tie-breaker change when the keyset id is 1, below the ids the database generates" do
+    page = "SELECT o.id FROM shop.orders o WHERE o.status = 'shipped' AND (o.created_at, o.id) < " \
+           "('2026-09-01 00:00:00+00', 1) ORDER BY o.created_at DESC, o.id DESC LIMIT 20"
+    report = described_class.run(conn, page, [page, page.sub(" 1)", " 2)")])
+    expect(report.untested).to eq([])
+    expect(report.results.map(&:passed)).to eq([true, false])
+  end
+
   it "loads a GROUP BY over a table with a unique index" do
     passes_itself(<<~SQL)
       SELECT u.country, count(*) FROM shop.users u WHERE u.status = 'active' GROUP BY u.country

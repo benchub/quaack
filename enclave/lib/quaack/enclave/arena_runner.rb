@@ -162,8 +162,10 @@ module Quaack
       def load(rows, inserts, settings)
         database(:begin_failed, :begin) { @connection.exec("SET LOCAL statement_timeout = #{@statement_timeout_ms}") }
         settings.each { |sql| database(:begin_failed, :begin) { @connection.exec(sql) } }
-        rows.each_with_index { |row, i| statement(*insert_sql(row), step: :load, rule: :fixture_load_failed, index: i) }
+        # Advance sequences past the explicit values first, so ids the
+        # database generates for other rows never collide with them.
         Sequences.advance(rows, method(:table_sql), method(:statement))
+        rows.each_with_index { |row, i| statement(*insert_sql(row), step: :load, rule: :fixture_load_failed, index: i) }
         inserts.each_with_index { |sql, index| statement(sql, [], step: :insert, rule: :insert_failed, index:) }
       end
 
