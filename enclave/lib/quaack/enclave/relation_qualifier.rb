@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "strscan"
+require_relative "parser_version"
 require_relative "deparse"
 require_relative "supported_sql"
 require_relative "table_name"
@@ -101,7 +102,7 @@ module Quaack
       def parse(sql)
         PgQuery.parse(sql).tap { |parse| SupportedSql.check!(parse) }
       rescue PgQuery::ParseError
-        raise Unparsable, "the query doesn't parse", cause: nil
+        raise Unparsable, ParserVersion.unparsable("the query doesn't parse"), cause: nil
       end
 
       # Every RangeVar with no schema that isn't a reference to a CTE in

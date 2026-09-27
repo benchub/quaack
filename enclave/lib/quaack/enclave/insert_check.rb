@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "parser_version"
 require_relative "deparse"
 require_relative "insert_values"
 require_relative "table_name"
@@ -133,7 +134,7 @@ module Quaack
       def parse(sql)
         PgQuery.parse(sql)
       rescue PgQuery::ParseError
-        raise Error.new("unparsable", "the insert doesn't parse"), cause: nil
+        raise Error.new("unparsable", ParserVersion.unparsable("the insert doesn't parse")), cause: nil
       end
 
       def insert_stmt(parse)

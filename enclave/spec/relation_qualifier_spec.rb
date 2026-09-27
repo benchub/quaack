@@ -37,6 +37,19 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
     end
   end
 
+  describe "a query that doesn't parse" do
+    it "names the parser's Postgres version, without quoting the query or pg_query's error" do
+      sentinel = "SENTINEL_9d41c7"
+
+      expect { qualify("SELECT '#{sentinel}' FROM") }
+        .to raise_error(described_class::Unparsable) { |error|
+          expect(error.message).to eq("the query doesn't parse (pg_query parses with the Postgres 17 grammar; " \
+                                      "Postgres 18-only syntax isn't supported yet)")
+          expect(error.cause).to be_nil
+        }
+    end
+  end
+
   describe "a query that already qualifies every relation" do
     it "comes back unchanged, with nothing resolved" do
       sql = "SELECT o.id FROM public.orders o JOIN public.customers c ON c.id = o.customer_id"

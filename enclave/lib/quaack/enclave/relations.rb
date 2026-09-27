@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require_relative "parser_version"
 require_relative "deparse"
 require_relative "from_functions"
 require_relative "relation_qualifier"
@@ -134,7 +135,7 @@ module Quaack
       def parse(sql)
         PgQuery.parse(sql)
       rescue PgQuery::ParseError
-        raise Error.new("parse_error", "the query doesn't parse"), cause: nil
+        raise Error.new("parse_error", ParserVersion.unparsable("the query doesn't parse")), cause: nil
       end
 
       def supported!(parse)

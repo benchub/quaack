@@ -52,6 +52,18 @@ module Quaack
       # A signal ended the process.
       def killed? = !signal.nil?
 
+      # The rule, and for query_unparsable a fixed note naming pg_query's
+      # grammar, which is older than production's Postgres. The enclave's
+      # error line holds only the rule, so the driver adds the note.
+      def rule_with_note
+        return rule unless rule == "query_unparsable"
+
+        require "pg_query"
+        major = PgQuery::PG_VERSION_NUM / 10_000
+        "#{rule} (pg_query parses with the Postgres #{major} grammar; " \
+          "Postgres #{major + 1}-only syntax isn't supported yet)"
+      end
+
       private
 
       def describe
