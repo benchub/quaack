@@ -23,7 +23,8 @@ module Quaack
     # EXCEPT) and VALUES included. It can have:
     # - FROM: tables (ONLY too), joins of every type with ON, USING, or
     #   NATURAL, subqueries (LATERAL too), and one plain function call,
-    #   such as generate_series or unnest, WITH ORDINALITY or not.
+    #   such as generate_series or unnest, WITH ORDINALITY or not. 3a
+    #   (Relations) refuses a function in FROM that isn't pg_catalog's.
     # - WITH: CTEs, RECURSIVE, MATERIALIZED, and NOT MATERIALIZED.
     # - Expressions: columns, constants, $n parameters, casts, function
     #   calls, aggregates (DISTINCT, ORDER BY, FILTER, and WITHIN GROUP),
