@@ -1,20 +1,20 @@
-# Case 075: NATURAL JOIN on an inheritance parent with ONLY.
+# Case 075: NATURAL JOIN with ONLY.
 
 **Category:** `index`, new index only.
 
-**Exercises:** NATURAL JOIN; FROM ONLY on an inheritance parent; indexes aren't inherited.
+**Exercises:** NATURAL JOIN; FROM ONLY on a table with no inheritance children. README 3c refuses a table with children (`inheritance_parent`), with or without `ONLY`, so the case has none.
 
 ## Setup.
 
-`events` holds 400,000 rows, and its child `events_2024` holds 100,000 more. `event_kinds` shares only `kind_code` with `events`.
+`events` holds 400,000 rows. `event_kinds` shares only `kind_code` with `events`.
 
 ## Slow query (`slow.sql`).
 
-This year's events for one account, with their labels. `ONLY` leaves out the child table, and nothing indexes `account_id`.
+This year's events for one account, with their labels. `ONLY` is a no-op here, and nothing indexes `account_id`.
 
 ## Expected result.
 
-`events (account_id)` on the parent. Indexes aren't inherited, and `ONLY` means the child doesn't need one.
+`events (account_id)`.
 
 ## Proof.
 
