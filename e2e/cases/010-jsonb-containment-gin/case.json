@@ -4,6 +4,7 @@
   "compare": "multiset",
   "features": [
     "jsonb @> operator",
+    "GIN index from the LLM (5a-5)",
     "GIN with jsonb_path_ops, set aside untested (5a-3)",
     "json values never sent, only frequencies (3f)"
   ],
