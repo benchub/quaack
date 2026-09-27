@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rubocop/rake_task"
+require "shellwords"
 
 RuboCop::RakeTask.new
 
@@ -20,18 +21,28 @@ RSPEC = "RSpec.configure { |c| c.fail_if_no_examples = true }; RSpec::Core::Runn
 #
 # The specs that check SPEC_SUITES live in the root suite, so they can't catch
 # the root suite being left out. The task checks that itself: it fails if the
-# root has a spec/ folder and the root suite didn't run. That catches a wrong
-# glob or a loop that skips a suite. It can't stop a deliberate edit that
-# also changes this check, or that runs the root suite with its specs
-# filtered out.
+# root has a spec/ folder and the root suite didn't run, or couldn't start.
+# That catches a wrong glob or a loop that skips the root suite. A loop that
+# skips another suite would go unnoticed, since only the root is checked. It
+# can't stop a deliberate edit that also changes this check, or that runs the
+# root suite with its specs filtered out.
+#
+# Local rake is the only check, so personal RSpec options (.rspec-local,
+# ~/.rspec, and SPEC_OPTS) must not filter specs out, such as the boundary
+# specs. `--options .rspec` makes RSpec read only the suite's own .rspec, and
+# SPEC_OPTS is removed from the suite's environment.
 desc "Run every gem's specs, plus the cross-gem specs in spec/"
 task :spec do
   ran = []
   failed = []
   SPEC_SUITES.each do |dir|
-    sh(Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "spec", chdir: File.join(__dir__, dir)) do |ok, _|
-      ran << dir
-      failed << File.join(dir, "spec") unless ok
+    cmd = [Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "--options", ".rspec", "spec"]
+    path = File.join(__dir__, dir)
+    puts "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}"
+    sh({ "SPEC_OPTS" => nil }, *cmd, chdir: path, verbose: false) do |ok, status|
+      # sh gives nil, not false, when the command couldn't start.
+      ran << dir unless ok.nil?
+      failed << "#{File.join(dir, "spec")} (#{ok.nil? ? "couldn't start" : "exit #{status.exitstatus}"})" unless ok
     end
   end
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")

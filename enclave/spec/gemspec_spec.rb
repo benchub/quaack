@@ -2,7 +2,7 @@
 
 RSpec.describe "quaacks gemspec" do
   let(:gemspec_files) { Dir.glob("*.gemspec", base: GEM_ROOT) }
-  let(:spec) { Gem::Specification.load(File.join(GEM_ROOT, gemspec_files.fetch(0))) }
+  let(:spec) { Gem::Specification.load(File.join(GEM_ROOT, gemspec_files.fetch(0))) or raise "couldn't load the gemspec" }
 
   it "is the only gemspec here, and it's named for the gem" do
     expect(gemspec_files).to eq(["quaacks.gemspec"])

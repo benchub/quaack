@@ -87,6 +87,7 @@ RSpec.describe RuntimeBoundary do
       gemspec = copy_of("enclave")
       add_dependency(gemspec, "quaack-driver")
       report = check(described_class.enclave(gemspec_path: gemspec))
+      expect(report.install.gem_dirs).to include("quaack-driver")
       driver = File.join(report.install.gem_dirs.fetch("quaack-driver"), "lib", "quaack", "driver.rb")
 
       expect(messages(report, run: "quaacks --version")).to eq([])
@@ -113,7 +114,9 @@ RSpec.describe RuntimeBoundary do
 
       report = check(side)
 
-      expect(messages(report)).to include(forbidden)
+      # Only --version shows the plant. The every-file run loads the whole
+      # driver gem anyway.
+      expect(messages(report, run: "quaacks --version")).to include(forbidden)
       expect(messages(report)).not_to include(outside)
     end
 
@@ -124,7 +127,8 @@ RSpec.describe RuntimeBoundary do
       side = described_class.enclave(gemspec_path: gemspec, sources: { "harmless-helper" => fake_llm_gem },
                                      allowed_gems: [*Boundary::ENCLAVE_ALLOWED_GEMS, "harmless-helper"])
 
-      expect(messages(check(side))).to include(%r{loaded \S+/lib/openai\.rb, which this side must never load})
+      expect(messages(check(side), run: "quaacks --version"))
+        .to include(%r{loaded \S+/lib/openai\.rb, which this side must never load})
     end
 
     # The real SDK the driver uses, not a stand-in, admitted by the
@@ -153,7 +157,8 @@ RSpec.describe RuntimeBoundary do
       side = described_class.enclave(gemspec_path: gemspec, sources: { "quaack-driver" => driver },
                                      allowed_gems: [*Boundary::ENCLAVE_ALLOWED_GEMS, "quaack-driver"])
 
-      expect(messages(check(side))).to include(%r{loaded \S+/lib/plain_helper\.rb, which this side must never load})
+      expect(messages(check(side), run: "quaacks --version"))
+        .to include(%r{loaded \S+/lib/plain_helper\.rb, which this side must never load})
     end
   end
 
@@ -263,6 +268,7 @@ RSpec.describe RuntimeBoundary do
       gemspec = copy_of("driver")
       add_dependency(gemspec, "quaacks")
       report = check(described_class.driver(gemspec_path: gemspec))
+      expect(report.install.gem_dirs).to include("quaacks")
       enclave = File.join(report.install.gem_dirs.fetch("quaacks"), "lib", "quaack", "enclave.rb")
 
       expect(messages(report, run: "quaack --version")).to eq([])

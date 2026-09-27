@@ -129,6 +129,11 @@ RSpec.describe Boundary do
       expect(flagged_lines(source)).to eq([2])
     end
 
+    it "flags ::Bundler.require, but not another module's Bundler" do
+      expect(scan(%(::Bundler.require\nMine::Bundler.require\n)).map { |v| [v.line, v.message] })
+        .to eq([[1, "Bundler.require would load every gem in the shared bundle"]])
+    end
+
     it "flags a file that doesn't parse, since it can't be checked" do
       expect(scan("require \"pg_query\"\ndef broken(\n")).not_to be_empty
     end
