@@ -15,8 +15,12 @@ require "prism"
 #
 # - A require, load, or autoload of a forbidden library, such as
 #   quaack/driver or openai in the enclave, or quaack/enclave in the driver.
-#   This is the only rule for the driver (`names_only`), since loading
-#   enclave code on a laptop leaks no production data.
+#   This is the only rule for the driver (`names_only`), apart from
+#   flagging a file that doesn't parse, since loading enclave code on a
+#   laptop leaks no production data. So the driver's check misses a
+#   require_relative into the enclave's tree, and doesn't check its
+#   executable's shebang. The runtime check still flags enclave code that
+#   loads.
 # - A require_relative or absolute path that leaves the gem, such as into the
 #   driver's tree, or a path relative to the working directory.
 # - A require or require_relative of a path that isn't a plain string, which
@@ -69,7 +73,8 @@ module Boundary
   end
 
   # Every violation of the rules above in the gem's source files. With
-  # `names_only`, only requires of something in `forbidden` count.
+  # `names_only`, only requires of something in `forbidden` and files that
+  # don't parse count.
   def require_violations(gem_dir, forbidden:, names_only: false)
     exe_dir = File.join(File.expand_path(gem_dir), "exe", "")
     source_files(gem_dir).flat_map do |file|
@@ -191,9 +196,13 @@ module Boundary
       flag(node, "#{node.name} reaches #{absolute}, outside #{@gem_dir}")
     end
 
+    # Bundler or ::Bundler, not Mine::Bundler.
     def bundler_require?(node)
+      receiver = node.receiver
       node.name == :require &&
-        node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :Bundler
+        (receiver.is_a?(Prism::ConstantReadNode) ||
+          (receiver.is_a?(Prism::ConstantPathNode) && receiver.parent.nil?)) &&
+        receiver.name == :Bundler
     end
 
     def flag(node, message)
