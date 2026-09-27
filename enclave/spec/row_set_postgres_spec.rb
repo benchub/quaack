@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "delegate"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
 
@@ -66,5 +67,25 @@ RSpec.describe Quaack::Enclave::Scenarios::RowSet do
     set = row_set("CREATE TABLE fx.t (id integer PRIMARY KEY, a integer, live boolean);
                    CREATE UNIQUE INDEX ON fx.t (a) WHERE live")
     expect(adds(set, row(id: "1", a: "1", live: "f"), row(id: "2", a: "1", live: "f"))).to eq([true, false])
+  end
+
+  # The catalog never prints a key like this, but if one ever reads as
+  # more than one expression it must not be spliced into SQL and run.
+  it "drops a group whose expression key isn't one expression, without running it" do
+    conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, email text NOT NULL);
+               CREATE UNIQUE INDEX ON fx.t (lower(email))")
+    real = Quaack::Enclave::ArenaSchema.load_closure(conn, [table])
+    crafted = real.constraints(table).then do |c|
+      c.with(expressions: c.expressions.map { |e| e.with(keys: ["lower(email)), (upper(email)"]) })
+    end
+    schema = SimpleDelegator.new(real)
+    schema.define_singleton_method(:constraints) { |_t| crafted }
+    sent = []
+    real_conn = conn
+    spy = SimpleDelegator.new(conn)
+    spy.define_singleton_method(:exec_params) { |sql, *args| (sent << sql) && real_conn.exec_params(sql, *args) }
+    set = described_class.new(schema, spy)
+    expect(adds(set, row(id: "1", email: "A"), row(id: "2", email: "b"))).to eq([false, false])
+    expect(sent.grep(/upper/)).to eq([])
   end
 end
