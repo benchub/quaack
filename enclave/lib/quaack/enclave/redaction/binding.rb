@@ -198,6 +198,25 @@ module Quaack
       end
 
       private_constant :Bind, :Prepare
+
+      # Prepares sql as name, each $n declared the type in types, by
+      # Binding#prepare's rules, so Postgres doesn't infer a different one
+      # from context. PREPARE goes by the simple protocol, which would run
+      # a second statement, so sql must be exactly one (Error
+      # not_one_select). With nil types, it prepares with the extended
+      # protocol and Postgres infers every type, raising its own error.
+      def self.prepare(connection, name, sql, types)
+        return connection.prepare(name, sql) unless types
+        raise Error, "not_one_select" unless one_statement?(sql)
+
+        Binding.new(sql:, types:, values: []).prepare(connection, name)
+      end
+
+      def self.one_statement?(sql)
+        PgQuery.parse(sql).tree.stmts.size == 1
+      rescue PgQuery::ParseError
+        false
+      end
     end
   end
 end

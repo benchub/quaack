@@ -67,8 +67,8 @@ module Quaack
       def check(store:, connection:, sql:)
         production = step1_plan(store)
         map = Redaction.placeholder_map(store)
-        Redaction.binding(sql, map)
-        racetrack = racetrack_plan(connection, sql, map)
+        types = Redaction.binding(sql, map).types
+        racetrack = racetrack_plan(connection, sql, map, types)
         comparable = production.comparable? && racetrack.comparable?
         raise Error.new("plan_gate_not_comparable", NOT_COMPARABLE_DETAIL) unless comparable
         raise Error.new(MISMATCH, MISMATCH_DETAIL) unless production.matches?(racetrack)
@@ -84,9 +84,9 @@ module Quaack
 
       # The slow literals, in parameter order, as SingleCandidateTest takes
       # them.
-      def racetrack_plan(connection, sql, map)
+      def racetrack_plan(connection, sql, map, types)
         values = map.keys.sort_by { |key| Integer(key.delete_prefix("$")) }.map { |key| map[key]["value"] }
-        report = SingleCandidateTest.run(connection, query: sql, literal_sets: { slow: values }, candidates: [])
+        report = SingleCandidateTest.run(connection, query: sql, literal_sets: { slow: values }, candidates: [], types:)
         report.baseline.plans.fetch(:slow).canonical_plan
       end
     end

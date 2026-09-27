@@ -1100,19 +1100,7 @@ A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_gu
 
 ### 20260927-1. Set operations crash generator one (5a-1). Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters.
-
-`SingleCandidateTest#explain` (`single_candidate_test.rb:419`) prepares the query without parameter types, so Postgres guesses wrong:
-- e2e 020, 048, 099 fail with `prepare_failed` 42883: `now()::date - $1` resolves as date minus date.
-- 031 fails with `explain_failed` 22P02: `4242.0` won't bind to an inferred bigint.
-- 091 is probably a plan-gate mismatch on `substring(... FROM $1 FOR $2)`.
-
-Use the original literal's type for each placeholder (from the placeholder map, or cast the placeholder the way the original literal was written). Check every other PREPARE site (the plan gate, index search) for the same bug. Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-4, step 5 plan gate.
-- **Status:** todo
+### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key.
 
@@ -1196,11 +1184,32 @@ In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and
 - **README:** 5a-1, 5a-4.
 - **Status:** todo
 
-### 20260927-12. e2e 086 misses its bound by 6 blocks.
+### 20260927-12. e2e 086 misses its bound by 6 blocks. Done, see BACKLOG-COMPLETE.md.
 
-Now that runs are stable, 086 measures 1013 blocks against a bound of 1007, every run. Find out whether it's a real small miss in QUAACK or a bound that's too tight in the corpus.
 
-- **Depends on:** 20260927-6.
-- **Came from:** The 20260927-6 investigation.
-- **README:** none.
+### 20260927-13. 5a-1 adds a non-covering INCLUDE and no bare-key variant.
+
+Diagnosed from e2e 086 (20260927-12). QUAACK built `catalog (price_cents) INCLUDE (id, sku, name)`, which measured 1013 blocks against 1007 for the plain `(price_cents)` index. The plan is a BitmapOr feeding a heap scan, which never uses INCLUDE columns, and the heap filter needs `category`, which isn't in the INCLUDE. So the INCLUDE only widens the leaf entries.
+- `btree(key)` (generator_one.rb ~792) always adds `include: covered - key`.
+- `covered_columns` (~584) takes only target-list and GROUP BY columns, and leaves out WHERE-only filter columns.
+- No bare-key variant is proposed, so ranking can't compare the two (`considered: 1`).
+
+Fix: add the INCLUDE only when it makes the index truly covering for that table (every column the query reads from it, filter columns included), and/or always also propose the bare-key variant. Related to 20260927-11 (INCLUDE vs deduplication).
+
+- **Depends on:** 20260927-12.
+- **Came from:** The 20260927-12 investigation.
+- **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099.
+
+- **e2e 020:** `started_at >= current_date - 1 GROUP BY user_id`. Its one candidate is declined as unused (bound 94). Diagnose it: clock anchoring's effect on the predicate, or 5a-1's choice.
+- **e2e 099:** the top fix touches 13 blocks against a bound of 12. Is it a ranking issue or the bound?
+- **Weak sentinel test:** the "failed typed prepare error free of the literal" test can't catch a regression, because the sentinel never reaches PREPARE.
+- **Type names:** `Redaction.prepare` and `Binding#prepare_sql` interpolate type names unchecked. They're safe only because the set is fixed. Add an allowlist.
+- **SELECT only:** `Redaction.one_statement?` doesn't require a SELECT.
+
+- **Depends on:** 20260927-2.
+- **Came from:** 20260927-2 build and review.
+- **README:** 5a-4.
 - **Status:** todo

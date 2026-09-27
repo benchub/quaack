@@ -55,9 +55,10 @@ module Quaack
           entry = store.read("index_search_#{search}")
           query = IndexSearch.query(store, search)
           literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
-          report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry))
+          types = IndexSearch.types(store, query)
+          report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry), types:)
           ranking = IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,
-                                                  results: report.results)
+                                                  results: report.results, types:)
           plain_ranking(ranking, LiteralSet.load(store).sets)
         end
 

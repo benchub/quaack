@@ -117,14 +117,20 @@ module Quaack
         def original_entry(store, connection, sql)
           dedupe, candidates = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
           maps = LiteralSet.load(store).sets
-          entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:), maps)
-            .merge("parameter_types" => parameter_types(connection, sql))
+          types = types(store, sql)
+          report = SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:, types:)
+          entry(dedupe, report, maps).merge("parameter_types" => parameter_types(connection, sql, types))
         end
 
-        # $n => the type Postgres infers for it in sql, by catalog name
-        # (format_type), or {} if sql doesn't prepare. Shape-class.
-        def parameter_types(connection, sql)
-          oids = StructuralDiscard.parameter_types(connection, sql) || []
+        # Each $n's type for PREPARE: its original literal's (Redaction's
+        # placeholder map), so Postgres doesn't infer a different one.
+        def types(store, sql) = Redaction.binding(sql, Redaction.placeholder_map(store)).types
+
+        # $n => the type Postgres gives it in sql, prepared with types (see
+        # types), by catalog name (format_type), or {} if sql doesn't
+        # prepare. Shape-class.
+        def parameter_types(connection, sql, types)
+          oids = StructuralDiscard.parameter_types(connection, sql, types) || []
           names = oids.map { connection.exec_params("SELECT format_type($1::oid, NULL)", [it]).getvalue(0, 0) }
           names.each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
         end
@@ -141,14 +147,16 @@ module Quaack
         def rewrite_entry(store, connection, sql)
           maps = LiteralSet.load(store).sets
           literal_sets = values(maps)
-          dedupe, candidates = mechanical(store, sql, plan: slow_plan(connection, sql, literal_sets), analyzed: false)
-          entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:), maps)
+          types = types(store, sql)
+          plan = slow_plan(connection, sql, literal_sets, types)
+          dedupe, candidates = mechanical(store, sql, plan:, analyzed: false)
+          entry(dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:, types:), maps)
         end
 
         # The query's plain EXPLAIN with the slow literals.
-        def slow_plan(connection, sql, literal_sets)
+        def slow_plan(connection, sql, literal_sets, types)
           report = SingleCandidateTest.run(connection, query: sql, literal_sets: literal_sets.slice("slow"),
-                                                       candidates: [])
+                                                       candidates: [], types:)
           report.baseline.plans.fetch("slow").raw_plan
         end
 

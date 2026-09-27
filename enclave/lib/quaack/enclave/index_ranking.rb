@@ -101,12 +101,12 @@ module Quaack
 
       module_function
 
-      def rank(connection, query:, literal_sets:, baseline:, results:)
+      def rank(connection, query:, literal_sets:, baseline:, results:, types: nil) # rubocop:disable Metrics/ParameterLists
         check(literal_sets, baseline, results)
         pool = results.select(&:used?).map { |r| single(r, baseline) }
         singles = ranked(pool)
         if pool.size > 1
-          combination = SingleCandidateTest.session(connection, query:, literal_sets:) do |session|
+          combination = SingleCandidateTest.session(connection, query:, literal_sets:, types:) do |session|
             combine(session, baseline, pool, singles.first)
           end
         end
