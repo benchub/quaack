@@ -153,7 +153,8 @@ module Quaack
         def pretty_print(pp) = pp.text(inspect)
       end
 
-      # A candidate HypoPG wouldn't create. rule is :hypopg_refused.
+      # A candidate HypoPG wouldn't create, rule :hypopg_refused, or one whose
+      # DDL can't be rendered, rule :unrenderable with a nil sqlstate.
       Refusal = Data.define(:rule, :sqlstate)
 
       # The name of the prepared statement and of the savepoint around each
@@ -204,7 +205,7 @@ module Quaack
       end
 
       def literal_sets?(sets)
-        sets.is_a?(Hash) && sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
+        sets.is_a?(Hash) && !sets.empty? && sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
       end
 
       def literal?(value)
@@ -242,6 +243,20 @@ module Quaack
         Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
       end
 
+      # A candidate whose to_ddl the deparse guard refuses, such as one with
+      # a name over 63 bytes, is refused on its own instead of stopping the
+      # run.
+      def renderable?(candidate)
+        candidate.to_ddl
+        true
+      rescue Deparse::Error
+        false
+      end
+
+      def unrenderable
+        Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :unrenderable, sqlstate: nil))
+      end
+
       # EXECUTE of the prepared statement with these values. With no
       # values, it takes no parentheses.
       def execute(connection, values)
@@ -273,9 +288,14 @@ module Quaack
 
         def open(&)
           previous = @connection.set_notice_receiver { nil }
+          type_map = @connection.type_map_for_results
           begin
+            # Every value is read as the String Postgres sends, whatever
+            # type map the caller set.
+            @connection.type_map_for_results = PG::TypeMapAllStrings.new
             within(&)
           ensure
+            @connection.type_map_for_results = type_map
             @connection.set_notice_receiver(&previous)
           end
         end
@@ -291,6 +311,8 @@ module Quaack
           SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
           indexes = []
           candidates.each do |candidate|
+            return SingleCandidateTest.unrenderable unless SingleCandidateTest.renderable?(candidate)
+
             oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
             return SingleCandidateTest.refused(sqlstate) if oid.nil?
 
