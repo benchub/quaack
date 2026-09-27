@@ -2590,3 +2590,22 @@ These are minor findings from the review of 20260927-3 to -8:
 - **Came from:** Review of 20260927-14.
 - **README:** 5a-4.
 - **Status:** done
+
+### 20260926-60. A fixture load failure in the vacuity guard crashes step 9.
+
+A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_guard.rb:91, from step_nine.rb:41) raises `ArenaRunner::Error` out of `StepNine.run` instead of producing a clean per-candidate outcome. Decide how 9c should treat a scenario that won't load: skip it and mark its atoms untested, or refuse the candidate with a rule. Then handle it, with a test.
+- **Decided (2026-09-27):** scenarios must never crash QUAACK. Skip a scenario that won't load and mark the atoms it would have tested as untested.
+
+- **Depends on:** 20260922-48, 20260926-59.
+- **Came from:** Build of 20260926-59.
+- **README:** Step 9.
+- **Status:** done
+
+### 20260927-10. Capture and restore relallvisible.
+
+The planner prices index-only scans from `pg_class.relallvisible`. The enclave captures only `reltuples` and `relpages`, so index-only pricing on the racetrack depends on whether it has been vacuumed, not on production. Capture `relallvisible` in the statistics step. **Decided (2026-09-27):** neither, for v1. Assume production is vacuumed normally and the racetrack is fully analyzed and vacuumed after restore. Document these assumptions in the README (3c, 4a).
+
+- **Depends on:** 20260922-17.
+- **Came from:** The 20260927-6 investigation.
+- **README:** 3c, 4a.
+- **Status:** done
