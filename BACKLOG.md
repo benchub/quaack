@@ -994,6 +994,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260924-13, -14, -20.
 - **Came from:** The build of those tasks.
 - **README:** Where QUAACK runs, LLM client.
+- **Landed (2026-09-27):** NoNetwork is shared with the root suite, and the LLM error text is pinned. **Needs a decision:** lazy-loading `anthropic` breaks `runtime_boundary_spec` (it expects every driver file to load the gem). Change that spec to build a client first, or keep the eager load. Still open: the Pump/Child rework, per-example timeouts, the JSON harness column, and streaming.
 - **Status:** todo
 
 ### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
@@ -1014,6 +1015,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
 - **README:** 3b, 3h, step 1.
+- **Landed (2026-09-27):** the `app:prod` false refusal is fixed (libpq's exact rule), and the parentheses mutants are pinned. The lock-wait and signal tests already existed. Still open: empty conninfo (no defined behavior), candidates restored by anchored form, subset DDL restore, and EUC_JP/WIN1252 sort order.
 - **Status:** todo
 
 ### 20260926-50. FROM functions: non-FuncCall items crash. Done, see BACKLOG-COMPLETE.md.
