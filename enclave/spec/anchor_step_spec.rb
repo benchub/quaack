@@ -63,6 +63,19 @@ RSpec.describe "quaacks anchor" do
     end
   end
 
+  context "with now() minus an interval placeholder" do
+    let(:query) { "SELECT o.id FROM public.orders o WHERE o.created_at > now() - interval $1" }
+    let(:placeholder_map) { { "$1" => { "value" => "7 days", "type" => "interval" } } }
+
+    it "anchors now() and keeps the placeholder" do
+      expect(anchor.status.exitstatus).to eq(0)
+      expect(stored.read("anchored_query"))
+        .to eq("SELECT o.id FROM public.orders o WHERE o.created_at > (quaack.clock_anchor() - $1::interval)")
+      expect(stored.read("clock_replacements")["replacements"])
+        .to eq([{ "original" => "now()", "anchored" => "quaack.clock_anchor()" }])
+    end
+  end
+
   context "when the plan's search_path puts a schema before pg_catalog" do
     let(:search_path) { "public, pg_catalog" }
 
