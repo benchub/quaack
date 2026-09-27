@@ -1,0 +1,1 @@
+{"inserts": ["INSERT INTO public.orders (user_id, status, total_cents, created_at, updated_at) VALUES (424242, $1, 100, '2024-01-01 00:00:00+00', '2024-01-01 00:00:00+00'), (424242, $1, -500, '2024-01-02 00:00:00+00', '2024-01-02 00:00:00+00')"]}
