@@ -695,6 +695,8 @@ When an atom is vacuous:
 2. **If it's still vacuous, keep going.** Mark the atom as untested. Every candidate that passes step 9 carries a note saying which atoms were never exercised, and that note goes into the report.
 3. **Hand it to step 10.** Pass the untested atoms to 10a so the LLM can aim its counterexamples at them.
 
+A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigger or constraint QUAACK doesn't model rejects a row, it exercises nothing: its atoms stay vacuous, get their retries, and end untested. In 9d, a scenario that won't load disproves each candidate with the load failure's rule, which is safe but means no candidate passes.
+
 The enclave script tells the driver which atoms are untested by their redacted shape, such as `o.status = $1`, never by their values.
 
 ### 9d. Compare results.
