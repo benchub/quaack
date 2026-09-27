@@ -11,7 +11,16 @@ One directory per fixture query, each run through the real pipeline against a th
 - `correlated_exists`: a correlated EXISTS subquery.
 - `keyset_pagination`: `WHERE (created_at, id) < (...) ORDER BY created_at DESC, id DESC LIMIT n`.
 
-All four run through the whole pipeline to the report. Each has an operator rewrite, so step 7 is asked. For `orm_join` and `correlated_exists`, step 8 prunes the operator rewrite, so only the 6a rewrite reaches 10a and step 11. For `group_having` and `keyset_pagination`, both do.
+All four run through the whole pipeline to the report. Each has an operator rewrite, so step 7 is asked. For `orm_join` and `correlated_exists`, step 8 prunes the operator rewrite. For `group_having` and `keyset_pagination`, it survives to 10a and step 11.
+
+The generator's made-up 6a reply holds two rewrites, both wrapped in a MATERIALIZED CTE so step 8 keeps them. The first is the query itself, so it's exactly equivalent and has no counterexample. The second adds one harmless-looking condition that drops rows real data can hold, so it's wrong, and its 10a prompts ask for a real counterexample. Step 9's fixtures don't catch it, since the condition tests a column the original never mentions:
+
+- `orm_join`: `AND u.name IS NOT NULL` (`users.name` is nullable).
+- `group_having`: `AND o.total_cents >= 0` (drops refunds from the counts and sums).
+- `correlated_exists`: `AND p.sku <> p.name`.
+- `keyset_pagination`: `AND o.updated_at <= o.created_at`.
+
+So in every query, `10a-1` to `10a-3` are the equivalent rewrite's rounds, `10a-4` to `10a-6` the wrong one's, and, where the operator rewrite survives, `10a-7` to `10a-9` are its rounds. For the wrong rewrite, a good reply gives inserts that make the two queries' results differ. For the equivalent one, an honest reply can only try and fail.
 
 Each query directory holds one directory per LLM ask, named `<step>-<n>`, where n counts that step's asks within the query in order. Each of those holds a `prompt.md`. If the pipeline stopped before its end, `stopped.md` says at which step and why, and the prompts for steps after it are missing.
 
@@ -50,7 +59,11 @@ Every step asks for one JSON object and nothing else. The driver reads it with t
 - `step7`: `{"rewrites": [{"transformation": "...", "assumptions": [...]}]}`, one entry per operator rewrite, in order, with the same assumption kinds (`OperatorCandidates::SCHEMA`).
 - `10a`: `{"inserts": ["INSERT INTO public.t (cols) VALUES (...)", ...]}` (`Counterexamples::SCHEMA`).
 
-The real driver asks the API for structured output with that schema, so the API holds the model to it. A pasted chat doesn't, so a reply may wrap the JSON in a code fence or add prose. Save it anyway, as it is.
+Every prompt's system section ends with "Reply with only the JSON object, with no code fences, commentary, or trailing text." (`LLM::Client::JSON_ONLY`, added to every ask with a schema). The real driver also asks the API for structured output with that schema, so the API holds the model to it. A pasted chat doesn't, so a reply may still wrap the JSON in a code fence or add prose. Save it anyway, as it is. The driver's client reads the JSON object out of such a reply: if the whole reply isn't JSON, it takes the longest span from the first `{` to a `}` that parses.
+
+## The archive
+
+`archive/equivalent-rewrite/` holds the first 18 replies, to `correlated_exists/10a-1` and `10a-2` from before task 20260927-20, with the prompts they answered. Those prompts asked for a counterexample to the old, exactly equivalent fake rewrite, so they don't match the live prompts. Its README says more. The generator never touches `archive/`.
 
 ## Regenerating
 
