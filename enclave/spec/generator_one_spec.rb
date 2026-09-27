@@ -960,6 +960,40 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
   end
 
+  describe "correlated subqueries" do
+    let(:stats) do
+      statistics(table(orders, { "customer_id" => column(900) }, extra: %w[id created_at body]),
+                 table(customers, { "id" => column(-1), "tier" => column(3) }, extra: %w[email]))
+    end
+
+    it "keys a LATERAL subquery's table on the correlated column, then its own ORDER BY" do
+      sql = "SELECT c.id, r.id FROM public.customers c CROSS JOIN LATERAL (SELECT o.id, o.created_at " \
+            "FROM public.orders o WHERE o.customer_id = c.id ORDER BY o.created_at DESC, o.id DESC LIMIT 3) r " \
+            "WHERE c.tier = 'gold' ORDER BY c.id"
+
+      expect(generate(sql, stats).select { |c| c.table == orders }).to eq([
+        btree(orders, %w[customer_id], %w[id created_at]),
+        btree(orders, [asc("customer_id"), desc("created_at")], %w[id]),
+        btree(orders, [asc("customer_id"), desc("created_at"), desc("id")])
+      ])
+    end
+
+    it "keys a subquery in the select list on the correlated column, then its own ORDER BY" do
+      sql = "SELECT c.id, ARRAY(SELECT o.body FROM public.orders o WHERE o.customer_id = c.id ORDER BY o.id) " \
+            "FROM public.customers c WHERE c.id IN (10, 20)"
+
+      expect(keys(generate(sql, stats).select { |c| c.table == orders }))
+        .to eq([["orders", %w[customer_id], %w[body]], ["orders", %w[customer_id id], %w[body]]])
+    end
+
+    it "keys a correlated subquery in WHERE on its correlated column" do
+      sql = "SELECT c.id FROM public.customers c WHERE EXISTS (SELECT 1 FROM public.orders o " \
+            "WHERE o.customer_id = c.id)"
+
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []]])
+    end
+  end
+
   describe "GROUP BY" do
     let(:stats) do
       statistics(table(orders, { "a" => column(10), "b" => column(20), "r" => column(-1) }, extra: %w[status id]))

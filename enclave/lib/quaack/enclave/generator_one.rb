@@ -27,11 +27,15 @@ module Quaack
     # is ordered and has no duplicates. The same input always gives the same
     # result.
     #
-    # Which tables. Only the plain tables in the top-level FROM clause,
+    # Which tables. The plain tables in the top-level FROM clause,
     # including joins, get candidates. Each one gets its own, and so does
-    # each alias of a self-join. Tables inside a subquery, a CTE, or a
-    # subquery in WHERE or the select list get none, though they're still
-    # checked for qualification. A subquery or function in FROM has no table's columns, so its columns
+    # each alias of a self-join. So does each subquery in an expression
+    # (WHERE, the select list, ARRAY(...), EXISTS) and each LATERAL
+    # subquery in FROM, as a query of its own, after the query it's in.
+    # There, a column compared by = with an outer query's column (one
+    # qualified by a name that isn't in the subquery's FROM) is held to one
+    # value, as by = const. Tables inside a CTE or a plain subquery in FROM
+    # get none, though they're still checked for qualification. A subquery or function in FROM has no table's columns, so its columns
     # are skipped, but a join to one still counts for the table on the other
     # side.
     #
@@ -128,7 +132,7 @@ module Quaack
       def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000)
         limits = { max_key_columns:, brin_min_correlation:, brin_min_reltuples: }
         Input.check_limits(limits)
-        Input.branches(parse).flat_map do |select|
+        Input.branches(parse).flat_map { |select| Input.with_nested(select) }.flat_map do |select|
           scope = Scope.new(select, statistics)
           uses = Uses.new(select, scope)
           scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }
@@ -165,6 +169,26 @@ module Quaack
           select = parse.tree.stmts.first.stmt.select_stmt
           check_relations(select, [])
           leaves(select)
+        end
+
+        # The SELECT and, after it, every SELECT nested in it that gets
+        # candidates of its own: a subquery in an expression (a SubLink)
+        # or a LATERAL subquery in FROM, and those nested in them.
+        def with_nested(select)
+          [select] + nested(select, top: true).flat_map { |inner| leaves(inner).flat_map { |l| with_nested(l) } }
+        end
+
+        def nested(node, top: false)
+          case node
+          when PgQuery::SubLink then [node.subselect.select_stmt]
+          when PgQuery::RangeSubselect then node.lateral ? [node.subquery.select_stmt] : []
+          when PgQuery::SelectStmt then top ? nested_in_select(node) : []
+          else children(node).flat_map { |child| nested(child) }
+          end
+        end
+
+        def nested_in_select(select)
+          select.class.descriptor.flat_map { |f| f.name == "with_clause" ? [] : nested(f.get(select)) }
         end
 
         def leaves(select)
@@ -262,6 +286,7 @@ module Quaack
           @joins = []
           @using = []
           @nullable = Set.new.compare_by_identity
+          @names = []
           select.from_clause.each { |item| read_item(item) }
         end
 
@@ -279,6 +304,14 @@ module Quaack
           return owners.flat_map { |t| t.stats.column_names.map { |c| [t, c] } } if name == :*
 
           owner(owners, name)
+        end
+
+        # A column of an outer query: qualified by a name that no item in
+        # this FROM clause has. Inside a correlated subquery, it's fixed
+        # for each run, like a constant.
+        def outer?(ref)
+          qualifier = ref.fields.to_a[0...-1]
+          qualifier.size == 1 && !@names.include?(qualifier.first.string&.sval)
         end
 
         # The one [table, column] pair a ColumnRef that isn't a star means,
@@ -303,9 +336,18 @@ module Quaack
 
         # Adds the tables under one FROM item, and returns them.
         def read_item(item)
+          @names << item_name(item)
           if item.join_expr then read_join(item.join_expr)
           elsif item.range_var && !item.range_var.schemaname.empty? then [add_table(item.range_var)]
           else []
+          end
+        end
+
+        def item_name(item)
+          if item.range_var then item.range_var.alias&.aliasname || item.range_var.relname
+          elsif item.range_subselect then item.range_subselect.alias&.aliasname
+          elsif item.range_function then item.range_function.alias&.aliasname
+          elsif item.join_expr then item.join_expr.alias&.aliasname
           end
         end
 
@@ -483,11 +525,15 @@ module Quaack
 
         # a.x = b.y: equality on each side that's a table's column, unless
         # both sides are the same table.
+        # A column against an outer query's column is held to one value for
+        # each run of the subquery, as by = const.
         def read_join_condition(left, right)
-          pairs = [@scope.column(left), @scope.column(right)].compact
+          found = [@scope.column(left), @scope.column(right)]
+          pairs = found.compact
           return if pairs.size == 2 && pairs[0][0].equal?(pairs[1][0])
 
-          pairs.each { |pair| add_equality_pair(pair, :join) }
+          outer = pairs.one? && @scope.outer?(found[0] ? right : left)
+          pairs.each { |pair| add_equality_pair(pair, outer ? :one : :join) }
         end
 
         # The ColumnRef of a bare column compared with a constant, on either
