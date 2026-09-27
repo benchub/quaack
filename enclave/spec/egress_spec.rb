@@ -120,7 +120,11 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a type named by a field", { type: :step, step: EGRESS_SENTINEL }],
       ["a String", EGRESS_SENTINEL],
       ["an Array", [%i[type error], [:step, EGRESS_SENTINEL]]],
-      ["nil", nil]
+      ["nil", nil],
+      ["a Hash-like object with each_key and []", Class.new do
+        def each_key(&) = %i[type step].each(&)
+        def [](key) = { type: :error, step: EGRESS_SENTINEL }[key]
+      end.new]
     ].each do |name, message|
       it "sends nothing for #{name}" do
         expect(egress.serialize(message)).to be_nil
