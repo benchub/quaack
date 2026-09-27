@@ -44,7 +44,11 @@ For every `prompt.md`:
 
 That makes 9 replies per prompt. Don't fix or tidy a reply. A reply that's wrong, or not valid JSON, is useful: the replay should see what real LLMs send.
 
-Some prompts continue a conversation: they hold a `# User`, then an `# Assistant`, then another `# User` section. The `# Assistant` turn is a placeholder the generator made up, not a real reply. Paste the prompt as it is, and save the reply to the last `# User` section.
+Some prompts continue a conversation: they hold a `# User`, then an `# Assistant`, then another `# User` section. A chat window can't take an assistant turn, so each of these has a `chat.md` next to its `prompt.md`. When `chat.md` exists, paste it instead of `prompt.md`, as one message (or its `# System` section as the system prompt and the rest as the message). It quotes the earlier exchange plainly, then gives the follow-up and the reply format. Save the reply to the follow-up as usual.
+
+The assistant turn is a planted reply the generator made up, not a real one. It's chosen to steer the pipeline to the follow-up. For example, 5a-5-2's planted reply holds an index on an unqualified table on purpose, so the index gets dropped and the replacement ask always happens. Don't chain the follow-up onto your own earlier reply to the first prompt. Paste `chat.md` into a fresh chat, so every reply answers the same planted history.
+
+`prompt.md` stays the real multi-turn transcript the driver sends, because the replay's drift check compares against it.
 
 ## What a reply should look like
 
@@ -69,6 +73,6 @@ Every prompt's system section ends with "Reply with only the JSON object, with n
 
     PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH bundle exec ruby script/prompt_pack/run.rb [query ...]
 
-Docker must be running. With no query names it runs all four. It rewrites each `prompt.md` and `stopped.md`, and never touches a `reply-*.md`. It removes an ask directory that's no longer asked only if it holds nothing but its prompt, and warns about one that holds replies. If a prompt changes after you've collected replies for it, the old replies answer the old prompt, so check the diff before reusing them.
+Docker must be running. With no query names it runs all four. It rewrites each `prompt.md`, `chat.md`, and `stopped.md`, and never touches a `reply-*.md`. It removes an ask directory that's no longer asked only if it holds nothing but its prompt, and warns about one that holds replies. If a prompt changes after you've collected replies for it, the old replies answer the old prompt, so check the diff before reusing them.
 
 Last, it scans every file here for the queries' literals, as LeakCheck sentinels, and fails if any shows up. The prompts carry only shapes. The values of low-cardinality columns, such as `US` and `shipped` in `most_common_vals`, are there by design (README 3f), so they aren't sentinels.
