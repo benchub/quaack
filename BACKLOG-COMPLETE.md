@@ -2246,3 +2246,12 @@ Minor findings from the second review of 20260923-7:
 - **Came from:** 20260926-47 review.
 - **README:** 3a.
 - **Status:** done
+
+### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1.
+
+Split out of 20260923-20. Postgres reads a column that ORDER BY repeats only at its first position, whatever the repeat's direction or position. An index on `(a, created_at)` serves both `ORDER BY a, a DESC, created_at` and `ORDER BY a, created_at, a DESC` with no Sort. Generator one no longer drops repeats. So today `WHERE a IN (1, 2) ORDER BY a, a, created_at` gives only `(a)`, and `ORDER BY created_at, created_at DESC` can propose a key with `created_at` twice. Re-add the dedupe, keeping the first occurrence. Test it with a non-adjacent repeat such as `ORDER BY a, created_at, a DESC`, so an adjacent-only dedupe goes red.
+
+- **Depends on:** 20260923-20.
+- **Came from:** The tests-only round of 20260923-20, where the old test stayed vacuous against an adjacent-only dedupe.
+- **README:** 5a-1.
+- **Status:** done

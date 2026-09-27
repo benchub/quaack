@@ -257,6 +257,7 @@ Minor findings from the reviews of 20260922-30:
 - **Depends on:** 20260923-20.
 - **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
 - **README:** 5a-1.
+- **Landed (2026-09-26):** BRIN only from comparison ranges, `col = NULL` not a constant, and tests for LIKE ESCAPE and alias case. Still open: join reduction for IS NULL and ON conjuncts, RIGHT and FULL nullability tests, the USING test, the error sentinel check, the comment fix, and the ORDER BY, FOR UPDATE OF, `(o).*`, alias list, INCLUDE, `text_pattern_ops` and incremental sort items.
 - **Status:** todo
 
 ### 20260923-22. MCV statistics loose ends.
@@ -271,16 +272,10 @@ Minor findings from the second review of 20260923-19:
 - **Depends on:** 20260923-19.
 - **Came from:** Second review of 20260923-19.
 - **README:** 3c.
+- **Landed (2026-09-26):** two-value tests, `finite` no longer quoting reltuples, and doc updates. Still open: the invalid-UTF-8 `strip` error and an optional real-Postgres `= false` test.
 - **Status:** todo
 
-### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1.
-
-Split out of 20260923-20. Postgres reads a column that ORDER BY repeats only at its first position, whatever the repeat's direction or position. An index on `(a, created_at)` serves both `ORDER BY a, a DESC, created_at` and `ORDER BY a, created_at, a DESC` with no Sort. Generator one no longer drops repeats. So today `WHERE a IN (1, 2) ORDER BY a, a, created_at` gives only `(a)`, and `ORDER BY created_at, created_at DESC` can propose a key with `created_at` twice. Re-add the dedupe, keeping the first occurrence. Test it with a non-adjacent repeat such as `ORDER BY a, created_at, a DESC`, so an adjacent-only dedupe goes red.
-
-- **Depends on:** 20260923-20.
-- **Came from:** The tests-only round of 20260923-20, where the old test stayed vacuous against an adjacent-only dedupe.
-- **README:** 5a-1.
-- **Status:** todo
+### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-24. 5a-2 loose ends.
 
@@ -305,6 +300,7 @@ Findings from the reviews of 20260922-31:
 - **Depends on:** 20260922-31.
 - **Came from:** Both reviews of 20260922-31.
 - **README:** 5a-2.
+- **Landed (2026-09-26):** tests pinning `PlanNode#inner`, the NaN removed fraction, and the multi-statement ANALYZE check. **Needs a decision:** whether to skip a partial when the column side is cast (varchar shows as `(col)::text`), and whether to treat a non-MCV literal as unknown when MCVs plus nulls cover about 1. Still open: boolean partials, InitPlan, COLLATE, deep plans, and the remaining test gaps.
 - **Status:** todo
 
 ### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -382,6 +378,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 - **Depends on:** 20260923-29.
 - **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
 - **README:** Step 9 and 9c.
+- **Checked (2026-09-26):** the deparse guard and qualification items are already done. **Needs a decision:** NATURAL JOIN atoms (compute the common columns, or emit a marker that can't be replaced). The rest are notes.
 - **Status:** todo
 
 ### 20260923-31. Finish 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
@@ -427,6 +424,7 @@ Findings from the reviews of 20260922-32 and 20260923-31:
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
 - **README:** 5a-3.
+- **Landed (2026-09-26):** the Decided item (partials with literal-free predicates are allowed; a sentinel test covers it) and the README note. Still open: the `from_ddl` nil cases (`ON ONLY`, `WITH (...)`, `NULLS NOT DISTINCT`), `normalize_predicate` re-parsing, the array-bounds doc note, and the dead-code cleanup.
 - **Status:** todo
 
 ### 20260923-37. Arena runner loose ends.
