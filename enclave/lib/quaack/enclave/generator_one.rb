@@ -16,8 +16,9 @@ module Quaack
     #
     # The query must use only what SupportedSql lists, or it raises
     # SupportedSql::Error. So it's one SELECT, with no SELECT ... INTO and
-    # no data-modifying CTE. It also must not be a set operation, and every
-    # relation must be schema qualified except a reference to a CTE whose
+    # no data-modifying CTE. Each branch of a set operation (UNION,
+    # INTERSECT, EXCEPT) gets candidates as if it were a query of its own,
+    # and the lists are unioned. Every relation must be schema qualified except a reference to a CTE whose
     # name reaches it: the rest of its SELECT, later CTEs in the same WITH,
     # and, under WITH RECURSIVE, every CTE there. The limits must be an Integer max_key_columns of at least
     # 1, a finite brin_min_correlation in 0..1, and a finite
@@ -122,13 +123,16 @@ module Quaack
       def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000)
         limits = { max_key_columns:, brin_min_correlation:, brin_min_reltuples: }
         Input.check_limits(limits)
-        select = Input.select(parse)
-        scope = Scope.new(select, statistics)
-        uses = Uses.new(select, scope)
-        scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }.uniq
+        Input.branches(parse).flat_map do |select|
+          scope = Scope.new(select, statistics)
+          uses = Uses.new(select, scope)
+          scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }
+        end.uniq
       end
 
-      # Checks the input and finds its one SELECT.
+      # Checks the input and finds its SELECTs: the one SELECT, or each
+      # branch of a set operation (UNION, INTERSECT, EXCEPT), which is
+      # treated like a query of its own.
       module Input
         module_function
 
@@ -149,18 +153,20 @@ module Quaack
 
         # SupportedSql makes sure it's one SELECT, with no SELECT ... INTO
         # and no data-modifying CTE.
-        def select(parse)
+        def branches(parse)
           raise ArgumentError, "expected a pg_query parse result" unless parse.is_a?(PgQuery::ParserResult)
 
           SupportedSql.check!(parse)
           select = parse.tree.stmts.first.stmt.select_stmt
-          raise ArgumentError, "generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)" if set?(select)
-
           check_relations(select, [])
-          select
+          leaves(select)
         end
 
-        def set?(select) = select.op != :SETOP_NONE
+        def leaves(select)
+          return [select] if select.op == :SETOP_NONE
+
+          leaves(select.larg) + leaves(select.rarg)
+        end
 
         # Every relation must name its schema, except a reference to a CTE
         # whose name reaches it.

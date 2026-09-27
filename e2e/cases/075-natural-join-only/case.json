@@ -1,11 +1,10 @@
 {
-  "title": "NATURAL JOIN on an inheritance parent with ONLY",
+  "title": "NATURAL JOIN with ONLY",
   "category": "index",
   "compare": "multiset",
   "features": [
     "NATURAL JOIN",
-    "FROM ONLY on an inheritance parent",
-    "indexes aren't inherited"
+    "FROM ONLY on a table with no inheritance children (a parent with children is refused, README 3c)"
   ],
   "literal_sets": [
     {
