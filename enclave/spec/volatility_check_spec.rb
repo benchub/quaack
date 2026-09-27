@@ -604,6 +604,12 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
       expect(check("SELECT o.calmo FROM orders o")).to be_nil
       expect(check("SELECT o.status FROM orders o", path("a, public"))).to be_nil
     end
+
+    # pg_catalog.system and bernoulli are volatile, but take internal,
+    # which a row can never be passed as.
+    it "passes a column named like a volatile built-in that can't take a row" do
+      expect(check("SELECT o.system, o.bernoulli, o.array_shuffle FROM orders o")).to be_nil
+    end
   end
 
   describe "a rewrite candidate" do

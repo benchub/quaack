@@ -45,7 +45,7 @@ module Quaack
     #   constraints call. So one volatile cast to a common type, such as
     #   int, makes every cast to it abort.
     # - A qualified column, t.f, is volatile if any function named f that
-    #   takes a row (a composite or pseudo type) as its one argument is,
+    #   takes a row (a composite type, record, anyelement, anycompatible, or "any") as its one argument is,
     #   since it may be attribute notation for f(t).
     #
     # What it doesn't catch: it trusts provolatile, so a function declared
@@ -105,11 +105,15 @@ module Quaack
       SQL
 
       # t.f can call a function f of one argument, a row: one whose first
-      # argument is a composite or pseudo type. Every schema in the path
-      # counts, since the parse doesn't say what t is.
+      # argument is a composite type, or record, anyelement, anycompatible,
+      # or "any", never internal, anyarray, or a handler type. Every schema
+      # in the path counts, since the parse doesn't say what t is.
       ATTRIBUTE_SQL = FUNCTION_SQL.sub("ORDER BY", <<~SQL.chomp)
         AND EXISTS (SELECT FROM pg_catalog.pg_type at
-                      WHERE at.oid = p.proargtypes[0] AND at.typtype IN ('c', 'p'))
+                    WHERE at.oid = p.proargtypes[0]
+                      AND (at.typtype = 'c' OR at.oid IN ('record'::pg_catalog.regtype,
+                           'anyelement'::pg_catalog.regtype, 'anycompatible'::pg_catalog.regtype,
+                           '"any"'::pg_catalog.regtype)))
         ORDER BY
       SQL
 
