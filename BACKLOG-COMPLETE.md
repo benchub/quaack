@@ -2420,3 +2420,24 @@ On the prompt-pack `shop.orders` schema, step 9 doesn't catch a keyset candidate
 - **Came from:** Build of 20260926-55.
 - **README:** Step 9.
 - **Status:** done
+
+### 20260926-58. End-to-end runner over the e2e corpus (20260922-65, part two).
+
+Build a runner (a script or rake task outside the default `rake` check, like `e2e/verify.rb`) that runs the real `quaacks` + `quaack run` pipeline end to end over each `e2e/cases/*`:
+- a throwaway harness Postgres standing in for production, loaded from the case's `schema.sql`
+- a run server and racetrack from the same data
+- the driver's `Pipeline`
+- a fake LLM that returns empty answers for now, and replays `spec/fixtures/llm_corpus` replies once they exist
+
+Per case it checks the case's claim:
+- a `refused` case fails intake with the expected rule
+- `index` cases produce a report whose top-ranked fix meets the case's block bound in `results.md`/`case.json`
+- `rewrite`, `both` and `trap` cases are recorded as expected to need the LLM
+- no case crashes
+
+It writes a summary table and fails clearly on crashes. Any real QUAACK bug it finds becomes its own backlog task, not a fix inside this one.
+
+- **Depends on:** 20260926-33, 20260926-57, the e2e corpus.
+- **Came from:** User direction, 2026-09-26.
+- **README:** All.
+- **Status:** done

@@ -1084,26 +1084,7 @@ These were skipped as needing a design choice or a larger rework:
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260926-58. End-to-end runner over the e2e corpus (20260922-65, part two).
-
-Build a runner (a script or rake task outside the default `rake` check, like `e2e/verify.rb`) that runs the real `quaacks` + `quaack run` pipeline end to end over each `e2e/cases/*`:
-- a throwaway harness Postgres standing in for production, loaded from the case's `schema.sql`
-- a run server and racetrack from the same data
-- the driver's `Pipeline`
-- a fake LLM that returns empty answers for now, and replays `spec/fixtures/llm_corpus` replies once they exist
-
-Per case it checks the case's claim:
-- a `refused` case fails intake with the expected rule
-- `index` cases produce a report whose top-ranked fix meets the case's block bound in `results.md`/`case.json`
-- `rewrite`, `both` and `trap` cases are recorded as expected to need the LLM
-- no case crashes
-
-It writes a summary table and fails clearly on crashes. Any real QUAACK bug it finds becomes its own backlog task, not a fix inside this one.
-
-- **Depends on:** 20260926-33, 20260926-57, the e2e corpus.
-- **Came from:** User direction, 2026-09-26.
-- **README:** All.
-- **Status:** todo
+### 20260926-58. End-to-end runner over the e2e corpus (20260922-65, part two). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
@@ -1115,4 +1096,83 @@ A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_gu
 - **Depends on:** 20260922-48, 20260926-59.
 - **Came from:** Build of 20260926-59.
 - **README:** Step 9.
+- **Status:** todo
+
+### 20260927-1. Set operations crash generator one (5a-1).
+
+e2e cases 029, 058, 068, 097, 098 and 100 stop at `index-search` with `internal_error`. `generator_one.rb:157` raises `ArgumentError` on UNION, INTERSECT or EXCEPT, which intake accepts. Handle set operations in 5a-1: generate candidates per branch, or skip set-operation queries with a clean result. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters.
+
+`SingleCandidateTest#explain` (`single_candidate_test.rb:419`) prepares the query without parameter types, so Postgres guesses wrong:
+- e2e 020, 048, 099 fail with `prepare_failed` 42883: `now()::date - $1` resolves as date minus date.
+- 031 fails with `explain_failed` 22P02: `4242.0` won't bind to an inferred bigint.
+- 091 is probably a plan-gate mismatch on `substring(... FROM $1 FOR $2)`.
+
+Use the original literal's type for each placeholder (from the placeholder map, or cast the placeholder the way the original literal was written). Check every other PREPARE site (the plan gate, index search) for the same bug. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-4, step 5 plan gate.
+- **Status:** todo
+
+### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key.
+
+e2e 013 gets `(tenant_id) INCLUDE (status)` and 073 gets `(account_id) INCLUDE (started_at)`. The cases need those columns as key columns for GROUP BY or ORDER BY to use the index order. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-4. 5a-1 gives no atoms for correlated subqueries.
+
+e2e 027 (LATERAL top-N) and 089 (`ARRAY(SELECT ...)`) get no index on the correlated column. Generate candidates from correlation predicates inside LATERAL and scalar/array subqueries. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-5. 5a-1 gives no candidates in some common shapes.
+
+These shapes get no candidates:
+- A column compared with a non-constant expression (e2e 076, 078, 093, 094).
+- OR across two columns (015, which could use a BitmapOr of two indexes).
+- `COLLATE "C"` (090).
+
+Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1, 5a-2.
+- **Status:** todo
+
+### 20260927-6. Weak or unstable top picks.
+
+- e2e 066 never finds the two-index combination it needs.
+- 025 generated the right shape, but its top fix measured 4984 blocks against a bound of 2618.
+- 055's matching candidate was declined as unused.
+- Most urgent: the top fix isn't stable between runs on the same data. 024 measured 52 then 8 blocks, and 096 measured 2511, 11, then 2511. 070 (5 vs 4) and 086 (1013 vs 1007) miss narrowly on every run.
+
+Find out why ranking or measurement varies between runs; it could be ANALYZE sampling, hint-bit or visibility-map state, or ties in ranking. Until then, the index verdicts can't gate anything. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-7, 12-14.
+- **Status:** todo
+
+### 20260927-7. e2e corpus fixes: 075 and 010.
+
+- 075's table has an inheritance child, which README 3c refuses as `inheritance_parent`. Make the case expect that refusal, or drop the child.
+- 010's GIN index comes from the LLM, but its `features` don't say 5a-5. Add it.
+
+- **Depends on:** the e2e corpus.
+- **Came from:** The e2e runner.
+- **README:** none.
 - **Status:** todo
