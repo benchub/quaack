@@ -373,6 +373,11 @@ RSpec.describe Quaack::Enclave::CLI do
       expect { step_class.new(handler: recorder, new_run: true, run: true) }
         .to raise_error(ArgumentError, "a step can't both start a run and open one")
     end
+
+    it "can't require an option it doesn't declare" do
+      expect { step_class.new(handler: recorder, options: { "search" => :value }, required: %w[search host]) }
+        .to raise_error(ArgumentError, "a step can't require an option it doesn't declare")
+    end
   end
 
   describe "input" do

@@ -19,7 +19,9 @@ module Quaack
         # symlink, or anything but a regular file, or can't be read, and
         # <kind>_too_large past MAX_BYTES.
         #
-        # NOFOLLOW refuses a symlink as the path's last part. NONBLOCK keeps
+        # NOFOLLOW refuses a symlink as the path's last part only. A symlink
+        # in a parent directory is followed, which the threat model allows:
+        # the operator chooses the path. NONBLOCK keeps
         # opening a FIFO from waiting for a writer; a FIFO then fails the
         # regular file check. Checking the open file, not the path, means
         # the check and the read see the same file.
