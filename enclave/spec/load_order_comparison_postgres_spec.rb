@@ -195,6 +195,14 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
         end
     end
 
+    it "keeps a query that fails only in the reverse run a query_failed" do
+      sql = "SELECT 1 / (SELECT id - 5 FROM items LIMIT 1) AS q"
+
+      expect { both(sql, sql) }.to raise_error(Quaack::Enclave::ArenaRunner::Error) do |e|
+        expect([e.rule, e.step, e.sqlstate]).to eq([:query_failed, :query, "22012"])
+      end
+    end
+
     it "keeps a failure in the forward load a fixture_load_failed" do
       conn.exec("CREATE TABLE node (id integer PRIMARY KEY, up integer REFERENCES node)")
       rows = rows_of("node", %w[id up], [1, nil], [2, 3])
