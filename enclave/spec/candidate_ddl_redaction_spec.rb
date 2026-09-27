@@ -30,6 +30,17 @@ RSpec.describe Quaack::Enclave::CandidateDdlRedaction do
                       "AND status IN ('7', ?) AND note = ?")
   end
 
+  it "keeps allowed values in col = ANY (...), the way Postgres prints an IN list, and masks the rest" do
+    ddl = redaction.ddl(candidate(predicate: "status = ANY (ARRAY['held', '#{sentinel}']) " \
+                                             "AND status = ANY ('{held,open}'::text[]) " \
+                                             "AND status = ANY ('{held,#{sentinel}}'::text[]) " \
+                                             "AND note = ANY (ARRAY['held'])"))
+
+    expect(ddl).to eq("CREATE INDEX ON public.orders USING btree (created_at) " \
+                      "WHERE status = ANY(ARRAY['held', ?]) AND status = ANY('{held,open}'::text[]) " \
+                      "AND status = ANY(?::text[]) AND note = ANY(ARRAY[?])")
+  end
+
   it "masks a low-cardinality value inside a key expression or function argument" do
     key = [Quaack::Enclave::IndexCandidate::KeyColumn.new(expression: "(status = 'held')")]
     ddl = redaction.ddl(candidate(key:, predicate: "coalesce(status, 'held') = 'open'"))
