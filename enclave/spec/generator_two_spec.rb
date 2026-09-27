@@ -522,6 +522,12 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect { described_class.candidates(explain, statistics:) }.to raise_error(ArgumentError, /ANALYZE/)
     end
 
+    it "refuses a multi-statement plan when any one statement lacks ANALYZE" do
+      analyzed = plan("seq_scan_rare_value").first
+      plain = plan("seq_scan_rare_value").first.tap { |e| e["Plan"].delete("Actual Loops") }
+      expect { described_class.candidates([analyzed, plain], statistics:) }.to raise_error(ArgumentError, /ANALYZE/)
+    end
+
     it "refuses a plan node that isn't an object" do
       expect { described_class.candidates([{ "Plan" => { "Actual Loops" => 1, "Plans" => ["x"] } }], statistics:) }
         .to raise_error(ArgumentError, /plan node/)
@@ -684,6 +690,22 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       expect(kinds.call("(o.status.x = 'x'::text)")).to eq([[:other, []]])
       # A column of an alias the plan has no scan for isn't a constant.
       expect(kinds.call("(total_cents = z.id)")).to eq([[:other, ["total_cents"]]])
+    end
+
+    it "finds the inner child by Parent Relationship, not by position" do
+      node = enclave.const_get(:PlanNode).new(
+        "Node Type" => "Hash Join",
+        "Plans" => [{ "Node Type" => "Hash", "Parent Relationship" => "Inner" },
+                    { "Node Type" => "Seq Scan", "Parent Relationship" => "Outer" }]
+      )
+      expect(node.inner.type).to eq("Hash")
+    end
+
+    it "gives a removed fraction that meets no threshold for a node that read no rows" do
+      node = enclave.const_get(:PlanNode).new("Node Type" => "Seq Scan", "Actual Rows" => 0,
+                                              "Rows Removed by Filter" => 0)
+      expect(node.removed_fraction).to be_nan
+      expect(node.removed_fraction >= 0.0).to be(false)
     end
 
     it "reads a bare key as the plan's one alias, and only when there's one" do
