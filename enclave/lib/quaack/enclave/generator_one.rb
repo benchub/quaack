@@ -927,6 +927,9 @@ module Quaack
 
       # The candidates for one table.
       class TableCandidates
+        # 3f's default low-cardinality threshold (PiiClassification).
+        LOW_CARDINALITY = 50
+
         def initialize(table, uses, limits)
           @table = table
           @stats = table.stats
@@ -1027,7 +1030,22 @@ module Quaack
           bare = IndexCandidate.new(table: @table.name, key:, sources: [:parse])
           return [bare] if include.empty? || !(@uses.read(@table) - names - include).empty?
 
-          [IndexCandidate.new(table: @table.name, key:, include:, sources: [:parse]), bare]
+          [IndexCandidate.new(table: @table.name, key:, include:, sources: [:parse]), *moved(key, include), bare]
+        end
+
+        # The INCLUDE columns appended to the key, when the leading key
+        # column is low-cardinality (3f: fewer than 50 distinct values).
+        # B-tree deduplication makes that index small, and HypoPG can't see
+        # it, so 12a may build it for real (20260927-11).
+        def moved(key, include)
+          return [] unless low_cardinality?(key.first) && key.size + include.size <= @limits[:max_key_columns]
+
+          [IndexCandidate.new(table: @table.name, key: key + include.map { key_column(it) }, sources: [:parse])]
+        end
+
+        def low_cardinality?(column)
+          count = @stats.distinct_count(column.name) if column.expression.nil? && @stats.column?(column.name)
+          !count.nil? && count < LOW_CARDINALITY
         end
 
         def brins

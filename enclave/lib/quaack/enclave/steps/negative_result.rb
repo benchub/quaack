@@ -65,13 +65,20 @@ module Quaack
 
         def declined(store, search, redaction)
           entry = store.read("index_search_#{search}")
+          set_aside = entry.fetch("set_aside", []).map { IndexStore.candidate(it) }
           [*entry["results"], *entry["llm_results"]].filter_map do |result|
             refusal = result["refusal"]
-            next if refusal.nil? && result["plans"].values.any? { it["used"] }
+            next if refusal.nil? && kept?(result, set_aside)
 
             { "search" => search, "ddl" => redaction.ddl(IndexStore.candidate(result["candidate"])),
               "reason" => refusal ? refusal["rule"] : "unused", "sqlstate" => refusal&.fetch("sqlstate") }
           end
+        end
+
+        # A tested candidate the planner used, or one set aside for 12a to
+        # build for real (20260927-11). Neither was declined.
+        def kept?(result, set_aside)
+          result["plans"].values.any? { it["used"] } || set_aside.include?(IndexStore.candidate(result["candidate"]))
         end
 
         def existing(store, search, redaction)
