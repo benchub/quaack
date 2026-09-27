@@ -179,6 +179,22 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(leftovers).to eq(clean)
   end
 
+  it "runs READ ONLY, so a function the planner folds can't make a write the rollback misses" do
+    # A sequence advance survives ROLLBACK. The planner folds an IMMUTABLE
+    # call on constants, so this runs nextval while planning.
+    conn.exec(<<~SQL)
+      CREATE SEQUENCE bumps;
+      CREATE FUNCTION bump(int) RETURNS int LANGUAGE sql IMMUTABLE AS 'SELECT $1 + 0 * nextval(''bumps'')::int';
+    SQL
+    begin
+      run("SELECT * FROM t WHERE a = public.bump(1) AND b = $1", { slow: ["5"] }, [candidate(key: ["a"])])
+    rescue described_class::Error
+      nil
+    end
+
+    expect(conn.exec("SELECT is_called FROM bumps").getvalue(0, 0)).to eq("f")
+  end
+
   it "leaves nothing behind when a literal fails" do
     expect { run("SELECT * FROM t WHERE a = $1", { slow: ["5"], bad: ["x"] }, [candidate(key: ["a"])]) }
       .to raise_error(described_class::Error)
@@ -703,6 +719,16 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
         described_class.run(conn, query: "DELETE FROM ev WHERE id > $1", literal_sets: { slow: ["0"] },
                                   candidates: [], types: ["integer"])
       end.to raise_error(described_class::Error) { expect(it.rule).to eq(:prepare_failed) }
+      expect(conn.exec("SELECT count(*) FROM ev").getvalue(0, 0)).to eq("1000")
+    end
+
+    it "refuses a data-modifying CTE or SELECT INTO, which parse as a SELECT" do
+      ["WITH d AS (DELETE FROM ev WHERE id > $1 RETURNING 1) SELECT * FROM d",
+       "SELECT * INTO ev_copy FROM ev WHERE id > $1"].each do |query|
+        expect do
+          described_class.run(conn, query:, literal_sets: { slow: ["0"] }, candidates: [], types: ["integer"])
+        end.to raise_error(described_class::Error) { expect(it.rule).to eq(:prepare_failed) }
+      end
       expect(conn.exec("SELECT count(*) FROM ev").getvalue(0, 0)).to eq("1000")
     end
 
