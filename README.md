@@ -628,7 +628,7 @@ From the pg_query parse, pull out every predicate atom:
 - `IN` lists.
 - `IS NULL` tests.
 - Every join condition.
-- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. A tie there, where the later columns decide, is left out. With `=` or `<>`, it gets no pool, so 9c may mark it untested.
+- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. S1 through S5 also get tie rows, where the later columns decide: for each later column, a copy of the hit row with the columns before it at their literals and that column at its literal or one unit either side. A tie that would set a join key column or break a CHECK is left out. Unsupported in v1: a keyset whose columns span tables, or whose elements don't all evaluate to literals, gets no tie rows, and one with `=` or `<>`, or with an expression in the column row, gets no pool, so 9c may mark it untested.
 
 For each atom, build a pool of interesting values. Include one value that satisfies the atom, one that fails it, and the boundary values where they exist. Boundary values include the literal itself, one unit on either side of it, a matching and a non-matching pattern, and case variants for text. Add `NULL` for nullable columns, and add the type's boundary values for every column.
 

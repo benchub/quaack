@@ -73,6 +73,13 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
       expect(check(sql).sql).to eq("WITH recent AS (SELECT id FROM public.orders WHERE id > $2) SELECT id FROM recent")
     end
 
+    it "may use a keyset row comparison" do
+      sql = "SELECT id FROM orders WHERE (total_cents, id) < ($1, $2) ORDER BY total_cents DESC, id DESC LIMIT 10"
+      expect(check(sql).sql).to eq(
+        "SELECT id FROM public.orders WHERE (total_cents, id) < ($1, $2) ORDER BY total_cents DESC, id DESC LIMIT 10"
+      )
+    end
+
     it "may call an immutable user function" do
       expect(check("SELECT public.steady() FROM orders").sql).to eq("SELECT public.steady() FROM public.orders")
     end
@@ -151,6 +158,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
 
     {
       "the select list" => ["SELECT $1, $9 FROM orders", 9],
+      "a keyset row comparison" => ["SELECT id FROM orders WHERE (total_cents, id) < ($1, $4)", 4],
       "a subquery" => ["SELECT $2 FROM orders WHERE id IN (SELECT id FROM orders WHERE id = $3 OR id = $5)", 5]
     }.each do |where, (sql, bad)|
       it "finds a bad placeholder after good ones, in #{where}" do
