@@ -210,8 +210,8 @@ module Quaack
       # Prepares sql as name, each $n declared the type in types, by
       # Binding#prepare's rules, so Postgres doesn't infer a different one
       # from context. PREPARE goes by the simple protocol, which would run
-      # a second statement, so sql must be exactly one SELECT (Error
-      # not_one_select). With nil types, it prepares with the extended
+      # a second statement, so sql must be exactly one SELECT, with no
+      # data-modifying CTE and no SELECT ... INTO (Error not_one_select). With nil types, it prepares with the extended
       # protocol and Postgres infers every type, raising its own error.
       def self.prepare(connection, name, sql, types)
         return connection.prepare(name, sql) unless types
@@ -222,9 +222,29 @@ module Quaack
 
       def self.one_statement?(sql)
         stmts = PgQuery.parse(sql).tree.stmts
-        stmts.size == 1 && !stmts.first.stmt.select_stmt.nil?
+        stmts.size == 1 && !stmts.first.stmt.select_stmt.nil? && !writes?(stmts.first.stmt)
       rescue PgQuery::ParseError
         false
+      end
+
+      # A data-modifying CTE or SELECT ... INTO, anywhere in the tree. Both
+      # parse as a SELECT.
+      def self.writes?(node)
+        return true if write_node?(node)
+
+        case node
+        when Google::Protobuf::RepeatedField then node.any? { |child| writes?(child) }
+        when Google::Protobuf::MessageExts then node.class.descriptor.any? { |f| writes?(f.get(node)) }
+        else false
+        end
+      end
+
+      def self.write_node?(node)
+        case node
+        when PgQuery::SelectStmt then !node.into_clause.nil?
+        when PgQuery::CommonTableExpr then node.ctequery.select_stmt.nil?
+        else false
+        end
       end
     end
   end

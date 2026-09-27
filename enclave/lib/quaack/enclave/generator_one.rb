@@ -34,7 +34,10 @@ module Quaack
     # EXISTS), as a query of its own, after the query it's in, and each CTE
     # body, before it. A set operation there is read per branch. There, a
     # column compared by = with an outer query's column (one qualified by a
-    # name that isn't in the subquery's FROM) is held to one value, as by
+    # name or schema and table that isn't in the subquery's FROM, or
+    # unqualified when the subquery's FROM is only plain tables and none
+    # has it; one that an inner table has resolves to it, as in Postgres)
+    # is held to one value, as by
     # = const. A reference to a CTE isn't a table. A subquery or function
     # in FROM has no table's columns, so its columns are skipped in the
     # query it's in, but a join to one still counts for the table on the
@@ -54,7 +57,8 @@ module Quaack
     # BitmapOr. A constant is a literal, a parameter ($1), or a cast of
     # either. A value is a constant, or, for = and the range operators and
     # BETWEEN, any expression that names no column of a table in this FROM
-    # clause, such as now(), $1 - interval '1 day', or a column of a
+    # clause and calls no built-in volatile function (random(), nextval()),
+    # such as now(), $1 - interval '1 day', or a column of a
     # subquery, a function, or an outer query.
     #
     # Outer joins. An outer join makes a table nullable when the table is on
@@ -120,10 +124,13 @@ module Quaack
     # Repeats are dropped, keeping the first, so a table with no join
     # columns gets each candidate once.
     #
-    # INCLUDE. Each btree candidate, prefixes too, INCLUDEs the table's
+    # INCLUDE. A btree candidate, prefixes too, INCLUDEs the table's
     # select-list and GROUP BY columns that aren't in its own key, in query
-    # order. * and t.* mean every column. WHERE, HAVING, and ORDER BY
-    # columns outside the key aren't added.
+    # order, only when that makes it covering: every column the query reads
+    # from the table (select list, WHERE, JOIN, GROUP BY, HAVING, ORDER BY)
+    # is in key or INCLUDE. Then the bare key follows it as a candidate of
+    # its own. Otherwise there's only the bare key. * and t.* mean every
+    # column. WHERE, HAVING, and ORDER BY columns aren't added to INCLUDE.
     #
     # BRIN. For each comparison range column (not a prefix LIKE, which BRIN
     # can't serve) whose |correlation| is at least
@@ -297,6 +304,7 @@ module Quaack
           @using = []
           @nullable = Set.new.compare_by_identity
           @names = []
+          @opaque = false
           select.from_clause.each { |item| read_item(item) }
         end
 
@@ -317,12 +325,21 @@ module Quaack
         end
 
         # A column of an outer query: qualified by a name that no item in
-        # this FROM clause has. Inside a correlated subquery, it's fixed
-        # for each run, like a constant.
+        # this FROM clause has, by a schema and table that no table here
+        # is, or unqualified when this FROM clause is only plain tables and
+        # none of them has it. Inside a correlated subquery, it's fixed for
+        # each run, like a constant.
         def outer?(ref)
-          qualifier = ref.fields.to_a[0...-1]
-          qualifier.size == 1 && !@names.include?(qualifier.first.string&.sval)
+          *qualifier, name = ref.fields.map { |f| f.string&.sval }
+          case qualifier
+          in [] then unqualified_outer?(name)
+          in [refname] then !@names.include?(refname)
+          in [_, _] then owners(qualifier).empty?
+          else false
+          end
         end
+
+        def unqualified_outer?(name) = !@opaque && tables.none? { |t| t.stats.column_names.include?(name) }
 
         # The one [table, column] pair a ColumnRef that isn't a star means,
         # or nil.
@@ -349,7 +366,9 @@ module Quaack
           @names << item_name(item)
           if item.join_expr then read_join(item.join_expr)
           elsif item.range_var && !item.range_var.schemaname.empty? then [add_table(item.range_var)]
-          else []
+          else
+            @opaque = true
+            []
           end
         end
 
@@ -437,6 +456,12 @@ module Quaack
       # How Predicates tells a column from a value. It needs @scope, and
       # @collations for the COLLATEs it sees.
       module Values
+        # Built-in volatile functions. A call to one changes from row to
+        # row, so an index can't seek to it. Step 3d refuses a query that
+        # calls any volatile function, and this is a backstop.
+        VOLATILE_FUNCTIONS = %w[random random_normal gen_random_uuid uuidv4 uuidv7 clock_timestamp timeofday
+                                nextval setval currval lastval txid_current pg_sleep].freeze
+
         private
 
         # The ColumnRef of a bare column compared with a value, on either
@@ -468,10 +493,20 @@ module Quaack
         end
 
         def value?(node)
-          return false if null_literal?(node)
+          return false if null_literal?(node) || volatile?(node)
           return true if constant?(node)
 
           ColumnRefs.in(node).none? { |ref| ref.fields.any?(&:a_star) || @scope.column(ref) }
+        end
+
+        def volatile?(node)
+          case node
+          when PgQuery::FuncCall
+            VOLATILE_FUNCTIONS.include?(node.funcname.last.string.sval) || volatile?(node.args)
+          when Google::Protobuf::RepeatedField then node.any? { |n| volatile?(n) }
+          when Google::Protobuf::MessageExts then node.class.descriptor.any? { |f| volatile?(f.get(node)) }
+          else false
+          end
         end
 
         # A NULL literal matches no row under = or a range operator, so it
@@ -647,6 +682,7 @@ module Quaack
           read_predicates(select, scope)
           scope.using.each { |using| @predicates.read_using(*using) }
           @covered = covered_columns(select, scope)
+          @read = read_columns(select, scope)
           @order = OrderBy.new(select, scope)
           @group = GroupBy.new(select, scope)
         end
@@ -678,6 +714,10 @@ module Quaack
 
         # Select-list and GROUP BY columns.
         def covered(table) = @covered[table]
+
+        # Every column of the table the query reads anywhere: select list,
+        # WHERE, JOIN, GROUP BY, HAVING, ORDER BY.
+        def read(table) = @read[table]
 
         # The ORDER BY items as [name, direction, nulls, collation], when every item is
         # a column of this table. Otherwise nil.
@@ -719,6 +759,23 @@ module Quaack
             ColumnRefs.in(node).each { |ref| scope.columns(ref).each { |pair| covered.add(pair) } }
           end
           covered
+        end
+
+        # Every ColumnRef in the SELECT but its WITH, plus USING columns.
+        # A subquery in FROM is walked too, which can only add columns.
+        def read_columns(select, scope)
+          read = Columns.new
+          refs_outside_with(select).each { |ref| scope.columns(ref).each { |pair| read.add(pair) } }
+          scope.using.each { |name, left, right| add_using(read, name, left + right) }
+          read
+        end
+
+        def refs_outside_with(select)
+          select.class.descriptor.flat_map { |f| f.name == "with_clause" ? [] : ColumnRefs.in(f.get(select)) }
+        end
+
+        def add_using(read, name, tables)
+          tables.each { |t| read.add([t, name]) if t.stats.column_names.include?(name) }
         end
       end
 
@@ -879,7 +936,7 @@ module Quaack
 
         def to_a
           btrees = equality_sets.flat_map { |equality| keys(equality) }
-                                .flat_map { |key| (1..key.size).map { |n| btree(key.first(n)) } }
+                                .flat_map { |key| (1..key.size).flat_map { |n| btrees(key.first(n)) } }
           btrees + brins
         end
 
@@ -961,9 +1018,16 @@ module Quaack
           @stats.equality_selectivity(name)
         end
 
-        def btree(key)
-          IndexCandidate.new(table: @table.name, key:, include: @uses.covered(@table) - key.map(&:name),
-                             sources: [:parse])
+        # The key with an INCLUDE, when that makes the index covering, then
+        # the bare key, so ranking can compare them. A non-covering INCLUDE
+        # only widens the leaf entries, so then there's just the bare key.
+        def btrees(key)
+          names = key.map(&:name)
+          include = @uses.covered(@table) - names
+          bare = IndexCandidate.new(table: @table.name, key:, sources: [:parse])
+          return [bare] if include.empty? || !(@uses.read(@table) - names - include).empty?
+
+          [IndexCandidate.new(table: @table.name, key:, include:, sources: [:parse]), bare]
         end
 
         def brins

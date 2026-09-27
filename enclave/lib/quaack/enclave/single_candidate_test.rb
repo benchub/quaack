@@ -76,7 +76,8 @@ module Quaack
     # as a column that doesn't exist, as XX000, so that counts as a
     # refusal.
     #
-    # The run happens inside a transaction that's rolled back, and
+    # The run happens inside a READ ONLY transaction that's rolled back, so
+    # even a write the planner makes while folding a function fails, and
     # hypopg_reset runs at the end, since hypothetical indexes don't roll
     # back. A hypothetical index the caller made earlier is gone afterward.
     # The transaction also sets hypopg.enabled = on, since with it off,
@@ -367,7 +368,7 @@ module Quaack
         end
 
         def start
-          @connection.exec("BEGIN")
+          @connection.exec("BEGIN READ ONLY")
           @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
           @connection.exec("SET LOCAL hypopg.enabled = on")
           @connection.exec("SELECT hypopg_reset()")

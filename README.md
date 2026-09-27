@@ -428,7 +428,7 @@ For each table in the query, including the tables of every subquery and CTE body
    - The `ORDER BY` columns, but only if they come after the equality columns and their sort directions match. That lets the planner drop the sort.
    - As a separate key, the `GROUP BY` columns after the equality columns, when every `GROUP BY` item is a plain column of the table. The scan then comes out grouped.
 4. Cap the key at three or four columns.
-5. Add the rest of the select-list columns as `INCLUDE` columns so an index-only scan becomes possible.
+5. Add the rest of the select-list and `GROUP BY` columns as `INCLUDE` columns, but only when that makes the index covering: every column the query reads from the table is then in the key or `INCLUDE`, so an index-only scan becomes possible. Emit the bare key too, so ranking can compare them. When the `INCLUDE` wouldn't cover, emit only the bare key, since the heap visit happens anyway.
 6. Also emit every leading prefix of the key as a separate candidate.
 7. If the range column's `pg_stats` correlation is close to 1 or -1 and the table is large, also emit a BRIN candidate on that column.
 
