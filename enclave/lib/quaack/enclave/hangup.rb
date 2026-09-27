@@ -24,11 +24,21 @@ module Quaack
       # returns. out is the real stdout.
       def during(out)
         previous = Signal.trap("HUP") { hang_up }
-        watcher = Thread.new { watch(out) }
+        watcher = Thread.new { watch(out) } if watchable?(out)
         yield
       ensure
         watcher&.kill
         Signal.trap("HUP", previous) if previous
+      end
+
+      # Only a pipe or socket turns readable when its reader goes away. A
+      # regular file or a tty is readable at once, so watching one would
+      # hang up every step.
+      def watchable?(out)
+        stat = out.stat
+        stat.pipe? || stat.socket?
+      rescue IOError, SystemCallError
+        false
       end
 
       def hang_up
