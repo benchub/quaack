@@ -11,6 +11,9 @@ require_relative "support/enclave_commands"
 # Tells Quaack::Driver::LLM::Client, in this process and every child process a
 # spec starts, that specs are running, so it refuses to call the real API.
 ENV["QUAACK_SPECS"] = "1"
+# Lets the enclave script run from this checkout, whose bundle holds the
+# driver gem. Without it, quaacks refuses with driver_present.
+ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 require_relative "../../spec/support/no_network"
 
 # Runs Ruby in a child process that inherits this bundle. Specs use it so

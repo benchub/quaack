@@ -24,6 +24,29 @@ RSpec.describe "quaacks executable" do
     end
   end
 
+  # The repo's bundle holds the driver gem, so running quaacks from a
+  # checkout is the wrong deploy (README, "Deploying the enclave"). The
+  # specs set QUAACKS_DEV_CHECKOUT=1 to allow it. Here it's unset.
+  it "refuses to run with driver_present when the driver gem is in its bundle" do
+    out, err, status = with_env("QUAACKS_DEV_CHECKOUT" => nil) { run_ruby(exe, "--version") }
+
+    expect([out, err, status.exitstatus]).to eq([%({"type":"error","rule":"driver_present"}\n), "", 1])
+  end
+
+  it "refuses with driver_present when the driver's code is on its load path, outside any bundle" do
+    env = { "QUAACKS_DEV_CHECKOUT" => nil, "RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil, "BUNDLER_SETUP" => nil }
+    lib = ["-I", File.join(GEM_ROOT, "lib"), "-I", File.join(REPO_ROOT, "protocol", "lib")]
+    gems = File.join(REPO_ROOT, "vendor", "bundle", "ruby", "3.4.0")
+    out, _, status = with_env(env.merge("GEM_PATH" => gems)) do
+      [nil, File.join(REPO_ROOT, "driver", "lib")].map do |driver|
+        Open3.capture3(RbConfig.ruby, *lib, *(["-I", driver] if driver), exe, "--version")
+      end.transpose
+    end
+
+    expect(out.first).to start_with(%({"type":"version"))
+    expect([out.last, status.last.exitstatus]).to eq([%({"type":"error","rule":"driver_present"}\n), 1])
+  end
+
   it "rejects anything else with one usage error line on stdout, nothing on stderr, and exit 64" do
     # An error names the step only when argv names one.
     { [] => "cli", ["--bogus"] => "cli", %w[some subcommand] => "cli", %w[extra --version] => "cli",
