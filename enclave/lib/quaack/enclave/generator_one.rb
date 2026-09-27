@@ -120,10 +120,13 @@ module Quaack
     # Repeats are dropped, keeping the first, so a table with no join
     # columns gets each candidate once.
     #
-    # INCLUDE. Each btree candidate, prefixes too, INCLUDEs the table's
+    # INCLUDE. A btree candidate, prefixes too, INCLUDEs the table's
     # select-list and GROUP BY columns that aren't in its own key, in query
-    # order. * and t.* mean every column. WHERE, HAVING, and ORDER BY
-    # columns outside the key aren't added.
+    # order, only when that makes it covering: every column the query reads
+    # from the table (select list, WHERE, JOIN, GROUP BY, HAVING, ORDER BY)
+    # is in key or INCLUDE. Then the bare key follows it as a candidate of
+    # its own. Otherwise there's only the bare key. * and t.* mean every
+    # column. WHERE, HAVING, and ORDER BY columns aren't added to INCLUDE.
     #
     # BRIN. For each comparison range column (not a prefix LIKE, which BRIN
     # can't serve) whose |correlation| is at least
@@ -647,6 +650,7 @@ module Quaack
           read_predicates(select, scope)
           scope.using.each { |using| @predicates.read_using(*using) }
           @covered = covered_columns(select, scope)
+          @read = read_columns(select, scope)
           @order = OrderBy.new(select, scope)
           @group = GroupBy.new(select, scope)
         end
@@ -678,6 +682,10 @@ module Quaack
 
         # Select-list and GROUP BY columns.
         def covered(table) = @covered[table]
+
+        # Every column of the table the query reads anywhere: select list,
+        # WHERE, JOIN, GROUP BY, HAVING, ORDER BY.
+        def read(table) = @read[table]
 
         # The ORDER BY items as [name, direction, nulls, collation], when every item is
         # a column of this table. Otherwise nil.
@@ -719,6 +727,23 @@ module Quaack
             ColumnRefs.in(node).each { |ref| scope.columns(ref).each { |pair| covered.add(pair) } }
           end
           covered
+        end
+
+        # Every ColumnRef in the SELECT but its WITH, plus USING columns.
+        # A subquery in FROM is walked too, which can only add columns.
+        def read_columns(select, scope)
+          read = Columns.new
+          refs_outside_with(select).each { |ref| scope.columns(ref).each { |pair| read.add(pair) } }
+          scope.using.each { |name, left, right| add_using(read, name, left + right) }
+          read
+        end
+
+        def refs_outside_with(select)
+          select.class.descriptor.flat_map { |f| f.name == "with_clause" ? [] : ColumnRefs.in(f.get(select)) }
+        end
+
+        def add_using(read, name, tables)
+          tables.each { |t| read.add([t, name]) if t.stats.column_names.include?(name) }
         end
       end
 
@@ -879,7 +904,7 @@ module Quaack
 
         def to_a
           btrees = equality_sets.flat_map { |equality| keys(equality) }
-                                .flat_map { |key| (1..key.size).map { |n| btree(key.first(n)) } }
+                                .flat_map { |key| (1..key.size).flat_map { |n| btrees(key.first(n)) } }
           btrees + brins
         end
 
@@ -961,9 +986,16 @@ module Quaack
           @stats.equality_selectivity(name)
         end
 
-        def btree(key)
-          IndexCandidate.new(table: @table.name, key:, include: @uses.covered(@table) - key.map(&:name),
-                             sources: [:parse])
+        # The key with an INCLUDE, when that makes the index covering, then
+        # the bare key, so ranking can compare them. A non-covering INCLUDE
+        # only widens the leaf entries, so then there's just the bare key.
+        def btrees(key)
+          names = key.map(&:name)
+          include = @uses.covered(@table) - names
+          bare = IndexCandidate.new(table: @table.name, key:, sources: [:parse])
+          return [bare] if include.empty? || !(@uses.read(@table) - names - include).empty?
+
+          [IndexCandidate.new(table: @table.name, key:, include:, sources: [:parse]), bare]
         end
 
         def brins
