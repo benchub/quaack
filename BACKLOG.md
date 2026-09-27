@@ -1102,52 +1102,18 @@ A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_gu
 
 ### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key.
+### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key. Done, see BACKLOG-COMPLETE.md.
 
-e2e 013 gets `(tenant_id) INCLUDE (status)` and 073 gets `(account_id) INCLUDE (started_at)`. The cases need those columns as key columns for GROUP BY or ORDER BY to use the index order. Details are in `e2e/RUN.md`.
+### 20260927-4. 5a-1 gives no atoms for correlated subqueries. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-1.
-- **Status:** todo
-
-### 20260927-4. 5a-1 gives no atoms for correlated subqueries.
-
-e2e 027 (LATERAL top-N) and 089 (`ARRAY(SELECT ...)`) get no index on the correlated column. Generate candidates from correlation predicates inside LATERAL and scalar/array subqueries. Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-1.
-- **Status:** todo
-
-### 20260927-5. 5a-1 gives no candidates in some common shapes.
-
-These shapes get no candidates:
-- A column compared with a non-constant expression (e2e 076, 078, 093, 094).
-- OR across two columns (015, which could use a BitmapOr of two indexes).
-- `COLLATE "C"` (090).
-
-Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-1, 5a-2.
-- **Status:** todo
+### 20260927-5. 5a-1 gives no candidates in some common shapes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-6. Weak or unstable top picks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-7. e2e corpus fixes: 075 and 010. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates.
-
-- e2e 097 (a set operation) no longer crashes, but its top fix measures 384 blocks against a bound of 118. Diagnose why.
-- Generator one gives no candidates for a CTE body or a subquery in FROM, including set operations inside one. Add a spec pinning that a CTE referenced from a set-operation branch is neither refused nor qualified as a table. Consider descending into CTE bodies and FROM subqueries for candidates.
-
-- **Depends on:** 20260927-1.
-- **Came from:** 20260927-1 build and review.
-- **README:** 5a-1.
-- **Status:** todo
+### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-9. 5a-7 ranking and combining are stricter than the README.
 
@@ -1212,4 +1178,18 @@ Fix: add the INCLUDE only when it makes the index truly covering for that table 
 - **Depends on:** 20260927-2.
 - **Came from:** 20260927-2 build and review.
 - **README:** 5a-4.
+- **Status:** todo
+
+### 20260927-15. 5a-1 generation loose ends.
+
+These are minor findings from the review of 20260927-3 to -8:
+- A volatile value (`col = random()`) counts as a value and yields a false candidate. Refuse volatile calls in `value?`.
+- A schema-qualified outer reference (`public.orders.id`) isn't treated as an outer column.
+- Inside a subquery, an unqualified outer column that shares a name with an inner column resolves to the inner table.
+- The first collation wins when a column gets different COLLATEs.
+- Long OR chains build one set of uses per arm. Consider a cap.
+
+- **Depends on:** 20260927-5.
+- **Came from:** Review of 20260927-3 to -8.
+- **README:** 5a-1.
 - **Status:** todo

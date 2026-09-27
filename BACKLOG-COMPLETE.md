@@ -2498,3 +2498,45 @@ Use the original literal's type for each placeholder (from the placeholder map, 
 - **Came from:** The e2e runner.
 - **README:** 5a-4, step 5 plan gate.
 - **Status:** done
+
+### 20260927-3. 5a-1 puts grouping and ordering columns in INCLUDE instead of the key.
+
+e2e 013 gets `(tenant_id) INCLUDE (status)` and 073 gets `(account_id) INCLUDE (started_at)`. The cases need those columns as key columns for GROUP BY or ORDER BY to use the index order. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** done
+
+### 20260927-4. 5a-1 gives no atoms for correlated subqueries.
+
+e2e 027 (LATERAL top-N) and 089 (`ARRAY(SELECT ...)`) get no index on the correlated column. Generate candidates from correlation predicates inside LATERAL and scalar/array subqueries. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** done
+
+### 20260927-5. 5a-1 gives no candidates in some common shapes.
+
+These shapes get no candidates:
+- A column compared with a non-constant expression (e2e 076, 078, 093, 094).
+- OR across two columns (015, which could use a BitmapOr of two indexes).
+- `COLLATE "C"` (090).
+
+Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1, 5a-2.
+- **Status:** done
+
+### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates.
+
+- e2e 097 (a set operation) no longer crashes, but its top fix measures 384 blocks against a bound of 118. Diagnose why.
+- Generator one gives no candidates for a CTE body or a subquery in FROM, including set operations inside one. Add a spec pinning that a CTE referenced from a set-operation branch is neither refused nor qualified as a table. Consider descending into CTE bodies and FROM subqueries for candidates.
+
+- **Depends on:** 20260927-1.
+- **Came from:** 20260927-1 build and review.
+- **README:** 5a-1.
+- **Status:** done
