@@ -95,7 +95,12 @@ module Quaack
     # shortest first. A keyset takes the range column's place with its
     # columns in order, less any equality columns, and the ORDER BY key
     # stands alone when it starts with them. Only the first keyset on a
-    # table counts.
+    # table counts. When every GROUP BY item is a bare column of the table,
+    # there's also a key of the equality columns and then the GROUP BY
+    # columns that aren't equality columns, so the scan comes out grouped.
+    # It stands alone when there's nothing else after the equality
+    # columns. An unqualified JOIN ... USING column in ORDER BY or GROUP BY
+    # counts as the column of each table that has it.
     #
     # Join columns. Each table's keys are built twice: once with its join
     # columns (a join condition or USING) counted as equality columns, and
@@ -279,6 +284,20 @@ module Quaack
         # The one [table, column] pair a ColumnRef that isn't a star means,
         # or nil.
         def column(ref) = (columns(ref).first if ref.fields.none?(&:a_star))
+
+        # Like column, but an unqualified JOIN ... USING name that doesn't
+        # resolve to one table gives [:using, name], which means that
+        # column of whichever table has it.
+        def column_or_using(ref)
+          found = column(ref)
+          return found if found
+
+          name = ref.fields.first.string&.sval if ref.fields.one?
+          [:using, name] if name && using.any? { |using_name, _, _| using_name == name }
+        end
+
+        # Whether the owner column_or_using gave is this table.
+        def owns?(owner, table) = owner.equal?(table) || owner == :using
 
         private
 
@@ -519,6 +538,7 @@ module Quaack
           scope.using.each { |using| @predicates.read_using(*using) }
           @covered = covered_columns(select, scope)
           @order = OrderBy.new(select, scope)
+          @group = GroupBy.new(select, scope)
         end
 
         def equality(table) = @predicates.equality[table]
@@ -549,6 +569,10 @@ module Quaack
         # The ORDER BY items as [name, direction, nulls], when every item is
         # a column of this table. Otherwise nil.
         def order(table) = @order.for(table)
+
+        # The GROUP BY columns, in query order, when every item is a bare
+        # column of this table. Otherwise nil.
+        def group(table) = @group.for(table)
 
         private
 
@@ -629,7 +653,7 @@ module Quaack
         end
 
         def for(table)
-          return nil unless @items.all? { |item| item && item[0].equal?(table) }
+          return nil unless @items.all? { |item| item && @scope.owns?(item[0], table) }
 
           # Postgres reads a repeated column only at its first place.
           @items.map { |item| item.drop(1) }.uniq(&:first)
@@ -642,7 +666,7 @@ module Quaack
         def item(sort)
           direction = DIRECTIONS[sort.sortby_dir]
           ref = column_ref(sort.node)
-          pair = direction && ref && @scope.column(ref)
+          pair = direction && ref && @scope.column_or_using(ref)
           pair && [*pair, direction, NULLS.fetch(sort.sortby_nulls)]
         end
 
@@ -668,6 +692,21 @@ module Quaack
         def output_alias(ref)
           name = ref.fields.first.string&.sval if ref.fields.one?
           @targets.find { |t| t.name == name }
+        end
+      end
+
+      # The GROUP BY clause, resolved to bare columns. Any other item, or a
+      # column of another table, leaves the table no GROUP BY key.
+      class GroupBy
+        def initialize(select, scope)
+          @scope = scope
+          @items = select.group_clause.map { |node| node.column_ref && scope.column_or_using(node.column_ref) }
+        end
+
+        def for(table)
+          return nil if @items.empty? || !@items.all? { |item| item && @scope.owns?(item[0], table) }
+
+          @items.map(&:last).uniq
         end
       end
 
@@ -752,10 +791,24 @@ module Quaack
           range = range_columns(equality_names)
           range_tail = range.map { |name| IndexCandidate::KeyColumn.new(name:) }
           order_tail = order_columns(equality_names)
-          return [range_tail] if order_tail.nil? || order_tail.empty?
-          return [order_tail] if range.empty? || order_tail.map(&:name).first(range.size) == range
+          with_group(range_tail, order_tail, range, equality_names)
+        end
 
-          [range_tail, order_tail]
+        def with_group(range_tail, order_tail, range, equality_names)
+          tails = if order_tail.nil? || order_tail.empty? then [range_tail]
+                  elsif range.empty? || order_tail.map(&:name).first(range.size) == range then [order_tail]
+                  else [range_tail, order_tail]
+                  end
+          group = group_columns(equality_names)
+          return tails if group.empty?
+
+          tails == [[]] ? [group] : tails + [group]
+        end
+
+        # The GROUP BY columns that aren't equality columns, so a scan on
+        # the key comes out grouped.
+        def group_columns(equality_names)
+          (@uses.group(@table).to_a - equality_names).map { |name| IndexCandidate::KeyColumn.new(name:) }
         end
 
         # A keyset's columns that aren't equality columns, or else the first
@@ -809,7 +862,7 @@ module Quaack
       end
 
       private_constant :Input, :Table, :Join, :Scope, :Keyset, :Columns, :Predicates, :Uses, :ColumnRefs, :OrderBy,
-                       :OrderTail, :TableCandidates
+                       :GroupBy, :OrderTail, :TableCandidates
     end
   end
 end

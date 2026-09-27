@@ -925,6 +925,16 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       expect(generate(sql, stats).map(&:key)).to eq([[asc("a")]])
     end
 
+    it "reads an unqualified JOIN ... USING column in ORDER BY as each side's own column" do
+      sql = "SELECT account_id, a.name, s.started_at FROM public.orders s RIGHT JOIN public.customers a " \
+            "USING (account_id) WHERE a.plan = 'x' ORDER BY account_id, s.started_at"
+      stats = statistics(table(orders, { "account_id" => column(-1), "started_at" => column(-1) }),
+                         table(customers, { "account_id" => column(-1), "plan" => column(3) }, extra: %w[name]))
+
+      expect(keys(generate(sql, stats)).first(2))
+        .to eq([["orders", %w[account_id], %w[started_at]], ["orders", %w[account_id started_at], []]])
+    end
+
     it "reads an ORDER BY ordinal or output alias as the column it names" do
       expect(generate("SELECT id, created_at FROM public.orders WHERE a = 1 ORDER BY 2 DESC", stats).last.key)
         .to eq([asc("a"), desc("created_at")])
@@ -950,6 +960,30 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
   end
 
+  describe "GROUP BY" do
+    let(:stats) do
+      statistics(table(orders, { "a" => column(10), "b" => column(20), "r" => column(-1) }, extra: %w[status id]))
+    end
+
+    it "keys the GROUP BY columns after the equality columns, so the scan comes out grouped" do
+      sql = "SELECT status, count(*) FROM public.orders WHERE a = 12 GROUP BY status"
+
+      expect(generate(sql, stats)).to eq([btree(orders, %w[a], %w[status]), btree(orders, %w[a status])])
+    end
+
+    it "keys GROUP BY alone when nothing else counts, and apart from a range column" do
+      expect(generate("SELECT status, id FROM public.orders GROUP BY status, id", stats).map(&:key))
+        .to eq([[asc("status")], [asc("status"), asc("id")]])
+      expect(generate("SELECT status FROM public.orders WHERE r > 1 GROUP BY status", stats).map(&:key))
+        .to eq([[asc("r")], [asc("status")]])
+    end
+
+    it "leaves GROUP BY out of the key when an item is an expression" do
+      expect(generate("SELECT 1 FROM public.orders WHERE a = 1 GROUP BY lower(status)", stats).map(&:key))
+        .to eq([[asc("a")]])
+    end
+  end
+
   describe "INCLUDE" do
     let(:stats) do
       statistics(table(orders, { "a" => column(10), "b" => column(20) }, extra: %w[id total region]))
@@ -959,13 +993,14 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
       sql = "SELECT a, sum(total) FROM public.orders WHERE a = 1 AND b = 2 GROUP BY a, region"
 
       expect(generate(sql, stats)).to eq([btree(orders, %w[b], %w[a total region]),
-                                          btree(orders, %w[b a], %w[total region])])
+                                          btree(orders, %w[b a], %w[total region]),
+                                          btree(orders, %w[b a region], %w[total])])
     end
 
     it "leaves out WHERE and HAVING columns that aren't in the key" do
       sql = "SELECT 1 FROM public.orders WHERE a = 1 AND (id = 1 OR id = 2) GROUP BY b HAVING max(region) = 'x'"
 
-      expect(generate(sql, stats)).to eq([btree(orders, %w[a], %w[b])])
+      expect(generate(sql, stats)).to eq([btree(orders, %w[a], %w[b]), btree(orders, %w[a b])])
     end
   end
 
