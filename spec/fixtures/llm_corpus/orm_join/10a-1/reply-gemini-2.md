@@ -1,0 +1,1 @@
+{"inserts": ["INSERT INTO public.users (email, name, country, status, created_at) VALUES ('test1@example.com', 'Test User', $1, 'active', $2);", "INSERT INTO public.orders (user_id, status, total_cents, created_at, updated_at) VALUES (1, 'pending', 100, $2, $2), (1, 'pending', 200, $2, $2), (1, 'pending', 300, $2, $2), (1, 'pending', 400, $2, $2), (1, 'pending', 500, $2, $2);"]}
