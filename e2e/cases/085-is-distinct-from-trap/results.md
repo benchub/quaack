@@ -1,11 +1,10 @@
-# 023-limit-without-order-by results.
+# 085-is-distinct-from-trap results.
 
 Total blocks (README step 13), from `ruby e2e/verify.rb`.
-Category: `index`.
+Category: `trap`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 5 | 3237 | - | 8 | - |
-| another customer | 5 | 3232 | - | 8 | - |
+| slow (from the plan) | 1 | 454 | 454 | - | - |
 
 Every claim holds.

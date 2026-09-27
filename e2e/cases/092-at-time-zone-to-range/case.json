@@ -1,0 +1,34 @@
+{
+  "title": "Local date via AT TIME ZONE",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "AT TIME ZONE",
+    "AT LOCAL",
+    "range in another time zone, across a DST change"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "the day DST ends",
+      "replace": {
+        "2025-03-15": "2025-11-02"
+      }
+    },
+    {
+      "name": "the day DST starts",
+      "replace": {
+        "2025-03-15": "2025-03-09"
+      }
+    },
+    {
+      "name": "another zone",
+      "replace": {
+        "America/New_York": "Asia/Kolkata"
+      }
+    }
+  ]
+}

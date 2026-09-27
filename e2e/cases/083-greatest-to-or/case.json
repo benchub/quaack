@@ -1,0 +1,30 @@
+{
+  "title": "GREATEST over two indexed columns",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "GREATEST",
+    "LEAST",
+    "NULLIF",
+    "OR of two range predicates (BitmapOr)",
+    "GREATEST ignores NULLs"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a week earlier",
+      "replace": {
+        "2025-12-13": "2025-12-06"
+      }
+    },
+    {
+      "name": "after the data",
+      "replace": {
+        "2025-12-13": "2026-12-13"
+      }
+    }
+  ]
+}

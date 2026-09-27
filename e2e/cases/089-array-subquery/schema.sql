@@ -1,0 +1,23 @@
+CREATE TABLE public.articles (
+    id     bigint PRIMARY KEY,
+    title  text NOT NULL,
+    tags   text[] NOT NULL
+);
+
+-- The first tag is 'postgres' for 1 in 500 articles.
+INSERT INTO public.articles (id, title, tags)
+SELECT i, 'Article ' || i,
+       ARRAY[CASE WHEN i % 500 = 0 THEN 'postgres' ELSE 'topic' || (i % 97) END, 'tag' || (i % 13), 'tag' || (i % 7)]
+FROM generate_series(1, 300000) AS i;
+
+CREATE TABLE public.comments (
+    id          bigint PRIMARY KEY,
+    article_id  bigint NOT NULL REFERENCES public.articles (id),
+    body        text NOT NULL
+);
+
+INSERT INTO public.comments (id, article_id, body)
+SELECT j, 1 + (j::bigint * 7919) % 300000, 'Comment ' || j
+FROM generate_series(1, 600000) AS j;
+
+VACUUM ANALYZE;

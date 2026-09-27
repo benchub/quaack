@@ -1,0 +1,21 @@
+{
+  "title": "Join to a VALUES list",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "VALUES in FROM with a column alias list",
+    "arithmetic in the select list"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other skus",
+      "replace": {
+        "'ABX-0000100'": "'ABX-0300000'"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Named and VARIADIC function arguments",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "named argument (=>)",
+    "VARIADIC argument",
+    "immutable function folded to a constant"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a longer look-back",
+      "replace": {
+        "days => 3": "days => 30"
+      }
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "title": "substring() prefix test",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "substring(... FROM ... FOR ...)",
+    "position(... IN ...)",
+    "overlay(... PLACING ...)",
+    "trim(BOTH / LEADING ...)",
+    "literal-dependent rewrite"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another prefix",
+      "replace": {
+        "'ABX-001'": "'KLP-039'"
+      }
+    },
+    {
+      "name": "no match",
+      "replace": {
+        "'ABX-001'": "'NOP-000'"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Calendar from generate_series WITH ORDINALITY",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "function in FROM (generate_series)",
+    "WITH ORDINALITY and a column alias list",
+    "LEFT JOIN on a range condition"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "days with no data",
+      "replace": {
+        "2025-03-0": "2026-03-0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "title": "IS NOT TRUE, IS NOT NULL, and boolean and bit literals",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "IS NOT TRUE on a nullable boolean",
+    "IS NOT NULL",
+    "boolean literal",
+    "bit-string literal and operator"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another assignee",
+      "replace": {
+        "= 42": "= 1999"
+      }
+    }
+  ]
+}

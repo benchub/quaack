@@ -1,0 +1,23 @@
+{
+  "title": "IS NOT DISTINCT FROM a constant",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "IS NOT DISTINCT FROM",
+    "not indexable as written",
+    "literal isn't NULL assumption"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another team",
+      "replace": {
+        "FROM 7": "FROM 999",
+        "= 7": "= 999"
+      }
+    }
+  ]
+}

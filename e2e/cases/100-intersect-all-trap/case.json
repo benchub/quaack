@@ -1,0 +1,15 @@
+{
+  "title": "INTERSECT ALL to INTERSECT",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "INTERSECT ALL keeps multiplicities",
+    "duplicates fixture (step 9, S3)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

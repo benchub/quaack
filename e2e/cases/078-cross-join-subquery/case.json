@@ -1,0 +1,22 @@
+{
+  "title": "CROSS JOIN to an aggregate subquery",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "CROSS JOIN",
+    "subquery in FROM",
+    "max() that an index can answer"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "the last day",
+      "replace": {
+        "'1 hour'": "'1 day'"
+      }
+    }
+  ]
+}

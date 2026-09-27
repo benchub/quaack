@@ -1,11 +1,11 @@
-# 023-limit-without-order-by results.
+# 080-named-window-frame results.
 
 Total blocks (README step 13), from `ruby e2e/verify.rb`.
 Category: `index`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 5 | 3237 | - | 8 | - |
-| another customer | 5 | 3232 | - | 8 | - |
+| slow (from the plan) | 500 | 3261 | - | 508 | - |
+| another account | 500 | 3261 | - | 508 | - |
 
 Every claim holds.

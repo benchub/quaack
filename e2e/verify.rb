@@ -7,8 +7,9 @@
 #   ruby e2e/verify.rb --write         # also rewrite each results.md and CASES.md
 #
 # It starts its own throwaway Postgres container, labeled quaack.e2e, and
-# removes it at exit. It needs only Docker and the standard library. Each
-# case loads into a fresh database. See e2e/README.md for what's checked.
+# removes it and its volume at exit. It needs only Docker and the standard
+# library. Each case loads into a fresh database, which is dropped when the
+# case finishes. See e2e/README.md for what's checked.
 
 require "json"
 require "open3"
@@ -25,9 +26,9 @@ module E2E
   # One throwaway Postgres container, reached with docker exec and psql.
   class Postgres
     def initialize
-      system("docker", "rm", "-f", *leftovers, out: File::NULL, err: File::NULL) unless leftovers.empty?
+      system("docker", "rm", "-f", "-v", *leftovers, out: File::NULL, err: File::NULL) unless leftovers.empty?
       @id = capture("docker", "run", "-d", "--label", LABEL, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE).strip
-      at_exit { system("docker", "rm", "-f", @id, out: File::NULL, err: File::NULL) }
+      at_exit { system("docker", "rm", "-f", "-v", @id, out: File::NULL, err: File::NULL) }
       wait_until_ready
     end
 
@@ -118,6 +119,8 @@ module E2E
       @rows = measure
       Verdict.new(@case, @rows, equivalence).check(@failures)
       self
+    ensure
+      @pg.psql("DROP DATABASE IF EXISTS #{@case.database};", "postgres")
     end
 
     def table

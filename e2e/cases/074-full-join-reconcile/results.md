@@ -1,11 +1,12 @@
-# 023-limit-without-order-by results.
+# 074-full-join-reconcile results.
 
 Total blocks (README step 13), from `ruby e2e/verify.rb`.
-Category: `index`.
+Category: `rewrite`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 5 | 3237 | - | 8 | - |
-| another customer | 5 | 3232 | - | 8 | - |
+| slow (from the plan) | 3 | 2523 | 204 | - | - |
+| another batch | 3 | 2523 | 204 | - | - |
+| no such batch | 0 | 2523 | 4 | - | - |
 
 Every claim holds.

@@ -1,0 +1,22 @@
+{
+  "title": "Named window with a ROWS frame",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "WINDOW clause",
+    "window referenced by name",
+    "ROWS BETWEEN frame"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 55": "= 999"
+      }
+    }
+  ]
+}

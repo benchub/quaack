@@ -12,7 +12,7 @@ ruby e2e/verify.rb 001 046     # only cases whose directory starts with these
 ruby e2e/verify.rb --write     # also rewrite each results.md, and CASES.md after a full run
 ```
 
-It needs Docker and the standard library, nothing else. It starts its own throwaway `postgres:18` container, labeled `quaack.e2e`, loads each case into a fresh database, and removes the container at exit. A container left by a crashed run is removed by the next one. Set `QUAACK_E2E_IMAGE` to use another image, such as the HypoPG one from `spec/support/postgres/`. The proofs don't need HypoPG, because they build real indexes.
+It needs Docker and the standard library, nothing else. It starts its own throwaway `postgres:18` container, labeled `quaack.e2e`, loads each case into a fresh database that it drops afterwards, and removes the container and its volume at exit. A container left by a crashed run is removed by the next one. Set `QUAACK_E2E_IMAGE` to use another image, such as the HypoPG one from `spec/support/postgres/`. The proofs don't need HypoPG, because they build real indexes.
 
 It isn't part of `rake`: the full run takes around 15 minutes.
 

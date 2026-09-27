@@ -1,0 +1,29 @@
+{
+  "title": "OFFSET pagination with NULLS LAST",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "OFFSET",
+    "ORDER BY ... DESC NULLS LAST",
+    "index sort order must match NULLS placement"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another carrier",
+      "replace": {
+        "'dhl'": "'usps'"
+      }
+    },
+    {
+      "name": "a deep page",
+      "replace": {
+        "OFFSET 40": "OFFSET 124000"
+      },
+      "minimax": false
+    }
+  ]
+}

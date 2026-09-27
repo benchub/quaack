@@ -1,0 +1,25 @@
+{
+  "title": "BETWEEN SYMMETRIC with NOT BETWEEN, NOT IN, NOT LIKE, and <> ALL",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "BETWEEN SYMMETRIC",
+    "NOT BETWEEN",
+    "NOT BETWEEN SYMMETRIC",
+    "NOT IN list",
+    "NOT LIKE",
+    "<> ALL (ARRAY[...])"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another price band",
+      "replace": {
+        "45200 AND 45000": "70200 AND 70000"
+      }
+    }
+  ]
+}

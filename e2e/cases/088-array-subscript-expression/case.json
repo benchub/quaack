@@ -1,0 +1,23 @@
+{
+  "title": "Filter on an array element",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "array subscript",
+    "array slice",
+    "expression index on an array element (5a-5)",
+    "text[] column statistics (3f)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a common first tag",
+      "replace": {
+        "'postgres'": "'topic5'"
+      }
+    }
+  ]
+}

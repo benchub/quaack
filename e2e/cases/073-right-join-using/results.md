@@ -1,11 +1,11 @@
-# 023-limit-without-order-by results.
+# 073-right-join-using results.
 
 Total blocks (README step 13), from `ruby e2e/verify.rb`.
-Category: `index`.
+Category: `none`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 5 | 3237 | - | 8 | - |
-| another customer | 5 | 3232 | - | 8 | - |
+| slow (from the plan) | 904 | 3443 | - | 1154 | - |
+| worst case: top MCV | 361600 | 7123 | - | 450608 | - |
 
 Every claim holds.

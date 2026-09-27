@@ -1,0 +1,22 @@
+{
+  "title": "ARRAY(SELECT ...) per row",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "ARRAY(SELECT ...) subquery",
+    "correlated subquery with ORDER BY",
+    "IN list on the primary key"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other articles",
+      "replace": {
+        "(10, 20, 30)": "(299997, 299998, 299999)"
+      }
+    }
+  ]
+}

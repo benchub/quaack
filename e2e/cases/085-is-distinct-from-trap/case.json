@@ -1,0 +1,15 @@
+{
+  "title": "IS DISTINCT FROM to <>",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "IS DISTINCT FROM includes NULL",
+    "NULL fixtures (step 9, S2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

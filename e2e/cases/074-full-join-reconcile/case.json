@@ -1,0 +1,29 @@
+{
+  "title": "FULL JOIN filtered after the join",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "FULL JOIN",
+    "COALESCE over both sides",
+    "IS DISTINCT FROM",
+    "filter pushed into subqueries in FROM"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another batch",
+      "replace": {
+        "= 42": "= 1999"
+      }
+    },
+    {
+      "name": "no such batch",
+      "replace": {
+        "= 42": "= 5000"
+      }
+    }
+  ]
+}
