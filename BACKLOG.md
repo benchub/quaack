@@ -1145,6 +1145,7 @@ In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and
 - make 5a-1 prefer key columns over INCLUDE when the leading key has few distinct values
 - correct the size estimate for low-cardinality key-only indexes
 - or list this case as unsupported in v1
+- **Decided (2026-09-27):** HypoPG's estimate can't be corrected from outside, but 12a already builds every index for real. So when 5a-4 declines a key-only B-tree index on a low-cardinality leading column as unused, set it aside for 12a the way GIN and GiST candidates are, instead of dropping it. 12a builds it for real, and steps 13 and 14 measure it.
 
 - **Depends on:** 20260922-30, -32.
 - **Came from:** The 20260927-6 investigation.
@@ -1171,4 +1172,13 @@ In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and
 - **Depends on:** 20260927-13, -15.
 - **Came from:** Review of 20260927-13 to -16.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-18. Make step 9 scenarios load instead of skipping them.
+
+20260926-60 skips a step 9 scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
+
+- **Depends on:** 20260926-60.
+- **Came from:** User direction, 2026-09-27.
+- **README:** Step 9.
 - **Status:** todo
