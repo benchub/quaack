@@ -296,6 +296,8 @@ module PromptPack
       name = "#{step}-#{counts[step] += 1}"
       FileUtils.mkdir_p(File.join(dir, name))
       File.write(File.join(dir, name, "prompt.md"), prompt(ask))
+      chat_file = File.join(dir, name, "chat.md")
+      (chat = chat(ask)) ? File.write(chat_file, chat) : FileUtils.rm_f(chat_file)
       name
     end
     prune(dir, kept)
@@ -306,7 +308,7 @@ module PromptPack
   def prune(dir, kept)
     (Dir.children(dir).select { File.directory?(File.join(dir, it)) } - kept).each do |name|
       path = File.join(dir, name)
-      if Dir.children(path) == ["prompt.md"]
+      if (Dir.children(path) - ["chat.md"]) == ["prompt.md"]
         FileUtils.rm_rf(path)
       else
         warn "  #{path} holds replies but wasn't asked this time; left alone"
@@ -338,9 +340,31 @@ module PromptPack
     body[:messages].each do |message|
       parts << "# #{message[:role].to_s.capitalize}\n\n#{text(message[:content]).strip}\n"
     end
-    parts << "# Reply format\n\nReply with only JSON matching this schema:\n\n```json\n" \
-             "#{JSON.pretty_generate(body.dig(:output_config, :format, :schema))}\n```\n"
+    parts << reply_format(body)
     parts.join("\n")
+  end
+
+  # A chat window can't take an assistant turn, so for a prompt with more
+  # than one user turn this folds the earlier exchange into one message
+  # that quotes it plainly. It's nil for a single-turn prompt.
+  def chat(ask)
+    body = ask.body
+    *earlier, last = body[:messages]
+    return nil if earlier.empty?
+
+    quoted = earlier.map do |message|
+      label = message[:role].to_s == "assistant" ? "Your reply:" : "You were asked:"
+      "#{label}\n\n#{text(message[:content]).strip}\n"
+    end
+    ["# System\n\n#{text(body[:system]).strip}\n",
+     "# Message\n\nEarlier in this conversation you were asked the following, and you replied as shown. " \
+     "Treat that reply as your own.\n",
+     *quoted, "Now:\n\n#{text(last[:content]).strip}\n", reply_format(body)].join("\n")
+  end
+
+  def reply_format(body)
+    "# Reply format\n\nReply with only JSON matching this schema:\n\n```json\n" \
+      "#{JSON.pretty_generate(body.dig(:output_config, :format, :schema))}\n```\n"
   end
 
   def text(value)
