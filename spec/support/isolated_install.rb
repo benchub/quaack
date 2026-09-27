@@ -69,7 +69,7 @@ class IsolatedInstall
   def isolated_env
     {
       "GEM_HOME" => @home, "GEM_PATH" => @home, "RUBYOPT" => nil, "RUBYLIB" => nil,
-      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil
+      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil, "RUBYGEMS_GEMDEPS" => nil
     }
   end
 

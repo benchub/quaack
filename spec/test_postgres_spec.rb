@@ -99,6 +99,50 @@ RSpec.describe TestPostgres do
     expect(open_fds.call - before).to be < 5
   end
 
+  it "drops a database that a session from connect still holds open" do
+    db = TestPostgres.create_database
+    held = db.connect
+
+    TestPostgres.drop_databases
+
+    expect(TestPostgres.server.database_names).not_to include(db.name)
+  ensure
+    held&.close
+  end
+
+  it "replaces an admin connection a spec left inside a transaction" do
+    TestPostgres.server.admin.exec("BEGIN")
+
+    expect(TestPostgres.create_database.name).to start_with("quaack_test_")
+  end
+
+  # This machine already has the image, so a fake docker that has none
+  # shows the build happens.
+  it "builds the image when docker has none with its tag" do
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "calls.log")
+      File.write(File.join(dir, "docker"), <<~SH, perm: 0o755)
+        #!/bin/sh
+        echo "$*" >> #{log}
+        [ "$1" != image ]
+      SH
+      path = ENV.fetch("PATH")
+      begin
+        ENV["PATH"] = "#{dir}#{File::PATH_SEPARATOR}#{path}"
+        TestPostgres.build_image
+      ensure
+        ENV["PATH"] = path
+      end
+
+      expect(File.readlines(log, chomp: true))
+        .to eq(["image inspect #{TestPostgres.image_tag}", "build -q -t #{TestPostgres.image_tag} #{TestPostgres::DIR}"])
+    end
+  end
+
+  it "counts a process it may not signal as alive" do
+    expect(TestPostgres.process_alive?(1)).to be(true)
+  end
+
   it "returns the same database for every call within one example" do
     expect(test_database).to equal(test_database)
     expect(racetrack_and_arena).to equal(racetrack_and_arena)
