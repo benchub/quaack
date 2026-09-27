@@ -2213,3 +2213,36 @@ Minor findings from the second review of 20260923-7:
 - **Came from:** Second review of 20260923-7.
 - **README:** Where QUAACK runs.
 - **Status:** done
+
+### 20260926-40. Keyset pagination loose ends.
+
+- Step 9 pools keysets only on the leading column. Scenarios never build the tie case, so a candidate that changes only the tie-breaker value (`(qty, id) < (7, 901)` instead of `(7, 900)`) can pass step 9. Seed tie rows on the leading column, or list it as a v1 limitation. (Steps 10 and 14c may still catch it.)
+- Row comparisons with `=` or `<>`, or with an expression in the column row, get no pool, so 9c may mark them untested.
+- 3e picks no worst-case or typical values for tuple placeholders.
+- No candidate-specific tests for row comparisons in rewrites.
+- The relation-qualifier keyset test sits under a misleading `describe`.
+
+- **Depends on:** 20260924-31.
+- **Came from:** 20260924-31 build and review.
+- **README:** 3e, step 9.
+- **Status:** done
+
+### 20260926-44. Expression-unique loose ends.
+
+- `RowSet`'s `expression?` guard is untested: inverting it stays green. Add a unit test with a crafted key like `a), (b`, asserting the group is dropped without running the key.
+- There's no perturb-and-retry for colliding expression keys, so the group is dropped.
+- A column an expression reads that the row leaves out (a generated column) counts as NULL when the key is worked out.
+
+- **Depends on:** 20260926-41.
+- **Came from:** 20260926-41 build and review.
+- **README:** Step 9.
+- **Status:** done
+
+### 20260926-50. FROM functions: non-FuncCall items crash.
+
+`FromFunctions.calls` assumes every FROM function item is a FuncCall, so `SELECT * FROM current_user` or `SELECT * FROM coalesce(1,2)` may raise NoMethodError instead of a clean refusal (unless an earlier stage refuses them). Refuse any non-FuncCall item cleanly, and test it. Overloads aren't told apart either: a user function sitting earlier in the path with a pg_catalog name is refused (documented as unsupported in v1).
+
+- **Depends on:** 20260926-47.
+- **Came from:** 20260926-47 review.
+- **README:** 3a.
+- **Status:** done

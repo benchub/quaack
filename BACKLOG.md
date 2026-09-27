@@ -1063,18 +1063,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-39. LLM payload fidelity. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-40. Keyset pagination loose ends.
-
-- Step 9 pools keysets only on the leading column. Scenarios never build the tie case, so a candidate that changes only the tie-breaker value (`(qty, id) < (7, 901)` instead of `(7, 900)`) can pass step 9. Seed tie rows on the leading column, or list it as a v1 limitation. (Steps 10 and 14c may still catch it.)
-- Row comparisons with `=` or `<>`, or with an expression in the column row, get no pool, so 9c may mark them untested.
-- 3e picks no worst-case or typical values for tuple placeholders.
-- No candidate-specific tests for row comparisons in rewrites.
-- The relation-qualifier keyset test sits under a misleading `describe`.
-
-- **Depends on:** 20260924-31.
-- **Came from:** 20260924-31 build and review.
-- **README:** 3e, step 9.
-- **Status:** todo
+### 20260926-40. Keyset pagination loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-41. Step 9: support expression unique indexes instead of refusing. Done, see BACKLOG-COMPLETE.md.
 
@@ -1101,16 +1090,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **README:** 5a-5, 6a.
 - **Status:** todo
 
-### 20260926-44. Expression-unique loose ends.
-
-- `RowSet`'s `expression?` guard is untested: inverting it stays green. Add a unit test with a crafted key like `a), (b`, asserting the group is dropped without running the key.
-- There's no perturb-and-retry for colliding expression keys, so the group is dropped.
-- A column an expression reads that the row leaves out (a generated column) counts as NULL when the key is worked out.
-
-- **Depends on:** 20260926-41.
-- **Came from:** 20260926-41 build and review.
-- **README:** Step 9.
-- **Status:** todo
+### 20260926-44. Expression-unique loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-45. Driver, LLM client and harness items left from 20260924-13, -14, -20.
 
@@ -1149,14 +1129,7 @@ These were skipped as needing a design choice or a larger rework:
 - **README:** 3b, 3h, step 1.
 - **Status:** todo
 
-### 20260926-50. FROM functions: non-FuncCall items crash.
-
-`FromFunctions.calls` assumes every FROM function item is a FuncCall, so `SELECT * FROM current_user` or `SELECT * FROM coalesce(1,2)` may raise NoMethodError instead of a clean refusal (unless an earlier stage refuses them). Refuse any non-FuncCall item cleanly, and test it. Overloads aren't told apart either: a user function sitting earlier in the path with a pg_catalog name is refused (documented as unsupported in v1).
-
-- **Depends on:** 20260926-47.
-- **Came from:** 20260926-47 review.
-- **README:** 3a.
-- **Status:** todo
+### 20260926-50. FROM functions: non-FuncCall items crash. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-51. Hangup watcher kills steps when stdout is a file or tty. Done, see BACKLOG-COMPLETE.md.
 
@@ -1188,4 +1161,16 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260923-16, -18, -25.
 - **Came from:** Their build and review.
 - **README:** none (CLAUDE.md Development).
+- **Status:** todo
+
+### 20260926-55. Keyset and expression-unique leftovers.
+
+- The realistic-schema step 9 spec has no keyset query, so tie rows aren't tested against the prompt-pack schema's unique keys and FKs. Add one.
+- No pools for `=` or `<>` row comparisons, or rows built on expressions (listed as a v1 limit).
+- Perturb-and-retry for colliding expression keys.
+- A generated column counts as NULL when an expression key is worked out.
+
+- **Depends on:** 20260926-40, -44.
+- **Came from:** Their build and review.
+- **README:** Step 9.
 - **Status:** todo
