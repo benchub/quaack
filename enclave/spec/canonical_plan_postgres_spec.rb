@@ -97,11 +97,13 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
   # hypothetical index's oid to what it is, here its definition.
   describe "hypothetical indexes mapped to what they are" do
     # The plan of query with only the hypothetical index ddl, and the oid to
-    # definition map from HypoPG.
-    def with_hypothetical(ddl, query)
+    # definition map from HypoPG. Each of others is made first, after the
+    # reset, so the index gets a later oid.
+    def with_hypothetical(ddl, query, others: [])
       conn = test_database.connection
       conn.exec("CREATE EXTENSION IF NOT EXISTS hypopg")
       conn.exec("SELECT hypopg_reset()")
+      others.each { conn.exec_params("SELECT * FROM hypopg_create_index($1)", [it]) }
       oid = Integer(conn.exec_params("SELECT indexrelid FROM hypopg_create_index($1)", [ddl]).getvalue(0, 0))
       definition = conn.exec_params("SELECT hypopg_get_indexdef($1)", [oid]).getvalue(0, 0)
       [explain(query, settings: ["enable_seqscan = off", "enable_bitmapscan = off"]), { oid => definition }]
@@ -136,10 +138,10 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
 
     it "matches the same hypothetical index made in two sessions" do
       query = "SELECT o.id FROM public.orders o WHERE o.status = 'shipped'"
-      (a, a_map), (b, b_map) = Array.new(2) do |i|
-        test_database.connection.exec("SELECT hypopg_create_index('CREATE INDEX ON public.customers (name)')") if i == 1
-        with_hypothetical("CREATE INDEX ON public.orders (status) WHERE total_cents > 100", query)
+      (a, a_map), (b, b_map) = [[], ["CREATE INDEX ON public.customers (name)"]].map do |others|
+        with_hypothetical("CREATE INDEX ON public.orders (status) WHERE total_cents > 100", query, others:)
       end
+      expect(a_map.keys).not_to eq(b_map.keys)
       expect(described_class.new(a, hypothetical_indexes: a_map)
                .matches?(described_class.new(b, hypothetical_indexes: b_map))).to be(true)
     end

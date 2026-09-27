@@ -375,7 +375,20 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
       expect(Marshal.dump(mapped("<13542>btree_orders_status", map))).not_to include("quaack-sentinel")
     end
 
-    [["not a hash"], { "13542" => "x" }, { 13_542 => :x }].each do |map|
+    it "makes a plan with a hypothetical index not comparable under an empty map" do
+      expect(mapped("<13542>btree_orders_status", {}).comparable?).to be(false)
+    end
+
+    it "reads the oid in decimal, even with a leading zero" do
+      expect(mapped("<010>btree_orders_status", 10 => "x").comparable?).to be(true)
+      expect(mapped("<09>btree_orders_status", 9 => "x").comparable?).to be(true)
+    end
+
+    it "treats a name with <digits> in the middle as a real index" do
+      expect(same?(hypothetical("orders<13542>btree"), hypothetical("orders<16901>btree"))).to be(false)
+    end
+
+    [["not a hash"], [[13_542, "x"]], { "13542" => "x" }, { 13_542 => :x }].each do |map|
       it "rejects hypothetical_indexes #{map.inspect.dump} without quoting it" do
         expect { mapped("<13542>btree_orders_status", map) }
           .to raise_error(ArgumentError, "hypothetical_indexes must map index oids to identity strings")
