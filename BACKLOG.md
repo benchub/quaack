@@ -1159,15 +1159,16 @@ These are minor findings from the review of 20260927-11:
 - **README:** 5a-1, 5a-4, 12a.
 - **Status:** todo
 
-### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite.
+### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite. Done, see BACKLOG-COMPLETE.md.
 
-The user's first 18 replies (`correlated_exists/10a-1`, `10a-2`) showed two problems:
-- **Code fences and prose:** some models wrap JSON in code fences or add prose. Add an explicit "reply with only the JSON object, no code fences or commentary" line to every LLM prompt the driver sends (5a-5, 5a-6, 6a, step 7, 10a). The API's structured output already enforces the schema, but this helps other providers. Make the replay tolerant of fences too.
-- **Empty answers:** the pack's fake 6a rewrite is exactly equivalent (a MATERIALIZED CTE wrapper), so 10a has no real counterexample and models return nothing. Give each query's fake rewrite a small, plausible bug (a changed boundary, a dropped condition) that still survives step 9 often enough to reach 10a, or add one buggy rewrite alongside the equivalent one.
 
-Regenerate the pack. Move the existing 18 replies to an `archive/` subfolder for the equivalent-rewrite prompt, so they're kept but not mixed with the new prompts. The user will redo the replies (decided 2026-09-27).
+### 20260927-21. LLM reply parsing: pick the right object, and check the schema.
 
-- **Depends on:** 20260922-65 part one.
-- **Came from:** The user's first replies.
-- **README:** 5a-5, 6a, step 7, 10a.
+These are minor findings from the review of 20260927-20:
+- `embedded_json` always starts at the first `{`, so prose like `Using {"a":1} as shown: {"indexes":[]}` yields `{"a":1}`. Try every start, and prefer the object that matches the schema. Or refuse when more than one top-level object parses.
+- `Client#ask` doesn't check a parsed reply against the schema. Check at least the required keys, so a wrong object is refused as `llm_bad_response` instead of reaching callers. (Claude's structured output makes this moot today; it matters for other providers and for replay.)
+
+- **Depends on:** 20260927-20.
+- **Came from:** Review of 20260927-20.
+- **README:** LLM client.
 - **Status:** todo
