@@ -64,11 +64,23 @@ module Quaack
       end
 
       # The atoms not yet exercised that this fixture doesn't exercise
-      # either.
+      # either. A fixture that won't load (a trigger or constraint QUAACK
+      # doesn't model, say) exercises nothing, so its atoms stay vacuous,
+      # are retried, and end untested. Scenarios never crash step 9.
       def vacuous_atoms(runner, rows, sql, loosened, state)
         pending = loosened.keys - state[:exercised]
-        state[:exercised] += exercised_atoms(runner, rows, sql, loosened.slice(*pending))
+        state[:exercised] += loaded_exercised_atoms(runner, rows, sql, loosened.slice(*pending))
         pending - state[:exercised]
+      end
+
+      LOAD_STEPS = %i[load insert].freeze
+
+      def loaded_exercised_atoms(runner, rows, sql, loosened)
+        exercised_atoms(runner, rows, sql, loosened)
+      rescue ArenaRunner::Error => e
+        raise unless LOAD_STEPS.include?(e.step)
+
+        []
       end
 
       # Each replaceable atom's loosened query, and the atoms that can't be

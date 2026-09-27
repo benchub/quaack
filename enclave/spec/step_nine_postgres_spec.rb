@@ -32,6 +32,17 @@ RSpec.describe Quaack::Enclave::StepNine do
     expect(report.results.map { |r| [r.passed, r.scenario, r.rule] }).to eq([[false, :s1, :query_failed]])
   end
 
+  it "skips a scenario that won't load in the 9c guard, marking its atoms untested, instead of crashing" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION fx.refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no'; END $$;
+      CREATE TRIGGER refuse BEFORE INSERT ON fx.orders FOR EACH ROW EXECUTE FUNCTION fx.refuse();
+    SQL
+    report = run("SELECT o.id FROM fx.orders o WHERE o.qty <> 5 AND o.status = 'SENTINEL_49'")
+    expect(report.untested).to eq(["o.status = $1", "o.qty <> $2"])
+    expect(report.untested_atoms).to eq([0, 1])
+    expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[false, :fixture_load_failed]])
+  end
+
   it "reports nothing but shapes, rules, and scenario names, though the fixture holds the sentinel" do
     builder = Quaack::Enclave::Scenarios::Builder.new(conn, PgQuery.parse(original))
     expect(builder.build[:s1].flat_map(&:values)).to include("SENTINEL_49")
