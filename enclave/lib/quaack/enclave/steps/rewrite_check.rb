@@ -100,11 +100,12 @@ module Quaack
         end
 
         # What StructuralDiscard compares each rewrite with: the original's
-        # parameter and output type OIDs, and the slow literals.
+        # parameter type OIDs (each typed as its literal was), its output
+        # type OIDs, and the slow literals.
         def structure(store, connection)
           original = store.read("redacted_query")
-          param_types = StructuralDiscard.parameter_types(connection, original)
-          expected = param_types && StructuralDiscard.output_types(connection, original)
+          param_types = StructuralDiscard.parameter_types(connection, original, IndexSearch.types(store, original))
+          expected = param_types && StructuralDiscard.output_types(connection, original, param_types:)
           raise StructuralDiscard::Error, "the original query doesn't describe on the racetrack" unless expected
 
           { expected:, param_types:, literals: IndexSearch.values(LiteralSet.load(store).sets).fetch("slow") }

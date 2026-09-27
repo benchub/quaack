@@ -656,4 +656,58 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
             result.plans[:slow], result.plans[:slow].raw_plan, result.plans[:slow].raw_plan.first["Plan"]])
       .to all(be_frozen)
   end
+
+  describe "with the literals' types (e2e 020, 031, 091)" do
+    before do
+      conn.exec("CREATE TABLE ev (id bigint, d date, name text)")
+      conn.exec("INSERT INTO ev SELECT i, current_date - (i % 30), 'n' || i FROM generate_series(1, 1000) AS i")
+    end
+
+    def baseline_plan(query, values, types)
+      report = described_class.run(conn, query:, literal_sets: { slow: values }, candidates: [], types:)
+      report.baseline.plans.fetch(:slow).raw_plan.first["Plan"]
+    end
+
+    it "prepares date minus an integer placeholder as date minus integer" do
+      plan = baseline_plan("SELECT * FROM ev WHERE d > now()::date - $1", ["7"], ["integer"])
+      expect(plan["Filter"]).to include("- 7")
+      expect(leftovers).to eq(clean)
+    end
+
+    it "binds a numeric literal against a bigint column" do
+      plan = baseline_plan("SELECT * FROM ev WHERE id = $1", ["4242.0"], ["numeric"])
+      expect(plan["Filter"]).to include("4242.0")
+    end
+
+    it "prepares substring FROM and FOR with integer placeholders" do
+      plan = baseline_plan("SELECT * FROM ev WHERE substring(name FROM $1 FOR $2) = 'n1'", %w[1 3],
+                           %w[integer integer])
+      expect(plan["Filter"]).to include("FROM 1 FOR 3")
+    end
+
+    it "types an unknown placeholder from where it sits, as before" do
+      plan = baseline_plan("SELECT * FROM ev WHERE name = $1", ["n5"], ["unknown"])
+      expect(plan["Filter"]).to include("'n5'::text")
+    end
+
+    it "refuses more than one statement, running none of them" do
+      query = "SELECT * FROM ev WHERE id = $1; DROP TABLE ev"
+      expect do
+        described_class.run(conn, query:, literal_sets: { slow: ["1"] }, candidates: [], types: ["integer"])
+      end.to raise_error(described_class::Error) { expect(it.rule).to eq(:prepare_failed) }
+      expect(conn.exec("SELECT to_regclass('ev')::text").getvalue(0, 0)).to eq("ev")
+    end
+
+    it "keeps a failed typed prepare's error free of the literal" do
+      error = begin
+        described_class.run(conn, query: "SELECT * FROM ev WHERE d = $1", literal_sets: { slow: [sentinel] },
+                                  candidates: [], types: ["integer"])
+      rescue described_class::Error => e
+        e
+      end
+      expect(error.rule).to eq(:prepare_failed)
+      expect([error.message, error.inspect, error.cause.inspect].join).not_to include(sentinel)
+      expect(leftovers).to eq(clean)
+    end
+  end
 end

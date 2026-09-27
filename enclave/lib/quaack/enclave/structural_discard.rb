@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "burndown"
+require_relative "redaction"
 
 module Quaack
   module Enclave
@@ -43,9 +44,9 @@ module Quaack
 
       module_function
 
-      def check(connection, original:, candidates:, literals:)
-        param_types = parameter_types(connection, original)
-        expected = param_types && output_types(connection, original)
+      def check(connection, original:, candidates:, literals:, types: nil)
+        param_types = parameter_types(connection, original, types)
+        expected = param_types && output_types(connection, original, param_types:)
         raise Error, "the original query doesn't describe on the racetrack", cause: nil unless expected
 
         dropped = { failed_to_plan: 0, output_mismatch: 0 }
@@ -78,10 +79,24 @@ module Quaack
       end
 
       # The statement's parameter type OIDs, in $n order, or nil on a
-      # Postgres error.
-      def parameter_types(connection, sql)
-        described(connection, sql, [], nil) { |d| Array.new(d.nparams) { |i| d.paramtype(i) } }
+      # Postgres error. With types, the type names of its literals (see
+      # Redaction::Binding), each $n is declared as its literal was, so
+      # Postgres doesn't infer another type from context. Without,
+      # Postgres infers them all.
+      def parameter_types(connection, sql, types = nil)
+        return described(connection, sql, [], nil) { |d| param_oids(d) } unless types
+
+        Redaction.prepare(connection, STATEMENT, sql, types)
+        begin
+          param_oids(connection.describe_prepared(STATEMENT))
+        ensure
+          connection.exec("DEALLOCATE #{STATEMENT}")
+        end
+      rescue Redaction::Error
+        nil
       end
+
+      def param_oids(description) = Array.new(description.nparams) { |i| description.paramtype(i) }
 
       # The block's result for the prepared statement's description, or nil
       # on a Postgres error or when plan, if given, returns false.

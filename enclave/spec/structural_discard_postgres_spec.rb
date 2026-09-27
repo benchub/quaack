@@ -29,6 +29,19 @@ RSpec.describe Quaack::Enclave::StructuralDiscard do
     expect(result.dropped).to eq(failed_to_plan: 0, output_mismatch: 0)
   end
 
+  it "types the original's placeholders with its literals' types when given them (e2e 020)" do
+    dated = "SELECT id FROM public.t WHERE now()::date - $1 > DATE '2000-01-01'"
+
+    expect(described_class.parameter_types(conn, dated, ["integer"])).to eq([23])
+    result = described_class.check(conn, original: dated, candidates: [dated], literals: ["7"], types: ["integer"])
+    expect(result.kept).to eq([dated])
+  end
+
+  it "refuses more than one statement when typing placeholders, running none of them" do
+    expect(described_class.parameter_types(conn, "SELECT $1 + 1; DROP TABLE t", ["integer"])).to be_nil
+    expect(conn.exec("SELECT to_regclass('t')::text").getvalue(0, 0)).to eq("t")
+  end
+
   it "prepares each candidate with the original's parameter types, so one that drops a placeholder still plans" do
     two = "SELECT id, name FROM public.t WHERE name = $1 OR id < $2"
     kept = ["SELECT id, name FROM public.t WHERE name = $1", "SELECT id, name FROM public.t WHERE $2 > id"]

@@ -51,6 +51,23 @@ RSpec.describe "quaacks index-rank, against a real server" do
     expect(held).to include("$1")
   end
 
+  context "when a literal's type differs from the one Postgres would infer (e2e 020)" do
+    let(:query) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+        "AND o.created_at::date > now()::date - 7"
+    end
+
+    it "ranks, preparing with the literal's type" do
+      prepare
+      index_search
+
+      outcome = index_rank
+
+      expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+      expect(stored.read("index_ranking_original")["top"]).not_to be_empty
+    end
+  end
+
   it "refuses an unknown search, and a run with no index search" do
     prepare
 

@@ -87,6 +87,22 @@ RSpec.describe "quaacks index-search, against a real server" do
     expect(LeakCheck.findings(sentinels, stdout: JSON.generate(stored.read("plan")))).not_to eq([])
   end
 
+  context "when a literal's type differs from the one Postgres would infer (e2e 020)" do
+    let(:query) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
+        "AND o.created_at::date > now()::date - 7"
+    end
+
+    it "prepares with the literal's type, and records it as the parameter's type" do
+      prepare
+
+      outcome = index_search
+
+      expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+      expect(stored.read("index_search_original")["parameter_types"].values).to include("integer")
+    end
+  end
+
   context "when the query selects every column" do
     let(:select_list) { "o.*" }
 

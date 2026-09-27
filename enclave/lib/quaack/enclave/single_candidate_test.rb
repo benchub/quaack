@@ -4,6 +4,7 @@ require "json"
 require_relative "canonical_plan"
 require_relative "index_candidate"
 require_relative "plan_node"
+require_relative "redaction"
 
 module Quaack
   module Enclave
@@ -33,6 +34,12 @@ module Quaack
     # values, in parameter order. Each value is a String in a valid
     # encoding with no NUL, or nil for NULL. Anything else raises
     # Error(:bad_literal) before the database is touched.
+    #
+    # types, if given, is each $n's type for PREPARE, in order, as
+    # Redaction::Binding declares it: the type its original literal had,
+    # such as integer for the 7 of now()::date - 7, so Postgres doesn't
+    # infer another from context (date there). The query must then be one
+    # statement. Without types, Postgres infers every type.
     #
     # Each literal is planned the way the production session plans it,
     # with its real value, not with a generic plan. Each EXPLAIN prepares
@@ -172,8 +179,8 @@ module Quaack
 
       module_function
 
-      def run(connection, query:, literal_sets:, candidates:)
-        session(connection, query:, literal_sets:) do |s|
+      def run(connection, query:, literal_sets:, candidates:, types: nil)
+        session(connection, query:, literal_sets:, types:) do |s|
           baseline = Baseline.new(plans: plans(s.measure([])))
           Report.new(baseline:, results: candidates.map { |c| result(c, s.measure([c])) }.freeze)
         end
@@ -197,11 +204,11 @@ module Quaack
       # Checks the arguments, opens a Session, yields it, and returns what
       # the block returns. Everything the block does happens inside the
       # run's transaction, which is rolled back after.
-      def session(connection, query:, literal_sets:, &)
+      def session(connection, query:, literal_sets:, types: nil, &)
         raise Error, :bad_literal unless literal_sets?(literal_sets)
         raise Error, :in_transaction unless connection.transaction_status.zero?
 
-        Session.new(connection, query, literal_sets).open(&)
+        Session.new(connection, query, literal_sets, types).open(&)
       end
 
       def literal_sets?(sets)
@@ -215,11 +222,15 @@ module Quaack
 
       # The SQLSTATE of a Postgres error, or nil.
       def sqlstate(error)
+        return error.sqlstate if error.is_a?(Redaction::Error)
+
         result = error.result if error.respond_to?(:result)
         result&.error_field(SQLSTATE_FIELD)
       end
 
-      def postgres_error?(error) = !error.is_a?(Error) && error.respond_to?(:result)
+      # A Postgres error, or Redaction's for a typed prepare, which carries
+      # only its rule and SQLSTATE.
+      def postgres_error?(error) = error.is_a?(Redaction::Error) || (!error.is_a?(Error) && error.respond_to?(:result))
 
       # Runs the block, turning a Postgres error into an Error with the rule
       # that carries nothing from it.
@@ -294,10 +305,11 @@ module Quaack
       # one, and it's good only inside that block: after, measure raises
       # Error(:session_closed) without touching the database.
       class Session
-        def initialize(connection, query, literal_sets)
+        def initialize(connection, query, literal_sets, types = nil)
           @connection = connection
           @query = query
           @literal_sets = literal_sets
+          @types = types
         end
 
         def open(&)
@@ -416,10 +428,8 @@ module Quaack
         end
 
         def explain(values)
-          SingleCandidateTest.guarded(:prepare_failed) do
-            @connection.prepare(STATEMENT, @query)
-            @prepared = true
-          end
+          SingleCandidateTest.guarded(:prepare_failed) { Redaction.prepare(@connection, STATEMENT, @query, @types) }
+          @prepared = true
           json = SingleCandidateTest.guarded(:explain_failed) do
             execute = SingleCandidateTest.execute(@connection, values)
             @connection.exec("EXPLAIN (FORMAT JSON) EXECUTE #{execute}").getvalue(0, 0)
