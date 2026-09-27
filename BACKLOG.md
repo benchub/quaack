@@ -1103,11 +1103,14 @@ It writes a summary table and fails clearly on crashes. Any real QUAACK bug it f
 - **README:** All.
 - **Status:** todo
 
-### 20260926-59. Keyset tie rows are dropped on realistic schemas.
+### 20260926-59. Keyset tie rows are dropped on realistic schemas. Done, see BACKLOG-COMPLETE.md.
 
-On the prompt-pack `shop.orders` schema, step 9 doesn't catch a keyset candidate that changes only the tie-breaker value (`id < 900` becomes `id < 901`). The candidate passes with `dropped: 3`: the tie rows are left out, probably because they collide on a unique key, an FK, or the `GENERATED ALWAYS` identity id. The same test catches it on the simple `fx` schema. Find out why the tie rows are dropped, and make them load: give their other unique columns distinct values, keep them within FK parents, and handle identity keys as 20260926-37 did. Add the tie-breaker test to `step_nine_realistic_schema_postgres_spec.rb`.
 
-- **Depends on:** 20260926-40, -55.
-- **Came from:** Build of 20260926-55.
+### 20260926-60. A fixture load failure in the vacuity guard crashes step 9.
+
+A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_guard.rb:91, from step_nine.rb:41) raises `ArenaRunner::Error` out of `StepNine.run` instead of producing a clean per-candidate outcome. Decide how 9c should treat a scenario that won't load: skip it and mark its atoms untested, or refuse the candidate with a rule. Then handle it, with a test.
+
+- **Depends on:** 20260922-48, 20260926-59.
+- **Came from:** Build of 20260926-59.
 - **README:** Step 9.
 - **Status:** todo

@@ -2411,3 +2411,12 @@ The e2e corpus (merged from the user's branch) was written against an older READ
 - **Came from:** 20260926-39 build and review.
 - **README:** 5a-5, 6a.
 - **Status:** done
+
+### 20260926-59. Keyset tie rows are dropped on realistic schemas.
+
+On the prompt-pack `shop.orders` schema, step 9 doesn't catch a keyset candidate that changes only the tie-breaker value (`id < 900` becomes `id < 901`). The candidate passes with `dropped: 3`: the tie rows are left out, probably because they collide on a unique key, an FK, or the `GENERATED ALWAYS` identity id. The same test catches it on the simple `fx` schema. Find out why the tie rows are dropped, and make them load: give their other unique columns distinct values, keep them within FK parents, and handle identity keys as 20260926-37 did. Add the tie-breaker test to `step_nine_realistic_schema_postgres_spec.rb`.
+
+- **Depends on:** 20260926-40, -55.
+- **Came from:** Build of 20260926-55.
+- **README:** Step 9.
+- **Status:** done
