@@ -19,15 +19,18 @@ Metrics/BlockLength:
   Exclude:
     - "**/spec/**/*.rb"
 
-# script/prompt_pack is a one-off generator, not shipped code.
+# script/prompt_pack and e2e/run.rb are tooling, not shipped code.
 Metrics/AbcSize:
   Exclude:
     - "script/**/*.rb"
+    - "e2e/run.rb"
 
 Metrics/MethodLength:
   Exclude:
     - "script/**/*.rb"
+    - "e2e/run.rb"
 
 Metrics/ModuleLength:
   Exclude:
     - "script/**/*.rb"
+    - "e2e/run.rb"
