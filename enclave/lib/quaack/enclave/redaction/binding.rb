@@ -9,6 +9,9 @@ module Quaack
       # A prepared statement's name: a lowercase word.
       STATEMENT_NAME = /\A[a-z_][a-z0-9_]*\z/
 
+      # A declared type: lowercase words, such as integer or bit varying.
+      TYPE_NAME = /\A[a-z_][a-z0-9_]*( [a-z_][a-z0-9_]*)*\z/
+
       # A query written with the placeholders, such as the redacted query
       # or a rewrite candidate, with the real literals to run it with
       # (README 3g: bind them with PREPARE, never splice them in). See
@@ -42,6 +45,9 @@ module Quaack
       # with its SQLSTATE and no cause, since Postgres's message can quote
       # a value.
       #
+      # A type that isn't lowercase words (TYPE_NAME) is Error bad_type,
+      # since the types go into the PREPARE's text.
+      #
       # Trust boundary: values are the literals. inspect leaves them out,
       # and the PREPARE holds only the SQL and the types.
       Binding = Data.define(:sql, :types, :values) do
@@ -52,6 +58,8 @@ module Quaack
         end
 
         def prepare_sql(name, declared)
+          raise Error, "bad_type" unless declared.all? { TYPE_NAME.match?(it) }
+
           list = declared.empty? ? "" : " (#{declared.join(", ")})"
           "PREPARE #{checked(name)}#{list} AS #{sql}"
         end
@@ -202,7 +210,7 @@ module Quaack
       # Prepares sql as name, each $n declared the type in types, by
       # Binding#prepare's rules, so Postgres doesn't infer a different one
       # from context. PREPARE goes by the simple protocol, which would run
-      # a second statement, so sql must be exactly one (Error
+      # a second statement, so sql must be exactly one SELECT (Error
       # not_one_select). With nil types, it prepares with the extended
       # protocol and Postgres infers every type, raising its own error.
       def self.prepare(connection, name, sql, types)
@@ -213,7 +221,8 @@ module Quaack
       end
 
       def self.one_statement?(sql)
-        PgQuery.parse(sql).tree.stmts.size == 1
+        stmts = PgQuery.parse(sql).tree.stmts
+        stmts.size == 1 && !stmts.first.stmt.select_stmt.nil?
       rescue PgQuery::ParseError
         false
       end
