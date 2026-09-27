@@ -27,4 +27,27 @@ RSpec.describe Quaack::Enclave::Deparse::Parentheses do
   it "finds the NOT at the right end of a sign in front of NOT" do
     expect(ends("- (NOT a)")).to eq(ends_of(described_class::CLOSED, described_class::NOT))
   end
+
+  # An infix operator is a b_expr only if it's one that can be, and both
+  # its operands are.
+  it "finds LIKE isn't a b_expr, though both its operands are" do
+    expect(ends("a LIKE b")).to eq(ends_of(described_class::LIKE, described_class::LIKE))
+  end
+
+  it "finds + isn't a b_expr when its left operand isn't" do
+    expect(ends("(a IS NULL) + b")).to eq(ends_of(described_class::IS, described_class::ADD))
+  end
+
+  it "finds + isn't a b_expr when its right operand isn't" do
+    expect(ends("a + (NOT b)")).to eq(ends_of(described_class::ADD, described_class::NOT))
+  end
+
+  it "finds + is a b_expr when both its operands are" do
+    expect(ends("a + b")).to eq(ends_of(described_class::ADD, described_class::ADD, b_expr: true))
+  end
+
+  # ~~ ANY (SELECT ...) is written LIKE ANY, which binds at LIKE.
+  it "finds LIKE at the left end of ~~ ANY over a subquery" do
+    expect(ends("a ~~ ANY (SELECT 'x')")).to eq(ends_of(described_class::LIKE, described_class::CLOSED))
+  end
 end

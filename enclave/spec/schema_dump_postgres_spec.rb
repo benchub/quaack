@@ -375,6 +375,23 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       admin&.exec("DROP DATABASE IF EXISTS #{admin.quote_ident(odd)} WITH (FORCE)")
     end
 
+    # libpq reads a dbname as a URI only for postgres:// or postgresql://.
+    it "takes a dbname with a colon that isn't a URI (app:prod)" do
+      named = "app:prod_#{Process.pid}"
+      admin = TestPostgres.server.admin
+      admin.exec("CREATE DATABASE #{admin.quote_ident(named)}")
+      named_conn = PG.connect(**db.connection_params, dbname: named)
+      named_conn.exec("CREATE TABLE public.here (id int)")
+
+      described_class.run(store:, relations: [table("public", "here")], connection: named_conn,
+                          conninfo: { dbname: named, user: TestPostgres::USER }, pg_dump:)
+
+      expect(created_tables(store.read("schema_subset")["ddl"])).to eq(["public.here"])
+    ensure
+      named_conn&.close
+      admin&.exec("DROP DATABASE IF EXISTS #{admin.quote_ident(named)} WITH (FORCE)")
+    end
+
     # Each libpq keyword that holds a secret, as a Symbol or a String.
     [:password, "password", :sslpassword, "sslpassword", :oauth_client_secret].each do |key|
       it "can't hold a secret (#{key.inspect}), since pg_dump's command line is visible to others on the jump server" do
@@ -404,7 +421,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
 
     # libpq reads a dbname holding = or a URI as a whole connection string,
     # which can carry a password.
-    ["postgresql://u:%s@h/db", "dbname=db password=%s"].each do |form|
+    ["postgresql://u:%s@h/db", "postgres://u:%s@h/db", "dbname=db password=%s"].each do |form|
       it "refuses a dbname that's a connection string (#{form.inspect})" do
         sentinels = LeakCheck::Sentinels.new
         error = nil
