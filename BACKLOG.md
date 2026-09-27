@@ -215,27 +215,7 @@ The repo has one Gemfile and one lockfile for all three gems. So `bundle install
 
 ### 20260923-15. Finish the test database harness without ForkGuard. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-16. Harness loose ends.
-
-Minor findings from the second review of 20260922-2:
-- **Untested branches.**
-  - `rescue Errno::EPERM` in the owner-pid check could return false and nothing would notice.
-  - "Never build the image" survives on a machine that already has it.
-- **Child specs load the root spec_helper.** Harness child processes run from the repo root, so `.rspec` loads the root `spec_helper` and `TestPostgres.configure` runs twice. The children don't prove the documented setup works on its own.
-- **Slow timeout test.** The readiness-timeout test takes about 4 s. A 1 s timeout would halve that.
-- **Repeated backtrace.** A memoized launch failure repeats the first example's backtrace in every later failure.
-- **Old images pile up.** Each Dockerfile edit leaves an old `quaack-test-postgres:<hash>` image of about 660 MB.
-- **The admin connection outlives a fork elsewhere.** Only a drop resets a dead admin connection. If a spec forks in an example with no databases of its own, every later example fails with an empty `PG::ConnectionBad`. Reset the admin connection when it's dead, or check it before reuse.
-- **`WITH (FORCE)` is untested.** Removing it keeps every test green, but a spec that holds a `connect` session open would then fail with `PG::ObjectInUse`.
-- **Only the first drop error is reported.** If an example leaves `admin` inside `BEGIN`, every later example fails. The admin connection is reset only for `ConnectionBad`.
-- **`ConnectionLost` always blames forking,** even when the container died or the backend was terminated.
-- **Faster child specs.** The `IS_TEMPLATE` and `ConnectionLost` tests could run in-process with `pg_terminate_backend` and save about 3.5 s.
-- **Arena template.** Arena's template comes from `template1`, not `template0` with locale settings matching production. The real arena setup in 20260922-27 should handle this, so check it there.
-
-- **Depends on:** 20260923-15.
-- **Came from:** Both reviews of 20260922-2, and the second review of 20260923-15.
-- **README:** Steps 4 and 4b.
-- **Status:** todo
+### 20260923-16. Harness loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-17. Index shape loose ends.
 
@@ -250,17 +230,7 @@ Minor findings from the second review of 20260923-14:
 - **README:** 5a.
 - **Status:** todo
 
-### 20260923-18. Runtime checker test loose ends.
-
-Findings from both reviews of 20260923-13, all outside its diff:
-- **Dead plants in three older tests.** In `spec/runtime_boundary_checker_spec.rb`, three tests stay green with their planted `require` deleted: "flags the driver as forbidden even when the allowlist admits it", "flags an LLM SDK by what it loads as", and "flags any file from the installed driver gem". Each adds a dependency on a gem built from source, so the every-file run flags that gem's files anyway. They aren't vacuous, since each goes red when its named rule breaks, but the plant proves nothing. Restrict each assertion to the `--version` run, or assert the planted path.
-- **Failing for the right reason.** The two bare-dependency tests fail with a `KeyError` from `gem_dirs.fetch` when their dependency is removed, not on their assertion. Assert that the gem is installed first.
-- **Isolation code no test watches.** In `spec/support/isolated_install.rb`, nothing tests `"GEM_PATH" => @home`, `"RUBYOPT" => nil`, `Bundler.with_unbundled_env` in `run_ruby`, or `File.realpath` in `stdlib_dirs`. Test them, or say why they're belt and braces. This overlaps with 20260923-6.
-
-- **Depends on:** 20260923-13.
-- **Came from:** Both reviews of 20260923-13.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
+### 20260923-18. Runtime checker test loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-19. MCV frequencies in the statistics input. Done, see BACKLOG-COMPLETE.md.
 
@@ -337,18 +307,7 @@ Findings from the reviews of 20260922-31:
 - **README:** 5a-2.
 - **Status:** todo
 
-### 20260923-25. Static checker loose ends.
-
-Minor findings from the second review of 20260923-7:
-- `::Bundler.require` isn't flagged, because `bundler_require?` needs a `ConstantReadNode` receiver, and `::Bundler` parses as a `ConstantPathNode`.
-- In names-only mode, the driver misses `require_relative "../../../../enclave/lib/quaack/enclave"`, and doesn't check its shebang. That's by design per the task, but say so in the header.
-- The header and the `require_violations` comment say names-only mode checks only forbidden names, but parse failures are still flagged. Fix the wording.
-- Nothing pins `names_only: true` for the real driver in `spec/boundary_spec.rb`. Dropping it stays green. The fixture tests do pin the mode itself.
-
-- **Depends on:** 20260923-7.
-- **Came from:** Second review of 20260923-7.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-26. Egress loose ends.
 
@@ -899,48 +858,13 @@ Minor findings from the first review of 20260925-9:
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
 - **Progress:** Piece one landed on `main` after a build and a first review with nothing blocking. `IndexDdlCheck` now refuses `WITH (...)` (rule `storage_options`). An enclave `GeneratorThree.filter` runs the inbound check, `from_ddl` and Dedupe, and returns an outcome for each DDL. There's a new whitelist type `index_outcome`, and a driver `GeneratorThree` loop with a callable `index_test`. Left: the `index-payload` and `index-test` subcommands, saving the LLM results and partial tags in the store, running 5a-4 on the survivors, the 5a-5 burndown record, and running it for rewrites. Those need 20260925-6 first. The review's minor findings went to 20260925-5.
 
-### 20260923-6. Test the runtime check's environment scrubbing.
+### 20260923-6. Test the runtime check's environment scrubbing. Done, see BACKLOG-COMPLETE.md.
 
-Removing `GEM_PATH` or `RUBYLIB` from the isolated environment in `spec/support/isolated_install.rb` stays green. Without `GEM_PATH`, RubyGems can see the user and Homebrew gem directories. Also consider `RUBYGEMS_GEMDEPS` and `HOME` (for `~/.gemrc`). Plant a leak for each and prove the check goes red. Also check that closure gems like `quaack-protocol` load from the installed copy, not the repo.
+### 20260923-8. Unit-test the RepoGems helper. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260923-4.
-- **Came from:** Second review of 20260922-1, finding 4.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
+### 20260923-9. Close the test gaps in the spec task guards. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-8. Unit-test the RepoGems helper.
-
-`spec/support/repo_gems.rb` finds each repo gem's gemspec for the boundary and runtime specs, but its lookups have no direct tests:
-- **The one-gemspec guard is untested.** Loosening `paths.size == 1` to `>= 1` in `RepoGems.gemspec` keeps every spec green. Only `enclave/` has its own "exactly one gemspec" test. If `driver/` or `protocol/` gained a second gemspec, `paths.first` could quietly pick the wrong one. Test the guard with two gemspecs planted in a temp directory.
-- **One test repeats another.** `spec/repo_gems_spec.rb` checks that the enclave gemspec is named `quaacks`, which `enclave/spec/gemspec_spec.rb` already checks. Replace it with direct tests of `RepoGems.gemspec` and `gemspec_path_of`.
-- **Noisy failures.** `enclave/spec/gemspec_spec.rb` loads its gemspec with `Gem::Specification.load` instead of `RepoGems.load`. A broken gemspec makes most of its examples fail with a `NoMethodError` on nil instead of one clear message.
-
-- **Depends on:** 20260923-3.
-- **Came from:** Second review of 20260923-3, minor findings 1 through 3.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
-
-### 20260923-9. Close the test gaps in the spec task guards.
-
-Task 20260923-5 made `rake spec` find the suites itself, run them all, and fail if the root suite didn't run. The second review found that the guards work today, but some mutants of them still pass every test:
-- **The root guard is only tested by changing SPEC_SUITES.** The test in `spec/rakefile_spec.rb` swaps `SPEC_SUITES` for `%w[foo]`. So a guard that checks `SPEC_SUITES` instead of what actually ran also passes. Combined with a later `drop(1)` in the loop, full `rake` goes green with no root suite. Add a test where `SPEC_SUITES` still includes `"."` but the loop skips it.
-- **Nothing tests a suite that can't start.** When `sh` can't start the command, `ok` is nil. Changing `unless ok` to `if ok == false` keeps every test green, and then a missing interpreter makes `rake spec` pass with zero examples run. Also, `ran` records a suite as run even when it never started. Test both.
-- **Output is hard to use.** The echoed command has no shell quoting, so you can't paste it to rerun one suite. A suite that can't start is reported only as `Spec suites failed: x/spec`, with no reason or exit status.
-- **The Rakefile comment oversells the guard.** It says the guard catches "a loop that skips a suite", but that holds only for the root suite.
-
-- **Depends on:** 20260923-5.
-- **Came from:** Second review of 20260923-5, findings 1, 2, 4, 5, and 6.
-- **README:** None. This is test infrastructure.
-- **Status:** todo
-
-### 20260923-10. Stop local RSpec options from filtering out boundary specs.
-
-RSpec reads `.rspec-local`, `~/.rspec`, and `SPEC_OPTS`. None of them are in the repo, and `.rspec-local` isn't gitignored. A `.rspec-local` with `--exclude-pattern "**/boundary*_spec.rb"` made full `rake` pass with a planted enclave dependency on `quaack-driver`. The root suite ran 20 examples instead of 61. Local `rake` is the only check, so a personal options file can quietly turn off the trust-boundary checks. Make the spec task ignore local and personal RSpec options, or check that the boundary specs actually ran, and test it with a planted exclusion.
-
-- **Depends on:** 20260923-5.
-- **Came from:** Second review of 20260923-5, finding 3.
-- **README:** Where QUAACK runs.
-- **Status:** todo
+### 20260923-10. Stop local RSpec options from filtering out boundary specs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-41. Support DML statements.
 
@@ -1247,4 +1171,21 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
 - **README:** 3h.
+- **Status:** todo
+
+### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
+
+- **Dead admin connection (needs a user decision):** should `Server#admin` quietly reconnect when a spec leaves its admin connection dead? Reconnecting hides the `ConnectionLost` hint that a forked child must end with `exit!`.
+- **Driver checker mode (needs a user decision):** pinning `names_only: true` for the real driver in the static checker needs a named driver-rules constant, or a planted fixture in the driver's tree.
+- **Harness:**
+  - child specs that load the root spec_helper
+  - a repeated memoized backtrace
+  - old image cleanup
+  - moving child specs in-process
+- **Symlinked Ruby:** `File.realpath` in `stdlib_dirs` matters only with a symlinked Ruby (rbenv), and it's untested.
+- **Rake loop:** a rake loop that skips a non-root suite would go unnoticed. Only the root suite is checked, and the Rakefile says so.
+
+- **Depends on:** 20260923-16, -18, -25.
+- **Came from:** Their build and review.
+- **README:** none (CLAUDE.md Development).
 - **Status:** todo
