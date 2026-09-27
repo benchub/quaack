@@ -65,6 +65,20 @@ RSpec.describe "quaacks index-build, against a real server" do
     conn&.close
   end
 
+  it "builds the unused low-cardinality B-tree candidates 5a-4 set aside (20260927-11)" do
+    ranked_run
+    btree = Quaack::Enclave::IndexCandidate.new(table: orders, key: %w[status total], sources: [:parse])
+    entry = store.read("index_search_original")
+    entry["set_aside"] = [Quaack::Enclave::IndexStore.candidate_plain(btree)]
+    store.write("index_search_original", entry)
+
+    expect(run("index-build").stdout).to eq(%({"type":"done"}\n))
+
+    build = stored.read("index_build")
+    expect(build["combinations"]["original:set_aside:2"].map { build["indexes"][it]["ddl"] }).to eq([btree.to_ddl])
+    expect(build["indexes"][build["combinations"]["original:set_aside:2"].first]["size"]).to be_positive
+  end
+
   it "unhides just one combination, confirms it with EXPLAIN, and catches a hidden index the plan uses" do
     ranked_run
     run("index-build")
