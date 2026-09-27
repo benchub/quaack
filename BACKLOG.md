@@ -1166,6 +1166,7 @@ These are minor findings from the review of 20260927-21:
 These are findings from the build and reviews of 20260922-65, part three:
 - Ask numbering shifts after a disproof. The counterexample loop stops at the first round that finds a mismatch, so later 10a asks get lower numbers than the prompt pack gave them, and their replies go to the wrong asks. Key replies by rewrite and round, not by a per-step count.
 - orm_join's wrong rewrite (`u.name IS NOT NULL`) can't be disproved. `users.id` is `GENERATED ALWAYS`, and 10a refuses `OVERRIDING`. Either let 10a inserts set identity keys, or change orm_join's planted bug in the generator and the corpus README.
+  - **Decided (2026-09-27):** Let 10a inserts use `OVERRIDING SYSTEM VALUE`, so they can set identity keys. They only load into the throwaway arena, and step 9 fixtures already use it. Update README step 10 and the insert check.
 - The drift check compares only the system prompt, and it reads `prompt.md` only from the corpus, not the planted root.
 - `PipelineReplay.wrong` finds `"sql"` strings with a regex, not a JSON parse. Assert that `wrong` isn't empty wherever a variant has a wrong rewrite.
 
