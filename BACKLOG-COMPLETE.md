@@ -2623,3 +2623,16 @@ README 5a-7 says to keep adding indexes "as long as each addition lowers the cos
 - **Came from:** The 20260927-6 investigation.
 - **README:** 5a-7.
 - **Status:** done
+
+### 20260927-11. HypoPG size ignores B-tree deduplication.
+
+In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and used, but HypoPG estimates 17.4 MB. 5a-1 proposes the INCLUDE shape, which isn't deduplicated, so the real planner wouldn't use it either. **Needs a decision:**
+- make 5a-1 prefer key columns over INCLUDE when the leading key has few distinct values
+- correct the size estimate for low-cardinality key-only indexes
+- or list this case as unsupported in v1
+- **Decided (2026-09-27):** HypoPG's estimate can't be corrected from outside, but 12a already builds every index for real. So when 5a-4 declines a key-only B-tree index on a low-cardinality leading column as unused, set it aside for 12a the way GIN and GiST candidates are, instead of dropping it. 12a builds it for real, and steps 13 and 14 measure it.
+
+- **Depends on:** 20260922-30, -32.
+- **Came from:** The 20260927-6 investigation.
+- **README:** 5a-1, 5a-4.
+- **Status:** done

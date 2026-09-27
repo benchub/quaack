@@ -1112,18 +1112,7 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260927-10. Capture and restore relallvisible. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-11. HypoPG size ignores B-tree deduplication.
-
-In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and used, but HypoPG estimates 17.4 MB. 5a-1 proposes the INCLUDE shape, which isn't deduplicated, so the real planner wouldn't use it either. **Needs a decision:**
-- make 5a-1 prefer key columns over INCLUDE when the leading key has few distinct values
-- correct the size estimate for low-cardinality key-only indexes
-- or list this case as unsupported in v1
-- **Decided (2026-09-27):** HypoPG's estimate can't be corrected from outside, but 12a already builds every index for real. So when 5a-4 declines a key-only B-tree index on a low-cardinality leading column as unused, set it aside for 12a the way GIN and GiST candidates are, instead of dropping it. 12a builds it for real, and steps 13 and 14 measure it.
-
-- **Depends on:** 20260922-30, -32.
-- **Came from:** The 20260927-6 investigation.
-- **README:** 5a-1, 5a-4.
-- **Status:** todo
+### 20260927-11. HypoPG size ignores B-tree deduplication. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-12. e2e 086 misses its bound by 6 blocks. Done, see BACKLOG-COMPLETE.md.
 
@@ -1156,4 +1145,29 @@ Also: 9d still disproves every candidate when a scenario won't load (`:fixture_l
 - **Depends on:** 20260926-60.
 - **Came from:** User direction, 2026-09-27.
 - **README:** Step 9.
+- **Status:** todo
+
+### 20260927-19. Set-aside loose ends.
+
+These are minor findings from the review of 20260927-11:
+- There's no cap on set-asides. The worst realistic case is about 2 extra real builds per low-cardinality table, per search (about 18 for a 3-table join with 2 rewrites). Add a per-search cap, or limit set-asides to the moved key-only variant.
+- `Burndown.record_single_candidate_test(set_aside:)` has no production caller, so set-aside counts don't show up in real runs. Wire it in.
+- There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and 3f's configurable one used by `UnusedSetAside`. Unify them.
+
+- **Depends on:** 20260927-11.
+- **Came from:** Review of 20260927-11.
+- **README:** 5a-1, 5a-4, 12a.
+- **Status:** todo
+
+### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite.
+
+The user's first 18 replies (`correlated_exists/10a-1`, `10a-2`) showed two problems:
+- **Code fences and prose:** some models wrap JSON in code fences or add prose. Add an explicit "reply with only the JSON object, no code fences or commentary" line to every LLM prompt the driver sends (5a-5, 5a-6, 6a, step 7, 10a). The API's structured output already enforces the schema, but this helps other providers. Make the replay tolerant of fences too.
+- **Empty answers:** the pack's fake 6a rewrite is exactly equivalent (a MATERIALIZED CTE wrapper), so 10a has no real counterexample and models return nothing. Give each query's fake rewrite a small, plausible bug (a changed boundary, a dropped condition) that still survives step 9 often enough to reach 10a, or add one buggy rewrite alongside the equivalent one.
+
+Regenerate the pack. Move the existing 18 replies to an `archive/` subfolder for the equivalent-rewrite prompt, so they're kept but not mixed with the new prompts. The user will redo the replies (decided 2026-09-27).
+
+- **Depends on:** 20260922-65 part one.
+- **Came from:** The user's first replies.
+- **README:** 5a-5, 6a, step 7, 10a.
 - **Status:** todo
