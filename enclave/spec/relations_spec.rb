@@ -317,7 +317,7 @@ RSpec.describe Quaack::Enclave::Relations do
     it "refuses a name no schema in the search path has" do
       expect { check("SELECT id FROM nowhere") }
         .to rejected("unknown_relation", "unknown_relation: relation nowhere isn't schema qualified, and no schema " \
-                                         "in the search path (pg_catalog, postgres, public) has it")
+                                         'in the search path ("pg_catalog", "postgres", "public") has it')
     end
 
     it "refuses a qualified name that doesn't exist" do

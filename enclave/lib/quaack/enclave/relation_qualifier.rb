@@ -141,7 +141,9 @@ module Quaack
       def search_path(settings, connection)
         raw = settings&.fetch("search_path", nil) || DEFAULT_SEARCH_PATH
         user = connection.exec("SELECT current_user").getvalue(0, 0)
-        schemas = split_identifiers(raw).map { |name| name == "$user" ? user : name }
+        # An empty or all-whitespace path is empty, as Postgres reads it.
+        names = raw.match?(/\A\s*\z/) ? [] : split_identifiers(raw)
+        schemas = names.map { |name| name == "$user" ? user : name }
         schemas.include?("pg_catalog") ? schemas : ["pg_catalog", *schemas]
       end
 
@@ -149,13 +151,9 @@ module Quaack
       # entry is a double-quoted identifier, with "" for a quote, or an
       # unquoted one folded to lower case. Each is cut to NAMEDATALEN - 1
       # bytes, without splitting a character, as Postgres cuts it.
-      # An empty or all-whitespace list is an empty path.
       def split_identifiers(raw)
         scanner = StringScanner.new(raw)
         names = []
-        scanner.skip(/\s*/)
-        return names if scanner.eos?
-
         loop do
           scanner.skip(/\s*/)
           names << truncate(next_identifier(scanner, raw))

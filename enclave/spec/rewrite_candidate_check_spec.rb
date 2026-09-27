@@ -182,7 +182,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     it "refuses a relation that doesn't exist" do
       expect { check("SELECT id FROM nowhere") }
         .to rejected("unknown_relation", "unknown_relation: relation nowhere isn't schema qualified, and no schema " \
-                                         "in the search path (pg_catalog, postgres, public) has it")
+                                         'in the search path ("pg_catalog", "postgres", "public") has it')
       expect { check("SELECT id FROM public.nowhere") }
         .to rejected("unknown_relation", "unknown_relation: public.nowhere isn't a relation the original uses")
     end
