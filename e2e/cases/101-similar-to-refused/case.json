@@ -1,10 +1,9 @@
 {
-  "title": "Keyset pagination with a row comparison",
+  "title": "SIMILAR TO pattern",
   "category": "refused",
   "compare": "multiset",
   "features": [
-    "ROW comparison is unsupported in v1 (SupportedSql)",
-    "refusal names only the rule"
+    "SIMILAR TO is unsupported in v1 (SupportedSql)"
   ],
   "literal_sets": [
     {
