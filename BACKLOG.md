@@ -161,6 +161,8 @@ Wire every step together in the driver, from intake through the report and teard
 - **Note (2026-09-26):** The user is having another LLM build a large end-to-end query corpus: for each test, the schema, the inserts, the slow query, and the changes that make it fast. Build -65's end-to-end tests on that corpus when it arrives. Don't spend cycles writing our own fixture queries beyond the small prompt pack.
 - **Decided (corpus):** Split into two parts. First, a builder generates a prompt pack: it runs the pipeline on harness fixtures and captures every real LLM prompt (5a-5, 5a-6, 6a, step 7, 10a) to files. The user pastes each prompt into 3 LLMs, 3 replies each, and saves the replies next to the prompts. The fake LLM then replays them. Queries to cover: an ORM-style join (equality plus range, ORDER BY, LIMIT), aggregates with GROUP BY/HAVING, a correlated EXISTS or IN subquery, and keyset pagination (row comparisons are unsupported in v1, so that one tests the refusal path unless it's written without a row comparison).
 
+- **Decided (replay, 2026-09-27):** A rake spec runs the four prompt-pack queries through the full pipeline, with the fake LLM replaying the corpus. It replays every saved reply separately, not just one per LLM. A prompt with no saved replies yet falls back to the e2e runner's valid empty answer, and the output notes that.
+
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
 - **README:** All.
 - **Status:** todo
@@ -1162,13 +1164,17 @@ These are minor findings from the review of 20260927-11:
 ### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260927-21. LLM reply parsing: pick the right object, and check the schema.
+### 20260927-21. LLM reply parsing: pick the right object, and check the schema. Done, see BACKLOG-COMPLETE.md.
 
-These are minor findings from the review of 20260927-20:
-- `embedded_json` always starts at the first `{`, so prose like `Using {"a":1} as shown: {"indexes":[]}` yields `{"a":1}`. Try every start, and prefer the object that matches the schema. Or refuse when more than one top-level object parses.
-- `Client#ask` doesn't check a parsed reply against the schema. Check at least the required keys, so a wrong object is refused as `llm_bad_response` instead of reaching callers. (Claude's structured output makes this moot today; it matters for other providers and for replay.)
+### 20260927-22. Reply parsing loose ends.
 
-- **Depends on:** 20260927-20.
-- **Came from:** Review of 20260927-20.
+These are minor findings from the review of 20260927-21:
+- `embedded_objects` builds every `{` start, then retries `JSON.parse` at each later `}`. That scan is worse than quadratic: 16 KB of brace-heavy prose takes 13s, and a 28 KB fenced reply takes 1.1s. Scan the starts lazily, stop at the first match, and cap the number of starts.
+- A reply cut off at max_tokens now reports "didn't match the schema" instead of "wasn't valid JSON".
+- In `longest_object`, the `is_a?(Hash)` check is dead code.
+- No test covers a required key that has no type (the `ReplyShape` `key?` mutation survives).
+
+- **Depends on:** 20260927-21.
+- **Came from:** Review of 20260927-21.
 - **README:** LLM client.
 - **Status:** todo

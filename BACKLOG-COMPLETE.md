@@ -2649,3 +2649,14 @@ Regenerate the pack. Move the existing 18 replies to an `archive/` subfolder for
 - **Came from:** The user's first replies.
 - **README:** 5a-5, 6a, step 7, 10a.
 - **Status:** done
+
+### 20260927-21. LLM reply parsing: pick the right object, and check the schema.
+
+These are minor findings from the review of 20260927-20:
+- `embedded_json` always starts at the first `{`, so prose like `Using {"a":1} as shown: {"indexes":[]}` yields `{"a":1}`. Try every start, and prefer the object that matches the schema. Or refuse when more than one top-level object parses.
+- `Client#ask` doesn't check a parsed reply against the schema. Check at least the required keys, so a wrong object is refused as `llm_bad_response` instead of reaching callers. (Claude's structured output makes this moot today; it matters for other providers and for replay.)
+
+- **Depends on:** 20260927-20.
+- **Came from:** Review of 20260927-20.
+- **README:** LLM client.
+- **Status:** done
