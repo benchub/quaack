@@ -141,6 +141,11 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
         .to eq(["o.status = $1", "o.total > $2", "o.note IS NULL", "o.active"])
     end
 
+    it "keeps a subquery's SELECT WHERE in a shape" do
+      shape = shapes(where("o.active AND EXISTS (SELECT WHERE o.total > 1)"))
+      expect(shape[1]).to eq("EXISTS (SELECT WHERE o.total > $1)")
+    end
+
     it "takes every join's ON clause, at any depth, in query order" do
       sql = "SELECT o.id FROM public.orders o JOIN public.customers c ON c.id = o.customer_id " \
             "LEFT JOIN public.items i ON i.order_id = o.id AND i.qty > 1 WHERE o.status = 2"

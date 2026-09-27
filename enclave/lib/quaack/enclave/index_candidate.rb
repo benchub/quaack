@@ -52,7 +52,7 @@ module Quaack
     # it, so "(status = 'open')" and "status = 'open'" make equal candidates.
     # Casts don't normalize away: "status::text = 'open'" stays different.
     # A predicate that pg_query deparses as SQL that doesn't parse back to the
-    # same expression, such as (a = 1) IS NOT DISTINCT FROM (b AND c), is
+    # same expression, even with Deparse::Parentheses, such as 't'::boolean, is
     # refused with ArgumentError, since stored that way it would mean
     # something else. from_ddl returns nil for one.
     # The constructor refuses a predicate with a parameter ($1), a subquery,

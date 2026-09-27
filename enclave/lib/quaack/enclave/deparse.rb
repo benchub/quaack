@@ -16,9 +16,11 @@ module Quaack
     # (status = $1) IS NOT DISTINCT FROM (true AND false) comes out as
     # status = $1 IS NOT DISTINCT FROM true AND false, and
     # (ARRAY(SELECT 1))[1] comes out as ARRAY(SELECT 1)[1], which doesn't
-    # parse. So each method here deparses, parses the SQL again, and
-    # compares the new tree with the one it deparsed. The SQL comes back
-    # only when they match.
+    # parse. So each method first adds the parentheses the deparser leaves
+    # out (Parentheses), then deparses, parses the SQL again, and compares
+    # the new tree with the one it deparsed. The SQL comes back only when
+    # they match, which still refuses what the deparser spells as another
+    # tree, such as 't'::boolean written as true.
     #
     # The comparison is of the whole protobuf tree, constants included,
     # with only the int32 location fields cleared, since spacing and spelling
@@ -64,8 +66,7 @@ module Quaack
       # The deparsed SQL's own PgQuery.parse result, whose query is the SQL
       # and whose tree matches the one given.
       def faithful_parse(tree)
-        sql = PgQuery.deparse(Parentheses.add!(copy(tree)))
-        parse = reparse(sql)
+        parse = reparse(deparse(Parentheses.add!(copy(tree))))
         raise Error, cause: nil unless comparable(parse.tree) == comparable(tree)
 
         parse
@@ -80,6 +81,16 @@ module Quaack
       # The SQL for one statement, such as a PgQuery::IndexStmt.
       def statement(stmt)
         faithfully(PgQuery::ParseResult.new(stmts: [PgQuery::RawStmt.new(stmt: PgQuery::Node.from(stmt))]))
+      end
+
+      # Protobuf refuses to encode a tree nested past its depth limit, which
+      # the added parentheses can push a deep query over.
+      def deparse(tree)
+        PgQuery.deparse(tree)
+      rescue RuntimeError => e
+        raise unless e.message.include?("maximum depth")
+
+        raise Error, cause: nil
       end
 
       def reparse(sql)
