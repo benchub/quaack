@@ -92,8 +92,8 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
     expect([status, stderr.string]).to eq([0, torn])
-    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback rewrite-payload rewrite-check status status
-                                                  status report-payload teardown])
+    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback rewrite-payload rewrite-check status
+                                                  status status report-payload teardown])
     expect(transport.calls[4].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
   end

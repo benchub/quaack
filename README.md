@@ -108,6 +108,16 @@ The driver finds the jump server with `jump_command` in its config file on the l
 
 Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
 
+#### Deploying the enclave.
+
+The enclave script deploys by gem install only. Never run it from a checkout on the jump server: the repo's one Gemfile also installs the driver, its LLM SDK, and the dev tools. From a checkout on the laptop, run `quaack deploy --host <jump server>`. It builds the `quaack-protocol` and `quaacks` gems from their gemspecs, copies them over ssh into `~/.quaack/deploy` on the jump server, and runs `gem install --user-install --no-document` there. That installs into the ssh user's own gem directory, never an OS-wide one, and never with sudo. gem install gets the gems' dependencies, such as pg_query and pg, from rubygems, and builds pg_query from source, so the jump server needs Ruby 3.4, `gem` on PATH, gcc, and make. When it's done, `quaack deploy` prints the version that `quaacks` now answers over ssh.
+
+The driver runs a bare `quaacks` over non-interactive ssh, so the user gem bin directory must be on PATH for a non-interactive session, and the remote login shell must be POSIX-compatible (bash, sh, or zsh). To find the directory, run `ruby -e 'puts Gem.user_dir'` on the jump server and add `/bin` to what it prints, such as `~/.local/share/gem/ruby/3.4.0/bin`. Put it on PATH in a file your shell reads for non-interactive ssh sessions, such as `~/.bashrc` for bash (above any line that returns early for non-interactive shells) or `~/.zshenv` for zsh. `~/.profile` works only if your shell reads it for such sessions. To check, run `ssh <jump server> quaacks --version` from the laptop. If `quaack deploy` installs but can't run `quaacks` afterward, it says so.
+
+Before each `quaack start` and `quaack run`, the driver runs `quaacks version` on the jump server. If `quaacks` is missing or isn't the version this driver expects, it refuses and says to run `quaack deploy`.
+
+`quaacks` itself refuses to run, with the rule `driver_present`, if the driver gem is loadable where it runs, as under the repo's own bundle or with the driver gem installed beside it. That catches the wrong deploy. The repo's specs set `QUAACKS_DEV_CHECKOUT=1` to run it from the checkout on purpose.
+
 Everything the enclave script prints goes through the egress function, including error messages. Postgres errors can include real values, such as the key in a unique-violation message, so errors get filtered too. That's where the trust boundary is enforced. 
 
 **What goes into the enclave**, from the driver to the enclave script:

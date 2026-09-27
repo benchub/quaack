@@ -15,12 +15,10 @@ $stdout = STDOUT
 # A driver gem that's loadable here, as under the repo's own bundle, means
 # the wrong deploy, so refuse before loading anything. The repo's specs set
 # QUAACKS_DEV_CHECKOUT=1 to run it from a checkout.
-unless ENV["QUAACKS_DEV_CHECKOUT"] == "1"
-  # Gem.find_files searches the load path and every installed gem.
-  if Gem.find_files("quaack/driver/version.rb").any?
-    out.write(%({"type":"error","rule":"driver_present"}\n))
-    exit 1
-  end
+# Gem.find_files searches the load path and every installed gem.
+if ENV["QUAACKS_DEV_CHECKOUT"] != "1" && Gem.find_files("quaack/driver/version.rb").any?
+  out.write(%({"type":"error","rule":"driver_present"}\n))
+  exit 1
 end
 
 require "quaack/enclave"

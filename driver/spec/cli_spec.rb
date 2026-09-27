@@ -98,6 +98,33 @@ RSpec.describe "quaack executable" do
     end
   end
 
+  describe "deploy" do
+    let(:dir) { Dir.mktmpdir("quaack-cli-deploy") }
+
+    after { FileUtils.rm_rf(dir) }
+
+    # deploy_spec.rb covers a real install. Here ssh fails every remote
+    # command, so the CLI's failure path shows.
+    it "prints what failed, naming the host, and exits 1" do
+      File.write(File.join(dir, "ssh"), "#!/bin/sh\ncat >/dev/null\necho 'no space left'\nexit 1\n")
+      FileUtils.chmod(0o755, File.join(dir, "ssh"))
+      out, err, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
+                                        "deploy", "--host", "jump-1")
+
+      expect([out, status.exitstatus]).to eq(["", 1])
+      expect(err).to start_with("quaack deploy failed: copying quaack-protocol-")
+      expect(err).to include("failed on jump-1:\nno space left\n")
+    end
+
+    it "rejects deploy without exactly one --host" do
+      [%w[deploy], %w[deploy --host], %w[deploy --host a --host b], %w[deploy --server a]].each do |argv|
+        out, err, status = run_ruby(exe, *argv)
+
+        expect([out, err, status.exitstatus]).to eq(["", Quaack::Driver::CLI::USAGE, 64]), argv.inspect
+      end
+    end
+  end
+
   it "rejects anything else with a usage message on stderr and nothing on stdout" do
     [[], ["--bogus"], %w[some subcommand], %w[--version extra], %w[extra --version],
      %w[--version --version]].each do |argv|

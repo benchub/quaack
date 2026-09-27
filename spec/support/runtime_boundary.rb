@@ -134,9 +134,13 @@ module RuntimeBoundary
     def closure = Boundary.dependency_closure(@spec).names
 
     # Maps each run's label to the run and the exit status it must end with.
+    # QUAACKS_DEV_CHECKOUT turns off quaacks's own driver_present guard, so
+    # this check sees what the enclave's code loads even when a planted
+    # driver gem sits beside it. The guard has its own specs.
     def runs
+      env = { "QUAACKS_DEV_CHECKOUT" => "1" }
       runs = COMMANDS.to_h do |args, status|
-        [[@side.exe, *args].join(" "), [@install.run(@side.exe, *args), status]]
+        [[@side.exe, *args].join(" "), [@install.run(@side.exe, *args, env:), status]]
       end
       script = File.join(@install.dir, "require_every_lib_file.rb")
       File.write(script, REQUIRE_EVERY_LIB_FILE)
