@@ -1205,14 +1205,7 @@ These were skipped as needing a design choice or a larger rework:
 - **README:** Where QUAACK runs, LLM client.
 - **Status:** todo
 
-### 20260926-46. Driver crashes on the first counterexample round.
-
-`Pipeline::CounterexampleStage.compare` (`driver/lib/quaack/driver/pipeline.rb:151`) passes `round:` as an Integer. `Transport::Base#option` accepts only Strings, so it raises `ArgumentError: --round needs a String value` before the enclave runs. Any real run whose rewrite passes step 9 crashes. The specs miss it because `pipeline_spec.rb:304` uses a fake transport that doesn't validate args. Fix it with `round.to_s`, and add a spec that goes through the real `Transport::Base#argv`. Then check for other Integer option values the same way, and remove the prompt pack's `PromptPack::Transport` workaround.
-
-- **Depends on:** 20260926-14.
-- **Came from:** Prompt pack regeneration.
-- **README:** Step 10.
-- **Status:** todo
+### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-47. Refuse user-defined set-returning functions in FROM.
 
