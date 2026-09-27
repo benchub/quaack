@@ -47,14 +47,18 @@ module Quaack
           host = store.read("server")
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
           connection = Enclave::Inventory::Production.connect(host)
-          pending = Pending.new
-          Enclave::Inventory::Production.read_only(connection) do
-            Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: { host: })
-          end
-          pending.entries.each { |name, data| store.write(name, data) }
+          dumped(connection, relations, host).entries.each { |name, data| store.write(name, data) }
           []
         ensure
           connection&.close
+        end
+
+        def dumped(connection, relations, host)
+          Pending.new.tap do |pending|
+            Enclave::Inventory::Production.read_only(connection) do
+              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: { host: })
+            end
+          end
         end
       end
     end

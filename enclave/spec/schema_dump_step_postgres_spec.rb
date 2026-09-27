@@ -138,7 +138,8 @@ RSpec.describe "quaacks schema-dump, against a real server" do
   it "stores nothing when the transaction fails after the dumps" do
     pgpass
     conn = production.connect
-    conn.exec(%(ALTER ROLE "#{production.user}" IN DATABASE "#{production.name}" SET idle_in_transaction_session_timeout = '1s'))
+    role = %("#{production.user}" IN DATABASE "#{production.name}")
+    conn.exec("ALTER ROLE #{role} SET idle_in_transaction_session_timeout = '1s'")
     conn.close
     container_pg_dump(before: %([ "$1" = --version ] || sleep 2))
 
