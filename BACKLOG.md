@@ -1207,15 +1207,7 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-47. Refuse user-defined set-returning functions in FROM.
-
-A set-returning function in FROM can hide a view or foreign table from 3a's relation checks (`SELECT * FROM f()` where `f` reads a view).
-- **Decided:** Allow built-in (pg_catalog) set-returning functions such as `generate_series` and `unnest`. Refuse user-defined functions in FROM, and list that as unsupported in v1.
-
-- **Depends on:** 20260924-19.
-- **Came from:** Build of 20260924-19.
-- **README:** 3a, step 1.
-- **Status:** todo
+### 20260926-47. Refuse user-defined set-returning functions in FROM. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-48. Anchor clock-reading date literals.
 
@@ -1239,4 +1231,13 @@ A set-returning function in FROM can hide a view or foreign table from 3a's rela
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
 - **README:** 3b, 3h, step 1.
+- **Status:** todo
+
+### 20260926-50. FROM functions: non-FuncCall items crash.
+
+`FromFunctions.calls` assumes every FROM function item is a FuncCall, so `SELECT * FROM current_user` or `SELECT * FROM coalesce(1,2)` may raise NoMethodError instead of a clean refusal (unless an earlier stage refuses them). Refuse any non-FuncCall item cleanly, and test it. Overloads aren't told apart either: a user function sitting earlier in the path with a pg_catalog name is refused (documented as unsupported in v1).
+
+- **Depends on:** 20260926-47.
+- **Came from:** 20260926-47 review.
+- **README:** 3a.
 - **Status:** todo

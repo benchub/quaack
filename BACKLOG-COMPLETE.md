@@ -2081,3 +2081,13 @@ Findings from the build and reviews of 20260924-4:
 - **Came from:** Prompt pack regeneration.
 - **README:** Step 10.
 - **Status:** done
+
+### 20260926-47. Refuse user-defined set-returning functions in FROM.
+
+A set-returning function in FROM can hide a view or foreign table from 3a's relation checks (`SELECT * FROM f()` where `f` reads a view).
+- **Decided:** Allow built-in (pg_catalog) set-returning functions such as `generate_series` and `unnest`. Refuse user-defined functions in FROM, and list that as unsupported in v1.
+
+- **Depends on:** 20260924-19.
+- **Came from:** Build of 20260924-19.
+- **README:** 3a, step 1.
+- **Status:** done
