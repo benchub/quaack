@@ -44,6 +44,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
   include LLMClientMessages
 
   def bad_json = "llm_bad_response: the reply wasn't valid JSON"
+  def no_match = "llm_bad_response: the reply didn't match the schema"
   def unreadable = "llm_bad_response: the reply couldn't be read as a message"
 
   def step_error
@@ -194,6 +195,47 @@ RSpec.describe Quaack::Driver::LLM::Client do
       fake.reply("5a-5", "{\"ddl\": []}\nThese cover the filter.")
 
       expect(ask(schema: schema)).to eq("ddl" => [])
+    end
+
+    it "skips a stray example object in the prose and reads the one that matches the schema" do
+      fake.reply("5a-5", "Using {\"a\": 1} as shown, here are the indexes:\n\n" \
+                         "```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```")
+
+      expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
+    end
+
+    it "skips an earlier object whose required key has the wrong type" do
+      fake.reply("5a-5", "For example {\"ddl\": \"one\"} is wrong. The answer: {\"ddl\": []}")
+
+      expect(ask(schema: schema)).to eq("ddl" => [])
+    end
+
+    it "refuses a JSON reply that lacks a required key" do
+      fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON t (a)"] })
+
+      expect { ask(schema: schema) }.to llm_error("llm_bad_response", no_match)
+    end
+
+    it "refuses a JSON reply whose required value has the wrong type" do
+      fake.reply("5a-5", { "ddl" => { "sql" => "CREATE INDEX ON t (a)" } })
+
+      expect { ask(schema: schema) }.to llm_error("llm_bad_response", no_match)
+    end
+
+    it "refuses prose whose only object doesn't match the schema" do
+      fake.reply("5a-5", "Here is an example: {\"a\": 1}. That's all.")
+
+      expect { ask(schema: schema) }.to llm_error("llm_bad_response", no_match)
+    end
+
+    it "checks object and string types of required values" do
+      typed = { type: "object", required: %w[plan note],
+                properties: { plan: { type: "object" }, note: { type: "string" } } }
+      fake.reply("5a-5", "{\"plan\": [], \"note\": \"x\"} then {\"plan\": {}, \"note\": \"y\"}")
+      fake.reply("5a-5", { "plan" => {}, "note" => 3 })
+
+      expect(ask(schema: typed)).to eq("plan" => {}, "note" => "y")
+      expect { ask(schema: typed) }.to llm_error("llm_bad_response", no_match)
     end
 
     it "parses the text as JSON when asked, without a schema" do
