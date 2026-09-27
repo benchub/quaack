@@ -121,7 +121,7 @@ All of this came from an LLM or a laptop, so the enclave script treats it as unt
 
 - **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see step 1) is refused too. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
 - **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses.
-- **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b.
+- **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b. Each value must be a constant, a cast, an array, or a call to an `IMMUTABLE` function. Two things aren't checked in v1. An uncast literal is still converted by its column type's input function, and a domain's `CHECK` still runs, at insert time. Those functions come from the production schema, not the LLM. And values aren't pinned to be deterministic: a `timestamptz` literal depends on the session's `TimeZone`, and the special inputs `'now'`, `'today'`, and the like are accepted.
 
 A rejected input fails with a message that says which rule it broke. The script then runs the accepted input only in the ways the steps below describe.
 
