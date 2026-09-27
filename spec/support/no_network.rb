@@ -7,7 +7,8 @@ require "anthropic"
 # execute, unless a middleware answers first the way a Client transport
 # does. So this refuses every execute unless QUAACK_ALLOW_REAL_LLM is 1.
 # That catches a spec using Anthropic::Client directly, which the guard in
-# Quaack::Driver::LLM::Client can't see. spec/network_guard_spec.rb tests it.
+# Quaack::Driver::LLM::Client can't see. The root and driver suites share
+# it, and each suite's spec/network_guard_spec.rb tests it.
 module NoNetwork
   class Refused < StandardError; end
 
