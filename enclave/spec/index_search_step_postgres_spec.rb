@@ -101,7 +101,8 @@ RSpec.describe "quaacks index-search, against a real server" do
       end
       expect(expected).not_to be_empty
       expect(entry["set_aside"]).to eq(expected)
-      expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] }).to eq([[["status"], []]])
+      expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] })
+      .to eq([[%w[status total], []], [["status"], []]])
     end
   end
 
