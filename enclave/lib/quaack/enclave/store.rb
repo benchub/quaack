@@ -232,8 +232,10 @@ module Quaack
         raise JSON::ParserError unless text.valid_encoding?
 
         begin
-          JSON.parse(text, max_nesting: PlainData::MAX_DEPTH)
-        rescue SystemStackError
+          # json doesn't count an empty innermost container toward
+          # max_nesting, so PlainData checks the depth again.
+          PlainData.check(JSON.parse(text, max_nesting: PlainData::MAX_DEPTH))
+        rescue SystemStackError, PlainData::NotPlain
           raise Error, "entry #{name} in run #{run_id} is nested too deep to read", cause: nil
         end
       rescue JSON::ParserError
