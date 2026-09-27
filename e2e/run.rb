@@ -154,11 +154,14 @@ module E2ERun
     racetrack = "#{prod}_racetrack"
     server.admin.exec(%(CREATE DATABASE "#{prod}" TEMPLATE template0))
     psql(server, prod, "CREATE EXTENSION hypopg;\n#{kase.read("schema.sql")}")
-    # The harness server runs with synchronous_commit off, so schema.sql's
-    # own VACUUM leaves the visibility map empty (relallvisible 0), and the
-    # planner then prices every index-only scan as a heap scan. A second
-    # VACUUM sets it, as on production and verify.rb's server.
-    psql(server, prod, "VACUUM;")
+    # The harness server runs with synchronous_commit off, so VACUUM can't
+    # mark a page all-visible until the WAL writer has flushed the loading
+    # transaction's commit. Whether it had was a race: relallvisible came out
+    # 0 or full from one load to the next, the planner priced index-only
+    # scans differently, and the top fix changed between runs (20260927-6).
+    # CHECKPOINT flushes the WAL first, so the VACUUM after it always sets
+    # the visibility map, as on production and verify.rb's server.
+    psql(server, prod, "CHECKPOINT; VACUUM;")
     # A case's settings are production's own (README step 2 records the
     # server's value, not the plan session's), so they go on the databases,
     # and the racetrack gets them too, as a run server configured like
