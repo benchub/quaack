@@ -1098,14 +1098,7 @@ A genuine fixture load failure inside `VacuityGuard.exercised_atoms` (vacuity_gu
 - **README:** Step 9.
 - **Status:** todo
 
-### 20260927-1. Set operations crash generator one (5a-1).
-
-e2e cases 029, 058, 068, 097, 098 and 100 stop at `index-search` with `internal_error`. `generator_one.rb:157` raises `ArgumentError` on UNION, INTERSECT or EXCEPT, which intake accepts. Handle set operations in 5a-1: generate candidates per branch, or skip set-operation queries with a clean result. Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-1.
-- **Status:** todo
+### 20260927-1. Set operations crash generator one (5a-1). Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-2. 5a-4 and the plan gate prepare with untyped parameters.
 
@@ -1167,12 +1160,15 @@ Find out why ranking or measurement varies between runs; it could be ANALYZE sam
 - **README:** 5a-7, 12-14.
 - **Status:** todo
 
-### 20260927-7. e2e corpus fixes: 075 and 010.
+### 20260927-7. e2e corpus fixes: 075 and 010. Done, see BACKLOG-COMPLETE.md.
 
-- 075's table has an inheritance child, which README 3c refuses as `inheritance_parent`. Make the case expect that refusal, or drop the child.
-- 010's GIN index comes from the LLM, but its `features` don't say 5a-5. Add it.
 
-- **Depends on:** the e2e corpus.
-- **Came from:** The e2e runner.
-- **README:** none.
+### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates.
+
+- e2e 097 (a set operation) no longer crashes, but its top fix measures 384 blocks against a bound of 118. Diagnose why.
+- Generator one gives no candidates for a CTE body or a subquery in FROM, including set operations inside one. Add a spec pinning that a CTE referenced from a set-operation branch is neither refused nor qualified as a table. Consider descending into CTE bodies and FROM subqueries for candidates.
+
+- **Depends on:** 20260927-1.
+- **Came from:** 20260927-1 build and review.
+- **README:** 5a-1.
 - **Status:** todo

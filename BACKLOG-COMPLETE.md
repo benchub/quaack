@@ -2441,3 +2441,22 @@ It writes a summary table and fails clearly on crashes. Any real QUAACK bug it f
 - **Came from:** User direction, 2026-09-26.
 - **README:** All.
 - **Status:** done
+
+### 20260927-1. Set operations crash generator one (5a-1).
+
+e2e cases 029, 058, 068, 097, 098 and 100 stop at `index-search` with `internal_error`. `generator_one.rb:157` raises `ArgumentError` on UNION, INTERSECT or EXCEPT, which intake accepts. Handle set operations in 5a-1: generate candidates per branch, or skip set-operation queries with a clean result. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-1.
+- **Status:** done
+
+### 20260927-7. e2e corpus fixes: 075 and 010.
+
+- 075's table has an inheritance child, which README 3c refuses as `inheritance_parent`. Make the case expect that refusal, or drop the child.
+- 010's GIN index comes from the LLM, but its `features` don't say 5a-5. Add it.
+
+- **Depends on:** the e2e corpus.
+- **Came from:** The e2e runner.
+- **README:** none.
+- **Status:** done
