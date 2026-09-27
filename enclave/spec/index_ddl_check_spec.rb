@@ -363,7 +363,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
 
     {
-      "unparsable" => planted(sentinel, tail: " AND"),
+      "unparsable" => planted(sentinel, tail: " '#{sentinel}'"),
       "not_create_index" => "#{planted(sentinel)}; SELECT '#{sentinel}'",
       "concurrently" => planted(sentinel, head: "CREATE INDEX CONCURRENTLY"),
       "unique" => planted(sentinel, head: "CREATE UNIQUE INDEX"),

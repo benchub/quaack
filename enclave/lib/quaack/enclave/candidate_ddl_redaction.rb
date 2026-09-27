@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "node_rewrite"
+require_relative "pg_array"
 
 module Quaack
   module Enclave
@@ -14,7 +15,8 @@ module Quaack
     # Generator two reads the unredacted step 1 plan, so a candidate's
     # partial predicate or key expression can hold a real literal. Every
     # constant in the DDL is masked as ? unless it's in the predicate,
-    # compared directly (col = const, const <> col, col IN (...), casts
+    # compared directly (col = const, const <> col, col IN (...), col = ANY
+    # (ARRAY[...]), col = ANY ('{...}') with every element allowed, casts
     # allowed) with a low-cardinality column of the candidate's table, and
     # its text is one of that column's MCV values: the values README 3f
     # lets out, which the payload's stats already carry. Key expressions
@@ -57,20 +59,48 @@ module Quaack
       # its children aren't walked again. nil for any other node. Only the
       # predicate has such comparisons: a key expression is masked whole.
       def comparison(node, allowed)
-        column, constants = operands(node)
+        column, constants, array_text = operands(node)
         values = allowed[column]
         return unless values
 
-        constants.each { |c| masked!(c) unless values.include?(text(c.a_const)) }
+        constants.each { |c| masked!(c) unless allowed_constant?(c, values, array_text) }
         node
       end
 
-      # sides of an operator or IN expression, either way round.
+      # An ANY's constant is an array literal such as '{held,open}', kept
+      # only if every element is one of the column's values.
+      def allowed_constant?(constant, values, array_text)
+        return values.include?(text(constant.a_const)) unless array_text
+
+        elements = PgArray.parse(text(constant.a_const).to_s)
+        elements.all? { |e| e.nil? || values.include?(e) }
+      rescue ArgumentError
+        false
+      end
+
+      # sides of an operator or IN expression, either way round, or of
+      # col = ANY (ARRAY[...]) and col = ANY ('{...}'), column first.
       def operands(node)
-        return unless node.node == :a_expr && %i[AEXPR_OP AEXPR_IN].include?(node.a_expr.kind)
+        return unless node.node == :a_expr
 
         expr = node.a_expr
+        return any_operands(expr) if expr.kind == :AEXPR_OP_ANY
+        return unless %i[AEXPR_OP AEXPR_IN].include?(expr.kind)
+
         sides(expr.lexpr, expr.rexpr) || sides(expr.rexpr, expr.lexpr)
+      end
+
+      def any_operands(expr)
+        array = uncast(expr.rexpr)
+        unless array&.node == :a_array_expr
+          found = sides(expr.lexpr, expr.rexpr)
+          return found && [*found, true]
+        end
+
+        items = array.a_array_expr.elements.to_a
+        name = column_name(uncast(expr.lexpr))
+        constants = items.map { const_node(it) }
+        [name, constants] if name && constants.all?
       end
 
       # [column name, the A_Const nodes] when column is a plain column

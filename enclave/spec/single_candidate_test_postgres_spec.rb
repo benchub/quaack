@@ -280,6 +280,26 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(run_error("SELECT * FROM t WHERE flag = $1", { slow: "ok" })).to have_attributes(rule: :bad_literal)
   end
 
+  it "refuses empty literal sets, since there are always three" do
+    expect(run_error("SELECT * FROM t WHERE flag = $1", {})).to have_attributes(rule: :bad_literal)
+  end
+
+  it "runs when the connection maps result types, so no value comes back as a String" do
+    conn.type_map_for_results = PG::BasicTypeMapForResults.new(conn)
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a"])])
+
+    expect(report.results.first).to have_attributes(refusal: nil, used?: true)
+    expect(report.baseline.plans[:slow].total_cost).to be > report.results.first.plans[:slow].total_cost
+  end
+
+  it "records a candidate whose DDL can't be rendered as refused, and goes on to the next" do
+    report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["a" * 70]), candidate(key: ["a"])])
+
+    expect(report.results.map(&:refusal))
+      .to eq([described_class::Refusal.new(rule: :unrenderable, sqlstate: nil), nil])
+    expect(report.results.last.used?).to be(true)
+  end
+
   # HypoPG reports a column that doesn't exist as an internal error, XX000.
   it "records a candidate on a column that doesn't exist as refused" do
     report = run("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, [candidate(key: ["nope"])])

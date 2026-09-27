@@ -153,7 +153,8 @@ module Quaack
         def pretty_print(pp) = pp.text(inspect)
       end
 
-      # A candidate HypoPG wouldn't create. rule is :hypopg_refused.
+      # A candidate HypoPG wouldn't create, rule :hypopg_refused, or one whose
+      # DDL can't be rendered, rule :unrenderable with a nil sqlstate.
       Refusal = Data.define(:rule, :sqlstate)
 
       # The name of the prepared statement and of the savepoint around each
@@ -204,7 +205,8 @@ module Quaack
       end
 
       def literal_sets?(sets)
-        sets.is_a?(Hash) && sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
+        sets.is_a?(Hash) && !sets.empty? &&
+          sets.each_value.all? { |values| values.is_a?(Array) && values.all? { |v| literal?(v) } }
       end
 
       def literal?(value)
@@ -242,6 +244,33 @@ module Quaack
         Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :hypopg_refused, sqlstate:))
       end
 
+      # Runs the block with every value read as the String Postgres sends,
+      # whatever type map the caller set, and puts the caller's back.
+      def string_results(connection)
+        type_map = connection.type_map_for_results
+        connection.type_map_for_results = PG::TypeMapAllStrings.new
+        yield
+      ensure
+        connection.type_map_for_results = type_map
+      end
+
+      # A candidate whose to_ddl the deparse guard refuses, such as one with
+      # a name over 63 bytes, is refused on its own instead of stopping the
+      # run.
+      def renderable?(candidate)
+        candidate.to_ddl
+        true
+      rescue Deparse::Error
+        false
+      end
+
+      # The refused Measurement if any candidate is unrenderable, or nil.
+      def unrenderable(candidates)
+        return if candidates.all? { renderable?(it) }
+
+        Measurement.new(sizes: nil, plans: {}.freeze, refusal: Refusal.new(rule: :unrenderable, sqlstate: nil))
+      end
+
       # EXECUTE of the prepared statement with these values. With no
       # values, it takes no parentheses.
       def execute(connection, values)
@@ -274,7 +303,7 @@ module Quaack
         def open(&)
           previous = @connection.set_notice_receiver { nil }
           begin
-            within(&)
+            SingleCandidateTest.string_results(@connection) { within(&) }
           ensure
             @connection.set_notice_receiver(&previous)
           end
@@ -289,6 +318,12 @@ module Quaack
           raise Error, :session_closed unless @open
 
           SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
+          SingleCandidateTest.unrenderable(candidates) || created(candidates)
+        end
+
+        private
+
+        def created(candidates)
           indexes = []
           candidates.each do |candidate|
             oid, name, size, sqlstate = SingleCandidateTest.guarded(:hypopg_failed) { create(candidate) }
@@ -298,8 +333,6 @@ module Quaack
           end
           Measurement.new(sizes: indexes.map { |i| i[2] }.freeze, plans: plans(indexes), refusal: nil)
         end
-
-        private
 
         def within
           failed = true

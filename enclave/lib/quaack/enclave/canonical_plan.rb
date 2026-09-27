@@ -241,7 +241,7 @@ module Quaack
           return unless anchor_call?(cast.arg)
 
           names = cast.type_name.names
-          names.shift if names.size > 1 && names.first.string&.sval == "pg_catalog"
+          names.shift if names.first.string&.sval == "pg_catalog"
         end
 
         def anchored(sql)

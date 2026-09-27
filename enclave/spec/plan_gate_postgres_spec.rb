@@ -75,6 +75,13 @@ RSpec.describe Quaack::Enclave::PlanGate do
     expect(described_class.check(store:, connection: conn, sql:)).to be_nil
   end
 
+  it "refuses SQL that doesn't bind to the stored placeholder map" do
+    sql = prepare_run
+
+    expect { described_class.check(store:, connection: conn, sql: "#{sql} AND o.id = $9") }
+      .to raise_error(Quaack::Enclave::Redaction::Error)
+  end
+
   it "passes for a query with no clock function or literal" do
     sql = prepare_run("SELECT c.id FROM public.customers c ORDER BY c.created_at DESC LIMIT 5")
 

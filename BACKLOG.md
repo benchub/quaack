@@ -447,6 +447,7 @@ Minor findings from the second review of 20260923-56:
 - **Depends on:** 20260923-56.
 - **Came from:** Second review of 20260923-56.
 - **README:** 5a-4.
+- **Landed (2026-09-26):** empty literal_sets refused, the string type map, and the `unrenderable` refusal. Still open: a `cleanup_failed` guard test, and an exact-cost test on a join.
 - **Status:** todo
 
 ### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
@@ -536,6 +537,7 @@ Findings from the reviews of 20260922-35:
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
 - **README:** 5a-7.
+- **Checked (2026-09-26):** the duplicate-candidates item is stale. **Needs a decision:** checking literal-set values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
 - **Status:** todo
 
 ### 20260924-11. Finish 3g redaction. Done, see BACKLOG-COMPLETE.md.
@@ -655,16 +657,7 @@ Findings from the build and reviews of 20260922-25:
 
 ### 20260924-31. Keyset pagination with row comparisons. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-1. Index DDL check loose ends.
-
-Findings from the second review of 20260922-11:
-- **The unparsable sentinel test doesn't exercise the leak path.** In `enclave/spec/index_ddl_check_spec.rb`, the `"unparsable"` case in "a sentinel in the DDL" ends in a trailing AND. So pg_query's message is "syntax error at end of input", which never quotes the sentinel. Plant the syntax error on a sentinel token, such as `... WHERE status = '<sentinel>' '<sentinel>'`. The exact-message test still catches a leak today.
-- **The README doesn't list the index DDL rules.** README "What goes into the enclave" says only "exactly one `CREATE INDEX` statement on a table the query uses". Add the refusals (CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT, TABLESPACE, ON ONLY, an unqualified table, volatile functions, parameters, subqueries, and aggregates). Also say that the index name is dropped and that STABLE is left to Postgres.
-
-- **Depends on:** 20260922-11.
-- **Came from:** The second review of 20260922-11.
-- **README:** What goes into the enclave.
-- **Status:** todo
+### 20260925-1. Index DDL check loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-2. Insert check loose ends.
 
@@ -680,16 +673,7 @@ Minor findings from the first review of 20260922-12:
 - **Landed (2026-09-26):** the variadic test and README notes on unchecked coercions. **Needs a decision:** fix the arena TimeZone, or refuse special date inputs, instead of just documenting them.
 - **Status:** todo
 
-### 20260925-3. Plan gate loose ends.
-
-Minor findings from the first review of 20260922-28:
-- **The `Redaction.binding` call in `plan_gate.rb` is untested.** Deleting it stays green. Add a test that SQL which doesn't bind to the stored map (an extra `$n`, or unredacted SQL) raises `Redaction::Error`.
-- **The guards in `CanonicalPlan#unqualify_type` are untested.** Removing the anchor-only guard or the `names.size > 1` guard stays green. Test them, or drop the guards if stripping `pg_catalog` from every cast is fine.
-
-- **Depends on:** 20260922-28.
-- **Came from:** The first review of 20260922-28.
-- **README:** Step 5.
-- **Status:** todo
+### 20260925-3. Plan gate loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-4. 5a-5 generator three: the LLM loop. Done, see BACKLOG-COMPLETE.md.
 
@@ -742,15 +726,7 @@ Minor findings from the first review of 20260925-8:
 
 ### 20260925-23. Anchor step loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-24. Index-search loose ends.
-
-- `Dedupe.restore` doesn't check that `considered` matches the lists, so a corrupt entry restores silently.
-- `index_search.rb` finds proposals with `==`, which relies on `IndexCandidate#==` ignoring sources. If SingleCandidateTest ever normalizes a candidate, the lookup gives nil and crashes.
-
-- **Depends on:** 20260925-6.
-- **Came from:** The reviews of 20260925-6.
-- **README:** 5a-3, 5a-4.
-- **Status:** todo
+### 20260925-24. Index-search loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-1. Driver finds the jump server with a configured command. Done, see BACKLOG-COMPLETE.md.
 
@@ -764,6 +740,7 @@ Minor findings from the first review of 20260925-8:
 - **Depends on:** 20260925-4.
 - **Came from:** The build and second review of 20260925-4.
 - **README:** 5a-5, 15b.
+- **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the 5a-5 burndown record.
 - **Status:** todo
 
 ## After version 1.

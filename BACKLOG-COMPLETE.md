@@ -2360,3 +2360,35 @@ Minor findings from the first review of 20260925-9:
 - **Came from:** The first review of 20260925-15.
 - **README:** 3h.
 - **Status:** done
+
+### 20260925-1. Index DDL check loose ends.
+
+Findings from the second review of 20260922-11:
+- **The unparsable sentinel test doesn't exercise the leak path.** In `enclave/spec/index_ddl_check_spec.rb`, the `"unparsable"` case in "a sentinel in the DDL" ends in a trailing AND. So pg_query's message is "syntax error at end of input", which never quotes the sentinel. Plant the syntax error on a sentinel token, such as `... WHERE status = '<sentinel>' '<sentinel>'`. The exact-message test still catches a leak today.
+- **The README doesn't list the index DDL rules.** README "What goes into the enclave" says only "exactly one `CREATE INDEX` statement on a table the query uses". Add the refusals (CONCURRENTLY, UNIQUE, NULLS NOT DISTINCT, TABLESPACE, ON ONLY, an unqualified table, volatile functions, parameters, subqueries, and aggregates). Also say that the index name is dropped and that STABLE is left to Postgres.
+
+- **Depends on:** 20260922-11.
+- **Came from:** The second review of 20260922-11.
+- **README:** What goes into the enclave.
+- **Status:** done
+
+### 20260925-3. Plan gate loose ends.
+
+Minor findings from the first review of 20260922-28:
+- **The `Redaction.binding` call in `plan_gate.rb` is untested.** Deleting it stays green. Add a test that SQL which doesn't bind to the stored map (an extra `$n`, or unredacted SQL) raises `Redaction::Error`.
+- **The guards in `CanonicalPlan#unqualify_type` are untested.** Removing the anchor-only guard or the `names.size > 1` guard stays green. Test them, or drop the guards if stripping `pg_catalog` from every cast is fine.
+
+- **Depends on:** 20260922-28.
+- **Came from:** The first review of 20260922-28.
+- **README:** Step 5.
+- **Status:** done
+
+### 20260925-24. Index-search loose ends.
+
+- `Dedupe.restore` doesn't check that `considered` matches the lists, so a corrupt entry restores silently.
+- `index_search.rb` finds proposals with `==`, which relies on `IndexCandidate#==` ignoring sources. If SingleCandidateTest ever normalizes a candidate, the lookup gives nil and crashes.
+
+- **Depends on:** 20260925-6.
+- **Came from:** The reviews of 20260925-6.
+- **README:** 5a-3, 5a-4.
+- **Status:** done

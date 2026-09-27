@@ -143,6 +143,11 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
         .to be(false)
     end
 
+    it "keeps pg_catalog on a cast of anything but the anchor" do
+      expect(same?(with_filter("seq_scan_rare_value", "((status)::pg_catalog.citext = 'x')"),
+                   with_filter("seq_scan_rare_value", "((status)::citext = 'x')"))).to be(false)
+    end
+
     it "doesn't match another schema's now() with the anchor" do
       expect(same?(with_filter("seq_scan_rare_value", "(created_at > app.now())"),
                    with_filter("seq_scan_rare_value", "(created_at > quaack.clock_anchor())"))).to be(false)
