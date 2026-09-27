@@ -21,6 +21,11 @@ RSpec.describe PipelineReplay do
           end
         end
 
+        it "tears the run down when it ends, deleting its store" do
+          expect(outcome.store_left).to be(false)
+          expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
+        end
+
         it "sends each replayed ask the prompt its reply answered" do
           expect(outcome.drift).to be_empty
         end

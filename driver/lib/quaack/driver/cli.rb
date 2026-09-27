@@ -8,7 +8,7 @@ module Quaack
     class CLI
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file>\n       " \
-              "quaack run --run <ID> [--rewrites <file>] [--out <path>]\n"
+              "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep]\n"
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
       RUN_OPTIONAL = %w[--rewrites --out].freeze
@@ -65,14 +65,17 @@ module Quaack
         1
       end
 
-      # { run:, rewrites:, out: } from `--run ID [--rewrites <file>]
-      # [--out <path>]`, the optional ones in either order, or nil. out
+      # { run:, rewrites:, out:, keep: } from `--run ID [--rewrites <file>]
+      # [--out <path>] [--keep]`, the optional ones in any order, or nil. out
       # defaults to ./quaack-<run>.html.
       def run_options(argv)
-        return unless argv.size.even? && argv[0] == "--run"
+        keep = argv.count("--keep")
+        argv -= ["--keep"]
+        return unless keep <= 1 && argv.size.even? && argv[0] == "--run"
 
         options = optional(argv.drop(2)) or return
-        { run: argv[1], rewrites: options["--rewrites"], out: options["--out"] || "./quaack-#{argv[1]}.html" }
+        { run: argv[1], rewrites: options["--rewrites"], out: options["--out"] || "./quaack-#{argv[1]}.html",
+          keep: keep == 1 }
       end
 
       # The optional run options as a Hash, or nil if one repeats or is unknown.
@@ -85,21 +88,24 @@ module Quaack
       # file, then prints the run ID and done. The
       # file is read first, so a bad one fails before the jump server is
       # touched. A failure prints only its rule, as for start.
-      def run_command(run:, rewrites:, out:)
+      def run_command(run:, rewrites:, out:, keep:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
         sqls = read_rewrites(rewrites) if rewrites
         return usage_error(@rewrites_problem) if rewrites && !sqls
 
-        drive(@transport.call(host), @client.call, run, sqls, out)
+        drive(@transport.call(host), @client.call, run, sqls, { out:, keep: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
         1
       end
 
-      # Prints the report's path, if the pipeline wrote one, before done.
-      def drive(transport, client, run_id, sqls, out)
-        path = Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out:).run
+      # Prints the report's path, if the pipeline wrote one, before done. The
+      # run is torn down when the pipeline ends, however it ends, unless keep.
+      def drive(transport, client, run_id, sqls, options)
+        path = Teardown.around(transport:, run_id:, stderr: @stderr, keep: options[:keep]) do
+          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out]).run
+        end
         @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"
         0
@@ -112,6 +118,7 @@ module Quaack
         require_relative "operator_candidates"
         require_relative "pipeline"
         require_relative "runs"
+        require_relative "teardown"
         require_relative "transport/ssh"
       end
 
