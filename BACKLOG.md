@@ -415,6 +415,7 @@ Minor findings from the reviews of 20260922-10:
 - **Depends on:** 20260922-10.
 - **Came from:** The reviews of 20260922-10.
 - **README:** What goes into the enclave.
+- **Landed (2026-09-26):** tests killing the `.last(1)` mutants. Still open: moving to `Relations.check`.
 - **Status:** todo
 - **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
 
@@ -430,6 +431,7 @@ Findings from the reviews of 20260922-4 and 20260923-53:
 - **Depends on:** 20260923-53.
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
 - **README:** Where QUAACK runs.
+- **Landed (2026-09-26):** stdout is claimed and stderr silenced before `require`, and `Store#parse` runs `PlainData.check`. Still open: `Input::MAX_BYTES` and element caps (a sizing choice), the slow scan, and cancel on SIGTERM.
 - **Status:** todo
 
 ### 20260924-1. 5a-4 loose ends.
@@ -938,6 +940,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
 - **README:** Step 13.
+- **Landed (2026-09-26):** removed the dead `rewrites.empty?` check. Still open: a real-Postgres test that produces an unstable literal.
 - **Status:** todo
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
@@ -969,17 +972,10 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
 - **README:** Step 15.
+- **Landed (2026-09-26):** the knocked_out missing-entry test. Still open: the StepNine dropped count, per-round covered shapes, schema-less plan nodes, and LLM counts on resume.
 - **Status:** todo
 
-### 20260926-43. Payload fidelity loose ends.
-
-- Nothing tests the fallback when PREPARE fails (empty `parameter_types`, so the payload falls back to the 3g type class).
-- The rewrite payload spec only checks that it agrees with the index payload, not that the types are correct.
-
-- **Depends on:** 20260926-39.
-- **Came from:** 20260926-39 build and review.
-- **README:** 5a-5, 6a.
-- **Status:** todo
+### 20260926-43. Payload fidelity loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260926-44. Expression-unique loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -1035,6 +1031,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
 - **README:** 3h.
+- **Landed (2026-09-26):** end-to-end clock tests for step 9 and candidate-runs. Still open: dropping the `anchored_sql` fallback.
 - **Status:** todo
 
 ### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
@@ -1064,6 +1061,7 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
 - **README:** Step 9.
+- **Landed (2026-09-26):** a realistic-schema keyset test (expanded form and dropped keyset). Still open: `=`/`<>` pools, perturb-and-retry, the generated-column item, and the tie-breaker gap (see 20260926-59).
 - **Status:** todo
 
 ### 20260926-56. Items left from 20260923-27, -28, -35, -38.
@@ -1103,4 +1101,13 @@ It writes a summary table and fails clearly on crashes. Any real QUAACK bug it f
 - **Depends on:** 20260926-33, 20260926-57, the e2e corpus.
 - **Came from:** User direction, 2026-09-26.
 - **README:** All.
+- **Status:** todo
+
+### 20260926-59. Keyset tie rows are dropped on realistic schemas.
+
+On the prompt-pack `shop.orders` schema, step 9 doesn't catch a keyset candidate that changes only the tie-breaker value (`id < 900` becomes `id < 901`). The candidate passes with `dropped: 3`: the tie rows are left out, probably because they collide on a unique key, an FK, or the `GENERATED ALWAYS` identity id. The same test catches it on the simple `fx` schema. Find out why the tie rows are dropped, and make them load: give their other unique columns distinct values, keep them within FK parents, and handle identity keys as 20260926-37 did. Add the tie-breaker test to `step_nine_realistic_schema_postgres_spec.rb`.
+
+- **Depends on:** 20260926-40, -55.
+- **Came from:** Build of 20260926-55.
+- **README:** Step 9.
 - **Status:** todo

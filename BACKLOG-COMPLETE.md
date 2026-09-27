@@ -2401,3 +2401,13 @@ The e2e corpus (merged from the user's branch) was written against an older READ
 - **Came from:** Review of the e2e corpus branch.
 - **README:** Step 1.
 - **Status:** done
+
+### 20260926-43. Payload fidelity loose ends.
+
+- Nothing tests the fallback when PREPARE fails (empty `parameter_types`, so the payload falls back to the 3g type class).
+- The rewrite payload spec only checks that it agrees with the index payload, not that the types are correct.
+
+- **Depends on:** 20260926-39.
+- **Came from:** 20260926-39 build and review.
+- **README:** 5a-5, 6a.
+- **Status:** done
