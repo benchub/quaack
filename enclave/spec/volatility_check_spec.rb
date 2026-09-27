@@ -699,7 +699,7 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
 
     it "replaces a parse error, naming only the rule" do
       expect { check("SELECT '#{sentinel}' '#{sentinel}'") }
-        .to raise_error(described_class::Error, "parse_error: the query doesn't parse") { |e|
+        .to raise_error(described_class::Error, "parse_error: the query doesn't parse #{PARSER_NOTE}") { |e|
           expect(e.rule).to eq("parse_error")
         }
     end

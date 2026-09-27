@@ -88,7 +88,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
   describe "a candidate that doesn't parse" do
     it "is refused as unparsable, without quoting pg_query's message" do
       expect { check("SELECT 'x' FROM") }
-        .to rejected("unparsable", "unparsable: the candidate doesn't parse")
+        .to rejected("unparsable", "unparsable: the candidate doesn't parse #{PARSER_NOTE}")
     end
   end
 

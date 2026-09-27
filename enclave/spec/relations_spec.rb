@@ -393,7 +393,8 @@ RSpec.describe Quaack::Enclave::Relations do
 
   describe "a query it can't check" do
     it "is refused as parse_error, without quoting pg_query's message" do
-      expect { check("SELECT 'x' FROM") }.to rejected("parse_error", "parse_error: the query doesn't parse")
+      expect { check("SELECT 'x' FROM") }
+        .to rejected("parse_error", "parse_error: the query doesn't parse #{PARSER_NOTE}")
     end
 
     it "is refused as unsupported_construct when it uses something outside SupportedSql" do

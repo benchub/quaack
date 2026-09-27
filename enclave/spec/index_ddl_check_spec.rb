@@ -143,7 +143,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
   describe "a statement that doesn't parse" do
     it "is refused as unparsable, without quoting pg_query's message" do
       expect { check("CREATE INDEX ON public.orders (status) WHERE status = 'x' AND") }
-        .to rejected("unparsable", "unparsable: the index DDL doesn't parse")
+        .to rejected("unparsable", "unparsable: the index DDL doesn't parse #{PARSER_NOTE}")
     end
   end
 

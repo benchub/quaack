@@ -8,6 +8,10 @@ GEM_ROOT = File.expand_path("..", __dir__)
 # the root's spec/support, such as repo_gems.rb, find the repo by it.
 REPO_ROOT = File.expand_path("..", GEM_ROOT)
 
+# What a parse refusal adds after its message, written out rather than taken
+# from ParserVersion, so a spec sees the exact text that leaves the enclave.
+PARSER_NOTE = "(pg_query parses with the Postgres 17 grammar; Postgres 18-only syntax isn't supported yet)"
+
 require_relative "../../spec/support/test_postgres"
 require_relative "support/leak_check"
 

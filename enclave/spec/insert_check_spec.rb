@@ -92,7 +92,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
   describe "an insert that doesn't parse" do
     it "is refused as unparsable, without quoting pg_query's message" do
       expect { check("INSERT INTO sales.items (id) VALUES (1") }
-        .to rejected("unparsable", "unparsable: the insert doesn't parse")
+        .to rejected("unparsable", "unparsable: the insert doesn't parse #{PARSER_NOTE}")
     end
   end
 
