@@ -1,0 +1,16 @@
+{
+  "title": "Dropping DISTINCT over a fan-out join",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "DISTINCT removed on a false uniqueness claim",
+    "unmet uniqueness assumption (6b)",
+    "duplicates fixture (step 9, S3)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

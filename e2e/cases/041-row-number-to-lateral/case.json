@@ -1,0 +1,23 @@
+{
+  "title": "row_number() over everything, then filter",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "window function with PARTITION BY",
+    "LATERAL top-N rewrite",
+    "existing index used by the rewrite",
+    "generator-one candidates already exist, so 5a-3 drops them"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "silver customers",
+      "replace": {
+        "'gold'": "'silver'"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "title": "EXCEPT whose second arm is a range scan",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "EXCEPT set operation",
+    "range-only arm: generator one keys on the range column (5a-1)",
+    "INCLUDE column for an index-only scan"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a lower threshold",
+      "replace": {
+        "20000": "15000"
+      }
+    }
+  ]
+}

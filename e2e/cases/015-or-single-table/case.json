@@ -1,0 +1,29 @@
+{
+  "title": "OR on two columns of one table, one unindexed",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "OR within one table",
+    "BitmapOr becomes possible once both columns are indexed",
+    "no rewrite needed"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "both terms hit the same row",
+      "replace": {
+        "+15550200001": "+15550001234"
+      }
+    },
+    {
+      "name": "neither matches",
+      "replace": {
+        "acct1234@": "nobody@",
+        "+15550200001": "+10000000000"
+      }
+    }
+  ]
+}

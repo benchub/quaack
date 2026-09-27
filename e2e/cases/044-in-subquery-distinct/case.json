@@ -1,0 +1,21 @@
+{
+  "title": "IN over a subquery that re-sorts a big table",
+  "category": "rewrite",
+  "compare": "ordered",
+  "features": [
+    "IN (SELECT DISTINCT ...)",
+    "semi-join from the small side"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "no such customer",
+      "replace": {
+        "customer4242@": "nobody@"
+      }
+    }
+  ]
+}

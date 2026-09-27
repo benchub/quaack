@@ -1,0 +1,35 @@
+{
+  "title": "Equality plus a range, with only a one-column index",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "index scan whose Filter removes most rows (5a-2)",
+    "equality column then one range column (5a-1)",
+    "range literals as a BETWEEN-like pair (3e)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 17": "= 912"
+      }
+    },
+    {
+      "name": "a whole month",
+      "replace": {
+        "2025-06-08": "2025-07-01"
+      }
+    },
+    {
+      "name": "an empty window",
+      "replace": {
+        "2025-06-01": "2026-06-01",
+        "2025-06-08": "2026-06-08"
+      }
+    }
+  ]
+}

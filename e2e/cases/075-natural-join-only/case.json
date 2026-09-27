@@ -1,0 +1,22 @@
+{
+  "title": "NATURAL JOIN on an inheritance parent with ONLY",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "NATURAL JOIN",
+    "FROM ONLY on an inheritance parent",
+    "indexes aren't inherited"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 17": "= 900"
+      }
+    }
+  ]
+}

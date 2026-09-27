@@ -1,0 +1,22 @@
+{
+  "title": "LATERAL top-N with no index to stop early",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "LATERAL subquery",
+    "ORDER BY ... LIMIT inside a correlated subquery",
+    "Nested Loop inner side (5a-2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "silver customers",
+      "replace": {
+        "'gold'": "'silver'"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "title": "RIGHT JOIN with USING",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "RIGHT JOIN",
+    "JOIN ... USING",
+    "outer-join rows with no match",
+    "a plainer index loses on the worst case and is rejected by minimax (14b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "worst case: top MCV",
+      "replace": {
+        "'enterprise'": "'free'"
+      }
+    }
+  ]
+}

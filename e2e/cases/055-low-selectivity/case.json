@@ -1,0 +1,22 @@
+{
+  "title": "Filter that matches most of the table",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "index the planner declines to use (5a-4)",
+    "covering index turns it into an index-only scan",
+    "top-MCV literal"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a rare status",
+      "replace": {
+        "'shipped'": "'pending'"
+      }
+    }
+  ]
+}

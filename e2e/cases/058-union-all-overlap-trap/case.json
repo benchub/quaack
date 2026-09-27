@@ -1,0 +1,22 @@
+{
+  "title": "UNION to UNION ALL when the branches overlap",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "UNION ALL keeps duplicates",
+    "overlapping branches",
+    "fixtures with a row that matches both (step 9, S1)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a customer with no recent order",
+      "replace": {
+        "5001": "4242"
+      }
+    }
+  ]
+}

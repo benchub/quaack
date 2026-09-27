@@ -1,0 +1,22 @@
+{
+  "title": "now(), current_timestamp, and localtimestamp",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "now() anchored (3h)",
+    "current_timestamp anchored (3h)",
+    "localtimestamp anchored (3h)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "the next week",
+      "replace": {
+        "interval '1 day'": "interval '7 days'"
+      }
+    }
+  ]
+}

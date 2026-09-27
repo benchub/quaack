@@ -1,0 +1,28 @@
+{
+  "title": "Case-insensitive lookup",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "expression index (5a-5)",
+    "unique index the planner can't use",
+    "PII column: MCVs withheld (3f)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "stored in lower case",
+      "replace": {
+        "123456": "123457"
+      }
+    },
+    {
+      "name": "no such user",
+      "replace": {
+        "user123456": "nobody"
+      }
+    }
+  ]
+}

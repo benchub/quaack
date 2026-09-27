@@ -1,0 +1,16 @@
+{
+  "title": "max() to ORDER BY ... DESC LIMIT 1",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "NULLs sort first in DESC order",
+    "aggregate over nullable column",
+    "NULL fixtures (step 9, S2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

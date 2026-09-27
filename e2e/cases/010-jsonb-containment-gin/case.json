@@ -1,0 +1,22 @@
+{
+  "title": "jsonb containment filter",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "jsonb @> operator",
+    "GIN with jsonb_path_ops, set aside untested (5a-3)",
+    "json values never sent, only frequencies (3f)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a type that doesn't exist",
+      "replace": {
+        "\"refund\"": "\"dispute\""
+      }
+    }
+  ]
+}

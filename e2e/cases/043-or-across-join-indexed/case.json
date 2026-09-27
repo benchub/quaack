@@ -1,0 +1,23 @@
+{
+  "title": "OR across a join, both columns indexed",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "OR across a join",
+    "UNION rewrite",
+    "existing indexes are enough"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "neither matches",
+      "replace": {
+        "customer777@": "nobody@",
+        "TRK0000300001": "TRK9999999999"
+      }
+    }
+  ]
+}

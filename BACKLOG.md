@@ -164,6 +164,7 @@ Wire every step together in the driver, from intake through the report and teard
 - **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2.
 - **README:** All.
 - **Status:** todo
+- **Note:** `e2e/cases/` holds 100 cases for this test to run QUAACK against, each with its schema and data, slow query, and expected outcome (new index, rewrite, both, negative result, trap to disprove, or refusal). `ruby e2e/verify.rb` proves each case against Postgres 18. See `e2e/README.md`.
 - **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
   - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
   - Require the `teardown` line followed by the done line.

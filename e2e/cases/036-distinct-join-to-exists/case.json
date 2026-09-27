@@ -1,0 +1,29 @@
+{
+  "title": "SELECT DISTINCT over a fan-out join",
+  "category": "none",
+  "compare": "multiset",
+  "features": [
+    "DISTINCT to remove join fan-out",
+    "semi-join rewrite",
+    "uniqueness assumption (6b)",
+    "generator-one candidates already exist, so 5a-3 drops them"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a lower threshold",
+      "replace": {
+        "15000": "1000"
+      }
+    },
+    {
+      "name": "nobody qualifies",
+      "replace": {
+        "15000": "999999"
+      }
+    }
+  ]
+}

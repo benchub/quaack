@@ -1,0 +1,15 @@
+{
+  "title": "Keyset pagination with a row comparison",
+  "category": "refused",
+  "compare": "multiset",
+  "features": [
+    "ROW comparison is unsupported in v1 (SupportedSql)",
+    "refusal names only the rule"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

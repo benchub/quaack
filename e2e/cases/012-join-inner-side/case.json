@@ -1,0 +1,28 @@
+{
+  "title": "Join to a child table with no index on its foreign key",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "Hash Join with a large inner build (5a-2)",
+    "join condition columns (5a-1)",
+    "three tables"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another customer",
+      "replace": {
+        "4242": "17"
+      }
+    },
+    {
+      "name": "customer with no orders",
+      "replace": {
+        "4242": "99999"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "title": "IS NOT TRUE to = false",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "IS NOT TRUE includes NULL",
+    "NULL fixtures (step 9, S2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

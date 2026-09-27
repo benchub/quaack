@@ -1,0 +1,23 @@
+{
+  "title": "Join to unnest(ARRAY[...])",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "function in FROM (unnest)",
+    "ARRAY[...] constructor",
+    "join to a function's rows",
+    "t.* in the select list"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other skus",
+      "replace": {
+        "'ABX-0000100'": "'ABX-0200000'"
+      }
+    }
+  ]
+}

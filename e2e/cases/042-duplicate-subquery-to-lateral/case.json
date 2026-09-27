@@ -1,0 +1,28 @@
+{
+  "title": "The same correlated subquery twice",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "correlated scalar subquery in SELECT and WHERE",
+    "LATERAL computes it once",
+    "aggregate over an empty set is NULL"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "an earlier cutoff",
+      "replace": {
+        "2025-12-10": "2025-12-05"
+      }
+    },
+    {
+      "name": "everyone qualifies",
+      "replace": {
+        "2025-12-10": "2026-12-10"
+      }
+    }
+  ]
+}

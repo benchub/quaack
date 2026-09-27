@@ -1,0 +1,30 @@
+{
+  "title": "Recursive CTE that walks every tree",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "WITH RECURSIVE",
+    "push the filter into the anchor",
+    "index on the recursive join key",
+    "IS NULL atom on a nullable parent key"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another root",
+      "replace": {
+        "420": "1999"
+      }
+    },
+    {
+      "name": "not a root",
+      "replace": {
+        "420": "4200"
+      },
+      "minimax": false
+    }
+  ]
+}

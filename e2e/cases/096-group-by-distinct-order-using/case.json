@@ -1,0 +1,22 @@
+{
+  "title": "GROUP BY DISTINCT and ORDER BY USING",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "GROUP BY DISTINCT",
+    "ORDER BY ... USING operator",
+    "ORDER BY an aggregate alias"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another tenant",
+      "replace": {
+        "= 12": "= 190"
+      }
+    }
+  ]
+}

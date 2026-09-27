@@ -1,0 +1,28 @@
+{
+  "title": "Skewed tenant sizes",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "top MCV as the worst-case literal (3e)",
+    "index that helps the slow literal and is no worse for the top MCV (14b)",
+    "rank by worst-case reduction (5a-7)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "worst case: top MCV, the giant tenant",
+      "replace": {
+        "= 780": "= 1"
+      }
+    },
+    {
+      "name": "typical: a mid-histogram tenant",
+      "replace": {
+        "= 780": "= 1001"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "title": "count(column) to count(*)",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "count of a nullable column",
+    "NULL fixtures (step 9, S2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

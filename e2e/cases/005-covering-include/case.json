@@ -1,0 +1,27 @@
+{
+  "title": "Aggregate that could be an index-only scan",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "INCLUDE columns for an index-only scan (5a-1)",
+    "aggregate over one account's rows"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another merchant",
+      "replace": {
+        "= 7": "= 150"
+      }
+    },
+    {
+      "name": "merchant with no payments",
+      "replace": {
+        "= 7": "= 9999"
+      }
+    }
+  ]
+}

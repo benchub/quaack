@@ -1,0 +1,27 @@
+{
+  "title": "MATERIALIZED CTE over an unindexed column",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "WITH ... AS MATERIALIZED",
+    "index that only helps once the fence is gone"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another account",
+      "replace": {
+        "= 17": "= 900"
+      }
+    },
+    {
+      "name": "worst case: top MCV",
+      "replace": {
+        "'purchase'": "'login'"
+      }
+    }
+  ]
+}

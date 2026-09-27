@@ -1,0 +1,28 @@
+{
+  "title": "Prefix LIKE under a non-C collation",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "LIKE with a trailing wildcard (3g shape)",
+    "operator class text_pattern_ops (5a-5)",
+    "dedupe must count the operator class as part of the key (5a-3)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "wider prefix",
+      "replace": {
+        "ABX-00123%": "ABX-0012%"
+      }
+    },
+    {
+      "name": "no match",
+      "replace": {
+        "ABX-00123%": "NOPE-%"
+      }
+    }
+  ]
+}

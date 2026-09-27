@@ -1,0 +1,22 @@
+{
+  "title": "LIKE prefix under COLLATE \"C\"",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "COLLATE clause",
+    "index with a matching collation",
+    "ORDER BY with COLLATE"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another prefix",
+      "replace": {
+        "'Acme 12%'": "'Umbrella 399%'"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Latest row per device with DISTINCT ON",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "DISTINCT ON with a matching ORDER BY",
+    "IN list",
+    "INCLUDE column for an index-only scan (5a-1)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other devices",
+      "replace": {
+        "(10, 20, 30, 40, 50)": "(4001, 4002, 4003, 4004, 4005)"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Join that only re-checks a foreign key",
+  "category": "rewrite",
+  "compare": "multiset",
+  "features": [
+    "join elimination",
+    "validated FK plus NOT NULL assumption (6b)",
+    "NOT VALID constraints don't count (6b)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "the last day only",
+      "replace": {
+        "2025-12-01": "2025-12-14"
+      }
+    },
+    {
+      "name": "after the data",
+      "replace": {
+        "2025-12-01": "2026-12-01"
+      }
+    }
+  ]
+}

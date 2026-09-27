@@ -1,0 +1,15 @@
+{
+  "title": "EXCEPT ALL to NOT EXISTS",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "EXCEPT ALL keeps multiplicities",
+    "duplicates fixture (step 9, S3)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

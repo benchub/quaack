@@ -1,0 +1,29 @@
+{
+  "title": "timestamptz cast to date, no index",
+  "category": "both",
+  "compare": "multiset",
+  "features": [
+    "cast on the column",
+    "expression index impossible: timestamptz to date isn't immutable",
+    "LLM expression-index DDL fails and feeds 5a-6",
+    "range rewrite depends on TimeZone (step 2)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "another day",
+      "replace": {
+        "2025-03-15": "2025-11-02"
+      }
+    },
+    {
+      "name": "a day with no data",
+      "replace": {
+        "2025-03-15": "2024-03-15"
+      }
+    }
+  ]
+}

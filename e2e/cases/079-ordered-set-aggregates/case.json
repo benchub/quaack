@@ -1,0 +1,23 @@
+{
+  "title": "DISTINCT, ORDER BY, and WITHIN GROUP aggregates",
+  "category": "index",
+  "compare": "tolerance",
+  "features": [
+    "aggregate with DISTINCT",
+    "aggregate with ORDER BY",
+    "ordered-set aggregate WITHIN GROUP",
+    "float result compared with a tolerance (9d)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "other customers",
+      "replace": {
+        "(4242, 31337)": "(1, 2)"
+      }
+    }
+  ]
+}

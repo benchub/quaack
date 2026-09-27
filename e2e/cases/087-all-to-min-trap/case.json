@@ -1,0 +1,16 @@
+{
+  "title": "< ALL (subquery) to < (SELECT min(...))",
+  "category": "trap",
+  "compare": "multiset",
+  "features": [
+    "ALL subquery",
+    "ALL over an empty set is true",
+    "orphan fixtures (step 9, S4)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "title": "Infix ILIKE search",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "GIN candidate set aside untested by HypoPG (5a-3)",
+    "trigram operator class (5a-5)",
+    "built and measured anyway in step 12",
+    "leading-wildcard shape (3g)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "a common name part",
+      "replace": {
+        "%a1b2%": "%kowalski-ff%"
+      }
+    },
+    {
+      "name": "no match",
+      "replace": {
+        "%a1b2%": "%zzzz%"
+      }
+    }
+  ]
+}

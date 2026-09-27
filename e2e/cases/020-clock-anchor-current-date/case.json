@@ -1,0 +1,22 @@
+{
+  "title": "Filter relative to CURRENT_DATE",
+  "category": "index",
+  "compare": "multiset",
+  "features": [
+    "clock function anchored to quaack.clock_anchor() (3h)",
+    "range predicate against an expression",
+    "report puts the original function back (3h)"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "last week",
+      "replace": {
+        "current_date - 1": "current_date - 7"
+      }
+    }
+  ]
+}
