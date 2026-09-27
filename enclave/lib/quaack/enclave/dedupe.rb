@@ -124,6 +124,10 @@ module Quaack
       # lists are taken as given, in order, so the caller must pass what
       # proposals, set_aside, drops, and considered returned.
       def self.restore(statistics:, low_cardinality:, proposals:, set_aside:, drops:, considered:) # rubocop:disable Metrics/ParameterLists
+        unless considered == proposals.size + set_aside.size + drops.size
+          raise ArgumentError, "considered must equal the proposals, set-aside candidates, and drops"
+        end
+
         new(statistics:, low_cardinality:).tap do |search|
           search.instance_variable_set(:@proposals, proposals.dup)
           search.instance_variable_set(:@set_aside, set_aside.dup)

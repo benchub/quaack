@@ -79,6 +79,13 @@ RSpec.describe Quaack::Enclave::IndexStore do
       expect(back.drops.last.covered_by).to be_a(Quaack::Enclave::IndexCandidate)
     end
 
+    it "refuses an entry whose count doesn't match its lists" do
+      plain = described_class.dedupe_plain(filled)
+
+      expect { restore(plain.merge("considered" => plain["considered"] + 1)) }
+        .to raise_error(ArgumentError, "considered must equal the proposals, set-aside candidates, and drops")
+    end
+
     it "keeps filtering as the original would, merging a later duplicate's sources" do
       back = restore(described_class.dedupe_plain(filled))
 
