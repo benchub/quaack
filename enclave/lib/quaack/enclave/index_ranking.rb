@@ -25,8 +25,9 @@ module Quaack
     # index. It's negative when the index makes that literal worse, and 0
     # when both costs are the same, even 0. Its worst reduction is the
     # smallest across the literal sets. The ranking puts the highest worst
-    # reduction first, breaks a tie by size, smallest first, and breaks any
-    # tie left by DDL, so the same results rank the same way in any order.
+    # reduction first, breaks a tie on the next-worst reduction, and so on
+    # up the sets, then by size, smallest first, and breaks any tie left by
+    # DDL, so the same results rank the same way in any order.
     #
     # Only candidates the planner used for some literal set are ranked. As
     # README 5a-4 says, one it never used is discarded here, and so is one
@@ -35,10 +36,10 @@ module Quaack
     #
     # The combination starts from the best single candidate. Each round
     # measures it together with each ranked candidate it doesn't hold yet,
-    # with all of their hypothetical indexes present at once, and picks the
-    # best of those by the same ranking. That one replaces it only if its
-    # worst reduction is higher (a tie isn't better) and the plans use
-    # every one of its indexes for some literal set. Rounds stop at three
+    # with all of their hypothetical indexes present at once. Of those whose
+    # plans use every one of their indexes for some literal set, and that
+    # lower some literal set's cost without raising any (README 5a-7), the
+    # best by the same ranking replaces it. Rounds stop at three
     # indexes or when nothing is better. combination is nil if no pair beat
     # the best single candidate, and otherwise holds its candidates in the
     # order they were added. The measuring runs in a SingleCandidateTest
@@ -120,7 +121,7 @@ module Quaack
         raise ArgumentError, "literal sets must match the baseline's and every result's"
       end
 
-      def ranked(entries) = entries.sort_by { |e| [-e.worst_reduction, e.size, e.ddl] }
+      def ranked(entries) = entries.sort_by { |e| [e.reductions.values.sort.map(&:-@), e.size, e.ddl] }
 
       def single(result, baseline)
         entry([result.candidate], result.size, result.plans, result.plans.transform_values { |p| [p.used] }, baseline)
@@ -143,12 +144,19 @@ module Quaack
       def combine(session, baseline, pool, best)
         current = best
         while current.candidates.size < MAX_INDEXES
-          better = ranked(additions(session, baseline, pool, current)).first
-          break unless better && better.worst_reduction > current.worst_reduction
+          better = ranked(additions(session, baseline, pool, current).select { |e| lower?(e, current) }).first
+          break unless better
 
           current = better
         end
         current.candidates.size > 1 ? current : nil
+      end
+
+      # README 5a-7: an addition lowers the cost if it lowers some literal
+      # set's cost and raises none.
+      def lower?(entry, current)
+        pairs = entry.costs.map { |set, cost| [cost.after, current.costs[set].after] }
+        pairs.none? { |after, was| after > was } && pairs.any? { |after, was| after < was }
       end
 
       # current with each candidate in pool it doesn't hold yet.
