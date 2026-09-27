@@ -2392,3 +2392,12 @@ Minor findings from the first review of 20260922-28:
 - **Came from:** The reviews of 20260925-6.
 - **README:** 5a-3, 5a-4.
 - **Status:** done
+
+### 20260926-57. Update the e2e corpus for keyset support, and check for other drift.
+
+The e2e corpus (merged from the user's branch) was written against an older README. Case `070-row-comparison-refused` expects keyset pagination `(created_at, id) < (...)` to be refused, but 20260924-31 made it supported. Turn 070 into an `index` case (for example an index on `(created_at DESC, id DESC)`), add a new refused case for a construct that is still refused (SIMILAR TO, TABLESAMPLE, or CTE CYCLE), and regenerate with `ruby e2e/verify.rb <case> --write`. Then run `quaacks intake` (or `SupportedSql`) over all 100 slow queries to catch any other case whose supported/refused expectation has drifted. Note in `e2e/README.md` that the full verify takes about 25 minutes and isn't part of `rake`.
+
+- **Depends on:** 20260924-31.
+- **Came from:** Review of the e2e corpus branch.
+- **README:** Step 1.
+- **Status:** done
