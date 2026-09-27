@@ -2475,3 +2475,12 @@ Find out why ranking or measurement varies between runs; it could be ANALYZE sam
 - **README:** 5a-7, 12-14.
 - **Landed (2026-09-27):** the instability was in the e2e harness, not in QUAACK. With `synchronous_commit=off`, VACUUM raced the WAL writer, so `relallvisible` came out 0 or full at random, and that flipped index-only pricing. The fix is a CHECKPOINT before VACUUM in `e2e/run.rb`. 024, 070 and 096 now pass every run. What's left moved to 20260927-9 to -12.
 - **Status:** done
+
+### 20260927-12. e2e 086 misses its bound by 6 blocks.
+
+Now that runs are stable, 086 measures 1013 blocks against a bound of 1007, every run. Find out whether it's a real small miss in QUAACK or a bound that's too tight in the corpus.
+
+- **Depends on:** 20260927-6.
+- **Came from:** The 20260927-6 investigation.
+- **README:** none.
+- **Status:** done
