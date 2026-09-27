@@ -44,12 +44,17 @@ module Quaack
     # belongs to the one top-level table whose column_names has it. A column
     # that's ambiguous, unknown, or not a table's is skipped, so an
     # unqualified JOIN ... USING column that both sides have is skipped. The
-    # column must be bare: under a cast, a COLLATE, or in an expression, it
-    # doesn't count.
+    # column must be bare, or under a COLLATE, which its key column then
+    # takes: under a cast or in an expression, it doesn't count.
     #
     # Which predicates. Only the top-level AND conjuncts of WHERE and of each
-    # JOIN ... ON count. Anything under OR or NOT is ignored. A constant is a
-    # literal, a parameter ($1), or a cast of either.
+    # JOIN ... ON count. Anything under NOT is ignored. Each arm of an OR in
+    # WHERE is also read on its own, ANDed with the other conjuncts, for a
+    # BitmapOr. A constant is a literal, a parameter ($1), or a cast of
+    # either. A value is a constant, or, for = and the range operators and
+    # BETWEEN, any expression that names no column of a table in this FROM
+    # clause, such as now(), $1 - interval '1 day', or a column of a
+    # subquery, a function, or an outer query.
     #
     # Outer joins. An outer join makes a table nullable when the table is on
     # its nullable side, at any depth: the right of LEFT, the left of RIGHT,
@@ -67,13 +72,13 @@ module Quaack
     # left of RIGHT). One that touches only a preserved side is a join
     # filter, not a scan filter, so a FULL JOIN's ON keeps only its join
     # conditions. USING always counts.
-    # - Equality: col = constant (either side), col IN (constants),
+    # - Equality: col = value (either side), col IN (constants),
     #   col = ANY(constant array or parameter), and col IS NULL.
     # - Join: a.x = b.y between two tables counts as equality on both. So
     #   does JOIN ... USING (x), for the one table under each side that has
     #   x. NATURAL JOIN doesn't count.
-    # - Range: <, <=, >, >= against a constant, BETWEEN (and BETWEEN
-    #   SYMMETRIC) with constant bounds, and col LIKE 'constant' when the
+    # - Range: <, <=, >, >= against a value, BETWEEN (and BETWEEN
+    #   SYMMETRIC) with value bounds, and col LIKE 'constant' when the
     #   pattern isn't empty and its first character isn't %, _, or a
     #   backslash. A LIKE with ESCAPE doesn't count. A btree only serves that
     #   LIKE under the C collation or text_pattern_ops, which this shape
@@ -134,8 +139,9 @@ module Quaack
         Input.check_limits(limits)
         Input.branches(parse).flat_map { |select| Input.with_nested(select) }.flat_map do |select|
           scope = Scope.new(select, statistics)
-          uses = Uses.new(select, scope)
-          scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }
+          Uses.variants(select, scope).flat_map do |uses|
+            scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }
+          end
         end.uniq
       end
 
@@ -443,7 +449,10 @@ module Quaack
           @like = Columns.new
           @keysets = Hash.new { |h, k| h[k] = [] }.compare_by_identity
           @kinds = Hash.new { |h, k| h[k] = [] }
+          @collations = {}
         end
+
+        def collation(table, name) = @collations[[table.object_id, name]]
 
         # The kinds of equality predicate on one table's column.
         def kinds(table, name) = @kinds[[table.object_id, name]]
@@ -483,13 +492,13 @@ module Quaack
         def read_operator(operator, expr)
           if expr.lexpr.row_expr && expr.rexpr.row_expr then read_rows(operator, expr)
           elsif operator == "=" then read_equals(expr.lexpr, expr.rexpr)
-          elsif RANGE_OPERATORS.include?(operator) then add_range(against_constant(expr.lexpr, expr.rexpr))
+          elsif RANGE_OPERATORS.include?(operator) then add_range(against_value(expr.lexpr, expr.rexpr))
           end
         end
 
         def read_equals(left, right)
           if left.column_ref && right.column_ref then read_join_condition(left.column_ref, right.column_ref)
-          else add_equality(against_constant(left, right), :one)
+          else add_equality(against_value(left, right), :one)
           end
         end
 
@@ -516,11 +525,11 @@ module Quaack
         end
 
         def read_between(expr)
-          add_range(expr.lexpr.column_ref) if expr.rexpr.list.items.all? { |item| constant?(item) }
+          add_range(bare(expr.lexpr)) if expr.rexpr.list.items.all? { |item| value?(item) }
         end
 
         def read_like(operator, expr)
-          add_range(expr.lexpr.column_ref, @like) if operator == "~~" && prefix_pattern?(expr.rexpr)
+          add_range(bare(expr.lexpr), @like) if operator == "~~" && prefix_pattern?(expr.rexpr)
         end
 
         # a.x = b.y: equality on each side that's a table's column, unless
@@ -536,12 +545,34 @@ module Quaack
           pairs.each { |pair| add_equality_pair(pair, outer ? :one : :join) }
         end
 
-        # The ColumnRef of a bare column compared with a constant, on either
-        # side, or nil.
-        def against_constant(left, right)
-          if left.column_ref && constant?(right) then left.column_ref
-          elsif right.column_ref && constant?(left) then right.column_ref
+        # The ColumnRef of a bare column compared with a value, on either
+        # side, or nil. A value is a constant, or an expression that names
+        # no column of a table in this FROM clause: now(), $1 - interval,
+        # an outer query's column, or a column of a subquery or function
+        # in FROM. It's the same for each row of the table, so an index
+        # can seek to it.
+        def against_value(left, right)
+          if bare(left) && value?(right) then bare(left)
+          elsif bare(right) && value?(left) then bare(right)
           end
+        end
+
+        # The ColumnRef of a column, bare or under COLLATE. A COLLATE's
+        # collation is recorded for the column.
+        def bare(node)
+          return node.column_ref if node.column_ref
+
+          ref = node.collate_clause&.arg&.column_ref
+          pair = ref && @scope.column(ref)
+          @collations[[pair[0].object_id, pair[1]]] ||= node.collate_clause.collname.map { |n| n.string.sval } if pair
+          ref
+        end
+
+        def value?(node)
+          return false if null_literal?(node)
+          return true if constant?(node)
+
+          ColumnRefs.in(node).none? { |ref| ref.fields.any?(&:a_star) || @scope.column(ref) }
         end
 
         # A NULL literal matches no row under = or a range operator, so it
@@ -578,8 +609,27 @@ module Quaack
 
       # What the query does with each table's columns.
       class Uses
-        def initialize(select, scope)
+        # The uses of the query as written, then one for each arm of each
+        # OR among the WHERE conjuncts, which reads that arm as if it were
+        # ANDed with the other conjuncts. A BitmapOr can then combine the
+        # indexes the arms get.
+        def self.variants(select, scope)
+          arms = conjuncts(select.where_clause).flat_map do |node|
+            node.bool_expr&.boolop == :OR_EXPR ? node.bool_expr.args.to_a : []
+          end
+          [new(select, scope)] + arms.map { |arm| new(select, scope, arm) }
+        end
+
+        def self.conjuncts(node)
+          return [] if node.nil?
+
+          bool = node.bool_expr
+          bool&.boolop == :AND_EXPR ? bool.args.flat_map { |arg| conjuncts(arg) } : [node]
+        end
+
+        def initialize(select, scope, arm = nil)
           @predicates = Predicates.new(scope)
+          @arm = arm
           read_predicates(select, scope)
           scope.using.each { |using| @predicates.read_using(*using) }
           @covered = covered_columns(select, scope)
@@ -588,6 +638,9 @@ module Quaack
         end
 
         def equality(table) = @predicates.equality[table]
+
+        # The collation a COLLATE on the column's predicate named, or nil.
+        def collation(table, name) = @predicates.collation(table, name)
 
         # The first keyset's columns, in order, or nil.
         def keyset(table) = @predicates.keysets[table].first
@@ -612,7 +665,7 @@ module Quaack
         # Select-list and GROUP BY columns.
         def covered(table) = @covered[table]
 
-        # The ORDER BY items as [name, direction, nulls], when every item is
+        # The ORDER BY items as [name, direction, nulls, collation], when every item is
         # a column of this table. Otherwise nil.
         def order(table) = @order.for(table)
 
@@ -628,7 +681,7 @@ module Quaack
         # so Postgres makes those outer joins inner and pushes it down. ON
         # conjuncts that Join#keeps? turns down are skipped too.
         def read_predicates(select, scope)
-          conjuncts(select.where_clause).each do |node|
+          (conjuncts(select.where_clause) + conjuncts(@arm)).each do |node|
             @predicates.read(node) unless null_test_on?(node, scope) { |t| scope.nullable?(t) }
           end
           scope.joins.each { |join| read_on(join, scope) }
@@ -644,12 +697,7 @@ module Quaack
 
         def null_test_on?(node, scope, &) = !node.null_test.nil? && scope.touched(node).any?(&)
 
-        def conjuncts(node)
-          return [] if node.nil?
-
-          bool = node.bool_expr
-          bool&.boolop == :AND_EXPR ? bool.args.flat_map { |arg| conjuncts(arg) } : [node]
-        end
+        def conjuncts(node) = self.class.conjuncts(node)
 
         def covered_columns(select, scope)
           covered = Columns.new
@@ -707,13 +755,14 @@ module Quaack
 
         private
 
-        # [table, name, direction, nulls], or nil for anything but a
-        # column with ASC or DESC.
+        # [table, name, direction, nulls, collation], or nil for anything
+        # but a column, bare or under COLLATE, with ASC or DESC.
         def item(sort)
           direction = DIRECTIONS[sort.sortby_dir]
-          ref = column_ref(sort.node)
+          collate = sort.node.collate_clause
+          ref = collate ? collate.arg.column_ref : column_ref(sort.node)
           pair = direction && ref && @scope.column_or_using(ref)
-          pair && [*pair, direction, NULLS.fetch(sort.sortby_nulls)]
+          pair && [*pair, direction, NULLS.fetch(sort.sortby_nulls), collate&.collname&.map { |n| n.string.sval }]
         end
 
         def column_ref(node)
@@ -780,7 +829,7 @@ module Quaack
           return nil unless head.map(&:first) == @unpinned
 
           scan = scan_direction(head)
-          scan && tail.map { |name, direction, nulls| key_column(name, direction, nulls, scan) }
+          scan && tail.map { |name, direction, nulls, collation| key_column(name, direction, nulls, collation, scan) }
         end
 
         private
@@ -792,11 +841,11 @@ module Quaack
           end
         end
 
-        def key_column(name, direction, nulls, scan)
-          column = IndexCandidate::KeyColumn.new(name:, direction:, nulls:)
+        def key_column(name, direction, nulls, collation, scan)
+          column = IndexCandidate::KeyColumn.new(name:, direction:, nulls:, collation:)
           return column if scan == :forward
 
-          IndexCandidate::KeyColumn.new(name:, direction: column.direction == :asc ? :desc : :asc,
+          IndexCandidate::KeyColumn.new(name:, collation:, direction: column.direction == :asc ? :desc : :asc,
                                         nulls: column.nulls == :first ? :last : :first)
         end
       end
@@ -828,14 +877,16 @@ module Quaack
         end
 
         def keys(equality_names)
-          equality = equality_names.map { |name| IndexCandidate::KeyColumn.new(name:) }
+          equality = equality_names.map { |name| key_column(name) }
           tails(equality_names).map { |tail| (equality + tail).first(@limits[:max_key_columns]) }
         end
+
+        def key_column(name) = IndexCandidate::KeyColumn.new(name:, collation: @uses.collation(@table, name))
 
         # What follows the equality columns in each full key.
         def tails(equality_names)
           range = range_columns(equality_names)
-          range_tail = range.map { |name| IndexCandidate::KeyColumn.new(name:) }
+          range_tail = range.map { |name| key_column(name) }
           order_tail = order_columns(equality_names)
           with_group(range_tail, order_tail, range, equality_names)
         end

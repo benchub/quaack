@@ -420,7 +420,7 @@ Three different generators propose candidate index definitions. The steps run in
 
 For each table in the query, including the tables of a subquery in an expression or a `LATERAL` subquery, where a correlation such as `o.customer_id = c.id` counts as an equality on the inner table's column:
 
-1. Use pg_query to collect the columns that appear in equality predicates, range predicates, join conditions, `ORDER BY`, `GROUP BY`, and the select list.
+1. Use pg_query to collect the columns that appear in equality predicates, range predicates, join conditions, `ORDER BY`, `GROUP BY`, and the select list. A predicate's other side can be any expression that names no column of a table in that `FROM`, such as `now()` or `$1 - interval '1 day'`. A column under `COLLATE` gets a key column with that collation. Each arm of an `OR` also gets candidates on its own, so a `BitmapOr` can combine them.
 2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
 3. Build the index key in this order:
    - Equality columns, most selective first.

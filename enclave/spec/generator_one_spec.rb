@@ -605,8 +605,44 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
         .to eq(%w[d c b a])
     end
 
-    it "doesn't count <>, NOT IN, IS NOT NULL, or a comparison with an expression" do
-      expect(equality_columns("a <> 1 AND b NOT IN (1) AND c IS NOT NULL AND d = e + 1 AND f = now()")).to be_nil
+    it "doesn't count <>, NOT IN, IS NOT NULL, or a comparison with an expression over the same table" do
+      expect(equality_columns("a <> 1 AND b NOT IN (1) AND c IS NOT NULL AND d = e + 1 AND f < lower(note)"))
+        .to be_nil
+    end
+
+    it "counts a comparison with an expression that names no column of a table in FROM" do
+      expect(equality_columns("f = now()")).to eq(%w[f])
+      expect(equality_columns("r >= date_trunc('day', now()) AND r < date_trunc('day', now()) + interval '1 day'"))
+        .to eq(%w[r])
+      expect(equality_columns("r >= $1 - make_interval(days => 3)")).to eq(%w[r])
+    end
+
+    it "counts a comparison with a column of a subquery or function in FROM as a range" do
+      sql = "SELECT o.a FROM public.orders o CROSS JOIN (SELECT max(r) AS latest FROM public.orders) m " \
+            "WHERE o.r > m.latest - interval '1 hour'"
+      expect(generate(sql, stats).first.key.map(&:name)).to eq(%w[r])
+      sql = "SELECT d.n, count(o.a) FROM generate_series(1, 7) WITH ORDINALITY AS d(day, n) " \
+            "LEFT JOIN public.orders o ON o.r >= d.day AND o.r < d.day + 1 GROUP BY d.n"
+      expect(generate(sql, stats).map { |c| c.key.map(&:name) }).to eq([%w[r]])
+    end
+
+    it "proposes each arm of an OR on its own, with the other conjuncts" do
+      expect(generate("SELECT 1 FROM public.orders WHERE (a = 1 OR b = 2) AND d = 4", stats)
+        .map { |c| c.key.map(&:name) }).to eq([%w[d], %w[d a], %w[d b]])
+    end
+
+    it "keys a COLLATE column with its collation" do
+      result = generate("SELECT 1 FROM public.orders WHERE note COLLATE \"C\" LIKE 'Acme 12%'", stats)
+
+      expect(result.map(&:key)).to eq([[Quaack::Enclave::IndexCandidate::KeyColumn.new(name: "note", collation: "C")]])
+    end
+
+    it "keys an ORDER BY column under COLLATE with its collation" do
+      result = generate("SELECT 1 FROM public.orders WHERE note COLLATE \"C\" LIKE $1 ORDER BY note COLLATE \"C\" DESC",
+                        stats)
+
+      expect(result.map(&:key))
+        .to eq([[Quaack::Enclave::IndexCandidate::KeyColumn.new(name: "note", collation: "C", direction: :desc)]])
     end
 
     it "doesn't count a comparison with a cast of a column" do
@@ -653,7 +689,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
 
     it "ignores predicates under OR or NOT" do
-      expect(equality_columns("(a = 1 OR b = 2) AND NOT (c = 3) AND d = 4")).to eq(%w[d])
+      expect(equality_columns("NOT (a = 1 OR b = 2) AND NOT (c = 3) AND d = 4")).to eq(%w[d])
     end
 
     it "reads nested ANDs" do
@@ -677,7 +713,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     it "doesn't count a LIKE that starts with a wildcard or an escape, or isn't a constant, or ILIKE" do
       ["note LIKE '%abc'", "note LIKE '_bc%'", "note LIKE '\\%x'", "note LIKE $1", "note ILIKE 'abc%'",
        "note NOT LIKE 'abc%'", "r NOT BETWEEN 1 AND 2", "r BETWEEN 1 AND s", "note LIKE ''", "r < s",
-       "r > now()", "note LIKE 'abc%' ESCAPE '!'", "a = NULL", "NULL = a"].each do |where|
+       "note LIKE 'abc%' ESCAPE '!'", "a = NULL", "NULL = a"].each do |where|
         expect(equality_columns(where)).to be_nil, where
       end
     end
@@ -1032,7 +1068,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
 
     it "leaves out WHERE and HAVING columns that aren't in the key" do
-      sql = "SELECT 1 FROM public.orders WHERE a = 1 AND (id = 1 OR id = 2) GROUP BY b HAVING max(region) = 'x'"
+      sql = "SELECT 1 FROM public.orders WHERE a = 1 AND NOT (id = 1) GROUP BY b HAVING max(region) = 'x'"
 
       expect(generate(sql, stats)).to eq([btree(orders, %w[a], %w[b]), btree(orders, %w[a b])])
     end
