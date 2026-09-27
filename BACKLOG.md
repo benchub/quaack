@@ -1146,19 +1146,7 @@ Details are in `e2e/RUN.md`.
 - **README:** 5a-1, 5a-2.
 - **Status:** todo
 
-### 20260927-6. Weak or unstable top picks.
-
-- e2e 066 never finds the two-index combination it needs.
-- 025 generated the right shape, but its top fix measured 4984 blocks against a bound of 2618.
-- 055's matching candidate was declined as unused.
-- Most urgent: the top fix isn't stable between runs on the same data. 024 measured 52 then 8 blocks, and 096 measured 2511, 11, then 2511. 070 (5 vs 4) and 086 (1013 vs 1007) miss narrowly on every run.
-
-Find out why ranking or measurement varies between runs; it could be ANALYZE sampling, hint-bit or visibility-map state, or ties in ranking. Until then, the index verdicts can't gate anything. Details are in `e2e/RUN.md`.
-
-- **Depends on:** 20260926-58.
-- **Came from:** The e2e runner.
-- **README:** 5a-7, 12-14.
-- **Status:** todo
+### 20260927-6. Weak or unstable top picks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-7. e2e corpus fixes: 075 and 010. Done, see BACKLOG-COMPLETE.md.
 
@@ -1171,4 +1159,48 @@ Find out why ranking or measurement varies between runs; it could be ANALYZE sam
 - **Depends on:** 20260927-1.
 - **Came from:** 20260927-1 build and review.
 - **README:** 5a-1.
+- **Status:** todo
+
+### 20260927-9. 5a-7 ranking and combining are stricter than the README.
+
+e2e 025 and 066 fail because of how `IndexRanking` reads the worst-case rule:
+- A candidate the planner doesn't use for the worst-case literal gets a worst-case reduction of 0, so a marginal index that helps every set by about 5% outranks one that cuts the slow set by 4x (025).
+- `combine` adds a second index only if the worst case improves, so a needed pair is never built (066).
+
+README 5a-7 says to keep adding indexes "as long as each addition lowers the cost further".
+- **Needs a decision:** combine while an addition lowers cost without making any set worse, and when worst-case reductions tie, compare the next-worst set before falling back to size? That changes how the worst-case rule is read.
+
+- **Depends on:** 20260922-35.
+- **Came from:** The 20260927-6 investigation.
+- **README:** 5a-7.
+- **Status:** todo
+
+### 20260927-10. Capture and restore relallvisible.
+
+The planner prices index-only scans from `pg_class.relallvisible`. The enclave captures only `reltuples` and `relpages`, so index-only pricing on the racetrack depends on whether it has been vacuumed, not on production. Capture `relallvisible` in the statistics step. **Needs a decision:** restore it on the racetrack (PG18's `pg_restore_relation_stats` accepts it), or only record it and warn.
+
+- **Depends on:** 20260922-17.
+- **Came from:** The 20260927-6 investigation.
+- **README:** 3c, 4a.
+- **Status:** todo
+
+### 20260927-11. HypoPG size ignores B-tree deduplication.
+
+In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and used, but HypoPG estimates 17.4 MB. 5a-1 proposes the INCLUDE shape, which isn't deduplicated, so the real planner wouldn't use it either. **Needs a decision:**
+- make 5a-1 prefer key columns over INCLUDE when the leading key has few distinct values
+- correct the size estimate for low-cardinality key-only indexes
+- or list this case as unsupported in v1
+
+- **Depends on:** 20260922-30, -32.
+- **Came from:** The 20260927-6 investigation.
+- **README:** 5a-1, 5a-4.
+- **Status:** todo
+
+### 20260927-12. e2e 086 misses its bound by 6 blocks.
+
+Now that runs are stable, 086 measures 1013 blocks against a bound of 1007, every run. Find out whether it's a real small miss in QUAACK or a bound that's too tight in the corpus.
+
+- **Depends on:** 20260927-6.
+- **Came from:** The 20260927-6 investigation.
+- **README:** none.
 - **Status:** todo

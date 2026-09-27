@@ -2460,3 +2460,18 @@ e2e cases 029, 058, 068, 097, 098 and 100 stop at `index-search` with `internal_
 - **Came from:** The e2e runner.
 - **README:** none.
 - **Status:** done
+
+### 20260927-6. Weak or unstable top picks.
+
+- e2e 066 never finds the two-index combination it needs.
+- 025 generated the right shape, but its top fix measured 4984 blocks against a bound of 2618.
+- 055's matching candidate was declined as unused.
+- Most urgent: the top fix isn't stable between runs on the same data. 024 measured 52 then 8 blocks, and 096 measured 2511, 11, then 2511. 070 (5 vs 4) and 086 (1013 vs 1007) miss narrowly on every run.
+
+Find out why ranking or measurement varies between runs; it could be ANALYZE sampling, hint-bit or visibility-map state, or ties in ranking. Until then, the index verdicts can't gate anything. Details are in `e2e/RUN.md`.
+
+- **Depends on:** 20260926-58.
+- **Came from:** The e2e runner.
+- **README:** 5a-7, 12-14.
+- **Landed (2026-09-27):** the instability was in the e2e harness, not in QUAACK. With `synchronous_commit=off`, VACUUM raced the WAL writer, so `relallvisible` came out 0 or full at random, and that flipped index-only pricing. The fix is a CHECKPOINT before VACUUM in `e2e/run.rb`. 024, 070 and 096 now pass every run. What's left moved to 20260927-9 to -12.
+- **Status:** done
