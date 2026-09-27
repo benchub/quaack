@@ -23,9 +23,22 @@ RSpec.describe Quaack::Driver::LLM::Client do
     e
   end
 
-  def llm_error(rule)
-    raise_error(Quaack::Driver::LLM::Error) { |e| expect(e.rule).to eq(rule) }
+  # The error for rule, whose message is exactly message when one is given.
+  def llm_error(rule, message = nil)
+    raise_error(Quaack::Driver::LLM::Error) do |e|
+      expect(e.rule).to eq(rule)
+      expect(e.message).to eq(message) if message
+    end
   end
+
+  BAD_JSON = "llm_bad_response: the reply wasn't valid JSON"
+  UNREADABLE = "llm_bad_response: the reply couldn't be read as a message"
+  NO_KEY = "llm_auth: ANTHROPIC_API_KEY isn't set"
+  REAL_IN_SPECS = "a spec built an LLM client that would call the real API. " \
+                  "Pass a transport, such as FakeLLM, or set QUAACK_ALLOW_REAL_LLM=1 to mean it."
+  STEP_ERROR = "step must be a step that calls an LLM, one of " \
+               "#{Quaack::Protocol::Burndown::LLM_STEPS.join(", ")}"
+  def stopped_for(reason) = "llm_bad_response: the reply stopped for #{reason}"
 
   it "is loaded by quaack/driver" do
     code = 'require "quaack/driver"; print Quaack::Driver::LLM::Client.instance_method(:ask).name'
@@ -99,7 +112,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
     it "counts an attempt whose reply can't be used" do
       fake.reply("6a", "not json")
 
-      expect { ask("6a", json: true) }.to llm_error("llm_bad_response")
+      expect { ask("6a", json: true) }.to llm_error("llm_bad_response", BAD_JSON)
       expect(burndown.llm_calls).to eq("6a" => 1)
     end
   end
@@ -113,7 +126,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
 
     it "refuses a step that doesn't call an LLM before making any call" do
       ["5a-3", "step8", "6A", :"6a", nil].each do |step|
-        expect { ask(step) }.to raise_error(ArgumentError, /step that calls an LLM/)
+        expect { ask(step) }.to raise_error(ArgumentError, STEP_ERROR)
       end
       expect(fake.asks).to eq([])
       expect(burndown.llm_calls).to eq({})
@@ -125,7 +138,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
 
       expect(small.ask(step: "5a-5", messages: messages, max_tokens: 8192)).to eq("ok")
       expect { small.ask(step: "5a-5", messages: messages, max_tokens: 8193) }
-        .to raise_error(ArgumentError, /max_tokens 8193 needs streaming/)
+        .to raise_error(ArgumentError, "max_tokens 8193 needs streaming, which this client doesn't do")
     end
   end
 
@@ -155,7 +168,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       e = ask_error(schema: schema)
 
       expect(e.rule).to eq("llm_bad_response")
-      expect(e.message).not_to include("SENTINEL-REPLY")
+      expect(e.message).to eq(BAD_JSON)
       # The parser's own error quotes the reply, so it isn't kept as the cause.
       expect(e.cause).to be_nil
     end
@@ -165,19 +178,19 @@ RSpec.describe Quaack::Driver::LLM::Client do
     it "fails with llm_bad_response on a reply cut short at max_tokens" do
       fake.reply("5a-5", "CREATE INDEX ON t (", stop_reason: "max_tokens")
 
-      expect { ask }.to llm_error("llm_bad_response")
+      expect { ask }.to llm_error("llm_bad_response", stopped_for("max_tokens"))
     end
 
     it "fails with llm_bad_response on a refusal" do
       fake.reply("5a-5", "", stop_reason: "refusal")
 
-      expect { ask }.to llm_error("llm_bad_response")
+      expect { ask }.to llm_error("llm_bad_response", stopped_for("refusal"))
     end
 
     it "fails with llm_bad_response on a reply with no text" do
       fake.reply_blocks("5a-5", [])
 
-      expect { ask }.to llm_error("llm_bad_response")
+      expect { ask }.to llm_error("llm_bad_response", "llm_bad_response: the reply had no text")
     end
 
     # Only a reply that finished on its own, or at a stop sequence, is whole.
@@ -185,7 +198,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       it "fails with llm_bad_response on stop reason #{reason}" do
         fake.reply("5a-5", "CREATE INDEX ON t (a)", stop_reason: reason)
 
-        expect { ask }.to llm_error("llm_bad_response")
+        expect { ask }.to llm_error("llm_bad_response", stopped_for(reason))
       end
     end
 
@@ -200,7 +213,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
                                      stop_reason: "end_turn", stop_sequence: nil,
                                      usage: { input_tokens: 1, output_tokens: 1 }))
 
-      expect { ask }.to llm_error("llm_bad_response")
+      expect { ask }.to llm_error("llm_bad_response", UNREADABLE)
     end
 
     it "fails with llm_bad_response on a reply body that isn't a JSON object" do
@@ -209,7 +222,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       [ask_error("5a-5"), ask_error("10a")].each do |e|
         expect(e.rule).to eq("llm_bad_response")
         expect(e.cause).to be_nil
-        expect(e.message).not_to include("SENTINEL-BODY")
+        expect(e.message).to eq(UNREADABLE)
       end
     end
   end
@@ -326,10 +339,10 @@ RSpec.describe Quaack::Driver::LLM::Client do
     it "fails with llm_auth when ANTHROPIC_API_KEY is empty, or the key given is" do
       with_env("ANTHROPIC_API_KEY" => "") do
         expect { described_class.new(burndown: burndown, transport: key_transport) }
-          .to raise_error(Quaack::Driver::LLM::Error, /\Allm_auth: .*ANTHROPIC_API_KEY/)
+          .to raise_error(Quaack::Driver::LLM::Error, NO_KEY)
       end
       expect { described_class.new(api_key: "", burndown: burndown, transport: key_transport) }
-        .to raise_error(Quaack::Driver::LLM::Error, /\Allm_auth: /)
+        .to raise_error(Quaack::Driver::LLM::Error, NO_KEY)
       expect(key_transport.keys).to eq([])
     end
   end
@@ -346,7 +359,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
 
     it "refuses more than the gem's non-streaming limit before making any call" do
       expect { client.ask(step: "5a-5", messages: messages, max_tokens: 21_334) }
-        .to raise_error(ArgumentError, /max_tokens 21334 needs streaming/)
+        .to raise_error(ArgumentError, "max_tokens 21334 needs streaming, which this client doesn't do")
       expect(fake.asks).to eq([])
       expect(burndown.llm_calls).to eq({})
     end
@@ -409,13 +422,13 @@ RSpec.describe Quaack::Driver::LLM do
 
     it "can't be built while specs run" do
       expect { described_class::Client.new(api_key: "k", burndown: burndown) }
-        .to raise_error(described_class::RealClientInSpecs, /QUAACK_ALLOW_REAL_LLM/)
+        .to raise_error(described_class::RealClientInSpecs, REAL_IN_SPECS)
     end
 
     it "can't be built in a process that loaded RSpec, even without the helpers' marker" do
       with_env("QUAACK_SPECS" => nil) do
         expect { described_class::Client.new(api_key: "k", burndown: burndown) }
-          .to raise_error(described_class::RealClientInSpecs)
+          .to raise_error(described_class::RealClientInSpecs, REAL_IN_SPECS)
       end
     end
 
@@ -428,14 +441,14 @@ RSpec.describe Quaack::Driver::LLM do
     it "takes only 1 as the opt-in, not any other value" do
       with_env("QUAACK_ALLOW_REAL_LLM" => "yes") do
         expect { described_class::Client.new(api_key: "k", burndown: burndown) }
-          .to raise_error(described_class::RealClientInSpecs)
+          .to raise_error(described_class::RealClientInSpecs, REAL_IN_SPECS)
       end
     end
 
     it "fails with llm_auth when there's no API key" do
       with_env("QUAACK_ALLOW_REAL_LLM" => "1", "ANTHROPIC_API_KEY" => nil) do
         expect { described_class::Client.new(burndown: burndown) }
-          .to raise_error(described_class::Error, /\Allm_auth: .*ANTHROPIC_API_KEY/)
+          .to raise_error(described_class::Error, NO_KEY)
       end
     end
 
