@@ -1153,41 +1153,21 @@ In e2e 055, the real key-only index `orders (status, total_cents)` is 5.6 MB and
 ### 20260927-12. e2e 086 misses its bound by 6 blocks. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20260927-13. 5a-1 adds a non-covering INCLUDE and no bare-key variant.
-
-Diagnosed from e2e 086 (20260927-12). QUAACK built `catalog (price_cents) INCLUDE (id, sku, name)`, which measured 1013 blocks against 1007 for the plain `(price_cents)` index. The plan is a BitmapOr feeding a heap scan, which never uses INCLUDE columns, and the heap filter needs `category`, which isn't in the INCLUDE. So the INCLUDE only widens the leaf entries.
-- `btree(key)` (generator_one.rb ~792) always adds `include: covered - key`.
-- `covered_columns` (~584) takes only target-list and GROUP BY columns, and leaves out WHERE-only filter columns.
-- No bare-key variant is proposed, so ranking can't compare the two (`considered: 1`).
-
-Fix: add the INCLUDE only when it makes the index truly covering for that table (every column the query reads from it, filter columns included), and/or always also propose the bare-key variant. Related to 20260927-11 (INCLUDE vs deduplication).
-
-- **Depends on:** 20260927-12.
-- **Came from:** The 20260927-12 investigation.
-- **README:** 5a-1.
-- **Status:** todo
+### 20260927-13. 5a-1 adds a non-covering INCLUDE and no bare-key variant. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-14. Typed-prepare loose ends, and e2e 020 and 099. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-15. 5a-1 generation loose ends.
+### 20260927-15. 5a-1 generation loose ends. Done, see BACKLOG-COMPLETE.md.
 
-These are minor findings from the review of 20260927-3 to -8:
-- A volatile value (`col = random()`) counts as a value and yields a false candidate. Refuse volatile calls in `value?`.
-- A schema-qualified outer reference (`public.orders.id`) isn't treated as an outer column.
-- Inside a subquery, an unqualified outer column that shares a name with an inner column resolves to the inner table.
-- The first collation wins when a column gets different COLLATEs.
-- Long OR chains build one set of uses per arm. Consider a cap.
+### 20260927-16. one_statement? lets data-modifying CTEs and SELECT INTO through. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20260927-5.
-- **Came from:** Review of 20260927-3 to -8.
+
+### 20260927-17. Covering-check and volatility-list gaps.
+
+- `ColumnRefs.in` skips subqueries, so an outer-table column read only inside a correlated subquery isn't counted in `read_columns`, and an INCLUDE can look covering when it isn't. This costs performance only.
+- `VOLATILE_FUNCTIONS` in `value?` is a fixed name list matched on the last name only. It misses user-defined volatile functions and wrongly flags a user function with a built-in's name. It's a backstop behind step 3d.
+
+- **Depends on:** 20260927-13, -15.
+- **Came from:** Review of 20260927-13 to -16.
 - **README:** 5a-1.
-- **Status:** todo
-
-### 20260927-16. one_statement? lets data-modifying CTEs and SELECT INTO through.
-
-`Redaction.one_statement?` accepts `WITH d AS (DELETE ... RETURNING 1) SELECT ...` and `SELECT ... INTO t2`, because both parse as a SelectStmt. SingleCandidateTest rolls back, so writes should be undone. Check whether its transaction is READ ONLY, and consider refusing non-SELECT CTEs and `into_clause` (intake's allowlist probably already refuses these in the original query; check). e2e 020 now passes after 20260927-5, and 099 passes after 20260927-2.
-
-- **Depends on:** 20260927-14.
-- **Came from:** Review of 20260927-14.
-- **README:** 5a-4.
 - **Status:** todo
