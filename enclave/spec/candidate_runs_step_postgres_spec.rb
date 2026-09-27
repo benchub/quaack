@@ -93,4 +93,28 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["timed_out"]).to eq(["rewrite_1:none"])
     expect(entry["timed_out_count"]).to eq(1)
   end
+
+  # README 3h: step 13 runs the candidate's anchored_sql, so it reads the
+  # anchored clock. Here that clock is years back, and only the real clock
+  # makes the candidate sleep past the timeout.
+  it "measures the candidate on the anchored clock" do
+    prepare
+    run("index-search")
+    run("index-rank")
+    run("index-build")
+    run("baseline")
+    stored.write("baseline", stored.read("baseline").merge("timeout_ms" => 100))
+    conn = production.connect
+    conn.exec("CREATE OR REPLACE FUNCTION quaack.clock_anchor() RETURNS pg_catalog.timestamptz " \
+              "LANGUAGE sql IMMUTABLE AS $$SELECT '2000-01-01 00:00:00+00'::pg_catalog.timestamptz$$")
+    conn.close
+    sleepy = "SELECT pg_sleep(CASE WHEN %s < '2001-01-01' THEN 0 ELSE 0.5 END), $1::text IS NULL"
+    add_rewrite(1, format(sleepy, "now()"))
+    stored.write("rewrite_1", stored.read("rewrite_1").merge("anchored_sql" => format(sleepy, "quaack.clock_anchor()")))
+
+    run("candidate-runs")
+
+    entry = stored.read("candidate_runs")
+    expect([entry["candidates"].keys, entry["timed_out"]]).to eq([["rewrite_1"], []])
+  end
 end
