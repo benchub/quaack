@@ -2660,3 +2660,42 @@ These are minor findings from the review of 20260927-20:
 - **Came from:** Review of 20260927-20.
 - **README:** LLM client.
 - **Status:** done
+
+### 20260922-65. Full pipeline.
+
+Wire every step together in the driver, from intake through the report and teardown. Run it end to end against the test harness.
+- **Decided:** The end-to-end test uses a scripted fake LLM, so it runs free in rake. The scripts must be realistic, drawn from a large corpus of responses. **Before building, ask the user questions:** they'll collect responses from several different LLMs to seed the corpus.
+- **Landed (part one):** The prompt pack generator, `script/prompt_pack/run.rb`, and a partial pack in `spec/fixtures/llm_corpus/`. Rerun it after 20260926-37 and keyset support land, to capture the 10a and step 11 prompts.
+- **Note (2026-09-26):** The user is having another LLM build a large end-to-end query corpus: for each test, the schema, the inserts, the slow query, and the changes that make it fast. Build -65's end-to-end tests on that corpus when it arrives. Don't spend cycles writing our own fixture queries beyond the small prompt pack.
+- **Decided (corpus):** Split into two parts. First, a builder generates a prompt pack: it runs the pipeline on harness fixtures and captures every real LLM prompt (5a-5, 5a-6, 6a, step 7, 10a) to files. The user pastes each prompt into 3 LLMs, 3 replies each, and saves the replies next to the prompts. The fake LLM then replays them. Queries to cover: an ORM-style join (equality plus range, ORDER BY, LIMIT), aggregates with GROUP BY/HAVING, a correlated EXISTS or IN subquery, and keyset pagination (row comparisons are unsupported in v1, so that one tests the refusal path unless it's written without a row comparison).
+
+- **Decided (replay, 2026-09-27):** A rake spec runs the four prompt-pack queries through the full pipeline, with the fake LLM replaying the corpus. It replays every saved reply separately, not just one per LLM. A prompt with no saved replies yet falls back to the e2e runner's valid empty answer, and the output notes that.
+
+- **Depends on:** 20260922-36, 20260922-39, 20260922-42, 20260922-49, 20260922-52, 20260922-64, 20260926-1, 20260926-2, 20260927-23.
+- **README:** All.
+- **Status:** done
+- **Landed (part three, 2026-09-27):** `spec/pipeline_replay_spec.rb` replays the corpus through the full pipeline in rake. 20260927-23 then added driver teardown, which covers the rest. Leftovers are in 20260927-24.
+- **Note:** `e2e/cases/` holds 100 cases for this test to run QUAACK against, each with its schema and data, slow query, and expected outcome (new index, rewrite, both, negative result, trap to disprove, or refusal). `ruby e2e/verify.rb` proves each case against Postgres 18. See `e2e/README.md`.
+- **Note (from 20260922-66):** The enclave's `quaacks teardown --run <id>` exists. The driver has to:
+  - Call it at the end of every run: on success, on abort, on exception, and on signals where possible.
+  - Require the `teardown` line followed by the done line.
+  - Treat `store: "already_gone"` as success.
+  - On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand. The enclave never sends the path.
+  - Turn `next_step: "destroy_run_server"` into a plain operator message. Nothing destroys the run server automatically.
+  - Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command for later.
+
+### 20260927-23. Driver calls run teardown (20260922-65, part four).
+
+The enclave's `quaacks teardown --run <id>` exists (20260922-66), but nothing in `driver/lib` calls it. Do the driver work listed in the -66 note under 20260922-65:
+- Call teardown at the end of every run: on success, on abort, on exception, and on signals where possible.
+- Require the `teardown` line, followed by the done line.
+- Treat `store: "already_gone"` as success.
+- On `bad_run`, `bad_store_base`, or `teardown_failed`, tell the operator to check or remove `~/.quaack/runs/<id>` by hand.
+- Turn `next_step: "destroy_run_server"` into a plain operator message.
+- Add `--keep` to the run command. It skips teardown and prints the run ID and the exact teardown command.
+Then make `spec/pipeline_replay_spec.rb` assert that each run calls teardown.
+
+- **Depends on:** 20260922-66.
+- **Came from:** Build of 20260922-65, part three.
+- **README:** Teardown.
+- **Status:** done
