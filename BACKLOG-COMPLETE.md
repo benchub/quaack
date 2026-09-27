@@ -2722,3 +2722,13 @@ Multi-turn prompts in `spec/fixtures/llm_corpus` (5a-5-2, 5a-6, later 10a rounds
 - **Came from:** User, 2026-09-27, while collecting corpus replies.
 - **README:** none.
 - **Status:** done
+
+### 20260923-1. Postgres 17 parser under Postgres 18.
+
+The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 version exists yet. The user accepted the Postgres 17 grammar for now. When pg_query fails to parse something, abort with a message that names the parser's Postgres version, so a Postgres 18-only construct is easy to spot. When pg_query ships Postgres 18 support, upgrade it and drop the special message.
+
+- **Depends on:** 20260922-1.
+- **Came from:** First review of 20260922-1.
+- **README:** Anywhere pg_query parses SQL, including 3a, 5a-1, step 9, and the inbound checks.
+- **Status:** done
+- **Decided:** Step 3b doesn't parse the schema dump. It finds the subset tables and their FK parents from `pg_catalog`, and gets the subset from `pg_dump --table` for each one (see 20260922-18). So pg_query only parses queries and inbound SQL, and Postgres 18-only syntax in a dump doesn't matter.

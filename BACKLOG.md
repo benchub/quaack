@@ -159,15 +159,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ## Added later.
 
-### 20260923-1. Postgres 17 parser under Postgres 18.
-
-The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 version exists yet. The user accepted the Postgres 17 grammar for now. When pg_query fails to parse something, abort with a message that names the parser's Postgres version, so a Postgres 18-only construct is easy to spot. When pg_query ships Postgres 18 support, upgrade it and drop the special message.
-
-- **Depends on:** 20260922-1.
-- **Came from:** First review of 20260922-1.
-- **README:** Anywhere pg_query parses SQL, including 3a, 5a-1, step 9, and the inbound checks.
-- **Status:** todo
-- **Decided:** Step 3b doesn't parse the schema dump. It finds the subset tables and their FK parents from `pg_catalog`, and gets the subset from `pg_dump --table` for each one (see 20260922-18). So pg_query only parses queries and inbound SQL, and Postgres 18-only syntax in a dump doesn't matter.
+### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-2. Enclave deploys by gem install only.
 
@@ -1185,5 +1177,18 @@ These are minor findings from the review of 20260927-24:
 
 - **Depends on:** 20260927-24.
 - **Came from:** Review of 20260927-24.
+- **README:** none.
+- **Status:** todo
+
+### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade.
+
+- When pg_query ships a Postgres 18 parser, upgrade it and drop the parser note (20260923-1).
+- The driver builds the `query_unparsable` note from its own pg_query, not the enclave's. The two usually match because both install from the same lockfile. If they don't, the note names the wrong grammar. The enclave could send its parser major version as a plain integer.
+- `clock_anchoring.rb` "the query doesn't parse" has no note. Intake refuses such a query first, so that message can't be reached today.
+- `parser_version_spec.rb` restates the formula, so it stays green when `MAJOR` is wrong. Assert the literal 17.
+- The sentinel test in `relation_qualifier_spec.rb` checks only the exception message, not the egress output.
+
+- **Depends on:** 20260923-1.
+- **Came from:** Reviews of 20260923-1.
 - **README:** none.
 - **Status:** todo
