@@ -1,0 +1,22 @@
+{
+  "title": "Keyset pagination with a row comparison",
+  "category": "index",
+  "compare": "ordered",
+  "features": [
+    "row comparison for keyset pagination (SupportedSql)",
+    "Sort under a Limit (5a-2)",
+    "DESC sort direction"
+  ],
+  "literal_sets": [
+    {
+      "name": "slow (from the plan)",
+      "replace": {}
+    },
+    {
+      "name": "first page, cursor past the newest order",
+      "replace": {
+        "'2025-06-01 00:00:00+00', 250000": "'2026-01-01 00:00:00+00', 0"
+      }
+    }
+  ]
+}
