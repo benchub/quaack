@@ -29,15 +29,16 @@ module Quaack
     #
     # Which tables. The plain tables in the top-level FROM clause,
     # including joins, get candidates. Each one gets its own, and so does
-    # each alias of a self-join. So does each subquery in an expression
-    # (WHERE, the select list, ARRAY(...), EXISTS) and each LATERAL
-    # subquery in FROM, as a query of its own, after the query it's in.
-    # There, a column compared by = with an outer query's column (one
-    # qualified by a name that isn't in the subquery's FROM) is held to one
-    # value, as by = const. Tables inside a CTE or a plain subquery in FROM
-    # get none, though they're still checked for qualification. A subquery or function in FROM has no table's columns, so its columns
-    # are skipped, but a join to one still counts for the table on the other
-    # side.
+    # each alias of a self-join. So does each subquery, in FROM (LATERAL or
+    # not) or in an expression (WHERE, the select list, ARRAY(...),
+    # EXISTS), as a query of its own, after the query it's in, and each CTE
+    # body, before it. A set operation there is read per branch. There, a
+    # column compared by = with an outer query's column (one qualified by a
+    # name that isn't in the subquery's FROM) is held to one value, as by
+    # = const. A reference to a CTE isn't a table. A subquery or function
+    # in FROM has no table's columns, so its columns are skipped in the
+    # query it's in, but a join to one still counts for the table on the
+    # other side.
     #
     # Which columns. A column qualified by an alias, a table name without an
     # alias, or schema and table belongs to that table. An unqualified one
@@ -137,7 +138,7 @@ module Quaack
       def candidates(parse, statistics, max_key_columns: 3, brin_min_correlation: 0.9, brin_min_reltuples: 1_000_000)
         limits = { max_key_columns:, brin_min_correlation:, brin_min_reltuples: }
         Input.check_limits(limits)
-        Input.branches(parse).flat_map { |select| Input.with_nested(select) }.flat_map do |select|
+        Input.branches(parse).flat_map do |select|
           scope = Scope.new(select, statistics)
           Uses.variants(select, scope).flat_map do |uses|
             scope.tables.flat_map { |table| TableCandidates.new(table, uses, limits).to_a }
@@ -174,20 +175,27 @@ module Quaack
           SupportedSql.check!(parse)
           select = parse.tree.stmts.first.stmt.select_stmt
           check_relations(select, [])
-          leaves(select)
+          selects(select)
         end
 
-        # The SELECT and, after it, every SELECT nested in it that gets
-        # candidates of its own: a subquery in an expression (a SubLink)
-        # or a LATERAL subquery in FROM, and those nested in them.
-        def with_nested(select)
-          [select] + nested(select, top: true).flat_map { |inner| leaves(inner).flat_map { |l| with_nested(l) } }
+        # Every SELECT that gets candidates of its own, in order: the
+        # bodies of its CTEs, then each branch of a set operation, or the
+        # SELECT itself followed by the SELECTs nested in it (a subquery
+        # in FROM or in an expression), and theirs in turn.
+        def selects(select)
+          ctes = select.with_clause&.ctes.to_a.flat_map { |cte| selects(cte.common_table_expr.ctequery.select_stmt) }
+          body = if select.op == :SETOP_NONE
+                   [select] + nested(select, top: true).flat_map { |inner| selects(inner) }
+                 else
+                   selects(select.larg) + selects(select.rarg)
+                 end
+          ctes + body
         end
 
         def nested(node, top: false)
           case node
           when PgQuery::SubLink then [node.subselect.select_stmt]
-          when PgQuery::RangeSubselect then node.lateral ? [node.subquery.select_stmt] : []
+          when PgQuery::RangeSubselect then [node.subquery.select_stmt]
           when PgQuery::SelectStmt then top ? nested_in_select(node) : []
           else children(node).flat_map { |child| nested(child) }
           end
@@ -195,12 +203,6 @@ module Quaack
 
         def nested_in_select(select)
           select.class.descriptor.flat_map { |f| f.name == "with_clause" ? [] : nested(f.get(select)) }
-        end
-
-        def leaves(select)
-          return [select] if select.op == :SETOP_NONE
-
-          leaves(select.larg) + leaves(select.rarg)
         end
 
         # Every relation must name its schema, except a reference to a CTE

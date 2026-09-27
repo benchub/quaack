@@ -533,18 +533,27 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
                                                ])
     end
 
-    it "skips the tables inside a subquery in FROM, but still counts a join to it" do
+    it "gives the tables inside a subquery in FROM their own candidates, and still counts a join to it" do
       sql = "SELECT s.id FROM public.orders o JOIN (SELECT id FROM public.customers WHERE region = 1) s " \
             "ON s.id = o.customer_id"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []]])
+      expect(keys(generate(sql, stats))).to eq([["orders", %w[customer_id], []], ["customers", %w[region], %w[id]]])
     end
 
-    it "skips the tables inside a CTE or a subquery in WHERE" do
-      sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1) " \
+    it "gives the tables inside a CTE their own candidates, before the query, with a set operation there read per branch" do
+      sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1 " \
+            "UNION SELECT id FROM public.orders WHERE status = 2) " \
             "SELECT 1 FROM public.orders o WHERE o.status = 1 AND o.customer_id IN (SELECT id FROM c)"
 
-      expect(keys(generate(sql, stats))).to eq([["orders", %w[status], []]])
+      expect(keys(generate(sql, stats)))
+        .to eq([["customers", %w[region], %w[id]], ["orders", %w[status], %w[id]], ["orders", %w[status], []]])
+    end
+
+    it "reads a CTE that a set operation branch names as the CTE, not a table" do
+      sql = "WITH c AS (SELECT id FROM public.customers WHERE region = 1) " \
+            "SELECT id FROM c UNION SELECT id FROM public.orders WHERE status = 2"
+
+      expect(keys(generate(sql, stats))).to eq([["customers", %w[region], %w[id]], ["orders", %w[status], %w[id]]])
     end
   end
 
