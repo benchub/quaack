@@ -40,6 +40,14 @@ module Quaack
     # skipped. The first remaining schema with a pg_class entry of that name
     # wins, whatever its relkind. Step 3a checks the relkind.
     #
+    # Known limits: "$user" and the USAGE check use the role QUAACK
+    # connects as, so if the plan's session ran as another role, resolution
+    # can differ. The implicit pg_temp at the front of the path is ignored,
+    # so a temp relation in the plan's session that shadowed a real one
+    # isn't seen. Only relation names are qualified: functions, types,
+    # operators, collations, and names inside string literals such as
+    # 'orders'::regclass still resolve through search_path.
+    #
     # The result's sql is the rewritten query, deparsed by pg_query, parse
     # is that SQL's own parse, and resolved maps each name that had no
     # schema to the table it now names. The deparser can write SQL that
@@ -141,9 +149,13 @@ module Quaack
       # entry is a double-quoted identifier, with "" for a quote, or an
       # unquoted one folded to lower case. Each is cut to NAMEDATALEN - 1
       # bytes, without splitting a character, as Postgres cuts it.
+      # An empty or all-whitespace list is an empty path.
       def split_identifiers(raw)
         scanner = StringScanner.new(raw)
         names = []
+        scanner.skip(/\s*/)
+        return names if scanner.eos?
+
         loop do
           scanner.skip(/\s*/)
           names << truncate(next_identifier(scanner, raw))
@@ -186,7 +198,7 @@ module Quaack
         return TableName.new(schema: rows.getvalue(0, 0), name:) if rows.ntuples == 1
 
         raise Error, "relation #{name} isn't schema qualified, and no schema in the search path " \
-                     "(#{path.join(", ")}) has it"
+                     "(#{path.map { |schema| %("#{schema.gsub('"', '""')}") }.join(", ")}) has it"
       end
     end
   end

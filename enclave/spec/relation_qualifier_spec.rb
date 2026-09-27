@@ -129,6 +129,18 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
       expect { qualify("SELECT * FROM orders", settings) }.to raise_error(described_class::Error, /orders/)
     end
 
+    it "reads a hand-written all-whitespace path as empty, as Postgres does" do
+      expect(qualify("SELECT * FROM pg_class", { "search_path" => "   " }).sql)
+        .to eq(deparse("SELECT * FROM pg_catalog.pg_class"))
+      expect(qualify("SELECT * FROM pg_class", { "search_path" => "" }).sql)
+        .to eq(deparse("SELECT * FROM pg_catalog.pg_class"))
+    end
+
+    it "quotes each schema in the abort message, so a comma in a name can't look like two schemas" do
+      expect { qualify("SELECT * FROM orders", settings_for('"weird, schema"')) }
+        .to raise_error(described_class::Error, /\("pg_catalog", "weird, schema"\)/)
+    end
+
     it "folds unquoted path entries to lower case and keeps quoted ones as written" do
       widgets_in("b", "Mixed Case")
 
@@ -395,7 +407,7 @@ RSpec.describe Quaack::Enclave::RelationQualifier do
       expect { qualify("SELECT * FROM nowhere_table", settings_for("public")) }
         .to raise_error(described_class::Error,
                         "relation nowhere_table isn't schema qualified, and no schema in the search path " \
-                        "(pg_catalog, public) has it")
+                        '("pg_catalog", "public") has it')
     end
 
     it "never puts the query's literals in the message" do
