@@ -331,6 +331,55 @@ RSpec.describe Quaack::Enclave::Relations do
     end
   end
 
+  # A user-defined function in FROM could read a view or foreign table 3a
+  # never sees, so only pg_catalog's set-returning functions may go there.
+  describe "a function in FROM" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.view_rows() RETURNS SETOF public.order_view
+          LANGUAGE sql AS 'SELECT * FROM public.order_view';
+        CREATE FUNCTION public.generate_series(int, int) RETURNS SETOF int LANGUAGE sql AS 'SELECT 1';
+      SQL
+    end
+
+    it "passes when it's a pg_catalog set-returning function, anywhere FROM goes" do
+      sql = <<~SQL
+        SELECT g FROM generate_series(1, 3) g, LATERAL unnest(ARRAY[g]) WITH ORDINALITY u(v, n)
+        WHERE g IN (SELECT x FROM pg_catalog.generate_series(1, 2) x)
+      SQL
+      expect(check(sql).relations).to eq([])
+    end
+
+    [
+      "SELECT * FROM view_rows()",
+      "SELECT * FROM public.view_rows()",
+      "SELECT * FROM orders o, LATERAL view_rows() v",
+      "SELECT * FROM ROWS FROM (view_rows()) v",
+      "SELECT * FROM (SELECT * FROM view_rows()) s",
+      "WITH c AS (SELECT * FROM view_rows()) SELECT * FROM c",
+      "SELECT 1 WHERE EXISTS (SELECT 1 FROM view_rows())"
+    ].each do |sql|
+      it "refuses a user-defined one: #{sql}" do
+        expect { check(sql) }
+          .to rejected("user_function_in_from", "user_function_in_from: a function in FROM isn't in pg_catalog")
+      end
+    end
+
+    it "refuses one that shadows a pg_catalog name when the search path puts its schema first" do
+      expect { check("SELECT * FROM generate_series(1, 3)", { "search_path" => "public, pg_catalog" }) }
+        .to rejected("user_function_in_from")
+    end
+
+    it "refuses one that doesn't exist" do
+      expect { check("SELECT * FROM no_such_function()") }.to rejected("user_function_in_from")
+    end
+
+    it "leaves scalar functions in SELECT and WHERE alone" do
+      expect(check("SELECT view_rows() FROM orders WHERE lower(status) = 'x'").relations)
+        .to eq([table_name("public", "orders")])
+    end
+  end
+
   describe "a query it can't check" do
     it "is refused as parse_error, without quoting pg_query's message" do
       expect { check("SELECT 'x' FROM") }.to rejected("parse_error", "parse_error: the query doesn't parse")
@@ -380,7 +429,8 @@ RSpec.describe Quaack::Enclave::Relations do
       "unknown_relation" => [planted(sentinel, from: "public.nowhere")],
       "deparse_mismatch" => [planted(sentinel, tail: " AND ('x' = 'y') IS NOT DISTINCT FROM (true AND 't'::boolean)")],
       "view_relation" => [planted(sentinel, from: "order_view")],
-      "foreign_relation" => [planted(sentinel, from: "remote_orders")]
+      "foreign_relation" => [planted(sentinel, from: "remote_orders")],
+      "user_function_in_from" => [planted(sentinel, tail: " AND EXISTS (SELECT 1 FROM view_rows())")]
     }.each do |rule, (sql, settings)|
       it "never shows up when it's refused as #{rule}" do
         expect(sql.scan(sentinel).size).to eq(7)

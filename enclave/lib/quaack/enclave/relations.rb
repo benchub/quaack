@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "from_functions"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
 require_relative "table_name"
@@ -50,6 +51,9 @@ module Quaack
     #
     # When several relations aren't plain tables, the first the query's
     # text names wins.
+    #
+    # A function in FROM that isn't pg_catalog's is refused as
+    # user_function_in_from (see FromFunctions).
     #
     # The other refusals: parse_error, unsupported_construct, bad_search_path
     # (the Settings' search_path doesn't read), unknown_relation (a name
@@ -121,6 +125,7 @@ module Quaack
         parse = parse(sql)
         supported!(parse)
         qualified = qualify(parse.tree, settings, connection)
+        functions!(parse.tree, settings, connection)
         relations = tables(parse.tree)
         relations.each { |table, inherits| plain_table!(table, inherits, connection) }
         Result.new(sql: qualified.query, parse: qualified, relations: relations.keys)
@@ -166,6 +171,12 @@ module Quaack
           table = TableName.new(schema: range.schemaname, name: range.relname)
           found[table] = found.fetch(table, false) || range.inh
         end
+      end
+
+      def functions!(tree, settings, connection)
+        return unless FromFunctions.user_function?(tree, settings, connection)
+
+        raise Error.new("user_function_in_from", "a function in FROM isn't in pg_catalog"), cause: nil
       end
 
       def plain_table!(table, inherits, connection)
