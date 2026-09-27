@@ -20,4 +20,4 @@ One day's orders. The cast hides `created_at` from any index, and there's no ind
 
 ## Proof.
 
-`ruby e2e/verify.rb 046` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 046` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

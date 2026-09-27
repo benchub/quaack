@@ -18,4 +18,4 @@ Gold customers with a shipped order. Counting reads all 10 orders per customer, 
 
 ## Proof.
 
-`ruby e2e/verify.rb 035` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 035` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

@@ -22,4 +22,4 @@ The deep page, near the unshipped rows at the end, only proves equivalence. It i
 
 ## Proof.
 
-`ruby e2e/verify.rb 095` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 095` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

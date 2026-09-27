@@ -8,3 +8,5 @@ Category: `trap`.
 | slow (from the plan) | 2 | 29 | 7 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK must reject the rewrite in `fast.sql`.

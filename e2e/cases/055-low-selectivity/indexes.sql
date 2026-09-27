@@ -1,1 +1,1 @@
-CREATE INDEX ON public.orders (status);
+CREATE INDEX ON public.orders (status, total_cents);

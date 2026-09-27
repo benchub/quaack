@@ -9,3 +9,5 @@ Category: `trap`.
 | another day | 1 | 2548 | 35 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK must reject the rewrite in `fast.sql`.

@@ -1,3 +1,7 @@
+-- Statistics from every row, not ANALYZE's random sample, so plans and
+-- block counts repeat from one load to the next.
+SET default_statistics_target = 10000;
+
 CREATE TABLE public.customers (
     id          bigint PRIMARY KEY,
     email       text NOT NULL UNIQUE,

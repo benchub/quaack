@@ -20,4 +20,4 @@ On the worst-case literal (`'done'`, the top MCV), the partial index isn't used,
 
 ## Proof.
 
-`ruby e2e/verify.rb 006` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 006` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

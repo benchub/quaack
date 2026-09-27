@@ -1,3 +1,7 @@
+-- Statistics from every row, not ANALYZE's random sample, so plans and
+-- block counts repeat from one load to the next.
+SET default_statistics_target = 10000;
+
 CREATE TABLE public.customers (
     id          bigint PRIMARY KEY,
     email       text NOT NULL UNIQUE,
@@ -38,5 +42,6 @@ SELECT i,
 FROM generate_series(1, 500000) AS i;
 
 CREATE INDEX orders_customer_total_idx ON public.orders (customer_id, total_cents);
+CREATE INDEX customers_tier_region_idx ON public.customers (tier, region);
 
 VACUUM ANALYZE;

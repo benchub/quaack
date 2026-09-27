@@ -1,1 +1,1 @@
-CREATE INDEX ON public.sessions (account_id);
+CREATE INDEX ON public.sessions (account_id, started_at);

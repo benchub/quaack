@@ -14,8 +14,12 @@ Gold APAC customers who never ordered. `NOT IN` can't become an anti-join, so Po
 
 ## Expected result.
 
-`NOT EXISTS`, which probes the index once per customer. Stated assumption: `orders.customer_id` is `NOT NULL`. With a NULL in the subquery, `NOT IN` returns nothing at all. Case 059 is the version where that assumption fails.
+`NOT EXISTS`, which probes the index once per customer. Stated assumption: `orders.customer_id` is `NOT NULL`. With a NULL in the subquery, `NOT IN` returns nothing at all. Case 057 is the version where that assumption fails.
+
+## Notes.
+
+3e's worst-case set would use the top MCV, `tier = 'standard'` (48,000 customers). There the subquery is too big to hash in `work_mem`, so the original `NOT IN` rescans `orders` for every customer and runs for many minutes. QUAACK would meet that under 12b's `statement_timeout`. The set is left out here so the proof finishes.
 
 ## Proof.
 
-`ruby e2e/verify.rb 034` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 034` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

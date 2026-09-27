@@ -8,3 +8,5 @@ Category: `none`.
 | slow (from the plan) | 1 | 2 | - | 2 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK must accept nothing and report a negative result (15a).

@@ -9,3 +9,5 @@ Category: `index`.
 | another price band | 365 | 4696 | - | 1006 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 1007 total blocks on the slow literals, and pass 14b.

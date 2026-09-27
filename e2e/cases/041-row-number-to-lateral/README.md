@@ -2,11 +2,11 @@
 
 **Category:** `none`, nothing beats the original (negative result).
 
-**Exercises:** window function with PARTITION BY; LATERAL top-N rewrite; existing index used by the rewrite.
+**Exercises:** window function with PARTITION BY; LATERAL top-N rewrite; existing index used by the rewrite; generator-one candidates already exist, so 5a-3 drops them.
 
 ## Setup.
 
-Case 001's `customers` and `orders`, with `orders (customer_id, created_at DESC, id DESC)` indexed.
+Case 001's `customers` and `orders`, with `orders (customer_id, created_at DESC, id DESC)` and `customers (tier, id)` indexed.
 
 ## Slow query (`slow.sql`).
 
@@ -18,4 +18,4 @@ The textbook rewrite is a `LATERAL` subquery with `LIMIT 3` (`fast.sql`), which 
 
 ## Proof.
 
-`ruby e2e/verify.rb 041` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 041` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

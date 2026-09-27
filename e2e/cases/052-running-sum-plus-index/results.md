@@ -9,3 +9,5 @@ Category: `both`.
 | another account | 100 | 233374 | 3261 | 5539 | 107 |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 107 total blocks on the slow literals, and pass 14b.

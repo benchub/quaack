@@ -10,3 +10,5 @@ Category: `rewrite`.
 | region with no gold customers | 0 | 741 | 741 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 2542 total blocks on the slow literals, and pass 14b.

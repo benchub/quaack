@@ -10,3 +10,5 @@ Category: `index`.
 | tenant and thread don't match | 0 | 5919 | - | 3 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 4 total blocks on the slow literals, and pass 14b.

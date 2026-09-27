@@ -22,4 +22,4 @@ For `4242.5` the rewrite would round and match customer 4243, so the assumption 
 
 ## Proof.
 
-`ruby e2e/verify.rb 031` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 031` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

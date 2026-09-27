@@ -18,4 +18,4 @@ QUAACK must reject `team_id <> 7`, which drops the 25,000 issues with no team.
 
 ## Proof.
 
-`ruby e2e/verify.rb 085` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 085` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

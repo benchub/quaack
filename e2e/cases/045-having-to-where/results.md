@@ -5,7 +5,9 @@ Category: `none`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 1 | 16 | 16 | - | - |
-| another customer | 1 | 16 | 16 | - | - |
+| slow (from the plan) | 1 | 7 | 7 | - | - |
+| another customer | 1 | 7 | 7 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK must accept nothing and report a negative result (15a).

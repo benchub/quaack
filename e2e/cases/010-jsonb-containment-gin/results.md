@@ -9,3 +9,5 @@ Category: `index`.
 | a type that doesn't exist | 0 | 5715 | - | 4 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 804 total blocks on the slow literals, and pass 14b.

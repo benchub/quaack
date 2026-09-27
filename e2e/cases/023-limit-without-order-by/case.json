@@ -4,8 +4,12 @@
   "compare": "limit_subset",
   "features": [
     "LIMIT with no ORDER BY: subset comparison (9d)",
-    "two equality columns"
+    "two equality columns",
+    "non-default planner setting from the plan's SETTINGS (steps 2 and 4)"
   ],
+  "settings": {
+    "max_parallel_workers_per_gather": "0"
+  },
   "literal_sets": [
     {
       "name": "slow (from the plan)",

@@ -6,7 +6,7 @@
 
 ## Setup.
 
-Case 001's `customers` and `orders`, with `orders (customer_id, total_cents)` indexed.
+Case 001's `customers` and `orders`, with `orders (customer_id, total_cents)` and `customers (tier, region)` indexed: generator one's candidates for both sides.
 
 ## Slow query (`slow.sql`).
 
@@ -18,4 +18,4 @@ The obvious rewrite is `NOT EXISTS` (`fast.sql`), which is correct. Stated assum
 
 ## Proof.
 
-`ruby e2e/verify.rb 068` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 068` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

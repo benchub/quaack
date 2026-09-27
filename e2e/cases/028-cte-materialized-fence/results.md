@@ -5,8 +5,10 @@ Category: `rewrite`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 6 | 6406 | 16 | - | - |
-| another customer | 6 | 6406 | 16 | - | - |
-| customer with no orders | 0 | 6406 | 6 | - | - |
+| slow (from the plan) | 6 | 6359 | 16 | - | - |
+| another customer | 6 | 6359 | 16 | - | - |
+| customer with no orders | 0 | 6359 | 6 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 16 total blocks on the slow literals, and pass 14b.

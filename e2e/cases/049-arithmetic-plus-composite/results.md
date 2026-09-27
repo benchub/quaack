@@ -9,3 +9,5 @@ Category: `both`.
 | another merchant and bucket | 20 | 3822 | 3822 | 3874 | 23 |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 23 total blocks on the slow literals, and pass 14b.

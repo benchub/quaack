@@ -10,3 +10,5 @@ Category: `both`.
 | a year with no data | 1 | 4958 | 4958 | 4958 | 3 |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 175 total blocks on the slow literals, and pass 14b.

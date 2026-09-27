@@ -4,6 +4,7 @@
   "compare": "multiset",
   "features": [
     "IS NOT TRUE on a nullable boolean",
+    "IS TRUE, IS FALSE, IS NOT FALSE, IS UNKNOWN",
     "IS NOT NULL",
     "boolean literal",
     "bit-string literal and operator"

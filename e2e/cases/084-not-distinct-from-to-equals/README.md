@@ -18,4 +18,4 @@ An ORM writes null-safe equality everywhere. Postgres can't use a btree index fo
 
 ## Proof.
 
-`ruby e2e/verify.rb 084` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 084` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

@@ -10,3 +10,5 @@ Category: `index`.
 | no match | 0 | 3410 | - | 6 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 8 total blocks on the slow literals, and pass 14b.

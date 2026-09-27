@@ -18,4 +18,4 @@ An author's 20 newest posts. Postgres fetches all 2,500 of the author's posts, s
 
 ## Proof.
 
-`ruby e2e/verify.rb 004` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 004` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

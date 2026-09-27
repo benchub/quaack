@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** function in FROM (unnest); ARRAY[...] constructor; join to a function's rows.
+**Exercises:** function in FROM (unnest); ARRAY[...] constructor; join to a function's rows; t.* in the select list.
 
 ## Setup.
 
@@ -18,4 +18,4 @@ Look up a cart's SKUs, passed as one array.
 
 ## Proof.
 
-`ruby e2e/verify.rb 077` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 077` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

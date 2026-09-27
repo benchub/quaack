@@ -10,3 +10,5 @@ Category: `rewrite`.
 | a status nobody has | 0 | 13618 | 4958 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 4618 total blocks on the slow literals, and pass 14b.

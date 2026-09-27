@@ -13,3 +13,5 @@ Category: `both`.
 | tracking number of a pending order (NULL in the table) | 10 | 6818 | 4987 | 6818 | 32 |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 36 total blocks on the slow literals, and pass 14b.

@@ -5,7 +5,9 @@ Category: `none`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| slow (from the plan) | 475 | 1447 | 2119 | - | - |
-| a lower threshold | 225 | 1446 | 2119 | - | - |
+| slow (from the plan) | 475 | 1331 | 2003 | - | - |
+| a lower threshold | 225 | 1330 | 2003 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK must accept nothing and report a negative result (15a).

@@ -10,3 +10,5 @@ Category: `index`.
 | typical: another MCV | 50 | 7785 | - | 7785 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 52 total blocks on the slow literals, and pass 14b.

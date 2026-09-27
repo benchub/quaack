@@ -1,12 +1,12 @@
 {
   "title": "RIGHT JOIN with USING",
-  "category": "none",
+  "category": "index",
   "compare": "ordered",
   "features": [
     "RIGHT JOIN",
     "JOIN ... USING",
     "outer-join rows with no match",
-    "index that wins on the slow literal but loses on the worst case: rejected by minimax (14b)"
+    "a plainer index loses on the worst case and is rejected by minimax (14b)"
   ],
   "literal_sets": [
     {

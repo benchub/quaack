@@ -5,7 +5,8 @@
   "features": [
     "function in FROM (unnest)",
     "ARRAY[...] constructor",
-    "join to a function's rows"
+    "join to a function's rows",
+    "t.* in the select list"
   ],
   "literal_sets": [
     {

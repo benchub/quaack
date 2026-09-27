@@ -18,4 +18,4 @@ A half-open range on `amount_cents`. Stated assumption: `amount_cents >= 0`. Int
 
 ## Proof.
 
-`ruby e2e/verify.rb 033` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 033` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

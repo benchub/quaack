@@ -13,10 +13,11 @@
       "replace": {}
     },
     {
-      "name": "worst case: top MCV",
+      "name": "the top MCV",
       "replace": {
         "= 'blocked'": "= 'done'"
-      }
+      },
+      "minimax": false
     },
     {
       "name": "a status that isn't the COALESCE default",

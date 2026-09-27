@@ -19,6 +19,12 @@
       }
     },
     {
+      "name": "worst case: top MCV",
+      "replace": {
+        "'gold'": "'standard'"
+      }
+    },
+    {
       "name": "a status nobody has",
       "replace": {
         "'pending'": "'lost'"

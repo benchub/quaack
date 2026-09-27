@@ -1,3 +1,7 @@
+-- Statistics from every row, not ANALYZE's random sample, so plans and
+-- block counts repeat from one load to the next.
+SET default_statistics_target = 10000;
+
 CREATE TABLE public.customers (
     id          bigint PRIMARY KEY,
     email       text NOT NULL UNIQUE,
@@ -37,6 +41,7 @@ SELECT i,
        timestamptz '2025-01-01 00:00:00+00' + i * interval '1 minute'
 FROM generate_series(1, 500000) AS i;
 
-CREATE INDEX orders_customer_id_idx ON public.orders (customer_id);
+CREATE INDEX customers_tier_idx ON public.customers (tier) INCLUDE (email);
+CREATE INDEX orders_customer_total_idx ON public.orders (customer_id, total_cents);
 
 VACUUM ANALYZE;

@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** substring(... FROM ... FOR ...); position(... IN ...); overlay(... PLACING ...); trim(BOTH / LEADING ...); literal-dependent rewrite.
+**Exercises:** substring(... FROM ... FOR ...); position(... IN ...); overlay(... PLACING ...); trim(BOTH / LEADING / TRAILING ...); literal-dependent rewrite.
 
 ## Setup.
 
@@ -18,4 +18,4 @@ Parts in a SKU family, tested with `substring`. The function hides `sku` from it
 
 ## Proof.
 
-`ruby e2e/verify.rb 091` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 091` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

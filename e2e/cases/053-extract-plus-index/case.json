@@ -17,13 +17,15 @@
       "replace": {
         ", 7, 1": ", 11, 1",
         "= 7": "= 11"
-      }
+      },
+      "minimax": false
     },
     {
       "name": "a year with no data",
       "replace": {
         "2025": "2023"
-      }
+      },
+      "minimax": false
     }
   ]
 }

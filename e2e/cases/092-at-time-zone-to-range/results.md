@@ -11,3 +11,5 @@ Category: `rewrite`.
 | another zone | 1440 | 4958 | 23 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 23 total blocks on the slow literals, and pass 14b.

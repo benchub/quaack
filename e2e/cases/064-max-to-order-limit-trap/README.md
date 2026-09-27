@@ -18,4 +18,4 @@ QUAACK must reject `ORDER BY delivered_at DESC LIMIT 1`. NULLs sort first in des
 
 ## Proof.
 
-`ruby e2e/verify.rb 064` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 064` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

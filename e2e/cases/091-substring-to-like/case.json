@@ -6,7 +6,7 @@
     "substring(... FROM ... FOR ...)",
     "position(... IN ...)",
     "overlay(... PLACING ...)",
-    "trim(BOTH / LEADING ...)",
+    "trim(BOTH / LEADING / TRAILING ...)",
     "literal-dependent rewrite"
   ],
   "literal_sets": [

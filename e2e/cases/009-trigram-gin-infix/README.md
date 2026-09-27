@@ -18,4 +18,4 @@ A trigram GIN index on `full_name`. HypoPG can't model GIN, so 5a-3 sets it asid
 
 ## Proof.
 
-`ruby e2e/verify.rb 009` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 009` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

@@ -18,8 +18,8 @@ Compute every customer's average once, then join. Both sides compare the same ex
 
 ## Notes.
 
-For the "after the data" set, the rewrite still aggregates the whole table, so it's worse there. By minimax (14b) QUAACK should reject this rewrite unless it finds a better one. See `results.md`.
+For the "after the data" set, both versions touch only a few blocks: the planner sees that no recent orders exist and skips the aggregate.
 
 ## Proof.
 
-`ruby e2e/verify.rb 038` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 038` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.

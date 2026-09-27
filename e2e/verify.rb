@@ -20,6 +20,8 @@ module E2E
   LABEL = "quaack.e2e"
   # README step 14a: better means more than 5% fewer total blocks.
   WIN = 0.95
+  # How far a count may move between repeated runs and still count as stable.
+  STABLE = 0.01
   BLOCK_KEYS = ["Shared Hit Blocks", "Shared Read Blocks", "Local Hit Blocks",
                 "Local Read Blocks", "Temp Read Blocks", "Temp Written Blocks"].freeze
 
@@ -27,7 +29,10 @@ module E2E
   class Postgres
     def initialize
       system("docker", "rm", "-f", "-v", *leftovers, out: File::NULL, err: File::NULL) unless leftovers.empty?
-      @id = capture("docker", "run", "-d", "--label", LABEL, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE).strip
+      # Autovacuum is off, as README step 4 requires of the run server, so a
+      # background vacuum or analyze can't change a measurement.
+      @id = capture("docker", "run", "-d", "--label", LABEL, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
+                    "-c", "autovacuum=off").strip
       at_exit { system("docker", "rm", "-f", "-v", @id, out: File::NULL, err: File::NULL) }
       wait_until_ready
     end
@@ -82,6 +87,10 @@ module E2E
     def indexes = optional("indexes.sql")
     def unlimited = optional("slow_unlimited.sql")
 
+    # Planner settings the production plan ran with, from its SETTINGS
+    # section (README step 2). Applied to every statement the case runs.
+    def settings = meta.fetch("settings", {}).map { |name, value| "SET #{name} = #{value};\n" }.join
+
     def bind(sql, set)
       set.fetch("replace").reduce(sql) { |text, (from, to)| text.gsub(from, to) }
     end
@@ -129,7 +138,7 @@ module E2E
 
     private
 
-    def sql(text) = @pg.psql(text, @case.database)
+    def sql(text) = @pg.psql(@case.settings + text, @case.database)
 
     def load_schema
       @pg.psql("DROP DATABASE IF EXISTS #{@case.database}; CREATE DATABASE #{@case.database};", "postgres")
@@ -185,17 +194,26 @@ module E2E
     end
 
     def blocks_for(set)
-      [blocks(@case.bind(@case.slow, set)), @case.fast && blocks(@case.bind(@case.fast, set))]
+      [blocks(@case.bind(@case.slow, set), set), @case.fast && blocks(@case.bind(@case.fast, set), set)]
     end
+
+    def moved?(counts) = counts.max - counts.min > counts.max * STABLE
 
     def row_count(set) = sql(@case.bind(@case.slow, set)).lines.count
 
-    # README step 13: shared, local, and temp blocks. The first run warms up.
-    def blocks(query)
+    # README step 13: shared, local, and temp blocks, three runs after one
+    # warm-up. A count that moves by more than 1% between runs fails the case,
+    # because every claim here rests on counts being repeatable. Parallel
+    # workers can wobble a count by a block or two, which changes no claim.
+    def blocks(query, set)
       explain = "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) #{query.strip.chomp(";")};"
       sql(explain)
-      plan = JSON.parse(sql(explain)).first.fetch("Plan")
-      BLOCK_KEYS.sum { |key| plan.fetch(key, 0) }
+      counts = Array.new(3) do
+        plan = JSON.parse(sql(explain)).first.fetch("Plan")
+        BLOCK_KEYS.sum { |key| plan.fetch(key, 0) }
+      end
+      @failures << "block counts moved between runs (#{set["name"]}): #{counts.join(", ")}" if moved?(counts)
+      counts.first
     end
   end
 
@@ -217,10 +235,12 @@ module E2E
 
     private
 
-    # Float aggregates: each numeric field within a relative 1e-9.
+    # Float aggregates: the same fields, each number within a relative 1e-9.
     def close?(original, candidate)
       original.size == candidate.size && original.zip(candidate).all? do |a, b|
-        a.split("|").zip(b.split("|")).all? { |x, y| x == y || near?(x, y) }
+        x = a.split("|", -1)
+        y = b.split("|", -1)
+        x.size == y.size && x.zip(y).all? { |one, other| one == other || near?(one, other) }
       end
     end
 
@@ -330,6 +350,12 @@ module E2E
     HEADER = "| Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |\n" \
              "| --- | ---: | ---: | ---: | ---: | ---: |\n"
 
+    OUTCOMES = {
+      "none" => "QUAACK must accept nothing and report a negative result (15a).",
+      "trap" => "QUAACK must reject the rewrite in `fast.sql`.",
+      "refused" => "`quaacks intake` must refuse the query with `unsupported_construct`."
+    }.freeze
+
     module_function
 
     def markdown(kase, rows, failures)
@@ -338,7 +364,17 @@ module E2E
       end
       verdict = failures.empty? ? "Every claim holds." : failures.map { |f| "- FAILED: #{f}" }.join("\n")
       "# #{kase.name} results.\n\nTotal blocks (README step 13), from `ruby e2e/verify.rb`.\n" \
-        "Category: `#{kase.category}`.\n\n#{HEADER}#{body.join("\n")}\n\n#{verdict}\n"
+        "Category: `#{kase.category}`.\n\n#{HEADER}#{body.join("\n")}\n\n#{verdict}\n\n#{bound(kase, rows.first)}\n"
+    end
+
+    # What the end-to-end test (BACKLOG 20260922-65) should hold QUAACK to.
+    # The named fix is one way to reach the bound, not the only acceptable DDL.
+    def bound(kase, slow)
+      column = { "index" => :orig_idx, "rewrite" => :rewrite, "both" => :rewrite_idx }[kase.category]
+      return "**For 20260922-65:** #{OUTCOMES.fetch(kase.category)}" unless column
+
+      "**For 20260922-65:** QUAACK's top-ranked fix must touch at most #{slow[column]} total blocks " \
+        "on the slow literals, and pass 14b."
     end
 
     def index(cases)
@@ -365,7 +401,9 @@ module E2E
   def self.select(cases, prefixes)
     return cases if prefixes.empty?
 
-    cases.select { |c| prefixes.any? { |a| c.name.start_with?(a) } }
+    chosen = cases.select { |c| prefixes.any? { |a| c.name.start_with?(a) } }
+    abort "No case matches #{prefixes.join(", ")}." if chosen.empty?
+    chosen
   end
 
   def self.run_all(postgres, cases, write)

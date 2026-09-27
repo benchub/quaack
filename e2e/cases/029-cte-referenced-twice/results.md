@@ -10,3 +10,5 @@ Category: `rewrite`.
 | customers with no orders | 2 | 7644 | 9 | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 29 total blocks on the slow literals, and pass 14b.

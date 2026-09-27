@@ -9,3 +9,5 @@ Category: `index`.
 | other skus | 3 | 3334 | - | 15 | - |
 
 Every claim holds.
+
+**For 20260922-65:** QUAACK's top-ranked fix must touch at most 15 total blocks on the slow literals, and pass 14b.

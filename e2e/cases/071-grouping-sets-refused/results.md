@@ -8,3 +8,5 @@ Category: `refused`.
 | slow (from the plan) | 15 | 618 | - | - | - |
 
 Every claim holds.
+
+**For 20260922-65:** `quaacks intake` must refuse the query with `unsupported_construct`.

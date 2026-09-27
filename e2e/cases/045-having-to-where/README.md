@@ -6,7 +6,7 @@
 
 ## Setup.
 
-Case 001's `customers` and `orders`, with `orders.customer_id` indexed.
+Case 001's `customers` and `orders`, with `orders (customer_id) INCLUDE (total_cents)` indexed: generator one's candidate, so the query is already an index-only scan.
 
 ## Slow query (`slow.sql`).
 
@@ -18,4 +18,4 @@ Moving the filter to `WHERE` is correct, but Postgres already does it: a `HAVING
 
 ## Proof.
 
-`ruby e2e/verify.rb 045` checks the claims above. The measured table is in `results.md`.
+`ruby e2e/verify.rb 045` checks the claims above. The measured table is in `results.md`, which also gives the bound the end-to-end test holds QUAACK to. A named index or rewrite is one way to reach that bound, not the only acceptable answer.
