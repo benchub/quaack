@@ -1270,7 +1270,7 @@ RSpec.describe Quaack::Enclave::GeneratorOne do
     end
   end
 
-  describe "the README example" do
+  describe "DESIGN.md example" do
     let(:stats) do
       statistics(
         table(orders, { "status" => column(6, correlation: 0.21), "created_at" => column(-0.94, correlation: 0.99),

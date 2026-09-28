@@ -6,7 +6,7 @@ require_relative "../volatility_check"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks volatility --run <run ID>` (README 3d): refuses the run's
+      # `quaacks volatility --run <run ID>` (DESIGN.md 3d): refuses the run's
       # query if it calls a volatile function anywhere (see VolatilityCheck).
       #
       # It reads the run's server, plan, and qualified_query entries, the

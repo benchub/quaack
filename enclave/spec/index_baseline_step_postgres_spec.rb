@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# README 13a: `quaacks index-baseline` repeats the step 13 runs for each of
+# DESIGN.md 13a: `quaacks index-baseline` repeats the step 13 runs for each of
 # the original's index combinations kept in 5a, then hides every index again.
 RSpec.describe "quaacks index-baseline, against a real server" do
   include_context "an index search run"

@@ -12,7 +12,7 @@ module Quaack
     # 0..1, one per value, that sum to at most 1 (plus FREQUENCY_SUM_SLACK).
     # They're fractions of all the rows, nulls included, as in pg_stats.
     #
-    # MCV values are real data, value-class under the README's trust
+    # MCV values are real data, value-class under DESIGN.md's trust
     # boundary. So inspect, to_s, and pp show only how many there are
     # (most_common_vals=<3 redacted>), and no error message includes one.
     # Pattern matching can't see them at all: deconstruct_keys leaves them

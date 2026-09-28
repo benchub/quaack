@@ -2,7 +2,7 @@
 
 module Quaack
   module Enclave
-    # README 14d: selection, as pure logic.
+    # DESIGN.md 14d: selection, as pure logic.
     #
     #   Selection.select(minimax: <minimax entry>, result_comparison: <result_comparison entry>)
     #

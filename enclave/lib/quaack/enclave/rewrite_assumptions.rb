@@ -2,7 +2,7 @@
 
 module Quaack
   module Enclave
-    # The structured assumptions a rewrite states (README 6a), and their
+    # The structured assumptions a rewrite states (DESIGN.md 6a), and their
     # vocabulary, which is exactly these four kinds:
     #
     #   { "kind" => "not_null", "table" => "public.orders", "column" => "id" }

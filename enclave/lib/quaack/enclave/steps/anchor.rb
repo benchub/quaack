@@ -5,7 +5,7 @@ require_relative "../clock_anchoring"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks anchor --run <run ID>` (README 3h): anchors the clock in the
+      # `quaacks anchor --run <run ID>` (DESIGN.md 3h): anchors the clock in the
       # run's redacted query (see ClockAnchoring).
       #
       # It runs after `quaacks redact`. It reads redacted_query, the

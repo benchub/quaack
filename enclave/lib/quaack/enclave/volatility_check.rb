@@ -9,7 +9,7 @@ require_relative "volatility_check_cast_sql"
 
 module Quaack
   module Enclave
-    # README step 3d: abort if the query calls a volatile function anywhere,
+    # DESIGN.md step 3d: abort if the query calls a volatile function anywhere,
     # since a volatile function breaks both rewriting and result comparison.
     # The inbound checks for rewrite candidates and index DDL ("What goes
     # into the enclave") call it too, on SQL with $n placeholders, and on

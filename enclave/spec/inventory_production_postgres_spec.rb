@@ -4,7 +4,7 @@ require "delegate"
 require "quaack/enclave/inventory/production"
 require_relative "support/production_server"
 
-# What step 2 reads from production (README, step 2), against a stand-in
+# What step 2 reads from production (DESIGN.md, step 2), against a stand-in
 # production database on the test harness's Postgres.
 RSpec.describe Quaack::Enclave::Inventory::Production do
   let(:production_module) { described_class }
@@ -59,7 +59,7 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
     end
 
     # TimeZone and the rest change plans but aren't in EXPLAIN's SETTINGS,
-    # so step 4 can't tell production's value from the plan (README, step 2).
+    # so step 4 can't tell production's value from the plan (DESIGN.md, step 2).
     it "records the memory and cost settings, and the planner settings SETTINGS never lists, as SHOW prints them" do
       expect(inventory["settings"].keys).to eq(%w[shared_buffers effective_cache_size work_mem random_page_cost jit
                                                   TimeZone DateStyle IntervalStyle default_statistics_target])

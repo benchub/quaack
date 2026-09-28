@@ -5,7 +5,7 @@ require_relative "../minimax"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks minimax --run <run ID>` (README 14a, 14b): compares every
+      # `quaacks minimax --run <run ID>` (DESIGN.md 14a, 14b): compares every
       # candidate_runs run ("rewrite_<n>:none" or its combination key) and
       # the original under each 13a combination that didn't time out
       # (index-only candidates) against the bare original baseline, with

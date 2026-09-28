@@ -4,7 +4,7 @@ require "quaack/enclave/store"
 require "quaack/enclave/planner_statistics"
 require_relative "support/production_server"
 
-# `quaacks statistics --run <run ID>` (README 3c) the way the jump server
+# `quaacks statistics --run <run ID>` (DESIGN.md 3c) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler, with
 # the operator's libpq setup in a temporary HOME, as `quaacks qualify` does.
 # It reads the run's server and relations entries, which qualify wrote.
@@ -128,7 +128,7 @@ RSpec.describe "quaacks statistics, against a real server" do
   end
 
   # A role that may connect but can't read pg_stats, so the read fails with
-  # permission denied (README 3c: the refusal stores nothing).
+  # permission denied (DESIGN.md 3c: the refusal stores nothing).
   context "when the statistics read fails" do
     let(:reader) { "reader_#{SecureRandom.hex(6)}" }
 

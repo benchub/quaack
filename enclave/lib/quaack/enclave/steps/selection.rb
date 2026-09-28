@@ -5,7 +5,7 @@ require_relative "../selection"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks selection --run <run ID>` (README 14d): reads minimax and
+      # `quaacks selection --run <run ID>` (DESIGN.md 14d): reads minimax and
       # result_comparison and writes selection as Enclave::Selection.select
       # returns it. Its only line is DONE.
       module Selection

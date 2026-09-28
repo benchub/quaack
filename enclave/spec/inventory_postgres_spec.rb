@@ -5,7 +5,7 @@ require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks inventory --run <run ID>` (README, step 2) the way the jump server
+# `quaacks inventory --run <run ID>` (DESIGN.md, step 2) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler,
 # connecting the way an operator's does. Its HOME is a temporary directory
 # holding the operator's ~/.pgpass, ~/.pg_service.conf, and

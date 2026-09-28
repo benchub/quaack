@@ -7,7 +7,7 @@ require_relative "statistics"
 
 module Quaack
   module Enclave
-    # The 5a-3 filter (README 5a-3): dedupes one index search's candidates
+    # The 5a-3 filter (DESIGN.md 5a-3): dedupes one index search's candidates
     # and drops the ones not worth testing. One Dedupe is one search: the
     # original query's in 5a, or one rewrite's in steps 8 and 11. Make a new
     # one for each search, so no search sees another's proposals.
@@ -25,10 +25,10 @@ module Quaack
     # as a frozen array.
     #
     # statistics is a Statistics. Each table's indexes are the existing
-    # indexes. README 3b and 3c fill them in (20260922-19). A table with no
+    # indexes. DESIGN.md 3b and 3c fill them in (20260922-19). A table with no
     # statistics raises KeyError, as the generators do.
     #
-    # low_cardinality is the columns that README 3f classes as
+    # low_cardinality is the columns that DESIGN.md 3f classes as
     # low-cardinality, as [TableName, column name] pairs: fewer than 50
     # distinct values and not PII. PiiClassification#low_cardinality gives
     # them. This class doesn't apply 3f's rule itself.
@@ -61,7 +61,7 @@ module Quaack
     #    as deleted_at IS NULL), passes on any column: it holds no values. Every stored
     #    predicate parses again, since IndexCandidate refuses one that
     #    pg_query can't deparse faithfully (see Deparse). This comes first,
-    #    because it's the trust-boundary check (README 5a-3): until a
+    #    because it's the trust-boundary check (DESIGN.md 5a-3): until a
     #    partial passes it, its predicate may hold PII.
     # 2. A candidate covered by an existing index is dropped
     #    (:covered_by_existing), recording the index as an ExistingIndex.
@@ -76,7 +76,7 @@ module Quaack
     #    isn't dropped, because generator one proposes every leading prefix
     #    on purpose, and 5a-4 tests each.
     # 4. A GIN, GiST, or SP-GiST candidate is set aside, untested, for step
-    #    12. HypoPG can't model those methods. The README names GIN and GiST.
+    #    12. HypoPG can't model those methods. DESIGN.md names GIN and GiST.
     #    The HypoPG in the test image (Postgres 18) refuses SP-GiST as well,
     #    so it goes too.
     #    A set-aside candidate counts as a proposal for step 3.
@@ -89,9 +89,9 @@ module Quaack
     # expression. Pattern matching on a Drop can't reach either, since
     # IndexCandidate's and KeyColumn's deconstruct_keys leave them out. No
     # error here includes a predicate or an expression. Rule 1 doesn't look
-    # at key expressions. The README (5a-3) scopes the low-cardinality rule
+    # at key expressions. The DESIGN.md (5a-3) scopes the low-cardinality rule
     # to partial predicates. An expression key comes from an existing
-    # index, which the README treats as schema, so shape data, or from the
+    # index, which DESIGN.md treats as schema, so shape data, or from the
     # LLM, which only ever saw shape data.
     # to_h and the readers still give the raw candidate, so keep them inside
     # the enclave.

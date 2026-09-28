@@ -6,7 +6,7 @@ require_relative "plan_expression"
 
 module Quaack
   module Enclave
-    # The README 5a-2 patterns, for GeneratorTwo's walk. It's private to the
+    # The DESIGN.md 5a-2 patterns, for GeneratorTwo's walk. It's private to the
     # enclave namespace. Each pattern takes one PlanNode and returns the
     # candidates it proposes there. Each checks what the IndexCandidate
     # constructor would refuse before it builds. The walk supplies columns (a PlanColumns) and the

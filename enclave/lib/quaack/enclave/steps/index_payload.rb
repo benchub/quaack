@@ -8,7 +8,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-payload --run <run ID> [--search original|rewrite_<n>]` (README
+      # `quaacks index-payload --run <run ID> [--search original|rewrite_<n>]` (DESIGN.md
       # 5a-5): sends the shape-only payload the driver gives the LLM, as one
       # index_payload message. It doesn't connect to anything.
       #
@@ -38,7 +38,7 @@ module Quaack
       # DDL: generator two reads the unredacted plan, so a stored predicate
       # or key expression can hold a real literal. Each DDL goes through
       # CandidateDdlRedaction, which masks every constant but a predicate value compared directly with its
-      # own low-cardinality column, one of its MCV values (README 3f),
+      # own low-cardinality column, one of its MCV values (DESIGN.md 3f),
       # the values stats already carries.
       module IndexPayload
         OPTIONS = { "search" => :value }.freeze
@@ -55,7 +55,7 @@ module Quaack
           [message(store, search, store.read("index_search_#{search}"))]
         end
 
-        # For a rewrite (README step 11), query is the rewrite's SQL, which
+        # For a rewrite (DESIGN.md step 11), query is the rewrite's SQL, which
         # holds only the original's $n and literals the LLM wrote, and plan
         # is its slow-literal plan as index-search stored it, redacted
         # through 3g. placeholders stay the original's shapes and rows.

@@ -47,7 +47,7 @@ module PromptPack
   # comes out the same on every run. Each is long enough for LeakCheck
   # (Sentinels::MIN_EXTRA). The date alone is checked too. The queries'
   # other literals, such as 'US' and 'shipped', are values of low-cardinality
-  # columns that aren't on the PII list, which README 3f sends to the LLM
+  # columns that aren't on the PII list, which DESIGN.md 3f sends to the LLM
   # as most_common_vals by design, so they aren't sentinels.
   SINCE = "2024-03-17 08:00:00+00"
   UNTIL = "2024-05-29 20:00:00+00"

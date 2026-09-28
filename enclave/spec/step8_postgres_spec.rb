@@ -4,7 +4,7 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/steps/rewrite_prune"
 require_relative "support/index_search_run"
 
-# README step 8, wired: index-search and index-rank for a rewrite search,
+# DESIGN.md step 8, wired: index-search and index-rank for a rewrite search,
 # rewrite-prune against the original's top three, and the step 8 burndown.
 RSpec.describe "quaacks step 8, against a real server" do
   include_context "an index search run"

@@ -8,7 +8,7 @@ require_relative "run_discipline"
 
 module Quaack
   module Enclave
-    # README 13 (and 13a, 14): the measurement process. For each 3e literal
+    # DESIGN.md 13 (and 13a, 14): the measurement process. For each 3e literal
     # set, runs sql three times with EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
     # FORMAT JSON) under RunDiscipline, with only one index combination
     # visible among index_build's indexes.

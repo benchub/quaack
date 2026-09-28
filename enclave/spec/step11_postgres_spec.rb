@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# README step 11, wired: 5a-5, 5a-6, and 5a-7 for each rewrite that
+# DESIGN.md step 11, wired: 5a-5, 5a-6, and 5a-7 for each rewrite that
 # survived steps 9 and 10 (rewrite_survived_<n>, which 20260926-14 writes)
 # and that step 8 didn't prune.
 RSpec.describe "quaacks step 11, against a real server" do

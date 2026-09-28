@@ -12,7 +12,7 @@ require_relative "version"
 
 module Quaack
   module Driver
-    # `quaack deploy --host <jump server>` (README, "Deploying the enclave").
+    # `quaack deploy --host <jump server>` (DESIGN.md, "Deploying the enclave").
     # It builds the quaack-protocol and quaacks gems from this checkout's
     # gemspecs, in child processes, so the driver never loads the enclave. It
     # copies them over ssh into ~/.quaack/deploy on the jump server, runs
@@ -113,7 +113,7 @@ module Quaack
       rescue EnclaveVersion::Mismatch => e
         raise Error, "installed quaacks #{ENCLAVE_VERSION} on #{@host}, but #{e.message.split(". ").first}. " \
                      "If it isn't on PATH for non-interactive ssh, put the user gem bin dir on PATH there " \
-                     "(README, \"Deploying the enclave\").", cause: nil
+                     "(DESIGN.md, \"Deploying the enclave\").", cause: nil
       end
 
       def tail(out) = out.to_s.lines.last(TAIL).join

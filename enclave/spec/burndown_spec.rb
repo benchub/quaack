@@ -149,7 +149,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
 
     describe "type checks" do
-      it "refuses a stage that isn't one of the README 15b stages, without quoting it" do
+      it "refuses a stage that isn't one of the DESIGN.md 15b stages, without quoting it" do
         expect_refused(/stage/) { record(BURNDOWN_SENTINEL, in: 0, out: 0) }
         expect_refused(/stage/) { record(:"5a-3", in: 0, out: 0) }
         expect_refused(/stage/) { record("5a-3\n", in: 0, out: 0) }

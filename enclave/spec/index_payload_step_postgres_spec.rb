@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-payload` (README 5a-5): the shape-only payload for the LLM,
+# `quaacks index-payload` (DESIGN.md 5a-5): the shape-only payload for the LLM,
 # the way the jump server runs it, after a real index-search.
 RSpec.describe "quaacks index-payload, against a real server" do
   include_context "an index search run"

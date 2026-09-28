@@ -9,7 +9,7 @@ module Quaack
     # "sql" is the candidate as accepted, with its clock functions and
     # clock-literal placeholders as written: that's what the LLM and the
     # report see. "anchored_sql" is the same SQL anchored as the original is
-    # (README 3h), and it's what every step runs, plans, or binds. An entry
+    # (DESIGN.md 3h), and it's what every step runs, plans, or binds. An entry
     # without one (written before anchoring existed, or by a spec that
     # doesn't care about the clock) runs its "sql".
     module RewriteEntry

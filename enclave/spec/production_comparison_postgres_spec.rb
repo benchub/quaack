@@ -2,7 +2,7 @@
 
 require "quaack/enclave/production_comparison"
 
-# README 14c: the original and a candidate run as plain queries on the
+# DESIGN.md 14c: the original and a candidate run as plain queries on the
 # racetrack, streamed and compared by hash with 9d's rules.
 RSpec.describe Quaack::Enclave::ProductionComparison do
   let(:conn) { racetrack_and_arena.racetrack.connection }

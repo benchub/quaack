@@ -15,7 +15,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # README steps 9 and 10 for one stored rewrite, on the arena. Each
+      # DESIGN.md steps 9 and 10 for one stored rewrite, on the arena. Each
       # takes --search rewrite_<n>. The original runs as anchored_query; the
       # candidate is the rewrite's SQL with each $n bound to its literal
       # from placeholder_map (Enclave::Counterexamples.bind).

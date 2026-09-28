@@ -6,7 +6,7 @@ require_relative "volatility"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks literals --run <run ID>` (README 3e): builds the run's
+      # `quaacks literals --run <run ID>` (DESIGN.md 3e): builds the run's
       # literal sets (see LiteralSet).
       #
       # It runs after `quaacks redact`, and refuses with its own rule,

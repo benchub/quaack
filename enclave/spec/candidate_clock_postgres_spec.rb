@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# README 3h: a rewrite candidate reads the anchored clock, as the original
+# DESIGN.md 3h: a rewrite candidate reads the anchored clock, as the original
 # does, so an equivalent candidate matches it in step 9 and 14c even when the
 # anchor is far from the real clock.
 RSpec.describe "clock anchoring in rewrite candidates, against a real server" do

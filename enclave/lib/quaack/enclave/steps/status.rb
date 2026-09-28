@@ -32,7 +32,7 @@ module Quaack
           end.to_a
         end
 
-        # README step 11, for each stored rewrite_<n>: rewrite_step11_<n>,
+        # DESIGN.md step 11, for each stored rewrite_<n>: rewrite_step11_<n>,
         # whether IndexSearch.llm_search? takes it, and whether its 5a-5 ran
         # (index_generated_) and its 5a-7 ran after that (index_llm_ranked_).
         def step11_entries(store)

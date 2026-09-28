@@ -7,7 +7,7 @@ require_relative "../shell_command"
 module Quaack
   module Enclave
     module Inventory
-      # Finds the production server's instance memory (README, step 2) with
+      # Finds the production server's instance memory (DESIGN.md, step 2) with
       # the operator's memory command, a one-line shell command from the
       # quaacks config (see Config), so any cloud provider's tools can do
       # it. Every {host} in it becomes the production host, as one shell

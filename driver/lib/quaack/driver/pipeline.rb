@@ -16,7 +16,7 @@ module Quaack
     #   Pipeline.new(transport:, client:, run_id:, rewrites: nil, out: nil).run
     #   # => the report's path, or nil if none was written (ReportStage)
     #
-    # rewrites are the operator's own (README step 7), from `--rewrites`.
+    # rewrites are the operator's own (DESIGN.md step 7), from `--rewrites`.
     #
     # It resumes. It first asks `quaacks status` which step outputs the
     # store holds, and skips the steps whose outputs are there. Each
@@ -24,7 +24,7 @@ module Quaack
     # checks to the enclave's Status::ENTRIES. An EnclaveError, such as the
     # plan gate's abort, stops the run where it is.
     class Pipeline
-      # README step 5 and 5a, for the original query:
+      # DESIGN.md step 5 and 5a, for the original query:
       # 1. index-search: the plan gate, 5a-1 and 5a-2 filtered by 5a-3, and
       #    5a-4 on the mechanical candidates.
       # 2. 5a-5: GeneratorThree, on index-payload. If the LLM proposes
@@ -70,7 +70,7 @@ module Quaack
         end
       end
 
-      # README 6a, step 7, and step 8, after step 5:
+      # DESIGN.md 6a, step 7, and step 8, after step 5:
       # 1. 6a: RewriteGeneration on rewrite-payload, unless the store says
       #    it ran (rewrites_generated). Its rewrite-check stores the
       #    survivors as rewrite_<n>.
@@ -118,7 +118,7 @@ module Quaack
         end
       end
 
-      # README steps 9 and 10, after step 8. If 6a or step 7 ran in this run, it asks
+      # DESIGN.md steps 9 and 10, after step 8. If 6a or step 7 ran in this run, it asks
       # status again, for the rewrites it stored. For each stored rewrite_<n> not yet decided
       # (rewrite_survived_<n>): rewrite-test (step 9), unless it's stored
       # (rewrite_tested_<n>), and, if the rewrite passed, the three 10a to
@@ -162,7 +162,7 @@ module Quaack
         end
       end
 
-      # README step 11, after steps 9 and 10: status is asked again, then IndexStage's
+      # DESIGN.md step 11, after steps 9 and 10: status is asked again, then IndexStage's
       # 5a-5, 5a-6, and 5a-7 run for each stored rewrite_<n> it marks
       # rewrite_step11_<n>: survived steps 9 and 10, and not pruned in step
       # 8. 5a-5 is skipped once index_generated_rewrite_<n> is stored, and
@@ -180,7 +180,7 @@ module Quaack
         end
       end
 
-      # README step 4b, before steps 9 and 10, which refuse without the
+      # DESIGN.md step 4b, before steps 9 and 10, which refuse without the
       # arena: arena-setup, unless the store holds arena_setup.
       module ArenaStage
         module_function
@@ -190,7 +190,7 @@ module Quaack
         end
       end
 
-      # README 12a to 14d, after step 11, in order: each step whose output
+      # DESIGN.md 12a to 14d, after step 11, in order: each step whose output
       # isn't stored. Earlier stages don't write these outputs, so the
       # entries from the start of the run still hold. It returns them with
       # the steps it ran marked done, for ReportStage.
@@ -211,7 +211,7 @@ module Quaack
         end
       end
 
-      # README step 15, last: once the store holds selection (14d), the
+      # DESIGN.md step 15, last: once the store holds selection (14d), the
       # report message from report-payload rendered as HTML to out.
       # MeasurementStage has stored selection by the time it runs. It writes
       # nothing, and asks for nothing, when there's no out. Rerunning

@@ -7,7 +7,7 @@ require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks run-server` (README, step 4) the way the jump server runs it: the
+# `quaacks run-server` (DESIGN.md, step 4) the way the jump server runs it: the
 # installed quaacks in its own process, outside Bundler, connecting with the
 # operator's libpq setup in a temporary HOME. The stand-in production
 # database from ProductionServer is production and the racetrack both, as
@@ -52,7 +52,7 @@ RSpec.describe "quaacks run-server, against a real server" do
                 "--arena-db", arena, env: libpq_env(**env))
   end
 
-  # The run server must have no other clients (README, 4a), so every
+  # The run server must have no other clients (DESIGN.md, 4a), so every
   # connection this process holds, including the harness's own and any a
   # spec left open, is ended first.
   def close_every_harness_connection

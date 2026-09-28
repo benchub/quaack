@@ -5,7 +5,7 @@ require "tmpdir"
 require "quaack/enclave/planner_statistics"
 require "quaack/enclave/store"
 
-# README 3c against the harness's sample schema (spec/support/postgres),
+# DESIGN.md 3c against the harness's sample schema (spec/support/postgres),
 # public.customers and public.orders, with more indexes and an extended
 # statistics object added and then ANALYZE run:
 #

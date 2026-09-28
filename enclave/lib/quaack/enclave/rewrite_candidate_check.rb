@@ -10,7 +10,7 @@ require_relative "volatility_check"
 
 module Quaack
   module Enclave
-    # The inbound check for rewrite candidates (README, "What goes into the
+    # The inbound check for rewrite candidates (DESIGN.md, "What goes into the
     # enclave"). A candidate comes from the LLM in step 6a or from an
     # operator in step 7, so it's untrusted. This check runs on it before
     # anything else does.
@@ -36,7 +36,7 @@ module Quaack
     # 1. unparsable: pg_query can't parse it. pg_query's own message quotes
     #    the text near the error, so it's replaced, not wrapped.
     # 2. unsupported_construct: SupportedSql refuses it. That covers
-    #    everything README names: it must be exactly one SELECT, with no
+    #    everything DESIGN.md names: it must be exactly one SELECT, with no
     #    data-modifying CTE, no SELECT INTO, and no locking clause.
     # 3. bad_placeholder: it uses a $n outside $1 to $N, where N is the
     #    original's count. Literals of its own, such as LIMIT 1 or

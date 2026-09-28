@@ -11,7 +11,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks index-rank --run <run ID> [--search original|rewrite_<n>]`
-      # (README 5a-7, and step 8 for a rewrite, ranked with its own query):
+      # (DESIGN.md 5a-7, and step 8 for a rewrite, ranked with its own query):
       # ranks and combines every candidate of index_search_<search>
       # the planner used, mechanical and LLM alike, on the racetrack.
       #
@@ -26,7 +26,7 @@ module Quaack
       # Each entry is { "ddl" => [String], "size", "costs" => { set =>
       # { "before", "after" } }, "used" => { set => [Boolean] }, "partial",
       # "plans" => { set => its plan, redacted through 3g as IndexSearch
-      # stores plans } } (README 5a-7's canonical plans, for step 13).
+      # stores plans } } (DESIGN.md 5a-7's canonical plans, for step 13).
       # The DDL can hold a low-cardinality predicate literal, so the entry
       # stays in the store. Once 5a-5 has run for the search
       # (index_generated_<search>), it also writes index_llm_ranked_<search>,

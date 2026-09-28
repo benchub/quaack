@@ -3,7 +3,7 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/index_build"
 
-# README 12a: `quaacks index-build` builds every distinct index from the
+# DESIGN.md 12a: `quaacks index-build` builds every distinct index from the
 # 5a and step 11 rankings and the set-aside GIN/GiST/SP-GiST candidates,
 # records sizes, and hides them. IndexBuild.show_only unhides one
 # combination and confirms with a plain EXPLAIN that the rest are hidden.

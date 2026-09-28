@@ -3,7 +3,7 @@
 require "quaack/enclave/steps/index_payload"
 require_relative "support/index_search_run"
 
-# `quaacks rewrite-payload` and `quaacks rewrite-check` (README 6a and 6b,
+# `quaacks rewrite-payload` and `quaacks rewrite-check` (DESIGN.md 6a and 6b,
 # with step 8's structural discards), the way the jump server runs them.
 RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server" do
   include_context "an index search run"

@@ -479,7 +479,7 @@ RSpec.describe "the statistics input" do
     end
   end
 
-  # MCV values are real data, value-class under the README's trust boundary.
+  # MCV values are real data, value-class under DESIGN.md's trust boundary.
   # The readers and to_h give them back, but nothing that can end up in a
   # log may show them: inspect, to_s, pp, failed pattern matches, and error
   # messages.

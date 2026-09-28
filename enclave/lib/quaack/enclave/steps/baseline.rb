@@ -7,7 +7,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks baseline --run <run ID>` (README 13, 12b): on the racetrack,
+      # `quaacks baseline --run <run ID>` (DESIGN.md 13, 12b): on the racetrack,
       # with every index index-build built hidden, measures anchored_query
       # for each 3e literal set (Measurement, combination nil).
       #

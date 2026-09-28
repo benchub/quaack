@@ -94,7 +94,7 @@ module Quaack
         pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { RUN_OPTIONAL.include?(it.first) }
       end
 
-      # README step 5 onward, with step 7 after 6a if there's a rewrites
+      # DESIGN.md step 5 onward, with step 7 after 6a if there's a rewrites
       # file, then prints the run ID and done. The
       # file is read first, so a bad one fails before the jump server is
       # touched. A failure prints only its rule, as for start.

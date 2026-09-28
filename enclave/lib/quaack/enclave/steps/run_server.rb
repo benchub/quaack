@@ -10,7 +10,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks run-server --run <run ID> [--host <host>] [--port <port>]
-      # [--racetrack-db <name>] [--arena-db <name>]` (README, step 4): checks
+      # [--racetrack-db <name>] [--arena-db <name>]` (DESIGN.md, step 4): checks
       # the run server, given by the flags or by the configured
       # run_server_command (see RunServerCommand), against the run's step 2 inventory,
       # and records it in the run's run_server entry (see RunServer), for

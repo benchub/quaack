@@ -6,7 +6,7 @@ require_relative "inventory/production"
 
 module Quaack
   module Enclave
-    # Step 2's production inventory (README), which `quaacks inventory`
+    # Step 2's production inventory (DESIGN.md), which `quaacks inventory`
     # takes (see Steps::Inventory). The run keeps it as its inventory entry,
     # a Hash with:
     #

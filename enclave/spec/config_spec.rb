@@ -5,7 +5,7 @@ require "tmpdir"
 require "quaack/enclave/config"
 require "quaack/enclave/table_name"
 
-# The quaacks config file on the jump server, ~/.quaack/config.json (README,
+# The quaacks config file on the jump server, ~/.quaack/config.json (DESIGN.md,
 # step 2). The operator writes it, and it can name anything, so an error
 # names only its rule, never the path or what's in the file.
 RSpec.describe Quaack::Enclave::Config do
@@ -58,7 +58,7 @@ RSpec.describe Quaack::Enclave::Config do
       .to eq(["make-rs {server} {run}", "rm-rs {run}"])
   end
 
-  describe "the PII columns and the cardinality threshold, for README 3f" do
+  describe "the PII columns and the cardinality threshold, for DESIGN.md 3f" do
     let(:users) { Quaack::Enclave::TableName.new(schema: "public", name: "users") }
 
     it "defaults to no PII columns and a threshold of 50" do

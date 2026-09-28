@@ -146,7 +146,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         .to eq(line(step: "3a", rule: "bad_search_path"))
     end
 
-    it "takes steps named the way the README and the subcommands name them" do
+    it "takes steps named the way DESIGN.md and the subcommands name them" do
       ["3f", "5a-1", "10b", "intake", "qualify_relations", "a" * 63].each do |step|
         expect(filter.to_egress(RuntimeError.new, step:)).to eq(line(step:, rule: "internal_error"))
       end

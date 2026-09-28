@@ -8,7 +8,7 @@ require_relative "redaction"
 
 module Quaack
   module Enclave
-    # README 5a-4: test each index candidate on its own with HypoPG, on the
+    # DESIGN.md 5a-4: test each index candidate on its own with HypoPG, on the
     # racetrack. Step 8 and step 11 call it the same way for a rewrite
     # candidate, with the rewrite's query in place of the original's.
     #

@@ -6,7 +6,7 @@ require_relative "../index_store"
 module Quaack
   module Enclave
     module Steps
-      # README 15a, for ReportPayload's negative field when the selection is
+      # DESIGN.md 15a, for ReportPayload's negative field when the selection is
       # empty: which rewrites steps 9 and 10 disproved, which index
       # candidates 5a-4 found the planner never used or HypoPG refused, and
       # which the 5a-3 Dedupe dropped as covered by an existing index.
@@ -19,7 +19,7 @@ module Quaack
 
         module_function
 
-        # README 15a. Rule and scenario names, round numbers, redacted DDL,
+        # DESIGN.md 15a. Rule and scenario names, round numbers, redacted DDL,
         # existing index names, and SQLSTATEs only.
         def call(store)
           rewrites = rewrites(store)

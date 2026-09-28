@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-feedback` (README 5a-6): the 5a-4 results for the LLM's
+# `quaacks index-feedback` (DESIGN.md 5a-6): the 5a-4 results for the LLM's
 # own candidates, and which fell short, after a real index-search.
 RSpec.describe "quaacks index-feedback, against a real server" do
   include_context "an index search run"

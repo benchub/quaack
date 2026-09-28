@@ -12,7 +12,7 @@ require_relative "negative_result"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks report-payload --run <run ID>` (README step 15): sends the
+      # `quaacks report-payload --run <run ID>` (DESIGN.md step 15): sends the
       # shape-class data the driver renders the main report from, as one
       # report message. It reads the store only and connects to nothing.
       #
@@ -28,7 +28,7 @@ module Quaack
       #                    "covered_by", "makes_redundant" } }
       #   original_plan    the redacted step 1 plan's node shapes
       #   timed_out_count  candidate runs dropped for timing out
-      #   negative         nil unless top is empty (README 15a); then
+      #   negative         nil unless top is empty (DESIGN.md 15a); then
       #                    { "disproved" => [{ "rewrite", "step" (step9 or
       #                    step10), "rule", "scenario", "round" }],
       #                    "declined" => [{ "search", "ddl", "reason"

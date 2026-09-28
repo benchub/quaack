@@ -4,7 +4,7 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # README 5a-7: rank the index candidates that 5a-4 tested, and combine
+    # DESIGN.md 5a-7: rank the index candidates that 5a-4 tested, and combine
     # them greedily. Step 8 ranks a rewrite's mechanical candidates the same
     # way, and step 11 calls it for a rewrite, with the rewrite's query.
     #
@@ -30,7 +30,7 @@ module Quaack
     # DDL, so the same results rank the same way in any order.
     #
     # Only candidates the planner used for some literal set are ranked. As
-    # README 5a-4 says, one it never used is discarded here, and so is one
+    # DESIGN.md 5a-4 says, one it never used is discarded here, and so is one
     # HypoPG refused. Their Results stay with the caller for 5a-5. top holds
     # the first three.
     #
@@ -38,7 +38,7 @@ module Quaack
     # measures it together with each ranked candidate it doesn't hold yet,
     # with all of their hypothetical indexes present at once. Of those whose
     # plans use every one of their indexes for some literal set, and that
-    # lower some literal set's cost without raising any (README 5a-7), the
+    # lower some literal set's cost without raising any (DESIGN.md 5a-7), the
     # best by the same ranking replaces it. Rounds stop at three
     # indexes or when nothing is better. combination is nil if no pair beat
     # the best single candidate, and otherwise holds its candidates in the
@@ -58,7 +58,7 @@ module Quaack
     # - Enclave-only: Entry#canonical_plans (see 20260923-28), and
     #   Entry#candidates and #ddl. A partial index's predicate, in its DDL,
     #   holds a literal from a low-cardinality column, which may leave only
-    #   under README 3f's rule, so inspect and to_s leave the DDL out.
+    #   under DESIGN.md 3f's rule, so inspect and to_s leave the DDL out.
     # Nothing here goes through egress yet.
     module IndexRanking
       # top has up to three single-index Entries, best first. combination
@@ -71,7 +71,7 @@ module Quaack
       # used, and canonical_plans map each literal set's name to its Cost,
       # to one boolean per index saying whether the plan uses it, and to
       # its CanonicalPlan. partial is true if any index has a predicate:
-      # README 5a-5 says such an index works only if the predicate's literal
+      # DESIGN.md 5a-5 says such an index works only if the predicate's literal
       # is a constant in the application's SQL. plans maps each literal set
       # to its 5a-4 Plan, raw and enclave-only.
       Entry = Data.define(:candidates, :ddl, :size, :costs, :used, :canonical_plans, :plans, :partial) do
@@ -152,7 +152,7 @@ module Quaack
         current.candidates.size > 1 ? current : nil
       end
 
-      # README 5a-7: an addition lowers the cost if it lowers some literal
+      # DESIGN.md 5a-7: an addition lowers the cost if it lowers some literal
       # set's cost and raises none.
       def lower?(entry, current)
         pairs = entry.costs.map { |set, cost| [cost.after, current.costs[set].after] }

@@ -7,7 +7,7 @@ require_relative "transport/ssh"
 
 module Quaack
   module Driver
-    # The driver's side of the link to the enclave script (README, "Where
+    # The driver's side of the link to the enclave script (DESIGN.md, "Where
     # QUAACK runs"). A transport runs `quaacks <subcommand> [--name value
     # ...]`, with any larger input as one JSON object on stdin, waits for it
     # to end, and reads what it printed (see Reply):

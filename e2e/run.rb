@@ -164,7 +164,7 @@ module E2ERun
     # CHECKPOINT flushes the WAL first, so the VACUUM after it always sets
     # the visibility map, as on production and verify.rb's server.
     psql(server, prod, "CHECKPOINT; VACUUM;")
-    # A case's settings are production's own (README step 2 records the
+    # A case's settings are production's own (DESIGN.md step 2 records the
     # server's value, not the plan session's), so they go on the databases,
     # and the racetrack gets them too, as a run server configured like
     # production would (step 4 checks it).
@@ -267,7 +267,7 @@ module E2ERun
     top ? "top #{top["label"]} #{top["slow_blocks"]} blocks" : "no fix selected (#{why_none(report)})"
   end
 
-  # Why the report has no fix, from its negative section (README 15a).
+  # Why the report has no fix, from its negative section (DESIGN.md 15a).
   def why_none(report)
     negative = report["negative"] || {}
     parts = { "declined" => Array(negative["declined"]).map { it["reason"] },

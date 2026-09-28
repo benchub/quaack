@@ -8,7 +8,7 @@ require "tmpdir"
 require "quaack/enclave/cli"
 require "quaack/enclave/store"
 
-# `quaacks teardown --run <run ID>` (README, "Where QUAACK runs"), run
+# `quaacks teardown --run <run ID>` (DESIGN.md, "Where QUAACK runs"), run
 # through the real CLI and its real steps table, with a temporary store
 # base. Each run's store holds sentinels, in its entries and in a file name,
 # standing in for the production values a real run keeps.

@@ -9,7 +9,7 @@ module Quaack
       # Runs the enclave script on the jump server, as
       # `ssh [options] -- <host> quaacks <subcommand> [--name value ...]`,
       # with any input piped to ssh's stdin, which ssh passes on to quaacks.
-      # Access control is ssh's own (README, "Where QUAACK runs").
+      # Access control is ssh's own (DESIGN.md, "Where QUAACK runs").
       #
       # ssh runs locally with no shell. But ssh joins the words of the remote
       # command with spaces and hands the one string to the remote user's

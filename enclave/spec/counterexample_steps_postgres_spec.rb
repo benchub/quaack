@@ -4,7 +4,7 @@ require "securerandom"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-test`, `counterexample-payload`, and
-# `counterexample-round` (README steps 9 and 10), the way the jump server
+# `counterexample-round` (DESIGN.md steps 9 and 10), the way the jump server
 # runs them, on an arena of the same schema with no rows.
 RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a real server" do
   include_context "an index search run"
@@ -104,7 +104,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(step("rewrite-test", "--search", "rewrite_9")).first["rule"]).to eq("rewrite_test_unknown_search")
     end
 
-    context "with now() and an anchor far from the real clock (README 3h)" do
+    context "with now() and an anchor far from the real clock (DESIGN.md 3h)" do
       let(:query) do
         "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
           "AND o.created_at < now()"

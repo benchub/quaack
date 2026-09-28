@@ -6,7 +6,7 @@ require_relative "planner_statistics"
 
 module Quaack
   module Enclave
-    # README 3f: classify every column of the query's tables as PII or not,
+    # DESIGN.md 3f: classify every column of the query's tables as PII or not,
     # mark the low-cardinality ones, and work out which of their statistics
     # may leave the enclave. It reads the statistics entry 3c stored
     # (PlannerStatistics.run) and the quaacks Config, and stores its own
@@ -60,7 +60,7 @@ module Quaack
     # in only when every base column is low-cardinality. An index's
     # expressions are classified together, by all its base columns.
     # Histogram bounds, avg_width, and reltuples never go in. The MCV values of a low-cardinality column are
-    # the only real values it holds, and README 3f lets those leave.
+    # the only real values it holds, and DESIGN.md 3f lets those leave.
     #
     # The stored entry, classification, holds "columns" (schema, table,
     # column, pii, and low_cardinality for each column) and

@@ -20,7 +20,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks index-search --run <run ID> [--search original|rewrite_<n>]`
-      # (README 5, 5a-1 to 5a-4, and step 8): the mechanical half of the
+      # (DESIGN.md 5, 5a-1 to 5a-4, and step 8): the mechanical half of the
       # index search, on the racetrack that `quaacks racetrack-setup` set up.
       # A rewrite search runs rewrite_entry on the stored rewrite's SQL, with
       # no plan gate.
@@ -42,7 +42,7 @@ module Quaack
       #   "results"  => one per tested candidate, in test order (the
       #                 Dedupe's proposals): { "candidate" (as IndexStore
       #                 saves it, sources merged), "partial_constant_only"
-      #                 (README 5a-5's tag: true for a partial index, which
+      #                 (DESIGN.md 5a-5's tag: true for a partial index, which
       #                 works only when the predicate's literal is a constant
       #                 in the application's SQL), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>
@@ -85,7 +85,7 @@ module Quaack
         end
 
         # The search's entry: the original's behind the plan gate, or a
-        # stored rewrite's (README step 8).
+        # stored rewrite's (DESIGN.md step 8).
         def search_entry(store, connection, search)
           return rewrite_entry(store, connection, RewriteEntry.run_sql(store.read(search))) unless search == "original"
 
@@ -105,7 +105,7 @@ module Quaack
         end
 
         # Whether the LLM-side steps (5a-5, 5a-6) take search: original, or
-        # (README step 11) a stored rewrite_<n> that survived steps 9 and 10
+        # (DESIGN.md step 11) a stored rewrite_<n> that survived steps 9 and 10
         # (rewrite_survived_<n> says survived true) and that step 8 didn't
         # prune (rewrite_pruned_<n> doesn't say discarded true).
         def llm_search?(store, search)
@@ -139,7 +139,7 @@ module Quaack
           names.each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
         end
 
-        # README step 8: the same search for one rewrite candidate, sql, as
+        # DESIGN.md step 8: the same search for one rewrite candidate, sql, as
         # the inbound check accepted it, with the original's $n. 5a-1 runs on
         # its parse, and 5a-2 on its plain EXPLAIN on the racetrack with the
         # slow literals (analyzed: false, since a rewrite has no production

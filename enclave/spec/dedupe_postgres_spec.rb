@@ -7,7 +7,7 @@ require "quaack/enclave/pg_array"
 
 # Checks Dedupe.covers? against the planner. For each case, a real index
 # stands for the existing index, read back through pg_get_indexdef and
-# IndexCandidate.from_ddl, as README 3b will read it. The candidate is
+# IndexCandidate.from_ddl, as DESIGN.md 3b will read it. The candidate is
 # created with HypoPG, as 5a-4 would. The query is one the candidate
 # serves on its own: the planner scans the candidate, with no sort, no
 # filter on the scan, and an index-only scan when the candidate has INCLUDE

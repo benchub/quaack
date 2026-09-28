@@ -6,7 +6,7 @@ require_relative "../inventory"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks inventory --run <run ID>` (README, step 2): connects to the
+      # `quaacks inventory --run <run ID>` (DESIGN.md, step 2): connects to the
       # run's production server, and records what later steps compare the
       # run server with, and what they need to know about production, in
       # the run's inventory entry (see Inventory).

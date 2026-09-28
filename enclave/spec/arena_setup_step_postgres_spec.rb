@@ -3,7 +3,7 @@
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks arena-setup` (README 4b) the way the jump server runs it: the
+# `quaacks arena-setup` (DESIGN.md 4b) the way the jump server runs it: the
 # installed quaacks in its own process, outside Bundler. The stand-in
 # production database is the racetrack, and arena is made beside it. The
 # stored dump is in the shape pg_dump 18 writes, \restrict lines and

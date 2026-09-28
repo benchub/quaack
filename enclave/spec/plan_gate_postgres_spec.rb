@@ -9,7 +9,7 @@ require "quaack/enclave/racetrack"
 require "quaack/enclave/redaction"
 require "quaack/enclave/store"
 
-# README 5: the racetrack's plan for the original query with the slow
+# DESIGN.md 5: the racetrack's plan for the original query with the slow
 # literals must match the step 1 plan. The racetrack here is also the
 # "production" server the step 1 plan comes from, so the two match until an
 # example changes the racetrack's statistics after the capture.

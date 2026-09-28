@@ -2,7 +2,7 @@
 
 module Quaack
   module Driver
-    # The driver's LLM calls. README, "Where QUAACK runs": the driver makes
+    # The driver's LLM calls. DESIGN.md, "Where QUAACK runs": the driver makes
     # every LLM call, on the engineer's laptop, never in the enclave. Client
     # is the one class that knows it's talking to Anthropic. Callers ask it
     # for text or JSON and see nothing of the SDK, so another provider, or

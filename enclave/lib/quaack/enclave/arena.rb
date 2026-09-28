@@ -5,7 +5,7 @@ require_relative "racetrack"
 
 module Quaack
   module Enclave
-    # README 4b: build arena, the empty database step 9 loads fixtures into.
+    # DESIGN.md 4b: build arena, the empty database step 9 loads fixtures into.
     #
     #   Arena.build(store:, racetrack:, name:, connect:)  # nil, or raises an Error
     #

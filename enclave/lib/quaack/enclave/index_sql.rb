@@ -52,7 +52,7 @@ module Quaack
       # Refuses what Postgres never allows in an index predicate and a parse
       # tree can show: parameters, subqueries, and aggregate, window, or
       # grouping calls. Function volatility needs the catalog, so it isn't
-      # checked here (see README 3d).
+      # checked here (see DESIGN.md 3d).
       def check_predicate_node(node, what = "predicate")
         problem = forbidden(node)
         raise ArgumentError, "#{what} can't use #{problem}" if problem

@@ -5,7 +5,7 @@ require_relative "enclave_error"
 module Quaack
   module Driver
     # Runs `quaacks teardown --run <id>` when a run ends, however it ends
-    # (README, "Where QUAACK runs"):
+    # (DESIGN.md, "Where QUAACK runs"):
     #
     #   Teardown.around(transport:, run_id:, stderr:, keep: false) { ... }
     #   # => the block's value

@@ -1,6 +1,6 @@
 # 076-generate-series-ordinality results.
 
-Total blocks (README step 13), from `ruby e2e/verify.rb`.
+Total blocks (DESIGN.md step 13), from `ruby e2e/verify.rb`.
 Category: `index`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |

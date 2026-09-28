@@ -6,7 +6,7 @@ require_relative "leak_check/positive_control"
 require_relative "leak_check/quaacks"
 require_relative "leak_check/fixture"
 
-# Leak tests for the trust boundary (README, "Trust boundary"): run a step on
+# Leak tests for the trust boundary (DESIGN.md, "Trust boundary"): run a step on
 # data that holds known sentinel values, and fail if any of them shows up in
 # what the step puts out. Every enclave task that touches production values
 # should have one. The enclave suite's spec_helper loads this file and calls

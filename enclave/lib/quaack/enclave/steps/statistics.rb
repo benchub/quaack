@@ -7,7 +7,7 @@ require_relative "../table_name"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks statistics --run <run ID>` (README 3c): the planner
+      # `quaacks statistics --run <run ID>` (DESIGN.md 3c): the planner
       # statistics, existing indexes, and extended statistics for the
       # query's tables (see Enclave::PlannerStatistics).
       #

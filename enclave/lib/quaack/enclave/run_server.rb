@@ -6,7 +6,7 @@ require_relative "intake"
 
 module Quaack
   module Enclave
-    # The run server (README, step 4), which `quaacks run-server` records in
+    # The run server (DESIGN.md, step 4), which `quaacks run-server` records in
     # the run's run_server entry (see Steps::RunServer), and how later steps
     # connect to it.
     #

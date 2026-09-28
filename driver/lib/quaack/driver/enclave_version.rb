@@ -6,7 +6,7 @@ require_relative "version"
 module Quaack
   module Driver
     # Checks, before start or run touches a run, that the jump server's
-    # quaacks is the version this driver speaks to, ENCLAVE_VERSION (README,
+    # quaacks is the version this driver speaks to, ENCLAVE_VERSION (DESIGN.md,
     # "Deploying the enclave"). The enclave's version reply is its gem's
     # VERSION constant, never anything read from a run.
     module EnclaveVersion

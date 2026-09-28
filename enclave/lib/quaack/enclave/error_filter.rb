@@ -4,7 +4,7 @@ require_relative "egress"
 
 module Quaack
   module Enclave
-    # Error filtering (README, "Where QUAACK runs"): every error the enclave
+    # Error filtering (DESIGN.md, "Where QUAACK runs"): every error the enclave
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one.
@@ -28,7 +28,7 @@ module Quaack
     #   Step names start with a digit and hold hyphens, so they get their own
     #   pattern rather than the rule's.
     # - The function comes from the error's function method, and is sent
-    #   only when the rule is volatile_function (README 3d). It must be one
+    #   only when the rule is volatile_function (DESIGN.md 3d). It must be one
     #   plain, unquoted, schema-qualified name, such as pg_catalog.random.
     #   Otherwise it's left out, so a quoted name is never sent.
     #

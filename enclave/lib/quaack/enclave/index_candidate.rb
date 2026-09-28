@@ -9,7 +9,7 @@ require_relative "index_methods"
 
 module Quaack
   module Enclave
-    # One proposed index, as the mechanical generators emit it (README 5a-1
+    # One proposed index, as the mechanical generators emit it (DESIGN.md 5a-1
     # and 5a-2) and as the filter and tests downstream consume it (5a-3,
     # 5a-4), and as 5a-5 reads the LLM's DDL. A key column can be an
     # expression, with an opclass and a collation (see KeyColumn).
@@ -60,7 +60,7 @@ module Quaack
     # sum(b) by name, against the aggregates and window functions built into
     # Postgres 18, so a user-defined aggregate or window function called
     # without aggregate or window syntax gets through. It doesn't check function volatility (random(), now()),
-    # because that needs the catalog. README 3d does that.
+    # because that needs the catalog. DESIGN.md 3d does that.
     #
     # That name check is unqualified: an unqualified call to a user-defined
     # function that happens to share a built-in's name, such as lead(x) where
@@ -76,7 +76,7 @@ module Quaack
     # definition collapse in a Set or a Hash. merge_sources combines them.
     # Key order and INCLUDE order both count.
     #
-    # A candidate with a predicate is value-class data under the README's trust
+    # A candidate with a predicate is value-class data under DESIGN.md's trust
     # boundary, because the predicate can hold a real literal. So inspect,
     # to_s, pp, and every error message leave the predicate text out. Pattern
     # matching can't see the predicate at all: deconstruct_keys leaves it out

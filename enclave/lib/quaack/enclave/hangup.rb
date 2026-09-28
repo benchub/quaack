@@ -5,7 +5,7 @@ require_relative "connections"
 module Quaack
   module Enclave
     # What quaacks does when the driver goes away mid-step, as when its ssh
-    # session drops or its timeout fires (README, "Where QUAACK runs"). It
+    # session drops or its timeout fires (DESIGN.md, "Where QUAACK runs"). It
     # cancels every registered connection's running statement (see
     # Connections.cancel_all), which aborts its transaction, and then dies
     # of SIGHUP. ErrorFilter.guard lets the SignalException through, so a

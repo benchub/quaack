@@ -9,7 +9,7 @@ require "quaack/enclave/planner_statistics"
 require "quaack/enclave/redaction"
 require "quaack/enclave/store"
 
-# README 3e against real statistics. Each example runs 3g and 3c the way the
+# DESIGN.md 3e against real statistics. Each example runs 3g and 3c the way the
 # run does, then LiteralSet on what they stored.
 #
 # public.readings has a skewed k: 7 in half the rows, 3 in a tenth, 11 in

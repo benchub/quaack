@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-test` (README 5a-5 and 5a-4): the LLM's DDL, filtered
+# `quaacks index-test` (DESIGN.md 5a-5 and 5a-4): the LLM's DDL, filtered
 # through the stored search's Dedupe and tested on the racetrack, the way
 # the jump server runs it, after a real index-search.
 RSpec.describe "quaacks index-test, against a real server" do

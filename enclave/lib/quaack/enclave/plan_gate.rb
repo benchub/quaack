@@ -6,7 +6,7 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # README 5: the plan gate. EXPLAIN the original query on the racetrack
+    # DESIGN.md 5: the plan gate. EXPLAIN the original query on the racetrack
     # with the slow literals, and abort unless its canonical form matches
     # the step 1 plan's.
     #

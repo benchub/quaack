@@ -6,7 +6,7 @@ require "quaack/enclave/planner_statistics"
 require "quaack/enclave/config"
 require "quaack/enclave/store"
 
-# README 3f against real pg_stats: 3c (PlannerStatistics.run) stores the
+# DESIGN.md 3f against real pg_stats: 3c (PlannerStatistics.run) stores the
 # statistics, and this classifies every column of the query's tables and
 # works out what of them may leave.
 #
@@ -233,7 +233,7 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     end
   end
 
-  # README 3f: an expression index's pg_stats rows and a CREATE STATISTICS
+  # DESIGN.md 3f: an expression index's pg_stats rows and a CREATE STATISTICS
   # object's MCV list are classified by the base columns they read. One that
   # reads any PII column is PII, so none of its MCV data leaves. Its values
   # leave only when every base column is low-cardinality.

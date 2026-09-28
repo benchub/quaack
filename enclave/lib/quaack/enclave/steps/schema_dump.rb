@@ -7,7 +7,7 @@ require_relative "../table_name"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks schema-dump --run <run ID>` (README 3b): the schema-only
+      # `quaacks schema-dump --run <run ID>` (DESIGN.md 3b): the schema-only
       # dump of the query's namespaces plus public, and the subset, the
       # query's tables and their FK ancestors (see Enclave::SchemaDump).
       #

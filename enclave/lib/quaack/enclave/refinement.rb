@@ -2,7 +2,7 @@
 
 module Quaack
   module Enclave
-    # README 5a-6: which of the LLM's 5a-5 candidates fell short in 5a-4.
+    # DESIGN.md 5a-6: which of the LLM's 5a-5 candidates fell short in 5a-4.
     #
     #   Refinement.shortfalls(entry)
     #   # => [nil, ["unused", nil], ["beaten", 2], ...]

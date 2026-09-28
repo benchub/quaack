@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-search` (README 5 and 5a-1 to 5a-4) the way the jump server
+# `quaacks index-search` (DESIGN.md 5 and 5a-1 to 5a-4) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler.
 RSpec.describe "quaacks index-search, against a real server" do
   include_context "an index search run"

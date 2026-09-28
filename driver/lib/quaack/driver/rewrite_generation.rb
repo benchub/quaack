@@ -4,7 +4,7 @@ require "json"
 
 module Quaack
   module Driver
-    # The driver's half of README 6a: it asks the LLM for rewrites of the
+    # The driver's half of DESIGN.md 6a: it asks the LLM for rewrites of the
     # redacted query and has the enclave check them.
     #
     #   RewriteGeneration.new(client:, rewrite_check:).run(payload)

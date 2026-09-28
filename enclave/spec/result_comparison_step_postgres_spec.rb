@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# README 14c: `quaacks result-comparison` runs the original and each measured
+# DESIGN.md 14c: `quaacks result-comparison` runs the original and each measured
 # candidate as plain queries per literal set on the racetrack, compares them
 # in the enclave, and stores verdicts. Mismatching candidates are discarded.
 RSpec.describe "quaacks result-comparison, against a real server" do

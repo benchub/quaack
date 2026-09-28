@@ -4,7 +4,7 @@ require_relative "deparse"
 
 module Quaack
   module Enclave
-    # README 3g: the redacted query and plans, which are what the driver
+    # DESIGN.md 3g: the redacted query and plans, which are what the driver
     # and every LLM call get, and the placeholder map, which stays in the
     # governed store.
     #

@@ -10,7 +10,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks result-comparison --run <run ID>` (README 14c): on the
+      # `quaacks result-comparison --run <run ID>` (DESIGN.md 14c): on the
       # racetrack, for each 3e literal set, compares anchored_query's result
       # with each candidate's that candidate_runs measured, with
       # ProductionComparison, binding the set's literals as Measurement

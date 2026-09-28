@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-rank` (README 5a-7): ranks and combines every tested
+# `quaacks index-rank` (DESIGN.md 5a-7): ranks and combines every tested
 # candidate of a search, mechanical and LLM, after a real index-search and
 # index-test.
 RSpec.describe "quaacks index-rank, against a real server" do

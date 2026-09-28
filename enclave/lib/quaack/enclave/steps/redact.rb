@@ -6,7 +6,7 @@ require_relative "../redaction"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks redact --run <run ID>` (README 3g): redacts the run's query
+      # `quaacks redact --run <run ID>` (DESIGN.md 3g): redacts the run's query
       # and step 1 plan (see Redaction).
       #
       # It reads the run's qualified_query entry, which `quaacks qualify`

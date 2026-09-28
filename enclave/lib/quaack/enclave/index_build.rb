@@ -7,7 +7,7 @@ require_relative "index_store"
 
 module Quaack
   module Enclave
-    # README 12a: builds every distinct index QUAACK proposed and ranked,
+    # DESIGN.md 12a: builds every distinct index QUAACK proposed and ranked,
     # records its size, and hides it.
     #
     #   IndexBuild.build(store, connection)  # writes index_build

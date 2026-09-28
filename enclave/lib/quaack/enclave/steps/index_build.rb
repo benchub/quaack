@@ -6,7 +6,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-build --run <run ID>` (README 12a): builds and hides
+      # `quaacks index-build --run <run ID>` (DESIGN.md 12a): builds and hides
       # every ranked and set-aside index on the racetrack (IndexBuild) and
       # writes index_build. Its only line is DONE.
       module IndexBuild

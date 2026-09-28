@@ -8,7 +8,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # The inbound check for step 10's inserts (README, "What goes into the
+    # The inbound check for step 10's inserts (DESIGN.md, "What goes into the
     # enclave"). The LLM writes them to fill a fixture, so they're
     # untrusted, and the arena runner accepts any single InsertStmt. This
     # check is the real guard, and runs on each insert before anything

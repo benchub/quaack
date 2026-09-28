@@ -12,7 +12,7 @@ require_relative "supported_sql"
 
 module Quaack
   module Enclave
-    # README step 3h: replace the functions that read the transaction's
+    # DESIGN.md step 3h: replace the functions that read the transaction's
     # clock with calls to quaack.clock_anchor(), so every run of the query
     # sees the time the production plan ran.
     #

@@ -1,4 +1,4 @@
--- The sample schema, based on the README's orders and customers example.
+-- The sample schema, based on DESIGN.md's orders and customers example.
 -- spec/support/test_postgres.rb loads it into both template databases:
 -- arena's, which stays empty, and racetrack's, which also gets data.sql.
 

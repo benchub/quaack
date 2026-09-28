@@ -13,7 +13,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-test --run <run ID> [--search original]` (README 5a-5,
+      # `quaacks index-test --run <run ID> [--search original]` (DESIGN.md 5a-5,
       # then 5a-4): filters the LLM's index DDL through the search's stored
       # Dedupe and tests the survivors on the racetrack. The driver calls it
       # once for the LLM's candidates and once more for its replacements.
@@ -37,7 +37,7 @@ module Quaack
       # status` shows 5a-5 ran; the driver calls it with no DDL when the LLM
       # proposed none.
       #
-      # With --round refinement (README 5a-6), each tested candidate also
+      # With --round refinement (DESIGN.md 5a-6), each tested candidate also
       # carries "round" => "refinement", and the entry gets "refined" =>
       # true, even if nothing survived. Any other round is refused with
       # index_test_unknown_round.

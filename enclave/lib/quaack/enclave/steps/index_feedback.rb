@@ -8,7 +8,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-feedback --run <run ID> [--search original]` (README
+      # `quaacks index-feedback --run <run ID> [--search original]` (DESIGN.md
       # 5a-6): sends the 5a-4 results for the LLM's own 5a-5 candidates, and
       # which of them fell short (see Refinement), as one index_feedback
       # message. It doesn't connect to anything.

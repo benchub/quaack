@@ -4,7 +4,7 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # README step 8's three-configuration pruning: whether a rewrite
+    # DESIGN.md step 8's three-configuration pruning: whether a rewrite
     # candidate can't run any differently from the original, so step 8
     # discards it.
     #

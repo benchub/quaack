@@ -52,7 +52,7 @@ module Quaack
         RULE = /\A[a-z][a-z0-9_]{0,62}\z/
         STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
-        # A volatile_function refusal's function (README 3d), as the
+        # A volatile_function refusal's function (DESIGN.md 3d), as the
         # enclave's ErrorFilter shapes it: one unquoted qualified name.
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
 

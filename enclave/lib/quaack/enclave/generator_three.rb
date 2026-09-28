@@ -6,7 +6,7 @@ require_relative "index_ddl_check"
 
 module Quaack
   module Enclave
-    # The enclave's half of README 5a-5: it takes the index DDL the LLM
+    # The enclave's half of DESIGN.md 5a-5: it takes the index DDL the LLM
     # wrote, through the driver, and filters it the way 5a-3 filters the
     # mechanical generators' output. The same call runs the replacement
     # round, and 5a-6's revision.
@@ -32,7 +32,7 @@ module Quaack
     # - :accepted, for a survivor, which goes on to 5a-4.
     #
     # partial_constant_only is true for a partial candidate that wasn't
-    # dropped (README 5a-5): it only works if the predicate's literal is a
+    # dropped (DESIGN.md 5a-5): it only works if the predicate's literal is a
     # constant in the application's SQL, not a bind parameter.
     #
     # Trust boundary. The DDL came from the LLM, which only saw shape, but a
@@ -42,7 +42,7 @@ module Quaack
     # only the position, status, rule, covering index name (schema, so
     # shape), and tag. Every rule is one of the enclave's constants.
     module GeneratorThree
-      # README 5a-5 asks for up to five.
+      # DESIGN.md 5a-5 asks for up to five.
       MAX_CANDIDATES = 5
 
       Outcome = Data.define(:index, :status, :rule, :covered_by, :partial_constant_only, :candidate)

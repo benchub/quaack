@@ -5,7 +5,7 @@ require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks qualify --run <run ID>` (README, steps 1 and 3a) the way the jump
+# `quaacks qualify --run <run ID>` (DESIGN.md, steps 1 and 3a) the way the jump
 # server runs it: the installed quaacks in its own process, outside Bundler,
 # connecting to the run's production server with the operator's libpq setup
 # in a temporary HOME, as `quaacks inventory` does. The production server is
