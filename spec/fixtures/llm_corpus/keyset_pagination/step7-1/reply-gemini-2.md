@@ -1,0 +1,1 @@
+{"rewrites": [{"transformation": "Expanded tuple comparison `(o.created_at, o.id) < ($1, $2)` into equivalent boolean logic `o.created_at <= $1 AND (o.created_at < $1 OR o.id < $2)` to enable better index usage or index scanning.", "assumptions": []}]}

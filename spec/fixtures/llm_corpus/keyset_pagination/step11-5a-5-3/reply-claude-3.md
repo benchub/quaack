@@ -1,0 +1,1 @@
+{"indexes": ["CREATE INDEX ON public.orders USING btree (created_at DESC, id DESC) INCLUDE (updated_at, total_cents)", "CREATE INDEX ON public.orders USING btree (created_at DESC, id DESC, updated_at, total_cents)", "CREATE INDEX ON public.orders USING brin (created_at)", "CREATE INDEX ON public.orders USING brin (created_at, id)"]}

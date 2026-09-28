@@ -1,0 +1,1 @@
+{"inserts":["INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) VALUES (1, 1, 'open', 100, $1 - interval '2 hours', $1 + interval '1 hour')","INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) VALUES (2, 1, 'open', 100, $1 - interval '3 hours', $1 - interval '3 hours')"]}

@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Moved the predicate u.country = $1 from the WHERE clause into the ON clause of the inner join. For an INNER JOIN, a condition in ON and the same condition in WHERE are semantically identical, so the result set, ordering, and LIMIT are unchanged. The trailing semicolon has no effect.","assumptions":[]}]}

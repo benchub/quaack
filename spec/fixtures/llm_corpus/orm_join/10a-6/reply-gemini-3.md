@@ -1,0 +1,1 @@
+{"inserts": ["INSERT INTO public.users (id, email, name, country, status, created_at) OVERRIDING SYSTEM VALUE VALUES (1, 'null_name@example.com', NULL, $1, 'active', '2024-01-01 00:00:00+00')", "INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (1, 1, 'completed', 1000, $2, '2024-01-01 00:00:00+00')"]}
