@@ -1,0 +1,34 @@
+# frozen_string_literal: true
+
+require "json"
+
+module Quaack
+  module Driver
+    # The driver config on the laptop, ~/.quaack/driver.json: a JSON object.
+    # `quaack start` reads its jump_command, and `quaack run` its llm block
+    # (see LLM.settings).
+    module DriverConfig
+      # A config file that isn't a JSON object. The message never quotes it.
+      class Bad < StandardError
+        def initialize = super("~/.quaack/driver.json must be a JSON object")
+      end
+
+      def self.path(home) = File.join(home, ".quaack", "driver.json")
+
+      # The config under home as a Hash, or nil when there's no file.
+      def self.read(home)
+        path = path(home)
+        return unless File.file?(path)
+
+        config = begin
+          JSON.parse(File.read(path))
+        rescue JSON::ParserError
+          nil
+        end
+        raise Bad unless config.is_a?(Hash)
+
+        config
+      end
+    end
+  end
+end

@@ -2,6 +2,7 @@
 
 require "json"
 require "shellwords"
+require_relative "driver_config"
 require_relative "enclave_version"
 require_relative "runs"
 require_relative "transport/child"
@@ -52,18 +53,13 @@ module Quaack
       private
 
       def jump_command
-        path = File.join(@home, ".quaack", "driver.json")
-        raise Error, "no_driver_config" unless File.file?(path)
-
-        command = begin
-          JSON.parse(File.read(path))
-        rescue JSON::ParserError
-          nil
-        end
-        command = command["jump_command"] if command.is_a?(Hash)
+        config = DriverConfig.read(@home) or raise Error, "no_driver_config"
+        command = config["jump_command"]
         raise Error, "bad_driver_config" unless command.is_a?(String) && command.match?(/\A[^\n\r]*\S[^\n\r]*\z/)
 
         command
+      rescue DriverConfig::Bad
+        raise Error, "bad_driver_config"
       end
 
       def jump_host(template, server)
