@@ -2732,3 +2732,15 @@ The newest pg_query (6.2.3) ships the Postgres 17 parser, and no Postgres 18 ver
 - **README:** Anywhere pg_query parses SQL, including 3a, 5a-1, step 9, and the inbound checks.
 - **Status:** done
 - **Decided:** Step 3b doesn't parse the schema dump. It finds the subset tables and their FK parents from `pg_catalog`, and gets the subset from `pg_dump --table` for each one (see 20260922-18). So pg_query only parses queries and inbound SQL, and Postgres 18-only syntax in a dump doesn't matter.
+
+### 20260923-2. Enclave deploys by gem install only.
+
+The repo has one Gemfile and one lockfile for all three gems. So `bundle install` from a checkout on the jump server would install the driver gem, its LLM SDK once 20260922-6 adds it, and the dev tools. The enclave has to deploy by building and installing the `quaacks` gem on its own. Document that, and make the wrong way hard or impossible, for example by having the enclave executable refuse to run under a bundle that includes the driver.
+
+- **Depends on:** 20260922-1.
+- **Came from:** First review of 20260922-1.
+- **README:** Where QUAACK runs.
+- **Status:** done
+- **Note (from 20260922-5):** The driver runs a bare `quaacks` over non-interactive ssh (`ssh -T -o BatchMode=yes -- host 'quaacks ...'`), so `quaacks` must be on PATH for a non-interactive session. The remote login shell must also be POSIX-compatible (bash, sh, or zsh). fish and csh break the Shellwords quoting.
+- **Decided:** The driver builds the `quaacks` and `quaack-protocol` gems locally, copies them to the jump server over ssh, and installs them into a user gem directory there. It checks the installed version before each run. There's no gem server.
+- **Decided (2026-09-27):** A separate `quaack deploy` command does the install. `quaack run` checks the installed version and refuses on a mismatch, pointing to `quaack deploy`. Install into a user-specific gem directory, never an OS-wide one. The jump servers have gcc and make, so gems with native extensions (pg_query) install from source there.

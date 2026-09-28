@@ -161,17 +161,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260923-1. Postgres 17 parser under Postgres 18. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-2. Enclave deploys by gem install only.
-
-The repo has one Gemfile and one lockfile for all three gems. So `bundle install` from a checkout on the jump server would install the driver gem, its LLM SDK once 20260922-6 adds it, and the dev tools. The enclave has to deploy by building and installing the `quaacks` gem on its own. Document that, and make the wrong way hard or impossible, for example by having the enclave executable refuse to run under a bundle that includes the driver.
-
-- **Depends on:** 20260922-1.
-- **Came from:** First review of 20260922-1.
-- **README:** Where QUAACK runs.
-- **Status:** todo
-- **Note (from 20260922-5):** The driver runs a bare `quaacks` over non-interactive ssh (`ssh -T -o BatchMode=yes -- host 'quaacks ...'`), so `quaacks` must be on PATH for a non-interactive session. The remote login shell must also be POSIX-compatible (bash, sh, or zsh). fish and csh break the Shellwords quoting.
-- **Decided:** The driver builds the `quaacks` and `quaack-protocol` gems locally, copies them to the jump server over ssh, and installs them into a user gem directory there. It checks the installed version before each run. There's no gem server.
-- **Decided (2026-09-27):** A separate `quaack deploy` command does the install. `quaack run` checks the installed version and refuses on a mismatch, pointing to `quaack deploy`. Install into a user-specific gem directory, never an OS-wide one. The jump servers have gcc and make, so gems with native extensions (pg_query) install from source there.
+### 20260923-2. Enclave deploys by gem install only. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-3. Rename the enclave gem to quaacks. Done, see BACKLOG-COMPLETE.md.
 
@@ -1192,4 +1182,14 @@ These are minor findings from the review of 20260927-24:
 - **Depends on:** 20260923-1.
 - **Came from:** Reviews of 20260923-1.
 - **README:** none.
+- **Status:** todo
+
+### 20260927-29. Deploy loose ends.
+
+- `QUAACKS_DEV_CHECKOUT=1` turns off the driver-present guard, and it's a plain environment variable. No production path sets it, but an operator could export it on a jump server by mistake.
+- The deploy spec never installs pg_query or pg from rubygems, and never compiles them. It never runs over real ssh or on a real Linux jump server. Check these on the first real `quaack deploy`.
+
+- **Depends on:** 20260923-2.
+- **Came from:** Reviews of 20260923-2.
+- **README:** Where QUAACK runs.
 - **Status:** todo
