@@ -62,6 +62,16 @@ module Quaack
     # without aggregate or window syntax gets through. It doesn't check function volatility (random(), now()),
     # because that needs the catalog. README 3d does that.
     #
+    # That name check is unqualified: an unqualified call to a user-defined
+    # function that happens to share a built-in's name, such as lead(x) where
+    # lead is a schema's own function rather than the window function, is
+    # wrongly refused as if it were the built-in. Postgres itself accepts such
+    # a function and such an index, and pg_get_indexdef can print the call
+    # unqualified when the function's schema is first on search_path, so
+    # from_ddl returns nil for an existing index built on one. This is rare
+    # and harmless: the index just can't be represented as a candidate, the
+    # same as any other DDL the constructor refuses.
+    #
     # Equality and hash ignore sources, so two generators' copies of the same
     # definition collapse in a Set or a Hash. merge_sources combines them.
     # Key order and INCLUDE order both count.
@@ -177,8 +187,11 @@ module Quaack
 
       def normalize_predicate(sql)
         return nil if sql.nil?
-        raise ArgumentError, "predicate must be SQL text or nil" unless sql.is_a?(String) && !sql.strip.empty?
+        raise ArgumentError, "predicate must be SQL text or nil" unless sql.is_a?(String)
 
+        # No separate blankness check: IndexSql.normalize_predicate parses "" and
+        # whitespace-only text as an empty WHERE clause, which pg_query refuses
+        # as a syntax error, so it already raises ArgumentError on its own.
         IndexSql.normalize_predicate(sql)
       end
 

@@ -79,6 +79,13 @@ module Quaack
           call.agg_order.any?
       end
 
+      # This name check is a backstop, not a precise catalog lookup: an
+      # unqualified call to a same-named user function is refused too (see
+      # IndexCandidate's comment on the predicate), and it can't see
+      # set-returning functions, DEFAULT, or merge_action(), which Postgres
+      # also refuses here but a mechanical generator never emits. Nothing in
+      # the supported SQL profile's WHERE clauses reaches those gaps, so it's
+      # left as-is rather than extended to close them.
       def built_in_aggregate?(call)
         *schema, name = call.funcname.map { |n| n.string.sval }
         AGGREGATE_AND_WINDOW_FUNCTIONS.include?(name) && [[], ["pg_catalog"]].include?(schema)
