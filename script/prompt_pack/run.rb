@@ -40,6 +40,8 @@ module PromptPack
   CORPUS = File.join(ROOT, "spec", "fixtures", "llm_corpus")
   QUAACKS = [RbConfig.ruby, "-I", File.join(ROOT, "enclave", "lib"),
              File.join(ROOT, "enclave", "exe", "quaacks")].freeze
+  # Lets quaacks run from this checkout, whose bundle holds the driver gem.
+  ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 
   # The queries' literals that must never reach a prompt, fixed so the pack
   # comes out the same on every run. Each is long enough for LeakCheck

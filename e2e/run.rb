@@ -43,6 +43,8 @@ module E2ERun
   NOTES = "<!-- notes: kept by run.rb -->"
   QUAACKS = [RbConfig.ruby, "-I", File.join(ROOT, "enclave", "lib"),
              File.join(ROOT, "enclave", "exe", "quaacks")].freeze
+  # Lets quaacks run from this checkout, whose bundle holds the driver gem.
+  ENV["QUAACKS_DEV_CHECKOUT"] = "1"
   SETUP = %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor
              racetrack-setup].freeze
 

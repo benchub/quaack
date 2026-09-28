@@ -2,6 +2,7 @@
 
 require "json"
 require "shellwords"
+require_relative "enclave_version"
 require_relative "runs"
 require_relative "transport/child"
 require_relative "transport/ssh"
@@ -38,7 +39,9 @@ module Quaack
 
       def call(server:, query:, plan:)
         host = jump_host(jump_command, server)
-        result = Transport::Ssh.new(host:, ssh: @ssh).call("intake", args: { query:, plan:, server: })
+        transport = Transport::Ssh.new(host:, ssh: @ssh)
+        EnclaveVersion.check!(transport, host)
+        result = transport.call("intake", args: { query:, plan:, server: })
         run_id = result.messages.find { it["type"] == "run" }&.fetch("run_id", nil)
         raise Error, "bad_run_id" unless run_id.is_a?(String) && Runs::RUN_ID.match?(run_id)
 

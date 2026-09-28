@@ -19,13 +19,21 @@ RSpec.describe "quaack executable" do
 
     after { FileUtils.rm_rf(dir) }
 
-    # A fake ssh first on PATH that answers any call with one run message,
-    # and a driver config whose jump_command prints jump-1.
+    # Shell that answers `quaacks version` as a jump server with version.
+    def version_answer(version = Quaack::Driver::ENCLAVE_VERSION)
+      "case \"$*\" in *\" quaacks version\") " \
+        "printf '{\"type\":\"version\",\"version\":\"#{version}\"}\\n{\"type\":\"done\"}\\n'; exit;; esac"
+    end
+
+    # A fake ssh first on PATH that answers version as the expected one and
+    # any other call with one run message, and a driver config whose
+    # jump_command prints jump-1.
     def env
       bin = File.join(dir, "bin")
       FileUtils.mkdir_p([bin, File.join(dir, ".quaack")])
       File.write(File.join(bin, "ssh"), <<~SH)
         #!/bin/sh
+        #{version_answer}
         printf '%s\\n' "$*" > '#{dir}/ssh-args'
         printf '{"type":"run","run_id":"20260926T010203Z-0123abcd"}\\n{"type":"done"}\\n'
       SH
@@ -40,6 +48,19 @@ RSpec.describe "quaack executable" do
 
       expect([out, status.exitstatus]).to eq(["20260926T010203Z-0123abcd\n", 0]), err
       expect(File.read(File.join(dir, "ssh-args"))).to include("jump-1 quaacks intake --query /q --plan /p")
+    end
+
+    it "refuses a jump server with another quaacks version before intake, pointing to quaack deploy" do
+      e = env
+      script = File.join(dir, "bin", "ssh")
+      File.write(script, File.read(script).sub(version_answer, version_answer("0.0.9")))
+      out, err, status = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start failed: jump-1 has quaacks 0.0.9, but this driver needs " \
+                    "#{Quaack::Driver::ENCLAVE_VERSION}. Run `quaack deploy --host jump-1`.\n", 1])
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
 
     it "prints only the rule when it fails, and exits 1" do
@@ -57,6 +78,7 @@ RSpec.describe "quaack executable" do
       e = env
       File.write(File.join(dir, "bin", "ssh"), <<~SH)
         #!/bin/sh
+        #{version_answer}
         printf '{"type":"error","step":"intake","rule":"query_unparsable"}\\n'
         exit 70
       SH
@@ -73,6 +95,33 @@ RSpec.describe "quaack executable" do
 
       expect([out, status.exitstatus]).to eq(["", 64])
       expect(err).to include("quaack start --server")
+    end
+  end
+
+  describe "deploy" do
+    let(:dir) { Dir.mktmpdir("quaack-cli-deploy") }
+
+    after { FileUtils.rm_rf(dir) }
+
+    # deploy_spec.rb covers a real install. Here ssh fails every remote
+    # command, so the CLI's failure path shows.
+    it "prints what failed, naming the host, and exits 1" do
+      File.write(File.join(dir, "ssh"), "#!/bin/sh\ncat >/dev/null\necho 'no space left'\nexit 1\n")
+      FileUtils.chmod(0o755, File.join(dir, "ssh"))
+      out, err, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
+                                        "deploy", "--host", "jump-1")
+
+      expect([out, status.exitstatus]).to eq(["", 1])
+      expect(err).to start_with("quaack deploy failed: copying quaack-protocol-")
+      expect(err).to include("failed on jump-1:\nno space left\n")
+    end
+
+    it "rejects deploy without exactly one --host" do
+      [%w[deploy], %w[deploy --host], %w[deploy --host a --host b], %w[deploy --server a]].each do |argv|
+        out, err, status = run_ruby(exe, *argv)
+
+        expect([out, err, status.exitstatus]).to eq(["", Quaack::Driver::CLI::USAGE, 64]), argv.inspect
+      end
     end
   end
 

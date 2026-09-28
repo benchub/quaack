@@ -27,7 +27,8 @@ RSpec.describe "quaack run" do
   end
   let(:out) { File.join(home, "r.html") }
   let(:replies) do
-    { "status" => [{ "type" => "status", "entries" => entries }],
+    { "version" => [{ "type" => "version", "version" => Quaack::Driver::ENCLAVE_VERSION }],
+      "status" => [{ "type" => "status", "entries" => entries }],
       "index-payload" => [{ "type" => "index_payload" }],
       "index-feedback" => [{ "type" => "index_feedback", "revise" => false, "refined" => false }],
       "rewrite-payload" => [{ "type" => "rewrite_payload", "query" => "SELECT $1" }],
@@ -77,10 +78,10 @@ RSpec.describe "quaack run" do
 
     expect([status, stderr.string]).to eq([0, torn])
     expect(hosts).to eq(["jump-1"])
-    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback arena-setup status index-build baseline
+    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build baseline
                                                   index-baseline candidate-runs minimax result-comparison selection
                                                   report-payload teardown])
-    expect(transport.calls.first.last[:args]).to eq(run: run_id)
+    expect(transport.calls[1].last[:args]).to eq(run: run_id)
   end
 
   it "sends the --rewrites file's rewrites through step 7 inside the pipeline, before step 8" do
@@ -91,9 +92,9 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
     expect([status, stderr.string]).to eq([0, torn])
-    expect(transport.calls.map(&:first)).to eq(%w[status index-feedback rewrite-payload rewrite-check status status
-                                                  status report-payload teardown])
-    expect(transport.calls[3].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
+    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback rewrite-payload rewrite-check status
+                                                  status status report-payload teardown])
+    expect(transport.calls[4].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
   end
 
@@ -129,14 +130,14 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 and only the rule when an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
 
-    status = cli.run(["run", "--run", run_id])
+    status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
   it "tears the run down after an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
-    cli.run(["run", "--run", run_id])
+    cli.run(["run", "--run", run_id, "--out", out])
     expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
   end
 
@@ -163,7 +164,7 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 and only the rule when an LLM call fails" do
     fake.error("step7", status: 401)
 
-    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
+    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: llm_auth\n"])
   end
@@ -171,7 +172,7 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
     replies["rewrite-payload"] = []
 
-    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
+    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: no_rewrite_payload\n"])
     expect(fake.asks).to eq([])
@@ -204,5 +205,36 @@ RSpec.describe "quaack run" do
     end
     expect(stderr.string).to include("quaack run --run <ID> [--rewrites <file>]")
     expect(transport.calls).to eq([])
+  end
+
+  it "checks the jump server's quaacks version first, and refuses a mismatch, pointing to quaack deploy" do
+    replies["version"] = [{ "type" => "version", "version" => "0.0.9" }]
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, stdout.string]).to eq([1, ""])
+    expect(stderr.string).to eq("quaack run failed: jump-1 has quaacks 0.0.9, but this driver needs " \
+                                "#{Quaack::Driver::ENCLAVE_VERSION}. Run `quaack deploy --host jump-1`.\n")
+    expect(transport.calls.map(&:first)).to eq(["version"])
+  end
+
+  it "refuses when the jump server has no quaacks to run, pointing to quaack deploy" do
+    failing["version"] = Quaack::Driver::EnclaveError.new(subcommand: "version", rule: "incomplete")
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect(status).to eq(1)
+    expect(stderr.string).to eq("quaack run failed: quaacks isn't installed on jump-1, or isn't on PATH for " \
+                                "non-interactive ssh there. Run `quaack deploy --host jump-1`.\n")
+    expect(transport.calls.map(&:first)).to eq(["version"])
+  end
+
+  it "names no version it doesn't recognize as one" do
+    replies["version"] = [{ "type" => "version", "version" => "x y\n" }]
+    cli.run(["run", "--run", run_id, "--out", out])
+
+    expect(stderr.string).to start_with("quaack run failed: jump-1 has quaacks of an unknown version, but")
+  end
+
+  it "expects the enclave's own VERSION" do
+    expect(Quaack::Driver::ENCLAVE_VERSION).to eq(EnclaveCommands.enclave_version)
   end
 end

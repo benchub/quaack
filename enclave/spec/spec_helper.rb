@@ -22,6 +22,20 @@ def run_ruby(*)
   Open3.capture3(RbConfig.ruby, *)
 end
 
+# Lets exe/quaacks run from this checkout, whose bundle holds the driver gem.
+# Without it, quaacks refuses (see cli_spec.rb).
+ENV["QUAACKS_DEV_CHECKOUT"] = "1"
+
+# Sets each environment variable in changes, a nil value unsetting it, for
+# the block, then puts every one back.
+def with_env(changes)
+  original = changes.keys.to_h { [it, ENV.fetch(it, nil)] }
+  changes.each { |k, v| ENV[k] = v }
+  yield
+ensure
+  original.each { |k, v| ENV[k] = v }
+end
+
 RSpec.configure do |config|
   config.disable_monkey_patching!
   config.expect_with(:rspec) { |c| c.syntax = :expect }

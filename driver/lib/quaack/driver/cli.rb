@@ -8,10 +8,14 @@ module Quaack
     class CLI
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file>\n       " \
+              "quaack deploy --host <jump server>\n       " \
               "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep]\n"
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
       RUN_OPTIONAL = %w[--rewrites --out].freeze
+      # What run loads, only once it runs.
+      RUN_FILES = %w[burndown enclave_error enclave_version llm operator_candidates pipeline runs teardown
+                     transport/ssh].freeze
 
       # transport builds the transport to a jump host, and client the LLM
       # client. Specs pass fakes for both, since they're the edges.
@@ -34,12 +38,12 @@ module Quaack
 
       private
 
-      # The exit status of a well-formed start or run, or nil.
+      # The exit status of a well-formed start, run, or deploy, or nil.
       def subcommand(argv)
-        if argv.first == "start" && (options = start_options(argv.drop(1)))
-          start(options)
-        elsif argv.first == "run" && (options = run_options(argv.drop(1)))
-          run_command(**options)
+        case argv.first
+        when "start" then (options = start_options(argv.drop(1))) && start(options)
+        when "run" then (options = run_options(argv.drop(1))) && run_command(**options)
+        when "deploy" then deploy(argv.drop(1))
         end
       end
 
@@ -60,9 +64,15 @@ module Quaack
         require_relative "start"
         @stdout.print "#{Start.new.call(**options)}\n"
         0
-      rescue Start::Error, EnclaveError => e
+      rescue Start::Error, EnclaveError, EnclaveVersion::Mismatch => e
         @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
+      end
+
+      # The exit status of `deploy --host <host>`, or nil for other options.
+      def deploy(argv)
+        require_relative "deploy"
+        Deploy.main(argv, stdout: @stdout, stderr: @stderr)
       end
 
       # { run:, rewrites:, out:, keep: } from `--run ID [--rewrites <file>]
@@ -94,8 +104,10 @@ module Quaack
         sqls = read_rewrites(rewrites) if rewrites
         return usage_error(@rewrites_problem) if rewrites && !sqls
 
-        drive(@transport.call(host), @client.call, run, sqls, { out:, keep: })
-      rescue EnclaveError, LLM::Error, OperatorCandidates::Error => e
+        transport = @transport.call(host)
+        EnclaveVersion.check!(transport, host)
+        drive(transport, @client.call, run, sqls, { out:, keep: })
+      rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
         1
       end
@@ -111,16 +123,7 @@ module Quaack
         0
       end
 
-      def require_run
-        require_relative "burndown"
-        require_relative "enclave_error"
-        require_relative "llm"
-        require_relative "operator_candidates"
-        require_relative "pipeline"
-        require_relative "runs"
-        require_relative "teardown"
-        require_relative "transport/ssh"
-      end
+      def require_run = RUN_FILES.each { require_relative it }
 
       def read_rewrites(path)
         OperatorCandidates.from_file(path)
