@@ -52,7 +52,6 @@ module Quaack
         def initialize(settings:, transport: nil, api_key: nil, max_retries: ::Anthropic::Client::DEFAULT_MAX_RETRIES)
           @model = settings.model
           @transport = transport
-          api_key = nil if api_key.to_s.empty?
           api_key ||= named_key(settings.api_key_env) if settings.api_key_env
           @anthropic = anthropic(api_key, settings.base_url, max_retries)
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
