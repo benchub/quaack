@@ -344,7 +344,7 @@ Minor findings from the reviews of 20260923-33:
 - **EXTRACT's field match uses Unicode `downcase`,** so `'weeK'` with a Kelvin sign is kept, and Postgres rejects that field. Use `downcase(:ascii)` and print the field lowercased, so quoted mixed case such as `'EpOcH'` doesn't pass through verbatim.
 - **Tests don't pin `EXTRACT_FIELDS`.** Removing a name only over-redacts, but nothing pins the list.
 - **Two doc-comment lines in `generator_one.rb` run long.**
-- **Question for the user:** keyset pagination, `WHERE (created_at, id) < ($1, $2)`, is refused because row comparisons aren't on the list. ORMs use it a lot. Should it be supported in v1, or wait for 20260923-48?
+- **Keyset pagination question:** answered by 20260924-31, which supports row comparisons in v1.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The reviews of 20260923-33.
@@ -776,9 +776,11 @@ The CYCLE mark redaction in PredicateAtoms, including typed marks, was last pres
 - **README:** What goes into the enclave, and step 1.
 - **Status:** todo
 
-### 20260923-48. Support row constructors and row comparisons.
+### 20260923-48. Support rows outside row comparisons.
 
-`ROW(...)`, `(a, b) = (c, d)`, and keyset pagination like `(created_at, id) < ($1, $2)`. See the question in 20260923-40. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
+20260924-31 made plain row comparisons, such as keyset pagination `(created_at, id) < ($1, $2)`, supported in v1. `SupportedSql` still refuses a row anywhere else, as `RowExpr`: `ROW(a, b)` in the select list, `(a, b) IN ((1, 2), ...)`, `(a, b) = ANY(...)`, a row compared with a subquery, `IS DISTINCT FROM` between rows, nested rows, and one-element rows such as `ROW(a)`. Supporting them means adding them to `SupportedSql` and handling them in every walker that 20260923-33 lists.
+
+Gaps in the supported comparisons are tracked elsewhere: pools for `=`/`<>` and expression rows in 20260926-55, and dropped keyset tie rows in 20260926-59.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
