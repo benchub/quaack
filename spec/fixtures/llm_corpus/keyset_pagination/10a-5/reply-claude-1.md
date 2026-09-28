@@ -1,0 +1,1 @@
+{"inserts":["INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (($2 - 1)::bigint, 1, 'paid', 1000, $1, '9999-12-31 00:00:00+00'::timestamptz), (($2 - 2)::bigint, 1, 'paid', 2000, $1, $1)"]}

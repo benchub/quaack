@@ -1,0 +1,1 @@
+{"inserts":["INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (CAST($2 AS bigint) - 1, 1, 'status', 100, CAST($1 AS timestamp with time zone) - interval '1 day', CAST($1 AS timestamp with time zone) + interval '1 day');"]}

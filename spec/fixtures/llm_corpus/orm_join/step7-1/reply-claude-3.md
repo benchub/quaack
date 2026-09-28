@@ -1,0 +1,1 @@
+{"rewrites": [{"transformation": "Moved the filter u.country = $1 from the WHERE clause into the ON clause of the inner join between public.orders and public.users. For an inner join, ON and WHERE predicates are semantically interchangeable, so the rewrite is equivalent unconditionally. The trailing semicolon has no effect.", "assumptions": []}]}

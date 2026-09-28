@@ -1,0 +1,1 @@
+{"indexes":["CREATE INDEX orders_brin_created_at_idx ON public.orders USING brin (created_at)","CREATE INDEX orders_status_partial_idx ON public.orders USING btree (created_at DESC, id DESC) WHERE status = 'delivered'"]}

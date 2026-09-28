@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Expands the row-value comparison (created_at, id) < ($1, $2) into the equivalent scalar predicates created_at <= $1 AND (created_at < $1 OR id < $2). This keeps the same lexicographic keyset-pagination semantics, including NULL handling, and adds a plain range predicate on created_at that the planner can use.","assumptions":[]}]}

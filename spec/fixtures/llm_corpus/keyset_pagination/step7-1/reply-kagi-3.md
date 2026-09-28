@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Decompose the row-value comparison ROW(created_at, id) < ROW($1, $2) into an equivalent disjunction/conjunction of scalar predicates: created_at <= $1 AND (created_at < $1 OR id < $2), enabling index usage on created_at.","assumptions":[]}]}
