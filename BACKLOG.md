@@ -183,18 +183,7 @@ This is the working backlog for QUAACK. It breaks README.md into tasks we can pi
 
 ### 20260923-16. Harness loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-17. Index shape loose ends.
-
-Minor findings from the second review of 20260923-14:
-- **Untested requires.** The three `require_relative` lines added to `enclave/lib/quaack/enclave.rb` have no test. Deleting them keeps every suite green. Add a `"quaack/enclave"` use to `standalone_require_spec.rb` that reaches `IndexCandidate`.
-- **Shadowed built-in names.** The built-in aggregate and window name check refuses an unqualified call to a user function that shares a built-in's name, such as `public.lead(int)`. Postgres accepts it, and `pg_get_indexdef` prints it unqualified. So `from_ddl` returns nil for such an existing index. It's rare and harmless, since the index just can't be represented. Document it. Also add a test that a column named like a built-in, such as `lag > 0`, is accepted.
-- **Proportion.** The aggregate and window check guards input the mechanical generators can't produce, because a valid query's WHERE clause can't hold those calls. It also misses set-returning functions, `DEFAULT`, and `merge_action()`. Decide whether to keep it, trim it, or finish it when 5a-5 extends the shape.
-- **Redundant check.** The `!sql.strip.empty?` check in `index_candidate.rb` duplicates the parse error.
-
-- **Depends on:** 20260923-14.
-- **Came from:** Second review of 20260923-14.
-- **README:** 5a.
-- **Status:** todo
+### 20260923-17. Index shape loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-18. Runtime checker test loose ends. Done, see BACKLOG-COMPLETE.md.
 
