@@ -114,7 +114,9 @@ RSpec.describe PipelineReplay do
     end
 
     it "fall back to all empty answers for a query with no replies" do
-      expect(described_class.variants("keyset_pagination")).to eq([described_class::EMPTY])
+      Dir.mktmpdir do |root|
+        expect(described_class.variants("keyset_pagination", roots: [root])).to eq([described_class::EMPTY])
+      end
     end
 
     it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
