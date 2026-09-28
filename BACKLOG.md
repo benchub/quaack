@@ -1,13 +1,13 @@
 # QUAACK backlog.
 
-This is the working backlog for QUAACK. It breaks README.md into tasks we can pick up one at a time.
+This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pick up one at a time.
 
 ## How this file works.
 
 - Each task has an ID made of the date it was added and a number: `YYYYMMDD-N`. IDs never change and never get reused, even if a task is dropped.
 - New tasks get the date they're added. Tasks from reviews, test findings, or new ideas go at the end of the section they belong to, or under "Added later" if no section fits.
 - **Depends on** lists tasks that must be done first. "None" means the task can start any time.
-- **README** points to the section the task comes from.
+- **Design** points to the section the task comes from.
 - **Status** is `todo`, `in progress`, `done`, or `dropped`.
 - **Open questions** are things I already know I'll need to ask about. Every task will get more questions when we pick it up.
 - Each task is built test first. CLAUDE.md has the rules.
@@ -211,7 +211,7 @@ Minor findings from the reviews of 20260922-30:
 
 - **Depends on:** 20260923-20.
 - **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
-- **README:** 5a-1.
+- **Design:** 5a-1.
 - **Landed (2026-09-26):** BRIN only from comparison ranges, `col = NULL` not a constant, and tests for LIKE ESCAPE and alias case. Still open: join reduction for IS NULL and ON conjuncts, RIGHT and FULL nullability tests, the USING test, the error sentinel check, the comment fix, and the ORDER BY, FOR UPDATE OF, `(o).*`, alias list, INCLUDE, `text_pattern_ops` and incremental sort items.
 - **Status:** todo
 
@@ -226,7 +226,7 @@ Minor findings from the second review of 20260923-19:
 
 - **Depends on:** 20260923-19.
 - **Came from:** Second review of 20260923-19.
-- **README:** 3c.
+- **Design:** 3c.
 - **Landed (2026-09-26):** two-value tests, `finite` no longer quoting reltuples, and doc updates. Still open: the invalid-UTF-8 `strip` error and an optional real-Postgres `= false` test.
 - **Status:** todo
 
@@ -254,7 +254,7 @@ Findings from the reviews of 20260922-31:
 
 - **Depends on:** 20260922-31.
 - **Came from:** Both reviews of 20260922-31.
-- **README:** 5a-2.
+- **Design:** 5a-2.
 - **Landed (2026-09-26):** tests pinning `PlanNode#inner`, the NaN removed fraction, and the multi-statement ANALYZE check. **Needs a decision:** whether to skip a partial when the column side is cast (varchar shows as `(col)::text`), and whether to treat a non-MCV literal as unknown when MCVs plus nulls cover about 1. Still open: boolean partials, InitPlan, COLLATE, deep plans, and the remaining test gaps.
 - **Status:** todo
 
@@ -290,7 +290,7 @@ Findings from both reviews of 20260922-43 that don't block it:
 
 - **Depends on:** 20260923-29.
 - **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
-- **README:** Step 9 and 9c.
+- **Design:** Step 9 and 9c.
 - **Checked (2026-09-26):** the deparse guard and qualification items are already done. **Needs a decision:** NATURAL JOIN atoms (compute the common columns, or emit a marker that can't be replaced). The rest are notes.
 - **Status:** todo
 
@@ -311,14 +311,14 @@ Findings from the reviews of 20260922-32 and 20260923-31:
 - **`IndexCandidate` accepts a predicate whose deparse doesn't parse again.** For example, `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`. Dedupe drops it, but other consumers would raise. `IndexSql.normalize_predicate` should re-parse its output.
 - **Array bounds on a cast aren't checked,** as in `status::text[12345] IS NULL`. It's the same class as the integer typmods the user accepted, but the doc comment doesn't say so.
 - **Dead or defensive code:** `left = unwrap(node.lexpr)` in `column_comparison?` is redundant, and the `A_Const` check in `plain_type?` can't be reached through Dedupe.
-- **README 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
+- **DESIGN.md 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
 - **Open question for the user:** the rule drops every partial that uses a column that isn't low-cardinality, including partials with no literal at all, like `WHERE deleted_at IS NULL`. Those carry no PII risk and are common. Should they get an exception?
 - **Decided:** Yes. Allow partial indexes whose predicate holds no literal: IS NULL, IS NOT NULL, or a bare boolean column.
 
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
-- **README:** 5a-3.
-- **Landed (2026-09-26):** the Decided item (partials with literal-free predicates are allowed; a sentinel test covers it) and the README note. Still open: the `from_ddl` nil cases (`ON ONLY`, `WITH (...)`, `NULLS NOT DISTINCT`), `normalize_predicate` re-parsing, the array-bounds doc note, and the dead-code cleanup.
+- **Design:** 5a-3.
+- **Landed (2026-09-26):** the Decided item (partials with literal-free predicates are allowed; a sentinel test covers it) and DESIGN.md note. Still open: the `from_ddl` nil cases (`ON ONLY`, `WITH (...)`, `NULLS NOT DISTINCT`), `normalize_predicate` re-parsing, the array-bounds doc note, and the dead-code cleanup.
 - **Status:** todo
 
 ### 20260923-37. Arena runner loose ends.
@@ -331,7 +331,7 @@ Minor findings from the second review of 20260922-46:
 
 - **Depends on:** 20260922-46.
 - **Came from:** Second review of 20260922-46.
-- **README:** Step 9.
+- **Design:** Step 9.
 - **Status:** todo
 
 ### 20260923-38. Error filtering loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -348,7 +348,7 @@ Minor findings from the reviews of 20260923-33:
 
 - **Depends on:** 20260923-33.
 - **Came from:** The reviews of 20260923-33.
-- **README:** Step 1.
+- **Design:** Step 1.
 - **Status:** todo
 
 ### 20260923-53. Finish the enclave CLI. Done, see BACKLOG-COMPLETE.md.
@@ -368,7 +368,7 @@ Minor findings from the reviews of 20260922-10:
 
 - **Depends on:** 20260922-10.
 - **Came from:** The reviews of 20260922-10.
-- **README:** What goes into the enclave.
+- **Design:** What goes into the enclave.
 - **Landed (2026-09-26):** tests killing the `.last(1)` mutants. Still open: moving to `Relations.check`.
 - **Status:** todo
 - **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
@@ -384,7 +384,7 @@ Findings from the reviews of 20260922-4 and 20260923-53:
 
 - **Depends on:** 20260923-53.
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
-- **README:** Where QUAACK runs.
+- **Design:** Where QUAACK runs.
 - **Landed (2026-09-26):** stdout is claimed and stderr silenced before `require`, and `Store#parse` runs `PlainData.check`. Still open: `Input::MAX_BYTES` and element caps (a sizing choice), the slow scan, and cancel on SIGTERM.
 - **Status:** todo
 
@@ -392,7 +392,7 @@ Findings from the reviews of 20260922-4 and 20260923-53:
 
 Minor findings from the second review of 20260923-56:
 - **A result type map breaks the hidden-index check.** With `conn.type_map_for_results = PG::BasicTypeMapForResults.new(conn)`, `getvalue` returns Integer `0`, so `0 != "0"` refuses every run as `indexes_hidden`, and EXPLAIN's json comes back already parsed. Pin a plain type map for the run, or compare with `.to_s`, and add a test.
-- **Empty `literal_sets` is accepted.** Every candidate comes back unused with no error. README says there are always three literal sets, so refuse `{}` as `bad_literal`.
+- **Empty `literal_sets` is accepted.** Every candidate comes back unused with no error. DESIGN.md says there are always three literal sets, so refuse `{}` as `bad_literal`.
 - **Tests that are missing:**
   - Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
   - The exact-cost assertions use single-node plans only. Add one on a join.
@@ -403,7 +403,7 @@ Minor findings from the second review of 20260923-56:
 
 - **Depends on:** 20260923-56.
 - **Came from:** Second review of 20260923-56.
-- **README:** 5a-4.
+- **Design:** 5a-4.
 - **Landed (2026-09-26):** empty literal_sets refused, the string type map, and the `unrenderable` refusal. Still open: a `cleanup_failed` guard test, and an exact-cost test on a join.
 - **Status:** todo
 
@@ -418,12 +418,12 @@ Findings from the reviews of 20260922-13:
 - **NOFOLLOW covers only the last path component.** That's acceptable under the threat model. Say so in the doc.
 - **Surviving mutant:** `time > now + FUTURE_SLACK` → `>=`. Add a unit test at exactly `now + 86_400` through `ClockAnchor.from(now:)`.
 - **`Step required:` doesn't check that each required name is a declared option.**
-- **README step 1** doesn't list `query_has_parameters` or the `--captured-at` bounds. It also says a refused construct's name is reported, but the `error` whitelist type can't carry it. That's a question for the user: change the README, or add a shape-only detail field?
+- **DESIGN.md step 1** doesn't list `query_has_parameters` or the `--captured-at` bounds. It also says a refused construct's name is reported, but the `error` whitelist type can't carry it. That's a question for the user: change DESIGN.md, or add a shape-only detail field?
 
 - **Depends on:** 20260922-13.
 - **Came from:** Both reviews of 20260922-13.
-- **README:** Step 1.
-- **Landed (2026-09-26):** the `FUTURE_SLACK` boundary test, the undeclared-option check in `CLI::Step`, the README step 1 text, and the NOFOLLOW doc. Still open: an orphan-run sweeper and the signal windows (see 20260922-66), and checking the query against the plan.
+- **Design:** Step 1.
+- **Landed (2026-09-26):** the `FUTURE_SLACK` boundary test, the undeclared-option check in `CLI::Step`, the DESIGN.md step 1 text, and the NOFOLLOW doc. Still open: an orphan-run sweeper and the signal windows (see 20260922-66), and checking the query against the plan.
 - **Status:** todo
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
@@ -436,7 +436,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 - **Depends on:** 20260922-47.
 - **Came from:** Second review of 20260923-54.
-- **README:** 9d.
+- **Design:** 9d.
 - **Status:** todo
 
 ### 20260924-7. 9d comparator loose ends.
@@ -444,12 +444,12 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Range over a nondeterministic collation passes the collation check.** A custom range type over text with a nondeterministic collation isn't caught, because the check doesn't read `pg_range.rngcollation`. Add `OR c.oid IN (SELECT rngcollation FROM pg_range)`.
 - **A precise check for ties at a cut.** The rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
 - **Interval compare by value, and lower-level nondeterminism.** Intervals could compare by value in the comparator. For nondeterminism below the top level (a subquery LIMIT, DISTINCT, or GROUP BY), see 20260924-5.
-- **README 9d** should describe the two-run tiebreaker and the fail-closed rules.
+- **DESIGN.md 9d** should describe the two-run tiebreaker and the fail-closed rules.
 
 - **Depends on:** 20260922-47.
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
-- **README:** 9d.
-- **Landed (2026-09-26):** the range-collation check and the README tiebreaker text. **Needs a decision:** an exact check for ties at a cut, and comparing intervals by value.
+- **Design:** 9d.
+- **Landed (2026-09-26):** the range-collation check and DESIGN.md tiebreaker text. **Needs a decision:** an exact check for ties at a cut, and comparing intervals by value.
 - **Status:** todo
 
 ### 20260924-8. Burndown loose ends.
@@ -464,7 +464,7 @@ Findings from the second review of 20260922-61:
 
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
-- **README:** 15b.
+- **Design:** 15b.
 - **Landed (2026-09-26):** mixed keys return false, and counts are capped at 10**12. **Needs a decision:** refusing misuse such as a double `record_dedupe` or a stale `since`, deriving `since` from the stored burndown, and tying `record_single_candidate_test` to the Dedupe's proposals. Also, 5a-4's new `unrenderable` refusal is counted as `hypopg_refused`.
 - **Status:** todo
 
@@ -475,13 +475,13 @@ Findings from both reviews of 20260924-5:
 - **A symmetric middle pick survives.** In an odd-sized tie group with the pick exactly in the middle (`OFFSET 1 LIMIT 1` over three ties), the pick is the same in both orders. So is a rare top-N heapsort pick. A third order, such as rotating each table's run by one, would catch both.
 - **Self-referencing foreign keys always fail the reverse load**, as `reverse_load_failed`. That fails closed, but it discards every candidate for fixtures with tree-shaped tables. Keep such tables in forward order, or reverse them level by level, using a catalog lookup of self-referencing FKs.
 - **Partitioned tables are scanned in a fixed partition order**, so the reverse load only flips rows within each partition. 3a (20260922-17) refuses partitioned tables, so today this is moot. Revisit it if 3a starts allowing them.
-- **README 9d wording:** name the hash-order and heap-sort gaps, and soften "a small sort keeps its input order for ties."
+- **DESIGN.md 9d wording:** name the hash-order and heap-sort gaps, and soften "a small sort keeps its input order for ties."
 - **Deferrable constraints** would allow any load order, but production FKs usually aren't deferrable. This is only a note.
 
 - **Depends on:** 20260924-5.
 - **Came from:** Both reviews of 20260924-5.
-- **README:** 9d.
-- **Landed (2026-09-26):** the reverse-only query_failed test and the README gaps text. **Needs a decision:** a third load order, and keeping self-referencing FK tables in forward order.
+- **Design:** 9d.
+- **Landed (2026-09-26):** the reverse-only query_failed test and DESIGN.md gaps text. **Needs a decision:** a third load order, and keeping self-referencing FK tables in forward order.
 - **Status:** todo
 
 ### 20260924-10. 5a-7 loose ends.
@@ -489,11 +489,11 @@ Findings from both reviews of 20260924-5:
 Findings from the reviews of 20260922-35:
 - **Duplicate candidates in `results`** can make `top` list the same index twice. 5a-3 dedupes within a search, so this can't happen in 5a-7's own flow. Step 8's caller should dedupe first.
 - **`rank` checks the literal-set names against the baseline, but not the values.** It's a documented precondition, but a caller who passes different values under the same names would compare against the wrong baseline.
-- **The greedy search never drops an index once added.** A smarter search could find `[a, c]` where the greedy keeps `[b, a]`. It follows the README's greedy rule, so change it only if someone wants that.
+- **The greedy search never drops an index once added.** A smarter search could find `[a, c]` where the greedy keeps `[b, a]`. It follows DESIGN.md's greedy rule, so change it only if someone wants that.
 
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
-- **README:** 5a-7.
+- **Design:** 5a-7.
 - **Checked (2026-09-26):** the duplicate-candidates item is stale. **Needs a decision:** checking literal-set values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
 - **Status:** todo
 
@@ -527,9 +527,9 @@ Findings from the reviews of 20260922-35:
 
 Findings from the build and reviews of 20260922-16:
 - **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
-- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the README wording, or connect with `options: ""`. Step 4 (20260922-25) decided: the run server is compared with production's own recorded values.
+- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix DESIGN.md wording, or connect with `options: ""`. Step 4 (20260922-25) decided: the run server is compared with production's own recorded values.
 - **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
-- **`"memory_command": null` counts as not configured,** but the README says that's `bad_config`.
+- **`"memory_command": null` counts as not configured,** but DESIGN.md says that's `bad_config`.
 - **There's no upper bound on the memory size.**
 - **A background child that holds stdout makes the memory command wait out the full timeout,** and a `setsid` child escapes the process-group kill.
 - **`pg` now loads for every `quaacks` subcommand.**
@@ -543,7 +543,7 @@ Findings from the build and reviews of 20260922-16:
 
 - **Depends on:** 20260922-16.
 - **Came from:** The build and reviews of 20260922-16.
-- **README:** Step 2.
+- **Design:** Step 2.
 - **Status:** todo
 
 ### 20260924-25. 3g redaction loose ends.
@@ -565,7 +565,7 @@ Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-1
 
 - **Depends on:** 20260924-16.
 - **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
-- **README:** 3g.
+- **Design:** 3g.
 - **Status:** todo
 
 ### 20260924-26. 3c statistics loose ends.
@@ -579,7 +579,7 @@ Findings from the build and reviews of 20260922-19:
 
 - **Depends on:** 20260922-19.
 - **Came from:** The build and reviews of 20260922-19.
-- **README:** 3c.
+- **Design:** 3c.
 - **Status:** todo
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -593,7 +593,7 @@ Findings from the build and reviews of 20260922-21:
 
 - **Depends on:** 20260922-21.
 - **Came from:** The build and reviews of 20260922-21.
-- **README:** 3e.
+- **Design:** 3e.
 - **Status:** todo
 
 ### 20260924-29. Run server check loose ends.
@@ -607,7 +607,7 @@ Findings from the build and reviews of 20260922-25:
 
 - **Depends on:** 20260922-25.
 - **Came from:** The build and reviews of 20260922-25.
-- **README:** Steps 2 and 4.
+- **Design:** Steps 2 and 4.
 - **Status:** todo
 
 ### 20260924-30. Include extensions in the 3b schema dump. Done, see BACKLOG-COMPLETE.md.
@@ -621,13 +621,13 @@ Findings from the build and reviews of 20260922-25:
 Minor findings from the first review of 20260922-12:
 - **The variadic arity branch is untested.** Dropping `OR p.provariadic <> 0` in `insert_values.rb` MUTABLE_SQL stays green. Add a test that `concat('a','b')` is refused as `not_immutable`.
 - **The `attisdropped` clause in COLUMNS_SQL is unproven.** Removing it stays green, because dropped columns get unmatchable names. Keep it or drop it.
-- **Implicit coercion is unchecked.** An uncast literal into a column whose type has a volatile input function, or a domain `CHECK` that calls one, runs that function at insert time. The function comes from the production schema, not the LLM. Document this in the README, or check column-type input functions and domain checks.
-- **Values aren't pinned to be deterministic.** TimeZone-dependent timestamptz literals and `'now'`, `'today'` are accepted. Set a fixed TimeZone in the arena session, or refuse the special date and time inputs, or note it in the README.
+- **Implicit coercion is unchecked.** An uncast literal into a column whose type has a volatile input function, or a domain `CHECK` that calls one, runs that function at insert time. The function comes from the production schema, not the LLM. Document this in DESIGN.md, or check column-type input functions and domain checks.
+- **Values aren't pinned to be deterministic.** TimeZone-dependent timestamptz literals and `'now'`, `'today'` are accepted. Set a fixed TimeZone in the arena session, or refuse the special date and time inputs, or note it in DESIGN.md.
 
 - **Depends on:** 20260922-12.
 - **Came from:** The first review of 20260922-12.
-- **README:** What goes into the enclave.
-- **Landed (2026-09-26):** the variadic test and README notes on unchecked coercions. **Needs a decision:** fix the arena TimeZone, or refuse special date inputs, instead of just documenting them.
+- **Design:** What goes into the enclave.
+- **Landed (2026-09-26):** the variadic test and DESIGN.md notes on unchecked coercions. **Needs a decision:** fix the arena TimeZone, or refuse special date inputs, instead of just documenting them.
 - **Status:** todo
 
 ### 20260925-3. Plan gate loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -664,13 +664,13 @@ Minor findings from the first review of 20260922-12:
 
 Minor findings from the first review of 20260925-8:
 - **No read-only transaction.** `steps/qualify.rb` reads production outside a read-only transaction, unlike inventory. Every statement is a fixed catalog SELECT today. Wrap `Relations.check` in `Inventory::Production.read_only`, both for defense in depth and for one snapshot across the lookups.
-- **`"$user"` is the operator's role.** It resolves to the operator's role, not the role of the application that made the plan. Say so in the README, or refuse a `$user` path entry that matches an existing schema other than the operator's own.
+- **`"$user"` is the operator's role.** It resolves to the operator's role, not the role of the application that made the plan. Say so in DESIGN.md, or refuse a `$user` path entry that matches an existing schema other than the operator's own.
 - **The step spec covers one join only.** Add step-level cases for a CTE, a subquery, quoted identifiers, and already-qualified names.
 
 - **Depends on:** 20260925-8.
 - **Came from:** The first review of 20260925-8.
-- **README:** Step 1, 3a.
-- **Landed (2026-09-26):** the qualify step case and the `$user` README note. **Needs a decision:** add the `Production.read_only` wrapper to qualify without a failing test first, since no test can observe it. Still open: refusing a `$user` entry that matches another schema.
+- **Design:** Step 1, 3a.
+- **Landed (2026-09-26):** the qualify step case and the `$user` DESIGN.md note. **Needs a decision:** add the `Production.read_only` wrapper to qualify without a failing test first, since no test can observe it. Still open: refusing a `$user` entry that matches another schema.
 - **Status:** todo
 
 ### 20260925-19. Schema-dump loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -691,13 +691,34 @@ Minor findings from the first review of 20260925-8:
 
 ### 20260926-3. Generator three follow-ups.
 
-- Record the 5a-5 burndown: LLM candidates, plus any replacements asked for dropped ones, with the 5a-3 and 5a-4 reasons (README step 15b table).
+- Record the 5a-5 burndown: LLM candidates, plus any replacements asked for dropped ones, with the 5a-3 and 5a-4 reasons (DESIGN.md step 15b table).
 - `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
 
 - **Depends on:** 20260925-4.
 - **Came from:** The build and second review of 20260925-4.
-- **README:** 5a-5, 15b.
+- **Design:** 5a-5, 15b.
 - **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the 5a-5 burndown record.
+- **Status:** todo
+
+### 20260928-1. `quaack setup`: one command for steps 2 through 4.
+
+`quaack start` runs only intake (step 1), and `quaack run` starts at step 5. Nothing in the driver runs the steps between them, so today the operator types eleven `quaacks` commands on the jump server by hand: `inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `anchor`, and `racetrack-setup`, in that order. `e2e/run.rb` runs the same list itself, which is why the e2e run never noticed. DESIGN.md sections 2 through 4 already say "the driver runs" each of these.
+
+Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --arena-db <name>]`. It runs those steps over ssh in order, passing any run-server flags through to `quaacks run-server` (which falls back to `run_server_command` for missing ones). It resumes like `quaack run`: a step whose output the store already holds is skipped, which may mean adding the setup entries to the enclave's `Status::ENTRIES`. A failure stops it and prints only the step's rule, as `start` and `run` do.
+
+- **Depends on:** None.
+- **Came from:** Writing the user-facing README (2026-09-28).
+- **Design:** Steps 2 through 4, "Where QUAACK runs."
+- **Status:** todo
+- **Open questions:** Should `quaack run` call setup itself when the run hasn't had it, so `start` then `run` is all an operator types? Should `quaack start` take the run-server flags and do setup too?
+
+### 20260928-2. `quaack start --captured-at`.
+
+`quaacks intake` takes `--captured-at <time>` (DESIGN.md step 1, 3h), but `quaack start` accepts exactly `--server`, `--query`, and `--plan`, so an operator starting from the laptop can't pass it. The clock is then anchored at intake time, which is wrong for a plan captured earlier. Accept an optional `--captured-at` and pass it through.
+
+- **Depends on:** None.
+- **Came from:** Writing the user-facing README (2026-09-28).
+- **Design:** Step 1, 3h.
 - **Status:** todo
 
 ## After version 1.
@@ -719,16 +740,16 @@ INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow prod
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-42. Support SELECT INTO and locking clauses.
 
-`SELECT ... INTO` and `FOR UPDATE`, `FOR SHARE`, and similar. Job-queue queries often use `FOR UPDATE SKIP LOCKED`. README refuses locking clauses in rewrite candidates, so decide how the original and its candidates are compared. RelationQualifier's locking-clause skip was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
+`SELECT ... INTO` and `FOR UPDATE`, `FOR SHARE`, and similar. Job-queue queries often use `FOR UPDATE SKIP LOCKED`. DESIGN.md refuses locking clauses in rewrite candidates, so decide how the original and its candidates are compared. RelationQualifier's locking-clause skip was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-43. Support TABLESAMPLE.
@@ -737,7 +758,7 @@ The `system` and `bernoulli` methods are volatile, so results aren't repeatable.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-44. Support richer functions in FROM.
@@ -746,7 +767,7 @@ The `system` and `bernoulli` methods are volatile, so results aren't repeatable.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-45. Support JSON_TABLE and SQL/JSON.
@@ -755,7 +776,7 @@ JSON_TABLE (`JsonTable`) and the SQL/JSON constructors and functions: JSON_OBJEC
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-46. Support XMLTABLE and XML functions.
@@ -764,7 +785,7 @@ XMLTABLE (`RangeTableFunc`), XmlExpr (including IS DOCUMENT and XMLROOT), and Xm
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-47. Support CTE CYCLE and SEARCH.
@@ -773,7 +794,7 @@ The CYCLE mark redaction in PredicateAtoms, including typed marks, was last pres
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-48. Support rows outside row comparisons.
@@ -784,7 +805,7 @@ Gaps in the supported comparisons are tracked elsewhere: pools for `=`/`<>` and 
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-49. Support GROUPING SETS, ROLLUP, and CUBE.
@@ -793,7 +814,7 @@ GroupingSet, `GROUP BY ()`, and GROUPING(). The allowlist (20260923-33) refuses 
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-50. Support SIMILAR TO.
@@ -802,7 +823,7 @@ The SIMILAR TO reader in PredicateAtoms was last present in 6507105. The allowli
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-51. Support field selection.
@@ -811,7 +832,7 @@ The SIMILAR TO reader in PredicateAtoms was last present in 6507105. The allowli
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260923-52. Support other SQL-syntax functions.
@@ -820,7 +841,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **README:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and step 1.
 - **Status:** todo
 
 ### 20260926-4. Wire run discipline into steps 13 and 14. Done, see BACKLOG-COMPLETE.md.
@@ -880,7 +901,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-21, 20260926-25.
 - **Came from:** Build of 20260926-21 and -25.
-- **README:** Step 10; CLAUDE.md Development.
+- **Design:** Step 10; CLAUDE.md Development.
 - **Status:** todo
 
 ### 20260926-30. Result comparison loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -895,7 +916,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
-- **README:** Step 13.
+- **Design:** Step 13.
 - **Landed (2026-09-26):** removed the dead `rewrites.empty?` check. Still open: a real-Postgres test that produces an unstable literal.
 - **Status:** todo
 
@@ -927,7 +948,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
-- **README:** Step 15.
+- **Design:** Step 15.
 - **Landed (2026-09-26):** the knocked_out missing-entry test. Still open: the StepNine dropped count, per-round covered shapes, schema-less plan nodes, and LLM counts on resume.
 - **Status:** todo
 
@@ -949,7 +970,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260924-13, -14, -20.
 - **Came from:** The build of those tasks.
-- **README:** Where QUAACK runs, LLM client.
+- **Design:** Where QUAACK runs, LLM client.
 - **Landed (2026-09-27):** NoNetwork is shared with the root suite, and the LLM error text is pinned. **Needs a decision:** lazy-loading `anthropic` breaks `runtime_boundary_spec` (it expects every driver file to load the gem). Change that spec to build a client first, or keep the eager load. Still open: the Pump/Child rework, per-example timeouts, the JSON harness column, and streaming.
 - **Status:** todo
 
@@ -970,7 +991,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
-- **README:** 3b, 3h, step 1.
+- **Design:** 3b, 3h, step 1.
 - **Landed (2026-09-27):** the `app:prod` false refusal is fixed (libpq's exact rule), and the parentheses mutants are pinned. The lock-wait and signal tests already existed. Still open: empty conninfo (no defined behavior), candidates restored by anchored form, subset DDL restore, and EUC_JP/WIN1252 sort order.
 - **Status:** todo
 
@@ -988,7 +1009,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
-- **README:** 3h.
+- **Design:** 3h.
 - **Landed (2026-09-26):** end-to-end clock tests for step 9 and candidate-runs. Still open: dropping the `anchored_sql` fallback.
 - **Status:** todo
 
@@ -1006,7 +1027,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260923-16, -18, -25.
 - **Came from:** Their build and review.
-- **README:** none (CLAUDE.md Development).
+- **Design:** none (CLAUDE.md Development).
 - **Status:** todo
 
 ### 20260926-55. Keyset and expression-unique leftovers.
@@ -1018,7 +1039,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
-- **README:** Step 9.
+- **Design:** Step 9.
 - **Landed (2026-09-26):** a realistic-schema keyset test (expanded form and dropped keyset). Still open: `=`/`<>` pools, perturb-and-retry, the generated-column item, and the tie-breaker gap (see 20260926-59).
 - **Status:** todo
 
@@ -1034,7 +1055,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260923-27, -28, -35, -38.
 - **Came from:** Their build and reviews.
-- **README:** 3a, 3d, step 1.
+- **Design:** 3a, 3d, step 1.
 - **Status:** todo
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
@@ -1064,7 +1085,7 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260927-8. e2e 097: top fix far above bound; CTEs and subqueries get no candidates. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-9. 5a-7 ranking and combining are stricter than the README. Done, see BACKLOG-COMPLETE.md.
+### 20260927-9. 5a-7 ranking and combining are stricter than DESIGN.md. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-10. Capture and restore relallvisible. Done, see BACKLOG-COMPLETE.md.
 
@@ -1089,7 +1110,7 @@ These were skipped as needing a design choice or a larger rework:
 
 - **Depends on:** 20260927-13, -15.
 - **Came from:** Review of 20260927-13 to -16.
-- **README:** 5a-1.
+- **Design:** 5a-1.
 - **Status:** todo
 
 ### 20260927-18. Make step 9 scenarios load instead of skipping them.
@@ -1100,7 +1121,7 @@ Also: 9d still disproves every candidate when a scenario won't load (`:fixture_l
 
 - **Depends on:** 20260926-60.
 - **Came from:** User direction, 2026-09-27.
-- **README:** Step 9.
+- **Design:** Step 9.
 - **Status:** todo
 
 ### 20260927-19. Set-aside loose ends.
@@ -1112,7 +1133,7 @@ These are minor findings from the review of 20260927-11:
 
 - **Depends on:** 20260927-11.
 - **Came from:** Review of 20260927-11.
-- **README:** 5a-1, 5a-4, 12a.
+- **Design:** 5a-1, 5a-4, 12a.
 - **Status:** todo
 
 ### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite. Done, see BACKLOG-COMPLETE.md.
@@ -1130,7 +1151,7 @@ These are minor findings from the review of 20260927-21:
 
 - **Depends on:** 20260927-21.
 - **Came from:** Review of 20260927-21.
-- **README:** LLM client.
+- **Design:** LLM client.
 - **Status:** todo
 
 ### 20260927-23. Driver calls run teardown (20260922-65, part four). Done, see BACKLOG-COMPLETE.md.
@@ -1145,7 +1166,7 @@ These are minor findings from the review of 20260927-23:
 
 - **Depends on:** 20260927-23.
 - **Came from:** Review of 20260927-23.
-- **README:** Teardown.
+- **Design:** Teardown.
 - **Status:** todo
 
 ### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts. Done, see BACKLOG-COMPLETE.md.
@@ -1159,7 +1180,7 @@ These are minor findings from the review of 20260927-24:
 
 - **Depends on:** 20260927-24.
 - **Came from:** Review of 20260927-24.
-- **README:** none.
+- **Design:** none.
 - **Status:** todo
 
 ### 20260927-28. Parser note loose ends, and the Postgres 18 upgrade.
@@ -1172,7 +1193,7 @@ These are minor findings from the review of 20260927-24:
 
 - **Depends on:** 20260923-1.
 - **Came from:** Reviews of 20260923-1.
-- **README:** none.
+- **Design:** none.
 - **Status:** todo
 
 ### 20260927-29. Deploy loose ends.
@@ -1182,5 +1203,5 @@ These are minor findings from the review of 20260927-24:
 
 - **Depends on:** 20260923-2.
 - **Came from:** Reviews of 20260923-2.
-- **README:** Where QUAACK runs.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
