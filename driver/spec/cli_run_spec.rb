@@ -130,14 +130,14 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 and only the rule when an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
 
-    status = cli.run(["run", "--run", run_id])
+    status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
   it "tears the run down after an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
-    cli.run(["run", "--run", run_id])
+    cli.run(["run", "--run", run_id, "--out", out])
     expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
   end
 
@@ -164,7 +164,7 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 and only the rule when an LLM call fails" do
     fake.error("step7", status: 401)
 
-    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
+    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: llm_auth\n"])
   end
@@ -172,7 +172,7 @@ RSpec.describe "quaack run" do
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
     replies["rewrite-payload"] = []
 
-    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file])
+    status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
     expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: no_rewrite_payload\n"])
     expect(fake.asks).to eq([])
@@ -209,7 +209,7 @@ RSpec.describe "quaack run" do
 
   it "checks the jump server's quaacks version first, and refuses a mismatch, pointing to quaack deploy" do
     replies["version"] = [{ "type" => "version", "version" => "0.0.9" }]
-    status = cli.run(["run", "--run", run_id])
+    status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string]).to eq([1, ""])
     expect(stderr.string).to eq("quaack run failed: jump-1 has quaacks 0.0.9, but this driver needs " \
@@ -219,7 +219,7 @@ RSpec.describe "quaack run" do
 
   it "refuses when the jump server has no quaacks to run, pointing to quaack deploy" do
     failing["version"] = Quaack::Driver::EnclaveError.new(subcommand: "version", rule: "incomplete")
-    status = cli.run(["run", "--run", run_id])
+    status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect(status).to eq(1)
     expect(stderr.string).to eq("quaack run failed: quaacks isn't installed on jump-1, or isn't on PATH for " \
@@ -229,7 +229,7 @@ RSpec.describe "quaack run" do
 
   it "names no version it doesn't recognize as one" do
     replies["version"] = [{ "type" => "version", "version" => "x y\n" }]
-    cli.run(["run", "--run", run_id])
+    cli.run(["run", "--run", run_id, "--out", out])
 
     expect(stderr.string).to start_with("quaack run failed: jump-1 has quaacks of an unknown version, but")
   end
