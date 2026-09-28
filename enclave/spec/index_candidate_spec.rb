@@ -120,6 +120,10 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
       expect { candidate(predicate: 1) }.to raise_error(ArgumentError, /predicate/)
       expect { candidate(predicate: "  ") }.to raise_error(ArgumentError, /predicate/)
     end
+
+    it "refuses an empty predicate as SQL that doesn't parse, with no check of its own for blankness" do
+      expect { candidate(predicate: "") }.to raise_error(ArgumentError, /predicate doesn't parse as SQL/)
+    end
   end
 
   describe "equality" do
@@ -329,6 +333,12 @@ RSpec.describe Quaack::Enclave::IndexCandidate do
 
     it "allows ordinary calls, including a schema's own function with an aggregate's name" do
       ["lower(note) = 'x'", "myschema.sum(b) > 0", "coalesce(b, 0) > 0", "b > 0 AND c IS NULL"].each do |ok|
+        expect(candidate(predicate: ok).predicate).to be_a(String), ok
+      end
+    end
+
+    it "allows a column named like a built-in aggregate or window function, since it's not a call" do
+      ["lag > 0", "lead > 0", "count > 0 AND rank < 5"].each do |ok|
         expect(candidate(predicate: ok).predicate).to be_a(String), ok
       end
     end

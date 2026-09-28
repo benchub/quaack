@@ -26,7 +26,10 @@ RSpec.describe "requiring one enclave file on its own" do
         "puts Quaack::Enclave::Statistics.new(tables: [Quaack::Enclave::TableStatistics.new(name: #{table}, " \
         "reltuples: 1, column_names: ['a', 'b'], indexes: { 'i' => #{candidate} }, " \
         "columns: { 'a' => Quaack::Enclave::ColumnStatistics.new(n_distinct: 1, null_frac: 0, correlation: nil) })])" \
-        ".table(#{table}).distinct_count('a')"
+        ".table(#{table}).distinct_count('a')",
+      # Requiring the top-level file must make IndexCandidate reachable,
+      # since other code just requires "quaack/enclave" and uses it.
+      "quaack/enclave" => "puts #{candidate}.to_ddl"
     }
   end
 
