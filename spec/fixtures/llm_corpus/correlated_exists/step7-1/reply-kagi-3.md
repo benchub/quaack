@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Replace the correlated EXISTS subquery (with constant select-list placeholder $2) with an equivalent uncorrelated IN semi-join over the same joined line_items/orders predicates.","assumptions":[{"kind":"not_null","table":"public.line_items","column":"product_id"}]}]}

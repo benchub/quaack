@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Replaces count(*) with count(o.id) in the HAVING clause; count(*) counts all rows in each group while count(o.id) counts only rows where o.id is not null, so equivalence holds if every row has a non-null id.","assumptions":[{"kind":"not_null","table":"public.orders","column":"id"}]}]}

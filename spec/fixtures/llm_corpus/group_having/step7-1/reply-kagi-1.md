@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Replace count(*) with count(o.id) in the HAVING clause; count(*) counts all rows including any with NULL id, while count(o.id) skips rows with NULL id, so equality relies on id never being NULL.","assumptions":[{"kind":"not_null","table":"public.orders","column":"id"}]}]}

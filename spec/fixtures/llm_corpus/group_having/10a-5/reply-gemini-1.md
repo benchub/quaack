@@ -1,0 +1,1 @@
+{"inserts": ["INSERT INTO public.users (id, email, country, status, created_at) OVERRIDING SYSTEM VALUE VALUES (1, 'test@example.com', 'US', 'active', CURRENT_TIMESTAMP)", "INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (101, 1, $1, -100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"]}

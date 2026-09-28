@@ -1,0 +1,1 @@
+{"inserts":["INSERT INTO public.users (email, country, status, created_at) VALUES ('user1@example.com', 'US', 'active', '2026-01-01 00:00:00+00');","INSERT INTO public.orders (user_id, status, total_cents, created_at, updated_at) VALUES (1, $1, 100, '2026-01-01 00:00:00+00', '2026-01-01 00:00:00+00');"]}

@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Rewrites the correlated EXISTS (SELECT $2 ...) semi-join as an uncorrelated IN (SELECT li.product_id ...) subquery, decorrelating the EXISTS against public.products by moving the correlation predicate (li.product_id = p.id) into the IN comparison and dropping the constant select-list placeholder from the subquery","assumptions":[]}]}

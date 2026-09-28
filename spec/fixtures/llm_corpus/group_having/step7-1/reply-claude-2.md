@@ -1,0 +1,1 @@
+{"rewrites":[{"transformation":"Replaced count(*) with count(o.id) in the HAVING clause; count(o.id) equals count(*) only when o.id is never NULL.","assumptions":[{"kind":"not_null","table":"public.orders","column":"id"}]}]}
