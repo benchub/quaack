@@ -27,10 +27,8 @@ RSpec.describe "requiring one enclave file on its own" do
         "reltuples: 1, column_names: ['a', 'b'], indexes: { 'i' => #{candidate} }, " \
         "columns: { 'a' => Quaack::Enclave::ColumnStatistics.new(n_distinct: 1, null_frac: 0, correlation: nil) })])" \
         ".table(#{table}).distinct_count('a')",
-      # The top-level file's own require_relative lines pull in table_name,
-      # index_candidate, and statistics: this exercises IndexCandidate through
-      # it, so a dropped require_relative for it (or something it needs)
-      # fails here even though each file also passes on its own above.
+      # Requiring the top-level file must make IndexCandidate reachable,
+      # since other code just requires "quaack/enclave" and uses it.
       "quaack/enclave" => "puts #{candidate}.to_ddl"
     }
   end
