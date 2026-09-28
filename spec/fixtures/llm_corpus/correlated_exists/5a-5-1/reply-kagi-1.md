@@ -1,0 +1,1 @@
+{"indexes":["CREATE INDEX ON public.orders USING brin (created_at)","CREATE INDEX ON public.line_items USING brin (order_id)","CREATE INDEX ON public.line_items USING btree (product_id, order_id) WHERE quantity >= 2","CREATE INDEX ON public.line_items USING btree (product_id, quantity, order_id) WHERE quantity >= 2"]}

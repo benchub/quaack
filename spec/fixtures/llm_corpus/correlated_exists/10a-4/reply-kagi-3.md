@@ -1,0 +1,2 @@
+{"inserts":["INSERT INTO public.products (id, sku, name, category, price_cents) OVERRIDING SYSTEM VALUE VALUES (9001, 'WIDGET-X1', 'WIDGET-X1', $1, 100)","INSERT INTO public.orders (id, user_id, status, total_cents, created_at, updated_at) OVERRIDING SYSTEM VALUE VALUES (5001, 1, 'paid', 100, $3, $3)","INSERT INTO public.line_items (id, order_id, product_id, quantity, unit_price_cents) OVERRIDING SYSTEM VALUE VALUES (6001, 5001, 9001, $4, 100)"]}
+
