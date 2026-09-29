@@ -106,7 +106,7 @@ Here's what a run does, in plain terms:
 **On your laptop:**
 
 - A checkout of this repo and Ruby 3.4. On a Mac with Homebrew, `ruby@3.4` is keg-only, so put it first on `PATH`: `export PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH`.
-- Access to Claude through the Anthropic API: an API key, or a login with the `ant` command-line tool. See [Give the driver access to Claude](#3-give-the-driver-access-to-claude).
+- Access to an LLM: Claude through the Anthropic API (an API key, or a login with the `ant` command-line tool), or any OpenAI-compatible API, such as OpenAI, Groq, Gemini, OpenRouter, or a local Ollama. See [Give the driver access to an LLM](#3-give-the-driver-access-to-an-llm).
 - ssh access to the production jump server, without a password prompt (keys or an agent).
 
 **On the jump server:**
@@ -153,9 +153,9 @@ Create `~/.quaack/driver.json`:
 { "jump_command": "case {server} in eu-*) echo jump-eu ;; *) echo jump-us ;; esac" }
 ```
 
-### 3. Give the driver access to Claude.
+### 3. Give the driver access to an LLM.
 
-The driver makes every LLM call from your laptop. It finds Anthropic credentials the way Anthropic's own tools do, taking the first of these that's set:
+The driver makes every LLM call from your laptop. By default it asks Claude, and finds Anthropic credentials the way Anthropic's own tools do, taking the first of these that's set:
 
 1. An API key in `ANTHROPIC_API_KEY`.
 2. A bearer token in `ANTHROPIC_AUTH_TOKEN`.
@@ -179,12 +179,52 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 
 | Key | What it does | Default |
 | --- | --- | --- |
-| `provider` | Which API to call. Only `anthropic` works today. `openai_compatible`, for OpenAI, Groq, Gemini, OpenRouter, and Ollama, is coming, and until then it fails with a clear message. | `anthropic` |
+| `provider` | Which API to call: `anthropic`, or `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API. | `anthropic` |
 | `model` | The model to ask. Required for any provider but `anthropic`. | `claude-opus-5-5` |
-| `base_url` | Where to send requests, such as a gateway. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` |
-| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above |
+| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
+| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the key or variable, never the value.
+
+#### OpenAI-compatible providers.
+
+With `"provider": "openai_compatible"`, the driver talks to OpenAI's Chat Completions API, through the official `openai` gem, at `base_url`. It sends the key from the variable `api_key_env` names, or from `OPENAI_API_KEY` when it names none, as a bearer token. If that variable is unset or empty, `quaack run` fails with `llm_auth` before it makes any call. Give a `model` too: there's no default.
+
+| Provider | `base_url` | `api_key_env` | `model`, for example |
+| --- | --- | --- | --- |
+| OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-5` |
+| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-2.5-pro` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.1` |
+| Ollama, on your laptop | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | `qwen2.5-coder:32b` |
+
+For example, for Groq:
+
+```json
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "openai_compatible",
+    "base_url": "https://api.groq.com/openai/v1",
+    "api_key_env": "GROQ_API_KEY",
+    "model": "llama-3.3-70b-versatile"
+  }
+}
+```
+
+then `export GROQ_API_KEY=...` before `quaack run`. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
+
+The models are examples. Use one your account can call, and a strong one: QUAACK asks for careful SQL work, and a small model mostly wastes the run's calls.
+
+**Structured output.** QUAACK asks for JSON that matches a schema at several steps. Not every OpenAI-compatible provider or model holds a reply to a schema, so the driver doesn't rely on it:
+
+- It puts the schema in the prompt, and also sends it as a `response_format` of type `json_schema`.
+- If the API rejects that request with a 400 or 422, the driver asks again without `response_format`. If that works, it stops sending `response_format` for the rest of the run. There's nothing to configure: the fallback finds out for itself.
+- It checks every reply against the schema. If one doesn't match, it asks once more, telling the model what was wrong. A second reply that doesn't match fails the run with `llm_bad_response`.
+
+Each of those calls counts in the report's burndown. So a provider that rejects `response_format` costs one extra call per run, and a model that doesn't follow the schema costs an extra call per miss.
+
+The `openai` gem reads a few more variables of its own, and sends what they hold to whatever `base_url` you use: `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`. Unset them if they're meant only for OpenAI and you're using another provider.
 
 ### 4. Install the enclave script on the jump server.
 
@@ -305,7 +345,7 @@ What each one does:
 
 ### Step 4. Run it.
 
-Back on your laptop, with access to Claude set up (see [setup step 3](#3-give-the-driver-access-to-claude)):
+Back on your laptop, with access to an LLM set up (see [setup step 3](#3-give-the-driver-access-to-an-llm)):
 
 ```sh
 quaack run --run 20260928T201702Z-3f9a1c2e --keep
@@ -395,7 +435,7 @@ quaack run --run $RUN --keep
 
 ### Use a different model.
 
-The driver uses `claude-opus-5-5` by default. Set `model` in the `llm` block of `~/.quaack/driver.json` (see [setup step 3](#3-give-the-driver-access-to-claude)) to change it for good, or `QUAACK_MODEL` for one run:
+The driver uses `claude-opus-5-5` by default. Set `model` in the `llm` block of `~/.quaack/driver.json` (see [setup step 3](#3-give-the-driver-access-to-an-llm)) to change it for good, or `QUAACK_MODEL` for one run:
 
 ```sh
 QUAACK_MODEL=claude-sonnet-5-5 quaack run --run $RUN
@@ -511,7 +551,7 @@ Common rules:
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
 | `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
-| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names is empty, a profile couldn't be read, or the API refused the credentials. | Set `ANTHROPIC_API_KEY`, or run `ant auth login`. See [setup step 3](#3-give-the-driver-access-to-claude). |
+| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |

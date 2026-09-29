@@ -13,4 +13,11 @@ RSpec.describe "quaack-driver gemspec" do
   it "depends at runtime on the official anthropic gem" do
     expect(spec.runtime_dependencies.map(&:name)).to include("anthropic")
   end
+
+  # The OpenAI-compatible adapter talks Chat Completions through the official
+  # openai gem. Like anthropic, it's on LLM_SDK_REQUIRES, so the enclave
+  # stays barred from it.
+  it "depends at runtime on the official openai gem" do
+    expect(spec.runtime_dependencies.map(&:name)).to include("openai")
+  end
 end

@@ -29,10 +29,8 @@ module Quaack
       PROVIDERS = %w[anthropic openai_compatible].freeze
       DEFAULT_MODELS = { "anthropic" => DEFAULT_MODEL }.freeze
 
-      # The adapter class for each provider that has one, by constant name
-      # under LLM. A provider in PROVIDERS but not here is recognized, and
-      # refused as not available yet.
-      ADAPTERS = { "anthropic" => :AnthropicAdapter }.freeze
+      # The adapter class for each provider, by constant name under LLM.
+      ADAPTERS = { "anthropic" => :AnthropicAdapter, "openai_compatible" => :OpenAICompatibleAdapter }.freeze
 
       BLOCK = "llm"
       FILE = "~/.quaack/driver.json"
@@ -68,13 +66,12 @@ module Quaack
       # (nil when there's none), and env. QUAACK_MODEL, QUAACK_LLM_PROVIDER,
       # and QUAACK_LLM_BASE_URL override the block, and an empty one counts
       # as unset. With neither, it's Anthropic with DEFAULT_MODEL. Raises
-      # ConfigError for a bad value, or a provider that isn't available.
+      # ConfigError for a bad value.
       def self.settings(block = nil, env: ENV)
         block = check_block(block)
         provider = pick(env, block, "provider") || "anthropic"
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
         model or raise ConfigError, "#{key("model")} is required unless the provider is anthropic"
-        available!(provider)
         Settings.new(provider:, model:, base_url: pick(env, block, "base_url"), api_key_env: block["api_key_env"])
       end
 
@@ -113,13 +110,7 @@ module Quaack
 
       def self.key(name) = "#{BLOCK}.#{name} in #{FILE}"
 
-      def self.available!(provider)
-        return if ADAPTERS.key?(provider)
-
-        raise ConfigError, "the #{provider} provider isn't available yet: use anthropic"
-      end
-
-      private_class_method :check_block, :pick, :check, :key, :available!
+      private_class_method :check_block, :pick, :check, :key
     end
   end
 end
@@ -127,3 +118,4 @@ end
 require_relative "llm/error"
 require_relative "llm/client"
 require_relative "llm/anthropic_adapter"
+require_relative "llm/openai_compatible_adapter"

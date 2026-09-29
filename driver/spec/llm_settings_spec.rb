@@ -147,15 +147,22 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     end
 
     it "takes the model from QUAACK_MODEL too" do
-      e = config_error({ "provider" => "openai_compatible" }, env: { "QUAACK_MODEL" => "llama-3.3-70b" })
+      result = settings({ "provider" => "openai_compatible" }, env: { "QUAACK_MODEL" => "llama-3.3-70b" })
 
-      expect(e.message).not_to include("required")
+      expect(result.model).to eq("llama-3.3-70b")
     end
 
-    it "fails clearly for openai_compatible, which isn't available yet" do
-      e = config_error({ "provider" => "openai_compatible", "model" => "llama-3.3-70b" })
+    it "takes openai_compatible with a model, a base URL, and a key variable" do
+      block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
+                "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
 
-      expect(e.message).to eq("the openai_compatible provider isn't available yet: use anthropic")
+      expect(fields(settings(block))).to eq(provider: "openai_compatible", model: "llama-3.3-70b-versatile",
+                                            base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY")
+    end
+
+    it "has an adapter for every provider it takes" do
+      expect(Quaack::Driver::LLM::PROVIDERS.map { Quaack::Driver::LLM.adapter(it).name.split("::").last })
+        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter])
     end
   end
 end
