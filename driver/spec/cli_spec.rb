@@ -123,16 +123,28 @@ RSpec.describe "quaack executable" do
       expect(err).to include("failed on jump-1:\nno space left\n")
     end
 
-    # ssh kills the driver while it waits on the copy, so only what the
-    # driver already flushed reaches the pipe.
-    it "shows each step as it starts, not only when the driver exits" do
-      File.write(File.join(dir, "ssh"), "#!/bin/sh\ncat >/dev/null\nkill -KILL $PPID\n")
-      FileUtils.chmod(0o755, File.join(dir, "ssh"))
-      out, _, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
-                                      "deploy", "--host", "jump-1")
+    # ssh succeeds until the remote command matches, then kills the driver
+    # while it waits on that step, so only what the driver already flushed
+    # reaches the pipe. So the step's line must be out before it runs.
+    {
+      "the copy" => ["cat >", "copying quaack-protocol-#{Quaack::Protocol::VERSION}.gem to jump-1"],
+      "gem install" => ["gem install", "running gem install on jump-1. It builds pg_query from source, " \
+                                       "which can take a few minutes."],
+      "the check" => ["quaacks version", "checking quaacks on jump-1"]
+    }.each do |step, (command, line)|
+      it "shows the line for #{step} while it runs, not only when the driver exits" do
+        File.write(File.join(dir, "ssh"), <<~SH)
+          #!/bin/sh
+          cat >/dev/null
+          case "$*" in *'#{command}'*) kill -KILL $PPID;; esac
+        SH
+        FileUtils.chmod(0o755, File.join(dir, "ssh"))
+        out, _, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
+                                        "deploy", "--host", "jump-1")
 
-      expect(status.termsig).to eq(9)
-      expect(out).to end_with("quaack deploy: copying quaack-protocol-#{Quaack::Protocol::VERSION}.gem to jump-1\n")
+        expect(status.termsig).to eq(9)
+        expect(out).to end_with("quaack deploy: #{line}\n")
+      end
     end
 
     it "rejects deploy without exactly one --host" do
