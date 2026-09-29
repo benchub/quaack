@@ -186,11 +186,20 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
   it "ignores what the login shell's startup files print around the probe's answers" do
     login_shell("/bin/bash")
     installed
-    File.write(File.join(dir, "noise"), "echo 'Welcome to jump-1'\necho 'shell=/usr/bin/fish'\n")
+    File.write(File.join(dir, "noise"), "echo 'Welcome to jump-1'\necho 'quaacks=/opt/quaacks'\n")
     ssh = fake_ssh(path: [stubs, tools, ruby_dir])
     File.write(ssh, File.read(ssh).sub("cd \"$HOME\"", ". '#{dir}/noise'\ncd \"$HOME\""))
 
-    expect(described_class.new(host: "jump-1", ssh:).call).to start_with("jump-1's login shell is bash,")
+    expect(described_class.new(host: "jump-1", ssh:).call).to start_with("jump-1's login shell is bash, and #{bin},")
+  end
+
+  it "gives no advice when the quaacks it finds isn't at a plain path" do
+    login_shell("/bin/bash")
+    installed
+    other = File.join(dir, "other dir")
+    executable(File.join(other, "quaacks"), "echo other")
+
+    expect(diagnose(path: [stubs, tools, ruby_dir, other])).to be_nil
   end
 
   it "gives no advice when the probe fails, so deploy keeps its general message" do

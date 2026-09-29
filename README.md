@@ -230,12 +230,29 @@ The `openai` gem reads a few more variables of its own, and sends what they hold
 
 ```sh
 quaack deploy --host jump1.prod.example.com
+# quaack deploy: building quaack-protocol-0.1.0.gem
+# quaack deploy: building quaacks-0.1.0.gem
+# quaack deploy: copying quaack-protocol-0.1.0.gem to jump1.prod.example.com
+# quaack deploy: copying quaacks-0.1.0.gem to jump1.prod.example.com
+# quaack deploy: running gem install on jump1.prod.example.com. It builds pg_query from source, which can take a few minutes.
+# quaack deploy: checking quaacks on jump1.prod.example.com
 # quaack deploy: installed quaacks 0.1.0 on jump1.prod.example.com
 ```
 
 This builds the `quaacks` gems from your checkout, copies them over ssh, and installs them into your own gem directory on the jump server. It doesn't use sudo. Never run QUAACK from a git checkout on the jump server, because the repo's bundle includes the LLM half. `quaacks` refuses to run if it finds that half beside it.
 
-The driver runs `quaacks` over non-interactive ssh, so your user gem `bin` directory must be on `PATH` for non-interactive shells. On the jump server, `ruby -e 'puts Gem.user_dir'` prints the gem directory. Add its `/bin` to `PATH` in `~/.bashrc`, above any line that returns early for non-interactive shells, or in `~/.zshenv`. Then check from your laptop:
+The driver runs `quaacks` over non-interactive ssh, so your user gem `bin` directory must be on `PATH` for non-interactive shells. On the jump server, `ruby -e 'puts Gem.user_dir'` prints the gem directory: `~/.gem/ruby/3.4.0` if you have a `~/.gem`, and otherwise `~/.local/share/gem/ruby/3.4.0`. Add its `/bin` to `PATH` in `~/.bashrc`, above any line that returns early for non-interactive shells, or in `~/.zshenv`.
+
+If `quaacks` isn't on that `PATH`, `quaack deploy` looks into why, without changing anything on the jump server, and tells you what to change. For bash, that looks like this:
+
+```
+quaack deploy failed: installed quaacks 0.1.0 on jump1.prod.example.com, but quaacks isn't installed on jump1.prod.example.com, or isn't on PATH for non-interactive ssh there.
+jump1.prod.example.com's login shell is bash, and /home/you/.local/share/gem/ruby/3.4.0/bin, where quaacks is, isn't on PATH for non-interactive ssh. Add this line to ~/.bashrc on jump1.prod.example.com, above any line that returns early for non-interactive shells:
+  export PATH="/home/you/.local/share/gem/ruby/3.4.0/bin:$PATH"
+Check with: ssh jump1.prod.example.com quaacks --version
+```
+
+It also tells you if `ruby` itself isn't on that `PATH`, if another `quaacks` or another Ruby comes first, or if your login shell is fish or csh, which QUAACK doesn't support. Then check from your laptop:
 
 ```sh
 ssh jump1.prod.example.com quaacks --version

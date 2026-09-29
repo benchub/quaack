@@ -21,9 +21,10 @@ module Quaack
       # The login shell comes from getent, which asks NSS, so it covers
       # accounts in LDAP or SSSD too and isn't fooled by a startup file
       # that exports SHELL. Where getent can't answer, $SHELL, which sshd
-      # sets from the same passwd entry, stands in. `same` compares
-      # directories by their physical paths, so a symlinked PATH entry
-      # still counts as the user gem bin dir.
+      # sets from the same passwd entry, stands in. Whether the user gem bin
+      # dir is on PATH shows in where `command -v quaacks` finds it: nowhere,
+      # there (`same`), or somewhere else first. `same` compares directories
+      # by their physical paths, so a symlinked PATH entry still counts.
       PROBE = <<~SH
         p=$(getent passwd "$(id -un)" 2>/dev/null); s=${p##*:}; [ -n "$s" ] || s=$SHELL
         echo "quaack-probe:shell=$s"
@@ -31,17 +32,16 @@ module Quaack
           d=$(ruby -e 'puts Gem.user_dir' 2>/dev/null)
           echo "quaack-probe:user_dir=$d"
           if [ -x "$d/bin/quaacks" ]; then echo "quaack-probe:installed=yes"; else echo "quaack-probe:installed=no"; fi
-          case ":$PATH:" in *":$d/bin:"*) echo "quaack-probe:on_path=yes";; *) echo "quaack-probe:on_path=no";; esac
         else
           echo "quaack-probe:ruby=missing"
         fi
         if q=$(command -v quaacks 2>/dev/null); then
           echo "quaack-probe:quaacks=$q"
           a=$(cd "${q%/*}" 2>/dev/null && pwd -P); b=$(cd "$d/bin" 2>/dev/null && pwd -P)
-          if [ -n "$a" ] && [ "$a" = "$b" ] && [ "${q##*/}" = quaacks ]; then echo "quaack-probe:same=yes"; fi
+          if [ -n "$a" ] && [ "$a" = "$b" ]; then echo "quaack-probe:same=yes"; fi
         fi
       SH
-      KEYS = %w[shell user_dir installed on_path ruby quaacks same].freeze
+      KEYS = %w[shell user_dir installed ruby quaacks same].freeze
       LINE = /\Aquaack-probe:(#{KEYS.join("|")})=(.*)\z/
       # A path it shows: absolute, and nothing a shell would expand.
       PLAIN_PATH = %r{\A/[A-Za-z0-9._/+-]{0,255}\z}
@@ -73,9 +73,8 @@ module Quaack
         nil
       end
 
-      # The first answer for each key.
       def parse(stdout)
-        stdout.lines(chomp: true).filter_map { LINE.match(it)&.captures }.reverse.to_h
+        stdout.lines(chomp: true).filter_map { LINE.match(it)&.captures }.to_h
       end
 
       def advise(facts)

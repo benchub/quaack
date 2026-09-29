@@ -129,14 +129,10 @@ module Quaack
         raise Error, advice ? "#{found}\n#{advice}" : "#{found} #{GENERAL_ADVICE}", cause: nil
       end
 
-      # Prints the line for a step as it starts, flushed so it shows while
-      # the step runs.
-      def say(line)
-        return unless @stdout
-
-        @stdout.print "quaack deploy: #{line}\n"
-        @stdout.flush
-      end
+      # Prints the line for a step as it starts. Each step starts a child
+      # process, and Ruby flushes stdout before it spawns one, so the line
+      # shows while the step runs.
+      def say(line) = @stdout&.print("quaack deploy: #{line}\n")
 
       def tail(out) = out.to_s.lines.last(TAIL).join
     end
