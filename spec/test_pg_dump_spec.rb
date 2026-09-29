@@ -99,6 +99,27 @@ RSpec.describe TestPgDump do
   it "takes the test server's major version from its image" do
     expect(described_class.server_major).to eq(running_major)
   end
+
+  it "reads the major version from the image's FROM line" do
+    File.write(File.join(@tmp, "Dockerfile"), "# A comment.\nFROM postgres:17\n\nRUN true\n")
+    expect(described_class.server_major(@tmp)).to eq(17)
+  end
+end
+
+# With no pg_dump found, the scripts' with_env says so, and leaves the
+# environment as it was.
+[["PromptPack", -> { PromptPack }], ["E2ERun", -> { E2ERun }]].each do |name, mod|
+  RSpec.describe "#{name}.with_env" do
+    it "raises the finder's NotFound, not another error, and leaves ENV unchanged, when there's no pg_dump" do
+      # The finder is faked here: what's under test is with_env.
+      allow(TestPgDump).to receive(:bin).and_raise(TestPgDump::NotFound, "no pg_dump 18")
+      server = Data.define(:host, :port).new(host: "127.0.0.1", port: 5432)
+      before = ENV.to_h
+      expect { mod.call.with_env("/nonexistent/home", server, "prod") { raise "must not run" } }
+        .to raise_error(TestPgDump::NotFound, "no pg_dump 18")
+      expect(ENV.to_h).to eq(before)
+    end
+  end
 end
 
 # The replay's quaacks children get that pg_dump first on their PATH, even

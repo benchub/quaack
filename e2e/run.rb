@@ -186,8 +186,8 @@ module E2ERun
   # The quaacks child's PATH starts with a pg_dump of the server's major
   # version, for schema-dump (TestPgDump).
   def with_env(home, server, prod)
-    pg_bin = TestPgDump.bin
     saved = ENV.to_h
+    pg_bin = TestPgDump.bin
     ENV.update("HOME" => home, "PGHOST" => server.host, "PGPORT" => server.port.to_s, "PGDATABASE" => prod,
                "PGUSER" => TestPostgres::USER, "PGPASSWORD" => TestPostgres::PASSWORD,
                "PATH" => "#{pg_bin}:#{ENV.fetch("PATH")}")
