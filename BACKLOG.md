@@ -779,30 +779,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20260929-3. `quaack deploy`: show progress, and diagnose PATH.
-
-`quaack deploy` is silent until it finishes, and when `quaacks` isn't on the jump server's non-interactive PATH, it only points at DESIGN.md. The user's first real deploy ended exactly that way. Make it say what it's doing and work out the fix.
-
-- **Progress.** Print one line on stdout as each step starts: building each gem, copying each one to the host, `gem install` on the host (saying it builds pg_query from source and can take a few minutes), and checking `quaacks` over ssh. The final "installed quaacks X on host" line stays last. Errors stay on stderr.
-- **PATH diagnosis.** When the check after install can't run `quaacks`, run read-only probes on the jump server over non-interactive ssh, the same way the driver reaches it. Probes are POSIX sh, because the remote login shell runs them. Find out:
-  - what `ruby -e 'puts Gem.user_dir'` prints, or that `ruby` itself isn't on the non-interactive PATH;
-  - whether `<user_dir>/bin/quaacks` exists;
-  - whether `<user_dir>/bin` is on the non-interactive PATH;
-  - the user's login shell.
-
-  Then print the specific fix:
-  - The exact line to add, such as `export PATH="<user_dir>/bin:$PATH"`, and the file to put it in: `~/.bashrc` for bash, above any line that returns early for non-interactive shells; `~/.zshenv` for zsh; for other POSIX shells, say which file to check.
-  - For a shell QUAACK doesn't support (fish or csh), say that.
-  - For a `quaacks` that's on PATH but isn't what was just installed, such as a different Ruby, say that instead.
-  - End with the command to check the fix: `ssh <host> quaacks --version`.
-- **Never change the jump server's shell config.** Only advise; the user makes the edit.
-- **Messages.** Keep them to what the probes found. They're about the jump server's setup, not production data, but print only what's needed.
-- Update DESIGN.md's "Deploying the enclave" and README.md's deploy step.
-
-- **Depends on:** 20260923-2.
-- **Came from:** The user, 2026-09-29, after a first real deploy. Answers already given: diagnose and advise only (the driver keeps running a bare `quaacks`, so PATH still matters), never edit the user's shell config, and progress goes to stdout with the result.
-- **Design:** Where QUAACK runs, "Deploying the enclave".
-- **Status:** todo
+### 20260929-3. `quaack deploy`: show progress, and diagnose PATH. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-4. Say why driver.json is bad.
 
@@ -841,13 +818,14 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 - **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH.
 - **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
 - **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
+- **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
 - **Optional tests.** The `\A` anchor on `LINE` and the `run.limit.nil?` guard both survive removal. The guard is effectively redundant.
 - **Also consider:**
   - a `gem` and `ruby` mismatch on the jump server (the install went into one Ruby's user dir, and the probe asks another);
   - a user gem dir with a space in its path, which falls back to the general advice today.
 
 - **Depends on:** 20260929-3.
-- **Came from:** Review of 20260929-3, round one.
+- **Came from:** Reviews of 20260929-3, rounds one and two.
 - **Design:** Deploying the enclave.
 - **Status:** todo
 
