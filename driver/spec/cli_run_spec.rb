@@ -321,6 +321,33 @@ RSpec.describe "quaack run" do
       expect(hosts).to eq([])
     end
 
+    # The CLI's own client builder, not a spec's. The block names a key
+    # variable that's unset, so a client built from the block's settings
+    # fails with llm_auth before any call, although ANTHROPIC_API_KEY is
+    # set. The opt-in lets a client without a transport be built; the base
+    # URL is a closed local port, so even a client built wrongly can't
+    # reach the API.
+    context "with the CLI's default client builder" do
+      let(:cli) do
+        h = hosts
+        t = transport
+        Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host|
+          h << host
+          t
+        })
+      end
+
+      it "builds the client from the block's settings" do
+        write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
+        env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
+                "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
+        status = without_anthropic_credentials(env) { run_with }
+
+        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+    end
+
     context "with the real client builder and no credentials anywhere" do
       let(:build_client) do
         lambda do |settings|
