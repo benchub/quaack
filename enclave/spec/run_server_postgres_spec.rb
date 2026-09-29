@@ -27,9 +27,9 @@ RSpec.describe "quaacks run-server, against a real server" do
     production.drop
   end
 
-  def pgpass(user: production.user, password: production.password)
+  def pgpass(user: production.user, password: production.password, port: production.port)
     path = File.join(quaacks.home, ".pgpass")
-    File.write(path, "*:#{production.port}:*:#{user}:#{password}\n")
+    File.write(path, "*:#{port}:*:#{user}:#{password}\n")
     File.chmod(0o600, path)
   end
 
@@ -88,6 +88,24 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect(outcome.stderr).to eq("")
       expect(outcome.status.exitstatus).to eq(0)
       expect(stored.read("run_server")).to eq("host" => production.host, "port" => production.port,
+                                              "racetrack_db" => production.name, "arena_db" => arena_db)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # PgBouncer in session mode in front of the run server reports a pid of
+    # its own to libpq, not the server backend's (DESIGN.md, step 4).
+    it "records a run server behind PgBouncer in session mode" do
+      bouncer_port = TestPostgres.server.pgbouncer_port
+      record_inventory
+      pgpass(port: bouncer_port)
+      close_every_harness_connection
+
+      outcome = run_server(port: bouncer_port.to_s)
+
+      expect(outcome.stdout).to eq(done), outcome.stdout
+      expect(outcome.stderr).to eq("")
+      expect(outcome.status.exitstatus).to eq(0)
+      expect(stored.read("run_server")).to eq("host" => production.host, "port" => bouncer_port,
                                               "racetrack_db" => production.name, "arena_db" => arena_db)
       expect_no_leaks(sentinels, outcome)
     end

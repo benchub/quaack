@@ -160,6 +160,63 @@ RSpec.describe TestPostgres do
     expect(out.lines.map(&:strip)).to eq(["127.0.0.1:#{server.port}"])
   end
 
+  describe "PgBouncer" do
+    def through_pgbouncer(db) = PG.connect(**db.connection_params, port: TestPostgres.server.pgbouncer_port)
+
+    it "publishes it only on 127.0.0.1" do
+      server = TestPostgres.server
+      port = server.pgbouncer_port
+      out, status = Open3.capture2("docker", "port", server.container_id, "6432/tcp")
+
+      expect(status).to be_success
+      expect(out.lines.map(&:strip)).to eq(["127.0.0.1:#{port}"])
+    end
+
+    # In session mode a client keeps one server backend for its session,
+    # and the pid libpq reports is PgBouncer's own, not that backend's.
+    it "pools in session mode, in front of the test server, and reports a pid of its own" do
+      conn = through_pgbouncer(test_database)
+      begin
+        server_pid = Integer(conn.exec("SELECT pg_backend_pid()").getvalue(0, 0), 10)
+        listed = TestPostgres.server.admin.exec_params("SELECT datname FROM pg_stat_activity WHERE pid = $1",
+                                                       [server_pid])
+
+        expect(listed.column_values(0)).to eq([test_database.name])
+        expect(conn.exec("SELECT pg_backend_pid()").getvalue(0, 0)).to eq(server_pid.to_s)
+        expect(conn.backend_pid).not_to eq(server_pid)
+      ensure
+        conn.close
+      end
+    end
+
+    def server_pid(conn) = conn.exec("SELECT pg_backend_pid()").getvalue(0, 0)
+
+    # In transaction mode, the second client would get the first one's idle
+    # backend.
+    it "keeps each client on its own server backend for its whole session" do
+      first = through_pgbouncer(test_database)
+      second = through_pgbouncer(test_database)
+      begin
+        first_pid = server_pid(first)
+
+        expect(server_pid(second)).not_to eq(first_pid)
+        expect(server_pid(first)).to eq(first_pid)
+      ensure
+        [first, second].each(&:close)
+      end
+    end
+
+    it "keeps a closed client's server backend in its pool" do
+      conn = through_pgbouncer(test_database)
+      server_pid = conn.exec("SELECT pg_backend_pid()").getvalue(0, 0)
+      conn.close
+
+      alive = TestPostgres.server.admin.exec_params("SELECT count(*) FROM pg_stat_activity WHERE pid = $1",
+                                                    [server_pid])
+      expect(alive.getvalue(0, 0)).to eq("1")
+    end
+  end
+
   describe "the image tag" do
     def tag_for(dockerfile_text)
       Dir.mktmpdir do |dir|

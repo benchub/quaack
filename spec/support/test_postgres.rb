@@ -15,6 +15,12 @@ require "pg"
 # the way the real run server has them. Each example gets its own databases,
 # and they're dropped after it.
 #
+# `TestPostgres.server.pgbouncer_port` is PgBouncer's port, in session mode in
+# front of the same server, for specs of a pooler in front of the run server.
+# It runs in the same container, started on first use, so it's removed with
+# it. It keeps a closed client's server backend in its pool, idle, until the
+# database is dropped.
+#
 # The first example that asks for a database starts one container for the
 # whole spec process: Postgres 18 with HypoPG, built from postgres/Dockerfile.
 # It's removed when the process exits. Every container carries LABEL and the
@@ -109,6 +115,9 @@ module TestPostgres
 
     def database_names = admin.exec("SELECT datname FROM pg_database").column_values(0)
 
+    # PgBouncer's port on the host, started on first use.
+    def pgbouncer_port = @pgbouncer_port ||= PgBouncer.start(container_id)
+
     # Polls with a real connection until one works. While the image's entry
     # point initializes the cluster, Postgres listens only on its Unix
     # socket, so a TCP connection fails until the real server is up.
@@ -197,8 +206,8 @@ module TestPostgres
 
   module_function
 
-  def docker(*args)
-    out, err, status = Open3.capture3("docker", *args)
+  def docker(*args, stdin_data: "")
+    out, err, status = Open3.capture3("docker", *args, stdin_data:)
     raise "docker #{args.first} failed: #{err.strip}" unless status.success?
 
     out.strip
@@ -252,7 +261,7 @@ module TestPostgres
     docker("run", "-d", "--label", "#{LABEL}=1", "--label", "#{OWNER_LABEL}=#{Process.pid}",
            "--label", "#{HOST_LABEL}=#{Socket.gethostname}",
            "--tmpfs", "/var/lib/postgresql", "-e", "POSTGRES_PASSWORD=#{PASSWORD}",
-           "-p", "127.0.0.1::5432", image_tag, *settings.flat_map { |s| ["-c", s] })
+           "-p", "127.0.0.1::5432", "-p", "127.0.0.1::#{PgBouncer::PORT}", image_tag, *settings.flat_map { ["-c", it] })
   end
 
   # A launch that fails isn't tried again. Every later example gets the same
@@ -326,3 +335,5 @@ module TestPostgres
     config.after { TestPostgres.drop_databases }
   end
 end
+
+require_relative "test_pgbouncer"

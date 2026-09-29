@@ -97,7 +97,7 @@ module Quaack
 
       def run(store:, connection:, own_connections: [])
         inventory = store.read("inventory")
-        own_pids = [connection, *own_connections].map(&:backend_pid)
+        own_pids = [connection, *own_connections].map { server_pid(it) }
         check_access(connection)
         check_version(connection, inventory)
         check_extensions(connection, inventory)
@@ -106,6 +106,12 @@ module Quaack
         check_quiet(connection, own_pids)
         nil
       end
+
+      # The pid of the server backend running this connection's queries,
+      # which pg_stat_activity lists. libpq's backend_pid is the one the
+      # server sent at connect time, and behind a pooler such as PgBouncer
+      # it's one the pooler made up.
+      def server_pid(connection) = Integer(value(connection, "SELECT pg_backend_pid()"), 10)
 
       def check_access(connection)
         fail!("run_server_not_superuser", "is_superuser") unless show(connection, "is_superuser") == "on"

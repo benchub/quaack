@@ -40,7 +40,8 @@ class ProductionServer
   # search_path as current_setting prints it.
   def search_path = %("#{sentinels.text}", public)
 
-  def connect = PG.connect(host:, port:, dbname: name, user:, password:)
+  # port: can be another way in to the same server, such as PgBouncer's.
+  def connect(port: self.port) = PG.connect(host:, port:, dbname: name, user:, password:)
 
   def create
     server.admin.exec(%(CREATE DATABASE "#{name}" TEMPLATE template0 LOCALE_PROVIDER builtin \

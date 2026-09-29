@@ -329,6 +329,72 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect(run_check(own_connections: [TestPostgres.server.admin, other])).to be_nil
     end
 
+    # PgBouncer in session mode in front of the run server (DESIGN.md, step
+    # 4): the pid libpq reports for a connection through it is one PgBouncer
+    # made up, not the server backend's.
+    describe "behind PgBouncer in session mode" do
+      def through_pgbouncer = production.connect(port: TestPostgres.server.pgbouncer_port).tap { connections << it }
+
+      def server_pid(conn) = Integer(conn.exec("SELECT pg_backend_pid()").getvalue(0, 0), 10)
+
+      it "passes a quiet server, reached through PgBouncer" do
+        record_inventory
+        pooled = through_pgbouncer
+        expect(pooled.backend_pid).not_to eq(server_pid(pooled))
+
+        expect(run_check(pooled)).to be_nil
+      end
+
+      it "passes QUAACK's own other connections through PgBouncer" do
+        record_inventory
+        pooled = through_pgbouncer
+        other = through_pgbouncer
+        # Each has its server backend before the check looks.
+        [pooled, other].each { server_pid(it) }
+
+        expect(run_check(pooled, own_connections: [TestPostgres.server.admin, other])).to be_nil
+      end
+
+      it "fails on another client connected through PgBouncer, naming its server backend's pid" do
+        record_inventory
+        pooled = through_pgbouncer
+        other = through_pgbouncer
+        pid = server_pid(other)
+
+        error = failure(pooled)
+
+        expect(error.rule).to eq("run_server_other_clients")
+        expect(error.clients.map { it["pid"] }).to eq([pid])
+      end
+
+      it "fails on another client connected directly" do
+        record_inventory
+        pooled = through_pgbouncer
+        other = connect
+
+        error = failure(pooled)
+
+        expect(error.rule).to eq("run_server_other_clients")
+        expect(error.clients.map { it["pid"] }).to eq([other.backend_pid])
+      end
+
+      # pooled takes its server backend first, or PgBouncer would hand it
+      # the one gone left idle.
+      it "fails on a server backend PgBouncer keeps idle in its pool after its client closed" do
+        record_inventory
+        pooled = through_pgbouncer
+        server_pid(pooled)
+        gone = production.connect(port: TestPostgres.server.pgbouncer_port)
+        pid = server_pid(gone)
+        gone.close
+
+        error = failure(pooled)
+
+        expect(error.rule).to eq("run_server_other_clients")
+        expect(error.clients.map { it["pid"] }).to eq([pid])
+      end
+    end
+
     it "fails when pg_cron runs its jobs from another database, which it can't see" do
       record_inventory
       run_server.exec("SET cron.database_name = 'postgres'")
