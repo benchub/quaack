@@ -1273,3 +1273,25 @@ These are minor findings from the review of 20260927-24:
 - **Came from:** Reviews of 20260923-2.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
+
+### 20260929-2. Several LLM providers in one run.
+
+Let one run use more than one LLM provider, for two reasons. Different models propose different rewrites, indexes, and counterexamples, which is more of the chaos QUAACK wants. And spreading asks across providers stretches free tiers further, since each has its own rate and daily limits.
+
+Each ask is stateless: it sends its whole conversation, and no provider holds a session. So asks can move between providers freely, with one exception. A multi-turn exchange must stay on one provider: 5a-5's replacement round, 10a's counterexample rounds, and the re-ask from 20260928-4. Otherwise a model is shown another model's reply as if it were its own.
+
+Ideas to settle before building:
+- **Configuration.** An `llms` list in driver.json, each entry shaped like today's `llm` block, with a name.
+- **Routing policy.** Options:
+  - round-robin per ask;
+  - pinning steps to providers;
+  - fan-out, where 6a and 5a-5 ask every provider and take the union, deduplicated by the usual checks;
+  - failover, moving on to the next provider after `llm_rate_limited` or `llm_unavailable`, and remembering that for the rest of the run.
+- **Adversarial pairing.** Have 10a use a different model from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work.
+- **Burndown.** Count calls per provider as well as per step (15b), so the report shows where the calls went.
+- **Cost.** Fan-out multiplies calls, so make it opt-in per step.
+
+- **Depends on:** 20260928-4.
+- **Came from:** The user, 2026-09-29.
+- **Design:** Where QUAACK runs, 5a-5, 6a, 10a, 15b.
+- **Status:** todo
