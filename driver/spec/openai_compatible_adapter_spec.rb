@@ -228,6 +228,20 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(ask_error.message).to eq("llm_bad_response: the reply had no choices")
     end
 
+    # Some proxies, such as OpenRouter for an upstream failure, answer 200
+    # with an error object in place of a completion.
+    it "fails with llm_bad_response on a 200 whose body is an error, not a completion, without quoting it" do
+      fake.raw("6a", JSON.generate(error: { message: "SENTINEL-UPSTREAM", code: 502 }))
+
+      e = ask_error("6a")
+
+      expect(e.rule).to eq("llm_bad_response")
+      expect(e.message).to eq("llm_bad_response: the reply had no choices")
+      expect(e.message).not_to include("SENTINEL")
+      expect(e.cause).to be_nil
+      expect(burndown.llm_calls).to eq("6a" => 1)
+    end
+
     it "fails with llm_bad_response on a reply the gem can't read as a completion" do
       fake.raw("5a-5", JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m",
                                      choices: [{ index: 0, message: "SENTINEL-MESSAGE", finish_reason: "stop" }]))

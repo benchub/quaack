@@ -154,8 +154,10 @@ module Quaack
           "the API refused the key (#{error.status})"
         end
 
+        # A 200 with no choices at all, such as a proxy's error object, has
+        # nil for them.
         def reply_text(completion)
-          choice = completion.choices.first or bad_response("the reply had no choices")
+          choice = completion.choices&.first or bad_response("the reply had no choices")
           reason = choice.finish_reason
           bad_response("the reply stopped for #{reason}") unless reason.to_s == WHOLE
 
