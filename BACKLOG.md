@@ -1381,3 +1381,16 @@ Ideas to settle before building:
 - **Came from:** The full check run for 20260929-7.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
+
+### 20260929-11. `run_server_other_clients` clients list: minor test gaps.
+
+Minor findings from the first review of 20260929-7. Each is untested, but none is visible outside the enclave on a realistic setup.
+
+- `RunServerCheck` returns nil rather than `[]` when every other client leaves between the count query and the list query. Changing that to `[]` survives the specs. ErrorFilter drops an empty Array, so nothing changes on the wire. Pin it, or drop the special case.
+- In ErrorFilter's client shape check, dropping the key-order check survives the specs. A Hash with its keys reversed then goes out, and the driver drops it, because its key check cares about order. Add a reversed-key-order case, or make both sides agree on whether order matters.
+- `ORDER BY pid` passes the specs as well as `ORDER BY backend_start, pid`. They differ only across pid wraparound.
+
+- **Depends on:** 20260929-7.
+- **Came from:** Review of 20260929-7, round one.
+- **Design:** Step 4.
+- **Status:** todo
