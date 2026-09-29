@@ -23,8 +23,15 @@ module Quaack
       # hold a real value. function is only on a volatile_function refusal
       # (DESIGN.md 3d): the volatile function's schema-qualified name, which
       # is schema and so shape. The enclave's ErrorFilter sends it only if
-      # it's one plain schema.name identifier pair.
-      error: %i[step rule sqlstate function].freeze,
+      # it's one plain schema.name identifier pair. clients is only on a
+      # run_server_other_clients failure (DESIGN.md, step 4): an Array of
+      # { "pid", "backend_start" }, one per other client backend on the run
+      # server, oldest first, at most 20. A pid is a positive Integer and a
+      # start time a UTC YYYY-MM-DDTHH:MM:SSZ, so both are shape: a process
+      # number and a clock time, neither configuration nor free text. No
+      # other pg_stat_activity column goes out. The enclave's ErrorFilter
+      # sends clients only if every entry has exactly that shape.
+      error: %i[step rule sqlstate function clients].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

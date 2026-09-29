@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "securerandom"
 require "shellwords"
 require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
@@ -91,12 +92,31 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "aborts on another client, naming only the check, and records nothing" do
+    it "aborts on another client, naming only the check and the client's pid and start time, and records nothing" do
       record_inventory
       pgpass
-      TestPostgres.server.admin
+      close_every_harness_connection
+      app_name = "sentinel-app-#{SecureRandom.hex(6)}"
+      other = production.connect
+      begin
+        other.exec("SET application_name = '#{app_name}'")
+        # Its start time, read apart from the check: its epoch's whole
+        # seconds, as UTC.
+        epoch = other.exec("SELECT floor(extract(epoch FROM backend_start))::bigint FROM pg_stat_activity " \
+                           "WHERE pid = pg_backend_pid()").getvalue(0, 0)
+        clients = [{ "pid" => other.backend_pid,
+                     "backend_start" => Time.at(Integer(epoch, 10)).utc.strftime("%Y-%m-%dT%H:%M:%SZ") }]
+        outcome = run_server
+      ensure
+        other.close
+      end
 
-      expect_failed(run_server, "run_server_other_clients")
+      expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+        .to eq([%(#{JSON.generate("type" => "error", "step" => "run-server", "rule" => "run_server_other_clients",
+                                  "clients" => clients)}\n), "", 70])
+      expect(outcome.stdout).not_to include(app_name)
+      expect(stored.entry?("run_server")).to be(false)
+      expect_no_leaks(sentinels, outcome)
     end
 
     it "aborts on a planner setting that isn't production's, without its name or value" do

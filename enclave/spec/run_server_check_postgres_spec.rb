@@ -248,6 +248,80 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect_failure("run_server_other_clients", "pg_stat_activity")
     end
 
+    # What a client's backend_start should read as, found apart from the
+    # check: the whole seconds of its epoch, as UTC.
+    def started(conn)
+      epoch = TestPostgres.server.admin.exec_params(
+        "SELECT floor(extract(epoch FROM backend_start))::bigint FROM pg_stat_activity WHERE pid = $1",
+        [conn.backend_pid]
+      ).getvalue(0, 0)
+      Time.at(Integer(epoch, 10)).utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end
+
+    def client(conn) = { "pid" => conn.backend_pid, "backend_start" => started(conn) }
+
+    it "names each other client by its pid and start time, in UTC, oldest first, and nothing else about it" do
+      # Production and the run server both show times at +05:30, so a start
+      # time that isn't made UTC reads wrong.
+      alter_database("TimeZone = 'Asia/Kolkata'")
+      record_inventory
+      app_name = "sentinel-app-#{SecureRandom.hex(6)}"
+      first = connect
+      first.exec("SET application_name = '#{app_name}'")
+      second = connect
+      error = failure
+
+      expect([error.rule, error.message])
+        .to eq(["run_server_other_clients", "run_server_other_clients: pg_stat_activity"])
+      expect(error.clients).to eq([client(first), client(second)])
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")
+      expect(JSON.parse(line)).to eq("type" => "error", "step" => "4", "rule" => "run_server_other_clients",
+                                     "clients" => error.clients)
+      expect([line, error.message, error.clients.inspect]).to all(satisfy { !it.include?("sentinel-app") })
+    end
+
+    # pg_stat_activity lists backends by slot, not by age, once a slot an
+    # older backend doesn't hold comes free. So a young client that lands in
+    # an earlier slot is listed before an old one, and only the check's own
+    # order can put the old one first.
+    it "names the oldest other client first, whatever order pg_stat_activity lists them in" do
+      record_inventory
+      run_server
+      old = connect
+      young = connect_listed_before(old)
+
+      expect(failure.clients.map { it["pid"] }).to eq([old.backend_pid, young.backend_pid])
+    end
+
+    # A connection opened after old that pg_stat_activity lists before it:
+    # it opens and closes one until one lands in an earlier slot.
+    def connect_listed_before(old, tries: 1000)
+      tries.times do
+        young = production.connect
+        return young.tap { connections << it } if listed_before?(young, old)
+
+        young.close
+      end
+      raise "no connection was listed before pid #{old.backend_pid} in #{tries} tries"
+    end
+
+    def listed_before?(young, old)
+      pids = TestPostgres.server.admin.exec("SELECT pid FROM pg_stat_activity WHERE backend_type = 'client backend'")
+                         .column_values(0).map { Integer(it, 10) }
+      pids.index(young.backend_pid) < pids.index(old.backend_pid)
+    end
+
+    it "names at most twenty other clients, the oldest, and still fails with more" do
+      record_inventory
+      run_server
+      others = Array.new(21) { connect }
+
+      error = failure
+
+      expect(error.rule).to eq("run_server_other_clients")
+      expect(error.clients.map { it["pid"] }).to eq(others.first(20).map(&:backend_pid))
+    end
+
     it "passes QUAACK's own other connections" do
       record_inventory
       other = connect
