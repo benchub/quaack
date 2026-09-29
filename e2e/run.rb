@@ -34,6 +34,7 @@ require "quaack/driver/enclave_error"
 require "quaack/driver/pipeline"
 require "quaack/driver/transport/local"
 require_relative "../spec/support/test_postgres"
+require_relative "../spec/support/test_pg_dump"
 require_relative "../driver/spec/support/fake_llm"
 
 module E2ERun
@@ -182,10 +183,14 @@ module E2ERun
     raise "psql failed on #{db}: #{out.lines.last(3).join}" unless status.success?
   end
 
+  # The quaacks child's PATH starts with a pg_dump of the server's major
+  # version, for schema-dump (TestPgDump).
   def with_env(home, server, prod)
     saved = ENV.to_h
+    pg_bin = TestPgDump.bin
     ENV.update("HOME" => home, "PGHOST" => server.host, "PGPORT" => server.port.to_s, "PGDATABASE" => prod,
-               "PGUSER" => TestPostgres::USER, "PGPASSWORD" => TestPostgres::PASSWORD)
+               "PGUSER" => TestPostgres::USER, "PGPASSWORD" => TestPostgres::PASSWORD,
+               "PATH" => "#{pg_bin}:#{ENV.fetch("PATH")}")
     yield
   ensure
     ENV.replace(saved)

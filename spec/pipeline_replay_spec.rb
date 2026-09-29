@@ -8,41 +8,88 @@ require_relative "spec_helper"
 # the planted spec/fixtures/pipeline_replay, and go through the real LLM
 # client as raw text. Each run happens once and its examples share it.
 RSpec.describe PipelineReplay do
-  PromptPack::QUERIES.each do |query|
-    described_class.variants(query.name).each do |variant|
-      context "#{query.name}, replaying #{variant}" do
-        let(:outcome) { described_class.cached(TestPostgres.server, query, variant) }
+  # Every run's schema-dump needs a pg_dump of the test server's major
+  # version (TestPgDump). It's looked for once, as this file loads. Without
+  # one, the runs below are one failing example that says what to install
+  # or set, rather than every run failing on its own.
+  def self.replays(&)
+    TestPgDump.bin
+  rescue TestPgDump::NotFound => e
+    it("replays the prompt pack, with a pg_dump of the test server's major version") { raise e }
+  else
+    class_exec(&)
+  end
 
-        it "ends in a report or a clean refusal" do
-          if outcome.error
-            expect(outcome.error).to be_a(Quaack::Driver::LLM::Error).or be_a(Quaack::Driver::EnclaveError)
-          else
-            expect(outcome.report).to include("type" => "report")
+  replays do
+    PromptPack::QUERIES.each do |query|
+      described_class.variants(query.name).each do |variant|
+        context "#{query.name}, replaying #{variant}" do
+          let(:outcome) { described_class.cached(TestPostgres.server, query, variant) }
+
+          it "ends in a report or a clean refusal" do
+            if outcome.error
+              expect(outcome.error).to be_a(Quaack::Driver::LLM::Error).or be_a(Quaack::Driver::EnclaveError)
+            else
+              expect(outcome.report).to include("type" => "report")
+            end
+          end
+
+          it "tears the run down when it ends, deleting its store" do
+            expect(outcome.store_left).to be(false)
+            expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
+          end
+
+          it "sends each replayed ask the prompt its reply answered" do
+            expect(outcome.drift).to be_empty
+          end
+
+          it "never reports the subtly wrong rewrite as a winning fix" do
+            # Disproved at step 9 or 10: never marked for step 11, and so
+            # never measured, ranked, or listed as a candidate.
+            labels = outcome.report ? (outcome.report["top"] + outcome.report["candidates"]).map { it["label"] } : []
+            outcome.wrong.each do |n|
+              expect(outcome.entries["rewrite_step11_#{n}"]).to be(false)
+              expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
+            end
+          end
+
+          it "finds the wrong rewrite whenever the 6a reply holds the wrong condition" do
+            wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
+            expect(outcome.wrong).not_to be_empty if wrong_condition
           end
         end
+      end
+    end
 
-        it "tears the run down when it ends, deleting its store" do
-          expect(outcome.store_left).to be(false)
-          expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
-        end
+    describe "the planted replies" do
+      def run(name)
+        query = PromptPack::QUERIES.find { it.name == name }
+        variant = described_class::Variant.new(llm: "planted", k: 1)
+        described_class.cached(TestPostgres.server, query, variant)
+      end
 
-        it "sends each replayed ask the prompt its reply answered" do
-          expect(outcome.drift).to be_empty
-        end
+      it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
+        outcome = run("group_having")
+        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
+                                       "10a-1: empty answer (no reply)", "10a-7: empty answer (no reply)")
+        # 10a-4 disproves in round one, so the operator rewrite's rounds are
+        # still 10a-7 to 10a-9, as the pack numbers them.
+        expect(outcome.log.grep(/\A10a-[56]:/)).to be_empty
+        expect(outcome.wrong).to eq([2])
+        expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
+      end
 
-        it "never reports the subtly wrong rewrite as a winning fix" do
-          # Disproved at step 9 or 10: never marked for step 11, and so
-          # never measured, ranked, or listed as a candidate.
-          labels = outcome.report ? (outcome.report["top"] + outcome.report["candidates"]).map { it["label"] } : []
-          outcome.wrong.each do |n|
-            expect(outcome.entries["rewrite_step11_#{n}"]).to be(false)
-            expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
-          end
-        end
+      it "load a 10a-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it disproves (orm_join)" do
+        outcome = run("orm_join")
+        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed")
+        expect(outcome.wrong).to eq([2])
+        expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
+      end
 
-        it "finds the wrong rewrite whenever the 6a reply holds the wrong condition" do
-          expect(outcome.wrong).not_to be_empty if outcome.rewrites_text.to_s.include?(described_class.condition(query))
-        end
+      it "refuse a wrong-shape reply cleanly as llm_bad_response" do
+        outcome = run("correlated_exists")
+        expect(outcome.log).to eq(["5a-5-1: replayed"])
+        expect(outcome.error).to have_attributes(class: Quaack::Driver::LLM::Error, rule: "llm_bad_response")
       end
     end
   end
@@ -103,12 +150,6 @@ RSpec.describe PipelineReplay do
   end
 
   describe "the planted replies" do
-    def run(name)
-      query = PromptPack::QUERIES.find { it.name == name }
-      variant = described_class::Variant.new(llm: "planted", k: 1)
-      described_class.cached(TestPostgres.server, query, variant)
-    end
-
     it "are found as a variant" do
       expect(described_class.variants("group_having")).to include(described_class::Variant.new(llm: "planted", k: 1))
     end
@@ -117,30 +158,6 @@ RSpec.describe PipelineReplay do
       Dir.mktmpdir do |root|
         expect(described_class.variants("keyset_pagination", roots: [root])).to eq([described_class::EMPTY])
       end
-    end
-
-    it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
-      outcome = run("group_having")
-      expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
-                                     "10a-1: empty answer (no reply)", "10a-7: empty answer (no reply)")
-      # 10a-4 disproves in round one, so the operator rewrite's rounds are
-      # still 10a-7 to 10a-9, as the pack numbers them.
-      expect(outcome.log.grep(/\A10a-[56]:/)).to be_empty
-      expect(outcome.wrong).to eq([2])
-      expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
-    end
-
-    it "load a 10a-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it disproves (orm_join)" do
-      outcome = run("orm_join")
-      expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed")
-      expect(outcome.wrong).to eq([2])
-      expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
-    end
-
-    it "refuse a wrong-shape reply cleanly as llm_bad_response" do
-      outcome = run("correlated_exists")
-      expect(outcome.log).to eq(["5a-5-1: replayed"])
-      expect(outcome.error).to have_attributes(class: Quaack::Driver::LLM::Error, rule: "llm_bad_response")
     end
   end
 end
