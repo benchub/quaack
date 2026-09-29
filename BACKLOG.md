@@ -1394,3 +1394,17 @@ Minor findings from the first review of 20260929-7. Each is untested, but none i
 - **Came from:** Review of 20260929-7, round one.
 - **Design:** Step 4.
 - **Status:** todo
+
+### 20260929-12. `clients` shape checks: round-two test gaps.
+
+Minor findings from the second review of 20260929-7. The code is correct, and none of these can leak today, because the enclave builds the start time with a fixed-format `to_char`.
+
+- Changing `\A` to `^` in the start-time pattern survives the specs, in both the enclave's ErrorFilter and the driver's reply parser. So does changing the driver's `\z` to `$`. Add cases with the start time after or before a newline to both suites.
+- The driver never tests keeping exactly 20 clients. With the driver's limit at 19, a real 20-client error line would lose its `clients` field and the specs stay green.
+- Whether the UTC test in `enclave/spec/run_server_check_postgres_spec.rb` catches a 12-hour clock (`HH12`) depends on the time of day the suite runs. Pin it to an afternoon hour.
+- The enclave never tests its exact-class checks on an Array or Hash subclass, only on a String subclass. Loosening them to `respond_to?` survives. Egress's own plain-data check backs them up.
+
+- **Depends on:** 20260929-7.
+- **Came from:** Review of 20260929-7, round two.
+- **Design:** Trust boundary, step 4.
+- **Status:** todo
