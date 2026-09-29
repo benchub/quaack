@@ -14,17 +14,18 @@ module Quaack
       START_OPTIONS = %w[--server --query --plan].freeze
       RUN_OPTIONAL = %w[--rewrites --out].freeze
       # What run loads, only once it runs.
-      RUN_FILES = %w[burndown enclave_error enclave_version llm operator_candidates pipeline runs teardown
-                     transport/ssh].freeze
+      RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline runs
+                     teardown transport/ssh].freeze
 
       # transport builds the transport to a jump host, and client the LLM
-      # client. Specs pass fakes for both, since they're the edges.
+      # client from its LLM::Settings. Specs pass fakes for both, since
+      # they're the edges.
       def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil)
         @stdout = stdout
         @stderr = stderr
         @home = home
         @transport = transport || ->(host) { Transport::Ssh.new(host:) }
-        @client = client || -> { LLM::Client.new(burndown: Burndown.new) }
+        @client = client || ->(settings) { LLM::Client.new(burndown: Burndown.new, settings:) }
       end
 
       def run(argv)
@@ -95,21 +96,34 @@ module Quaack
       end
 
       # DESIGN.md step 5 onward, with step 7 after 6a if there's a rewrites
-      # file, then prints the run ID and done. The
-      # file is read first, so a bad one fails before the jump server is
-      # touched. A failure prints only its rule, as for start.
+      # file, then prints the run ID and done. The file is read and the LLM
+      # client built first, from the llm block of ~/.quaack/driver.json, so a
+      # bad file, a bad block, or missing credentials fail before the jump
+      # server is touched. A bad block is a usage error naming the key. A
+      # failure prints only its rule, as for start.
       def run_command(run:, rewrites:, out:, keep:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
-        sqls = read_rewrites(rewrites) if rewrites
-        return usage_error(@rewrites_problem) if rewrites && !sqls
+        sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
         transport = @transport.call(host)
         EnclaveVersion.check!(transport, host)
-        drive(transport, @client.call, run, sqls, { out:, keep: })
+        drive(transport, client, run, sqls, { out:, keep: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
         1
+      end
+
+      # The rewrites file's SQL (nil without one) and the LLM client, or nil
+      # with @problem set for a usage error.
+      def prepare(rewrites)
+        sqls = read_rewrites(rewrites) if rewrites
+        return if rewrites && !sqls
+
+        [sqls, @client.call(LLM.settings(DriverConfig.read(@home)&.fetch("llm", nil)))]
+      rescue DriverConfig::Bad, LLM::ConfigError => e
+        @problem = e.message
+        nil
       end
 
       # Prints the report's path, if the pipeline wrote one, before done. The
@@ -127,11 +141,8 @@ module Quaack
 
       def read_rewrites(path)
         OperatorCandidates.from_file(path)
-      rescue SystemCallError, IOError
-        @rewrites_problem = "can't read the rewrites file"
-        nil
-      rescue OperatorCandidates::Error => e
-        @rewrites_problem = e.message
+      rescue SystemCallError, IOError, OperatorCandidates::Error => e
+        @problem = e.is_a?(OperatorCandidates::Error) ? e.message : "can't read the rewrites file"
         nil
       end
 

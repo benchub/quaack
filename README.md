@@ -106,7 +106,7 @@ Here's what a run does, in plain terms:
 **On your laptop:**
 
 - A checkout of this repo and Ruby 3.4. On a Mac with Homebrew, `ruby@3.4` is keg-only, so put it first on `PATH`: `export PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH`.
-- An Anthropic API key in `ANTHROPIC_API_KEY`.
+- Access to Claude through the Anthropic API: an API key, or a login with the `ant` command-line tool. See [Give the driver access to Claude](#3-give-the-driver-access-to-claude).
 - ssh access to the production jump server, without a password prompt (keys or an agent).
 
 **On the jump server:**
@@ -153,7 +153,40 @@ Create `~/.quaack/driver.json`:
 { "jump_command": "case {server} in eu-*) echo jump-eu ;; *) echo jump-us ;; esac" }
 ```
 
-### 3. Install the enclave script on the jump server.
+### 3. Give the driver access to Claude.
+
+The driver makes every LLM call from your laptop. It finds Anthropic credentials the way Anthropic's own tools do, taking the first of these that's set:
+
+1. An API key in `ANTHROPIC_API_KEY`.
+2. A bearer token in `ANTHROPIC_AUTH_TOKEN`.
+3. A profile, such as the one `ant auth login` saves under `~/.config/anthropic`. `ANTHROPIC_PROFILE` picks a profile other than the active one.
+
+If you're already logged in with `ant`, there's nothing to do. With none of them, `quaack run` fails with `llm_auth` before it touches the jump server.
+
+To change the model, the provider, or where the key comes from, add an `llm` block to `~/.quaack/driver.json`. Every key is optional:
+
+```json
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-opus-5-5",
+    "base_url": "https://llm-gateway.example.com",
+    "api_key_env": "QUAACK_ANTHROPIC_KEY"
+  }
+}
+```
+
+| Key | What it does | Default |
+| --- | --- | --- |
+| `provider` | Which API to call. Only `anthropic` works today. `openai_compatible`, for OpenAI, Groq, Gemini, OpenRouter, and Ollama, is coming, and until then it fails with a clear message. | `anthropic` |
+| `model` | The model to ask. Required for any provider but `anthropic`. | `claude-opus-5-5` |
+| `base_url` | Where to send requests, such as a gateway. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` |
+| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above |
+
+Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the key or variable, never the value.
+
+### 4. Install the enclave script on the jump server.
 
 ```sh
 quaack deploy --host jump1.prod.example.com
@@ -170,7 +203,7 @@ ssh jump1.prod.example.com quaacks --version
 
 Re-run `quaack deploy` whenever you update your checkout. `quaack start` and `quaack run` refuse to talk to an out-of-date `quaacks`, and tell you to deploy.
 
-### 4. Configure the jump server (optional, but recommended).
+### 5. Configure the jump server (optional, but recommended).
 
 `~/.quaack/config.json` on the jump server holds anything the enclave needs to know. Every key is optional.
 
@@ -272,10 +305,9 @@ What each one does:
 
 ### Step 4. Run it.
 
-Back on your laptop:
+Back on your laptop, with access to Claude set up (see [setup step 3](#3-give-the-driver-access-to-claude)):
 
 ```sh
-export ANTHROPIC_API_KEY=sk-ant-...
 quaack run --run 20260928T201702Z-3f9a1c2e --keep
 # ./quaack-20260928T201702Z-3f9a1c2e.html
 # 20260928T201702Z-3f9a1c2e done
@@ -363,7 +395,7 @@ quaack run --run $RUN --keep
 
 ### Use a different model.
 
-The driver uses `claude-opus-5-5` by default. Set `QUAACK_MODEL` to use another:
+The driver uses `claude-opus-5-5` by default. Set `model` in the `llm` block of `~/.quaack/driver.json` (see [setup step 3](#3-give-the-driver-access-to-claude)) to change it for good, or `QUAACK_MODEL` for one run:
 
 ```sh
 QUAACK_MODEL=claude-sonnet-5-5 quaack run --run $RUN
@@ -466,7 +498,7 @@ Read it when the result surprises you. If the LLM proposed five rewrites and all
 
 ## When a run fails.
 
-QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. A usage mistake, such as an unknown run ID or an unreadable rewrites file, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
+QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
 
 Common rules:
 
@@ -479,7 +511,7 @@ Common rules:
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
 | `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
-| `llm_auth` | `ANTHROPIC_API_KEY` isn't set. | Set it. |
+| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names is empty, a profile couldn't be read, or the API refused the credentials. | Set `ANTHROPIC_API_KEY`, or run `ant auth login`. See [setup step 3](#3-give-the-driver-access-to-claude). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
