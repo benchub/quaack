@@ -1336,20 +1336,7 @@ Ideas to settle before building:
 - **Design:** Where QUAACK runs, 5a-5, 6a, 10a, 15b.
 - **Status:** todo
 
-### 20260929-7. Say which clients `run_server_other_clients` saw.
-
-`quaacks run-server` fails with `run_server_other_clients` when `pg_stat_activity` shows another client backend, but the operator can't tell which one. Have the error line list them, so the operator can find and stop them.
-
-- The error line gains a `clients` field, only for `run_server_other_clients`: an Array of `{ "pid", "backend_start" }`, one per other client backend, oldest first. `pid` is a positive Integer. `backend_start` is the UTC time the backend started, as `YYYY-MM-DDTHH:MM:SSZ`. At most 20 entries, so a crowded server can't make the line huge.
-- Nothing else about a client goes out: not `usename`, `application_name`, `client_addr`, `datname`, `state`, or `query`. Those are production configuration or free text. A pid and a start time are neither.
-- `clients` joins the `error` entry in `Protocol::WHITELIST`. The enclave's ErrorFilter sends it only for that rule, and only if every entry has exactly that shape. Otherwise it leaves the field out, as it does for `function`.
-- The driver's reply parser accepts `clients` with the same shape check, and the driver's error message names the pids and start times.
-- DESIGN.md step 4 says the error names the other clients' pids and start times, and nothing else about them.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-09-29, after a real `run_server_other_clients` failure.
-- **Design:** Trust boundary, step 4.
-- **Status:** todo
+### 20260929-7. Say which clients `run_server_other_clients` saw. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-8. `run_server_other_clients` may count QUAACK's own session.
 

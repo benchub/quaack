@@ -2817,3 +2817,19 @@ Add the second adapter from 20260928-3: the OpenAI-compatible Chat Completions A
 - **Design:** Where QUAACK runs, "Deploying the enclave".
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `claude/quaack-readme-graphic-8iwhvt` after two reviews and a fix round (the gem install and check progress lines could print after their step with no test failing). New `DeployDiagnosis` probes the jump server read-only over `sh -s`. The minor findings went to 20260929-6. The full `bundle exec rake` couldn't run in the cloud session (no HypoPG image, and `deploy_spec.rb:73` expects aarch64 gems), so run it before merging to `main`. RuboCop and the driver suite otherwise passed.
+
+### 20260929-7. Say which clients `run_server_other_clients` saw.
+
+`quaacks run-server` fails with `run_server_other_clients` when `pg_stat_activity` shows another client backend, but the operator can't tell which one. Have the error line list them, so the operator can find and stop them.
+
+- The error line gains a `clients` field, only for `run_server_other_clients`: an Array of `{ "pid", "backend_start" }`, one per other client backend, oldest first. `pid` is a positive Integer. `backend_start` is the UTC time the backend started, as `YYYY-MM-DDTHH:MM:SSZ`. At most 20 entries, so a crowded server can't make the line huge.
+- Nothing else about a client goes out: not `usename`, `application_name`, `client_addr`, `datname`, `state`, or `query`. Those are production configuration or free text. A pid and a start time are neither.
+- `clients` joins the `error` entry in `Protocol::WHITELIST`. The enclave's ErrorFilter sends it only for that rule, and only if every entry has exactly that shape. Otherwise it leaves the field out, as it does for `function`.
+- The driver's reply parser accepts `clients` with the same shape check, and the driver's error message names the pids and start times.
+- DESIGN.md step 4 says the error names the other clients' pids and start times, and nothing else about them.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-29, after a real `run_server_other_clients` failure.
+- **Design:** Trust boundary, step 4.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after two reviews and one fix round. Round one found two tests that stayed green with the code broken: nothing checked the oldest-first order, and nothing checked the start anchor of the start-time pattern. Round one's minor findings went to 20260929-11, round two's to 20260929-12. The full check still fails on this Mac with the two failures filed as 20260929-9 and 20260929-10. They fail the same way on unchanged main. The task's own specs, RuboCop, protocol, and the boundary specs pass.
