@@ -804,6 +804,21 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Design:** Where QUAACK runs, "Deploying the enclave".
 - **Status:** todo
 
+### 20260929-4. Say why driver.json is bad.
+
+`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
+- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
+- valid JSON but not an object;
+- no `jump_command`;
+- `jump_command` isn't one non-blank line.
+
+Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
