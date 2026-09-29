@@ -2757,3 +2757,37 @@ Minor findings from the second review of 20260923-14:
 - **Came from:** Second review of 20260923-14.
 - **README:** 5a.
 - **Status:** done
+
+### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key.
+
+The driver only talks to Anthropic, through `LLM::Client`, and it requires `ANTHROPIC_API_KEY`. Many operators have an OpenAI, Google, or Groq key instead. This task makes the provider pluggable and gives it configuration. 20260928-4 adds the second provider.
+
+- Split `LLM::Client` into a provider-neutral front and a provider adapter. The front keeps today's interface and behavior: `ask(step:, messages:, max_tokens:, system:, schema:, json:)` returns text or parsed JSON, and it owns the burndown count per attempt (15b), `ReplyJSON`, the `JSON_ONLY` instruction, the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`), and the guard against real clients in specs. The Anthropic adapter holds everything Anthropic-specific: request shape, structured output, stop reasons, the gem's retries, and mapping its errors to the rules.
+- Configuration lives in an `llm` block in `~/.quaack/driver.json`: `provider` (`anthropic` or `openai_compatible`), `model`, `base_url`, and `api_key_env`, the name of the environment variable that holds the key. Keys never go in the file. `QUAACK_MODEL` still overrides the model, and `QUAACK_LLM_PROVIDER` and `QUAACK_LLM_BASE_URL` override the others. With no `llm` block, the driver behaves as today: Anthropic, `claude-opus-5-5`. A bad block fails with a usage error that names the key, never a value.
+- Anthropic auth: stop requiring `ANTHROPIC_API_KEY`. Let the anthropic gem resolve credentials in its usual order (API key, `ANTHROPIC_AUTH_TOKEN`, then an `ant auth login` profile), and map an authentication failure to `llm_auth`. `api_key_env`, when set, still wins.
+- Update README.md (requirements, configuration, and the `llm_auth` row) and DESIGN.md's "Where QUAACK runs".
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-09-28. Answers already given: two adapters (Anthropic, plus one OpenAI-compatible adapter that covers OpenAI, Groq, Gemini's compatible endpoint, OpenRouter, and Ollama); configuration in driver.json with env overrides; fold in keyless Anthropic auth.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `claude/quaack-readme-graphic-8iwhvt`. The full `bundle exec rake` couldn't run in the cloud session (no HypoPG image), so run it before merging to `main`. RuboCop, the driver suite, and the boundary specs passed.
+
+### 20260928-4. OpenAI-compatible LLM adapter.
+
+Add the second adapter from 20260928-3: the OpenAI-compatible Chat Completions API, through the official `openai` gem, with the base URL from configuration. One adapter serves OpenAI, Groq (`https://api.groq.com/openai/v1`), Google Gemini's OpenAI-compatible endpoint, OpenRouter, and local servers such as Ollama.
+
+- Map `system` and `messages` to chat messages, and a finish reason other than `stop` to `llm_bad_response`, as the Anthropic adapter does for stop reasons.
+- With `schema`, ask for `response_format` of type `json_schema` when the provider takes it. Some providers and models don't enforce schemas. For those, rely on the `JSON_ONLY` instruction and `ReplyJSON`'s validation, and if the reply doesn't validate, re-ask once with the validation error attached, then fail with `llm_bad_response`. Each attempt counts in the burndown. Decide at build time how the adapter learns whether schema mode is supported (configuration, or falling back when the API rejects it), and say which in README.md.
+- Map the gem's errors to the same rules as the Anthropic adapter. Keep retries at the gem's level, counted per attempt.
+- Add a fake at this adapter's HTTP edge, like `FakeLLM`, and run the existing driver LLM specs against both adapters where the behavior is shared. No spec may reach the network. An opt-in live smoke test (with `QUAACK_ALLOW_REAL_LLM=1` and a real key) may exist, but outside `rake`.
+- Add `openai` to the driver gem's dependencies. It's already on `LLM_SDK_REQUIRES`, so the enclave stays barred from it. Check that the boundary specs still pass.
+- Verify, before building, what structured-output support OpenAI, Groq, and Gemini's compatible endpoint offer today. Don't rely on memory.
+- Where the re-ask lives: after 20260928-3, the front runs `ReplyJSON.parse` after the adapter's `reply` returns, so a "validate, then re-ask once" loop has no home in the adapter contract. Either give the front a re-ask for adapters that don't enforce schemas, or let the adapter call `ReplyJSON` itself. Say which, and keep the burndown counting every attempt.
+- Document per-provider setup in README.md, including a Groq example.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user, 2026-09-28. Answer already given: prompt, validate, and retry once when the provider can't enforce a schema.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `claude/quaack-readme-graphic-8iwhvt` after two reviews and a fix round (a 200 with no `choices` crashed the adapter). The provider docs couldn't be reached, so the structured-output check in this entry is unverified; see 20260929-1. The full `bundle exec rake` couldn't run in the cloud session (no HypoPG image), so run it before merging to `main`. RuboCop, the driver suite, and the boundary and guard specs passed.

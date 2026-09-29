@@ -12,7 +12,7 @@ require_relative "driver/counterexamples"
 
 module Quaack
   # The driver. It runs on an engineer's laptop, outside the production
-  # enclave, and never holds a production value. See README.md, "Where QUAACK
+  # enclave, and never holds a production value. See DESIGN.md, "Where QUAACK
   # runs."
   module Driver
   end

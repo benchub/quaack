@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require "openai"
 
 # The root spec/support/no_network.rb stops the anthropic gem's HTTP requester, the
 # one way its requests reach the network, so no spec can call the real API,
@@ -13,6 +14,26 @@ RSpec.describe "the spec-time network guard" do
   end
 
   let(:client) { Anthropic::Client.new(api_key: "k", base_url: "http://127.0.0.1:9", max_retries: 0) }
+
+  it "refuses a request that would reach the network from the gem's own client" do
+    expect { create(client) }.to raise_error(NoNetwork::Refused, /QUAACK_ALLOW_REAL_LLM/)
+  end
+
+  it "refuses it even when the opt-in is set to something other than 1" do
+    with_env("QUAACK_ALLOW_REAL_LLM" => "yes") do
+      expect { create(client) }.to raise_error(NoNetwork::Refused)
+    end
+  end
+end
+
+# The same guard stops the openai gem's HTTP client, the one way the
+# OpenAI-compatible adapter's requests reach the network.
+RSpec.describe "the spec-time network guard, for the openai gem" do
+  def create(client)
+    client.chat.completions.create(model: "m", messages: [{ role: "user", content: "hi" }])
+  end
+
+  let(:client) { OpenAI::Client.new(api_key: "k", base_url: "http://127.0.0.1:9", max_retries: 0) }
 
   it "refuses a request that would reach the network from the gem's own client" do
     expect { create(client) }.to raise_error(NoNetwork::Refused, /QUAACK_ALLOW_REAL_LLM/)

@@ -7,7 +7,7 @@ require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/intake"
 require "quaack/enclave/store"
 
-# README 4a: the racetrack gets hypopg, the quaack schema, and
+# DESIGN.md 4a: the racetrack gets hypopg, the quaack schema, and
 # quaack.clock_anchor(), which returns the run's clock anchor from 3h.
 RSpec.describe Quaack::Enclave::Racetrack do
   let(:base) { Dir.mktmpdir }

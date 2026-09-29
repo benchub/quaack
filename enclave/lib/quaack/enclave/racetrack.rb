@@ -5,7 +5,7 @@ require_relative "intake/error"
 
 module Quaack
   module Enclave
-    # README 4a: set up the restored racetrack database.
+    # DESIGN.md 4a: set up the restored racetrack database.
     #
     #   Racetrack.setup(store:, connection:)  # nil, or raises an Error
     #

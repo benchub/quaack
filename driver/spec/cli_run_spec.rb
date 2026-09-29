@@ -5,7 +5,9 @@ require "stringio"
 require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/cli"
+require "quaack/driver/enclave_error"
 require "quaack/driver/runs"
+require_relative "support/anthropic_credentials"
 require_relative "support/fake_llm"
 
 RSpec.describe "quaack run" do
@@ -65,7 +67,7 @@ RSpec.describe "quaack run" do
                               h << host
                               t
                             },
-                            client: -> { fake.client(burndown: Quaack::Driver::Burndown.new) })
+                            client: ->(_settings) { fake.client(burndown: Quaack::Driver::Burndown.new) })
   end
 
   before { Quaack::Driver::Runs.new(home).record(run_id, "jump-1") }
@@ -236,5 +238,140 @@ RSpec.describe "quaack run" do
 
   it "expects the enclave's own VERSION" do
     expect(Quaack::Driver::ENCLAVE_VERSION).to eq(EnclaveCommands.enclave_version)
+  end
+
+  describe "the llm block of ~/.quaack/driver.json" do
+    include AnthropicCredentials
+
+    let(:seen) { [] }
+    let(:build_client) do
+      lambda do |settings|
+        seen << settings
+        fake.client(burndown: Quaack::Driver::Burndown.new, model: settings.model)
+      end
+    end
+    let(:cli) do
+      t = transport
+      h = hosts
+      Quaack::Driver::CLI.new(stdout:, stderr:, home:, client: build_client,
+                              transport: lambda { |host|
+                                h << host
+                                t
+                              })
+    end
+    let(:overrides) { { "QUAACK_MODEL" => nil, "QUAACK_LLM_PROVIDER" => nil, "QUAACK_LLM_BASE_URL" => nil } }
+
+    def write_config(text)
+      FileUtils.mkdir_p(File.join(home, ".quaack"))
+      File.write(File.join(home, ".quaack", "driver.json"), text)
+    end
+
+    def run_with(env = {}) = with_env(overrides.merge(env)) { cli.run(["run", "--run", run_id, "--out", out]) }
+
+    it "gives the LLM client its settings" do
+      write_config(JSON.generate("jump_command" => "echo jump-1",
+                                 "llm" => { "model" => "claude-from-config", "api_key_env" => "MY_KEY" }))
+
+      expect(run_with).to eq(0)
+      expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-from-config", base_url: nil,
+                                        api_key_env: "MY_KEY" }])
+    end
+
+    it "gives the defaults, with the environment's overrides, when there's no driver.json or no block" do
+      run_with("QUAACK_LLM_BASE_URL" => "https://env.example.com")
+      write_config(JSON.generate("jump_command" => "echo jump-1"))
+      run_with
+
+      expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-opus-5-5",
+                                        base_url: "https://env.example.com", api_key_env: nil },
+                                      { provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
+                                        api_key_env: nil }])
+    end
+
+    it "fails with a usage error naming the key, not the value, before touching the jump server" do
+      write_config(JSON.generate("llm" => { "provider" => "SENTINEL-VALUE" }))
+
+      expect([run_with, stdout.string, stderr.string])
+        .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic or openai_compatible\n"])
+      expect([hosts, transport.calls, seen]).to eq([[], [], []])
+    end
+
+    it "fails with a usage error for a bad override" do
+      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), stderr.string])
+        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic or openai_compatible\n"])
+      expect(hosts).to eq([])
+    end
+
+    it "fails with a usage error for a driver.json that isn't a JSON object" do
+      ["SENTINEL-VALUE {", "[1]"].each do |text|
+        write_config(text)
+        stderr.truncate(0)
+        stderr.rewind
+
+        expect([run_with, stderr.string]).to eq([64, "quaack run: ~/.quaack/driver.json must be a JSON object\n"])
+      end
+      expect(hosts).to eq([])
+    end
+
+    it "gives the client openai_compatible settings" do
+      block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
+                "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
+      write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+
+      expect(run_with).to eq(0)
+      expect(seen.map(&:to_h)).to eq([{ provider: "openai_compatible", model: "llama-3.3-70b-versatile",
+                                        base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY" }])
+    end
+
+    # The CLI's own client builder, not a spec's. The block names a key
+    # variable that's unset, so a client built from the block's settings
+    # fails with llm_auth before any call, although ANTHROPIC_API_KEY is
+    # set. The opt-in lets a client without a transport be built; the base
+    # URL is a closed local port, so even a client built wrongly can't
+    # reach the API.
+    context "with the CLI's default client builder" do
+      let(:cli) do
+        h = hosts
+        t = transport
+        Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host|
+          h << host
+          t
+        })
+      end
+
+      it "builds the client from the block's settings" do
+        write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
+        env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
+                "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
+        status = without_anthropic_credentials(env) { run_with }
+
+        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+    end
+
+    context "with the real client builder and no credentials anywhere" do
+      let(:build_client) do
+        lambda do |settings|
+          Quaack::Driver::LLM::Client.new(burndown: Quaack::Driver::Burndown.new, settings:, transport: fake)
+        end
+      end
+
+      it "fails with exit 1 and llm_auth before touching the jump server" do
+        status = without_anthropic_credentials { run_with }
+
+        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+
+      it "fails the same way for openai_compatible when the variable api_key_env names is unset" do
+        block = { "provider" => "openai_compatible", "model" => "m", "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+        status = with_env("QUAACK_SPEC_UNSET_KEY" => nil, "OPENAI_API_KEY" => "SENTINEL-KEY") { run_with }
+
+        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+    end
   end
 end

@@ -5,7 +5,7 @@ require "pg_query"
 module Quaack
   module Enclave
     # Every function, operator, and cast a parse calls by name, for the
-    # volatility check (README step 3d). It reads only the parse.
+    # volatility check (DESIGN.md step 3d). It reads only the parse.
     #
     #   FunctionCalls.of(PgQuery.parse("SELECT random() WHERE 1 IN (2)").tree)
     #   # => [Call(kind: :function, schema: nil, name: "random", arity: 0),

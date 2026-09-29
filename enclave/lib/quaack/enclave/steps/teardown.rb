@@ -7,7 +7,7 @@ require_relative "../run_server_command"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks teardown --run <run ID>` (README, "Where QUAACK runs"):
+      # `quaacks teardown --run <run ID>` (DESIGN.md, "Where QUAACK runs"):
       # deletes the run's governed store directory when the run ends. With
       # destroy_command in the quaacks config, it first destroys the run
       # server with it (see RunServerCommand), and a failure there,

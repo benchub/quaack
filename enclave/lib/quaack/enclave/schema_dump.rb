@@ -6,7 +6,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # README 3b: the schema-only dump of every namespace the query touches,
+    # DESIGN.md 3b: the schema-only dump of every namespace the query touches,
     # plus public, and the subset: the query's tables and their whole FK
     # ancestor chain. Both go into the governed store, and nothing here
     # leaves the enclave.

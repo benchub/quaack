@@ -6,7 +6,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks racetrack-setup --run <run ID>` (README 4a): sets up the
+      # `quaacks racetrack-setup --run <run ID>` (DESIGN.md 4a): sets up the
       # racetrack database recorded by `quaacks run-server` (see Racetrack),
       # using the run's clock_anchor entry.
       #

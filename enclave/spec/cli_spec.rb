@@ -25,7 +25,7 @@ RSpec.describe "quaacks executable" do
   end
 
   # The repo's bundle holds the driver gem, so running quaacks from a
-  # checkout is the wrong deploy (README, "Deploying the enclave"). The
+  # checkout is the wrong deploy (DESIGN.md, "Deploying the enclave"). The
   # specs set QUAACKS_DEV_CHECKOUT=1 to allow it. Here it's unset.
   it "refuses to run with driver_present when the driver gem is in its bundle" do
     out, err, status = with_env("QUAACKS_DEV_CHECKOUT" => nil) { run_ruby(exe, "--version") }

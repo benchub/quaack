@@ -5,7 +5,7 @@ require "tmpdir"
 
 # When the driver goes away mid-step (its ssh session drops, or its
 # timeout fires), quaacks cancels the running query, which rolls back its
-# transaction, and exits nonzero (README, "Where QUAACK runs"). The driver
+# transaction, and exits nonzero (DESIGN.md, "Where QUAACK runs"). The driver
 # closes stdin as soon as it has written the input, so stdin closing is
 # normal. What counts as a hangup is SIGHUP, or the reader of stdout going
 # away.

@@ -2,7 +2,7 @@
 
 require "quaack/enclave/run_server"
 
-# The checks on `quaacks run-server`'s arguments (README, step 4). Each is
+# The checks on `quaacks run-server`'s arguments (DESIGN.md, step 4). Each is
 # refused rather than guessed at.
 RSpec.describe Quaack::Enclave::RunServer do
   let(:good) { { host: "run-db-7.internal", port: "5433", racetrack_db: "racetrack", arena_db: "arena_1" } }

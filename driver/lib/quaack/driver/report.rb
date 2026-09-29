@@ -4,7 +4,7 @@ require "erb"
 
 module Quaack
   module Driver
-    # README step 15: the main report, as HTML, from the enclave's report
+    # DESIGN.md step 15: the main report, as HTML, from the enclave's report
     # message (`quaacks report-payload`). The explanation is templated from
     # the measurements, plan node shapes, and selectivities, never written
     # by an LLM. Every value is HTML-escaped.
@@ -86,7 +86,7 @@ module Quaack
         INDEX_STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7].freeze
         REWRITE_STAGES = %w[6a step7 6b step8 step9 step10].freeze
 
-        # README 15b: the recorded counts, { "stages", "totals" }.
+        # DESIGN.md 15b: the recorded counts, { "stages", "totals" }.
         def burndown = @payload["burndown"] || { "stages" => {}, "totals" => {} }
 
         # The original query's index search, one row per stage.
@@ -116,7 +116,7 @@ module Quaack
 
         def counts(hash) = hash.map { |name, n| "#{name}: #{n}" }.join(", ")
 
-        # README 15a, sent only when the selection is empty.
+        # DESIGN.md 15a, sent only when the selection is empty.
         def negative = @payload["negative"]
 
         KNOCKED_OUT = { "not_better" => "minimax found it not better than the original",

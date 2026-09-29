@@ -9,7 +9,7 @@ require_relative "plan_expression"
 
 module Quaack
   module Enclave
-    # The canonical plan form (README step 1), which steps 5, 5a-4, and 8 use
+    # The canonical plan form (DESIGN.md step 1), which steps 5, 5a-4, and 8 use
     # to compare plans:
     #
     #   CanonicalPlan.new(explain).matches?(CanonicalPlan.new(other))

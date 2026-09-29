@@ -8,7 +8,7 @@ module Quaack
   module Enclave
     # IndexCandidate and Dedupe as plain data for the governed store, and
     # back, so one enclave call can save an index search and a later one go
-    # on with it (README 5a: 5a-5 filters the LLM's candidates through the
+    # on with it (DESIGN.md 5a: 5a-5 filters the LLM's candidates through the
     # same 5a-3 search as the mechanical ones).
     #
     #   IndexStore.candidate(IndexStore.candidate_plain(c)) == c  # sources too

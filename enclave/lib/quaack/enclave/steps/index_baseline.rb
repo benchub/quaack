@@ -7,7 +7,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-baseline --run <run ID>` (README 13a): on the
+      # `quaacks index-baseline --run <run ID>` (DESIGN.md 13a): on the
       # racetrack, measures anchored_query under each of the original's
       # index_build combinations (the ones 5a kept), with baseline's
       # timeout_ms. It writes index_baseline:

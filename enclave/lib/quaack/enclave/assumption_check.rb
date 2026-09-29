@@ -5,7 +5,7 @@ require "pg_query"
 
 module Quaack
   module Enclave
-    # README 6b: checks one stated assumption (see RewriteAssumptions for
+    # DESIGN.md 6b: checks one stated assumption (see RewriteAssumptions for
     # the four kinds) mechanically against pg_constraint and pg_index.
     # NOT VALID constraints count as absent.
     #

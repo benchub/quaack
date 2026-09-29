@@ -4,7 +4,7 @@ require_relative "support/index_search_run"
 require "quaack/enclave/run_server"
 require "quaack/enclave/steps/index_search"
 
-# README step 8: the mechanical index search (5a-1 to 5a-4) for one rewrite
+# DESIGN.md step 8: the mechanical index search (5a-1 to 5a-4) for one rewrite
 # candidate, on its own parse and its plain racetrack plan, run in-process.
 RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
   include_context "an index search run"

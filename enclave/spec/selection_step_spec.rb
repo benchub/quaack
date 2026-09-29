@@ -2,7 +2,7 @@
 
 require "quaack/enclave/store"
 
-# `quaacks selection --run <run ID>` (README 14d): reads minimax and
+# `quaacks selection --run <run ID>` (DESIGN.md 14d): reads minimax and
 # result_comparison, needs no connection, and prints only DONE.
 RSpec.describe "quaacks selection" do
   let(:quaacks) { LeakCheck::Quaacks.new }

@@ -10,7 +10,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # README 3e: the slow, worst-case, and typical literal sets, from 3g's
+    # DESIGN.md 3e: the slow, worst-case, and typical literal sets, from 3g's
     # placeholder map and 3c's statistics, kept in the governed store.
     #
     #   result = LiteralSet.run(store:, sql: redacted.query.sql)

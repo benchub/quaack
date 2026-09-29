@@ -7,7 +7,7 @@ require_relative "plain_data"
 
 module Quaack
   module Enclave
-    # The egress function (README, "Trust boundary"): the one way anything
+    # The egress function (DESIGN.md, "Trust boundary"): the one way anything
     # leaves the enclave. It sends a message only as its type plus the
     # fields Quaack::Protocol::WHITELIST lists for that type, and drops
     # everything else outright rather than scrubbing it.

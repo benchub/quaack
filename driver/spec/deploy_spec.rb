@@ -35,7 +35,7 @@ RSpec.describe Quaack::Driver::Deploy do
 
   # Takes ssh's options up to --, then the host, then runs the joined remote
   # command with sh in the fake jump server's HOME, as sshd would, with the
-  # user gem bin dir on PATH, as the README says to set up. It logs each
+  # user gem bin dir on PATH, as DESIGN.md says to set up. It logs each
   # remote command, one per line, to dir/remote.
   def fake_ssh(path: true)
     script = File.join(dir, "ssh")

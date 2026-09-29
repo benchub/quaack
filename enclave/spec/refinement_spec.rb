@@ -2,7 +2,7 @@
 
 require "quaack/enclave/refinement"
 
-# README 5a-6: which of the LLM's candidates fell short in 5a-4, as the
+# DESIGN.md 5a-6: which of the LLM's candidates fell short in 5a-4, as the
 # decision in 20260922-34 defines it.
 RSpec.describe Quaack::Enclave::Refinement do
   def column(name) = { "name" => name, "expression" => nil }

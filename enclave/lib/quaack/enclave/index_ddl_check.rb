@@ -10,7 +10,7 @@ require_relative "volatility_check"
 
 module Quaack
   module Enclave
-    # The inbound check for index DDL (README, "What goes into the
+    # The inbound check for index DDL (DESIGN.md, "What goes into the
     # enclave"). The DDL comes from the LLM in 5a-5 and 5a-6, or from later
     # steps, so it's untrusted. This check runs on it before anything else
     # does.

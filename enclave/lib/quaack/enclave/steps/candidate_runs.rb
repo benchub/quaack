@@ -9,7 +9,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks candidate-runs --run <run ID>` (README 14, 12b): on the
+      # `quaacks candidate-runs --run <run ID>` (DESIGN.md 14, 12b): on the
       # racetrack, measures each rewrite candidate that survived steps 9 and
       # 10 and wasn't pruned in step 8 (IndexSearch.llm_search?), first with
       # every built index hidden ("none") and then under each of its own

@@ -8,7 +8,7 @@ require_relative "private_files"
 
 module Quaack
   module Enclave
-    # The governed store (README, "Where QUAACK runs"): one directory per
+    # The governed store (DESIGN.md, "Where QUAACK runs"): one directory per
     # run on the jump server, holding the step 1 inputs and every
     # intermediate result between calls to the enclave script. Everything
     # in it can be value-class data, so it never leaves the enclave.

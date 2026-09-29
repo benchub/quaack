@@ -8,7 +8,7 @@ require "quaack/enclave/store"
 require "quaack/enclave/table_name"
 require_relative "support/production_server"
 
-# `quaacks literals --run <run ID>` (README 3e) the way the jump server runs
+# `quaacks literals --run <run ID>` (DESIGN.md 3e) the way the jump server runs
 # it: the installed quaacks in its own process, outside Bundler. Its inputs
 # come from 3g and 3c, run in-process against a real database whose values
 # are sentinels. The step itself needs no production connection.

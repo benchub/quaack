@@ -8,7 +8,7 @@ module Quaack
   module Enclave
     # The clock-reading literals 3h anchors: 'now', 'today', 'yesterday',
     # and 'tomorrow', where Postgres reads them as a date or timestamp.
-    # They read the clock just as now() does (README 3h).
+    # They read the clock just as now() does (DESIGN.md 3h).
     #
     #   found = ClockLiterals.find(placeholder_map, statistics) { |column_names| LiteralSet.feeds(parse, column_names) }
     #   # => Found(words: {1 => "today"}, types: {1 => "timestamptz"})

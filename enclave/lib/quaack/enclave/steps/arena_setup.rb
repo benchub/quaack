@@ -6,7 +6,7 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks arena-setup --run <run ID>` (README 4b): builds the arena
+      # `quaacks arena-setup --run <run ID>` (DESIGN.md 4b): builds the arena
       # database recorded by `quaacks run-server` (see Arena), beside the
       # racetrack, from the run's inventory, full schema dump, and
       # clock_anchor.

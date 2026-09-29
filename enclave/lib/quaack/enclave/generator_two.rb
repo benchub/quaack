@@ -8,7 +8,7 @@ require_relative "generator_two_patterns"
 
 module Quaack
   module Enclave
-    # Generator two (README 5a-2): index candidates from the problem patterns
+    # Generator two (DESIGN.md 5a-2): index candidates from the problem patterns
     # in the production plan.
     #
     #   GeneratorTwo.candidates(explain, statistics:, schemas: ["public"])
@@ -25,7 +25,7 @@ module Quaack
     # the same output.
     #
     # analyzed: false is for a plain EXPLAIN, such as a rewrite's racetrack
-    # plan (README step 8). It has no actual rows and no rows removed, so
+    # plan (DESIGN.md step 8). It has no actual rows and no rows removed, so
     # only the patterns that need neither run: the BitmapAnd/BitmapOr, Sort,
     # and aggregate patterns. The others are skipped, even if the plan has
     # actual rows.
@@ -80,7 +80,7 @@ module Quaack
         explain.map { |e| PlanNode.new(e["Plan"]) }
       end
 
-      # README step 1: the rows removed and actual rows come only from ANALYZE.
+      # DESIGN.md step 1: the rows removed and actual rows come only from ANALYZE.
       def check_analyze(explain)
         return if explain.all? { |e| e["Plan"].key?("Actual Loops") }
 

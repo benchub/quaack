@@ -16,7 +16,7 @@ INTAKE_SENTINELS = %w[quaack-sentinel-email quaack-sentinel-name].freeze
 # One more, planted in each bad input and each path.
 INTAKE_SENTINEL = "sentinel-5b17c0-ssn"
 
-# `quaacks intake` (README, step 1), run through the real CLI and its real
+# `quaacks intake` (DESIGN.md, step 1), run through the real CLI and its real
 # steps table, with a temporary store base.
 RSpec.describe "quaacks intake" do
   let(:dir) { Dir.mktmpdir("quaack-intake") }

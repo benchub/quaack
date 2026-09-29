@@ -10,7 +10,7 @@ require_relative "relation_qualifier/errors"
 
 module Quaack
   module Enclave
-    # README step 1: rewrite the query so every relation names its schema,
+    # DESIGN.md step 1: rewrite the query so every relation names its schema,
     # and search_path never matters again.
     #
     #   RelationQualifier.qualify(sql, settings, connection)

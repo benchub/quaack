@@ -6,7 +6,7 @@ require_relative "rewrite_generation"
 
 module Quaack
   module Driver
-    # README step 7: an operator's own rewrites, from a file on the laptop
+    # DESIGN.md step 7: an operator's own rewrites, from a file on the laptop
     # (`--rewrites <file>`), written with the 3g placeholders in place of
     # literals, one per ;-terminated statement.
     #

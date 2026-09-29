@@ -6,7 +6,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks intake --query <file> --plan <file> --server <name>
-      # [--captured-at <time>]` (README, step 1). The operator runs it on the
+      # [--captured-at <time>]` (DESIGN.md, step 1). The operator runs it on the
       # jump server, where the query and its EXPLAIN (ANALYZE, BUFFERS,
       # SETTINGS, FORMAT JSON) output already sit in files. It checks the
       # three inputs (see Intake), starts the run that holds them, and

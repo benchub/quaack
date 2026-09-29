@@ -2,7 +2,7 @@
 
 module Quaack
   module Protocol
-    # The one list of what may leave the production enclave (README, "Trust
+    # The one list of what may leave the production enclave (DESIGN.md, "Trust
     # boundary"). Each key is a type of message the enclave script prints,
     # and its value is the only fields that message may carry. The enclave's
     # egress function sends each message as its type plus these fields, and
@@ -21,7 +21,7 @@ module Quaack
       # A failed step: which step, which rule it broke, and the Postgres
       # SQLSTATE if there was one. Never the error's message text, which can
       # hold a real value. function is only on a volatile_function refusal
-      # (README 3d): the volatile function's schema-qualified name, which
+      # (DESIGN.md 3d): the volatile function's schema-qualified name, which
       # is schema and so shape. The enclave's ErrorFilter sends it only if
       # it's one plain schema.name identifier pair.
       error: %i[step rule sqlstate function].freeze,
@@ -48,7 +48,7 @@ module Quaack
       # command gave the instance memory. The inventory itself, its settings,
       # locale names, and extensions, stays in the store.
       inventory: %i[major_version memory_known].freeze,
-      # The README 15b burndown. Its values are nested Hashes, so unlike
+      # The DESIGN.md 15b burndown. Its values are nested Hashes, so unlike
       # every other field, they're checked on the way out: the egress
       # function sends them only if Protocol::Burndown.valid? passes, so
       # every count is an Integer and every key is a stage from
@@ -67,7 +67,7 @@ module Quaack
       # false: whether it's a partial index, which only works when the
       # predicate's literal is a constant in the application's SQL.
       index_outcome: %i[index outcome rule covered_by partial_constant_only].freeze,
-      # The README 5a-5 payload for the LLM, from `quaacks index-payload`,
+      # The DESIGN.md 5a-5 payload for the LLM, from `quaacks index-payload`,
       # built only from shape-class store entries: query is the 3g redacted
       # query; placeholders each placeholder's 3g shape and the step 1 row
       # counts; plan the 3g redacted step 1 plan; schema the 3b subset;
@@ -81,7 +81,7 @@ module Quaack
       # nested and go out unchecked, so the enclave's IndexPayload step is
       # where this is reviewed.
       index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,
-      # README 5a-6 feedback for the LLM, from `quaacks index-feedback`:
+      # DESIGN.md 5a-6 feedback for the LLM, from `quaacks index-feedback`:
       # the 5a-4 results for its own candidates, built like index_payload
       # (plans redacted through 3g, DDL through CandidateDdlRedaction), with
       # each one's shortfall. Its values are nested and go out unchecked,
@@ -90,7 +90,7 @@ module Quaack
       # Which step outputs a run's store holds, from `quaacks status`:
       # entries maps each of a fixed list of entry names to true or false.
       status: %i[entries].freeze,
-      # The README 6a payload, from `quaacks rewrite-payload`: the same
+      # The DESIGN.md 6a payload, from `quaacks rewrite-payload`: the same
       # shape-class fields as index_payload, without mechanical_results.
       rewrite_payload: %i[query placeholders plan schema stats].freeze,
       # What `quaacks rewrite-check` made of one rewrite (6a or step 7),
@@ -107,7 +107,7 @@ module Quaack
       # or one of the enclave's rule constants, such as row_count or
       # discarded. Never SQL or a row.
       rewrite_test: %i[rewrite passed scenario rule].freeze,
-      # The README 10a payload, from `quaacks counterexample-payload`:
+      # The DESIGN.md 10a payload, from `quaacks counterexample-payload`:
       # original is the 3g redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
       # check accepted it), placeholders and schema as in index_payload,
@@ -121,7 +121,7 @@ module Quaack
       # exercised; refused [{ index, rule }], each refused insert's 0-based
       # index and rule constant; load_failed true or false.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
-      # The README step 15 report, from `quaacks report-payload`: the 14d
+      # The DESIGN.md step 15 report, from `quaacks report-payload`: the 14d
       # selection (top, excluded, infinite_sets), minimax verdicts, block
       # counts with hit/read and stability, each top candidate's $n SQL
       # with the 3h functions put back, its untested atoms and step 10

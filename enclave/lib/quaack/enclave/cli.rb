@@ -14,7 +14,7 @@ require_relative "cli/steps"
 
 module Quaack
   module Enclave
-    # The quaacks command line (README, "Where QUAACK runs"). The driver
+    # The quaacks command line (DESIGN.md, "Where QUAACK runs"). The driver
     # calls it over ssh as `quaacks <subcommand> [options]`, with any larger
     # input as one JSON object on stdin. Each call runs one step and ends:
     # a step reads what it needs from the governed store, does its work,

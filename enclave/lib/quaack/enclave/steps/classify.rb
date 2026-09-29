@@ -6,7 +6,7 @@ require_relative "../pii_classification"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks classify --run <run ID>` (README 3f): classifies each column
+      # `quaacks classify --run <run ID>` (DESIGN.md 3f): classifies each column
       # of the query's tables as PII or not and as low-cardinality or not
       # (see PiiClassification), and stores the statistics that may leave.
       #

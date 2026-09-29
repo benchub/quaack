@@ -5,7 +5,7 @@ require_relative "inventory/production"
 
 module Quaack
   module Enclave
-    # Step 4's run server checks (README, step 4): does the run server match
+    # Step 4's run server checks (DESIGN.md, step 4): does the run server match
     # production's inventory (see Inventory), and is QUAACK alone on it?
     #
     #   RunServerCheck.run(store:, connection:)  # nil, or raises an Error

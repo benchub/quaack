@@ -3,7 +3,7 @@
 require "tmpdir"
 require "quaack/enclave/inventory/memory"
 
-# The operator's memory command (README, step 2), run on the jump server with
+# The operator's memory command (DESIGN.md, step 2), run on the jump server with
 # the production host filled in. Its output is the operator's, so it never
 # goes into an error.
 RSpec.describe Quaack::Enclave::Inventory::Memory do

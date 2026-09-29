@@ -4,7 +4,7 @@ require "json"
 
 module Quaack
   module Driver
-    # The driver's half of README 5a-5: it asks the LLM for index
+    # The driver's half of DESIGN.md 5a-5: it asks the LLM for index
     # candidates, has the enclave filter and test them, and runs the one
     # replacement round.
     #

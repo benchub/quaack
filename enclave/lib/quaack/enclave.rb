@@ -42,7 +42,7 @@ require_relative "enclave/counterexamples"
 
 module Quaack
   # The enclave script. It runs on the production jump server and does
-  # everything that touches a database or a real value. See README.md,
+  # everything that touches a database or a real value. See DESIGN.md,
   # "Where QUAACK runs."
   module Enclave
   end

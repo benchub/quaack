@@ -3,11 +3,19 @@
 require "open3"
 require "quaack/driver/burndown"
 require "quaack/driver/llm"
+require_relative "support/anthropic_credentials"
 require_relative "support/fake_llm"
+require_relative "support/llm_client_examples"
 
 # The exact text of the errors both groups below expect.
 module LLMClientMessages
-  def no_key = "llm_auth: ANTHROPIC_API_KEY isn't set"
+  include AnthropicCredentials
+
+  def no_credentials
+    "llm_auth: no Anthropic credentials: set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or run `ant auth login`"
+  end
+
+  def unloadable_credentials = "llm_auth: the Anthropic credentials couldn't be loaded"
 
   def real_in_specs
     "a spec built an LLM client that would call the real API. " \
@@ -15,7 +23,13 @@ module LLMClientMessages
   end
 end
 
+# The Anthropic adapter behind the client. The behavior every adapter
+# shares is in support/llm_client_examples.rb.
 RSpec.describe Quaack::Driver::LLM::Client do
+  it_behaves_like "an LLM client" do
+    let(:fake) { FakeLLM.new }
+  end
+
   let(:burndown) { Quaack::Driver::Burndown.new }
   let(:fake) { FakeLLM.new }
   let(:client) { fake.client(burndown: burndown) }
@@ -47,11 +61,6 @@ RSpec.describe Quaack::Driver::LLM::Client do
   def no_match = "llm_bad_response: the reply didn't match the schema"
   def unreadable = "llm_bad_response: the reply couldn't be read as a message"
 
-  def step_error
-    "step must be a step that calls an LLM, one of " \
-      "#{Quaack::Protocol::Burndown::LLM_STEPS.join(", ")}"
-  end
-
   def stopped_for(reason) = "llm_bad_response: the reply stopped for #{reason}"
 
   it "is loaded by quaack/driver" do
@@ -63,12 +72,6 @@ RSpec.describe Quaack::Driver::LLM::Client do
   end
 
   describe "#ask" do
-    it "returns the reply's text" do
-      fake.reply("5a-5", "CREATE INDEX ON orders (status)")
-
-      expect(ask).to eq("CREATE INDEX ON orders (status)")
-    end
-
     it "joins the reply's text blocks, in order" do
       fake.reply_blocks("5a-5", [{ type: "text", text: "CREATE INDEX " }, { type: "text", text: "ON t (a)" }])
 
@@ -98,54 +101,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
     end
   end
 
-  describe "the burndown" do
-    it "counts one LLM call for each ask, under its step" do
-      fake.reply("5a-5", "a").reply("5a-5", "b").reply("10a", "c")
-      ask("5a-5")
-      ask("5a-5")
-      ask("10a")
-
-      expect(burndown.llm_calls).to eq("5a-5" => 2, "10a" => 1)
-    end
-
-    it "counts every attempt, since a retry is an API call too" do
-      fake.error("6a", status: 529).error("6a", status: 429).reply("6a", "ok")
-
-      expect(ask("6a")).to eq("ok")
-      expect(burndown.llm_calls).to eq("6a" => 3)
-      expect(fake.asks.size).to eq(3)
-    end
-
-    it "counts attempts that end in an error" do
-      3.times { fake.error("step7", status: 529) }
-
-      expect { ask("step7") }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("step7" => 3)
-    end
-
-    it "counts an attempt whose reply can't be used" do
-      fake.reply("6a", "not json")
-
-      expect { ask("6a", json: true) }.to llm_error("llm_bad_response", bad_json)
-      expect(burndown.llm_calls).to eq("6a" => 1)
-    end
-  end
-
   describe "the step" do
-    it "takes every step the protocol lists as one that calls an LLM" do
-      Quaack::Protocol::Burndown::LLM_STEPS.each { fake.reply(it, it) }
-
-      expect(Quaack::Protocol::Burndown::LLM_STEPS.map { ask(it) }).to eq(Quaack::Protocol::Burndown::LLM_STEPS)
-    end
-
-    it "refuses a step that doesn't call an LLM before making any call" do
-      ["5a-3", "step8", "6A", :"6a", nil].each do |step|
-        expect { ask(step) }.to raise_error(ArgumentError, step_error)
-      end
-      expect(fake.asks).to eq([])
-      expect(burndown.llm_calls).to eq({})
-    end
-
     it "holds a model to its own, lower non-streaming limit" do
       small = fake.client(burndown: burndown, model: "claude-opus-4-0")
       fake.reply("5a-5", "ok")
@@ -185,35 +141,13 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(fake.asks.first.body[:system]).to eq("You rewrite SQL.")
     end
 
-    it "reads the JSON object out of a code fence with prose around it" do
-      fake.reply("5a-5", "Here you go:\n\n```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```\n\nHope that helps.")
-
-      expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
-    end
-
-    it "reads a bare JSON object followed by trailing prose" do
-      fake.reply("5a-5", "{\"ddl\": []}\nThese cover the filter.")
-
-      expect(ask(schema: schema)).to eq("ddl" => [])
-    end
-
-    it "skips a stray example object in the prose and reads the one that matches the schema" do
-      fake.reply("5a-5", "Using {\"a\": 1} as shown, here are the indexes:\n\n" \
-                         "```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```")
-
-      expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
-    end
-
-    it "skips an earlier object whose required key has the wrong type" do
-      fake.reply("5a-5", "For example {\"ddl\": \"one\"} is wrong. The answer: {\"ddl\": []}")
-
-      expect(ask(schema: schema)).to eq("ddl" => [])
-    end
-
-    it "refuses a JSON reply that lacks a required key" do
+    # Anthropic holds the reply to the schema, so one that doesn't match
+    # isn't asked for again.
+    it "refuses a JSON reply that lacks a required key, without asking again" do
       fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON t (a)"] })
 
       expect { ask(schema: schema) }.to llm_error("llm_bad_response", no_match)
+      expect(burndown.llm_calls).to eq("5a-5" => 1)
     end
 
     it "refuses a JSON reply whose required value has the wrong type" do
@@ -310,90 +244,17 @@ RSpec.describe Quaack::Driver::LLM::Client do
     end
   end
 
-  describe "API errors" do
-    it "fails with llm_rate_limited once the gem's retries run out on 429s" do
-      3.times { fake.error("5a-5", status: 429) }
-
-      expect { ask }.to llm_error("llm_rate_limited")
-      expect(fake.asks.size).to eq(3)
-    end
-
-    # A dropped connection has no retry-after, so the gem backs off half a
-    # second. One retry keeps the spec quick.
-    it "fails with llm_unavailable once retries run out on dropped connections" do
-      client = fake.client(burndown: burndown, max_retries: 1)
-      2.times { fake.drop("5a-5") }
-
-      expect { client.ask(step: "5a-5", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("5a-5" => 2)
-    end
-
-    it "fails with llm_unavailable on a server error that persists" do
-      3.times { fake.error("5a-5", status: 500) }
-
-      expect { ask }.to llm_error("llm_unavailable")
-    end
-
-    it "fails with llm_auth on a bad key or a forbidden request, without retrying" do
-      fake.error("5a-5", status: 401).error("10a", status: 403)
-
-      expect { ask("5a-5") }.to llm_error("llm_auth")
-      expect { ask("10a") }.to llm_error("llm_auth")
-      expect(burndown.llm_calls).to eq("5a-5" => 1, "10a" => 1)
-    end
-
-    # 408 is a timeout and 409 a lock, both passing, so the gem retries them
-    # and what's left once it gives up is an API that isn't answering.
-    it "fails with llm_unavailable once retries run out on 408s or 409s" do
-      3.times { fake.error("5a-5", status: 408).error("10a", status: 409) }
-
-      expect { ask("5a-5") }.to llm_error("llm_unavailable")
-      expect { ask("10a") }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("5a-5" => 3, "10a" => 3)
-    end
-
-    it "fails with llm_bad_request on a request the API rejects, without retrying" do
-      fake.error("5a-5", status: 400).error("10a", status: 404)
-
-      expect { ask("5a-5") }.to llm_error("llm_bad_request")
-      expect { ask("10a") }.to llm_error("llm_bad_request")
-      expect(fake.asks.size).to eq(2)
-    end
-
-    it "retries as many times as max_retries says" do
-      client = fake.client(burndown: burndown, max_retries: 0)
-      fake.error("5a-5", status: 529)
-
-      expect { client.ask(step: "5a-5", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
-      expect(fake.asks.size).to eq(1)
-    end
-
-    it "keeps the API key out of its error messages" do
-      client = Quaack::Driver::LLM::Client.new(api_key: "SENTINEL-KEY", burndown: burndown, transport: fake)
-      [401, 400, 429, 429, 429].each { fake.error("5a-5", status: it) }
-
-      seen = Array.new(3) do
-        client.ask(step: "5a-5", messages: messages, max_tokens: 10)
-      rescue Quaack::Driver::LLM::Error => e
-        e.message
-      end
-
-      expect(seen).to match([/\Allm_auth: /, /\Allm_bad_request: /, /\Allm_rate_limited: /])
-      expect(seen.join).not_to include("SENTINEL-KEY")
-    end
-  end
-
-  describe "the API key" do
+  describe "the credentials" do
     # FakeLLM never records headers, so this transport looks only at the
-    # one that carries the key, and answers every attempt.
+    # ones that carry credentials, and answers every attempt.
     let(:key_transport) do
       Class.new do
-        attr_reader :keys
+        attr_reader :seen
 
-        def initialize = @keys = []
+        def initialize = @seen = []
 
         def call(request, step:)
-          @keys << request.headers["x-api-key"]
+          @seen << request.headers.slice("x-api-key", "authorization")
           body = { id: "m", type: "message", role: "assistant", model: "m", stop_reason: "end_turn",
                    content: [{ type: "text", text: step }], stop_sequence: nil,
                    usage: { input_tokens: 1, output_tokens: 1 } }
@@ -404,29 +265,100 @@ RSpec.describe Quaack::Driver::LLM::Client do
     end
 
     def ask_with(client) = client.ask(step: "6a", messages: messages, max_tokens: 10)
+    def key_env_settings = Quaack::Driver::LLM.settings({ "api_key_env" => "QUAACK_SPEC_KEY" }, env: {})
 
     it "sends the key it was given" do
       ask_with(described_class.new(api_key: "SENTINEL-GIVEN", burndown: burndown, transport: key_transport))
 
-      expect(key_transport.keys).to eq(["SENTINEL-GIVEN"])
+      expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-GIVEN" }])
     end
 
     it "sends ANTHROPIC_API_KEY when it isn't given one" do
-      with_env("ANTHROPIC_API_KEY" => "SENTINEL-FROM-ENV") do
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-FROM-ENV") do
         ask_with(described_class.new(burndown: burndown, transport: key_transport))
       end
 
-      expect(key_transport.keys).to eq(["SENTINEL-FROM-ENV"])
+      expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-FROM-ENV" }])
     end
 
-    it "fails with llm_auth when ANTHROPIC_API_KEY is empty, or the key given is" do
-      with_env("ANTHROPIC_API_KEY" => "") do
-        expect { described_class.new(burndown: burndown, transport: key_transport) }
-          .to raise_error(Quaack::Driver::LLM::Error, no_key)
+    it "sends ANTHROPIC_AUTH_TOKEN as a bearer token when there's no API key" do
+      without_anthropic_credentials("ANTHROPIC_AUTH_TOKEN" => "SENTINEL-TOKEN") do
+        ask_with(described_class.new(burndown: burndown, transport: key_transport))
       end
-      expect { described_class.new(api_key: "", burndown: burndown, transport: key_transport) }
-        .to raise_error(Quaack::Driver::LLM::Error, no_key)
-      expect(key_transport.keys).to eq([])
+
+      expect(key_transport.seen).to eq([{ "authorization" => "Bearer SENTINEL-TOKEN" }])
+    end
+
+    it "sends the token of an `ant auth login` profile when there's no key or token" do
+      without_anthropic_credentials do |dir|
+        write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+        ask_with(described_class.new(burndown: burndown, transport: key_transport))
+      end
+
+      expect(key_transport.seen).to eq([{ "authorization" => "Bearer SENTINEL-PROFILE-TOKEN" }])
+    end
+
+    it "sends the key from the variable api_key_env names, over ANTHROPIC_API_KEY" do
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => "SENTINEL-NAMED") do
+        ask_with(described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport))
+      end
+
+      expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-NAMED" }])
+    end
+
+    it "fails with llm_auth, naming the variable, when api_key_env's variable is unset or empty" do
+      [nil, ""].each do |value|
+        without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => value) do
+          expect { described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport) }
+            .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_KEY isn't set")
+        end
+      end
+      expect(key_transport.seen).to eq([])
+    end
+
+    it "fails with llm_auth before any attempt when it finds no credentials, or only empty ones" do
+      [{}, { "ANTHROPIC_API_KEY" => "" }, { "ANTHROPIC_AUTH_TOKEN" => "" }].each do |env|
+        without_anthropic_credentials(env) do
+          expect { described_class.new(burndown: burndown, transport: key_transport) }
+            .to raise_error(Quaack::Driver::LLM::Error, no_credentials)
+        end
+      end
+      without_anthropic_credentials do
+        expect { described_class.new(api_key: "", burndown: burndown, transport: key_transport) }
+          .to raise_error(Quaack::Driver::LLM::Error, no_credentials)
+      end
+      expect(key_transport.seen).to eq([])
+    end
+
+    it "fails with llm_auth when the profile ANTHROPIC_PROFILE names can't be loaded" do
+      without_anthropic_credentials("ANTHROPIC_PROFILE" => "missing") do
+        expect { described_class.new(burndown: burndown, transport: key_transport) }
+          .to raise_error(Quaack::Driver::LLM::Error, unloadable_credentials)
+      end
+    end
+
+    it "fails with llm_auth, counting no attempt, when the profile's token can't be read at ask time" do
+      without_anthropic_credentials do |dir|
+        write_profile(dir, nil)
+        client = described_class.new(burndown: burndown, transport: key_transport)
+
+        expect { ask_with(client) }.to raise_error(Quaack::Driver::LLM::Error, unloadable_credentials)
+      end
+      expect(key_transport.seen).to eq([])
+      expect(burndown.llm_calls).to eq({})
+    end
+
+    # With a profile, the gem retries a 401 as it does a 429, rereading the
+    # token each time, so every attempt counts.
+    it "fails with llm_auth when the API refuses a profile's token" do
+      3.times { fake.error("5a-5", status: 401) }
+      without_anthropic_credentials do |dir|
+        write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+        client = described_class.new(burndown: burndown, transport: fake)
+
+        expect { client.ask(step: "5a-5", messages: messages, max_tokens: 10) }.to llm_error("llm_auth")
+      end
+      expect(burndown.llm_calls).to eq("5a-5" => 3)
     end
   end
 
@@ -448,59 +380,39 @@ RSpec.describe Quaack::Driver::LLM::Client do
     end
   end
 
-  describe "the model" do
-    it "is LLM.model unless it's given, so QUAACK_MODEL reaches every call" do
-      original = ENV.fetch("QUAACK_MODEL", nil)
-      ENV["QUAACK_MODEL"] = "claude-from-env"
-      client = described_class.new(api_key: "k", burndown: burndown, transport: fake)
+  describe "the settings" do
+    it "are LLM.settings unless they're given, so QUAACK_MODEL reaches every call" do
       fake.reply("5a-5", "ok")
-      client.ask(step: "5a-5", messages: messages, max_tokens: 10)
+      with_env("QUAACK_MODEL" => "claude-from-env") do
+        described_class.new(api_key: "k", burndown: burndown, transport: fake)
+                       .ask(step: "5a-5", messages: messages, max_tokens: 10)
+      end
 
       expect(fake.asks.first.body[:model]).to eq("claude-from-env")
-    ensure
-      ENV["QUAACK_MODEL"] = original
     end
 
-    it "sends the model it was built with" do
+    it "send the settings' model" do
+      settings = Quaack::Driver::LLM.settings({ "model" => "claude-from-config" }, env: {})
       fake.reply("5a-5", "ok")
-      fake.client(burndown: burndown, model: "claude-other-1").ask(step: "5a-5", messages: messages, max_tokens: 10)
+      described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
+                     .ask(step: "5a-5", messages: messages, max_tokens: 10)
 
-      expect(fake.asks.first.body[:model]).to eq("claude-other-1")
+      expect(fake.asks.first.body[:model]).to eq("claude-from-config")
+    end
+
+    it "send every attempt to the settings' base_url" do
+      settings = Quaack::Driver::LLM.settings({ "base_url" => "https://llm.example.com/anthropic" }, env: {})
+      fake.reply("6a", "ok")
+      described_class.new(settings:, api_key: "k", burndown: burndown, transport: fake)
+                     .ask(step: "6a", messages: messages, max_tokens: 10)
+
+      expect(fake.asks.map(&:url)).to eq(["https://llm.example.com/anthropic/v1/messages"])
     end
   end
 end
 
 RSpec.describe Quaack::Driver::LLM do
   include LLMClientMessages
-
-  describe ".model" do
-    it "is claude-opus-5-5 by default" do
-      expect(described_class.model({}, env: {})).to eq("claude-opus-5-5")
-    end
-
-    it "takes the driver config's model over the default" do
-      expect(described_class.model({ "model" => "claude-from-config" }, env: {})).to eq("claude-from-config")
-    end
-
-    it "takes QUAACK_MODEL over the config and the default" do
-      env = { "QUAACK_MODEL" => "claude-from-env" }
-
-      expect(described_class.model({ "model" => "claude-from-config" }, env: env)).to eq("claude-from-env")
-      expect(described_class.model({}, env: env)).to eq("claude-from-env")
-    end
-
-    it "ignores an empty QUAACK_MODEL or config value" do
-      expect(described_class.model({ "model" => "" }, env: { "QUAACK_MODEL" => "" })).to eq("claude-opus-5-5")
-    end
-
-    it "reads the process environment when no env is given" do
-      original = ENV.fetch("QUAACK_MODEL", nil)
-      ENV["QUAACK_MODEL"] = "claude-from-process"
-      expect(described_class.model).to eq("claude-from-process")
-    ensure
-      ENV["QUAACK_MODEL"] = original
-    end
-  end
 
   describe "a client with no transport, which would call the real API" do
     let(:burndown) { Quaack::Driver::Burndown.new }
@@ -530,10 +442,10 @@ RSpec.describe Quaack::Driver::LLM do
       end
     end
 
-    it "fails with llm_auth when there's no API key" do
-      with_env("QUAACK_ALLOW_REAL_LLM" => "1", "ANTHROPIC_API_KEY" => nil) do
+    it "fails with llm_auth when it finds no credentials" do
+      without_anthropic_credentials("QUAACK_ALLOW_REAL_LLM" => "1") do
         expect { described_class::Client.new(burndown: burndown) }
-          .to raise_error(described_class::Error, no_key)
+          .to raise_error(described_class::Error, no_credentials)
       end
     end
 

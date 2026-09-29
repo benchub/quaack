@@ -8,7 +8,7 @@ require_relative "planner_statistics/catalog"
 
 module Quaack
   module Enclave
-    # README 3c: the planner statistics for the query's tables and their
+    # DESIGN.md 3c: the planner statistics for the query's tables and their
     # indexes, extended statistics included, and each index's definition
     # and size. It all goes into the governed store. MCV lists and histogram
     # bounds hold real values, so the entry is value-class data, and nothing
@@ -61,7 +61,7 @@ module Quaack
     #
     # The Result's statistics is built from that entry, with each index as
     # IndexCandidate.from_ddl reads its definition, sources [:existing], or
-    # nil where it can't. README 3f (PiiClassification) reads the entry for
+    # nil where it can't. DESIGN.md 3f (PiiClassification) reads the entry for
     # the low-cardinality set that Dedupe takes.
     #
     # Refusals raise Error, with a rule and a message naming only tables:

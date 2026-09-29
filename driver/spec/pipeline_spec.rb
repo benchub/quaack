@@ -61,7 +61,7 @@ RSpec.describe Quaack::Driver::Pipeline do
   def run = described_class.new(transport:, client:, run_id: "RUN").run
   def subcommands = transport.calls.map(&:first)
 
-  it "runs step 5 in the README's order: plan gate and 5a-1 to 5a-4, 5a-5, 5a-6, then 5a-7" do
+  it "runs step 5 in DESIGN.md's order: plan gate and 5a-1 to 5a-4, 5a-5, 5a-6, then 5a-7" do
     fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
 
     run

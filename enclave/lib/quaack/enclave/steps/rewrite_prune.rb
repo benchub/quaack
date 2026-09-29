@@ -11,7 +11,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-prune --run <run ID> --search rewrite_<n>` (README
+      # `quaacks rewrite-prune --run <run ID> --search rewrite_<n>` (DESIGN.md
       # step 8's three-configuration pruning): whether a rewrite can't run
       # any differently from the original, by ThreeConfigurationPruning
       # against index_ranking_original's top three and the rewrite's own

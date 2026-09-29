@@ -12,7 +12,7 @@ ruby e2e/verify.rb 001 046     # only cases whose directory starts with these
 ruby e2e/verify.rb --write     # also rewrite each results.md, and CASES.md after a full run
 ```
 
-It needs Docker and the standard library, nothing else. It starts its own throwaway `postgres:18` container with autovacuum off (as README step 4 requires of the run server), labeled `quaack.e2e`, loads each case into a fresh database that it drops afterwards, and removes the container and its volume at exit. A container left by a crashed run is removed by the next one. Set `QUAACK_E2E_IMAGE` to use another image, such as the HypoPG one from `spec/support/postgres/`. The proofs don't need HypoPG, because they build real indexes.
+It needs Docker and the standard library, nothing else. It starts its own throwaway `postgres:18` container with autovacuum off (as DESIGN.md step 4 requires of the run server), labeled `quaack.e2e`, loads each case into a fresh database that it drops afterwards, and removes the container and its volume at exit. A container left by a crashed run is removed by the next one. Set `QUAACK_E2E_IMAGE` to use another image, such as the HypoPG one from `spec/support/postgres/`. The proofs don't need HypoPG, because they build real indexes.
 
 It isn't part of `rake`, because of that run time.
 
@@ -21,7 +21,7 @@ It isn't part of `rake`, because of that run time.
 | File | What it holds |
 | --- | --- |
 | `README.md` | What the case is, why the query is slow, and what QUAACK should do. |
-| `case.json` | Title, category, the README features it exercises, the comparison mode, the literal sets, and any `settings`: non-default planner settings the production plan ran with, which step 2 would read from its `SETTINGS`. `verify.rb` applies them to every statement. |
+| `case.json` | Title, category, DESIGN.md features it exercises, the comparison mode, the literal sets, and any `settings`: non-default planner settings the production plan ran with, which step 2 would read from its `SETTINGS`. `verify.rb` applies them to every statement. |
 | `schema.sql` | Tables, existing indexes, and deterministic data (no `random()`), then `VACUUM ANALYZE`. It sets `default_statistics_target` to 10000 first, so ANALYZE reads every row instead of a random sample, and plans repeat from one load to the next. |
 | `slow.sql` | The query as QUAACK receives it at intake, with its slow literals. |
 | `fast.sql` | A rewrite that reaches the case's bound, or, for `trap` and `none` cases, the tempting rewrite QUAACK must reject. |
@@ -46,7 +46,7 @@ Each `results.md` ends with the bound for BACKLOG 20260922-65. For `index`, `rew
 | `trap` | A tempting rewrite is wrong. | Its results differ from the original's on at least one literal set, so the data really does disprove it. |
 | `refused` | QUAACK v1 must refuse the query. | Only that the query runs on Postgres. |
 
-Total blocks are README step 13's: shared, local, and temp blocks from `EXPLAIN (ANALYZE, BUFFERS)`. Each query runs once to warm up, then three times. A count that moves by more than 1% between the three fails the case, because every claim rests on counts that repeat. A parallel plan can wobble by a block or two, which changes no claim.
+Total blocks are DESIGN.md step 13's: shared, local, and temp blocks from `EXPLAIN (ANALYZE, BUFFERS)`. Each query runs once to warm up, then three times. A count that moves by more than 1% between the three fails the case, because every claim rests on counts that repeat. A parallel plan can wobble by a block or two, which changes no claim.
 
 ## Comparison modes.
 

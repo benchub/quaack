@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # The driver and the enclave script run on different machines, on opposite
-# sides of the trust boundary. See README.md, "Where QUAACK runs." These are
+# sides of the trust boundary. See DESIGN.md, "Where QUAACK runs." These are
 # the static checks: they fail if either gem declares or requires the other,
 # or if the enclave can reach an LLM SDK. runtime_boundary_spec.rb holds the
 # runtime check.

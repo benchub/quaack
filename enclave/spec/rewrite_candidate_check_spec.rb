@@ -93,7 +93,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
   end
 
   # SupportedSql does these checks. They're pinned here too, since they're
-  # what README's "What goes into the enclave" names for a rewrite
+  # what DESIGN.md's "What goes into the enclave" names for a rewrite
   # candidate, and they must hold even if the supported list changes.
   describe "a candidate that isn't exactly one plain SELECT" do
     it "refuses two statements" do

@@ -136,7 +136,7 @@ The fake LLM (`CaseLLM`) answers every ask with a valid empty answer. Its `repli
 Two things the runner does to stand in for production, both found by this run:
 
 - A second `VACUUM` after `schema.sql`. The harness server runs with `synchronous_commit=off`, and `schema.sql`'s own `VACUUM` then leaves `relallvisible` at 0, so every index-only scan is priced as a heap scan and covering candidates come back "unused" (cases 005, 006).
-- A case's `settings` go on the production and racetrack databases with `ALTER DATABASE`, not only on the EXPLAIN session. README step 2 records production's own value, not the plan session's, and step 4 checks the run server against it. With the setting only on the session, 023 stopped at the plan gate, which was right.
+- A case's `settings` go on the production and racetrack databases with `ALTER DATABASE`, not only on the EXPLAIN session. DESIGN.md step 2 records production's own value, not the plan session's, and step 4 checks the run server against it. With the setting only on the session, 023 stopped at the plan gate, which was right.
 
 ## Failures and suspected QUAACK bugs.
 
@@ -194,5 +194,5 @@ Diagnosed on the runs of 2026-09-26/27. Each is a candidate backlog task. None i
 
 ### Corpus problems (not QUAACK bugs).
 
-- 075 `natural-join-only`: its table has an inheritance child, and README 3c refuses any table with inheritance children (`inheritance_parent`), with or without `ONLY`. The case should be `refused` with `inheritance_parent`, or drop the child table.
-- 010 `jsonb-containment-gin`: the GIN `jsonb_path_ops` index comes from 5a-5 (README 5a-5 lists operator-class choices), so it needs the LLM. Its features don't say 5a-5; the runner treats "set aside untested" as LLM too.
+- 075 `natural-join-only`: its table has an inheritance child, and DESIGN.md 3c refuses any table with inheritance children (`inheritance_parent`), with or without `ONLY`. The case should be `refused` with `inheritance_parent`, or drop the child table.
+- 010 `jsonb-containment-gin`: the GIN `jsonb_path_ops` index comes from 5a-5 (DESIGN.md 5a-5 lists operator-class choices), so it needs the LLM. Its features don't say 5a-5; the runner treats "set aside untested" as LLM too.

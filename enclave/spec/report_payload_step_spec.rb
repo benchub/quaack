@@ -7,7 +7,7 @@ require "quaack/enclave/index_candidate"
 require "quaack/enclave/index_store"
 require "quaack/enclave/store"
 
-# `quaacks report-payload --run <run ID>` (README step 15): one report
+# `quaacks report-payload --run <run ID>` (DESIGN.md step 15): one report
 # message of shape-class data, from the store, with no connection.
 RSpec.describe "quaacks report-payload" do
   let(:quaacks) { LeakCheck::Quaacks.new }

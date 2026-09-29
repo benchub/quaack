@@ -9,7 +9,7 @@ require_relative "run_discipline"
 
 module Quaack
   module Enclave
-    # README 14c: compares the original's result with a candidate's on the
+    # DESIGN.md 14c: compares the original's result with a candidate's on the
     # racetrack, with 9d's rules (ResultComparison, ResultComparator), but
     # without holding rows. Each query runs as a plain query, alone, in a
     # READ ONLY transaction under statement_timeout (RunDiscipline's lock),

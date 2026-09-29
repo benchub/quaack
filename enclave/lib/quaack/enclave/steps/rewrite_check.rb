@@ -13,7 +13,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-check --run <run ID>` (README 6a, 6b, and step 8's
+      # `quaacks rewrite-check --run <run ID>` (DESIGN.md 6a, 6b, and step 8's
       # structural discards): checks rewrites and stores the survivors.
       #
       # stdin is one JSON object, {"rewrites": [{"sql", "transformation",
@@ -25,7 +25,7 @@ module Quaack
       # are checked; the rest are rejected as too_many. Step 7's operator
       # rewrites come with "inferred": true: their transformation and
       # assumptions were inferred by the LLM, so they have no cap, and an
-      # unmet assumption only adds a warning (README step 7).
+      # unmet assumption only adds a warning (DESIGN.md step 7).
       #
       # On one racetrack connection, each rewrite goes through, in order:
       # its assumptions' vocabulary (bad_assumption), RewriteCandidateCheck
@@ -44,7 +44,7 @@ module Quaack
       #                    "assumptions" and its kind; always [] for 6a
       #   "result_types"   its output column types, as regtype text
       #   "anchored_sql"   "sql" with its clock anchored as the original's
-      #                    is (README 3h), with the same placeholder map and
+      #                    is (DESIGN.md 3h), with the same placeholder map and
       #                    column types; what later steps run, plan, and
       #                    bind (see RewriteEntry). "sql" keeps the clock as
       #                    written, for the payloads and the report. A
@@ -179,7 +179,7 @@ module Quaack
           name
         end
 
-        # sql anchored as the original is (README 3h), or raises
+        # sql anchored as the original is (DESIGN.md 3h), or raises
         # ClockAnchoring::Error.
         def anchored(sql, context)
           store = context[:store]

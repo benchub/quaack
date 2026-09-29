@@ -8,7 +8,7 @@ require_relative "supported_sql"
 
 module Quaack
   module Enclave
-    # Generator one (README 5a-1): index candidates from the parse of the
+    # Generator one (DESIGN.md 5a-1): index candidates from the parse of the
     # query alone, with the statistics input to rank columns.
     #
     #   GeneratorOne.candidates(PgQuery.parse(sql), statistics)

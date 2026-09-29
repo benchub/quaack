@@ -6,7 +6,7 @@ require_relative "../relations"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks qualify --run <run ID>` (README, steps 1 and 3a): fully
+      # `quaacks qualify --run <run ID>` (DESIGN.md, steps 1 and 3a): fully
       # qualifies the run's query against its production server, and checks
       # that every relation it uses is a plain table (see Relations).
       #

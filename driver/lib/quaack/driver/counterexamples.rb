@@ -4,7 +4,7 @@ require "json"
 
 module Quaack
   module Driver
-    # The driver's half of README 10a: asks the LLM for inserts that should
+    # The driver's half of DESIGN.md 10a: asks the LLM for inserts that should
     # make one candidate and the original return different results.
     #
     #   Counterexamples.new(client:).ask(payload)  # => ["INSERT INTO ...", ...]
@@ -51,7 +51,7 @@ module Quaack
       Round = Data.define(:inserts, :outcome)
       Result = Data.define(:rounds, :disproved, :covered)
 
-      # README 10a to 10c, up to three rounds. compare stands for the
+      # DESIGN.md 10a to 10c, up to three rounds. compare stands for the
       # enclave's 10b and 10c over the transport: it takes a round's
       # inserts and returns its outcome, a Hash with match, rule, covered
       # (untested atom shapes the round exercised), and refused (each

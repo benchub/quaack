@@ -1,6 +1,6 @@
 # QUAACK.
 
-README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE.md holds the work that's done.
+DESIGN.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE.md holds the work that's done.
 
 ## Language and tools.
 
@@ -48,9 +48,9 @@ README.md is the design. BACKLOG.md holds the work that's left. BACKLOG-COMPLETE
    - Each test failed for the right reason before the code made it pass.
    - No test is vacuous. It breaks the code on purpose and confirms the tests go red.
    - Nothing crosses the trust boundary that shouldn't.
-   - The work does what the task and README say.
+   - The work does what the task and DESIGN.md say.
 
-   Keep the review scoped. Test realistic queries and setups, the ordinary SELECTs that apps and ORMs generate, and mutation-test only the task's own diff. Don't fuzz open-ended, and don't hunt through exotic encodings or setups. Label each finding **blocking** or **minor**. Blocking means a trust-boundary leak, a vacuous test, or a correctness bug on a realistic, supported case. A problem that only shows up with rare SQL or an unusual setup is minor. The fix for it is a clean refusal, listed in the README as unsupported in v1.
+   Keep the review scoped. Test realistic queries and setups, the ordinary SELECTs that apps and ORMs generate, and mutation-test only the task's own diff. Don't fuzz open-ended, and don't hunt through exotic encodings or setups. Label each finding **blocking** or **minor**. Blocking means a trust-boundary leak, a vacuous test, or a correctness bug on a realistic, supported case. A problem that only shows up with rare SQL or an unusual setup is minor. The fix for it is a clean refusal, listed in DESIGN.md as unsupported in v1.
 4. **Fix once.** Send the blocking findings back to the same builder, so it keeps its context. It gets one more try. Minor findings go straight to BACKLOG.md as new tasks, not into the fix round.
 5. **Review again.** Run a second review with a fresh reviewer agent.
 6. **Land.** Landing means merging the task's branch into `main` locally with `git merge --no-ff`. There are no pull requests. Never squash. A squash drops the branch's history, and git then can't tell the branch was merged, so the safe `git branch -d` refuses to delete it. If the branch has a problem, such as commits missing the attribution trailer, send it back to the builder to fix on its branch before landing. If the second review is clean, land the work. If it still has findings:

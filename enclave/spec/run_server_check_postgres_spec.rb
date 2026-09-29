@@ -9,7 +9,7 @@ require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# Step 4's run server checks (README, step 4). The stand-in production
+# Step 4's run server checks (DESIGN.md, step 4). The stand-in production
 # database from ProductionServer is production and the run server both:
 # its inventory is read from it, then the check runs on a new connection
 # to it, which matches until an example changes one thing.

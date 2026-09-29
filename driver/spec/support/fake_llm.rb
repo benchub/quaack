@@ -24,10 +24,11 @@ require "quaack/driver/llm"
 # can't pass on an answer it didn't expect.
 #
 # `asks` records every attempt, in order, as an Ask with the step and the
-# request body the gem built: model, max_tokens, system, messages, and
-# output_config. Headers aren't recorded, so the API key never is.
+# request body the gem built (model, max_tokens, system, messages, and
+# output_config), and the URL it went to. Headers aren't recorded, so the
+# API key never is.
 class FakeLLM
-  Ask = Data.define(:step, :body)
+  Ask = Data.define(:step, :body, :url)
 
   # The error type the real API sends with each status.
   ERROR_TYPES = {
@@ -51,6 +52,9 @@ class FakeLLM
     @scripts[step] << message_response([{ type: "text", text: text }], stop_reason)
     self
   end
+
+  # Queues one reply cut short at the token limit.
+  def cut_short(step, text) = reply(step, text, stop_reason: "max_tokens")
 
   # Queues one successful answer for step with these content blocks, such
   # as none at all.
@@ -83,14 +87,17 @@ class FakeLLM
   end
 
   # A real LLM::Client whose every attempt comes here.
-  def client(burndown:, model: Quaack::Driver::LLM::DEFAULT_MODEL, **)
-    Quaack::Driver::LLM::Client.new(api_key: "fake-key", model: model, burndown: burndown, transport: self, **)
+  def client(burndown:, model: Quaack::Driver::LLM::DEFAULT_MODEL, api_key: "fake-key", **)
+    Quaack::Driver::LLM::Client.new(api_key:, model:, burndown:, transport: self, **)
   end
+
+  # The system prompt an attempt sent.
+  def system_prompt(ask) = ask.body[:system]
 
   # The transport interface LLM::Client calls, once per attempt: the gem's
   # per-attempt request, and the step it's for. Returns the gem's response.
   def call(request, step:)
-    @asks << Ask.new(step: step, body: request.body)
+    @asks << Ask.new(step: step, body: request.body, url: request.url.to_s)
     scripted = @scripts[step].shift
     raise Unscripted, "FakeLLM has no answer scripted for step #{step}" unless scripted
     if scripted == :drop

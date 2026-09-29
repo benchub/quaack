@@ -128,7 +128,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
 
   # With both indexes, s = 10 uses the one on s and s = 0 uses the one on
   # b, whose cost doesn't depend on s. So the worst case is no better, but
-  # the slow set is, and no set is worse (README 5a-7, 20260927-9).
+  # the slow set is, and no set is worse (DESIGN.md 5a-7, 20260927-9).
   it "combines an index that lowers one set's cost without making any set worse" do
     ranking = ranked(skewed, skewed_sets, [on_s, on_b])
     pair = ranking.combination

@@ -3,7 +3,7 @@
 require "quaack/enclave/assumption_check"
 require_relative "support/production_server"
 
-# README 6b: each stated assumption, checked against pg_constraint and
+# DESIGN.md 6b: each stated assumption, checked against pg_constraint and
 # pg_index on a real server, with NOT VALID constraints treated as absent.
 RSpec.describe Quaack::Enclave::AssumptionCheck do
   let!(:production) { ProductionServer.create(ProductionServer.sentinels) }

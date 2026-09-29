@@ -5,7 +5,7 @@ require_relative "store"
 
 module Quaack
   module Enclave
-    # The enclave script's side of the README 15b burndown: per-stage counts
+    # The enclave script's side of the DESIGN.md 15b burndown: per-stage counts
     # and work totals, kept in the governed store as each step runs, in one
     # entry named burndown.
     #
@@ -224,7 +224,7 @@ module Quaack
           index = Protocol::Burndown::STAGES.index(stage)
           return Protocol::Burndown::STAGES[index] if index
 
-          raise Error, "the stage must be one of the README 15b stages"
+          raise Error, "the stage must be one of the DESIGN.md 15b stages"
         end
 
         def name(name, what)

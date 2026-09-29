@@ -1,897 +1,582 @@
-# QUAACK: Query Upgrade Automation Assisted by Chaos and Knowledge
+<p align="center">
+  <img src="docs/quaack-logo.jpg" alt="QUAACK: Query Upgrade Automation Assisted by Chaos and Knowledge" width="560">
+</p>
 
-QUAACK takes a slow production query and works through it in stages. It proposes rewrites and indexes, throws out any rewrite that changes the query's results, and then ranks the rest by how many buffers they touch on a restored clone of production.
+# QUAACK.
 
-## Overview.
+**Query Upgrade Automation Assisted by Chaos and Knowledge.**
 
-The driver on the engineer's laptop talks to the LLM. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
+You give QUAACK one slow Postgres query. It gives you back an HTML report: the indexes and rewrites that make it faster, proven on a full-size copy of production, ranked by how much work they save. Or, if nothing helps, the report says why.
+
+It uses an LLM for ideas, but the LLM never sees your data. Every idea gets tested, and anything that changes the query's results is thrown out.
+
+> **Status.** QUAACK is at version 1 and ready for its first real runs. Two rough edges you'll hit right away:
+>
+> - Between `quaack start` and `quaack run`, you run eleven setup commands by hand on the jump server. A single `quaack setup` command is on the backlog (task 20260928-1). The walkthrough below shows the manual steps.
+> - QUAACK handles ordinary `SELECT` queries on plain tables. It refuses anything else rather than guess. See [What QUAACK won't do](#what-quaack-wont-do).
+
+**Contents:** [Why QUAACK?](#why-quaack) · [How it works](#how-it-works) · [What you need](#what-you-need) · [One-time setup](#one-time-setup) · [Tuning a query](#tuning-a-query-a-walkthrough) · [More examples](#more-examples) · [Reading the report](#reading-the-report) · [When it fails](#when-a-run-fails) · [What QUAACK won't do](#what-quaack-wont-do)
+
+## Why QUAACK?
+
+When a query is slow, you usually do one of these:
+
+- **Ask an index advisor** (Dexter, pganalyze's Index Advisor, or HypoPG by hand). It suggests indexes, based on what the planner *estimates* they'd cost.
+- **Paste the query into an LLM chat.** You get clever rewrites, but you've just sent your query, with its real values, to a third party. And nobody checks whether the rewrite returns the same rows.
+- **Use an equivalence checker like QED.** You give it two queries, and it tries to *prove* they always return the same results. It doesn't come up with the rewrite, and it says nothing about speed.
+
+QUAACK does the whole job, and checks its own work:
+
+| | Index advisors | LLM chat | QED | **QUAACK** |
+| --- | --- | --- | --- | --- |
+| Suggests indexes | Yes | Sometimes | No | **Yes** |
+| Suggests rewrites | No | Yes | No | **Yes, and takes yours too** |
+| Checks a rewrite returns the same rows | n/a | No | Yes, by proof | **Yes, by trying hard to break it** |
+| Measures real work, not estimates | No | No | No | **Yes, on a full-size copy of production** |
+| Checks more than the one slow value | Rarely | No | n/a | **Yes: slow, worst-case, and typical values** |
+| Keeps your data private | Yes | **No** | Yes | **Yes** |
+
+A few things set QUAACK apart:
+
+**It measures, it doesn't estimate.** QUAACK builds the indexes and runs the queries on a restored copy of production. It counts the 8 kB blocks each one reads, which barely moves from run to run and doesn't depend on what's in cache. A win of 5% or less doesn't count.
+
+**It tries to break every rewrite.** A faster query that returns different rows is a bug. QUAACK builds small test tables aimed at each part of your `WHERE` clause, and asks the LLM for test data that would prove the rewrite wrong. Then it compares the results on real production data too. This is testing, not proof, so it's weaker than QED's guarantee. In exchange, it works on the SQL real apps write, and you don't have to supply the rewrite.
+
+**It doesn't overfit to one value.** A query that's slow for `account_id = 17` might be fine for most accounts. QUAACK tests every candidate with three sets of values: the slow ones from your plan, a worst case, and a typical case. A candidate has to win on the slow values, and can't be worse on the others.
+
+**The LLM sees shapes, never values.** Your literals, your rows, and the values in your statistics stay inside the production network. The LLM sees table and column names, types, indexes, plans with the values taken out, and summary numbers like "71% of rows share one value". The code enforces this. It isn't a convention people have to remember.
+
+**It says so when nothing helps.** If no candidate wins, the report explains which rewrites were disproved, which indexes the planner ignored, and which ones you already have.
+
+## How it works.
+
+QUAACK comes in two halves, because of the privacy rule:
 
 ```mermaid
-%%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart LR
-    subgraph laptop["Engineer's laptop: shapes only"]
-        driver["quaack (driver)<br/>runs the steps, calls the LLM,<br/>builds the report"]
+    subgraph laptop["Your laptop"]
+        quaack["quaack<br/>(runs the show, talks to the LLM,<br/>writes the report)"]
         llm(["LLM"])
-        driver <--> llm
+        quaack <--> llm
     end
-    subgraph enclave["Production enclave: values stay here"]
-        prod[("Production")]
+    subgraph enclave["Production network"]
         subgraph jump["Jump server"]
-            script["quaacks (enclave script)<br/>stateless, one subcommand per call"]
-            egress{{"Egress whitelist"}}
-            store[("Governed store")]
+            quaacks["quaacks<br/>(does all the database work)"]
         end
-        subgraph runsrv["Run server"]
-            racetrack[("Racetrack<br/>full restore + HypoPG")]
-            arena[("Arena<br/>empty schema, fixtures<br/>rolled back")]
+        prod[("Production<br/>(read only)")]
+        subgraph runsrv["Run server, one per run"]
+            racetrack[("Racetrack:<br/>restored copy of production")]
+            arena[("Arena:<br/>empty tables for testing")]
         end
     end
-    driver -- "ssh: step + untrusted SQL,<br/>checked with pg_query" --> script
-    script --> egress -- "redacted shapes,<br/>pass/fail, block counts" --> driver
-    script <--> store
-    script -- "read-only" --> prod
-    script <--> racetrack
-    script <--> arena
+    quaack -- "ssh" --> quaacks
+    quaacks -- "shapes, pass/fail,<br/>block counts" --> quaack
+    quaacks --> prod
+    quaacks --> racetrack
+    quaacks --> arena
 ```
 
-Each run works through the steps below. Blue steps run in the enclave, orange steps run on the driver, and green steps are split between them.
+- **`quaack`**, on your laptop, runs each step in order and makes every LLM call. It never holds a production value.
+- **`quaacks`** (with an s), on the jump server, does everything that touches a database. It has no memory between calls. It keeps its working files in `~/.quaack/runs/<run ID>/` on the jump server, and everything it prints passes through one filter that only lets out things on an allowlist.
+- **The racetrack** is a full restore of production. QUAACK measures there, because only real data has production's real layout on disk.
+- **The arena** is an empty copy of the schema. QUAACK loads small test tables into it, always inside a transaction that it rolls back.
 
-```mermaid
-%%{init: {"flowchart": {"curve": "step"}}}%%
-flowchart TD
-    s1["1. Intake<br/>query, EXPLAIN ANALYZE, server"] --> s2["2. Production inventory"]
-    s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
-    s3 --> s4["4. Run server<br/>racetrack + arena"]
-    s4 --> s5{"5. Plan gate<br/>racetrack plan matches production?"}
-    s5 -- no --> abort(["Abort: statistics don't match"])
-    s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
-    s5 -- yes --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
-    s6a --> s6b["6b. Assumption check<br/>against constraints and indexes"]
-    s5a --> s8
-    s6b --> s8["8. Plan-based pruning<br/>drop rewrites whose plan never changes"]
-    s8 --> s9["9. Predicate-aware fixtures<br/>in arena, compare results"]
-    s9 --> s10["10. Adversarial fixtures<br/>LLM counterexamples, up to 3 rounds"]
-    s10 --> s11["11. Per-rewrite index ranking"]
-    s11 --> s12["12–13. Build hidden indexes,<br/>baseline total blocks"]
-    s12 --> s14["14. Candidate runs<br/>minimax on total blocks, result check, top 3"]
-    s14 --> s15["15. Report and burndown"]
-    s6b -. unmet assumption .-> out(["Discarded"])
-    s8 -. same plan .-> out
-    s9 -. different results .-> out
-    s10 -. different results .-> out
-    s14 -. no win or different results .-> out
+Here's what a run does, in plain terms:
 
-    classDef enclave fill:#cfe3ff,stroke:#3b6db3,color:#000
-    classDef driver fill:#ffe0b8,stroke:#b36b12,color:#000
-    classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
-    class s1,s2,s3,s4,s5,s6b,s8,s9,s12,s14 enclave
-    class s6a,s15 driver
-    class s5a,s10,s11 both
+1. **Collect.** Read the schema, planner statistics, and settings from production (read only). Take the literal values out of the query and plan, so the LLM only sees `$1`, `$2`, and so on. Mark columns that look like personal data, so even their statistics stay back.
+2. **Check the copy.** Plan the query on the racetrack. If the plan doesn't match production's, stop. Tuning against a copy that behaves differently would be worse than useless.
+3. **Propose indexes.** Two rule-based generators read the query and the plan. Then the LLM suggests what they missed: partial indexes, expression indexes, BRIN, and operator classes. Each idea is tried with HypoPG, as a hypothetical index, which is free. Ideas the planner won't use are dropped. The LLM sees how its ideas did, and gets one chance to fix them.
+4. **Propose rewrites.** The LLM suggests rewrites, and says what each one assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites too. Each rewrite gets its own index search, since a rewrite may want different indexes.
+5. **Try to break the rewrites.** Build test data in the arena aimed at every condition in the query: rows that just match, rows that just miss, NULLs, duplicates, orphans, and empty tables. Then ask the LLM up to three times for data that would tell the two queries apart. Any difference kills the rewrite.
+6. **Measure.** Build the surviving indexes for real on the racetrack, hidden from the planner except when being measured. Run the original and every candidate with each of the three value sets, three times each, and count blocks.
+7. **Check the results on real data.** Run the winners once more, as plain queries, and compare their results with the original's on full production data.
+8. **Report.** Rank the winners, explain them, and show where every idea dropped out.
+9. **Clean up.** Delete the run's files on the jump server, and destroy the run server if you've told QUAACK how.
+
+### What to expect.
+
+- **A run takes minutes to hours.** Most of that is building real indexes and running your slow query many times on the racetrack. A query that takes a minute will be run dozens of times.
+- **"Faster" means fewer blocks read, not fewer milliseconds.** Blocks are stable and comparable. Timing isn't. Fewer blocks almost always means faster, and it always means less pressure on the cache.
+- **Rewrites are tested hard, not proven.** QUAACK checks each rewrite several different ways, but a test can still miss a case. Read a winning rewrite before you ship it. The report lists any condition in your query that the tests never managed to exercise.
+- **A partial index only helps if your app sends a constant.** If a winning index has a `WHERE` clause, check that your app writes that value into the SQL. If the app sends it as a bind parameter, a generic plan can't use the partial index.
+- **QUAACK never changes production.** It reads production inside read-only transactions. Everything it builds, it builds on the run server. Applying a fix is up to you.
+
+## What you need.
+
+**On your laptop:**
+
+- A checkout of this repo and Ruby 3.4. On a Mac with Homebrew, `ruby@3.4` is keg-only, so put it first on `PATH`: `export PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH`.
+- Access to an LLM: Claude through the Anthropic API (an API key, or a login with the `ant` command-line tool), or any OpenAI-compatible API, such as OpenAI, Groq, Gemini, OpenRouter, or a local Ollama. See [Give the driver access to an LLM](#3-give-the-driver-access-to-an-llm).
+- ssh access to the production jump server, without a password prompt (keys or an agent).
+
+**On the jump server:**
+
+- Ruby 3.4, `gem` on `PATH`, `gcc`, and `make`. `quaack deploy` compiles the pg_query gem there.
+- `pg_dump`, at least as new as production's Postgres.
+- A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords.
+- A POSIX login shell (bash, sh, or zsh).
+
+**Production:** Postgres 17 or later.
+
+**A run server,** one per run, that you build:
+
+- The same Postgres major version and extensions as production, plus [HypoPG](https://github.com/HypoPG/hypopg).
+- A **racetrack database** restored from a recent production backup, full size.
+- The same planner and locale settings as production. QUAACK checks every one and refuses a mismatch.
+- A superuser login for you, autovacuum off, and nothing else connected.
+- A name for the **arena database.** QUAACK creates it, and drops and recreates it on a rerun. It refuses to touch an existing database of that name that it didn't create.
+
+## One-time setup.
+
+### 1. Install the driver on your laptop.
+
+```sh
+git clone https://github.com/benchub/quaack.git
+cd quaack
+bundle install
+bundle exec quaack --version
 ```
 
-## Trust boundary.
+Run `quaack` from the checkout with `bundle exec`. The rest of this README just writes `quaack`.
 
-QUAACK splits data into two classes. The code enforces the line between them. It doesn't rely on people following a convention.
+### 2. Tell the driver how to find your jump server.
 
-**Values never leave the production enclave.** These values never reach an engineer's workstation:
-
-- Literals from the query.
-- `most_common_vals` and `histogram_bounds`.
-- Fixture contents.
-- Result rows.
-
-**Shapes may leave.** These can leave the enclave and go to the engineer's machine and from there to an LLM:
-
-- Relation and column names.
-- Types.
-- Constraint and index definitions.
-- Plan structure, with literals stripped out.
-- Derived scalars: `n_distinct`, `null_frac`, `correlation`, and MCV frequencies (without the values they belong to).
-- MCV values for low-cardinality columns only, as defined in 3f. These are the one exception to "values never leave," and they exist so the LLM can write partial index predicates.
-
-For version 1, we assume the schema dump and partial index predicates contain no PII, and we treat them as shape data. A schema-only dump can still hold literals in `CHECK` constraints, column defaults, comments, and function bodies. Revisit this assumption before using QUAACK on a schema where that isn't true. Partial index predicates are safer, because QUAACK only allows them on low-cardinality columns (see 5a-3).
-
-Everything that leaves the enclave goes through one egress function, and that function only accepts fields on a whitelist. If a field isn't on the whitelist, it isn't sent at all. We don't scrub it and send it anyway. Adding a field to the whitelist is the single place where this policy gets reviewed.
-
-A step whose upstream store entry is missing, because the step that writes it hasn't run, refuses with the rule `missing_<entry>`, such as `missing_statistics`. Entry names are fixed words in the code, never data, so the rule is shape.
-
-### Where QUAACK runs.
-
-QUAACK has two parts:
-
-- **The driver** runs on a engineer's laptop, outside the production enclave. It runs the steps in order, makes every LLM call, and builds the report. It never holds a production value.
-- **The enclave script** runs on the production enclave's jump server. It's a stateless command-line script, not a long-running service. It does everything that touches a database or a real value, and it only runs when and how the driver calls it.
-
-The driver calls the enclave script over ssh, passing a subcommand for the step to run plus its arguments. The script reads what it needs from the governed store, does the work, writes any new state back to the store, and prints its result. Nothing stays in memory between calls.
-
-The driver finds the jump server with `jump_command` in its config file on the laptop, `~/.quaack/driver.json`. It's a one-line shell command in which every `{server}` becomes the production server name, as one shell word. `/bin/sh` runs it with no stdin, its stderr thrown away, and a 30-second timeout, and it must print one ssh host name and nothing else. `quaack start` runs it, then runs `quaacks intake` on that host (step 1), and records which jump server holds the run in `~/.quaack/runs/<run ID>.json`, so later commands, such as `quaack run --run <ID>`, take only the run ID.
-
-Access control comes from ssh. Anyone who can ssh into the jump server already has production access, so they can run the enclave script too. There's no separate login or service to secure.
-
-#### Deploying the enclave.
-
-The enclave script deploys by gem install only. Never run it from a checkout on the jump server: the repo's one Gemfile also installs the driver, its LLM SDK, and the dev tools. From a checkout on the laptop, run `quaack deploy --host <jump server>`. It builds the `quaack-protocol` and `quaacks` gems from their gemspecs, copies them over ssh into `~/.quaack/deploy` on the jump server, and runs `gem install --user-install --no-document` there. That installs into the ssh user's own gem directory, never an OS-wide one, and never with sudo. gem install gets the gems' dependencies, such as pg_query and pg, from rubygems, and builds pg_query from source, so the jump server needs Ruby 3.4, `gem` on PATH, gcc, and make. When it's done, `quaack deploy` prints the version that `quaacks` now answers over ssh.
-
-The driver runs a bare `quaacks` over non-interactive ssh, so the user gem bin directory must be on PATH for a non-interactive session, and the remote login shell must be POSIX-compatible (bash, sh, or zsh). To find the directory, run `ruby -e 'puts Gem.user_dir'` on the jump server and add `/bin` to what it prints, such as `~/.local/share/gem/ruby/3.4.0/bin`. Put it on PATH in a file your shell reads for non-interactive ssh sessions, such as `~/.bashrc` for bash (above any line that returns early for non-interactive shells) or `~/.zshenv` for zsh. `~/.profile` works only if your shell reads it for such sessions. To check, run `ssh <jump server> quaacks --version` from the laptop. If `quaack deploy` installs but can't run `quaacks` afterward, it says so.
-
-Before each `quaack start` and `quaack run`, the driver runs `quaacks version` on the jump server. If `quaacks` is missing or isn't the version this driver expects, it refuses and says to run `quaack deploy`.
-
-`quaacks` itself refuses to run, with the rule `driver_present`, if the driver gem is loadable where it runs, as under the repo's own bundle or with the driver gem installed beside it. That catches the wrong deploy. The repo's specs set `QUAACKS_DEV_CHECKOUT=1` to run it from the checkout on purpose.
-
-Everything the enclave script prints goes through the egress function, including error messages. Postgres errors can include real values, such as the key in a unique-violation message, so errors get filtered too. That's where the trust boundary is enforced. 
-
-**What goes into the enclave**, from the driver to the enclave script:
-
-- Requests to run a step.
-- Rewrite candidates, written with placeholders instead of literals.
-- Index DDL.
-- The LLM-generated inserts from step 10.
-
-All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pg_query and rejects anything that isn't what it claims to be:
-
-- **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see step 1) is refused too. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
-- **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses, named with its schema. Reject `CONCURRENTLY`, `UNIQUE`, `NULLS NOT DISTINCT`, `TABLESPACE`, `ON ONLY`, `WITH (...)` storage options, and an unqualified table. Reject a key expression or predicate that uses a `$n` parameter, a subquery, an aggregate or window call, a construct outside the supported SQL list, or a volatile function, operator, or cast (the 3d check). The index name is dropped. A STABLE function is left to Postgres and HypoPG, which refuse it when they build the index.
-- **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b. Reject `WITH`, `ON CONFLICT`, and `RETURNING`. `OVERRIDING SYSTEM VALUE` (and `OVERRIDING USER VALUE`) is allowed, so an insert can set a `GENERATED ALWAYS` identity key, as step 9's fixture rows do: the inserts load only into the throwaway arena, and an id that collides with another row just fails that round's load. Each value must be a constant, a cast, an array, or a call to an `IMMUTABLE` function. Two things aren't checked in v1. An uncast literal is still converted by its column type's input function, and a domain's `CHECK` still runs, at insert time. Those functions come from the production schema, not the LLM. And values aren't pinned to be deterministic: a `timestamptz` literal depends on the session's `TimeZone`, and the special inputs `'now'`, `'today'`, and the like are accepted.
-
-A rejected input fails with a message that says which rule it broke. The script then runs the accepted input only in the ways the steps below describe.
-
-**What comes out**, from the enclave script to the driver, is shape-class data only:
-
-- The redacted query and redacted plans from step 3g.
-- The subset schema from step 3b and the existing index definitions from step 3c.
-- The derived scalars and low-cardinality MCV values from step 3f.
-- Costs, estimated and built index sizes, block counts, and whether the planner used each index.
-- Pass or fail results, with the scenario or predicate atom behind each failure.
-- Which predicate atoms step 9c couldn't exercise, identified by their redacted shape.
-- Counts of what each stage added and dropped, for the 15b burndown.
-- Production's major version, and whether step 2 found its instance memory.
-
-Result rows, fixture contents, and literals never come out.
-
-**Which part runs each step:**
-
-- **The enclave script** runs steps 1 through 4, step 5, 5a-1 through 5a-4, 5a-7, 6b, step 8, step 9, 10b, 10c, the re-ranking in step 11, and steps 12 through 14.
-- **The driver** runs 5a-5, 5a-6, 6a, step 7, 10a, generator three in step 11, and step 15. These are the steps that talk to an LLM or an operator, plus the report.
-
-Inside the enclave, the enclave script keeps its data in three places:
-
-| Part | What it holds | Where it lives | Used in |
-| --- | --- | --- | --- |
-| Governed store | The step 1 inputs, the set of literals from step 3e, the placeholder map from 3g, the raw statistics from 3c, and every intermediate result between calls. | A directory on the jump server in the operator's home directory. | Every step. |
-| Racetrack | A full restore of production, with everything production has. | The run server. | Steps 5, 5a, 8, and 11 for hypothetical-index planning. Steps 12 through 14 for measurement. |
-| Arena | An empty copy of the schema in an independant db, loaded with generated fixtures inside transactions that get rolled back. | The run server. | Steps 9 and 10. |
-
-All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
-
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory. If the quaacks config sets `destroy_command`, a one-line shell command given `{server}` and `{run}` like `run_server_command` (step 4), teardown first runs it to destroy the run server, ignores what it prints, and reports `next_step` `none`. If it fails, teardown fails with `destroy_command_failed` or `destroy_command_timed_out` and keeps the store, so it can run again. So `destroy_command` must be idempotent: running it for a run server that's already gone, or half gone, must succeed. Without `destroy_command`, or for a run that's already gone, it prints a reminder to destroy the run server by hand. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
-
-## 1. Input.
-
-QUAACK takes three inputs:
-
-- The query text.
-- The full output of `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` for that query.
-- The production server name the explain plan came from.
-
-The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from 3g.
-
-To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for 3h. It must be no earlier than 1970 and no more than one day after intake, or intake refuses it as `bad_captured_at`. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
-
-The operator usually starts this from the laptop instead, with `quaack start --server <name> --query <file> --plan <file>`, where the files are paths on the jump server. The driver finds the jump server with `jump_command` (see "Where QUAACK runs"), runs `quaacks intake` there over ssh, and prints the run ID. The files stay on the jump server.
-
-The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. A query with `$1`-style parameters is refused as `query_has_parameters`, since the plan must come from the query with its literals. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, `IS NULL`, and the row comparisons of keyset pagination, such as `(created_at, id) < ($1, $2)`, with `<`, `<=`, `>`, `>=`, `=`, or `<>` between two rows of the same length. A row anywhere else, such as `ROW(a, b)` in the select list, `(a, b) IN (SELECT ...)`, or a nested row, is refused. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
-
-Fully qualify every relation in the query so `search_path` never matters.
-
-This step also defines the **canonical plan form** that every later step uses to compare plans. A canonical plan keeps each node's type, relation, index, join type, strategy, quals, and sort keys. It strips costs, row counts, buffers, and aliases.
-
-## 2. Production inventory.
-
-Validate the connection to step 1's production server. Then record the following from it:
-
-- Major version.
-- Installed extensions.
-- Instance memory.
-- `shared_buffers`, `effective_cache_size`, `work_mem`, `random_page_cost`, and `jit`.
-- `TimeZone`, `DateStyle`, `IntervalStyle`, and `default_statistics_target`, which change plans or how a literal is read, but which `SETTINGS` never lists.
-- Every parallel setting.
-- Every non-default planner GUC listed in the `SETTINGS` section of the input plan.
-- From `pg_database`: `datcollate`, `datctype`, `datlocprovider`, `datlocale`, and `datcollversion`.
-- `default_text_search_config`.
-
-The driver runs `quaacks inventory --run <run ID>`. It connects to the server named at intake with the operator's own libpq setup on the jump server. The host comes from the run, and everything else comes from where libpq looks for it: `PGUSER` and the other `PG` environment variables, a service in `~/.pg_service.conf` named by `PGSERVICE`, and the password in `~/.pgpass`. QUAACK stores no credentials. It reads everything inside one read-only, repeatable read transaction, so it can't write to production. Production must run Postgres 17 or later, since older versions don't have `datlocale`.
-
-For each setting the plan's `SETTINGS` lists, it records production's own current value, not the value in the plan, which came from the operator's session. It records settings the way `SHOW` prints them, such as `128MB`.
-
-The instance memory comes from a command the operator configures, since Postgres can't report it and every cloud provider finds it differently. The command lives in the `quaacks` config file on the jump server, `~/.quaack/config.json`, under the key `memory_command`:
+Create `~/.quaack/driver.json`:
 
 ```json
-{ "memory_command": "aws rds describe-db-instances ... {host} ..." }
+{ "jump_command": "echo jump1.prod.example.com" }
 ```
 
-It's one line of shell. Each `{host}` becomes the production host, quoted as one shell word, and `/bin/sh -c` runs it with no stdin, throwing its stderr away. It must print the memory as a whole number of bytes, or as a whole number and a unit: `kB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`, or `TiB`, in any case, with an optional space. Every unit is binary, as in Postgres, so `64GB` is 64 × 1024³ bytes. The command gets 30 seconds, and a timeout stops everything it started.
+`jump_command` is a shell command that prints the ssh host of the jump server for a production server. `{server}` in the command becomes the server name you pass to `quaack start`. With one jump server, a plain `echo` is enough. With several, map the server to a host:
 
-- With no config file, or no `memory_command` in it, the step records the memory as unknown and carries on. Later steps that need it refuse clearly.
-- A command that fails aborts the step with `memory_command_failed`, one that runs too long with `memory_command_timed_out`, and one whose output isn't a size with `memory_command_bad_output`. The command's output never appears in any message.
-- A config file that's a symlink, isn't a readable regular file, isn't a JSON object, or has a `memory_command` that isn't one non-blank line is refused as `bad_config`, before the step connects.
+```json
+{ "jump_command": "case {server} in eu-*) echo jump-eu ;; *) echo jump-us ;; esac" }
+```
 
-Failing to connect is `production_connection_failed`. A Postgres error while reading is `production_read_failed`, with its SQLSTATE. Neither error names the host, the user, or the server's message. Nothing is recorded unless the whole step succeeds.
+### 3. Give the driver access to an LLM.
 
-The inventory stays in the governed store. The step prints only its shape: production's major version and whether the memory is known.
+The driver makes every LLM call from your laptop. By default it asks Claude, and finds Anthropic credentials the way Anthropic's own tools do, taking the first of these that's set:
 
-## 3. Schema, statistics, and classification.
+1. An API key in `ANTHROPIC_API_KEY`.
+2. A bearer token in `ANTHROPIC_AUTH_TOKEN`.
+3. A profile, such as the one `ant auth login` saves under `~/.config/anthropic`. `ANTHROPIC_PROFILE` picks a profile other than the active one.
 
-### 3a. Relations.
+If you're already logged in with `ant`, there's nothing to do. With none of them, `quaack run` fails with `llm_auth` before it touches the jump server.
 
-Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
-
-A function in `FROM` could read a view or foreign table this check never sees, so each one, anywhere in the query, must be `pg_catalog`'s, such as `generate_series` or `unnest`. An unqualified name resolves to the first schema in the `search_path` with a function of that name. Unsupported in v1: any other function in `FROM`, including a user-defined one that shadows a `pg_catalog` name earlier in the path, is refused with `user_function_in_from`. Functions in the select list or `WHERE` aren't affected.
-
-The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualification and this check together. It connects to the run's production server the way step 2 does, with the operator's own libpq setup, and reads only the catalog. It resolves each unqualified name through the `search_path` in the input plan's `SETTINGS`, or the default `"$user", public` without one. `"$user"` resolves to the operator's role, the one qualify connects as, not the role of the application that ran the plan. If the application's role has a schema of its own name, give the plan's `search_path` explicitly. That's a known gap in v1. It stores the qualified query as the run's `qualified_query` entry, and the relations, each once and in the order the query first names them, as `relations`, a list of `{"schema", "name"}` objects. Later steps of 3 read both from there. It prints nothing but its done line, since the driver sees the schema only as 3b's subset. A refusal names only its rule, such as `view_relation`, `unknown_relation`, `unsupported_construct`, or `production_connection_failed`, and stores nothing.
-
-### 3b. Schema dump.
-
-Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches. Always include `public` in the list of namespaces, even if the query doesn't reference it. `pg_dump --schema` emits no `CREATE EXTENSION`, so also pass `--extension=<name>` for every extension in production's `pg_extension` except `plpgsql`, and add each one's schema to the namespaces, so the dump holds `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...` and loads into arena. It carries no version, so arena gets the run server's default version of each.
-
-Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
-
-The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing. `pg_dump` runs with `--no-password`, so it never prompts.
-
-Unsupported in v1: a `SQL_ASCII` database is refused with `sql_ascii_database`, since its names have no known encoding.
-
-### 3c. Statistics.
-
-Pull planner statistics for the query's tables and their indexes, including extended statistics. Also pull current index definitions and sizes, which the report uses for its redundancy check.
-
-These statistics include real values in `most_common_vals` and `histogram_bounds`. That makes them value-class data under the trust boundary, so they stay in the governed store.
-
-Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic, and which have a date, timestamp, or timestamptz type, for 3h's clock literals.
-
-This step captures each table's `reltuples` and `relpages`, not `relallvisible`, which the planner uses to price index-only scans. v1 assumes production is vacuumed normally, so its visibility map is current, and that the racetrack is fully vacuumed and analyzed after restore (4a). QUAACK doesn't capture or restore `relallvisible`.
-
-The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not 3b's FK parents. It connects to the production server the way step 2 does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and 3f read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
-
-Unsupported in v1: a table with inheritance children is refused with `inheritance_parent`, because `pg_stats` keeps two rows for each of its columns and QUAACK doesn't choose between them. The element and range statistics in `pg_stats` and the statistics on expressions in `pg_stats_ext_exprs` aren't read.
-
-### 3d. Function volatility.
-
-Check `provolatile` for every function anywhere in the query, including the select list. If any function is volatile, abort and say which function caused it. A volatile function breaks both rewriting and result comparison.
-
-The driver runs `quaacks volatility --run <run ID>` after `quaacks qualify`. It reads the run's `server`, `plan`, and `qualified_query` entries. It connects to the production server the way step 2 does and reads only the catalog, inside one read-only transaction, resolving unqualified function names through the `search_path` in the input plan's `SETTINGS`, or the default without one. This step is a gate, so all it stores is that the query passed: the run's `volatility` entry, `{"passed": true}`, which later steps can require before they run the query. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `volatile_function`, `unsupported_construct`, `production_connection_failed`, or `production_read_failed`, and stores nothing. A `volatile_function` refusal's error line also names the volatile function, schema-qualified, such as `pg_catalog.random`, and never its arguments. Function names are schema, so they're shape. A name that needs quoting is left out.
-
-### 3e. Literals.
-
-Build the literal set that later steps test against. It has three literals:
-
-- The **slow** literal(s), which is the set of literals in the input query itself.
-- A **worst-case** literal, taken from the top MCV of each equality column.
-- A **typical** literal, taken from a histogram bound.
-
-This literal set is value-class data, so it stays in the governed store. QUAACK runs these values on the racetrack and in arena. No LLM ever sees them.
-
-Each set is keyed by the 3g placeholder numbers, in the same form as the placeholder map, so any set binds the same way the slow values do. Values come from the step 3c statistics for the column each placeholder is compared with, picked by operator:
-
-- **Equality (`=`):** the worst case is the top MCV, and the typical value is the middle histogram bound.
-- **Ranges (`<`, `<=`, `>`, `>=`):** the worst case is the histogram bound that selects the most rows: the last bound for `<` and `<=`, and the first for `>` and `>=`. The typical value is the middle bound. For `BETWEEN`, the worst case is the first and last bounds, and the typical value is the middle bucket: the middle bound and the one after it. A lower bound (`>` or `>=`) and an upper bound (`<` or `<=`) on one column in the same `AND`, such as `created_at >= $1 AND created_at < $2`, are treated like `BETWEEN`, whichever side the column is written on. A range on its own keeps the single-bound rule.
-- **`IN` lists and `= ANY`:** the list keeps its length. In the worst case, each element takes the next most common value. In the typical set, the elements take consecutive bounds around the middle.
-- **`LIKE` and any other operator,** including `<>`, `NOT IN`, and `NOT BETWEEN`: the slow literal in all three sets.
-
-A picked value keeps the placeholder's declared type. A number placeholder widens to `bigint` or `numeric` when the value needs it, such as `20` against a numeric column.
-
-When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
-
-- A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
-- A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
-- A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
-- A placeholder that 3g shares between expressions, since it can feed more than one place.
-- A clock-reading literal, such as `'today'`, compared with a date or timestamp column, since 3h anchors it.
-
-The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
-
-### 3f. PII classification.
-
-Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.
-
-- The configured list is `pii_columns` in the `quaacks` config: `schema.table.column` globs, such as `*.users.email`. A `*` matches within one name part and never crosses a dot. Matching ignores case, so a glob can only match more columns, never fewer.
-- The heuristic flags a column whose type is text-like (text, varchar, char, name, citext, or a domain over one) and that has 50 or more distinct values. A text column whose distinct count is unknown, because it was never analyzed, counts as PII too.
-- The config's `cardinality_threshold` moves the line of 50, here and for low-cardinality below.
-
-This classification doesn't decide whether values get sent, because no values are ever sent. Instead, it controls which derived scalars go out:
-
-- For a PII column, also withhold the MCV frequencies. A frequency vector plus a column name can be enough to re-identify values in a small domain.
-- For every column, PII or not, still send `n_distinct`, `null_frac`, and `correlation`. A single number that summarizes a whole column reveals nothing about any one row.
-
-This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
-
-Expression-index and extended-statistics MCVs follow the rules of their base columns, the columns their definition names. One that names any PII column counts as PII, so none of its MCV data goes out. Otherwise its MCV frequencies go out, and its MCV values go out only when every base column is low-cardinality. An index's expressions are classified together. text[], json, and jsonb columns aren't text-like for the heuristic, so their MCV frequencies may go out, but their values never do.
-
-The driver runs `quaacks classify --run <run ID>` after `quaacks statistics`. It reads the `quaacks` config and the run's `statistics` entry, and doesn't connect to production. It stores the run's `classification` entry, `{"columns", "outbound_statistics"}`: each column's schema, table, name, and whether it's PII and low-cardinality, plus the statistics that may go out. For each column, `outbound_statistics` holds `n_distinct`, `null_frac`, and `correlation`, plus the MCV frequencies (null for a PII column) and the MCV values (null unless the column is low-cardinality). Dedupe (5a-3) reads the low-cardinality columns from there. The step sends none of it and prints nothing but its done line. The 5a-5 payload step sends `outbound_statistics` as part of the payload, so the data leaves only when the LLM needs it. A missing `statistics` entry or a bad config fails, and stores nothing.
-
-This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. The 5a-5 payload step does.
-
-### 3g. Redaction.
-
-Produce a redacted query and a redacted production plan. These redacted versions are what the driver gets, and what every LLM call uses.
-
-- Replace each literal with a numbered placeholder. The placeholder keeps the literal's shape, such as a leading versus trailing wildcard, or a numeric versus text type.
-- Give each literal its own placeholder, except where Postgres requires two expressions to match. There, equal literals in the same places of the same expression share one placeholder, because Postgres compares the expressions after binding and won't treat `$1` and `$2` as equal. These are the places:
-  - A GROUP BY expression and the same expression in the select list, HAVING, or ORDER BY.
-  - DISTINCT ON and ORDER BY.
-  - SELECT DISTINCT and ORDER BY.
-  - An aggregate's DISTINCT arguments and its ORDER BY.
-
-  A GROUP BY, DISTINCT ON, or ORDER BY key written by position or by alias, such as `GROUP BY 1`, stands for its select-list entry. A key that's a whole subquery shares the subquery's literals too. The search for the key's copies covers everything in the other clause, including aggregate arguments and FILTER. That can share a few more literals than Postgres needs, but they always hold equal values, so the query means the same. A key written differently from its copy, such as `status` against `o.status`, isn't found, and the query fails to prepare.
-
-  A shared placeholder gets its row counts the same way as any other. When the quals of more than one node hold it, its row counts are marked ambiguous.
-- Annotate each placeholder with two row counts from the step 1 plan, taken at the node that consumes it: the planner's estimated rows and the actual rows.
-- Strip literal values out of the plan's quals the same way.
-
-Keep a one-to-one placeholder map in the governed store. The map is value-class data too, so it never leaves. Any plan that leaves the enclave later, including plans from the racetrack, goes through this same redaction first.
-
-Rewrite candidates arrive from the driver with placeholders. When the enclave script needs to turn one into a runnable query, use `PREPARE` and bind the real literals as parameters. Never splice strings.
-
-The driver runs `quaacks redact --run <run ID>` after `quaacks classify`. It reads the run's `qualified_query` and `plan` entries, and doesn't connect to production. It stores four entries: `placeholder_map`, which holds the literals and never leaves; `placeholder_shapes`, each placeholder's shape and row counts; `redacted_query`, the qualified query with a placeholder in place of each literal; and `redacted_plan`, `{"explain", "masked", "dropped"}`, the step 1 plan with its literals stripped. The step sends none of them and prints nothing but its done line. The 5a-5 payload step sends the redacted query, plan, and shapes. It computes everything before it writes, so a missing entry or a query it can't redact, such as one with `$n` parameters of its own, fails with only its rule and stores nothing.
-
-### 3h. Clock anchoring.
-
-In the AST, replace each of these with a schema-qualified call to `quaack.clock_anchor()`:
-
-- `now()`
-- `transaction_timestamp()`
-- `statement_timestamp()`
-- `current_timestamp`
-- `current_date`
-- `localtimestamp`
-- `localtime`
-
-Leave all other stable functions alone.
-
-The string literals `'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` read the clock too, where Postgres reads them as a date or timestamp, so they're anchored the same way. Case and surrounding whitespace don't matter, as in Postgres. By 3h each literal is a 3g placeholder, so the word comes from the placeholder map, and the placeholder is replaced when it's cast to `date`, `timestamp`, or `timestamptz` (such as `'today'::date` or `timestamp 'now'`, which 3g keeps as `$1::date`), or compared with a column whose type, from 3c, is one of those. `'now'` is `quaack.clock_anchor()`, `'today'` is its date, and `'yesterday'` and `'tomorrow'` are that date minus or plus one day, each cast to the target type, so `'today'` as a timestamp is midnight in the session's time zone. `'now'` cast to `time` or `timetz` is anchored too. A real date, such as `'2024-01-01'`, or a longer string such as `'today 12:00'`, is left alone.
-
-The step 15 report shows the query with the original functions, and the placeholders the clock literals were, put back.
-
-The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry, the `search_path` in its `plan` entry's settings, and its `placeholder_map` and `statistics` entries for the clock literals, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The placeholder map doesn't change: a clock literal's placeholder stays in it, and a rewrite that still uses it binds the word. Its replacement records only the placeholder. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
-
-Unsupported in v1: a clock literal typed any other way, such as an argument to a function that takes a date, or compared with an expression on a column or with a column of a domain over a domain, is left alone and reads the clock. A clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
-
-## 4. Run server.
-
-The operator builds one server for each run of QUAACK. It must meet all of these requirements:
-
-- Running the same major version and extensions as production, plus HypoPG.
-- Using the same planner GUCs and locale settings recorded in step 2.
-- Superuser access.
-- No clients other than QUAACK.
-- No background jobs, and autovacuum turned off. A background `ANALYZE` would change the statistics partway through the run.
-
-Verify every requirement. If any check fails, abort and name the check that failed.
-
-The checks compare the run server with step 2's inventory. A planner setting is any setting `EXPLAIN`'s `SETTINGS` would list, any Query Tuning setting, and `TimeZone`, `DateStyle`, and `IntervalStyle`. Production's value of one is the value step 2 recorded, if it recorded one. Otherwise it's the built-in default, since `SETTINGS` lists every setting that differs from it. The database's name can differ from production's. For quiet, `pg_stat_activity` must show no client other than QUAACK, and if pg_cron is loaded, it must run its jobs from this database and have none active. Schedulers outside Postgres, such as a cron job on another host that connects later, are the operator's to turn off. The error names only the check, such as `run_server_guc_mismatch`.
-
-Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since step 2 doesn't record them.
-
-The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`. It connects to the racetrack database with the operator's own libpq setup, as step 2 does for production: the user comes from `PGUSER` or a service in `~/.pg_service.conf`, and the password from `~/.pgpass`. QUAACK stores no credentials. It runs the checks there and nowhere else. Arena doesn't exist yet, since 4b makes it, and the quiet checks already see every database on the server. If every check passes, it records the host, the port, and both database names in the run, and later steps connect with them. It prints nothing but its done line.
-
-The operator can set `run_server_command` in the quaacks config (`~/.quaack/config.json`) instead of passing the flags. It's a one-line shell command in which every `{server}` becomes the run's production server name and every `{run}` the run ID, each as one shell word. `/bin/sh` runs it on the jump server with no stdin, its stderr thrown away, and a one-hour timeout. It builds or finds the run server from production and prints one JSON object with exactly the keys `host`, `port`, `racetrack_db`, and `arena_db`. `quaacks run-server --run <run ID>` with any flag missing calls it, and each flag given overrides its value. The values are checked as the flags are. A failure is `run_server_command_failed`, `run_server_command_timed_out`, or `run_server_command_bad_output`, and nothing the command prints goes out.
-
-It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no step 2 inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
-
-### 4a. Racetrack.
-
-The racetrack is a clone of production, restored from a production backup at full size. QUAACK never generates its data. Synthetic data can't reproduce production's physical layout: row width, page density, index depth, and how closely heap order matches index order. That layout decides how many blocks a plan touches. Matching production byte for byte is the whole point of the racetrack.
-
-The restore also brings production's statistics with it. That's why the racetrack can do the hypothetical-index planning too. No separate statistics-only database is needed.
-
-v1 assumes the racetrack is fully vacuumed and analyzed after the restore, so its visibility map, and with it `relallvisible` and the price of index-only scans, is current, as production's is assumed to be. QUAACK doesn't capture or restore `relallvisible` (3c).
-
-In the racetrack database:
-
-1. Create the `hypopg` extension.
-2. Create a schema named `quaack` and a function `clock_anchor()`. The function returns `timestamptz`, is marked `STABLE`, and returns the capture time from 3h.
-
-The driver runs `quaacks racetrack-setup --run <run ID>` after `quaacks run-server`. It refuses a run with no recorded run server, then connects to the recorded racetrack database and does both steps above, with the run's `clock_anchor` entry. A `quaack` schema that already holds anything else fails the step and changes nothing. Only when setup succeeds does it store `racetrack_setup`, a marker that later racetrack steps require. It prints nothing but its done line, and a failure names only its rule.
-
-The racetrack holds real production data, including PII. Nothing read from it ever leaves the enclave without going through 3g redaction first.
-
-### 4b. Arena.
-
-Arena is a second database on the same server. Set it up like this:
-
-1. Create it from `template0`. Set `LOCALE_PROVIDER`, `LC_COLLATE`, `LC_CTYPE`, and `ICU_LOCALE` to match step 2. Do this before you load the schema dump.
-2. Load the full schema and the extensions from 3b.
-3. Create the `quaack` schema and `clock_anchor()` function, the same way as in the racetrack.
-4. Keep all `VALID` constraints.
-5. Disable user triggers only, so FK triggers still fire.
-
-Arena's job is to disprove rewrites, not to measure them. Step 9 generates its fixtures from the query's predicate structure. Every fixture load happens inside a transaction that gets rolled back, so arena stays empty between tests.
-
-Arena shares the server with the racetrack, and its activity can change what's in the cache. That only affects the hit-versus-read split, which is a secondary measure. Total blocks don't depend on the cache.
-
-## 5. Plan gate.
-
-`EXPLAIN` the original query on the racetrack with the slow literal(s). Compare its canonical form with the step 1 plan. If they differ, abort.
-
-A mismatch usually means the racetrack's statistics don't match production's. For example, the backup might be older than the statistics from 3c. The abort message should name that as the likely cause.
-
-This gate stops QUAACK from confidently optimizing against a racetrack that doesn't behave like production.
-
-### 5a. Index candidates.
-
-This step uses HypoPG to find index candidates for the original query on the racetrack. Everything here is based on estimates, because HypoPG only works during plain `EXPLAIN`, not `EXPLAIN ANALYZE`. Every literal used here comes from the set of literals defined in step 3e.
-
-Three different generators propose candidate index definitions. The steps run in this order:
-
-1. The two mechanical generators, 5a-1 and 5a-2, propose candidates.
-2. The 5a-3 filter removes duplicates and anything already covered.
-3. 5a-4 tests each surviving mechanical candidate on its own.
-4. The LLM generator, 5a-5, sees those test results and proposes candidates that the mechanical generators missed. Its candidates go through the same filter and the same testing.
-5. If any LLM candidate fell short, 5a-6 gives the LLM one chance to revise.
-6. 5a-7 combines and ranks every candidate that survived, whichever generator it came from.
-
-`quaack run --run <run ID>` drives this order through the enclave script: `quaacks index-search` (the plan gate and 5a-1 through 5a-4), `index-payload` and `index-test` (5a-5), `index-feedback` and `index-test --round refinement` (5a-6), then `index-rank` (5a-7), which tests the used candidates again, ranks and combines them, and stores the result. It can resume: `quaacks status --run <run ID>` says which of these steps' outputs the store already holds, and those steps are skipped. After step 8 it runs `quaacks arena-setup` (4b), since steps 9 and 10 need the arena. After step 11 it runs `index-build` (12a), `baseline` (13), `index-baseline` (13a), `candidate-runs` (14), `minimax` (14a and 14b), `result-comparison` (14c), and `selection` (14d), in that order, then writes the step 15 report. The same resume rule skips each of these whose output is stored, and a step that fails stops the run with its rule.
-
-#### 5a-1. Generator one: from the parse.
-
-For each table in the query, including the tables of every subquery and CTE body, each read as a query of its own, where a correlation such as `o.customer_id = c.id` counts as an equality on the inner table's column:
-
-1. Use pg_query to collect the columns that appear in equality predicates, range predicates, join conditions, `ORDER BY`, `GROUP BY`, and the select list. A predicate's other side can be any expression that names no column of a table in that `FROM`, such as `now()` or `$1 - interval '1 day'`. A column under `COLLATE` gets a key column with that collation. Each arm of an `OR` also gets candidates on its own, so a `BitmapOr` can combine them.
-2. Rank the equality columns by selectivity using `pg_stats`. Watch out: a negative `n_distinct` means it's a fraction of the row count. Convert it by taking the absolute value times `reltuples`, then discount by `null_frac`.
-3. Build the index key in this order:
-   - Equality columns, most selective first.
-   - At most one range column. A keyset row comparison, `(created_at, id) < ($1, $2)`, takes its place with all of its columns, in order.
-   - The `ORDER BY` columns, but only if they come after the equality columns and their sort directions match. That lets the planner drop the sort.
-   - As a separate key, the `GROUP BY` columns after the equality columns, when every `GROUP BY` item is a plain column of the table. The scan then comes out grouped.
-4. Cap the key at three or four columns.
-5. Add the rest of the select-list and `GROUP BY` columns as `INCLUDE` columns, but only when that makes the index covering: every column the query reads from the table is then in the key or `INCLUDE`, so an index-only scan becomes possible. Emit the bare key too, so ranking can compare them. When the `INCLUDE` wouldn't cover, emit only the bare key, since the heap visit happens anyway.
-6. Also emit every leading prefix of the key as a separate candidate.
-7. If the range column's `pg_stats` correlation is close to 1 or -1 and the table is large, also emit a BRIN candidate on that column.
-
-#### 5a-2. Generator two: from the plan.
-
-Use the production plan from step 1, not a plain `EXPLAIN` from the racetrack. The production plan has actual row counts and rows removed. A plain `EXPLAIN` only has estimates.
-
-Each problem pattern in the plan points to a potentially-helpful index:
-
-- **Seq Scan whose filter removes most rows:** a btree on the filter's equality columns. If the filter includes a constant predicate that removes most rows on its own, also try a partial index.
-- **Index Scan or Bitmap Heap Scan with a Filter or Recheck that removes many rows:** extend the index in use with the filtering columns, or add them as `INCLUDE` columns.
-- **Sort, especially an external merge or a Sort under a Limit:** an index whose key has the sort keys after the equality columns, so the scan comes out already sorted.
-- **Nested Loop with an expensive inner side:** an index on the inner table's join key plus its filter columns.
-- **Hash Join with a large inner build:** an index on the join key, so a nested loop or merge join becomes an option.
-- **BitmapAnd or BitmapOr combining several single-column indexes:** one composite index on those columns.
-- **Sort or Hash feeding an aggregate:** an index on the `GROUP BY` keys.
-- **Heap Fetches on an Index Only Scan:** this isn't an index problem, so skip it.
-
-#### 5a-3. Dedupe and filter.
-
-This filter runs on each generator's output as soon as the generator produces it, not once at the end.
-
-Normalize every definition. Drop any candidate whose key columns and `INCLUDE` columns are a leading prefix of an existing index. Also drop any candidate that matches one an earlier generator already proposed, but add the later generator to its list of sources.
-
-A dropped duplicate isn't lost work. If generator one's ideal key already exists, the query isn't slow for lack of that index, and that's worth knowing. Record every duplicate and the index that covers it, so step 15a can report it.
-
-Drop any partial index candidate whose predicate uses a column that isn't low-cardinality, as defined in 3f. This applies to every generator, including generator two's partial indexes. A predicate on a column with 50 or more distinct values risks putting PII into the DDL. The one exception is a predicate with no literal at all, made only of bare columns tested with `IS NULL`, `IS NOT NULL`, or as a boolean (`archived`, `NOT archived`), joined by `AND`, such as `WHERE deleted_at IS NULL`. It holds no values, only column names, so it's allowed on any column.
-
-HypoPG can't model every index method (GIN, GiST, and SP-GiST among them), so set aside any candidate using a method HypoPG can't model that survive this filter. Carry them forward to step 12 untested, and note that they weren't tested.
-
-#### 5a-4. Single-candidate testing.
-
-Test each candidate on its own in the racetrack:
-
-1. Run `hypopg_reset`, then `hypopg_create_index`.
-2. For each literal in the set of literals from step 3e, run `EXPLAIN (format json)` of the original query.
-3. Record whether the plan uses the hypothetical index, the total cost, the canonical plan, and `hypopg_relation_size`.
-
-Discard any candidate the planner never uses, but keep its results. The LLM learns from what the planner ignored as much as from what it used.
-
-This step runs twice: once on the mechanical candidates before 5a-5, and again on the LLM's candidates after it.
-
-#### 5a-5. Generator three: the LLM.
-
-The LLM has no database connection. The driver builds a payload from what the enclave script has sent it, and the LLM returns index DDL as text. The driver then sends that DDL to the enclave script, which tests it on the racetrack. Everything the LLM needs is shape-class data:
+To change the model, the provider, or where the key comes from, add an `llm` block to `~/.quaack/driver.json`. Every key is optional:
 
 ```json
 {
-  "query": "SELECT ... FROM orders o JOIN customers c ON c.id = o.customer_id
-            WHERE o.status = $1 AND o.created_at > $2 AND c.name LIKE $3
-            ORDER BY o.created_at DESC LIMIT 50",
-  "placeholders": {
-    "$1": {"type": "text",        "shape": "exact",            "est_rows": 480000, "actual_rows": 512300},
-    "$2": {"type": "timestamptz", "shape": "range_lower",      "est_rows": 12000,  "actual_rows": 340},
-    "$3": {"type": "text",        "shape": "trailing_wildcard","est_rows": 10000,  "actual_rows": 3}
-  },
-  "plan": "<step 1 plan, quals carrying placeholder ids instead of literals>",
-  "schema": "<step 3b subset, with existing index definitions>",
-  "mechanical_results": "<5a-4 results for every generator one and two candidate: DDL, whether the planner used it, cost per literal, estimated size, and canonical plan redacted through 3g>",
-  "stats": {
-    "orders.status":     {"n_distinct": 6,     "null_frac": 0.00, "correlation": 0.21,
-                          "mcv_freqs": [0.71, 0.12, 0.09, 0.04, 0.03, 0.01],
-                          "mcv_vals":  ["delivered", "shipped", "pending", "cancelled", "returned", "failed"]},
-    "orders.created_at": {"n_distinct": -0.94, "null_frac": 0.00, "correlation": 0.99},
-    "customers.name":    {"n_distinct": -1.00, "null_frac": 0.02, "correlation": 0.01,
-                          "mcv_freqs": null, "withheld": "pii"}
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-opus-5-5",
+    "base_url": "https://llm-gateway.example.com",
+    "api_key_env": "QUAACK_ANTHROPIC_KEY"
   }
 }
 ```
 
-That payload is enough for every recommendation this stage is meant to make:
-
-- 71% of `status` rows are `'delivered'`, so a partial index on the other values is worth testing. `status` has six distinct values and isn't PII, so it's low-cardinality, and the LLM gets the values it needs to write that predicate.
-- `created_at` has a correlation of 0.99, so BRIN is a candidate.
-- `$3` is a trailing wildcard on a nearly unique column. The planner estimated 10,000 rows, and it returned three. That points to `text_pattern_ops`, and it shows the estimate is off by three orders of magnitude.
-
-Only the `status` partial index needed real values, and those came from a low-cardinality column. The PII lives in the literals, and the literals are the one thing the recommendation doesn't depend on. What matters about `$3` is that it's a trailing wildcard estimated about 3,000 times too high. It doesn't matter that it was `'smith%'`.
-
-Ask the LLM for:
-
-- Partial indexes.
-- Expression indexes.
-- BRIN indexes, where correlation supports them.
-- Operator class choices, such as `text_pattern_ops` for prefix `LIKE` or trigram GIN for infix `LIKE`.
-
-Ask for up to five candidates. Tell the LLM that the existing indexes and the candidates in `mechanical_results` are already covered, so it should only propose indexes that aren't on either list. The mechanical generators handle the obvious btree keys well. The LLM's job is to find what they miss.
-
-The `mechanical_results` field shows the LLM where to aim. It can see which mechanical indexes the planner used, how much each one helped for each literal, and what's still expensive in the best plan. It doesn't have to guess at those.
-
-The enclave script runs the LLM's output through 5a-3 right away. If any candidates get dropped, the driver tells the LLM which ones and why, such as "already covered by `orders_status_created_at_idx`," and asks for replacements. Do this once. After that, go ahead with whatever survived, if anything.
-
-Only ask for partial indexes whose predicates use low-cardinality columns. Tag every partial index candidate with a note: it only works if the predicate's literal is a constant in the application's SQL. A generic plan for a bind parameter can't use a partial index. That tag stays with the candidate all the way into the report.
-
-Then run 5a-4 on the LLM's surviving candidates.
-
-The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from 3g, the schema subset from 3b, the outbound statistics from 3f, and the 5a-4 results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved 5a-3 filter and runs 5a-4 on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
-
-#### 5a-6. Refinement round.
-
-The results from 5a-4 up front make the LLM's first pass much better. But they can't teach it about its own kinds of candidates. Partial, expression, and operator-class indexes fail in ways btree results don't reveal. A partial index predicate might not match the query closely enough for the planner to use it. An operator class might not fit the column's collation. An expression index might not match the query's expression exactly.
-
-Run this round only if at least one LLM candidate fell short in 5a-4:
-
-- The planner never used it.
-- It helped less than a simpler mechanical candidate did.
-
-If every LLM candidate was used and helped, skip this round.
-
-Otherwise, send the LLM the 5a-4 results for its own candidates:
-
-- Whether the planner used each one.
-- Cost before and after, per literal.
-- Estimated size.
-- The resulting canonical plan, redacted through 3g like every other plan.
-
-Then ask it to revise. A model that sees the planner ignored its partial index, or that its four-column key lost to a two-column prefix, can usually fix the problem on a second try.
-
-This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run 5a-3 and 5a-4 on whatever comes back. Do only one round.
-
-An LLM candidate fell short if the planner didn't use it, or if a simpler mechanical candidate did at least as well. Simpler means fewer key and `INCLUDE` columns, with ties broken by smaller estimated size. At least as well means its worst-case cost across the set of literals is no higher. The driver gets the feedback from `quaacks index-feedback --run <run ID> [--search original]`, which sends one `index_feedback` message: whether to revise, whether the round already ran, the baseline cost per literal set, and each of the LLM's 5a-5 candidates with its DDL redacted as in 5a-5, its 5a-4 results, its shortfall, and the simpler mechanical candidate that beat it, if any. The LLM's revisions go to `quaacks index-test` with `--round refinement`, which tags their results and records that the round ran.
-
-#### 5a-7. Combination and ranking.
-
-Combine candidates from all three generators greedily. Start with the best single candidate. Test it paired with each remaining candidate. Keep adding candidates as long as each addition lowers the cost further, up to three indexes total.
-
-Rank by the **worst-case** cost reduction across the set of literals. That way, an index that only helps the slow literal(s) ranks below one that helps across the board. Use estimated size to break ties.
-
-Keep the top three by that ranking. Also keep the best combination if it beats the best single candidate. Each entry you keep carries:
-
-- Its DDL.
-- Its estimated size.
-- Cost before and after, per literal.
-- Its canonical plan.
-- Its partial-index tag, if it has one.
-
-## 6. Rewrite generation.
-
-### 6a. Candidate generation.
-
-Give the LLM the redacted query and annotated plan from step 3g, plus the schema subset from step 3b. Require each rewrite candidate to state two things:
-
-- The transformation it applied.
-- Every assumption it relies on, such as a column being `NOT NULL` or a key being unique.
-
-Attach these statements to each candidate. Later steps use them to guide adversarial testing.
-
-### 6b. Assumption check.
-
-Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. The inbound check plans the candidate first, then this check runs. Reject any candidate with an unmet assumption before anything executes it.
-
-## 7. Operator candidates.
-
-Operators can submit their own rewrites through the driver as plain SQL. They write them with the 3g placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred.
-
-Run the 6b constraint check on operator candidates too. But an unmet inferred assumption only adds a warning to the report. It doesn't reject the candidate, because the operator may know something the schema doesn't capture. The candidate still has to survive steps 8 through 10 like any other.
-
-The operator passes them as `quaack run --run <run ID> --rewrites <file>`, where the file is on the laptop and holds one `;`-terminated statement per rewrite. The driver reads and parses the file before it touches the jump server, so an unreadable or unparseable file, like an unknown run ID, fails at once with a usage error (exit 64). Right after 6a, on the same `quaacks rewrite-payload`, it sends the rewrites through `rewrite-check` with `"inferred": true`. The survivors are stored after 6a's, so they go through steps 8 to 11 like 6a's. That call writes the `operator_rewrites_checked` marker, which `quaacks status` reports, so a resumed run doesn't run step 7 again.
-
-## 8. Plan-based pruning.
-
-A rewrite can need completely different indexes than the original query. So each rewrite candidate gets its own index search, using the same sub-steps as 5a but run on the candidate's own parse and plan. That search is split into two halves:
-
-- **Step 8** does the cheaper mechanical half now, using no LLM calls. It tries to drop candidates we have a high confidence will not be able to run better than the original query, before they progress to more expensive parts of the pipeline.
-- **Step 11** uses LLM-suggested indices later, and only for candidates that survived steps 9 and 10. It's a more expensive operation, so we want to apply it after removing as many candidates as we can.
-
-Within one candidate's search, the 5a-3 filter compares only against existing indexes and against that candidate's own earlier proposals. An index that the original query's search also found still gets tested here, because it may behave differently with the rewrite.
-
-First, discard three kinds of candidates:
-
-- Candidates that aren't a single `SELECT` without side effects. The enclave script actually rejects these as soon as they arrive from the driver, using the checks listed under "What goes into the enclave." They're listed here so the report counts them with the other discarded candidates.
-- Candidates that fail to plan on racetrack.
-- Candidates whose output column count or types differ from the original.
-
-For each remaining candidate, run the mechanical half of its index search:
-
-1. **5a-1 and 5a-2:** Run generator one on the candidate's parse and generator two on its plan. Generator two uses the candidate's plain `EXPLAIN` plan from the racetrack, because a rewrite has no production `EXPLAIN ANALYZE`.
-2. **5a-3:** Filter the results.
-3. **5a-4:** Test each surviving index on its own, running the candidate query instead of the original.
-
-Then `EXPLAIN` the candidate on the racetrack in three configurations:
-
-1. With no hypothetical indexes.
-2. With the original query's top three indexes from 5a-7.
-3. With the candidate's own top three mechanical indexes, ranked the same way 5a-7 ranks them.
-
-Discard the candidate only if its canonical plan matches the original's in all three configurations. A candidate like that can't run any better than the original.
-
-Save each remaining candidate's 5a-4 results. Step 11 picks up from there.
-
-## 9. Predicate-aware fixtures.
-
-The enclave script runs all of step 9. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
-
-From the pg_query parse, pull out every predicate atom:
-
-- Column-versus-literal equality.
-- Range and `LIKE` predicates.
-- `IN` lists.
-- `IS NULL` tests.
-- Every join condition.
-- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. S1 through S5 also get tie rows, where the later columns decide: for each later column, a copy of the hit row with the columns before it at their literals and that column at its literal or one unit either side. A tie that would set a join key column or break a CHECK is left out. Unsupported in v1: a keyset whose columns span tables, or whose elements don't all evaluate to literals, gets no tie rows, and one with `=` or `<>`, or with an expression in the column row, gets no pool, so 9c may mark it untested.
-
-For each atom, build a pool of interesting values. Include one value that satisfies the atom, one that fails it, and the boundary values where they exist. Boundary values include the literal itself, one unit on either side of it, a matching and a non-matching pattern, and case variants for text. Add `NULL` for nullable columns, and add the type's boundary values for every column.
-
-Build every non-empty scenario from these pools:
-
-- Each table gets at least one **hit row** that satisfies all of its predicates.
-- Each table also gets one **near-miss row** per atom. A near-miss row fails only that one atom.
-- Each scenario either creates or withholds join partners.
-- Every row satisfies every `VALID` constraint.
-
-The scenarios are:
-
-- **S0:** All tables empty.
-- **S1:** Hit and near-miss rows only, FK-consistent, with no `NULL`s.
-- **S2:** `NULL`s in every nullable join key and every nullable predicate column.
-- **S3:** Duplicates on join keys that have no unique constraint, so joins fan out.
-- **S4:** Orphan rows on each side of every join that has no FK.
-- **S5:** Type boundary values substituted into the hit rows.
-- **S6:** One group with one row, one group with many rows, and one empty group.
-
-Columns the query never mentions still need values. A column with a `DEFAULT` gets its default. Any other column gets a type-typical value (0, an empty string, the epoch), or, when a `CHECK` constrains it, a value that satisfies the `CHECK`.
-
-Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle between two tables is refused with `fk_cycle`. A unique index on an expression, such as `lower(email)`, is supported: every column it reads gets a distinct value per row, and step 9 evaluates the index keys in Postgres and leaves out a group whose keys still collide. One that calls a function outside `pg_catalog` is refused with `expression_unique_index`, since step 9 won't run user code. A partial unique index is treated as always unique. `NULLS NOT DISTINCT` keys collide on NULL. After loading a fixture, each identity or serial sequence is moved to its column's max, so an insert that leaves the column out doesn't collide with a fixture row.
-
-A domain's `CHECK` counts as a `CHECK` on each column of that domain, with the same rule for what's simple.
-
-Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark an atom untested, but they never make a fixture break a constraint:
-
-- Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
-- A join atom gets no near miss when a foreign key touches either of its columns.
-- A self-join's aliases share one row per group, so atoms on different aliases of the same table can't be failed one at a time.
-- A group whose row would collide with an earlier row on a unique key is left out. The step 9 report counts these as `dropped`.
-- The pools don't use 3e's literal sets or 3c's statistics.
-
-Run steps 9a through 9e for each scenario.
-
-### 9a. Open the transaction.
-
-Begin a transaction on arena with `statement_timeout` set.
-
-### 9b. Load the fixture.
-
-Load the scenario's rows.
-
-### 9c. Vacuity guard.
-
-This guard checks that the fixture actually tests every atom. Without it, a candidate can pass just because the fixture never exercised the part of the query it changed.
-
-Run the guard on S1 only. S1 is the scenario built to exercise every atom both ways. The other scenarios leave things empty on purpose. S0 has no rows at all, S4 withholds join partners, and S6 has an empty group. So they're extra coverage for edge cases, not full coverage.
-
-For each atom, run the original query twice:
-
-1. As written.
-2. With that one atom replaced by `TRUE`.
-
-If the two results differ, the atom's near-miss row did its job, and the atom counts as exercised. If they're the same, the atom is **vacuous**: nothing in the fixture depends on it.
-
-Don't use `EXPLAIN ANALYZE` row counts for this. "Rows Removed by Filter" is one total for all of a node's conditions, not a count for each atom. Conditions used as an Index Cond, and hash or merge join conditions, don't report removed rows at all.
-
-When an atom is vacuous:
-
-1. **Retry.** Roll back, rebuild that atom's hit and near-miss rows from other values in its pool, and check again. Most vacuous atoms come from an unlucky value, such as a near-miss value that a `CHECK` constraint forces back into range. Try up to three times.
-2. **If it's still vacuous, keep going.** Mark the atom as untested. Every candidate that passes step 9 carries a note saying which atoms were never exercised, and that note goes into the report.
-3. **Hand it to step 10.** Pass the untested atoms to 10a so the LLM can aim its counterexamples at them.
-
-A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigger or constraint QUAACK doesn't model rejects a row, it exercises nothing: its atoms stay vacuous, get their retries, and end untested. In 9d, a scenario that won't load disproves each candidate with the load failure's rule, which is safe but means no candidate passes.
-
-The enclave script tells the driver which atoms are untested by their redacted shape, such as `o.status = $1`, never by their values.
-
-### 9d. Compare results.
-
-Run the original and every remaining candidate through the result comparator. The comparator follows these rules:
-
-- **No `ORDER BY`:** compare results as multisets.
-- **`ORDER BY` that doesn't give a total order:** for this run only, add a tiebreaker to both queries. Use the driving table's PK, or all output columns. Keep the `LIMIT`.
-  - The tiebreaker runs both ways, ascending and descending. The original must return the same rows both ways, or its `LIMIT` cuts through a tied group, and the comparison refuses with `unsupported_order`. The candidate must match the original in both runs.
-  - It fails closed, with `unsupported_order`, when a column, domain, or range type in the database uses a nondeterministic collation, or either query names one in a `COLLATE`. It also refuses when a query has a `LIMIT` or `OFFSET` and a column btree can't order, such as `json`, is left out of the tiebreaker, or when the original has rows equal on every tiebreaker column that differ in a left-out one. `FETCH FIRST ... WITH TIES` is refused outright.
-- **`LIMIT` with no `ORDER BY`:** run the original once without the `LIMIT`. The candidate's rows must be a subset of those rows, with the expected row count.
-- **Float aggregates:** compare with a tolerance.
-- **Built queries must round-trip.** Dropping the `LIMIT` or adding a tiebreaker means deparsing a changed tree. That SQL must parse back to the same tree, or the comparison refuses with `deparse_mismatch`. That's unsupported in v1.
-
-Each comparison runs twice, each time in its own transaction that rolls back. The first run loads the fixture forward. The second loads it in reverse. Fixtures load in id order, and a small sort often keeps its input order for ties, so a rewrite can match one load by luck. Examples are a subquery that drops a secondary sort key before its `LIMIT`, or a `DISTINCT` that keeps `'24 hours'` where the original returns the equal `'1 day'`. The reverse load flips the order rows reach those steps in.
-
-- **Index scans are off.** Both runs turn off index, index-only, and bitmap scans for the transaction. Arena has the production indexes, and an index on `(grp, id)` returns the `grp` ties in `id` order however the rows were loaded. 9d compares only results, so the plan doesn't matter.
-- **Rows reverse within each table.** Only each run of consecutive rows for one table is reversed. Rows of different tables keep their order, so parents still load before their children. A table whose foreign key references itself can't be reversed this way, and its reverse load fails with its own error, so the fixture isn't blamed for it.
-- **Step 10's raw inserts don't reverse.** One `INSERT` can hold many rows, and reordering them would mean rewriting it. They load in their own order, after the rows, in both runs.
-- **Gaps remain.** A pick that doesn't follow the order rows arrive in comes out the same both ways, so the reverse load can't catch it. Examples are a hash aggregate's or hash join's order, a top-N heapsort's pick, and the middle row of an odd-sized tie group (`OFFSET 1 LIMIT 1` over three ties).
-- **Both runs must match.** A mismatch in either run disproves the candidate, and the verdict says which load order did it. If either run refuses to compare, the whole comparison refuses.
-
-Any mismatch disproves the candidate.
-
-### 9e. Roll back.
-
-Roll back the transaction.
-
-## 10. Adversarial fixtures.
-
-Run up to three rounds of 10a through 10c for each surviving candidate.
-
-### 10a. Generate counterexamples.
-
-Give the LLM:
-
-- The candidate's stated transformation and assumptions from 6a, or the inferred ones from step 7.
-- The subset schema.
-- The constraint list.
-- Any atoms that 9c marked as untested. Ask the LLM to make sure its counterexamples exercise these, since step 9 couldn't.
-
-Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints.
-
-### 10b. Compare results.
-
-Run the comparator from 9d. Any mismatch disproves the candidate.
-
-For each atom that 9c marked as untested, also run the 9c test on this fixture. If the atom counts as exercised, record that step 10 covered it.
-
-### 10c. Roll back.
-
-Roll back the transaction.
-
-## 11. Per-candidate index ranking.
-
-For each candidate that survived steps 9 and 10, run the LLM half of the index search that step 8 started:
-
-1. **5a-5:** Run generator three on the candidate. The payload uses the candidate's redacted query and plan in place of the original's, and its `mechanical_results` are the 5a-4 results that step 8 saved.
-2. **5a-3 and 5a-4:** Filter the LLM's proposals and test each survivor on its own, running the candidate query.
-3. **5a-6:** If any LLM proposal fell short, give the LLM its one refinement round.
-4. **5a-7:** Combine and rank all of the candidate's indexes, mechanical and LLM, and keep what 5a-7 keeps.
-
-The candidate's plan came from the racetrack, so its quals contain real literals. The enclave script redacts it through 3g before sending it to the driver. The placeholder rules apply to candidate plans exactly as they apply to the production plan.
-
-Each candidate's winning indexes may differ from the original query's.
-
-## 12. Measurement setup.
-
-Steps 12 through 14 measure real block counts on the racetrack.
-
-### 12a. Indexes.
-
-Build every distinct index from 5a and step 11, with `maintenance_work_mem` and `max_parallel_maintenance_workers` raised. Record each index's built size for the report.
-
-Hide all of them by setting `indisvalid` to false in `pg_index`. Only ever flip proposed non-unique indexes. Never touch existing constraints. Before measuring, confirm with a plain `EXPLAIN` that the right set of indexes is hidden.
-
-### 12b. Run discipline.
-
-Run every statement in a `READ ONLY` transaction with `statement_timeout` set. Run one at a time, never in parallel.
-
-## 13. Baseline runs.
-
-For each set of literals from the step 3e, run the original query with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks, which is the sum of:
-
-- Shared hit and read.
-- Local hit and read.
-- Temp read and written.
-
-For a fixed plan, total blocks is nearly deterministic and doesn't depend on what's in the cache. So you need three runs, not the large sample you'd need for timing. The runs are there to confirm that the plan didn't change and the count didn't move. They aren't there to average out noise. If the count does move between runs, record the plan for each run and mark that literal as unstable in the report.
-
-Also record the split between hits and reads. It's secondary, since it depends on whatever happened to be cached. But it's what tells you whether a candidate avoids I/O or just avoids work that was already in memory.
-
-### 13a. Index baselines.
-
-Repeat the baseline runs for each index combination kept in 5a.
-
-## 14. Candidate runs.
-
-Run each candidate and its index combinations using the same process as step 13.
-
-### 14a. Metric.
-
-Use total blocks, and nothing else. The rewrite worth shipping is the one that touches fewer blocks. Buffer counts stay stable across runs and across machines, and wall-clock time doesn't.
-
-"Better" means more than 5% fewer total blocks. That threshold is about whether a gain matters, not about filtering out noise. A 2% buffer win is real, but it isn't worth adding an index for.
-
-### 14b. Minimax rule.
-
-A candidate must beat the original on the slow literal, and it must be no worse than the original on every other literal. When candidates tie, discard the one with the largest index footprint. Ties happen often when you rank on a single, nearly deterministic metric, so this tiebreaker matters. Ties are resolved greedily: take the survivors from smallest footprint up, and keep each one unless it ties one already kept, so a discarded candidate never knocks out another.
-
-### 14c. Result comparison.
-
-This is the last correctness check. Steps 9 and 10 tested each candidate on small generated fixtures. This step tests it on full production data with the real literals.
-
-The measurement runs in steps 13 and 14 use `EXPLAIN ANALYZE`, which runs the query but throws away its rows. So for each literal, run the original and each candidate once more, as plain queries, to get their results.
-
-The enclave script compares the results itself, using the 9d comparator and its rules. Rows never leave the enclave. Only pass or fail goes to the driver.
-
-Production-size results may be too big to hold in memory. In that case, stream the rows and compare hashes. Use a hash that ignores row order: hash each row, sort the row hashes, and hash the sorted list together with the row count, so that two queries returning the same rows in a different order still match. Where 9d compares in order, hash the row hashes in their order instead. Where 9d adds a tiebreaker to an `ORDER BY`, add the same tiebreaker here before hashing. A hash can't apply 9d's float tolerance, so round float columns to that tolerance before hashing them.
-
-The one exception is 9d's rule for `LIMIT` with no `ORDER BY`, which runs the original without its `LIMIT`. At production size, that query could return millions of rows. Try it under `statement_timeout`. If it times out, check only that the candidate returns the expected number of rows, and mark the comparison as partial in the report.
-
-A real difference here means a bug slipped past steps 9 and 10. Report it prominently and discard the candidate.
-
-### 14d. Selection.
-
-Keep the top three candidates by total blocks.
-
-## 15. Report.
-
-The driver builds the report from the results the enclave script sent back. Everything it needs is shape-class data.
-
-Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them.
-
-For each proposed index, include:
-
-- Its built size from step 12a.
-- Whether an existing index already covers it as a prefix.
-- Whether it would make an existing index redundant.
-
-Explain why the winning candidate touches fewer blocks and what that means for cache pressure. Use only plans and selectivities in that explanation. Never use literal values.
-
-### 15a. Negative result.
-
-If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out.
-
-### 15b. Burndown.
-
-Every report ends with a burndown: how much work QUAACK did, and where candidates dropped out. It appears whether or not anything beat the original.
-
-For each stage, show how many items came in, how many the stage added, how many it dropped, and how many went on. Break every drop count down by reason.
-
-**Index candidates for the original query:**
-
-| Stage | Adds | Drops, by reason |
+| Key | What it does | Default |
 | --- | --- | --- |
-| 5a-1 and 5a-2 | Candidates from generator one and from generator two, counted separately. | None. |
-| 5a-3 | None. | Already covered by an existing index, duplicate of an earlier proposal, or a partial index on a column that isn't low-cardinality. GIN and GiST candidates set aside untested are counted separately. |
-| 5a-4 | None. | The planner never used it. |
-| 5a-5 | LLM candidates, plus any replacements requested for dropped ones. | Same 5a-3 and 5a-4 reasons. |
-| 5a-6 | Revised candidates, if the round ran. Say whether it ran and why. | Same 5a-3 and 5a-4 reasons. |
-| 5a-7 | Combinations tested. | Candidates and combinations that didn't make the cut. |
+| `provider` | Which API to call: `anthropic`, or `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API. | `anthropic` |
+| `model` | The model to ask. Required for any provider but `anthropic`. | `claude-opus-5-5` |
+| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
+| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
 
-**Rewrite candidates:**
+Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the key or variable, never the value.
 
-| Stage | Adds | Drops, by reason |
+#### OpenAI-compatible providers.
+
+With `"provider": "openai_compatible"`, the driver talks to OpenAI's Chat Completions API, through the official `openai` gem, at `base_url`. It sends the key from the variable `api_key_env` names, or from `OPENAI_API_KEY` when it names none, as a bearer token. If that variable is unset or empty, `quaack run` fails with `llm_auth` before it makes any call. Give a `model` too: there's no default.
+
+| Provider | `base_url` | `api_key_env` | `model`, for example |
+| --- | --- | --- | --- |
+| OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-5` |
+| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-2.5-pro` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.1` |
+| Ollama, on your laptop | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | `qwen2.5-coder:32b` |
+
+For example, for Groq:
+
+```json
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "openai_compatible",
+    "base_url": "https://api.groq.com/openai/v1",
+    "api_key_env": "GROQ_API_KEY",
+    "model": "llama-3.3-70b-versatile"
+  }
+}
+```
+
+then `export GROQ_API_KEY=...` before `quaack run`. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
+
+The models are examples. Use one your account can call, and a strong one: QUAACK asks for careful SQL work, and a small model mostly wastes the run's calls.
+
+**Structured output.** QUAACK asks for JSON that matches a schema at several steps. Not every OpenAI-compatible provider or model holds a reply to a schema, so the driver doesn't rely on it:
+
+- It puts the schema in the prompt, and also sends it as a `response_format` of type `json_schema`.
+- If the API rejects that request with a 400 or 422, the driver asks again without `response_format`. If that works, it stops sending `response_format` for the rest of the run. There's nothing to configure: the fallback finds out for itself.
+- It checks every reply against the schema. If one doesn't match, it asks once more, telling the model what was wrong. A second reply that doesn't match fails the run with `llm_bad_response`.
+
+Each of those calls counts in the report's burndown. So a provider that rejects `response_format` costs one extra call per run, and a model that doesn't follow the schema costs an extra call per miss.
+
+The `openai` gem reads a few more variables of its own, and sends what they hold to whatever `base_url` you use: `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`. Unset them if they're meant only for OpenAI and you're using another provider.
+
+### 4. Install the enclave script on the jump server.
+
+```sh
+quaack deploy --host jump1.prod.example.com
+# quaack deploy: installed quaacks 0.1.0 on jump1.prod.example.com
+```
+
+This builds the `quaacks` gems from your checkout, copies them over ssh, and installs them into your own gem directory on the jump server. It doesn't use sudo. Never run QUAACK from a git checkout on the jump server, because the repo's bundle includes the LLM half. `quaacks` refuses to run if it finds that half beside it.
+
+The driver runs `quaacks` over non-interactive ssh, so your user gem `bin` directory must be on `PATH` for non-interactive shells. On the jump server, `ruby -e 'puts Gem.user_dir'` prints the gem directory. Add its `/bin` to `PATH` in `~/.bashrc`, above any line that returns early for non-interactive shells, or in `~/.zshenv`. Then check from your laptop:
+
+```sh
+ssh jump1.prod.example.com quaacks --version
+```
+
+Re-run `quaack deploy` whenever you update your checkout. `quaack start` and `quaack run` refuse to talk to an out-of-date `quaacks`, and tell you to deploy.
+
+### 5. Configure the jump server (optional, but recommended).
+
+`~/.quaack/config.json` on the jump server holds anything the enclave needs to know. Every key is optional.
+
+```json
+{
+  "memory_command": "aws rds describe-db-instances --db-instance-identifier {host} --query 'DBInstances[0].DBInstanceClass' --output text | ./instance-class-to-bytes",
+  "run_server_command": "/opt/dba/make-quaack-run-server {server} {run}",
+  "destroy_command": "/opt/dba/destroy-quaack-run-server {run}",
+  "pii_columns": ["*.users.email", "*.users.*name", "billing.*.card_*"],
+  "cardinality_threshold": 50
+}
+```
+
+| Key | What it does | Without it |
 | --- | --- | --- |
-| 6a and step 7 | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
-| 6b | None. | Unmet assumption. Also count the step 7 warnings, which don't drop anything. |
-| Step 8 | None. | Failed to plan, output columns didn't match, or couldn't run any differently from the original. |
-| Step 9 | None. | Disproved, broken down by scenario, S0 through S6. Also count untested atoms and 9c retries. |
-| Step 10 | None. | Disproved, broken down by round. Also count untested atoms that step 10 covered. |
-| Steps 8 and 11 | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same 5a-3, 5a-4, and 5a-7 reasons. |
-| Step 14 | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in 14c, or fell outside the top three. Count partial 14c comparisons too. |
+| `memory_command` | Prints production's instance memory, such as `64GB`. `{host}` is production's host. | Memory is recorded as unknown. |
+| `run_server_command` | Builds or finds the run server, and prints `{"host": ..., "port": ..., "racetrack_db": ..., "arena_db": ...}`. `{server}` is the production server name and `{run}` the run ID. It gets an hour. | You pass the run server as flags to `quaacks run-server`. |
+| `destroy_command` | Destroys the run server at the end of a run. It must succeed if the server is already gone. | QUAACK reminds you to destroy it yourself. |
+| `pii_columns` | `schema.table.column` patterns for columns that hold personal data. `*` matches within one part. Case is ignored. | Only the automatic rule applies: any text column with 50 or more distinct values counts as personal data. |
+| `cardinality_threshold` | Moves that line of 50. | 50. |
 
-**Work totals:**
+Personal-data columns never have their common values or how often those values appear sent to the LLM. Only columns with fewer distinct values than the threshold, like `status` or `country`, ever have their values sent.
 
-- LLM calls, by step.
-- Hypothetical-index `EXPLAIN`s on the racetrack.
-- Real indexes built in 12a.
-- Measurement runs in steps 13 and 14, including literals marked unstable.
-- Fixture loads in arena.
+## Tuning a query: a walkthrough.
 
-The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.
+Say this query is slow on `prod-db-1`:
+
+```sql
+SELECT id, kind, created_at
+FROM public.events
+WHERE account_id = 17
+  AND created_at >= '2025-06-01 00:00:00+00'
+  AND created_at < '2025-06-08 00:00:00+00'
+ORDER BY created_at, id;
+```
+
+`events` has 500,000 rows, and only `account_id` has an index. The index finds the account's 500 events, then a filter throws away all but about 10 of them.
+
+### Step 1. Save the query and its plan on the jump server.
+
+Both files hold real values, so they stay on the jump server. ssh in and save the query as `~/slow/events.sql`. Then capture its plan from production:
+
+```sh
+ssh jump1.prod.example.com
+mkdir -p ~/slow && cd ~/slow
+# save the query as events.sql, then:
+( echo 'EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)'; cat events.sql ) \
+  | psql -h prod-db-1 -XAtq -o events-plan.json
+```
+
+`EXPLAIN ANALYZE` really runs the query, so this takes as long as the query does. Capture the plan with the same settings the app uses. If the app sets `work_mem` or `search_path`, set them in the same session first. `SETTINGS` records them, and QUAACK uses them.
+
+### Step 2. Start the run from your laptop.
+
+```sh
+quaack start --server prod-db-1 --query ~/slow/events.sql --plan ~/slow/events-plan.json
+# 20260928T201702Z-3f9a1c2e
+```
+
+The paths are on the jump server. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it.
+
+QUAACK runs every candidate as if `now()` and `current_date` were the moment you ran `quaack start`. If your query uses them, start the run soon after you capture the plan. (`quaacks intake` takes a `--captured-at` time, but `quaack start` can't pass it through yet. That's backlog task 20260928-2.)
+
+### Step 3. Set up the run on the jump server.
+
+Until `quaack setup` exists, run these on the jump server, in this order. Each prints a line when it finishes, and stops with a rule name if it can't go on.
+
+```sh
+RUN=20260928T201702Z-3f9a1c2e
+
+quaacks inventory --run $RUN        # production's version, settings, and memory
+
+# With run_server_command in your config:
+quaacks run-server --run $RUN
+# Or name the run server yourself:
+quaacks run-server --run $RUN --host runsrv-7.prod.example.com --port 5432 \
+  --racetrack-db racetrack --arena-db quaack_arena
+
+for step in qualify schema-dump statistics volatility classify redact literals anchor racetrack-setup; do
+  quaacks $step --run $RUN || break
+done
+```
+
+What each one does:
+
+| Command | What it does |
+| --- | --- |
+| `inventory` | Reads production's version, extensions, settings, and locale. |
+| `run-server` | Checks that the run server matches production: version, extensions, settings, locale, superuser, and quiet. |
+| `qualify` | Adds the schema to every table name, and refuses views, partitioned tables, and the like. |
+| `schema-dump` | Dumps the schema of the tables the query touches. |
+| `statistics` | Reads planner statistics and existing indexes for the query's tables. |
+| `volatility` | Refuses the query if it calls a function with side effects, such as `random()`. |
+| `classify` | Decides which columns hold personal data, and which statistics may go to the LLM. |
+| `redact` | Swaps every literal for `$1`, `$2`, and so on. |
+| `literals` | Picks the worst-case and typical values to test with, alongside the slow ones. |
+| `anchor` | Pins `now()` and friends to the time the plan was captured. |
+| `racetrack-setup` | Installs HypoPG and QUAACK's clock function on the racetrack. |
+
+### Step 4. Run it.
+
+Back on your laptop, with access to an LLM set up (see [setup step 3](#3-give-the-driver-access-to-an-llm)):
+
+```sh
+quaack run --run 20260928T201702Z-3f9a1c2e --keep
+# ./quaack-20260928T201702Z-3f9a1c2e.html
+# 20260928T201702Z-3f9a1c2e done
+```
+
+It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
+
+`--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
+
+For this query, the report's top answer is one index:
+
+```sql
+CREATE INDEX ON public.events (account_id, created_at) INCLUDE (kind);
+```
+
+It cuts the slow values from about 509 blocks to single digits, and it's no worse for the other values. See [Reading the report](#reading-the-report) for how that looks.
+
+### Step 5. Clean up.
+
+If you used `--keep`, tear the run down when you're done:
+
+```sh
+ssh jump1.prod.example.com quaacks teardown --run 20260928T201702Z-3f9a1c2e
+```
+
+That deletes the run's files on the jump server, and runs `destroy_command` if you set one. Otherwise, destroy the run server yourself. Every copy of production data from the run lives in one of those two places.
+
+## More examples.
+
+### Put the report somewhere else.
+
+```sh
+quaack run --run $RUN --out ~/reports/events-slow-week.html
+```
+
+### Test your own rewrite.
+
+You may already have an idea. Write it with the same `$1`, `$2` placeholders QUAACK uses, since your laptop never sees the real values. To see the redacted query and learn which number is which, ask the jump server:
+
+```sh
+ssh jump1.prod.example.com quaacks rewrite-payload --run $RUN \
+  | jq -r 'select(.type == "rewrite_payload") | .query'
+# SELECT id, kind, created_at FROM public.events WHERE account_id = $1
+#   AND created_at >= $2 AND created_at < $3 ORDER BY created_at, id
+```
+
+That output holds shapes only, so it's safe on your laptop. Put one or more rewrites in a file, each ending in `;`:
+
+```sql
+-- my-rewrites.sql
+SELECT id, kind, created_at
+FROM public.events
+WHERE account_id = $1
+  AND created_at >= $2 AND created_at < $3
+ORDER BY created_at, id
+LIMIT 1000;
+
+WITH mine AS MATERIALIZED (
+  SELECT id, kind, created_at FROM public.events WHERE account_id = $1
+)
+SELECT id, kind, created_at
+FROM mine
+WHERE created_at >= $2 AND created_at < $3
+ORDER BY created_at, id;
+```
+
+```sh
+quaack run --run $RUN --rewrites my-rewrites.sql --keep
+```
+
+Your rewrites go through the same tests as the LLM's. Above, the first rewrite adds a `LIMIT` the original doesn't have, so QUAACK will prove it wrong. The second returns the same rows, but still reads all 500 of the account's rows, so it won't beat the new index and won't be ranked. There's one difference: if the LLM thinks your rewrite relies on something the schema doesn't guarantee, you get a warning in the report instead of a rejection, since you may know something the schema doesn't.
+
+QUAACK reads and parses the file before it contacts the jump server, so a typo fails straight away.
+
+### Resume after a failure.
+
+With `--keep`, a failed run leaves its work behind. Fix the problem and run the same command again. QUAACK skips every step whose output it already has.
+
+```sh
+quaack run --run $RUN --keep
+# quaack run failed: run_server_connection_failed
+# ... fix the network ...
+quaack run --run $RUN --keep
+```
+
+### Use a different model.
+
+The driver uses `claude-opus-5-5` by default. Set `model` in the `llm` block of `~/.quaack/driver.json` (see [setup step 3](#3-give-the-driver-access-to-an-llm)) to change it for good, or `QUAACK_MODEL` for one run:
+
+```sh
+QUAACK_MODEL=claude-sonnet-5-5 quaack run --run $RUN
+```
+
+### Two runs at once.
+
+Each run has its own ID, its own files, and its own run server, so separate queries don't get in each other's way. Start each with `quaack start`, and run each with its own ID.
+
+## Reading the report.
+
+The report is one HTML file with these sections, in order. The example below is shortened, and its numbers are illustrative, from the walkthrough's query.
+
+### Overall ranking.
+
+| # | Candidate | Slow blocks | Sum across literals | Index footprint |
+| --- | --- | ---: | ---: | ---: |
+| 1 | `original:top:1` | 4 | 20 | 15,112 kB |
+| 2 | `original:top:2` | 19 | 83 | 11,776 kB |
+| 3 | `original:combination` | 4 | 20 | 26,888 kB |
+
+The winner is first. Each **candidate** is your query, or a rewrite, with a set of new indexes:
+
+| Label | Means |
+| --- | --- |
+| `original` | Your query, unchanged, with no new indexes. This is the baseline. |
+| `original:top:1` | Your query with the best new index, or indexes, QUAACK found for it. `:top:2` and `:top:3` are the runners-up. |
+| `original:combination` | Your query with the top indexes together, when using them together beat using any one. |
+| `rewrite_2` | The second rewrite, with no new indexes. |
+| `rewrite_2:top:1` | The second rewrite with its own best indexes. |
+
+- **Slow blocks:** blocks read with the values from your slow plan. This is the number you most want down.
+- **Sum across literals:** blocks read, added up over the slow, worst-case, and typical values.
+- **Index footprint:** disk space for the candidate's new indexes. When two candidates tie on blocks, the smaller footprint wins.
+
+Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks, and *no worse* on every other value set, meaning no more than 5% more blocks. The report lists any candidate that was excluded, and why.
+
+### Why the winner reads fewer blocks.
+
+> `original:top:1` reads 4 blocks on the slow literal set, against 509 for the original (99% fewer).
+>
+> Original plan: Sort (10 rows) › Index Scan on public.events using events_account_id_idx (500 rows, selectivity 0.1%)
+>
+> Winner's plan: Index Only Scan on public.events using quaack_5d1e07b2 (10 rows, selectivity 0.0%)
+
+This part is generated from the measurements and plans, not written by the LLM. Compare the two plans. Here, the old plan read 500 rows to keep 10, one heap page each. The new index finds exactly the 10 rows, in order, and never visits the table.
+
+### One section per candidate.
+
+**`original:top:1`**
+
+```sql
+SELECT id, kind, created_at FROM public.events WHERE account_id = $1
+  AND created_at >= $2 AND created_at < $3 ORDER BY created_at, id
+```
+
+| Literal set | Blocks | Hit | Read | Verdict | Stability |
+| --- | ---: | ---: | ---: | --- | --- |
+| slow | 4 | 4 | 0 | better | |
+| worst_case | 12 | 9 | 3 | better | |
+| typical | 4 | 4 | 0 | better | |
+
+Indexes: `quaack_5d1e07b2`
+
+- **Literal sets:** `slow` is the values from your plan. `worst_case` uses the most common values from the statistics, which match the most rows. `typical` uses middle-of-the-road values.
+- **Blocks** is the total. **Hit** and **Read** split it by whether the block was already in memory. Blocks matter most. Hit and Read show whether a win saves disk reads or just saves work in memory.
+- **Verdict** is `better`, `no_worse`, or `worse`, against the original on the same values.
+- **Stability** says `unstable` if the block count moved between the three runs. That usually means the plan changed between runs, so be wary of that row.
+- **Untested atoms,** when listed, are conditions in the `WHERE` clause that the test data never managed to exercise, such as `o.status = $1`. A rewrite that changed such a condition wasn't really checked there. Read those rewrites extra carefully.
+
+A rewrite's SQL uses the same placeholders as the redacted query. Put your real values or bind parameters back in the same spots.
+
+### Proposed indexes.
+
+| Name | DDL | Built size | Existing index covering it | Existing indexes it makes redundant |
+| --- | --- | ---: | --- | --- |
+| `quaack_5d1e07b2` | `CREATE INDEX ON public.events (account_id, created_at) INCLUDE (kind)` | 15,112 kB | | `events_account_id_idx` |
+| `quaack_9b20c4aa` | `CREATE INDEX ON public.events (account_id, created_at)` | 11,776 kB | | `events_account_id_idx` |
+
+The **built size** is real: QUAACK built the index on the racetrack. **Makes redundant** lists your existing indexes that the new one covers, which you could drop after checking that nothing else needs them.
+
+To ship an index, build it on production yourself, usually with `CREATE INDEX CONCURRENTLY`, and give it a proper name. The `quaack_` name is only for the run.
+
+### Why nothing beat the original.
+
+This section appears only when no candidate won. It lists:
+
+- **Rewrites disproved,** and what disproved them, such as "rewrite_1: disproved in step 9 by scenario S2". Scenarios are kinds of test data: `S0` empty tables, `S1` rows that just match and just miss, `S2` NULLs, `S3` duplicate join keys, `S4` rows with no join partner, `S5` extreme values, `S6` groups of one, many, and none. A rewrite disproved in step 10 was caught by LLM-written test data.
+- **Indexes the planner declined,** because it never chose them, even hypothetically.
+- **Proposed indexes that already existed,** and which existing index covers each. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
+- **Rewrites that passed the tests but lost,** because they weren't enough faster, tied with something smaller, or returned different results on production data.
+
+"Nothing helps" is a real answer. It often means the query is already as good as its indexes allow, and the fix is in the app: fetch less, or cache it.
+
+### Burndown.
+
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
+
+Read it when the result surprises you. If the LLM proposed five rewrites and all five failed the schema checks, the problem is different than if all five were disproved by NULLs.
+
+## When a run fails.
+
+QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
+
+Common rules:
+
+| Rule | What it means | What to do |
+| --- | --- | --- |
+| `unsupported_construct` | The query uses SQL QUAACK doesn't handle yet. | See [What QUAACK won't do](#what-quaack-wont-do). |
+| `view_relation`, `inheritance_parent`, and other `..._relation` rules | The query reads something other than a plain table. | Not supported in v1. |
+| `volatile_function` | The query calls a function with side effects, such as `random()` or `nextval()`. | Not supported. Results couldn't be compared. |
+| `plan_gate_mismatch_likely_stale_statistics` | The racetrack plans the query differently from production. | Usually the restore is older than production's latest `ANALYZE`. Restore a newer backup, then start a new run. |
+| `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
+| `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. |
+| `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
+| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
+| `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
+| `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
+| A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
+
+## What QUAACK won't do.
+
+In version 1, QUAACK refuses these, rather than give an answer it can't back up:
+
+- **Anything but a `SELECT`.** No `INSERT`, `UPDATE`, `DELETE`, `SELECT ... INTO`, or `FOR UPDATE`.
+- **Anything but plain tables.** No views, materialized views, partitioned tables, foreign tables, or tables with inheritance children.
+- **Functions with side effects,** anywhere in the query.
+- **Less common SQL:** `GROUPING SETS`, `ROLLUP`, `CUBE`, `TABLESAMPLE`, `SIMILAR TO`, `JSON_TABLE` and the SQL/JSON functions, XML functions, `CYCLE` and `SEARCH` on recursive CTEs, and a few others. Joins, subqueries, CTEs, `UNION`, `CASE`, aggregates, window functions, `IN`, `ANY`, `LIKE`, `BETWEEN`, and `IS NULL` all work.
+- **Production older than Postgres 17.**
+- **Queries that already use `$1`-style parameters.** Capture the query with its real values.
+
+Some limits are in the design itself:
+
+- **One query per run.** QUAACK doesn't weigh what an index costs every other query, beyond reporting its size and what it makes redundant.
+- **It doesn't apply anything.** You decide what ships, and build it yourself.
+- **The schema counts as shape.** QUAACK sends table and column definitions to the LLM. It assumes your schema's `CHECK` constraints, defaults, and comments don't hold personal data. If yours do, don't use QUAACK on that schema yet.
+- **The racetrack must be a real restore.** QUAACK never generates data for measurement, because made-up data doesn't have production's layout on disk.
+
+## Going deeper.
+
+- [DESIGN.md](DESIGN.md) is the full design: every step, every rule, and exactly what may cross the privacy line.
+- [BACKLOG.md](BACKLOG.md) is the work that's left. [BACKLOG-COMPLETE.md](BACKLOG-COMPLETE.md) is the work that's done.
+- [e2e/](e2e/README.md) holds 100 real-world slow queries, with what QUAACK should find for each, proven against Postgres.
+- [CLAUDE.md](CLAUDE.md) covers development: Ruby 3.4, Docker for tests, and `bundle exec rake` as the one check.

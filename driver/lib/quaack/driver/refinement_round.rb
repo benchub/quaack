@@ -5,7 +5,7 @@ require_relative "generator_three"
 
 module Quaack
   module Driver
-    # The driver's half of README 5a-6: one revision round for the LLM's
+    # The driver's half of DESIGN.md 5a-6: one revision round for the LLM's
     # index candidates that fell short in 5a-4.
     #
     #   RefinementRound.new(client:, index_feedback:, index_test:).run(payload)

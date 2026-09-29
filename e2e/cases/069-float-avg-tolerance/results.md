@@ -1,6 +1,6 @@
 # 069-float-avg-tolerance results.
 
-Total blocks (README step 13), from `ruby e2e/verify.rb`.
+Total blocks (DESIGN.md step 13), from `ruby e2e/verify.rb`.
 Category: `rewrite`.
 
 | Literal set | Rows | Orig | Rewrite | Orig + idx | Rewrite + idx |

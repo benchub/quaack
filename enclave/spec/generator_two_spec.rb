@@ -554,7 +554,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
     end
   end
 
-  # README, "Trust boundary": a partial-index candidate holds a real literal,
+  # DESIGN.md, "Trust boundary": a partial-index candidate holds a real literal,
   # so it's value-class data. Nothing here sends it anywhere, but no error
   # message or inspect output may carry a filter literal.
   describe "filter literals" do

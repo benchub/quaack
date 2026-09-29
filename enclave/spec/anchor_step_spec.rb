@@ -2,7 +2,7 @@
 
 require "quaack/enclave/store"
 
-# `quaacks anchor --run <run ID>` (README 3h) the way the jump server runs
+# `quaacks anchor --run <run ID>` (DESIGN.md 3h) the way the jump server runs
 # it: the installed quaacks in its own process, outside Bundler. It reads the
 # run's redacted_query and plan entries and needs no production connection.
 RSpec.describe "quaacks anchor" do
