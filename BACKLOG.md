@@ -1350,3 +1350,16 @@ Ideas to settle before building:
 - **Came from:** The user, 2026-09-29, after a real `run_server_other_clients` failure.
 - **Design:** Trust boundary, step 4.
 - **Status:** todo
+
+### 20260929-8. `run_server_other_clients` may count QUAACK's own session.
+
+`RunServerCheck` tells its own sessions apart from other clients by libpq's `backend_pid`. That's the pid the server sent at connect time. Behind a pooler or proxy, such as PgBouncer, it can be a pid the pooler made up, not the server backend running QUAACK's queries. Then QUAACK's own session counts as another client, and step 4 fails with `run_server_other_clients` on a quiet server.
+
+- Get each own pid from the server with `SELECT pg_backend_pid()` on that connection, not from libpq.
+- Decide whether step 4 supports a pooler in front of the run server at all. With transaction pooling, consecutive statements can land on different backends, so the quiet check and later steps can't rely on one session. If it isn't supported, say so in DESIGN.md as unsupported in v1.
+- First confirm with 20260929-7's output whether this is what happened in the 2026-09-29 failure, where the run server was on port 5431.
+
+- **Depends on:** 20260929-7.
+- **Came from:** The user, 2026-09-29, who doubted the run server really had other clients.
+- **Design:** Step 4.
+- **Status:** todo
