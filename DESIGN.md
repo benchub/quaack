@@ -21,7 +21,7 @@ flowchart TB
         llm{{"LLM portal"}}
         
         %% The label node will now render with a visible border inside the workstation
-        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted informatin"]:::labelNode
+        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted information"]:::labelNode
         
         quaack <--> llm
         
@@ -62,10 +62,10 @@ Each run works through the steps below. Orange steps run in the production data 
 ```mermaid
 %%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart TD
-    s1["1. Intake:<br/>the query, it's EXPLAIN ANALYZE, and a production server name"] --> s2["2. Gather production inventory"]
+    s1["1. Intake:<br/>the query, its EXPLAIN ANALYZE, and a production server name"] --> s2["2. Gather production inventory"]
     s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
     s3 --> s4["4. Build run server<br/>racetrack + arena"]
-    s4 --> s5{"5. Does the racetrack plan matches production's plan?"}
+    s4 --> s5{"5. Does the racetrack plan match production's plan?"}
     s5 -- no --> abort(["Abort: statistics don't match"])
     s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
     s5 -- yes --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
@@ -84,8 +84,8 @@ flowchart TD
     s10 -. different results .-> out
     s14 -. no win or different results .-> out
 
-    classDef enclave fill:#ffe0b8,stroke:#3b6db3,color:#000
-    classDef driver fill:#cfe3ff,stroke:#b36b12,color:#000
+    classDef enclave fill:#ffe0b8,stroke:#b36b12,color:#000
+    classDef driver fill:#cfe3ff,stroke:#3b6db3,color:#000
     classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
     class s1,s2,s3,s4,s5,s6b,s8,s9,s12,s14 enclave
     class s6a,s15 driver

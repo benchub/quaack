@@ -31,13 +31,13 @@ When a query is slow, you usually do some combination of these things:
 - **Use your brain.** Unlock that professional pride and try to be better than Postgres' online optimizer by applying your superior intellect (and/or contextual knowledge).
 - **Ask an index advisor.** (Dexter, pganalyze's Index Advisor, or HypoPG by hand). It suggests indexes, based on what the planner *estimates* they'd cost.
 - **Paste the query into an LLM chat.** You get clever rewrites, but you've just sent your query, possibly with its real constants, to a third party. And even then, that LLM doesn't have a good sense for the data distribution of your environment. *And* you don't have any reason to believe the query is actually *correct*.
-- **Use an equivalence checker like QED.** You give it two queries, and it tries to *prove* they always return the same results. That's great, but it doesn't come up with the rewrite, nor does it say nothing about speed.
+- **Use an equivalence checker like QED.** You give it two queries, and it tries to *prove* they always return the same results. That's great, but it doesn't come up with the rewrite, nor does it say anything about speed.
 
 QUAACK does all of that, **and** it checks its work. A few things set QUAACK apart:
 
-**It measures, it doesn't estimate.** QUAACK builds the indexes and runs the queries on a restored copy of your real production data. It looks at blocks read, and considers a plan with >5% a win over the status quo. It intentionally uses real data over synthetic data, as synthetic data can take a long time to build and provide a false optimization target.
+**It measures, it doesn't estimate.** QUAACK builds the indexes and runs the queries on a restored copy of your real production data. It looks at blocks read, and counts a plan that reads more than 5% fewer blocks as a win over the status quo. It intentionally uses real data over synthetic data, as synthetic data can take a long time to build and provide a false optimization target.
 
-**It tries to break every rewrite.** A faster query that returns different rows is useless. QUAACK builds small test tables aimed at each part of your `WHERE` clause, and asks the LLM for test data that would prove any rewrite candidate to be wrong. Then it compares the results on real production data too. This is testing, not proof, so it's weaker than QED's guarantee, but on the hand, you don't have to supply the rewrite, and QED's conservative rules might discount perfectly fine rewrites.
+**It tries to break every rewrite.** A faster query that returns different rows is useless. QUAACK builds small test tables aimed at each part of your `WHERE` clause, and asks the LLM for test data that would prove any rewrite candidate to be wrong. Then it compares the results on real production data too. This is testing, not proof, so it's weaker than QED's guarantee, but on the other hand, you don't have to supply the rewrite, and QED's conservative rules might discount perfectly fine rewrites.
 
 **It doesn't overfit to one value.** A query that's slow for `account_id = 17` might be fine for most accounts. QUAACK utilizes PostgreSQL planner stats to test every rewrite candidate with three sets of literal values: the slow ones from your plan, a worst case, and a typical case. A candidate has to win on the slow values, and can't be worse on the others.
 
@@ -64,7 +64,7 @@ flowchart TB
         llm{{"LLM portal"}}
         
         %% The label node will now render with a visible border inside the workstation
-        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted informatin"]:::labelNode
+        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted information"]:::labelNode
         
         quaack <--> llm
         
@@ -110,7 +110,7 @@ flowchart TB
 1. **Collect.** Read the schema, planner statistics, and settings from production (read only). Take the literal values out of the query and the plan, so that the LLM only sees `$1`, `$2`, and so on. Make a note of which columns look like personal data, so that even their statistics stay back.
 2. **Check the copy.** Plan the query on the racetrack. If the plan doesn't match production's, stop. Tuning against a copy that behaves differently is a waste of time.
 3. **Propose indexes.** Two rule-based generators read the query and the plan. Then an LLM makes its own suggestions, which might include things the mechanical generators don't know how to work with: partial indexes, expression indexes, BRIN, and operator classes. Each idea is tried with HypoPG, as a hypothetical index, which is free. Ideas the planner won't use are dropped. The LLM sees how its ideas did, and gets one chance to fix things that didn't pan out.
-4. **Propose rewrites.** The LLM suggests rewrites, and remarks what each suggestions assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites from your big brain too. Each rewrite gets its own index search, since a rewrite may want different indexes.
+4. **Propose rewrites.** The LLM suggests rewrites, and remarks what each suggestion assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites from your big brain too. Each rewrite gets its own index search, since a rewrite may want different indexes.
 5. **Try to break the rewrites.** Build test data in the arena aimed at every condition in the query: rows that just match, rows that just miss, NULLs, duplicates, orphans, and empty tables. Then ask the LLM up to three times for data that would provide different answers from the original query and the rewrite candidate. Any difference kills the rewrite.
 6. **Measure.** Build the surviving indexes for real on the racetrack, hidden from the planner except when being measured. Run the original and every query candidate with each of the three value sets, three times each, and count the blocks they hit.
 7. **Recheck for accuracy on real data.** Run the winners once more, this time comparing the actual rows returned against the original query on full production data. The previous accuracy checks were against small sets of carefully chosen synthetic data.
@@ -242,7 +242,9 @@ then `export GROQ_API_KEY=...` before `quaack run`. Ollama needs no key, but the
 
 The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
 
-**Structured output.** QUAACK asks for JSON that matches a schema at several steps. If a model consistently fails to provide output in the needed format, the model's suggestions are discarded, and this will show up in the final report.
+**Structured output.** At several steps, QUAACK asks for JSON in a fixed shape, and checks every reply. A reply in the wrong shape gets one more try. If the model gets it wrong twice, the run stops with `llm_bad_response`. Strong models rarely do.
+
+> **Privacy: other OpenAI settings go to every provider.** The `openai` gem reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`, and sends what they hold to whatever `base_url` you use, not just to OpenAI. So a custom header carrying a secret, or your OpenAI organization and project IDs, would reach Groq, Gemini, or whichever provider you point QUAACK at. Unset those variables before `quaack run` unless your provider is OpenAI.
 
 
 ### 4. Install the enclave script on the jump server.
@@ -335,11 +337,11 @@ mkdir -p ~/slow && cd ~/slow
 ### Step 2. Start the run from your laptop.
 
 ```sh
-quaack start --server prod-db-1 --query /home/you/slow/events.sql --plan /home/you/slow/events-plan.json
+quaack start --server prod-db-1 --query slow/events.sql --plan slow/events-plan.json
 # 20260928T201702Z-3f9a1c2e
 ```
 
-The paths are on the jump server. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it.
+The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. Don't write `~/slow/...`: your laptop's shell turns `~` into your laptop's home directory before `quaack` sees it. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it.
 
 QUAACK runs every candidate as if `now()` and `current_date` were the moment you ran `quaack start`. If your query uses them, start the run soon after you capture the plan. (`quaacks intake` takes a `--captured-at` time, but `quaack start` can't pass it through yet. That's backlog task 20260928-2.)
 
