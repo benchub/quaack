@@ -1363,3 +1363,21 @@ Ideas to settle before building:
 - **Came from:** The user, 2026-09-29, who doubted the run server really had other clients.
 - **Design:** Step 4.
 - **Status:** todo
+
+### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18.
+
+`spec/pipeline_replay_spec.rb` runs the installed `quaacks schema-dump`, which uses whichever pg_dump is first on PATH. The test server is Postgres 18. On a development Mac whose PATH has Homebrew's `postgresql@14`, every replay fails with `pg_dump_too_old`, 198 failures on 2026-09-29 on unchanged main (a762d73). Either have the specs use a pg_dump 18, such as the one in the test Postgres image, or say in CLAUDE.md that the full check needs pg_dump 18 first on PATH, and fail early with a clear message when it isn't.
+
+- **Depends on:** nothing open.
+- **Came from:** The full check run for 20260929-7.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
+
+`enclave/spec/leak_check_spec.rb:374` ("runs a script the same way, with no Bundler in its environment") fails on unchanged main (a762d73) on 2026-09-29. It expected no Bundler variables and got `BUNDLER_VERSION`. A likely cause is Ruby 3.4's bundled bundler re-execing into the lockfile's bundler 4.0.15, which sets `BUNDLER_VERSION`. Find the cause, and scrub the variable, or fix the check, so a script runs with no Bundler in its environment.
+
+- **Depends on:** nothing open.
+- **Came from:** The full check run for 20260929-7.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
