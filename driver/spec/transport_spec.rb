@@ -686,6 +686,7 @@ RSpec.describe Quaack::Driver::Transport do
     [
       ["an application_name beside the pid", %([{"pid":1,"backend_start":"#{good}","application_name":"SENTINEL"}])],
       ["a sentinel for a start time", %([{"pid":1,"backend_start":"SENTINEL"}])],
+      ["a sentinel before a start time", %([{"pid":1,"backend_start":"SENTINEL #{good}"}])],
       ["a sentinel after a start time", %([{"pid":1,"backend_start":"#{good} SENTINEL"}])],
       ["a String pid", %([{"pid":"1","backend_start":"#{good}"}])],
       ["a zero pid", %([{"pid":0,"backend_start":"#{good}"}])],
@@ -701,6 +702,7 @@ RSpec.describe Quaack::Driver::Transport do
 
         expect(error.clients).to be_nil
         expect(error.message).to eq("quaacks probe failed: run_server_other_clients (exit 0)")
+        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
       end
     end
 

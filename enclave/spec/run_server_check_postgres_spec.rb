@@ -280,6 +280,37 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect([line, error.message, error.clients.inspect]).to all(satisfy { !it.include?("sentinel-app") })
     end
 
+    # pg_stat_activity lists backends by slot, not by age, once a slot an
+    # older backend doesn't hold comes free. So a young client that lands in
+    # an earlier slot is listed before an old one, and only the check's own
+    # order can put the old one first.
+    it "names the oldest other client first, whatever order pg_stat_activity lists them in" do
+      record_inventory
+      run_server
+      old = connect
+      young = connect_listed_before(old)
+
+      expect(failure.clients.map { it["pid"] }).to eq([old.backend_pid, young.backend_pid])
+    end
+
+    # A connection opened after old that pg_stat_activity lists before it:
+    # it opens and closes one until one lands in an earlier slot.
+    def connect_listed_before(old, tries: 1000)
+      tries.times do
+        young = production.connect
+        return young.tap { connections << it } if listed_before?(young, old)
+
+        young.close
+      end
+      raise "no connection was listed before pid #{old.backend_pid} in #{tries} tries"
+    end
+
+    def listed_before?(young, old)
+      pids = TestPostgres.server.admin.exec("SELECT pid FROM pg_stat_activity WHERE backend_type = 'client backend'")
+                         .column_values(0).map { Integer(it, 10) }
+      pids.index(young.backend_pid) < pids.index(old.backend_pid)
+    end
+
     it "names at most twenty other clients, the oldest, and still fails with more" do
       record_inventory
       run_server

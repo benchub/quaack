@@ -170,6 +170,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         ["an application_name beside the pid",
          [{ "pid" => 4242, "backend_start" => good, "application_name" => ERROR_SENTINEL }]],
         ["a sentinel in place of the start time", [{ "pid" => 4242, "backend_start" => ERROR_SENTINEL }]],
+        ["a sentinel before the start time", [{ "pid" => 4242, "backend_start" => "#{ERROR_SENTINEL} #{good}" }]],
         ["a sentinel after the start time", [{ "pid" => 4242, "backend_start" => "#{good} #{ERROR_SENTINEL}" }]],
         ["a start time on a line of its own", [{ "pid" => 4242, "backend_start" => "#{good}\n#{ERROR_SENTINEL}" }]],
         ["a start time with a fraction", [{ "pid" => 4242, "backend_start" => "2026-09-29T16:01:02.5Z" }]],
