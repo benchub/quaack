@@ -771,11 +771,62 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Untested: how narrow the fallback trigger is.** Widening `rescue *REJECTED` to every `APIStatusError` keeps every spec green, and then a schema ask whose 429s or 5xxs outlast the retries would fire the fallback and could turn schema mode off for the run. Add a spec: with a schema, three 429s give `llm_rate_limited` with three calls, each carrying `response_format`.
 - **Untested: the adapter's `::OpenAI::Errors::Error` rescue branch.** Plant a body that makes the gem raise `ConversionError`, and assert `llm_bad_response` with a nil cause. Or drop the branch if no realistic body reaches it.
 - **`choices: null` gives a different detail** ("couldn't be read as a message") than a missing `choices` ("had no choices"), and no spec covers the null case. Both are a clean `llm_bad_response`.
+- **A `base_url` ending in `/chat/completions` fails with a confusing 404.** The `openai` gem appends `/chat/completions` itself, so the user's first live run went to `.../openai/v1/chat/completions/chat/completions` and failed `llm_bad_request`. Provider docs usually show the full endpoint URL, so this mistake will be common. Refuse it in `LLM.settings` with a usage error naming `base_url` (for example, "base_url must be the API root, such as https://api.groq.com/openai/v1, without /chat/completions"), or strip the suffix. `script/llm_smoke.rb` could also print the rule and message instead of a stack trace.
 - **Stray lockfile line.** 20260928-4's Gemfile.lock change also added a `bundler` checksum line. Drop it, or keep it knowingly.
 
 - **Depends on:** 20260928-4.
 - **Came from:** The build report and both reviews of 20260928-4.
 - **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-3. `quaack deploy`: show progress, and diagnose PATH. Done, see BACKLOG-COMPLETE.md.
+
+### 20260929-4. Say why driver.json is bad.
+
+`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
+- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
+- valid JSON but not an object;
+- no `jump_command`;
+- `jump_command` isn't one non-blank line.
+
+Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-5. Say why intake can't read the query or plan.
+
+`quaack start --query ~/q/query.sql ...` failed with only `query_unreadable`. The laptop's shell had expanded `~` to the laptop's home (`/Users/...`), but `--query` and `--plan` are paths on the jump server, so the file wasn't there. Both sides should help:
+
+- **The driver, before any ssh.** If `--query` or `--plan` is an absolute path under the laptop's own home directory (`Dir.home`), refuse with a usage error: that looks like a path on this laptop, and these are paths on the jump server, so give one relative to your home there, such as `q/query.sql`, or an absolute path there. Decide whether a literal leading `~/` (quoted, so the laptop's shell leaves it) should be expanded on the jump server. If it is, do it in `quaacks`, never with a remote shell.
+- **The enclave.** `query_unreadable` and `plan_unreadable` have several causes that look the same today: missing, a symlink as the last part (refused by `NOFOLLOW`), not a regular file, and no permission. Keep the rule, and add which cause it was, such as `query_unreadable: no such file on the jump server`. Never include the path or the OS's own message, which quotes it. Check the whitelist and the egress rules for what an error line may carry.
+- Update README.md's `quaack start` section and DESIGN.md step 1 to say plainly that the paths are on the jump server, relative to your home there.
+
+- **Depends on:** none.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Step 1, Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording.
+
+The round-one review of 20260929-3 left these minor findings. The code is in `driver/lib/quaack/driver/deploy_diagnosis.rb`.
+
+- **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
+- **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
+- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH.
+- **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
+- **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
+- **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
+- **Optional tests.** The `\A` anchor on `LINE` and the `run.limit.nil?` guard both survive removal. The guard is effectively redundant.
+- **Also consider:**
+  - a `gem` and `ruby` mismatch on the jump server (the install went into one Ruby's user dir, and the probe asks another);
+  - a user gem dir with a space in its path, which falls back to the general advice today.
+
+- **Depends on:** 20260929-3.
+- **Came from:** Reviews of 20260929-3, rounds one and two.
+- **Design:** Deploying the enclave.
 - **Status:** todo
 
 ## After version 1.
