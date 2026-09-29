@@ -2850,3 +2850,22 @@ Answers from the user, 2026-09-29:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after two reviews and one fix round. Round one found two problems. First, `with_env` in the prompt pack and e2e scripts took its ENV snapshot after calling the finder, so a missing pg_dump showed up as a TypeError. Second, the test that the major version comes from the image stayed green with a hardcoded 18. The minor findings went to 20260929-14 and 20260929-15. With pg_dump 14 first on PATH, the full replay spec passes: 204 examples in about 25 minutes. The root suite is slower than before, because every replay now runs its whole pipeline. 20260929-13 aims to speed that up.
+
+### 20260929-8. `run_server_other_clients` may count QUAACK's own session.
+
+`RunServerCheck` tells its own sessions apart from other clients by libpq's `backend_pid`. That's the pid the server sent at connect time. Behind a pooler or proxy, such as PgBouncer, it can be a pid the pooler made up, not the server backend running QUAACK's queries. Then QUAACK's own session counts as another client, and step 4 fails with `run_server_other_clients` on a quiet server.
+
+- Get each own pid from the server with `SELECT pg_backend_pid()` on that connection, not from libpq.
+- Confirmed 2026-09-29 with 20260929-7's output. The run server on port 5431 is PgBouncer in session mode. `run_server_other_clients` named pid 58297, which was QUAACK's own session. The server log shows the check excluded `$1 = '{1235762793}'`, the pid PgBouncer made up and libpq reported. The session came from 127.0.0.1, through PgBouncer.
+
+Answers from the user, 2026-09-29:
+
+- Support PgBouncer in session mode in front of the run server. Each client keeps one server backend for its session, so later steps that rely on one session still work.
+- Transaction and statement pooling are unsupported in v1. DESIGN.md step 4 says so. Detecting them is not required.
+- Build this alongside 20260929-13, as an exception to the one-task-at-a-time rule. 13 only touches the test harness.
+
+- **Depends on:** 20260929-7.
+- **Came from:** The user, 2026-09-29, who doubted the run server really had other clients.
+- **Design:** Step 4.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings, so there was no fix round. `RunServerCheck` now reads each own pid with `SELECT pg_backend_pid()`. The test image runs PgBouncer 1.26 in session mode, on demand, and the spec failed with the real error through it before the fix. DESIGN.md step 4 covers poolers. The minor findings went to 20260929-16. The builder's full check passed apart from 20260929-10.

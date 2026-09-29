@@ -1338,23 +1338,7 @@ Ideas to settle before building:
 
 ### 20260929-7. Say which clients `run_server_other_clients` saw. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-8. `run_server_other_clients` may count QUAACK's own session.
-
-`RunServerCheck` tells its own sessions apart from other clients by libpq's `backend_pid`. That's the pid the server sent at connect time. Behind a pooler or proxy, such as PgBouncer, it can be a pid the pooler made up, not the server backend running QUAACK's queries. Then QUAACK's own session counts as another client, and step 4 fails with `run_server_other_clients` on a quiet server.
-
-- Get each own pid from the server with `SELECT pg_backend_pid()` on that connection, not from libpq.
-- Confirmed 2026-09-29 with 20260929-7's output. The run server on port 5431 is PgBouncer in session mode. `run_server_other_clients` named pid 58297, which was QUAACK's own session. The server log shows the check excluded `$1 = '{1235762793}'`, the pid PgBouncer made up and libpq reported. The session came from 127.0.0.1, through PgBouncer.
-
-Answers from the user, 2026-09-29:
-
-- Support PgBouncer in session mode in front of the run server. Each client keeps one server backend for its session, so later steps that rely on one session still work.
-- Transaction and statement pooling are unsupported in v1. DESIGN.md step 4 says so. Detecting them is not required.
-- Build this alongside 20260929-13, as an exception to the one-task-at-a-time rule. 13 only touches the test harness.
-
-- **Depends on:** 20260929-7.
-- **Came from:** The user, 2026-09-29, who doubted the run server really had other clients.
-- **Design:** Step 4.
-- **Status:** todo
+### 20260929-8. `run_server_other_clients` may count QUAACK's own session. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18. Done, see BACKLOG-COMPLETE.md.
 
@@ -1428,4 +1412,16 @@ The test "reads the major version from the image's FROM line" in `spec/test_pg_d
 - **Depends on:** 20260929-9.
 - **Came from:** Review of 20260929-9, round two.
 - **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-16. PgBouncer support: minor findings.
+
+Minor findings from the review of 20260929-8.
+
+- DESIGN.md step 4 says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
+- `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
+
+- **Depends on:** 20260929-8.
+- **Came from:** Review of 20260929-8, round one.
+- **Design:** Step 4.
 - **Status:** todo
