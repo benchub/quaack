@@ -1351,21 +1351,7 @@ Ideas to settle before building:
 - **Design:** Step 4.
 - **Status:** todo
 
-### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18.
-
-`spec/pipeline_replay_spec.rb` runs the installed `quaacks schema-dump`, which uses whichever pg_dump is first on PATH. The test server is Postgres 18. On a development Mac whose PATH has Homebrew's `postgresql@14`, every replay fails with `pg_dump_too_old`, 198 failures on 2026-09-29 on unchanged main (a762d73).
-
-Answers from the user, 2026-09-29:
-
-- The test harness finds a pg_dump whose major version matches the test server's. It checks the `QUAACK_TEST_PG_BIN` directory first, if that's set, then Homebrew's libpq keg (`/opt/homebrew/opt/libpq/bin`). It puts that directory first on PATH only for the `quaacks` children it starts. The operator's own shell PATH is untouched.
-- If it finds none, the specs that need one fail early, once, with a clear message naming what to install or set. They never fail 198 times with `pg_dump_too_old`.
-- CLAUDE.md's Development section says the full check needs a pg_dump of the test server's major version, and how the harness finds it.
-- This Mac's libpq keg was upgraded to 18.6 for this.
-
-- **Depends on:** nothing open.
-- **Came from:** The full check run for 20260929-7.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
 
@@ -1427,5 +1413,14 @@ Minor findings from the first review of 20260929-9.
 
 - **Depends on:** 20260929-9.
 - **Came from:** Review of 20260929-9, round one.
+- **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-15. `TestPgDump.server_major`'s regex is under-tested.
+
+The test "reads the major version from the image's FROM line" in `spec/test_pg_dump_spec.rb` uses a fixture Dockerfile with no digits before `FROM`. So weakening the regex to `/(\d+)/` keeps it green. Put a line with a number before `FROM` in the fixture, such as `ARG PG_MAJOR=16` or a comment naming a version, and check that the test still reads the `FROM` line's major.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round two.
 - **Design:** none. Test harness only.
 - **Status:** todo

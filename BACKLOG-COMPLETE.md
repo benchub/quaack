@@ -2833,3 +2833,20 @@ Add the second adapter from 20260928-3: the OpenAI-compatible Chat Completions A
 - **Design:** Trust boundary, step 4.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after two reviews and one fix round. Round one found two tests that stayed green with the code broken: nothing checked the oldest-first order, and nothing checked the start anchor of the start-time pattern. Round one's minor findings went to 20260929-11, round two's to 20260929-12. The full check still fails on this Mac with the two failures filed as 20260929-9 and 20260929-10. They fail the same way on unchanged main. The task's own specs, RuboCop, protocol, and the boundary specs pass.
+
+### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18.
+
+`spec/pipeline_replay_spec.rb` runs the installed `quaacks schema-dump`, which uses whichever pg_dump is first on PATH. The test server is Postgres 18. On a development Mac whose PATH has Homebrew's `postgresql@14`, every replay fails with `pg_dump_too_old`, 198 failures on 2026-09-29 on unchanged main (a762d73).
+
+Answers from the user, 2026-09-29:
+
+- The test harness finds a pg_dump whose major version matches the test server's. It checks the `QUAACK_TEST_PG_BIN` directory first, if that's set, then Homebrew's libpq keg (`/opt/homebrew/opt/libpq/bin`). It puts that directory first on PATH only for the `quaacks` children it starts. The operator's own shell PATH is untouched.
+- If it finds none, the specs that need one fail early, once, with a clear message naming what to install or set. They never fail 198 times with `pg_dump_too_old`.
+- CLAUDE.md's Development section says the full check needs a pg_dump of the test server's major version, and how the harness finds it.
+- This Mac's libpq keg was upgraded to 18.6 for this.
+
+- **Depends on:** nothing open.
+- **Came from:** The full check run for 20260929-7.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after two reviews and one fix round. Round one found two problems. First, `with_env` in the prompt pack and e2e scripts took its ENV snapshot after calling the finder, so a missing pg_dump showed up as a TypeError. Second, the test that the major version comes from the image stayed green with a hardcoded 18. The minor findings went to 20260929-14 and 20260929-15. With pg_dump 14 first on PATH, the full replay spec passes: 204 examples in about 25 minutes. The root suite is slower than before, because every replay now runs its whole pipeline. 20260929-13 aims to speed that up.
