@@ -57,6 +57,10 @@ module Quaack
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
         end
 
+        # Structured output holds every reply to the schema, so the front
+        # never asks again.
+        def enforces_schema? = true
+
         def reply(step:, system:, messages:, max_tokens:, schema:, count:) # rubocop:disable Metrics/ParameterLists
           timeout = nonstreaming_timeout(max_tokens)
           reply_text(send_message(params(system, messages, max_tokens, schema), step, count, timeout))

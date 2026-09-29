@@ -53,6 +53,9 @@ class FakeLLM
     self
   end
 
+  # Queues one reply cut short at the token limit.
+  def cut_short(step, text) = reply(step, text, stop_reason: "max_tokens")
+
   # Queues one successful answer for step with these content blocks, such
   # as none at all.
   def reply_blocks(step, blocks, stop_reason: "end_turn")
@@ -84,9 +87,12 @@ class FakeLLM
   end
 
   # A real LLM::Client whose every attempt comes here.
-  def client(burndown:, model: Quaack::Driver::LLM::DEFAULT_MODEL, **)
-    Quaack::Driver::LLM::Client.new(api_key: "fake-key", model: model, burndown: burndown, transport: self, **)
+  def client(burndown:, model: Quaack::Driver::LLM::DEFAULT_MODEL, api_key: "fake-key", **)
+    Quaack::Driver::LLM::Client.new(api_key:, model:, burndown:, transport: self, **)
   end
+
+  # The system prompt an attempt sent.
+  def system_prompt(ask) = ask.body[:system]
 
   # The transport interface LLM::Client calls, once per attempt: the gem's
   # per-attempt request, and the step it's for. Returns the gem's response.

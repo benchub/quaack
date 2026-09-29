@@ -313,12 +313,14 @@ RSpec.describe "quaack run" do
       expect(hosts).to eq([])
     end
 
-    it "fails with a usage error for the openai_compatible provider, which isn't available yet" do
-      write_config(JSON.generate("llm" => { "provider" => "openai_compatible", "model" => "llama-3.3-70b" }))
+    it "gives the client openai_compatible settings" do
+      block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
+                "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
+      write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
 
-      expect([run_with, stderr.string])
-        .to eq([64, "quaack run: the openai_compatible provider isn't available yet: use anthropic\n"])
-      expect(hosts).to eq([])
+      expect(run_with).to eq(0)
+      expect(seen.map(&:to_h)).to eq([{ provider: "openai_compatible", model: "llama-3.3-70b-versatile",
+                                        base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY" }])
     end
 
     # The CLI's own client builder, not a spec's. The block names a key
@@ -357,6 +359,15 @@ RSpec.describe "quaack run" do
 
       it "fails with exit 1 and llm_auth before touching the jump server" do
         status = without_anthropic_credentials { run_with }
+
+        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([hosts, transport.calls]).to eq([[], []])
+      end
+
+      it "fails the same way for openai_compatible when the variable api_key_env names is unset" do
+        block = { "provider" => "openai_compatible", "model" => "m", "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }
+        write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+        status = with_env("QUAACK_SPEC_UNSET_KEY" => nil, "OPENAI_API_KEY" => "SENTINEL-KEY") { run_with }
 
         expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
         expect([hosts, transport.calls]).to eq([[], []])

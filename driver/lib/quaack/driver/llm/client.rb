@@ -29,6 +29,17 @@ module Quaack
       # it asks for structured output if the provider has it; and it raises
       # Error with one of the rules for every way the call can fail.
       #
+      # It also answers `enforces_schema?`: whether the provider holds a
+      # reply to the schema. One that doesn't must put the schema in the
+      # prompt itself, and the front asks once more when a reply doesn't
+      # match (see `ask`).
+      #
+      # The re-ask lives here, not in an adapter, because it's the same for
+      # every provider that can't enforce a schema: ReplyJSON's check, which
+      # the front owns, then one more `reply` through the same contract, so
+      # the burndown counts it like any other attempt. An adapter only says
+      # whether it's needed.
+      #
       # `transport` is the adapter's edge, which specs fake, such as FakeLLM
       # for Anthropic. Leave it nil to call the real API. While specs run,
       # that raises RealClientInSpecs, unless QUAACK_ALLOW_REAL_LLM is 1, so
@@ -43,6 +54,10 @@ module Quaack
         # holds the API to the schema where the provider has it; this helps
         # where it doesn't.
         JSON_ONLY = "Reply with only the JSON object, with no code fences, commentary, or trailing text."
+
+        # What a re-ask tells the model, with what was wrong with its reply:
+        # ReplyJSON's message, which never quotes the reply.
+        REASK = "That reply couldn't be used: %s. Reply again with only the JSON object, matching the schema."
 
         # The Burndown each call is counted in, for the report (15b).
         attr_reader :burndown
@@ -63,6 +78,11 @@ module Quaack
         # JSON. With `json: true` and no schema, it parses the text as JSON,
         # for a prompt that asks for JSON itself.
         #
+        # When the adapter doesn't enforce schemas and a reply doesn't match
+        # the schema, it asks once more: the conversation, then that reply,
+        # then what was wrong with it. A second reply that doesn't match is
+        # llm_bad_response.
+        #
         # Burndown#llm_call refuses a step that isn't one of
         # Protocol::Burndown::LLM_STEPS, and the adapter counts before each
         # attempt goes out, so a bad step raises ArgumentError before any.
@@ -70,10 +90,26 @@ module Quaack
           system = [system, JSON_ONLY].compact.join("\n\n") if schema
           count = -> { @burndown.llm_call(step) }
           text = @adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:)
-          schema || json ? ReplyJSON.parse(text, schema) : text
+          return text unless schema || json
+
+          ReplyJSON.parse(text, schema)
+        rescue Error => e
+          raise unless reask?(e, schema, text)
+
+          messages = [*messages, { role: "assistant", content: text }, { role: "user", content: reask(e) }]
+          ReplyJSON.parse(@adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:), schema)
         end
 
         private
+
+        # Whether error calls for a re-ask: there's a schema the adapter
+        # doesn't enforce, and a reply, text, came back that ReplyJSON
+        # refused. text is nil when the adapter raised.
+        def reask?(error, schema, text)
+          schema && text && error.rule == "llm_bad_response" && !@adapter.enforces_schema?
+        end
+
+        def reask(error) = format(REASK, error.message.delete_prefix("#{error.rule}: "))
 
         def refuse_real_client_in_specs
           return unless defined?(::RSpec) || ENV[SPECS_ENV] == "1"
