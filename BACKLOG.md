@@ -1343,8 +1343,13 @@ Ideas to settle before building:
 `RunServerCheck` tells its own sessions apart from other clients by libpq's `backend_pid`. That's the pid the server sent at connect time. Behind a pooler or proxy, such as PgBouncer, it can be a pid the pooler made up, not the server backend running QUAACK's queries. Then QUAACK's own session counts as another client, and step 4 fails with `run_server_other_clients` on a quiet server.
 
 - Get each own pid from the server with `SELECT pg_backend_pid()` on that connection, not from libpq.
-- Decide whether step 4 supports a pooler in front of the run server at all. With transaction pooling, consecutive statements can land on different backends, so the quiet check and later steps can't rely on one session. If it isn't supported, say so in DESIGN.md as unsupported in v1.
-- First confirm with 20260929-7's output whether this is what happened in the 2026-09-29 failure, where the run server was on port 5431.
+- Confirmed 2026-09-29 with 20260929-7's output. The run server on port 5431 is PgBouncer in session mode. `run_server_other_clients` named pid 58297, which was QUAACK's own session. The server log shows the check excluded `$1 = '{1235762793}'`, the pid PgBouncer made up and libpq reported. The session came from 127.0.0.1, through PgBouncer.
+
+Answers from the user, 2026-09-29:
+
+- Support PgBouncer in session mode in front of the run server. Each client keeps one server backend for its session, so later steps that rely on one session still work.
+- Transaction and statement pooling are unsupported in v1. DESIGN.md step 4 says so. Detecting them is not required.
+- Build this alongside 20260929-13, as an exception to the one-task-at-a-time rule. 13 only touches the test harness.
 
 - **Depends on:** 20260929-7.
 - **Came from:** The user, 2026-09-29, who doubted the run server really had other clients.
