@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "open3"
+require "stringio"
 require "rbconfig"
 require "tmpdir"
 require "quaack/driver/deploy"
@@ -36,8 +37,10 @@ RSpec.describe Quaack::Driver::Deploy do
   # Takes ssh's options up to --, then the host, then runs the joined remote
   # command with sh in the fake jump server's HOME, as sshd would, with the
   # user gem bin dir on PATH, as DESIGN.md says to set up. It logs each
-  # remote command, one per line, to dir/remote.
-  def fake_ssh(path: true)
+  # remote command, one per line, to dir/remote. The login shell is bash:
+  # getent is a stub that can't answer, so SHELL decides. With probe: false,
+  # the diagnosis probe (`sh -s`) fails, as it would if ssh dropped.
+  def fake_ssh(path: true, probe: true)
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
     File.write(script, <<~SH)
@@ -45,11 +48,20 @@ RSpec.describe Quaack::Driver::Deploy do
       while [ "$#" -gt 0 ]; do arg=$1; shift; [ "$arg" = "--" ] && break; done
       shift
       #{remote_env.map { |k, v| v ? "export #{k}='#{v}'" : "unset #{k}" }.join("\n")}
-      export PATH='#{bin}#{RbConfig::CONFIG["bindir"]}':/usr/bin:/bin
+      export PATH='#{bin}#{stubs}:#{RbConfig::CONFIG["bindir"]}':/usr/bin:/bin SHELL=/bin/bash
       printf '%s\\n' "$*" >> '#{dir}/remote'
+      #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
+  end
+
+  let(:stubs) do
+    File.join(dir, "stubs").tap do |stubs|
+      FileUtils.mkdir_p(stubs)
+      File.write(File.join(stubs, "getent"), "#!/bin/sh\nexit 2\n")
+      FileUtils.chmod(0o755, File.join(stubs, "getent"))
+    end
   end
 
   # The jump server session's environment: outside any bundle, with the
@@ -70,10 +82,48 @@ RSpec.describe Quaack::Driver::Deploy do
     expect(remote).not_to include("sudo")
   end
 
-  it "says to put the user gem bin dir on PATH when quaacks installed but can't be run over ssh" do
-    expect { deploy(ssh: fake_ssh(path: false)) }
-      .to raise_error(described_class::Error, /installed quaacks .* isn't on PATH for non-interactive ssh/)
+  it "prints each step on stdout as it starts, and what it installed last" do
+    out = StringIO.new
+    err = StringIO.new
+    ssh
+    status = with_env("PATH" => "#{dir}:#{ENV.fetch("PATH")}") do
+      described_class.main(["--host", "jump-1"], stdout: out, stderr: err)
+    end
+
+    expect([status, err.string]).to eq([0, ""])
+    protocol = "quaack-protocol-#{Quaack::Protocol::VERSION}.gem"
+    quaacks = "quaacks-#{Quaack::Driver::ENCLAVE_VERSION}.gem"
+    expect(out.string).to eq(<<~OUT)
+      quaack deploy: building #{protocol}
+      quaack deploy: building #{quaacks}
+      quaack deploy: copying #{protocol} to jump-1
+      quaack deploy: copying #{quaacks} to jump-1
+      quaack deploy: running gem install on jump-1. It builds pg_query from source, which can take a few minutes.
+      quaack deploy: checking quaacks on jump-1
+      quaack deploy: installed quaacks #{Quaack::Driver::ENCLAVE_VERSION} on jump-1
+    OUT
+  end
+
+  it "says what line to add, and where, when quaacks installed but isn't on PATH for non-interactive ssh" do
+    bin = "#{user_dir}/bin"
+    expect { deploy(ssh: fake_ssh(path: false)) }.to raise_error(described_class::Error) { |e|
+      expect(e.message).to eq(<<~MSG.chomp)
+        installed quaacks #{Quaack::Driver::ENCLAVE_VERSION} on jump-1, but quaacks isn't installed on jump-1, or isn't on PATH for non-interactive ssh there.
+        jump-1's login shell is bash, and #{bin}, where quaacks is, isn't on PATH for non-interactive ssh. Add this line to ~/.bashrc on jump-1, above any line that returns early for non-interactive shells:
+          export PATH="#{bin}:$PATH"
+        Check with: ssh jump-1 quaacks --version
+      MSG
+    }
     expect(Dir.children(File.join(user_dir, "gems"))).to include("quaacks-#{Quaack::Driver::ENCLAVE_VERSION}")
+  end
+
+  it "falls back to the general advice when the diagnosis probe fails" do
+    expect { deploy(ssh: fake_ssh(path: false, probe: false)) }.to raise_error(described_class::Error) { |e|
+      expect(e.message).to eq("installed quaacks #{Quaack::Driver::ENCLAVE_VERSION} on jump-1, but quaacks isn't " \
+                              "installed on jump-1, or isn't on PATH for non-interactive ssh there. If it isn't on " \
+                              "PATH for non-interactive ssh, put the user gem bin dir on PATH there (DESIGN.md, " \
+                              "\"Deploying the enclave\").")
+    }
   end
 
   it "fails, naming the host, when gem install fails there" do

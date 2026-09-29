@@ -3,6 +3,7 @@
 require "fileutils"
 require "tmpdir"
 require "quaack/driver/cli"
+require "quaack/protocol/version"
 
 RSpec.describe "quaack executable" do
   let(:exe) { File.join(GEM_ROOT, "exe", "quaack") }
@@ -111,9 +112,27 @@ RSpec.describe "quaack executable" do
       out, err, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
                                         "deploy", "--host", "jump-1")
 
-      expect([out, status.exitstatus]).to eq(["", 1])
+      protocol = "quaack-protocol-#{Quaack::Protocol::VERSION}.gem"
+      expect([out, status.exitstatus])
+        .to eq([<<~OUT, 1])
+          quaack deploy: building #{protocol}
+          quaack deploy: building quaacks-#{Quaack::Driver::ENCLAVE_VERSION}.gem
+          quaack deploy: copying #{protocol} to jump-1
+        OUT
       expect(err).to start_with("quaack deploy failed: copying quaack-protocol-")
       expect(err).to include("failed on jump-1:\nno space left\n")
+    end
+
+    # ssh kills the driver while it waits on the copy, so only what the
+    # driver already flushed reaches the pipe.
+    it "shows each step as it starts, not only when the driver exits" do
+      File.write(File.join(dir, "ssh"), "#!/bin/sh\ncat >/dev/null\nkill -KILL $PPID\n")
+      FileUtils.chmod(0o755, File.join(dir, "ssh"))
+      out, _, status = Open3.capture3({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, RbConfig.ruby, exe,
+                                      "deploy", "--host", "jump-1")
+
+      expect(status.termsig).to eq(9)
+      expect(out).to end_with("quaack deploy: copying quaack-protocol-#{Quaack::Protocol::VERSION}.gem to jump-1\n")
     end
 
     it "rejects deploy without exactly one --host" do
