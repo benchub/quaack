@@ -670,6 +670,47 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.full_message(highlight: false)).not_to include(sentinel)
     end
 
+    it "shows the pids and start times of the other clients a run_server_other_clients failure names" do
+      clients = %([{"pid":1234,"backend_start":"2026-09-29T16:01:02Z"},) +
+                %({"pid":5678,"backend_start":"2026-09-29T17:00:00Z"}])
+      error = refusal(%({"type":"error","step":"run-server","rule":"run_server_other_clients","clients":#{clients}}))
+
+      expect(error.clients).to eq([{ "pid" => 1234, "backend_start" => "2026-09-29T16:01:02Z" },
+                                   { "pid" => 5678, "backend_start" => "2026-09-29T17:00:00Z" }])
+      expect(error.message).to eq("quaacks probe failed: run_server_other_clients (step run-server, " \
+                                  "clients pid 1234 started 2026-09-29T16:01:02Z, " \
+                                  "pid 5678 started 2026-09-29T17:00:00Z, exit 0)")
+    end
+
+    good = "2026-09-29T16:01:02Z"
+    [
+      ["an application_name beside the pid", %([{"pid":1,"backend_start":"#{good}","application_name":"SENTINEL"}])],
+      ["a sentinel for a start time", %([{"pid":1,"backend_start":"SENTINEL"}])],
+      ["a sentinel after a start time", %([{"pid":1,"backend_start":"#{good} SENTINEL"}])],
+      ["a String pid", %([{"pid":"1","backend_start":"#{good}"}])],
+      ["a zero pid", %([{"pid":0,"backend_start":"#{good}"}])],
+      ["a Float pid", %([{"pid":1.0,"backend_start":"#{good}"}])],
+      ["a missing start time", %([{"pid":1}])],
+      ["a good entry and a sentinel", %([{"pid":1,"backend_start":"#{good}"},"SENTINEL"])],
+      ["an empty Array", "[]"],
+      ["twenty-one entries", JSON.generate(Array.new(21) { { "pid" => it + 1, "backend_start" => good } })],
+      ["a String", %("SENTINEL")]
+    ].each do |label, clients|
+      it "drops clients with #{label}" do
+        error = refusal(%({"type":"error","rule":"run_server_other_clients","clients":#{clients}}))
+
+        expect(error.clients).to be_nil
+        expect(error.message).to eq("quaacks probe failed: run_server_other_clients (exit 0)")
+      end
+    end
+
+    it "drops clients on any rule but run_server_other_clients" do
+      clients = %([{"pid":1,"backend_start":"#{good}"}])
+      error = refusal(%({"type":"error","rule":"run_server_guc_mismatch","clients":#{clients}}))
+
+      expect(error.clients).to be_nil
+    end
+
     it "drops an error line's field that starts with a valid value and goes on past it" do
       error = refusal(%({"type":"error","step":"probe #{sentinel}","rule":"usage #{sentinel}",) +
                       %("sqlstate":"23505#{sentinel}"}))

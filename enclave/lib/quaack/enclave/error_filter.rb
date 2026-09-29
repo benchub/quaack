@@ -7,7 +7,8 @@ module Quaack
     # Error filtering (DESIGN.md, "Where QUAACK runs"): every error the enclave
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
-    # SQLSTATE if there was one.
+    # SQLSTATE if there was one, plus, for two rules, the shape-class detail
+    # below (function and clients).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "9b")
     #   # => '{"type":"error","step":"9b","rule":"internal_error","sqlstate":"23505"}'
@@ -31,6 +32,12 @@ module Quaack
     #   only when the rule is volatile_function (DESIGN.md 3d). It must be one
     #   plain, unquoted, schema-qualified name, such as pg_catalog.random.
     #   Otherwise it's left out, so a quoted name is never sent.
+    # - The clients come from the error's clients method, and are sent only
+    #   when the rule is run_server_other_clients (DESIGN.md, step 4). They must
+    #   be a non-empty Array of at most MAX_CLIENTS Hashes, each with exactly
+    #   the String keys pid, a positive Integer, and backend_start, a UTC
+    #   time such as 2026-09-29T16:01:02Z. Otherwise the whole field is
+    #   left out, so no other detail of a client is ever sent.
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -42,6 +49,10 @@ module Quaack
       SQLSTATE = /\A[0-9A-Z]{5}\z/
       FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
       FUNCTION_RULE = "volatile_function"
+      BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
+      CLIENTS_RULE = "run_server_other_clients"
+      CLIENT_KEYS = %w[pid backend_start].freeze
+      MAX_CLIENTS = 20
       INTERNAL_ERROR = "internal_error"
       # libpq's PG_DIAG_SQLSTATE, the error field code for the SQLSTATE.
       PG_DIAG_SQLSTATE = "C".ord
@@ -58,7 +69,8 @@ module Quaack
       def to_egress(exception, step:)
         rule = name(ask(exception, :rule), RULE) || INTERNAL_ERROR
         message = { type: :error, step: name(step, STEP), rule:, sqlstate: sqlstate(exception),
-                    function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE) }
+                    function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
+                    clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE) }
         line = Egress.serialize(message.compact)
         line.is_a?(String) ? line : FALLBACK
       rescue SignalException
@@ -127,6 +139,22 @@ module Quaack
       def shaped?(value, pattern) = value.instance_of?(String) && value.ascii_only? && value.match?(pattern)
 
       def shaped_or_nil(value, pattern) = (value if shaped?(value, pattern))
+
+      # clients if it's an Array of 1 to MAX_CLIENTS clients, each a Hash
+      # with exactly CLIENT_KEYS, and nil otherwise.
+      def clients(clients)
+        return unless clients.instance_of?(Array) && (1..MAX_CLIENTS).cover?(clients.size)
+
+        clients if clients.all? { client?(it) }
+      end
+
+      # The class checks are exact, since a subclass can write itself out
+      # as something else.
+      def client?(client)
+        client.instance_of?(Hash) && client.keys == CLIENT_KEYS && client.keys.map(&:class) == [String, String] &&
+          client["pid"].instance_of?(Integer) && client["pid"].positive? &&
+          shaped?(client["backend_start"], BACKEND_START)
+      end
 
       def sqlstate(exception)
         code = ask(exception, :sqlstate)

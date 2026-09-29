@@ -48,6 +48,18 @@ module FilterFakes
     end
   end
 
+  # A run_server_other_clients failure, which names the other clients by
+  # pid and start time.
+  class ClientsError < StandardError
+    attr_reader :rule, :clients
+
+    def initialize(rule:, clients:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @clients = clients
+    end
+  end
+
   class ResultError < StandardError
     attr_reader :result
 
@@ -124,6 +136,69 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
         expect(out).to eq(line(step: "3d", rule: "volatile_function"))
         expect(out).not_to include("SENTINEL")
+      end
+    end
+
+    describe "a run_server_other_clients failure's clients" do
+      let(:start) { "2026-09-29T16:01:02Z" }
+      let(:client) { { "pid" => 4242, "backend_start" => start } }
+
+      def clients_line(clients, rule: "run_server_other_clients")
+        filter.to_egress(FilterFakes::ClientsError.new(rule:, clients:), step: "run-server")
+      end
+
+      it "sends each other client's pid and start time, in order" do
+        other = { "pid" => 5678, "backend_start" => "2026-09-29T17:00:00Z" }
+
+        expect(clients_line([client, other]))
+          .to eq(line(step: "run-server", rule: "run_server_other_clients", clients: [client, other]))
+      end
+
+      it "sends twenty clients" do
+        clients = Array.new(20) { |i| { "pid" => i + 1, "backend_start" => start } }
+
+        expect(JSON.parse(clients_line(clients))["clients"]).to eq(clients)
+      end
+
+      it "sends no clients for any rule but run_server_other_clients" do
+        expect(clients_line([client], rule: "run_server_guc_mismatch"))
+          .to eq(line(step: "run-server", rule: "run_server_guc_mismatch"))
+      end
+
+      good = "2026-09-29T16:01:02Z"
+      [
+        ["an application_name beside the pid",
+         [{ "pid" => 4242, "backend_start" => good, "application_name" => ERROR_SENTINEL }]],
+        ["a sentinel in place of the start time", [{ "pid" => 4242, "backend_start" => ERROR_SENTINEL }]],
+        ["a sentinel after the start time", [{ "pid" => 4242, "backend_start" => "#{good} #{ERROR_SENTINEL}" }]],
+        ["a start time on a line of its own", [{ "pid" => 4242, "backend_start" => "#{good}\n#{ERROR_SENTINEL}" }]],
+        ["a start time with a fraction", [{ "pid" => 4242, "backend_start" => "2026-09-29T16:01:02.5Z" }]],
+        ["a start time with an offset", [{ "pid" => 4242, "backend_start" => "2026-09-29T16:01:02+00:00" }]],
+        ["a start time that's a String subclass", [{ "pid" => 4242, "backend_start" => Class.new(String).new(good) }]],
+        ["a String pid", [{ "pid" => "4242", "backend_start" => good }]],
+        ["a sentinel for a pid", [{ "pid" => ERROR_SENTINEL, "backend_start" => good }]],
+        ["a zero pid", [{ "pid" => 0, "backend_start" => good }]],
+        ["a negative pid", [{ "pid" => -1, "backend_start" => good }]],
+        ["a Float pid", [{ "pid" => 4242.0, "backend_start" => good }]],
+        ["a pid that's true", [{ "pid" => true, "backend_start" => good }]],
+        ["a missing start time", [{ "pid" => 4242 }]],
+        ["a missing pid", [{ "backend_start" => good }]],
+        ["Symbol keys", [{ pid: 4242, backend_start: good }]],
+        ["a key that's a String subclass", [{ Class.new(String).new("pid") => 4242, "backend_start" => good }]],
+        ["an entry that isn't a Hash", [[4242, good]]],
+        ["a good entry and a sentinel", [{ "pid" => 4242, "backend_start" => good }, ERROR_SENTINEL]],
+        ["an empty Array", []],
+        ["twenty-one entries", Array.new(21) { |i| { "pid" => i + 1, "backend_start" => good } }],
+        ["a String", ERROR_SENTINEL],
+        ["a lone Hash", { "pid" => 4242, "backend_start" => good }],
+        ["nil", nil]
+      ].each do |label, clients|
+        it "drops clients with #{label}, and still sends the rule" do
+          out = clients_line(clients)
+
+          expect(out).to eq(line(step: "run-server", rule: "run_server_other_clients"))
+          expect(out).not_to include("SENTINEL")
+        end
       end
     end
 
