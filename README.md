@@ -2,116 +2,142 @@
   <img src="docs/quaack-logo.jpg" alt="QUAACK: Query Upgrade Automation Assisted by Chaos and Knowledge" width="560">
 </p>
 
-# QUAACK.
+# QUAACK
 
-**Query Upgrade Automation Assisted by Chaos and Knowledge.**
+QUAACK is a pipeline that optimizes one Postgres query. You provide it the query and some information about the environment it ran in. QUAACK gives you back an HTML report: the indexes and rewrites that make it faster, which have been proven on a full-size copy of real data on real hardware, ranked by how much work those changes saved. And in the sad case when nothing helps, the report says why.
 
-You give QUAACK one slow Postgres query. It gives you back an HTML report: the indexes and rewrites that make it faster, proven on a full-size copy of production, ranked by how much work they save. Or, if nothing helps, the report says why.
-
-It uses an LLM for ideas, but the LLM never sees your data. Every idea gets tested, and anything that changes the query's results is thrown out.
+QUAACK has mechanical rules to generate candidates that should help, and additionally, it uses an LLM to come up with crazy ideas that *just might work*. Of course, the LLM never sees your data. In fact, your data never leaves your production environment.
 
 > **Status.** QUAACK is at version 1 and ready for its first real runs. Two rough edges you'll hit right away:
 >
-> - Between `quaack start` and `quaack run`, you run eleven setup commands by hand on the jump server. A single `quaack setup` command is on the backlog (task 20260928-1). The walkthrough below shows the manual steps.
-> - QUAACK handles ordinary `SELECT` queries on plain tables. It refuses anything else rather than guess. See [What QUAACK won't do](#what-quaack-wont-do).
+> - Between `quaack start` and `quaack run`, you run eleven setup commands by hand on the **jump server**. A single `quaack setup` command is on the backlog (task 20260928-1). The walkthrough below shows the manual steps.
+> - QUAACK handles ordinary `SELECT` queries on plain tables. It refuses anything else. See [What QUAACK won't do](#what-quaack-wont-do).
 
-**Contents:** [Why QUAACK?](#why-quaack) · [How it works](#how-it-works) · [What you need](#what-you-need) · [One-time setup](#one-time-setup) · [Tuning a query](#tuning-a-query-a-walkthrough) · [More examples](#more-examples) · [Reading the report](#reading-the-report) · [When it fails](#when-a-run-fails) · [What QUAACK won't do](#what-quaack-wont-do)
+**Contents:**
+[Why QUAACK?](#why-quaack)
+[How it works](#how-it-works)
+[What you need](#what-you-need)
+[One-time setup](#one-time-setup)
+[Tuning a query](#tuning-a-query-a-walkthrough)
+[More examples](#more-examples)
+[Reading the report](#reading-the-report)
+[When it fails](#when-a-run-fails)
+[What QUAACK won't do](#what-quaack-wont-do)
 
 ## Why QUAACK?
 
-When a query is slow, you usually do one of these:
+When a query is slow, you usually do some combination of these things:
 
-- **Ask an index advisor** (Dexter, pganalyze's Index Advisor, or HypoPG by hand). It suggests indexes, based on what the planner *estimates* they'd cost.
-- **Paste the query into an LLM chat.** You get clever rewrites, but you've just sent your query, with its real values, to a third party. And nobody checks whether the rewrite returns the same rows.
-- **Use an equivalence checker like QED.** You give it two queries, and it tries to *prove* they always return the same results. It doesn't come up with the rewrite, and it says nothing about speed.
+- **Use your brain.** Unlock that professional pride and try to be better than Postgres' online optimizer by applying your superior intellect (and/or contextual knowledge).
+- **Ask an index advisor.** (Dexter, pganalyze's Index Advisor, or HypoPG by hand). It suggests indexes, based on what the planner *estimates* they'd cost.
+- **Paste the query into an LLM chat.** You get clever rewrites, but you've just sent your query, possibly with its real constants, to a third party. And even then, that LLM doesn't have a good sense for the data distribution of your environment. *And* you don't have any reason to believe the query is actually *correct*.
+- **Use an equivalence checker like QED.** You give it two queries, and it tries to *prove* they always return the same results. That's great, but it doesn't come up with the rewrite, nor does it say nothing about speed.
 
-QUAACK does the whole job, and checks its own work:
+QUAACK does all of that, **and** it checks its work. A few things set QUAACK apart:
 
-| | Index advisors | LLM chat | QED | **QUAACK** |
-| --- | --- | --- | --- | --- |
-| Suggests indexes | Yes | Sometimes | No | **Yes** |
-| Suggests rewrites | No | Yes | No | **Yes, and takes yours too** |
-| Checks a rewrite returns the same rows | n/a | No | Yes, by proof | **Yes, by trying hard to break it** |
-| Measures real work, not estimates | No | No | No | **Yes, on a full-size copy of production** |
-| Checks more than the one slow value | Rarely | No | n/a | **Yes: slow, worst-case, and typical values** |
-| Keeps your data private | Yes | **No** | Yes | **Yes** |
+**It measures, it doesn't estimate.** QUAACK builds the indexes and runs the queries on a restored copy of your real production data. It looks at blocks read, and considers a plan with >5% a win over the status quo. It intentionally uses real data over synthetic data, as synthetic data can take a long time to build and provide a false optimization target.
 
-A few things set QUAACK apart:
+**It tries to break every rewrite.** A faster query that returns different rows is useless. QUAACK builds small test tables aimed at each part of your `WHERE` clause, and asks the LLM for test data that would prove any rewrite candidate to be wrong. Then it compares the results on real production data too. This is testing, not proof, so it's weaker than QED's guarantee, but on the hand, you don't have to supply the rewrite, and QED's conservative rules might discount perfectly fine rewrites.
 
-**It measures, it doesn't estimate.** QUAACK builds the indexes and runs the queries on a restored copy of production. It counts the 8 kB blocks each one reads, which barely moves from run to run and doesn't depend on what's in cache. A win of 5% or less doesn't count.
+**It doesn't overfit to one value.** A query that's slow for `account_id = 17` might be fine for most accounts. QUAACK utilizes PostgreSQL planner stats to test every rewrite candidate with three sets of literal values: the slow ones from your plan, a worst case, and a typical case. A candidate has to win on the slow values, and can't be worse on the others.
 
-**It tries to break every rewrite.** A faster query that returns different rows is a bug. QUAACK builds small test tables aimed at each part of your `WHERE` clause, and asks the LLM for test data that would prove the rewrite wrong. Then it compares the results on real production data too. This is testing, not proof, so it's weaker than QED's guarantee. In exchange, it works on the SQL real apps write, and you don't have to supply the rewrite.
+**QUAACK was written with PII safety in mind.** Your literals, your rows, and the values in your statistics stay inside the production network. The LLM sees table and column names, types, indexes, plans with the values taken out, and summary numbers like "71% of rows share one value". The code enforces this. It isn't a convention people have to remember.
 
-**It doesn't overfit to one value.** A query that's slow for `account_id = 17` might be fine for most accounts. QUAACK tests every candidate with three sets of values: the slow ones from your plan, a worst case, and a typical case. A candidate has to win on the slow values, and can't be worse on the others.
-
-**The LLM sees shapes, never values.** Your literals, your rows, and the values in your statistics stay inside the production network. The LLM sees table and column names, types, indexes, plans with the values taken out, and summary numbers like "71% of rows share one value". The code enforces this. It isn't a convention people have to remember.
-
-**It says so when nothing helps.** If no candidate wins, the report explains which rewrites were disproved, which indexes the planner ignored, and which ones you already have.
+**It says so when nothing helps.** If no candidate wins, a details report explains which rewrites were disproved, which indexes the planner ignored, and which ones you already have.
 
 ## How it works.
 
-QUAACK comes in two halves, because of the privacy rule:
+QUAACK comes in two halves, because PII is important.
 
 ```mermaid
-flowchart LR
-    subgraph laptop["Your laptop"]
-        quaack["quaack<br/>(runs the show, talks to the LLM,<br/>writes the report)"]
-        llm(["LLM"])
+flowchart TB
+    %% Define custom styles
+    classDef workstation fill:#f4f9ff,stroke:#0055a4,stroke-width:2px,rx:5,ry:5
+    classDef network fill:#fff8f0,stroke:#d84315,stroke-width:2px,rx:5,ry:5,stroke-dasharray: 5 5
+    classDef server fill:#ffffff,stroke:#757575,stroke-width:1px,rx:5,ry:5
+    
+    %% Updated label style: added a stroke (border) and a white background
+    classDef labelNode fill:#ffffff,stroke:#555,stroke-width:1px,rx:5,ry:5,color:#333
+
+    subgraph laptop["💻 Your workstation"]
+        quaack["<b>quaack</b><br/>(orchestrates, talks to the LLM, writes the report)"]
+        llm{{"LLM portal"}}
+        
+        %% The label node will now render with a visible border inside the workstation
+        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted informatin"]:::labelNode
+        
         quaack <--> llm
+        
+        %% Lengthened bidirectional arrow to push the label to the right
+        quaack <--> edge_lbl
     end
-    subgraph enclave["Production network"]
+    class laptop workstation
+
+    subgraph enclave["🔒 Production network"]
         subgraph jump["Jump server"]
-            quaacks["quaacks<br/>(does all the database work)"]
+            quaacks["<b>quaacks</b><br/>(does all the database work)"]
+            store@{ shape: docs, label: "state files" }
+
+            quaacks <--> store
         end
+        class jump server
+        
         prod[("Production<br/>(read only)")]
-        subgraph runsrv["Run server, one per run"]
-            racetrack[("Racetrack:<br/>restored copy of production")]
-            arena[("Arena:<br/>empty tables for testing")]
+        
+        subgraph runsrv["Run server, built once per run"]
+            racetrack[("Racetrack:<br/>restore of production for performance testing")]
+            arena[("Arena:<br/>empty tables for correctness testing")]
         end
+        class runsrv server
     end
-    quaack -- "ssh" --> quaacks
-    quaacks -- "shapes, pass/fail,<br/>block counts" --> quaack
-    quaacks --> prod
-    quaacks --> racetrack
-    quaacks --> arena
+    class enclave network
+
+    %% Connect the label node outward to the jump server
+    edge_lbl <--> quaacks
+    
+    prod ---> quaacks
+    quaacks ---> racetrack
+    quaacks ---> arena
 ```
 
 - **`quaack`**, on your laptop, runs each step in order and makes every LLM call. It never holds a production value.
-- **`quaacks`** (with an s), on the jump server, does everything that touches a database. It has no memory between calls. It keeps its working files in `~/.quaack/runs/<run ID>/` on the jump server, and everything it prints passes through one filter that only lets out things on an allowlist.
+- **`quaacks`** (the "s" is for "server"), on the jump server, does everything that touches a database. It has no memory between calls. It keeps its working state files in `~/.quaack/runs/<run ID>/` on the jump server, and everything it prints passes through one filter that only lets out things on an allowlist.
 - **The racetrack** is a full restore of production. QUAACK measures there, because only real data has production's real layout on disk.
-- **The arena** is an empty copy of the schema. QUAACK loads small test tables into it, always inside a transaction that it rolls back.
+- **The arena** is an empty copy of the schema for correctness testing. QUAACK loads small test tables into it, always inside a transaction that it rolls back.
 
-Here's what a run does, in plain terms:
+### QUAACK's pipeline
 
-1. **Collect.** Read the schema, planner statistics, and settings from production (read only). Take the literal values out of the query and plan, so the LLM only sees `$1`, `$2`, and so on. Mark columns that look like personal data, so even their statistics stay back.
-2. **Check the copy.** Plan the query on the racetrack. If the plan doesn't match production's, stop. Tuning against a copy that behaves differently would be worse than useless.
-3. **Propose indexes.** Two rule-based generators read the query and the plan. Then the LLM suggests what they missed: partial indexes, expression indexes, BRIN, and operator classes. Each idea is tried with HypoPG, as a hypothetical index, which is free. Ideas the planner won't use are dropped. The LLM sees how its ideas did, and gets one chance to fix them.
-4. **Propose rewrites.** The LLM suggests rewrites, and says what each one assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites too. Each rewrite gets its own index search, since a rewrite may want different indexes.
-5. **Try to break the rewrites.** Build test data in the arena aimed at every condition in the query: rows that just match, rows that just miss, NULLs, duplicates, orphans, and empty tables. Then ask the LLM up to three times for data that would tell the two queries apart. Any difference kills the rewrite.
-6. **Measure.** Build the surviving indexes for real on the racetrack, hidden from the planner except when being measured. Run the original and every candidate with each of the three value sets, three times each, and count blocks.
-7. **Check the results on real data.** Run the winners once more, as plain queries, and compare their results with the original's on full production data.
+1. **Collect.** Read the schema, planner statistics, and settings from production (read only). Take the literal values out of the query and the plan, so that the LLM only sees `$1`, `$2`, and so on. Make a note of which columns look like personal data, so that even their statistics stay back.
+2. **Check the copy.** Plan the query on the racetrack. If the plan doesn't match production's, stop. Tuning against a copy that behaves differently is a waste of time.
+3. **Propose indexes.** Two rule-based generators read the query and the plan. Then an LLM makes its own suggestions, which might include things the mechanical generators don't know how to work with: partial indexes, expression indexes, BRIN, and operator classes. Each idea is tried with HypoPG, as a hypothetical index, which is free. Ideas the planner won't use are dropped. The LLM sees how its ideas did, and gets one chance to fix things that didn't pan out.
+4. **Propose rewrites.** The LLM suggests rewrites, and remarks what each suggestions assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites from your big brain too. Each rewrite gets its own index search, since a rewrite may want different indexes.
+5. **Try to break the rewrites.** Build test data in the arena aimed at every condition in the query: rows that just match, rows that just miss, NULLs, duplicates, orphans, and empty tables. Then ask the LLM up to three times for data that would provide different answers from the original query and the rewrite candidate. Any difference kills the rewrite.
+6. **Measure.** Build the surviving indexes for real on the racetrack, hidden from the planner except when being measured. Run the original and every query candidate with each of the three value sets, three times each, and count the blocks they hit.
+7. **Recheck for accuracy on real data.** Run the winners once more, this time comparing the actual rows returned against the original query on full production data. The previous accuracy checks were against small sets of carefully chosen synthetic data.
 8. **Report.** Rank the winners, explain them, and show where every idea dropped out.
 9. **Clean up.** Delete the run's files on the jump server, and destroy the run server if you've told QUAACK how.
 
 ### What to expect.
 
 - **A run takes minutes to hours.** Most of that is building real indexes and running your slow query many times on the racetrack. A query that takes a minute will be run dozens of times.
+
+  Depending upon your environment, restoring and analyzing production data might add more hours to this time.
 - **"Faster" means fewer blocks read, not fewer milliseconds.** Blocks are stable and comparable. Timing isn't. Fewer blocks almost always means faster, and it always means less pressure on the cache.
 - **Rewrites are tested hard, not proven.** QUAACK checks each rewrite several different ways, but a test can still miss a case. Read a winning rewrite before you ship it. The report lists any condition in your query that the tests never managed to exercise.
 - **A partial index only helps if your app sends a constant.** If a winning index has a `WHERE` clause, check that your app writes that value into the SQL. If the app sends it as a bind parameter, a generic plan can't use the partial index.
 - **QUAACK never changes production.** It reads production inside read-only transactions. Everything it builds, it builds on the run server. Applying a fix is up to you.
 
-## What you need.
+## What you need
 
 **On your laptop:**
 
 - A checkout of this repo and Ruby 3.4. On a Mac with Homebrew, `ruby@3.4` is keg-only, so put it first on `PATH`: `export PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH`.
 - Access to an LLM: Claude through the Anthropic API (an API key, or a login with the `ant` command-line tool), or any OpenAI-compatible API, such as OpenAI, Groq, Gemini, OpenRouter, or a local Ollama. See [Give the driver access to an LLM](#3-give-the-driver-access-to-an-llm).
-- ssh access to the production jump server, without a password prompt (keys or an agent).
+- ssh access to the production jump server, without a password prompt (i.e. use keys or an agent).
 
 **On the jump server:**
 
-- Ruby 3.4, `gem` on `PATH`, `gcc`, and `make`. `quaack deploy` compiles the pg_query gem there.
+- Ruby 3.4, `gem`, `gcc`, and `make` in your `$PATH`. `quaack deploy` will compile the pg_query gem there.
 - `pg_dump`, at least as new as production's Postgres.
 - A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords.
 - A POSIX login shell (bash, sh, or zsh).
@@ -120,11 +146,11 @@ Here's what a run does, in plain terms:
 
 **A run server,** one per run, that you build:
 
-- The same Postgres major version and extensions as production, plus [HypoPG](https://github.com/HypoPG/hypopg).
-- A **racetrack database** restored from a recent production backup, full size.
+- The same Postgres major version and extensions as production, plus [HypoPG](https://github.com/HypoPG/hypopg) built and available for `CREATE EXTENSION`.
+- A **racetrack database** restored from a production backup that shows the query performing the same way.
 - The same planner and locale settings as production. QUAACK checks every one and refuses a mismatch.
 - A superuser login for you, autovacuum off, and nothing else connected.
-- A name for the **arena database.** QUAACK creates it, and drops and recreates it on a rerun. It refuses to touch an existing database of that name that it didn't create.
+- A name for the **arena database.** QUAACK will create it, drop it, and recreate it on a rerun, but you need to provide the name. It refuses to touch an existing database of that name that it didn't create.
 
 ## One-time setup.
 
@@ -184,7 +210,7 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 | `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
 | `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
 
-Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the key or variable, never the value.
+Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
 
 #### OpenAI-compatible providers.
 
@@ -214,17 +240,10 @@ For example, for Groq:
 
 then `export GROQ_API_KEY=...` before `quaack run`. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
 
-The models are examples. Use one your account can call, and a strong one: QUAACK asks for careful SQL work, and a small model mostly wastes the run's calls.
+The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
 
-**Structured output.** QUAACK asks for JSON that matches a schema at several steps. Not every OpenAI-compatible provider or model holds a reply to a schema, so the driver doesn't rely on it:
+**Structured output.** QUAACK asks for JSON that matches a schema at several steps. If a model consistently fails to provide output in the needed format, the model's suggestions are discarded, and this will show up in the final report.
 
-- It puts the schema in the prompt, and also sends it as a `response_format` of type `json_schema`.
-- If the API rejects that request with a 400 or 422, the driver asks again without `response_format`. If that works, it stops sending `response_format` for the rest of the run. There's nothing to configure: the fallback finds out for itself.
-- It checks every reply against the schema. If one doesn't match, it asks once more, telling the model what was wrong. A second reply that doesn't match fails the run with `llm_bad_response`.
-
-Each of those calls counts in the report's burndown. So a provider that rejects `response_format` costs one extra call per run, and a model that doesn't follow the schema costs an extra call per miss.
-
-The `openai` gem reads a few more variables of its own, and sends what they hold to whatever `base_url` you use: `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`. Unset them if they're meant only for OpenAI and you're using another provider.
 
 ### 4. Install the enclave script on the jump server.
 
@@ -239,9 +258,9 @@ quaack deploy --host jump1.prod.example.com
 # quaack deploy: installed quaacks 0.1.0 on jump1.prod.example.com
 ```
 
-This builds the `quaacks` gems from your checkout, copies them over ssh, and installs them into your own gem directory on the jump server. It doesn't use sudo. Never run QUAACK from a git checkout on the jump server, because the repo's bundle includes the LLM half. `quaacks` refuses to run if it finds that half beside it.
+This builds the `quaacks` gems from your checkout, copies them over ssh, and installs them into your own gem directory on the jump server. It doesn't use sudo to install them for everybody. **Never run QUAACK from a git checkout on the jump server, because the repo's bundle includes the LLM half. To keep from leaking data, `quaacks` refuses to run if it finds that half beside it.**
 
-The driver runs `quaacks` over non-interactive ssh, so your user gem `bin` directory must be on `PATH` for non-interactive shells. On the jump server, `ruby -e 'puts Gem.user_dir'` prints the gem directory: `~/.gem/ruby/3.4.0` if you have a `~/.gem`, and otherwise `~/.local/share/gem/ruby/3.4.0`. Add its `/bin` to `PATH` in `~/.bashrc`, above any line that returns early for non-interactive shells, or in `~/.zshenv`.
+The driver runs `quaacks` over non-interactive ssh, so your user gem `bin` directory must be in your `$PATH` for non-interactive shells. On the jump server, `ruby -e 'puts Gem.user_dir'` prints the gem directory: `~/.gem/ruby/3.4.0` if you have a `~/.gem`, and otherwise `~/.local/share/gem/ruby/3.4.0`. Add its `/bin` to `PATH` in `~/.bashrc`, above any line that returns early for non-interactive shells, or in `~/.zshenv`.
 
 If `quaacks` isn't on that `PATH`, `quaack deploy` looks into why, without changing anything on the jump server, and tells you what to change. For bash, that looks like this:
 
@@ -257,7 +276,7 @@ It also tells you if `ruby` itself isn't on that `PATH`, if another `quaacks` or
 ```sh
 ssh jump1.prod.example.com quaacks --version
 ```
-
+#### Upgrading
 Re-run `quaack deploy` whenever you update your checkout. `quaack start` and `quaack run` refuse to talk to an out-of-date `quaacks`, and tell you to deploy.
 
 ### 5. Configure the jump server (optional, but recommended).
@@ -316,7 +335,7 @@ mkdir -p ~/slow && cd ~/slow
 ### Step 2. Start the run from your laptop.
 
 ```sh
-quaack start --server prod-db-1 --query ~/slow/events.sql --plan ~/slow/events-plan.json
+quaack start --server prod-db-1 --query /home/you/slow/events.sql --plan /home/you/slow/events-plan.json
 # 20260928T201702Z-3f9a1c2e
 ```
 
@@ -335,7 +354,7 @@ quaacks inventory --run $RUN        # production's version, settings, and memory
 
 # With run_server_command in your config:
 quaacks run-server --run $RUN
-# Or name the run server yourself:
+# ...or, name the run server yourself:
 quaacks run-server --run $RUN --host runsrv-7.prod.example.com --port 5432 \
   --racetrack-db racetrack --arena-db quaack_arena
 

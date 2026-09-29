@@ -7,42 +7,65 @@ QUAACK takes a slow production query and works through it in stages. It proposes
 The driver on the engineer's laptop talks to the LLM. The enclave script on the jump server touches the databases and every real value. Only shapes cross the line between them.
 
 ```mermaid
-%%{init: {"flowchart": {"curve": "step"}}}%%
-flowchart LR
-    subgraph laptop["Engineer's laptop: shapes only"]
-        driver["quaack (driver)<br/>runs the steps, calls the LLM,<br/>builds the report"]
-        llm(["LLM"])
-        driver <--> llm
+flowchart TB
+    %% Define custom styles
+    classDef workstation fill:#f4f9ff,stroke:#0055a4,stroke-width:2px,rx:5,ry:5
+    classDef network fill:#fff8f0,stroke:#d84315,stroke-width:2px,rx:5,ry:5,stroke-dasharray: 5 5
+    classDef server fill:#ffffff,stroke:#757575,stroke-width:1px,rx:5,ry:5
+    
+    %% Updated label style: added a stroke (border) and a white background
+    classDef labelNode fill:#ffffff,stroke:#555,stroke-width:1px,rx:5,ry:5,color:#333
+
+    subgraph laptop["💻 Your workstation"]
+        quaack["<b>quaack</b><br/>(orchestrates, talks to the LLM, writes the report)"]
+        llm{{"LLM portal"}}
+        
+        %% The label node will now render with a visible border inside the workstation
+        edge_lbl["SSH pipeline<br/>---<br/>passes commands and redacted informatin"]:::labelNode
+        
+        quaack <--> llm
+        
+        %% Lengthened bidirectional arrow to push the label to the right
+        quaack <--> edge_lbl
     end
-    subgraph enclave["Production enclave: values stay here"]
-        prod[("Production")]
+    class laptop workstation
+
+    subgraph enclave["🔒 Production network"]
         subgraph jump["Jump server"]
-            script["quaacks (enclave script)<br/>stateless, one subcommand per call"]
-            egress{{"Egress whitelist"}}
-            store[("Governed store")]
+            quaacks["<b>quaacks</b><br/>(does all the database work)"]
+            store@{ shape: docs, label: "state files" }
+
+            quaacks <--> store
         end
-        subgraph runsrv["Run server"]
-            racetrack[("Racetrack<br/>full restore + HypoPG")]
-            arena[("Arena<br/>empty schema, fixtures<br/>rolled back")]
+        class jump server
+        
+        prod[("Production<br/>(read only)")]
+        
+        subgraph runsrv["Run server, built once per run"]
+            racetrack[("Racetrack:<br/>restore of production for performance testing")]
+            arena[("Arena:<br/>empty tables for correctness testing")]
         end
+        class runsrv server
     end
-    driver -- "ssh: step + untrusted SQL,<br/>checked with pg_query" --> script
-    script --> egress -- "redacted shapes,<br/>pass/fail, block counts" --> driver
-    script <--> store
-    script -- "read-only" --> prod
-    script <--> racetrack
-    script <--> arena
+    class enclave network
+
+    %% Connect the label node outward to the jump server
+    edge_lbl <--> quaacks
+    
+    prod ---> quaacks
+    quaacks ---> racetrack
+    quaacks ---> arena
 ```
 
-Each run works through the steps below. Blue steps run in the enclave, orange steps run on the driver, and green steps are split between them.
+Each run works through the steps below. Orange steps run in the production data enclave, blue steps run on an external workstation, and green steps are split between them.
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart TD
-    s1["1. Intake<br/>query, EXPLAIN ANALYZE, server"] --> s2["2. Production inventory"]
+    s1["1. Intake:<br/>the query, it's EXPLAIN ANALYZE, and a production server name"] --> s2["2. Gather production inventory"]
     s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
-    s3 --> s4["4. Run server<br/>racetrack + arena"]
-    s4 --> s5{"5. Plan gate<br/>racetrack plan matches production?"}
+    s3 --> s4["4. Build run server<br/>racetrack + arena"]
+    s4 --> s5{"5. Does the racetrack plan matches production's plan?"}
     s5 -- no --> abort(["Abort: statistics don't match"])
     s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
     s5 -- yes --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
@@ -61,8 +84,8 @@ flowchart TD
     s10 -. different results .-> out
     s14 -. no win or different results .-> out
 
-    classDef enclave fill:#cfe3ff,stroke:#3b6db3,color:#000
-    classDef driver fill:#ffe0b8,stroke:#b36b12,color:#000
+    classDef enclave fill:#ffe0b8,stroke:#3b6db3,color:#000
+    classDef driver fill:#cfe3ff,stroke:#b36b12,color:#000
     classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
     class s1,s2,s3,s4,s5,s6b,s8,s9,s12,s14 enclave
     class s6a,s15 driver
