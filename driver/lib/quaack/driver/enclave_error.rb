@@ -34,7 +34,8 @@ module Quaack
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
-      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, function: nil, clients: nil, exit_status: nil, signal: nil) # rubocop:disable Metrics/ParameterLists
+      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, function: nil, clients: nil, # rubocop:disable Metrics/ParameterLists
+                     exit_status: nil, signal: nil)
         @subcommand = subcommand
         @rule = rule
         @step = step
@@ -70,11 +71,17 @@ module Quaack
       private
 
       def describe
-        details = [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
-                   ("function #{function}" if function), ("clients #{described_clients}" if clients),
-                   ("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)].compact
+        details = (line_details + ending_details).compact
         "quaacks #{subcommand} failed: #{rule}#{" (#{details.join(", ")})" unless details.empty?}"
       end
+
+      # What the error line said beyond its rule.
+      def line_details
+        [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
+         ("function #{function}" if function), ("clients #{described_clients}" if clients)]
+      end
+
+      def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
       def described_clients = clients.map { "pid #{it["pid"]} started #{it["backend_start"]}" }.join(", ")
     end
