@@ -723,23 +723,7 @@ Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --aren
 
 ### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key. Done, see BACKLOG-COMPLETE.md.
 
-### 20260928-4. OpenAI-compatible LLM adapter.
-
-Add the second adapter from 20260928-3: the OpenAI-compatible Chat Completions API, through the official `openai` gem, with the base URL from configuration. One adapter serves OpenAI, Groq (`https://api.groq.com/openai/v1`), Google Gemini's OpenAI-compatible endpoint, OpenRouter, and local servers such as Ollama.
-
-- Map `system` and `messages` to chat messages, and a finish reason other than `stop` to `llm_bad_response`, as the Anthropic adapter does for stop reasons.
-- With `schema`, ask for `response_format` of type `json_schema` when the provider takes it. Some providers and models don't enforce schemas. For those, rely on the `JSON_ONLY` instruction and `ReplyJSON`'s validation, and if the reply doesn't validate, re-ask once with the validation error attached, then fail with `llm_bad_response`. Each attempt counts in the burndown. Decide at build time how the adapter learns whether schema mode is supported (configuration, or falling back when the API rejects it), and say which in README.md.
-- Map the gem's errors to the same rules as the Anthropic adapter. Keep retries at the gem's level, counted per attempt.
-- Add a fake at this adapter's HTTP edge, like `FakeLLM`, and run the existing driver LLM specs against both adapters where the behavior is shared. No spec may reach the network. An opt-in live smoke test (with `QUAACK_ALLOW_REAL_LLM=1` and a real key) may exist, but outside `rake`.
-- Add `openai` to the driver gem's dependencies. It's already on `LLM_SDK_REQUIRES`, so the enclave stays barred from it. Check that the boundary specs still pass.
-- Verify, before building, what structured-output support OpenAI, Groq, and Gemini's compatible endpoint offer today. Don't rely on memory.
-- Where the re-ask lives: after 20260928-3, the front runs `ReplyJSON.parse` after the adapter's `reply` returns, so a "validate, then re-ask once" loop has no home in the adapter contract. Either give the front a re-ask for adapters that don't enforce schemas, or let the adapter call `ReplyJSON` itself. Say which, and keep the burndown counting every attempt.
-- Document per-provider setup in README.md, including a Groq example.
-
-- **Depends on:** 20260928-3.
-- **Came from:** The user, 2026-09-28. Answer already given: prompt, validate, and retry once when the provider can't enforce a schema.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260928-4. OpenAI-compatible LLM adapter. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-5. LLM provider seam loose ends.
 
@@ -786,6 +770,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Untested: the `text &&` guard in `reask?`** (`client.rb`). Dropping it keeps every spec green, and then a schema ask that the adapter itself failed (cut short, a refusal, or empty) re-asks with a nil assistant turn and costs an extra call. Add a spec: with a schema, `finish_reason: "length"` gives `llm_bad_response` with one counted call.
 - **Untested: how narrow the fallback trigger is.** Widening `rescue *REJECTED` to every `APIStatusError` keeps every spec green, and then a schema ask whose 429s or 5xxs outlast the retries would fire the fallback and could turn schema mode off for the run. Add a spec: with a schema, three 429s give `llm_rate_limited` with three calls, each carrying `response_format`.
 - **Untested: the adapter's `::OpenAI::Errors::Error` rescue branch.** Plant a body that makes the gem raise `ConversionError`, and assert `llm_bad_response` with a nil cause. Or drop the branch if no realistic body reaches it.
+- **`choices: null` gives a different detail** ("couldn't be read as a message") than a missing `choices` ("had no choices"), and no spec covers the null case. Both are a clean `llm_bad_response`.
 - **Stray lockfile line.** 20260928-4's Gemfile.lock change also added a `bundler` checksum line. Drop it, or keep it knowingly.
 
 - **Depends on:** 20260928-4.
