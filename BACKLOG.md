@@ -779,6 +779,31 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
+### 20260929-3. `quaack deploy`: show progress, and diagnose PATH.
+
+`quaack deploy` is silent until it finishes, and when `quaacks` isn't on the jump server's non-interactive PATH, it only points at DESIGN.md. The user's first real deploy ended exactly that way. Make it say what it's doing and work out the fix.
+
+- **Progress.** Print one line on stdout as each step starts: building each gem, copying each one to the host, `gem install` on the host (saying it builds pg_query from source and can take a few minutes), and checking `quaacks` over ssh. The final "installed quaacks X on host" line stays last. Errors stay on stderr.
+- **PATH diagnosis.** When the check after install can't run `quaacks`, run read-only probes on the jump server over non-interactive ssh, the same way the driver reaches it. Probes are POSIX sh, because the remote login shell runs them. Find out:
+  - what `ruby -e 'puts Gem.user_dir'` prints, or that `ruby` itself isn't on the non-interactive PATH;
+  - whether `<user_dir>/bin/quaacks` exists;
+  - whether `<user_dir>/bin` is on the non-interactive PATH;
+  - the user's login shell.
+
+  Then print the specific fix:
+  - The exact line to add, such as `export PATH="<user_dir>/bin:$PATH"`, and the file to put it in: `~/.bashrc` for bash, above any line that returns early for non-interactive shells; `~/.zshenv` for zsh; for other POSIX shells, say which file to check.
+  - For a shell QUAACK doesn't support (fish or csh), say that.
+  - For a `quaacks` that's on PATH but isn't what was just installed, such as a different Ruby, say that instead.
+  - End with the command to check the fix: `ssh <host> quaacks --version`.
+- **Never change the jump server's shell config.** Only advise; the user makes the edit.
+- **Messages.** Keep them to what the probes found. They're about the jump server's setup, not production data, but print only what's needed.
+- Update DESIGN.md's "Deploying the enclave" and README.md's deploy step.
+
+- **Depends on:** 20260923-2.
+- **Came from:** The user, 2026-09-29, after a first real deploy. Answers already given: diagnose and advise only (the driver keeps running a bare `quaacks`, so PATH still matters), never edit the user's shell config, and progress goes to stdout with the result.
+- **Design:** Where QUAACK runs, "Deploying the enclave".
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
