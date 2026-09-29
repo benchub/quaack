@@ -2757,3 +2757,18 @@ Minor findings from the second review of 20260923-14:
 - **Came from:** Second review of 20260923-14.
 - **README:** 5a.
 - **Status:** done
+
+### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key.
+
+The driver only talks to Anthropic, through `LLM::Client`, and it requires `ANTHROPIC_API_KEY`. Many operators have an OpenAI, Google, or Groq key instead. This task makes the provider pluggable and gives it configuration. 20260928-4 adds the second provider.
+
+- Split `LLM::Client` into a provider-neutral front and a provider adapter. The front keeps today's interface and behavior: `ask(step:, messages:, max_tokens:, system:, schema:, json:)` returns text or parsed JSON, and it owns the burndown count per attempt (15b), `ReplyJSON`, the `JSON_ONLY` instruction, the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`), and the guard against real clients in specs. The Anthropic adapter holds everything Anthropic-specific: request shape, structured output, stop reasons, the gem's retries, and mapping its errors to the rules.
+- Configuration lives in an `llm` block in `~/.quaack/driver.json`: `provider` (`anthropic` or `openai_compatible`), `model`, `base_url`, and `api_key_env`, the name of the environment variable that holds the key. Keys never go in the file. `QUAACK_MODEL` still overrides the model, and `QUAACK_LLM_PROVIDER` and `QUAACK_LLM_BASE_URL` override the others. With no `llm` block, the driver behaves as today: Anthropic, `claude-opus-5-5`. A bad block fails with a usage error that names the key, never a value.
+- Anthropic auth: stop requiring `ANTHROPIC_API_KEY`. Let the anthropic gem resolve credentials in its usual order (API key, `ANTHROPIC_AUTH_TOKEN`, then an `ant auth login` profile), and map an authentication failure to `llm_auth`. `api_key_env`, when set, still wins.
+- Update README.md (requirements, configuration, and the `llm_auth` row) and DESIGN.md's "Where QUAACK runs".
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-09-28. Answers already given: two adapters (Anthropic, plus one OpenAI-compatible adapter that covers OpenAI, Groq, Gemini's compatible endpoint, OpenRouter, and Ollama); configuration in driver.json with env overrides; fold in keyless Anthropic auth.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `claude/quaack-readme-graphic-8iwhvt`. The full `bundle exec rake` couldn't run in the cloud session (no HypoPG image), so run it before merging to `main`. RuboCop, the driver suite, and the boundary specs passed.

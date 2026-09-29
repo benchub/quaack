@@ -721,19 +721,7 @@ Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --aren
 - **Design:** Step 1, 3h.
 - **Status:** todo
 
-### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key.
-
-The driver only talks to Anthropic, through `LLM::Client`, and it requires `ANTHROPIC_API_KEY`. Many operators have an OpenAI, Google, or Groq key instead. This task makes the provider pluggable and gives it configuration. 20260928-4 adds the second provider.
-
-- Split `LLM::Client` into a provider-neutral front and a provider adapter. The front keeps today's interface and behavior: `ask(step:, messages:, max_tokens:, system:, schema:, json:)` returns text or parsed JSON, and it owns the burndown count per attempt (15b), `ReplyJSON`, the `JSON_ONLY` instruction, the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`), and the guard against real clients in specs. The Anthropic adapter holds everything Anthropic-specific: request shape, structured output, stop reasons, the gem's retries, and mapping its errors to the rules.
-- Configuration lives in an `llm` block in `~/.quaack/driver.json`: `provider` (`anthropic` or `openai_compatible`), `model`, `base_url`, and `api_key_env`, the name of the environment variable that holds the key. Keys never go in the file. `QUAACK_MODEL` still overrides the model, and `QUAACK_LLM_PROVIDER` and `QUAACK_LLM_BASE_URL` override the others. With no `llm` block, the driver behaves as today: Anthropic, `claude-opus-5-5`. A bad block fails with a usage error that names the key, never a value.
-- Anthropic auth: stop requiring `ANTHROPIC_API_KEY`. Let the anthropic gem resolve credentials in its usual order (API key, `ANTHROPIC_AUTH_TOKEN`, then an `ant auth login` profile), and map an authentication failure to `llm_auth`. `api_key_env`, when set, still wins.
-- Update README.md (requirements, configuration, and the `llm_auth` row) and DESIGN.md's "Where QUAACK runs".
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-09-28. Answers already given: two adapters (Anthropic, plus one OpenAI-compatible adapter that covers OpenAI, Groq, Gemini's compatible endpoint, OpenRouter, and Ollama); configuration in driver.json with env overrides; fold in keyless Anthropic auth.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-4. OpenAI-compatible LLM adapter.
 
@@ -762,6 +750,19 @@ These are minor findings from the build and review of 20260928-3:
 
 - **Depends on:** 20260928-3.
 - **Came from:** The build report and round-one review of 20260928-3.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260928-6. LLM provider seam loose ends, part two.
+
+These are minor findings from the second review of 20260928-3:
+- The spec for the CLI's default client builder (`cli_run_spec.rb`, "builds the client from the block's settings") only checks `api_key_env`. A builder that drops the block's model or base_url stays green. Move the builder into a small method that takes a transport, so a spec can pass FakeLLM and assert the model and URL in `fake.asks`.
+- The same spec sets `QUAACK_ALLOW_REAL_LLM=1`, which turns off the `NoNetwork` guard. Its only remaining guard is `ANTHROPIC_BASE_URL=http://127.0.0.1:9`, so a future explicit base URL could send its sentinel key to the real API from `rake`. Keep a refusal at the gem's requester in that example.
+- `AnthropicAdapter` claims a given `api_key:` wins over `api_key_env`, but no spec checks it. Add one, or drop the claim.
+- `quaack run` now reads driver.json. A file that exists but can't be read (EACCES) raises `Errno::EACCES` out of `DriverConfig.read`, uncaught, so the run dies with a stack trace. Rescue `SystemCallError` there as `Bad`, or as a "can't read" usage error. `start` has the same gap.
+
+- **Depends on:** 20260928-3.
+- **Came from:** Second review of 20260928-3.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
