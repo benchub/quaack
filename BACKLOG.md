@@ -1416,3 +1416,16 @@ Minor findings from the second review of 20260929-7. The code is correct, and no
 - **Came from:** The user, 2026-09-29, after timing the full check.
 - **Design:** none. This is test harness speed only.
 - **Status:** todo
+
+### 20260929-14. pg_dump finder: minor findings.
+
+Minor findings from the first review of 20260929-9.
+
+- When no pg_dump of the server's major is found, three examples fail, not one: the replay gate, `TestPgDump.bin`'s own example, and the `PromptPack.with_env` example. CLAUDE.md says the replay spec "fails once". Gate the two finder examples the same way, or reword CLAUDE.md.
+- Three pieces of code have no automated test: the load-time gate in `spec/pipeline_replay_spec.rb`, which was only checked by hand; `E2ERun.with_env`'s PATH change; and `TestPgDump.version`'s exit-status check. Ignoring the exit status survives the specs.
+- If `QUAACK_TEST_PG_BIN` holds a pg_dump of the wrong major, the harness quietly falls back to the Homebrew keg. That matches the user's answer, "checks first", and the not-found message lists what each directory held. Consider saying so when it happens.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round one.
+- **Design:** none. Test harness only.
+- **Status:** todo
