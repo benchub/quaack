@@ -1353,7 +1353,12 @@ Ideas to settle before building:
 
 ### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18.
 
-`spec/pipeline_replay_spec.rb` runs the installed `quaacks schema-dump`, which uses whichever pg_dump is first on PATH. The test server is Postgres 18. On a development Mac whose PATH has Homebrew's `postgresql@14`, every replay fails with `pg_dump_too_old`, 198 failures on 2026-09-29 on unchanged main (a762d73). Either have the specs use a pg_dump 18, such as the one in the test Postgres image, or say in CLAUDE.md that the full check needs pg_dump 18 first on PATH, and fail early with a clear message when it isn't.
+`spec/pipeline_replay_spec.rb` runs the installed `quaacks schema-dump`, which uses whichever pg_dump is first on PATH. The test server is Postgres 18. On a development Mac whose PATH has Homebrew's `postgresql@14`, every replay fails with `pg_dump_too_old`, 198 failures on 2026-09-29 on unchanged main (a762d73). Answers from the user, 2026-09-29:
+
+- The test harness finds a pg_dump whose major version matches the test server's. It checks the `QUAACK_TEST_PG_BIN` directory first, if that's set, then Homebrew's libpq keg (`/opt/homebrew/opt/libpq/bin`). It puts that directory first on PATH only for the `quaacks` children it starts. The operator's own shell PATH is untouched.
+- If it finds none, the specs that need one fail early, once, with a clear message naming what to install or set. They never fail 198 times with `pg_dump_too_old`.
+- CLAUDE.md's Development section says the full check needs a pg_dump of the test server's major version, and how the harness finds it.
+- This Mac's libpq keg was upgraded to 18.6 for this.
 
 - **Depends on:** nothing open.
 - **Came from:** The full check run for 20260929-7.
@@ -1394,4 +1399,18 @@ Minor findings from the second review of 20260929-7. The code is correct, and no
 - **Depends on:** 20260929-7.
 - **Came from:** Review of 20260929-7, round two.
 - **Design:** Trust boundary, step 4.
+- **Status:** todo
+
+### 20260929-13. Build the prompt-pack database once per spec process.
+
+`PromptPack.databases` builds each replay's production database from scratch: it creates it from template0, loads `script/prompt_pack/schema.sql` and `data.sql`, and runs ANALYZE. The data script generates about 420,000 rows, which takes about 3 seconds, and the pipeline replay spec does that for each of its 39 runs. The data is the same for every query. Copying a database with `CREATE DATABASE ... TEMPLATE` takes about 0.07 seconds.
+
+- Build the loaded, analyzed database once per spec process, on the first run that needs it, and create each run's production database as a copy of it. The racetrack database is already a copy of production, so it stays as it is.
+- Every copy must hold the same schema, data, extensions, and statistics as a fresh build. A spec should prove a copy matches.
+- The template database must have no connections left open when it's copied, and no replay run may change it.
+- `script/prompt_pack/run.rb` uses the same helper, so it gets the same speedup.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-29, after timing the full check.
+- **Design:** none. This is test harness speed only.
 - **Status:** todo
