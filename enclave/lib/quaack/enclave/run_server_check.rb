@@ -42,17 +42,23 @@ module Quaack
     # An Error's message is its rule and the name of what failed, such as
     # "run_server_guc_mismatch: search_path", and never a value: settings,
     # locale names, and the database's name are production configuration.
-    # ErrorFilter sends only the rule. Nothing is stored.
+    # ErrorFilter sends only the rule. Nothing is stored. The one exception
+    # is run_server_other_clients, whose Error also carries clients: each
+    # other client's pid and UTC start time, oldest first, at most
+    # MAX_CLIENTS, and nil if none is left to name. ErrorFilter sends those
+    # too, so the operator can find and stop them. No other pg_stat_activity
+    # column is read.
     #
     # Not checked, so unsupported in v1: per-tablespace random_page_cost
     # and seq_page_cost, which the inventory doesn't record, and schedulers
     # outside Postgres, which are the operator's to stop.
     module RunServerCheck
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :clients
 
-        def initialize(rule, name)
+        def initialize(rule, name, clients: nil)
           @rule = rule
+          @clients = clients
           super("#{rule}: #{name}")
         end
       end
@@ -73,6 +79,17 @@ module Quaack
       SQL
       CLIENTS_SQL = "SELECT count(*) FROM pg_stat_activity " \
                     "WHERE backend_type = 'client backend' AND pid <> ALL($1::int[])"
+      # The other clients, for the operator to find: only each one's pid and
+      # the UTC time it started, oldest first, at most MAX_CLIENTS. Nothing
+      # else about a client is read.
+      MAX_CLIENTS = 20
+      OTHER_CLIENTS_SQL = <<~SQL.freeze
+        SELECT pid, to_char(backend_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        FROM pg_stat_activity
+        WHERE backend_type = 'client backend' AND pid <> ALL($1::int[]) AND backend_start IS NOT NULL
+        ORDER BY backend_start, pid
+        LIMIT #{MAX_CLIENTS}
+      SQL
       HYPOPG_SQL = "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
       CRON_ACTIVE_SQL = "SELECT count(*) FROM cron.job WHERE active"
 
@@ -144,10 +161,22 @@ module Quaack
       end
 
       def check_quiet(connection, own_pids)
-        others = value(connection, CLIENTS_SQL, "{#{own_pids.join(",")}}")
-        fail!("run_server_other_clients", "pg_stat_activity") unless others == "0"
+        pids = "{#{own_pids.join(",")}}"
+        unless value(connection, CLIENTS_SQL, pids) == "0"
+          raise Error.new("run_server_other_clients", "pg_stat_activity", clients: other_clients(connection, pids))
+        end
+
         check_cron(connection)
         fail!("run_server_autovacuum_on", "autovacuum") unless show(connection, "autovacuum") == "off"
+      end
+
+      # The other clients' pids and start times, or nil if none is left to
+      # name, as when each one left after the count.
+      def other_clients(connection, pids)
+        clients = connection.exec_params(OTHER_CLIENTS_SQL, [pids]).values.map do |pid, started|
+          { "pid" => Integer(pid, 10), "backend_start" => started }
+        end
+        clients unless clients.empty?
       end
 
       # pg_cron, when it's loaded, defines cron.database_name, the one
