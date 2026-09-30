@@ -5,6 +5,7 @@ require "tmpdir"
 require "quaack/enclave/schema_dump"
 require "quaack/enclave/store"
 require "quaack/enclave/error_filter"
+require "quaack/enclave/arena"
 
 # Every example runs real pg_dump against real Postgres. The dev Macs have
 # no pg_dump 18, so pg_dump runs inside the harness's own container, through
@@ -233,6 +234,100 @@ RSpec.describe Quaack::Enclave::SchemaDump do
                          "WHERE attrelid = 'other.tagged'::regclass AND attname = 'tag'").getvalue(0, 0)
       expect(type).to eq("citext")
       loaded.close
+    end
+  end
+
+  # plperl, like plpgsql, lives in pg_catalog. A --schema for a system
+  # schema has pg_dump dump the system catalog itself: as a read-only role
+  # it can't lock pg_authid, and fails; as a superuser it emits DDL for
+  # pg_catalog's own functions and types, which won't load into arena.
+  # --extension alone still brings the CREATE EXTENSION.
+  describe "an extension in a system schema" do
+    let(:target) { "quaack_sys_ext_load_#{Process.pid}" }
+    let(:reader) { "quaack_reader_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+    let(:reader_conn) { PG.connect(**db.connection_params, user: reader, password: TestPostgres::PASSWORD) }
+
+    before do
+      conn.exec("CREATE EXTENSION plperl")
+      # A production read-only role: it can read the app's schemas, and
+      # nothing more.
+      admin.exec(%(CREATE ROLE "#{reader}" LOGIN PASSWORD '#{TestPostgres::PASSWORD}'))
+      conn.exec(<<~SQL)
+        GRANT USAGE ON SCHEMA sales, audit, other TO "#{reader}";
+        GRANT SELECT ON ALL TABLES IN SCHEMA public, sales, audit, other TO "#{reader}";
+      SQL
+    end
+
+    after do
+      reader_conn.close
+      admin.exec(%(DROP DATABASE IF EXISTS "#{target}" WITH (FORCE)))
+      conn.exec(%(DROP OWNED BY "#{reader}"))
+      admin.exec(%(DROP ROLE IF EXISTS "#{reader}"))
+    end
+
+    def dump_as_reader(relations)
+      described_class.run(store:, relations:, connection: reader_conn, conninfo: { dbname: db.name, user: reader },
+                          pg_dump:)
+    end
+
+    # What arena's load (4a) makes of ddl, in a fresh template0 database.
+    def arena_extensions(ddl)
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      arena = PG.connect(**db.connection_params, dbname: target)
+      Quaack::Enclave::Arena.load_dump(arena, ddl)
+      arena.exec("SELECT extname, extnamespace::regnamespace::text FROM pg_extension ORDER BY 1").values
+    ensure
+      arena&.close
+    end
+
+    it "is dumped by a read-only role, with no --schema for pg_catalog, and reaches arena" do
+      result = dump_as_reader([table("other", "lonely")])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(result.namespaces).to eq(%w[other public])
+      expect(store.read("schema_dump")["namespaces"]).to eq(%w[other public])
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS plperl WITH SCHEMA pg_catalog;")
+      expect(arena_extensions(ddl)).to eq([%w[plperl pg_catalog], %w[plpgsql pg_catalog]])
+    end
+
+    it "brings none of pg_catalog's own objects into the full dump" do
+      run([table("other", "lonely")])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(ddl.scan(/^CREATE .*\bpg_catalog\.\S+/)).to eq([])
+      expect(ddl.scan(/^-- Name: .*; Schema: pg_catalog;.*/)).to eq([])
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS plperl WITH SCHEMA pg_catalog;")
+    end
+
+    # A query can read the catalog, as an ORM's introspection does. Only
+    # the full dump is run here: the subset of a system table is another
+    # matter.
+    it "leaves out the system schemas a query's tables live in" do
+      toast = conn.exec("SELECT relname FROM pg_class WHERE oid = " \
+                        "(SELECT reltoastrelid FROM pg_class WHERE oid = 'public.customers'::regclass)").getvalue(0, 0)
+      relations = [table("pg_catalog", "pg_namespace"), table("pg_toast", toast),
+                   table("information_schema", "sql_features"), table("other", "lonely")]
+
+      namespaces, ddl = described_class.full_dump(pg_dump, { dbname: db.name, user: reader }, relations, reader_conn,
+                                                  "30s")
+
+      expect(namespaces).to eq(%w[other public])
+      expect(created_tables(ddl)).to eq(%w[other.lonely public.customers public.orders])
+    end
+
+    # information_schema isn't pg_*, but it's a system schema all the same.
+    it "leaves out information_schema too, when an extension lives there" do
+      conn.exec("CREATE EXTENSION citext SCHEMA information_schema")
+      result = run([table("other", "lonely")])
+      ddl = store.read("schema_dump")["ddl"]
+
+      expect(result.namespaces).to eq(%w[other public])
+      expect(ddl).to include("CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA information_schema;")
+      expect(ddl.scan(/^CREATE .*\binformation_schema\.\S+/)).to eq([])
+      expect(ddl.scan(/^-- Name: .*; Schema: information_schema;.*/)).to eq([])
+      expect(arena_extensions(ddl)).to eq([%w[citext information_schema], %w[plperl pg_catalog],
+                                           %w[plpgsql pg_catalog]])
     end
   end
 
