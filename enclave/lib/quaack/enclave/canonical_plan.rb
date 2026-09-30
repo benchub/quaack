@@ -66,19 +66,21 @@ module Quaack
       # Kept as they are, except for a HypoPG index's name, "<oid>" followed
       # by a name made from its method, table, and columns. Each session
       # gives the same index a new oid, and different indexes, such as a
-      # partial one and a plain one, can get the same name. So a caller that
-      # knows what each hypothetical index is passes hypothetical_indexes, a
-      # Hash from each one's oid to an identity string, such as its
-      # definition from hypopg_get_indexdef. Each hypothetical index then
-      # stands for its identity, and one the Hash leaves out makes the plan
-      # not comparable?. The canonical form keeps only a digest of the
-      # identity, since a partial index's predicate holds a literal. Without
-      # hypothetical_indexes, the "<oid>" is just dropped, and indexes that
-      # HypoPG names the same match. The oid is read in decimal.
+      # partial one and a plain one, can get the same name. So a caller
+      # whose plan has hypothetical indexes passes hypothetical_indexes, a
+      # Hash from each one's oid, as HypoPG reports it, to an identity
+      # string, such as its definition from hypopg_get_indexdef. Each index
+      # whose name is "<oid>" for an oid in the Hash, read in decimal, then
+      # stands for its identity. The canonical form keeps only a digest of
+      # the identity, since a partial index's predicate holds a literal.
       #
-      # A real index whose name starts with "<digits>" is taken for a
-      # hypothetical one, so without a map "<123>orders_pkey" matches
-      # orders_pkey. Real names like that are unlikely, so it's left alone.
+      # Every other index name is kept as it is, even one that starts with
+      # "<digits>", since a real index can have a name like that, such as
+      # "<1>orders_pkey" as a quoted identifier. So without a map, or for an
+      # oid the map leaves out, the same hypothetical index in two sessions
+      # doesn't match itself. A real index whose name starts with the
+      # "<oid>" of a hypothetical index in the map is taken for that
+      # hypothetical index.
       #
       # The digest covers a partial index's predicate, literal and all, and
       # a short literal could be guessed from it. It stays in the enclave
@@ -172,18 +174,16 @@ module Quaack
 
         def names(plan_node)
           names = NAMES.filter_map { |key| [key, plan_node[key]] if plan_node[key] }.to_h
-          index = names["Index Name"]
-          names["Index Name"] = hypothetical(index, Integer(index[HYPOTHETICAL_INDEX, 1], 10)) if hypothetical?(index)
+          identity = hypothetical_identity(names["Index Name"])
+          names["Index Name"] = "<hypothetical #{Digest::SHA256.hexdigest(identity)}>" if identity
           names
         end
 
-        def hypothetical?(index) = index.is_a?(String) && index.match?(HYPOTHETICAL_INDEX)
-
-        def hypothetical(index, oid)
-          return index.sub(HYPOTHETICAL_INDEX, "") unless @hypothetical_indexes
-
-          identity = @hypothetical_indexes[oid]
-          identity ? "<hypothetical #{Digest::SHA256.hexdigest(identity)}>" : unparsed
+        # The identity the map gives an index name's "<oid>", or nil for a
+        # real index.
+        def hypothetical_identity(index)
+          oid = index[HYPOTHETICAL_INDEX, 1] if @hypothetical_indexes && index.is_a?(String)
+          @hypothetical_indexes[Integer(oid, 10)] if oid
         end
 
         def quals(plan_node, default)

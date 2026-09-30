@@ -340,9 +340,13 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
   describe "hypothetical indexes" do
     def hypothetical(name) = changed("primary_key_lookup") { |top| top["Index Name"] = name }
 
-    it "matches the same hypothetical index with another oid" do
+    # Without a map nothing says which names HypoPG made, and a real index
+    # can be named "<1>orders_pkey".
+    it "keeps every index name as it is without a map, even one that looks hypothetical" do
       expect(same?(hypothetical("<13542>btree_orders_total_cents"), hypothetical("<16901>btree_orders_total_cents")))
-        .to be(true)
+        .to be(false)
+      expect(same?(hypothetical("<1>orders_pkey"), plan("primary_key_lookup"))).to be(false)
+      expect(same?(hypothetical("<1>orders_pkey"), hypothetical("<1>orders_pkey"))).to be(true)
     end
 
     def mapped(name, map) = canonical_with(hypothetical(name), map)
@@ -365,9 +369,12 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
       expect(mapped("<13542>btree_orders_status", 13_542 => "orders_pkey").matches?(real)).to be(false)
     end
 
-    it "makes a plan with a hypothetical index the map leaves out not comparable" do
-      expect(mapped("<13542>btree_orders_status", 99 => "CREATE INDEX ON orders (status)").comparable?).to be(false)
-      expect(mapped("<13542>btree_orders_status", 13_542 => "CREATE INDEX ON orders (status)").comparable?).to be(true)
+    it "takes a name whose oid the map leaves out for a real index, and keeps it as it is" do
+      real = mapped("<1>orders_pkey", 13_542 => "CREATE INDEX ON orders (status)")
+      expect(real.comparable?).to be(true)
+      expect(real.matches?(canonical(hypothetical("<1>orders_pkey")))).to be(true)
+      expect(real.matches?(canonical(plan("primary_key_lookup")))).to be(false)
+      expect(real.matches?(mapped("<2>orders_pkey", 13_542 => "CREATE INDEX ON orders (status)"))).to be(false)
     end
 
     it "leaves real indexes as they are when there's a map" do
@@ -380,17 +387,21 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
       expect(Marshal.dump(mapped("<13542>btree_orders_status", map))).not_to include("quaack-sentinel")
     end
 
-    it "makes a plan with a hypothetical index not comparable under an empty map" do
-      expect(mapped("<13542>btree_orders_status", {}).comparable?).to be(false)
+    it "keeps a name that looks hypothetical as it is under an empty map" do
+      expect(mapped("<13542>btree_orders_status", {})
+        .matches?(canonical(hypothetical("<13542>btree_orders_status")))).to be(true)
     end
 
     it "reads the oid in decimal, even with a leading zero" do
-      expect(mapped("<010>btree_orders_status", 10 => "x").comparable?).to be(true)
-      expect(mapped("<09>btree_orders_status", 9 => "x").comparable?).to be(true)
+      expect(mapped("<010>btree_orders_status", 10 => "x").matches?(mapped("<99>btree_orders_status", 99 => "x")))
+        .to be(true)
+      expect(mapped("<09>btree_orders_status", 9 => "x").matches?(mapped("<99>btree_orders_status", 99 => "x")))
+        .to be(true)
     end
 
     it "treats a name with <digits> in the middle as a real index" do
-      expect(same?(hypothetical("orders<13542>btree"), hypothetical("orders<16901>btree"))).to be(false)
+      expect(mapped("orders<13542>btree", 13_542 => "x").matches?(mapped("orders<16901>btree", 16_901 => "x")))
+        .to be(false)
     end
 
     [["not a hash"], [[13_542, "x"]], { "13542" => "x" }, { 13_542 => :x }].each do |map|
