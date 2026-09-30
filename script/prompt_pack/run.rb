@@ -6,8 +6,8 @@
 #
 # Docker must be running. For each query in QUERIES, or only those named, it
 # starts from a throwaway harness Postgres (spec/support/test_postgres.rb),
-# loads schema.sql and data.sql into a stand-in production
-# database, captures the query's EXPLAIN ANALYZE, and runs the real enclave
+# makes a stand-in production database, a copy of one that schema.sql and
+# data.sql are loaded into once per server (TEMPLATE), captures the query's EXPLAIN ANALYZE, and runs the real enclave
 # steps 1 to 4a, then the driver's Pipeline, over Transport::Local. The LLM
 # client's transport is CapturingLLM: it writes down every prompt the driver
 # sends, and answers with a small placeholder so the pipeline reaches its
@@ -39,6 +39,10 @@ module PromptPack
   ROOT = File.expand_path("../..", __dir__)
   HERE = __dir__
   CORPUS = File.join(ROOT, "spec", "fixtures", "llm_corpus")
+  # The database each run's production database is copied from, built
+  # once per server (databases), and the name it's built under.
+  TEMPLATE = "pack_template"
+  TEMPLATE_BUILDING = "#{TEMPLATE}_building".freeze
   QUAACKS = [RbConfig.ruby, "-I", File.join(ROOT, "enclave", "lib"),
              File.join(ROOT, "enclave", "exe", "quaacks")].freeze
   # Lets quaacks run from this checkout, whose bundle holds the driver gem.
@@ -203,21 +207,51 @@ module PromptPack
     end
   end
 
+  # A run's production database is a copy of TEMPLATE, and its racetrack
+  # database a copy of production.
   def databases(server, query)
     prod = "pack_#{query.name}"
     racetrack = "#{prod}_racetrack"
-    [prod, racetrack, "#{racetrack}_arena"].each { server.admin.exec(%(DROP DATABASE IF EXISTS "#{it}" WITH (FORCE))) }
-    server.admin.exec(%(CREATE DATABASE "#{prod}" TEMPLATE template0))
-    conn = PG.connect(host: server.host, port: server.port, dbname: prod, user: TestPostgres::USER,
-                      password: TestPostgres::PASSWORD)
-    conn.exec("CREATE EXTENSION hypopg")
-    [File.read(File.join(HERE, "schema.sql")), File.read(File.join(HERE, "data.sql"))].each { conn.exec(it) }
-    conn.exec("ANALYZE")
-    conn.close
+    names = [prod, racetrack, "#{racetrack}_arena"]
+    unless (clash = names & [TEMPLATE, TEMPLATE_BUILDING]).empty?
+      raise ArgumentError, "query #{query.name}: its database #{clash.first} would take a name the template uses " \
+                           "(#{TEMPLATE} or #{TEMPLATE_BUILDING})"
+    end
+
+    names.each { server.admin.exec(%(DROP DATABASE IF EXISTS "#{it}" WITH (FORCE))) }
+    template(server)
+    server.admin.exec(%(CREATE DATABASE "#{prod}" TEMPLATE "#{TEMPLATE}"))
     server.admin.exec(%(CREATE DATABASE "#{racetrack}" TEMPLATE "#{prod}"))
     # The run server check refuses a server with other clients on it.
     server.close_admin
     [prod, racetrack]
+  end
+
+  # Builds TEMPLATE the first time a server needs it: data.sql takes
+  # seconds, and a copy a fraction of one. It's built under another name
+  # and renamed once complete, so a build that failed partway is never
+  # copied. It then takes no connections, so no run can change it, and
+  # nothing is connected to it when it's copied.
+  def template(server)
+    return if server.database_names.include?(TEMPLATE)
+
+    server.admin.exec(%(DROP DATABASE IF EXISTS "#{TEMPLATE_BUILDING}" WITH (FORCE)))
+    build(server, TEMPLATE_BUILDING)
+    server.admin.exec(%(ALTER DATABASE "#{TEMPLATE_BUILDING}" WITH ALLOW_CONNECTIONS false))
+    server.admin.exec(%(ALTER DATABASE "#{TEMPLATE_BUILDING}" RENAME TO "#{TEMPLATE}"))
+  end
+
+  # Creates db from template0 with hypopg, schema.sql, and data.sql, and
+  # analyzes it. The connection that loads it is closed before it returns.
+  def build(server, db)
+    server.admin.exec(%(CREATE DATABASE "#{db}" TEMPLATE template0))
+    conn = PG.connect(host: server.host, port: server.port, dbname: db, user: TestPostgres::USER,
+                      password: TestPostgres::PASSWORD)
+    conn.exec("CREATE EXTENSION hypopg")
+    [File.read(File.join(HERE, "schema.sql")), File.read(File.join(HERE, "data.sql"))].each { conn.exec(it) }
+    conn.exec("ANALYZE")
+  ensure
+    conn&.close
   end
 
   # The enclave child reads libpq's variables for production and the run
