@@ -7,8 +7,9 @@
 # Docker must be running. For each query in QUERIES, or only those named, it
 # starts from a throwaway harness Postgres (spec/support/test_postgres.rb),
 # makes a stand-in production database, a copy of one that schema.sql and
-# data.sql are loaded into once per server (TEMPLATE), captures the query's EXPLAIN ANALYZE, and runs the real enclave
-# steps 1 to 4a, then the driver's Pipeline, over Transport::Local. The LLM
+# data.sql are loaded into once per server (TEMPLATE), captures the query's
+# EXPLAIN ANALYZE, and runs the real enclave steps 1 to 4a, then the
+# driver's Pipeline, over Transport::Local. The LLM
 # client's transport is CapturingLLM: it writes down every prompt the driver
 # sends, and answers with a small placeholder so the pipeline reaches its
 # later LLM steps.

@@ -103,6 +103,38 @@ RSpec.describe "PromptPack.databases" do
       .to raise_error(PG::ConnectionBad, /"#{PromptPack::TEMPLATE}" is not currently accepting connections/)
   end
 
+  # Task 20260929-17. The template is dropped first so this example builds
+  # it, and the build is made to fail once, at its last step, the ANALYZE,
+  # after data.sql is loaded. The retry leaves a complete template behind,
+  # which the other examples copy as usual.
+  it "copies no half-built template after a build fails, and the next call builds a complete one" do
+    PipelineReplay.drop(server, [PromptPack::TEMPLATE, PromptPack::TEMPLATE_BUILDING])
+    @made << PromptPack::TEMPLATE_BUILDING
+    failures = 0
+    allow(PG).to receive(:connect).and_wrap_original do |connect, *args, **kwargs|
+      conn = connect.call(*args, **kwargs)
+      if kwargs[:dbname] != "postgres" && failures.zero?
+        allow(conn).to receive(:exec).and_wrap_original do |exec, sql, *rest|
+          if sql == "ANALYZE" && failures.zero?
+            failures += 1
+            raise PG::QueryCanceled, "planted build failure"
+          end
+          exec.call(sql, *rest)
+        end
+      end
+      conn
+    end
+
+    expect { databases(first_query) }.to raise_error(PG::QueryCanceled, "planted build failure")
+    expect(server.database_names).not_to include(PromptPack::TEMPLATE)
+
+    prod, = databases(first_query)
+    expect(failures).to eq(1)
+    expect(rows(prod)["line_items"].first.first).to eq("300000")
+    expect(stats(prod).map(&:first).uniq).to match_array(tables)
+    expect(server.database_names).not_to include(PromptPack::TEMPLATE_BUILDING)
+  end
+
   it "refuses a query whose databases would take the template's name" do
     query = first_query.with(name: "template")
     expect { PromptPack.databases(server, query) }
