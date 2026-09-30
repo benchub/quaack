@@ -66,10 +66,14 @@ class IsolatedInstall
 
   private
 
+  # BUNDLER_VERSION is here because Bundler.with_unbundled_env keeps it: when
+  # `bundle exec` re-execs into the lockfile's Bundler version, it sets
+  # BUNDLER_VERSION before the new process records its original environment.
   def isolated_env
     {
       "GEM_HOME" => @home, "GEM_PATH" => @home, "RUBYOPT" => nil, "RUBYLIB" => nil,
-      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil, "RUBYGEMS_GEMDEPS" => nil
+      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil, "BUNDLER_VERSION" => nil,
+      "RUBYGEMS_GEMDEPS" => nil
     }
   end
 

@@ -50,6 +50,13 @@ RSpec.describe IsolatedInstall do
     expect(probe("puts ENV.key?('RUBYGEMS_GEMDEPS')", "RUBYGEMS_GEMDEPS" => gemfile)).to eq("false\n")
   end
 
+  # Bundler sets BUNDLER_VERSION when it re-execs into the lockfile's
+  # version, before it records the original environment, so
+  # with_unbundled_env alone keeps it.
+  it "ignores a BUNDLER_VERSION in the parent's environment" do
+    expect(probe("puts ENV.key?('BUNDLER_VERSION')", "BUNDLER_VERSION" => "4.0.15")).to eq("false\n")
+  end
+
   it "loads a closure gem such as quaack-protocol from the installed copy, not the repo" do
     protocol = @install.gem_dirs.fetch("quaack-protocol")
     loaded = probe(%(require "quaack/protocol"; puts $LOADED_FEATURES.grep(%r{/quaack/protocol\\.rb\\z}))).split("\n")
