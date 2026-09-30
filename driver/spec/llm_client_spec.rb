@@ -327,18 +327,76 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(key_transport.seen).to eq([])
     end
 
-    it "fails with llm_auth before any attempt when it finds no credentials, or only empty ones" do
-      [{}, { "ANTHROPIC_API_KEY" => "" }, { "ANTHROPIC_AUTH_TOKEN" => "" }].each do |env|
-        without_anthropic_credentials(env) do
-          expect { described_class.new(burndown: burndown, transport: key_transport) }
-            .to raise_error(Quaack::Driver::LLM::Error, no_credentials)
-        end
+    it "fails with llm_auth before any attempt when it finds no credentials, or is given an empty key" do
+      without_anthropic_credentials do
+        expect { described_class.new(burndown: burndown, transport: key_transport) }
+          .to raise_error(Quaack::Driver::LLM::Error, no_credentials)
       end
       without_anthropic_credentials do
         expect { described_class.new(api_key: "", burndown: burndown, transport: key_transport) }
           .to raise_error(Quaack::Driver::LLM::Error, no_credentials)
       end
       expect(key_transport.seen).to eq([])
+    end
+
+    # The gem takes a set variable, even an empty one, as the credential,
+    # and then looks no further: not at ANTHROPIC_AUTH_TOKEN after an empty
+    # ANTHROPIC_API_KEY, and not at a profile after either.
+    it "fails with llm_auth before any attempt when the variable the gem would use is set but empty" do
+      [{ "ANTHROPIC_API_KEY" => "" }, { "ANTHROPIC_API_KEY" => "", "ANTHROPIC_AUTH_TOKEN" => "SENTINEL-TOKEN" },
+       { "ANTHROPIC_AUTH_TOKEN" => "" }].each do |env|
+        without_anthropic_credentials(env) do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          empty = env.key("")
+          expect { described_class.new(burndown: burndown, transport: key_transport) }
+            .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: #{empty} is set but empty")
+        end
+      end
+      expect(key_transport.seen).to eq([])
+    end
+
+    it "sends a key that doesn't come from an empty variable, whatever else is empty" do
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-FROM-ENV", "ANTHROPIC_AUTH_TOKEN" => "") do
+        ask_with(described_class.new(burndown: burndown, transport: key_transport))
+      end
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "", "QUAACK_SPEC_KEY" => "SENTINEL-NAMED") do
+        ask_with(described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport))
+      end
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "") do
+        ask_with(described_class.new(api_key: "SENTINEL-GIVEN", burndown: burndown, transport: key_transport))
+      end
+
+      expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-FROM-ENV" }, { "x-api-key" => "SENTINEL-NAMED" },
+                                        { "x-api-key" => "SENTINEL-GIVEN" }])
+    end
+
+    # The gem warns, once a process, when a key is used while
+    # ANTHROPIC_API_KEY is set and a profile could be found. It says
+    # ANTHROPIC_API_KEY took precedence, which is wrong when the key is one
+    # QUAACK passed on purpose, from api_key_env's variable or given.
+    describe "the gem's warning that ANTHROPIC_API_KEY shadows a profile" do
+      let(:shadow_warning) { /ANTHROPIC_API_KEY is set and takes precedence/ }
+
+      def build(**)
+        Anthropic.instance_variable_set(:@warned_env_shadow, false)
+        described_class.new(burndown: burndown, transport: key_transport, **)
+      end
+
+      it "isn't printed for a key QUAACK chose" do
+        env = { "ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => "SENTINEL-NAMED" }
+        without_anthropic_credentials(env) do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          expect { build(settings: key_env_settings) }.not_to output.to_stderr
+          expect { build(api_key: "SENTINEL-GIVEN") }.not_to output.to_stderr
+        end
+      end
+
+      it "is still printed when the gem found ANTHROPIC_API_KEY itself" do
+        without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT") do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          expect { build }.to output(shadow_warning).to_stderr
+        end
+      end
     end
 
     it "fails with llm_auth when the profile ANTHROPIC_PROFILE names can't be loaded" do
