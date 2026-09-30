@@ -152,10 +152,7 @@ module Quaack
         nil
       end
 
-      def usage_error(message)
-        @stderr.print "quaack run: #{message}\n"
-        EX_USAGE
-      end
+      def usage_error(message) = @stderr.print("quaack run: #{message}\n") || EX_USAGE
     end
   end
 end
