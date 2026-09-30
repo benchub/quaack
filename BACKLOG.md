@@ -752,14 +752,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 
 ### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
-
-`enclave/spec/leak_check_spec.rb:374` ("runs a script the same way, with no Bundler in its environment") fails on unchanged main (a762d73) on 2026-09-29. It expected no Bundler variables and got `BUNDLER_VERSION`. A likely cause is Ruby 3.4's bundled bundler re-execing into the lockfile's bundler 4.0.15, which sets `BUNDLER_VERSION`. Find the cause, and scrub the variable, or fix the check, so a script runs with no Bundler in its environment.
-
-- **Depends on:** nothing open.
-- **Came from:** The full check run for 20260929-7.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-11. `run_server_other_clients` clients list: minor test gaps.
 
@@ -882,6 +875,18 @@ Changing `start_with?("pg_")` to `start_with?("pg")` leaves every spec green. Th
 - **Depends on:** 20260929-19.
 - **Came from:** Review of 20260929-19, round one.
 - **Design:** 3b.
+- **Status:** todo
+
+### 20260929-24. Scrub every Bundler variable, not a named list.
+
+Minor findings from the review of 20260929-10:
+
+- `IsolatedInstall#isolated_env` unsets Bundler variables by name. Another `BUNDLER_*` in a developer's shell, such as a leftover `BUNDLER_ORIG_*`, still reaches the child. The leak check then fails loudly, so nothing slips through. Unset every key matching `/\ABUNDLE/` in `ENV` and `Bundler.original_env` instead.
+- `Deploy::UNBUNDLED` (driver/lib/quaack/driver/deploy.rb) and deploy_spec's `clean` env don't unset `BUNDLER_VERSION`. It's harmless today, since `gem build` ignores it and ssh doesn't forward it. Add it for consistency with deploy_diagnosis_spec.
+
+- **Depends on:** 20260929-10.
+- **Came from:** Review of 20260929-10, round one.
+- **Design:** none. Test harness and deploy only.
 - **Status:** todo
 
 ## After version 1.

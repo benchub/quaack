@@ -2904,3 +2904,13 @@ To do:
 - **Design:** 3b, 4a.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. `SchemaDump.system_schema?` drops `information_schema` and every `pg_*` schema from the full dump's namespaces, while `--extension` is still passed, so plperl reaches arena. The test image now installs plperl, and a read-only-role spec reproduces the user's `permission denied for table pg_authid` before the fix. The minor findings went to 20260929-22 and 20260929-23.
+
+### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
+
+`enclave/spec/leak_check_spec.rb:374` ("runs a script the same way, with no Bundler in its environment") fails on unchanged main (a762d73) on 2026-09-29. It expected no Bundler variables and got `BUNDLER_VERSION`. A likely cause is Ruby 3.4's bundled bundler re-execing into the lockfile's bundler 4.0.15, which sets `BUNDLER_VERSION`. Find the cause, and scrub the variable, or fix the check, so a script runs with no Bundler in its environment.
+
+- **Depends on:** nothing open.
+- **Came from:** The full check run for 20260929-7.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. The cause: under `bundle exec`, Ruby 3.4's bundler 2.7.2 re-execs into the lockfile's 4.0.15 with `BUNDLER_VERSION` set. That lands in `Bundler.original_env`, which `with_unbundled_env` restores, since `unbundle_env` removes only `BUNDLE_*` keys. `IsolatedInstall#isolated_env` now unsets it. The full check passed with 0 failures. The minor findings went to 20260929-24.
