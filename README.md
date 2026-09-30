@@ -187,7 +187,7 @@ The driver makes every LLM call from your laptop. By default it asks Claude, and
 2. A bearer token in `ANTHROPIC_AUTH_TOKEN`.
 3. A profile, such as the one `ant auth login` saves under `~/.config/anthropic`. `ANTHROPIC_PROFILE` picks a profile other than the active one.
 
-If you're already logged in with `ant`, there's nothing to do. With none of them, `quaack run` fails with `llm_auth` before it touches the jump server. So does a variable that's set but empty, since it would hide the ones after it. Unset it instead.
+If you're already logged in with `ant`, there's nothing to do. With none of them, `quaack run` fails with `llm_auth` before it touches the jump server. So does an empty `ANTHROPIC_API_KEY`, or an empty `ANTHROPIC_AUTH_TOKEN` when `ANTHROPIC_API_KEY` is unset, since the first of the two that's set hides everything after it. Unset it instead.
 
 To change the model, the provider, or where the key comes from, add an `llm` block to `~/.quaack/driver.json`. Every key is optional:
 

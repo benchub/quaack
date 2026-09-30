@@ -317,12 +317,18 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-GIVEN" }] * 2)
     end
 
-    it "fails with llm_auth, naming the variable, when api_key_env's variable is unset or empty" do
-      [nil, ""].each do |value|
-        without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => value) do
-          expect { described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport) }
-            .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_KEY isn't set")
-        end
+    it "fails with llm_auth, naming the variable, when api_key_env's variable is unset" do
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => nil) do
+        expect { described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport) }
+          .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_KEY isn't set")
+      end
+      expect(key_transport.seen).to eq([])
+    end
+
+    it "fails with llm_auth, naming the variable, when api_key_env's variable is set but empty" do
+      without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => "") do
+        expect { described_class.new(settings: key_env_settings, burndown: burndown, transport: key_transport) }
+          .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_KEY is set but empty")
       end
       expect(key_transport.seen).to eq([])
     end
@@ -395,6 +401,18 @@ RSpec.describe Quaack::Driver::LLM::Client do
         without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT") do |dir|
           write_profile(dir, "SENTINEL-PROFILE-TOKEN")
           expect { build }.to output(shadow_warning).to_stderr
+        end
+      end
+
+      # The gem passes keywords today. A later one might pass them
+      # positionally, and skipping the warning mustn't then break the client.
+      it "is skipped however the gem passes its arguments" do
+        client = Quaack::Driver::LLM::AnthropicAdapter::GivenKeyClient.allocate
+        without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT") do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          Anthropic.instance_variable_set(:@warned_env_shadow, false)
+          expect { client.send(:warn_env_shadow, "SENTINEL-GIVEN", nil) }.not_to output.to_stderr
+          expect(client.send(:warn_env_shadow, "SENTINEL-GIVEN", nil, api_key: "SENTINEL-GIVEN")).to be_nil
         end
       end
     end

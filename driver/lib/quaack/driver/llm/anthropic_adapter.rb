@@ -13,8 +13,8 @@ module Quaack
       # credentials, and which of its errors is which rule.
       #
       # Credentials: a key given (specs pass one) wins; then the variable
-      # the settings' api_key_env names, which must be set; else the gem
-      # finds them itself, in its own order: ANTHROPIC_API_KEY, then
+      # the settings' api_key_env names, which must be set and not empty;
+      # else the gem finds them itself, in its own order: ANTHROPIC_API_KEY, then
       # ANTHROPIC_AUTH_TOKEN as a bearer token, then a profile, such as the
       # one `ant auth login` writes. Finding none is llm_auth. The gem takes
       # the first of those variables that's set, even set but empty, and
@@ -92,8 +92,8 @@ module Quaack
         end
 
         def named_key(variable)
-          key = ENV.fetch(variable, nil)
-          raise Error.new("llm_auth", "#{variable} isn't set") if key.to_s.empty?
+          key = ENV.fetch(variable) { raise Error.new("llm_auth", "#{variable} isn't set") }
+          raise Error.new("llm_auth", "#{variable} is set but empty") if key.empty?
 
           key
         end
@@ -113,7 +113,7 @@ module Quaack
         class GivenKeyClient < ::Anthropic::Client
           private
 
-          def warn_env_shadow(**) = nil
+          def warn_env_shadow(*, **) = nil
         end
 
         # The gem reads ANTHROPIC_API_KEY and the rest only when it's given
