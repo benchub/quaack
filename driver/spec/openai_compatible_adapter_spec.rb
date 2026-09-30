@@ -299,15 +299,25 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(key_transport.seen).to eq([{ "authorization" => "Bearer SENTINEL-GIVEN" }])
     end
 
-    it "fails with llm_auth before any attempt, naming the variable, when it's unset or empty" do
-      [nil, ""].each do |value|
-        with_env("OPENAI_API_KEY" => "SENTINEL-OPENAI", "QUAACK_SPEC_GROQ_KEY" => value) do
-          expect { build(groq_settings) }
-            .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_GROQ_KEY isn't set")
-        end
-        with_env("OPENAI_API_KEY" => value) do
-          expect { build }.to raise_error(Quaack::Driver::LLM::Error, "llm_auth: OPENAI_API_KEY isn't set")
-        end
+    it "fails with llm_auth before any attempt, naming the variable, when it's unset" do
+      with_env("OPENAI_API_KEY" => "SENTINEL-OPENAI", "QUAACK_SPEC_GROQ_KEY" => nil) do
+        expect { build(groq_settings) }
+          .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_GROQ_KEY isn't set")
+      end
+      with_env("OPENAI_API_KEY" => nil) do
+        expect { build }.to raise_error(Quaack::Driver::LLM::Error, "llm_auth: OPENAI_API_KEY isn't set")
+      end
+      expect(key_transport.seen).to eq([])
+      expect(burndown.llm_calls).to eq({})
+    end
+
+    it "fails with llm_auth before any attempt, naming the variable, when it's set but empty" do
+      with_env("OPENAI_API_KEY" => "SENTINEL-OPENAI", "QUAACK_SPEC_GROQ_KEY" => "") do
+        expect { build(groq_settings) }
+          .to raise_error(Quaack::Driver::LLM::Error, "llm_auth: QUAACK_SPEC_GROQ_KEY is set but empty")
+      end
+      with_env("OPENAI_API_KEY" => "") do
+        expect { build }.to raise_error(Quaack::Driver::LLM::Error, "llm_auth: OPENAI_API_KEY is set but empty")
       end
       expect(key_transport.seen).to eq([])
       expect(burndown.llm_calls).to eq({})
