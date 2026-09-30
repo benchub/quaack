@@ -306,6 +306,17 @@ RSpec.describe Quaack::Driver::LLM::Client do
       expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-NAMED" }])
     end
 
+    it "sends the key it was given over the variable api_key_env names, even when that variable is unset" do
+      ["SENTINEL-NAMED", nil].each do |named|
+        without_anthropic_credentials("QUAACK_SPEC_KEY" => named) do
+          ask_with(described_class.new(api_key: "SENTINEL-GIVEN", settings: key_env_settings, burndown: burndown,
+                                       transport: key_transport))
+        end
+      end
+
+      expect(key_transport.seen).to eq([{ "x-api-key" => "SENTINEL-GIVEN" }] * 2)
+    end
+
     it "fails with llm_auth, naming the variable, when api_key_env's variable is unset or empty" do
       [nil, ""].each do |value|
         without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => value) do

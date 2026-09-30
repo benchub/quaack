@@ -25,7 +25,13 @@ module Quaack
         @stderr = stderr
         @home = home
         @transport = transport || ->(host) { Transport::Ssh.new(host:) }
-        @client = client || ->(settings) { LLM::Client.new(burndown: Burndown.new, settings:) }
+        @client = client || ->(settings) { CLI.build_client(settings) }
+      end
+
+      # The LLM client run uses by default, built from settings. transport
+      # is the client's edge, which a spec fakes; nil calls the real API.
+      def self.build_client(settings, transport: nil)
+        LLM::Client.new(burndown: Burndown.new, settings:, transport:)
       end
 
       def run(argv)
@@ -146,10 +152,7 @@ module Quaack
         nil
       end
 
-      def usage_error(message)
-        @stderr.print "quaack run: #{message}\n"
-        EX_USAGE
-      end
+      def usage_error(message) = @stderr.print("quaack run: #{message}\n") || EX_USAGE
     end
   end
 end

@@ -313,6 +313,18 @@ RSpec.describe "quaack run" do
       expect(hosts).to eq([])
     end
 
+    # chmod 000 can't stop root reading the file, so the example is
+    # skipped where the file stays readable.
+    it "fails with a usage error for a driver.json it can't read" do
+      write_config(JSON.generate("llm" => {}))
+      path = File.join(home, ".quaack", "driver.json")
+      File.chmod(0o000, path)
+      skip "this user can read a file with mode 000" if File.readable?(path)
+
+      expect([run_with, stdout.string, stderr.string]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      expect([hosts, transport.calls, seen]).to eq([[], [], []])
+    end
+
     it "gives the client openai_compatible settings" do
       block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
                 "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
@@ -323,12 +335,14 @@ RSpec.describe "quaack run" do
                                         base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY" }])
     end
 
-    # The CLI's own client builder, not a spec's. The block names a key
+    # The CLI's own client builder, not a spec's. build_client takes a
+    # transport, so the first example checks what reaches the request. In
+    # the second, the CLI builds it with none: the block names a key
     # variable that's unset, so a client built from the block's settings
     # fails with llm_auth before any call, although ANTHROPIC_API_KEY is
-    # set. The opt-in lets a client without a transport be built; the base
-    # URL is a closed local port, so even a client built wrongly can't
-    # reach the API.
+    # set. The opt-in lets a client without a transport be built, and turns
+    # the network guard off, so NoNetwork.always_refuse keeps it on. The
+    # base URL is a closed local port as well.
     context "with the CLI's default client builder" do
       let(:cli) do
         h = hosts
@@ -339,11 +353,26 @@ RSpec.describe "quaack run" do
         })
       end
 
+      it "builds the client with the settings' model and base_url, on the transport it's given" do
+        block = { "model" => "claude-from-block", "base_url" => "https://llm.example.com",
+                  "api_key_env" => "QUAACK_SPEC_KEY" }
+        settings = Quaack::Driver::LLM.settings(block, env: {})
+        client = without_anthropic_credentials("QUAACK_SPEC_KEY" => "fake-key") do
+          Quaack::Driver::CLI.build_client(settings, transport: fake)
+        end
+        fake.reply("6a", "ok")
+        client.ask(step: "6a", messages: [{ role: "user", content: "hi" }], max_tokens: 10)
+
+        expect(fake.asks.map { [it.body[:model], it.url] })
+          .to eq([["claude-from-block", "https://llm.example.com/v1/messages"]])
+        expect(client.burndown).to be_a(Quaack::Driver::Burndown)
+      end
+
       it "builds the client from the block's settings" do
         write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
         env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
-        status = without_anthropic_credentials(env) { run_with }
+        status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
 
         expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
         expect([hosts, transport.calls]).to eq([[], []])
