@@ -95,7 +95,7 @@ RSpec.describe "quaacks schema-dump, against a real server" do
     expect_no_leaks(sentinels, outcome)
   end
 
-  it "stores the dump of the query's namespaces and public, and the subset with its FK parents, printing only DONE" do
+  it "stores the dump of the query's and its FK parents' namespaces and public, and the subset, printing only DONE" do
     pgpass
     argv = File.join(quaacks.home, "argv")
     container_pg_dump(before: %(printf '%s\\n' "$@" >> '#{argv}'))
@@ -104,8 +104,8 @@ RSpec.describe "quaacks schema-dump, against a real server" do
 
     expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([done, "", 0])
     dump = stored.read("schema_dump")
-    expect(dump["namespaces"]).to eq(%w[public sales])
-    expect(created_tables(dump["ddl"])).to eq(%w[public.orders sales.items sales.unrelated])
+    expect(dump["namespaces"]).to eq(%w[audit public sales])
+    expect(created_tables(dump["ddl"])).to eq(%w[audit.vendors public.orders sales.items sales.unrelated])
     subset = stored.read("schema_subset")
     expect(subset["tables"]).to eq([%w[audit vendors], %w[public orders], %w[sales items]])
     expect(created_tables(subset["ddl"])).to eq(%w[audit.vendors public.orders sales.items])
