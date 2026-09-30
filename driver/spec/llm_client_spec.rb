@@ -412,6 +412,8 @@ RSpec.describe Quaack::Driver::LLM::Client do
           write_profile(dir, "SENTINEL-PROFILE-TOKEN")
           Anthropic.instance_variable_set(:@warned_env_shadow, false)
           expect { client.send(:warn_env_shadow, "SENTINEL-GIVEN", nil) }.not_to output.to_stderr
+          expect { client.send(:warn_env_shadow, "SENTINEL-GIVEN", nil, api_key: "SENTINEL-GIVEN") }
+            .not_to output.to_stderr
           expect(client.send(:warn_env_shadow, "SENTINEL-GIVEN", nil, api_key: "SENTINEL-GIVEN")).to be_nil
         end
       end
