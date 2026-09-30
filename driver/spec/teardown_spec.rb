@@ -124,6 +124,25 @@ RSpec.describe Quaack::Driver::Teardown do
     end
   end
 
+  # Task 20260930-1: an error outside StandardError, such as a LoadError.
+  context "with a transport that raises an error that isn't a StandardError" do
+    let(:transport) { Class.new { def call(*, **) = raise(LoadError, "sentinel-load-9b2d") }.new }
+    let(:driver_error) do
+      "quaack: couldn't tear down run #{run_id} (driver_error). " \
+        "Run this on the jump server: quaacks teardown --run #{run_id}\n"
+    end
+
+    it "never masks the run's own error, and tells the operator how to finish teardown" do
+      expect { around_run { raise ArgumentError, "boom" } }.to raise_error(ArgumentError, "boom")
+      expect(stderr.string).to eq(driver_error)
+    end
+
+    it "fails an otherwise good run with that error, and tells the operator how to finish teardown" do
+      expect { around_run }.to raise_error(LoadError, "sentinel-load-9b2d")
+      expect(stderr.string).to eq(driver_error)
+    end
+  end
+
   context "when a signal interrupts teardown" do
     let(:transport) { Class.new { def call(*, **) = Process.kill("TERM", Process.pid) && sleep(5) }.new }
     let(:finish) { "Run this on the jump server: quaacks teardown --run #{run_id}\n" }

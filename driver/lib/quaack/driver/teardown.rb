@@ -23,7 +23,10 @@ module Quaack
     # first it prints the run's error, if the run failed (only the rule of
     # an EnclaveError), and the command that finishes teardown. Ruby prints
     # nothing for an uncaught SIGTERM, so without that line the run's error
-    # would be lost.
+    # would be lost. A signal in the instant after the transport returns,
+    # while a failure message prints or before around ends, still replaces
+    # the run's error without that line. Closing it would mean masking
+    # signals, which isn't worth the complexity for so small a window.
     #
     # Messages go to stderr and name only the run ID, which the driver
     # already has, and the enclave's shaped rule. The enclave never sends
@@ -64,21 +67,22 @@ module Quaack
       end
 
       # nil once the store is gone, or the error that says why not: the
-      # transport's EnclaveError, or any other StandardError, whose rule is
-      # then driver_error. run_error is the run's own error, or nil. A
-      # signal isn't a StandardError, so it goes on, after its message.
+      # transport's EnclaveError, or any other error, whose rule is then
+      # driver_error. That includes errors outside StandardError, such as a
+      # LoadError, so they can't mask the run's own error either. run_error
+      # is the run's own error, or nil. A signal goes on, after its message.
       def call(run_error = nil)
         line = @transport.call("teardown", args: { run: @run_id }).messages.find { it["type"] == "teardown" }
         raise EnclaveError.new(subcommand: "teardown", rule: "no_teardown") unless line
 
         @stderr.print done(line["next_step"])
         nil
-      rescue StandardError => e
-        @stderr.print failed(e.is_a?(EnclaveError) ? e.rule : "driver_error")
-        e
       rescue SignalException
         @stderr.print interrupted(run_error)
         raise
+      rescue Exception => e # rubocop:disable Lint/RescueException -- returned, not swallowed; signals go on above
+        @stderr.print failed(e.is_a?(EnclaveError) ? e.rule : "driver_error")
+        e
       end
 
       private
