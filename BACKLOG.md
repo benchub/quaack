@@ -847,18 +847,7 @@ Minor findings from the review of 20260927-25:
 
 ### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-3. Anthropic credential checks: minor findings.
-
-Minor findings from the review of 20260928-5:
-
-- `GivenKeyClient#warn_env_shadow(**)` accepts only keyword arguments. If the anthropic gem starts passing positional arguments, building the client raises ArgumentError. Use `(*, **)`. A rename is already caught, because llm_client_spec's warning example goes red.
-- README.md and DESIGN.md read as if any empty Anthropic variable fails the run. Only the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set is checked. Tighten the wording.
-- When `api_key_env` names a variable that's set but empty, the message is "`<VAR>` isn't set", while the new check says "is set but empty". Make them agree.
-
-- **Depends on:** 20260928-5.
-- **Came from:** Review of 20260928-5, round one.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260930-3. Anthropic credential checks: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-4. An assertion in index_candidate_expression_spec passes a value as its failure message. Done, see BACKLOG-COMPLETE.md.
 
@@ -893,6 +882,19 @@ In driver/lib/quaack/driver/llm/openai_compatible_adapter.rb (about line 113), t
 
 - **Depends on:** 20260930-3.
 - **Came from:** The build of 20260930-3.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260930-8. Anthropic credential docs and one spec line: tidy.
+
+Minor findings from the review of 20260930-3:
+
+- README.md:190 is one long sentence ("So does an empty `ANTHROPIC_API_KEY`, or an empty `ANTHROPIC_AUTH_TOKEN` when ..., since ..."). DESIGN.md:139's parenthetical is dense too. Both are accurate. Split them into short sentences, in the house style.
+- In driver/spec/llm_client_spec.rb:415, the second assertion of the positional-arguments example checks only that `warn_env_shadow` returns nil. An override that prints and returns nil would pass it. Add `not_to output.to_stderr`, as the first assertion has.
+- The class comment at anthropic_adapter.rb:16-18 has uneven line lengths after the reflow.
+
+- **Depends on:** 20260930-3.
+- **Came from:** Review of 20260930-3, round one.
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 

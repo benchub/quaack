@@ -3110,3 +3110,17 @@ Changing `start_with?("pg_")` to `include?("pg_")` in `SchemaDump.system_schema?
 - **Design:** 3b.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. `app_pg_x` in the user-schema list turns `include?("pg_")` and `match?(/pg_/)` red.
+
+### 20260930-3. Anthropic credential checks: minor findings.
+
+Minor findings from the review of 20260928-5:
+
+- `GivenKeyClient#warn_env_shadow(**)` accepts only keyword arguments. If the anthropic gem starts passing positional arguments, building the client raises ArgumentError. Use `(*, **)`. A rename is already caught, because llm_client_spec's warning example goes red.
+- README.md and DESIGN.md read as if any empty Anthropic variable fails the run. Only the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set is checked. Tighten the wording.
+- When `api_key_env` names a variable that's set but empty, the message is "`<VAR>` isn't set", while the new check says "is set but empty". Make them agree.
+
+- **Depends on:** 20260928-5.
+- **Came from:** Review of 20260928-5, round one.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. An `api_key_env` variable that's set but empty now says "is set but empty", while an unset one still says "isn't set". `GivenKeyClient#warn_env_shadow` takes `(*, **)`, pinned by a spec that calls it with positional arguments. README.md and DESIGN.md say which empty variable fails a run. The minor findings went to 20260930-8.
