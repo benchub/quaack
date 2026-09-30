@@ -845,14 +845,7 @@ Minor findings from the review of 20260927-25:
 - **Design:** Teardown.
 - **Status:** todo
 
-### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix.
-
-Changing `start_with?("pg_")` to `include?("pg_")` in `SchemaDump.system_schema?` leaves every spec green. That version would drop a user schema such as `app_pg_stats`, and its query tables would be missing from the dump and arena. Add a name like `app_pg_x` to the "leaves every other schema to the user" list in enclave/spec/schema_dump_spec.rb.
-
-- **Depends on:** 20260929-23.
-- **Came from:** Review of 20260929-23, round one.
-- **Design:** 3b.
-- **Status:** todo
+### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-3. Anthropic credential checks: minor findings.
 

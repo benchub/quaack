@@ -3100,3 +3100,13 @@ The enclave suite prints "WARNING: ignoring the provided expectation message arg
 - **Design:** 5a-3.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. The label is now `bad.inspect`, so the warning is gone and a failure names its input. No other spec file had the warning.
+
+### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix.
+
+Changing `start_with?("pg_")` to `include?("pg_")` in `SchemaDump.system_schema?` leaves every spec green. That version would drop a user schema such as `app_pg_stats`, and its query tables would be missing from the dump and arena. Add a name like `app_pg_x` to the "leaves every other schema to the user" list in enclave/spec/schema_dump_spec.rb.
+
+- **Depends on:** 20260929-23.
+- **Came from:** Review of 20260929-23, round one.
+- **Design:** 3b.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. `app_pg_x` in the user-schema list turns `include?("pg_")` and `match?(/pg_/)` red.
