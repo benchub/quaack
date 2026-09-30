@@ -99,6 +99,17 @@ RSpec.describe Quaack::Driver::Start do
     end
   end
 
+  it "refuses a config that isn't a JSON object" do
+    path = File.join(home, ".quaack", "driver.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    aggregate_failures do
+      ["not json", "[1]", "null"].each do |text|
+        File.write(path, text)
+        expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+      end
+    end
+  end
+
   # chmod 000 can't stop root reading the file, so the example is skipped
   # where the file stays readable.
   it "refuses a config it can't read" do
