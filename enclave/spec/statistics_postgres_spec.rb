@@ -97,6 +97,33 @@ RSpec.describe "value_frequency against real Postgres statistics" do
     expect(our_rows(stats, "active", "true")).to be_within(1).of(9500)
   end
 
+  # Postgres rewrites bool_col = false as NOT bool_col and estimates it as
+  # 1 - freq(t), which counts the NULL rows as matching. value_frequency
+  # follows var_eq_const instead and gives freq(f), the rows that really
+  # match, so on a nullable boolean it's below EXPLAIN's estimate.
+  it "gives freq(f), not the planner's 1 - freq(t), for = false on a nullable boolean" do
+    conn.exec(<<~SQL)
+      CREATE TABLE nullable_flags (active boolean);
+      INSERT INTO nullable_flags SELECT CASE WHEN i % 5 = 0 THEN NULL ELSE i % 20 <> 1 END
+        FROM generate_series(1, 10000) AS i;
+      ANALYZE nullable_flags;
+    SQL
+    stats = table_statistics("nullable_flags", "active")
+    column = stats.column("active")
+    freq = column.most_common_vals.zip(column.most_common_freqs).to_h
+    false_rows = conn.exec("SELECT count(*) FROM nullable_flags WHERE active = false").getvalue(0, 0).to_i
+
+    expect(column.most_common_vals).to contain_exactly("t", "f")
+    expect(column.null_frac).to be_within(1e-6).of(0.2)
+    expect(false_rows).to eq(500)
+    %w[false f no off 0].each do |literal|
+      expect(stats.value_frequency("active", literal)).to eq(freq["f"]), literal
+    end
+    expect(our_rows(stats, "active", "false")).to be_within(1).of(false_rows)
+    expect(planner_rows("nullable_flags", "active", "false")).to be_within(1).of((1 - freq["t"]) * stats.reltuples)
+    expect(planner_rows("nullable_flags", "active", "false")).to be > false_rows + 1000
+  end
+
   # Most columns 5a-2 sees have a negative n_distinct: a fraction of the
   # rows, not a count.
   it "matches the planner on a column whose n_distinct is negative, with a full MCV list" do
