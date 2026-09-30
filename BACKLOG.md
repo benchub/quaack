@@ -298,17 +298,7 @@ Still open from the second review of 20260922-46:
 
 ### 20260923-39. Finish 5a-4 single-candidate testing. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-40. Allowlist loose ends.
-
-Still open from the reviews of 20260923-33:
-- EXTRACT's field match uses Unicode `downcase`, in both `predicate_atoms.rb` and `redaction/query.rb`, so `'weeK'` with a Kelvin sign is kept. Use `downcase(:ascii)`, and print the field lowercased.
-- No test pins `EXTRACT_FIELDS`.
-
-- **Depends on:** 20260923-33.
-- **Came from:** The reviews of 20260923-33.
-- **Design:** Step 1.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-40. Allowlist loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-53. Finish the enclave CLI. Done, see BACKLOG-COMPLETE.md.
 
@@ -887,6 +877,15 @@ Minor findings from the review of 20260929-10:
 - **Depends on:** 20260929-10.
 - **Came from:** Review of 20260929-10, round one.
 - **Design:** none. Test harness and deploy only.
+- **Status:** todo
+
+### 20260929-25. Pin the guard on EXTRACT field lowercasing in the query redaction.
+
+In `Redaction::Query#lowercase_field` (enclave/lib/quaack/enclave/redaction/query.rb), dropping `&& extract_field?(constant)` leaves every spec green. Every SQL-syntax EXTRACT's first argument would then be lowercased, recognized or not, so a redacted `'Years'` would be stored as `years`. Nothing leaks, since the value is redacted either way. Make the Kelvin test in redaction_query_spec use an uppercase ASCII letter, such as `'WEEK'` with the Kelvin sign, and expect the placeholder map to keep the original case.
+
+- **Depends on:** 20260923-40.
+- **Came from:** Review of 20260923-40, round one.
+- **Design:** 3g.
 - **Status:** todo
 
 ## After version 1.

@@ -2914,3 +2914,16 @@ To do:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. The cause: under `bundle exec`, Ruby 3.4's bundler 2.7.2 re-execs into the lockfile's 4.0.15 with `BUNDLER_VERSION` set. That lands in `Bundler.original_env`, which `with_unbundled_env` restores, since `unbundle_env` removes only `BUNDLE_*` keys. `IsolatedInstall#isolated_env` now unsets it. The full check passed with 0 failures. The minor findings went to 20260929-24.
+
+### 20260923-40. Allowlist loose ends.
+
+Still open from the reviews of 20260923-33:
+- EXTRACT's field match uses Unicode `downcase`, in both `predicate_atoms.rb` and `redaction/query.rb`, so `'weeK'` with a Kelvin sign is kept. Use `downcase(:ascii)`, and print the field lowercased.
+- No test pins `EXTRACT_FIELDS`.
+
+- **Depends on:** 20260923-33.
+- **Came from:** The reviews of 20260923-33.
+- **Design:** Step 1.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. Both EXTRACT field matches use `downcase(:ascii)`, and a kept field goes out lowercased, only on the tree copy. A Kelvin-sign `'weeK'` is redacted, and both `EXTRACT_FIELDS` sets are pinned to Postgres 18's 22 fields, checked on a real server. The minor finding went to 20260929-25.
