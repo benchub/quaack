@@ -47,7 +47,7 @@ RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and
 
     it "refuses an expression that isn't one expression, or that Postgres never allows in an index" do
       ["a, b", "lower(a) FROM t", "a + $1", "(SELECT 1)", "count(*)", "", 5, :lower].each do |bad|
-        expect { key_column.new(expression: bad) }.to raise_error(ArgumentError, /expression/), bad
+        expect { key_column.new(expression: bad) }.to raise_error(ArgumentError, /expression/), bad.inspect
       end
     end
 
