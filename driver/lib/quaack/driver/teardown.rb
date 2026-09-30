@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "English"
 require_relative "enclave_error"
 
 module Quaack
@@ -34,15 +33,15 @@ module Quaack
       BY_HAND = %w[bad_run bad_store_base teardown_failed].freeze
 
       def self.around(transport:, run_id:, stderr:, keep: false)
-        error = nil
-        begin
-          result = yield
-        ensure
-          keep ? stderr.print(kept(run_id)) : (error = new(transport, run_id, stderr).call($ERROR_INFO))
-        end
-        raise error if error
-
-        result
+        run_error = nil
+        yield
+      rescue Exception => e # rubocop:disable Lint/RescueException -- only noted, then re-raised
+        # Captured here, not read from $ERROR_INFO in the ensure: that would
+        # be the caller's error when around is called inside a rescue.
+        run_error = e
+        raise
+      ensure
+        keep ? stderr.print(kept(run_id)) : new(transport, run_id, stderr).finish(run_error)
       end
 
       def self.command(run_id) = "quaacks teardown --run #{run_id}"
@@ -55,6 +54,13 @@ module Quaack
         @transport = transport
         @run_id = run_id
         @stderr = stderr
+      end
+
+      # Tears down, and raises the teardown's error only when the run itself
+      # succeeded, so it never masks the run's own error.
+      def finish(run_error)
+        error = call(run_error)
+        raise error if error && !run_error
       end
 
       # nil once the store is gone, or the error that says why not: the

@@ -145,6 +145,16 @@ RSpec.describe Quaack::Driver::Teardown do
       expect { around_run }.to raise_error(SignalException, "SIGTERM")
       expect(stderr.string).to eq("quaack: a signal interrupted the teardown of run #{run_id}. #{finish}")
     end
+
+    # Task 20260930-1: an error the caller is handling isn't the run's.
+    it "reports no run error for a run that succeeded, even when called while handling another error" do
+      begin
+        raise ArgumentError, "sentinel-outer-5c1e"
+      rescue ArgumentError
+        expect { around_run }.to raise_error(SignalException, "SIGTERM")
+      end
+      expect(stderr.string).to eq("quaack: a signal interrupted the teardown of run #{run_id}. #{finish}")
+    end
   end
 
   # A second Ctrl-C, in a child process with Ruby's own INT handler (RSpec
