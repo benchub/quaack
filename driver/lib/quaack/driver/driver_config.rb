@@ -8,9 +8,10 @@ module Quaack
     # `quaack start` reads its jump_command, and `quaack run` its llm block
     # (see LLM.settings).
     module DriverConfig
-      # A config file that isn't a JSON object. The message never quotes it.
+      # A config file that isn't a JSON object, or can't be read. The
+      # message never quotes it.
       class Bad < StandardError
-        def initialize = super("~/.quaack/driver.json must be a JSON object")
+        def initialize(message = "~/.quaack/driver.json must be a JSON object") = super
       end
 
       def self.path(home) = File.join(home, ".quaack", "driver.json")
@@ -24,6 +25,8 @@ module Quaack
           JSON.parse(File.read(path))
         rescue JSON::ParserError
           nil
+        rescue SystemCallError
+          raise Bad, "can't read ~/.quaack/driver.json"
         end
         raise Bad unless config.is_a?(Hash)
 

@@ -99,6 +99,17 @@ RSpec.describe Quaack::Driver::Start do
     end
   end
 
+  # chmod 000 can't stop root reading the file, so the example is skipped
+  # where the file stays readable.
+  it "refuses a config it can't read" do
+    configure("echo jump-1")
+    path = File.join(home, ".quaack", "driver.json")
+    File.chmod(0o000, path)
+    skip "this user can read a file with mode 000" if File.readable?(path)
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+  end
+
   it "times out a jump_command that runs too long" do
     configure("sleep 5; echo jump-1")
     expect { start(jump_timeout: 0.3) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")

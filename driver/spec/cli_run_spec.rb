@@ -313,6 +313,18 @@ RSpec.describe "quaack run" do
       expect(hosts).to eq([])
     end
 
+    # chmod 000 can't stop root reading the file, so the example is
+    # skipped where the file stays readable.
+    it "fails with a usage error for a driver.json it can't read" do
+      write_config(JSON.generate("llm" => {}))
+      path = File.join(home, ".quaack", "driver.json")
+      File.chmod(0o000, path)
+      skip "this user can read a file with mode 000" if File.readable?(path)
+
+      expect([run_with, stdout.string, stderr.string]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      expect([hosts, transport.calls, seen]).to eq([[], [], []])
+    end
+
     it "gives the client openai_compatible settings" do
       block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
                 "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
