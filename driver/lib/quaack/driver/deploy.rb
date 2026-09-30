@@ -41,7 +41,8 @@ module Quaack
       GENERAL_ADVICE = "If it isn't on PATH for non-interactive ssh, put the user gem bin dir on PATH there " \
                        "(DESIGN.md, \"Deploying the enclave\")."
       # Keeps the build out of whatever bundle the driver runs in.
-      UNBUNDLED = { "RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil }.freeze
+      UNBUNDLED = { "RUBYOPT" => nil, "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil,
+                    "BUNDLER_VERSION" => nil }.freeze
 
       # `quaack deploy --host <host>`, given the options after deploy: prints
       # each step, then what it installed, or why it failed, and returns the

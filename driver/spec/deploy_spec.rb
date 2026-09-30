@@ -20,7 +20,7 @@ RSpec.describe Quaack::Driver::Deploy do
   let(:vendor) { File.join(REPO_ROOT, "vendor", "bundle", "ruby", "3.4.0") }
   let(:clean) do
     { "RUBYOPT" => nil, "RUBYLIB" => nil, "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil,
-      "GEM_HOME" => nil, "QUAACKS_DEV_CHECKOUT" => nil, "HOME" => home }
+      "BUNDLER_VERSION" => nil, "GEM_HOME" => nil, "QUAACKS_DEV_CHECKOUT" => nil, "HOME" => home }
   end
   # Where `gem install --user-install` puts gems for this HOME.
   let(:user_dir) do
@@ -132,6 +132,34 @@ RSpec.describe Quaack::Driver::Deploy do
     FileUtils.chmod(0o755, broken)
 
     expect { deploy(ssh: broken) }.to raise_error(described_class::Error, /on jump-1.*could not build pg_query/m)
+  end
+
+  # gem build runs outside whatever bundle the driver runs in. The fake
+  # checkout's first gemspec records which of the parent's Bundler
+  # variables it sees. Its second gemspec is missing, so the deploy stops
+  # there, before ssh.
+  it "runs gem build without the parent's Bundler variables" do
+    checkout = File.join(dir, "checkout")
+    seen = File.join(dir, "seen")
+    names = %w[RUBYOPT BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VERSION]
+    FileUtils.mkdir_p(File.join(checkout, "protocol"))
+    File.write(File.join(checkout, described_class::GEMS.fetch("quaack-protocol")), <<~RUBY)
+      File.write(#{seen.inspect}, #{names.inspect}.select { ENV.key?(it) }.join(","))
+      Gem::Specification.new { |s| s.name = "quaack-protocol"; s.version = "0.0.1"; s.summary = "fake"; s.authors = ["x"] }
+    RUBY
+    planted = { "RUBYOPT" => "-W0", "BUNDLE_GEMFILE" => File.join(dir, "Gemfile"), "BUNDLE_BIN_PATH" => "/nowhere",
+                "BUNDLER_SETUP" => "/nowhere", "BUNDLER_VERSION" => Bundler::VERSION }
+    saved = ENV.to_h.slice(*names)
+    begin
+      ENV.update(planted)
+      expect { described_class.new(host: "jump-1", ssh:, checkout:).call }
+        .to raise_error(described_class::Error, /enclave.*isn't there/)
+    ensure
+      names.each { ENV.delete(it) }
+      ENV.update(saved)
+    end
+
+    expect(File.read(seen)).to eq("")
   end
 
   # The installed quaacks refuses to run where the driver gem is installed
