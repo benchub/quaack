@@ -330,6 +330,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect(persisted_rows).to eq(0)
     end
 
+    # Interrupt isn't a StandardError, so this needs the runner to note any
+    # exception, not just a StandardError, before it tries to roll back.
+    it "keeps an Interrupt from the block when the connection dies and the rollback fails too" do
+      expect do
+        runner.with_fixture([parent(1, "a")]) do
+          terminate(conn)
+          raise Interrupt, "from the block"
+        end
+      end.to raise_error(Interrupt, "from the block")
+      expect(persisted_rows).to eq(0)
+    end
+
     it "keeps the query's own error when the connection dies and the rollback fails too" do
       error = run_error(runner, [parent(1, "a")]) do |tx|
         terminate(conn)
@@ -675,6 +687,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
   end
 
   describe "the fixture itself" do
+    # Checked before the connection is, so bad rows are refused as bad rows
+    # even on a connection that's busy.
+    it "refuses bad rows before it looks at a connection already inside a transaction" do
+      conn.exec("BEGIN")
+      yielded = false
+
+      expect { runner.with_fixture([:junk]) { yielded = true } }
+        .to raise_error(ArgumentError, "rows must be an Array of FixtureRows")
+      expect([yielded, conn.transaction_status]).to eq([false, 2])
+      conn.exec("ROLLBACK")
+    end
+
     it "refuses rows that aren't FixtureRows before the transaction starts" do
       [[:junk], [parent(1, "a"), "row"], :junk, {}].each do |rows|
         yielded = false
