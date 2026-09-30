@@ -16,7 +16,9 @@ module Quaack
       # the settings' api_key_env names, which must be set; else the gem
       # finds them itself, in its own order: ANTHROPIC_API_KEY, then
       # ANTHROPIC_AUTH_TOKEN as a bearer token, then a profile, such as the
-      # one `ant auth login` writes. Finding none is llm_auth.
+      # one `ant auth login` writes. Finding none is llm_auth. The gem takes
+      # the first of those variables that's set, even set but empty, and
+      # looks no further, so that's llm_auth too, before any attempt.
       #
       # Retries are the gem's own: it retries a 408, 409, 429, or 5xx
       # (including 529, overloaded) and a dropped connection, up to
@@ -35,6 +37,8 @@ module Quaack
         # The gem's own messages about a profile can quote its files, so
         # they're left out.
         UNLOADABLE = "the Anthropic credentials couldn't be loaded"
+        # The variables the gem reads, in its order, when it's given no key.
+        DEFAULT_VARIABLES = %w[ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN].freeze
 
         # The stop reasons of a reply that finished. Any other, such as
         # max_tokens, refusal, model_context_window_exceeded, pause_turn,
@@ -53,6 +57,7 @@ module Quaack
           @model = settings.model
           @transport = transport
           api_key ||= named_key(settings.api_key_env) if settings.api_key_env
+          refuse_empty_default unless api_key
           @anthropic = anthropic(api_key, settings.base_url, max_retries)
           raise Error.new("llm_auth", NO_CREDENTIALS) unless credentials?
         end
@@ -93,6 +98,13 @@ module Quaack
           key
         end
 
+        # The first of DEFAULT_VARIABLES that's set is the one the gem uses,
+        # so it mustn't be empty.
+        def refuse_empty_default
+          variable = DEFAULT_VARIABLES.find { ENV.key?(it) }
+          raise Error.new("llm_auth", "#{variable} is set but empty") if variable && ENV[variable].empty?
+        end
+
         # The gem reads ANTHROPIC_API_KEY and the rest only when it's given
         # no key.
         def anthropic(api_key, base_url, max_retries)
@@ -101,7 +113,9 @@ module Quaack
           raise Error.new("llm_auth", UNLOADABLE), cause: nil
         end
 
-        # An empty key or token is sent as no header at all.
+        # An empty key given here counts as none. The gem keeps it as the
+        # credential, so it never looks at ANTHROPIC_AUTH_TOKEN or a profile,
+        # and then drops the empty header, so it would send no credential.
         def credentials?
           [@anthropic.api_key, @anthropic.auth_token].any? { !it.to_s.empty? } || !@anthropic.credentials.nil?
         end
