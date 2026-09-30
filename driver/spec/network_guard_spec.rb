@@ -24,6 +24,14 @@ RSpec.describe "the spec-time network guard" do
       expect { create(client) }.to raise_error(NoNetwork::Refused)
     end
   end
+
+  # After the block, the opt-in lets the request out, to the closed port.
+  it "refuses it even with the opt-in, inside NoNetwork.always_refuse, and only there" do
+    with_env("QUAACK_ALLOW_REAL_LLM" => "1") do
+      NoNetwork.always_refuse { expect { create(client) }.to raise_error(NoNetwork::Refused) }
+      expect { create(client) }.to raise_error(Anthropic::Errors::APIConnectionError)
+    end
+  end
 end
 
 # The same guard stops the openai gem's HTTP client, the one way the
@@ -42,6 +50,14 @@ RSpec.describe "the spec-time network guard, for the openai gem" do
   it "refuses it even when the opt-in is set to something other than 1" do
     with_env("QUAACK_ALLOW_REAL_LLM" => "yes") do
       expect { create(client) }.to raise_error(NoNetwork::Refused)
+    end
+  end
+
+  # After the block, the opt-in lets the request out, to the closed port.
+  it "refuses it even with the opt-in, inside NoNetwork.always_refuse, and only there" do
+    with_env("QUAACK_ALLOW_REAL_LLM" => "1") do
+      NoNetwork.always_refuse { expect { create(client) }.to raise_error(NoNetwork::Refused) }
+      expect { create(client) }.to raise_error(OpenAI::Errors::APIConnectionError)
     end
   end
 end

@@ -335,12 +335,14 @@ RSpec.describe "quaack run" do
                                         base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY" }])
     end
 
-    # The CLI's own client builder, not a spec's. The block names a key
+    # The CLI's own client builder, not a spec's. build_client takes a
+    # transport, so the first example checks what reaches the request. In
+    # the second, the CLI builds it with none: the block names a key
     # variable that's unset, so a client built from the block's settings
     # fails with llm_auth before any call, although ANTHROPIC_API_KEY is
-    # set. The opt-in lets a client without a transport be built; the base
-    # URL is a closed local port, so even a client built wrongly can't
-    # reach the API.
+    # set. The opt-in lets a client without a transport be built, and turns
+    # the network guard off, so NoNetwork.always_refuse keeps it on. The
+    # base URL is a closed local port as well.
     context "with the CLI's default client builder" do
       let(:cli) do
         h = hosts
@@ -370,7 +372,7 @@ RSpec.describe "quaack run" do
         write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
         env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
-        status = without_anthropic_credentials(env) { run_with }
+        status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
 
         expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
         expect([hosts, transport.calls]).to eq([[], []])

@@ -15,9 +15,21 @@ require "openai"
 module NoNetwork
   class Refused < StandardError; end
 
+  # For the block, refuses every request even with QUAACK_ALLOW_REAL_LLM=1,
+  # for a spec that sets the opt-in only to build a client without a
+  # transport, so the guard still stands if that client tries to send.
+  def self.always_refuse
+    @always = true
+    yield
+  ensure
+    @always = false
+  end
+
+  def self.always? = @always == true
+
   module Requester
     def execute(...)
-      unless ENV["QUAACK_ALLOW_REAL_LLM"] == "1"
+      if NoNetwork.always? || ENV["QUAACK_ALLOW_REAL_LLM"] != "1"
         raise Refused, "a spec tried to send a request to an LLM API. " \
                        "Use a transport, such as FakeLLM, or set QUAACK_ALLOW_REAL_LLM=1 to mean it."
       end
