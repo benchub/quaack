@@ -370,6 +370,35 @@ RSpec.describe Quaack::Driver::LLM::Client do
                                         { "x-api-key" => "SENTINEL-GIVEN" }])
     end
 
+    # The gem warns, once a process, when a key is used while
+    # ANTHROPIC_API_KEY is set and a profile could be found. It says
+    # ANTHROPIC_API_KEY took precedence, which is wrong when the key is one
+    # QUAACK passed on purpose, from api_key_env's variable or given.
+    describe "the gem's warning that ANTHROPIC_API_KEY shadows a profile" do
+      let(:shadow_warning) { /ANTHROPIC_API_KEY is set and takes precedence/ }
+
+      def build(**)
+        Anthropic.instance_variable_set(:@warned_env_shadow, false)
+        described_class.new(burndown: burndown, transport: key_transport, **)
+      end
+
+      it "isn't printed for a key QUAACK chose" do
+        env = { "ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT", "QUAACK_SPEC_KEY" => "SENTINEL-NAMED" }
+        without_anthropic_credentials(env) do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          expect { build(settings: key_env_settings) }.not_to output.to_stderr
+          expect { build(api_key: "SENTINEL-GIVEN") }.not_to output.to_stderr
+        end
+      end
+
+      it "is still printed when the gem found ANTHROPIC_API_KEY itself" do
+        without_anthropic_credentials("ANTHROPIC_API_KEY" => "SENTINEL-DEFAULT") do |dir|
+          write_profile(dir, "SENTINEL-PROFILE-TOKEN")
+          expect { build }.to output(shadow_warning).to_stderr
+        end
+      end
+    end
+
     it "fails with llm_auth when the profile ANTHROPIC_PROFILE names can't be loaded" do
       without_anthropic_credentials("ANTHROPIC_PROFILE" => "missing") do
         expect { described_class.new(burndown: burndown, transport: key_transport) }

@@ -105,10 +105,21 @@ module Quaack
           raise Error.new("llm_auth", "#{variable} is set but empty") if variable && ENV[variable].empty?
         end
 
+        # The gem warns that ANTHROPIC_API_KEY takes precedence over a
+        # profile whenever a key is used while that variable is set, even a
+        # key it was given. A key given here is QUAACK's choice, and the
+        # warning would name the wrong variable, so this client skips just
+        # that warning. Its others still print.
+        class GivenKeyClient < ::Anthropic::Client
+          private
+
+          def warn_env_shadow(**) = nil
+        end
+
         # The gem reads ANTHROPIC_API_KEY and the rest only when it's given
         # no key.
         def anthropic(api_key, base_url, max_retries)
-          ::Anthropic::Client.new(api_key:, base_url:, max_retries:)
+          (api_key ? GivenKeyClient : ::Anthropic::Client).new(api_key:, base_url:, max_retries:)
         rescue *CREDENTIAL_ERRORS
           raise Error.new("llm_auth", UNLOADABLE), cause: nil
         end
