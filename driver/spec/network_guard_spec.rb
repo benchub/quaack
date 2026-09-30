@@ -32,6 +32,15 @@ RSpec.describe "the spec-time network guard" do
       expect { create(client) }.to raise_error(Anthropic::Errors::APIConnectionError)
     end
   end
+
+  # A block that raises still ends the always-refuse, so a later request
+  # with the opt-in reaches the closed port.
+  it "stops refusing with the opt-in after a block that raises" do
+    with_env("QUAACK_ALLOW_REAL_LLM" => "1") do
+      expect { NoNetwork.always_refuse { raise "boom" } }.to raise_error(RuntimeError, "boom")
+      expect { create(client) }.to raise_error(Anthropic::Errors::APIConnectionError)
+    end
+  end
 end
 
 # The same guard stops the openai gem's HTTP client, the one way the
