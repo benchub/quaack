@@ -271,18 +271,7 @@ Still open from the reviews of 20260922-32 and 20260923-31:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260923-37. Arena runner loose ends.
-
-Still open from the second review of 20260922-46:
-- `ArenaRunner` reports every 57014 as `statement_timeout`, including a self-cancel or an operator cancel. Name it `statement_canceled`, or document it. 20260926-5 fixed this for run discipline only.
-- A non-StandardError from the block, followed by a failed rollback, loses the primary error. Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
-- Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
-
-- **Depends on:** 20260922-46.
-- **Came from:** Second review of 20260922-46.
-- **Design:** Step 9.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-37. Arena runner loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-38. Error filtering loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -883,6 +872,27 @@ Minor findings from the review of 20260928-6:
 - **Depends on:** 20260928-6.
 - **Came from:** Review of 20260928-6, round one.
 - **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait.
+
+Minor findings from the review of 20260923-37:
+
+- No test pins that `ArenaRunner` records a statement's start time per connection call. Recording one start for the runner's whole life leaves every spec green. StepNine reuses one runner across scenarios, so after the timeout's worth of total time, an operator's cancel would read as `statement_timeout`. Add a test with a short timeout: two `pg_sleep` calls, each under it, then a self-cancel. Expect `statement_canceled`.
+- In `arena_runner_postgres_spec.rb`, the operator-cancel test's canceler thread polls for the `PgSleep` wait event with no deadline. If a regression stops the INSERT from running, `canceler.join` blocks forever and the suite hangs. Give the loop a deadline.
+
+- **Depends on:** 20260923-37.
+- **Came from:** Review of 20260923-37, round one.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite.
+
+In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-54`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in step 9 ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
+
+- **Depends on:** 20260923-37.
+- **Came from:** Review of 20260923-37, round one.
+- **Design:** Steps 9 and 10.
 - **Status:** todo
 
 ## After version 1.

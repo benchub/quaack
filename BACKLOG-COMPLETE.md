@@ -2969,3 +2969,17 @@ Still open from the second review of 20260923-19:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no findings to fix. `ColumnStatistics#boolean_text` leaves an invalid-UTF-8 literal unchanged, so it misses the t/f MCVs and gets the non-MCV estimate instead of raising. The guard is defensive, since pg_query already refuses invalid UTF-8. A real-Postgres spec pins `= false` on a nullable boolean to freq(f).
+
+### 20260923-37. Arena runner loose ends.
+
+Still open from the second review of 20260922-46:
+- `ArenaRunner` reports every 57014 as `statement_timeout`, including a self-cancel or an operator cancel. Name it `statement_canceled`, or document it. 20260926-5 fixed this for run discipline only.
+- A non-StandardError from the block, followed by a failed rollback, loses the primary error. Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
+- Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
+
+- **Depends on:** 20260922-46.
+- **Came from:** Second review of 20260922-46.
+- **Design:** Step 9.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. A 57014 is `statement_timeout` only once `statement_timeout_ms` has passed since the connection call started, as in run discipline. Anything sooner is the new rule `statement_canceled`, in `arena_runner/cancel.rb`. New specs cover a self-cancel, an operator cancel, an Interrupt surviving a failed rollback, and the fixture check coming before the idle check. The minor findings went to 20260929-28 and 20260929-29.
