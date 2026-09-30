@@ -883,6 +883,25 @@ Minor findings from the review of 20260930-3:
 - **Design:** none. Test harness only.
 - **Status:** todo
 
+### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock.
+
+The driver's `llm` block accepts only `anthropic` and `openai_compatible`, so QUAACK can't call Anthropic models on AWS Bedrock with AWS credentials. The anthropic gem already ships `Anthropic::BedrockClient`, which signs requests with SigV4 using the standard AWS credential chain. It needs the `aws-sdk-bedrockruntime` gem.
+
+Answers from the user, 2026-09-30:
+
+- Add a third provider, `"provider": "bedrock"`, backed by `Anthropic::BedrockClient` through a new adapter behind the provider-neutral client, like the other two.
+- Credentials come from the standard AWS chain: environment variables, `~/.aws` profiles, and SSO. A Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` also works, since the client reads it itself. QUAACK stores no credentials.
+- The llm block takes optional `aws_region` and `aws_profile`, plus the usual `model` and `base_url`. `model` is required, since Bedrock model IDs vary by region and inference profile, so there's no default. Check the new keys the way the block's existing keys are checked. A bad value is a usage error naming the key, never the value.
+- Map the client's errors onto the existing rules: `llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`. That includes AWS credential errors raised before a request is sent, so no SDK exception escapes.
+- Add `aws-sdk-bedrockruntime` as a driver dependency only. The enclave must never depend on it: add its require name to `LLM_SDK_REQUIRES` in spec/support/boundary.rb, and keep the boundary specs green.
+- No spec may reach AWS. Keep the `NoNetwork` guard working for the new client's requests, and fake at the transport edge as the other adapters' specs do.
+- Document it in README.md's LLM setup section and DESIGN.md's LLM client section.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-30.
+- **Design:** Where QUAACK runs, LLM client.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
