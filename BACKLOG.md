@@ -865,14 +865,7 @@ Minor findings from the review of 20260929-12:
 - **Design:** Step 4.
 - **Status:** todo
 
-### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable.
-
-In driver/lib/quaack/driver/llm/openai_compatible_adapter.rb (about line 113), the key variable named by `api_key_env`, or `OPENAI_API_KEY`, is reported as "`<VAR>` isn't set" when it's set but empty. Since 20260930-3, the Anthropic adapter tells the two apart: "isn't set" versus "is set but empty". Make the OpenAI-compatible adapter match, and test both messages.
-
-- **Depends on:** 20260930-3.
-- **Came from:** The build of 20260930-3.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-8. Anthropic credential docs and one spec line: tidy.
 

@@ -3138,3 +3138,13 @@ Minor findings from the first review of 20260929-7. Each is untested, but none i
 - **Design:** Step 4.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. `RunServerCheck` now returns `[]` rather than nil when no client is left to name, and ErrorFilter already drops an empty list. Reversed-key-order rows on both sides pin that key order matters. Two new Postgres tests shadow `pg_stat_activity` with a temp view: one where the list comes back empty after a non-zero count, and one where the older client has the higher pid. The review found that the check's unqualified catalog names can be shadowed through search_path. That went to 20260930-9.
+
+### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable.
+
+In driver/lib/quaack/driver/llm/openai_compatible_adapter.rb (about line 113), the key variable named by `api_key_env`, or `OPENAI_API_KEY`, is reported as "`<VAR>` isn't set" when it's set but empty. Since 20260930-3, the Anthropic adapter tells the two apart: "isn't set" versus "is set but empty". Make the OpenAI-compatible adapter match, and test both messages.
+
+- **Depends on:** 20260930-3.
+- **Came from:** The build of 20260930-3.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. `named_key` says "isn't set" for an unset variable and "is set but empty" for an empty one, as the Anthropic adapter does. Specs cover both the `api_key_env` variable and `OPENAI_API_KEY`, and check that no attempt is made or counted.
