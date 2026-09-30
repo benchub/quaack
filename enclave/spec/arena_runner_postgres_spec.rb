@@ -189,6 +189,40 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
       expect_nothing_persisted
     end
+
+    # A cancel shares the timeout's SQLSTATE, 57014, and its message depends
+    # on lc_messages, so the runner tells them apart by time, as
+    # RunDiscipline does: one that comes before the timeout could have
+    # fired isn't the timeout.
+    it "turns a cancel that isn't the timeout into a statement_canceled error and rolls back" do
+      error = run_error(runner, [parent(1, "a")]) do |tx|
+        tx.query("SELECT 1")
+        tx.query("SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+      end
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 1])
+      expect(error.message).to eq("a statement in the arena transaction was canceled")
+      expect_nothing_persisted
+    end
+
+    it "reports an operator's cancel from another session as statement_canceled, whatever the step" do
+      pid = conn.backend_pid
+      canceler = Thread.new do
+        other = arena.connect
+        sleep 0.05 until other.exec_params(
+          "SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid]
+        ).getvalue(0, 0) == "1"
+        other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
+      ensure
+        other&.close
+      end
+
+      error = run_error(runner, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+      canceler.join
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :insert, 0])
+      expect_nothing_persisted
+    end
   end
 
   describe "index scans" do
@@ -293,6 +327,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
           raise failure, "from the block"
         end
       end.to raise_error(failure, "from the block")
+      expect(persisted_rows).to eq(0)
+    end
+
+    # Interrupt isn't a StandardError, so this needs the runner to note any
+    # exception, not just a StandardError, before it tries to roll back.
+    it "keeps an Interrupt from the block when the connection dies and the rollback fails too" do
+      expect do
+        runner.with_fixture([parent(1, "a")]) do
+          terminate(conn)
+          raise Interrupt, "from the block"
+        end
+      end.to raise_error(Interrupt, "from the block")
       expect(persisted_rows).to eq(0)
     end
 
@@ -641,6 +687,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
   end
 
   describe "the fixture itself" do
+    # Checked before the connection is, so bad rows are refused as bad rows
+    # even on a connection that's busy.
+    it "refuses bad rows before it looks at a connection already inside a transaction" do
+      conn.exec("BEGIN")
+      yielded = false
+
+      expect { runner.with_fixture([:junk]) { yielded = true } }
+        .to raise_error(ArgumentError, "rows must be an Array of FixtureRows")
+      expect([yielded, conn.transaction_status]).to eq([false, 2])
+      conn.exec("ROLLBACK")
+    end
+
     it "refuses rows that aren't FixtureRows before the transaction starts" do
       [[:junk], [parent(1, "a"), "row"], :junk, {}].each do |rows|
         yielded = false

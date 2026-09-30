@@ -46,6 +46,9 @@ module Quaack
         insert_failed: "an INSERT statement failed in the arena transaction",
         query_failed: "a query failed in the arena transaction",
         statement_timeout: "a statement in the arena transaction hit statement_timeout",
+        # A cancel that came before the timeout could have fired, such as
+        # an operator's pg_cancel_backend.
+        statement_canceled: "a statement in the arena transaction was canceled",
         transaction_ended: "a statement ended the arena transaction early",
         transaction_closed: "the arena transaction has already been rolled back",
         rollback_failed: "the arena transaction couldn't be rolled back"
