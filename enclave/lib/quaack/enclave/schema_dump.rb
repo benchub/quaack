@@ -20,9 +20,11 @@ module Quaack
     # The inputs:
     # - relations: the qualified TableNames from Relations.check, the
     #   query's tables. Their schemas, plus public if the database has it,
-    #   plus the schema of each extension but plpgsql, are the namespaces.
-    #   The full dump also names each of those extensions, so it holds
-    #   their CREATE EXTENSION IF NOT EXISTS, with no version.
+    #   plus the schema of each extension but plpgsql, are the namespaces,
+    #   less any system schema (pg_catalog, information_schema, or another
+    #   pg_ one). The full dump also names each of those extensions, so it
+    #   holds their CREATE EXTENSION IF NOT EXISTS, with no version, even
+    #   for one that lives in a system schema.
     # - connection: a PG connection to the production database, for the
     #   catalog and the server's version. Only plain SELECTs are run on it,
     #   and its settings, including its client encoding, are left alone.
@@ -140,14 +142,23 @@ module Quaack
         Result.new(namespaces:, tables:)
       end
 
-      # The full dump's namespaces, with each extension's schema, and its
-      # DDL, with each extension.
+      # The full dump's namespaces, with each extension's schema but a
+      # system schema, and its DDL, with each extension.
       def full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
         extensions = extensions(connection)
         namespaces = (namespaces(relations, connection) + extensions.values).uniq.sort
+        namespaces = namespaces.reject { system_schema?(it) }
         selections = namespaces.map { "--schema=#{pattern(it)}" } + extensions.keys.map { "--extension=#{pattern(it)}" }
         [namespaces, dump(pg_dump, conninfo, selections, lock_wait_timeout:)]
       end
+
+      # pg_catalog, information_schema, or any other pg_ schema, such as
+      # pg_toast. A --schema for one has pg_dump dump the system catalog
+      # itself: a read-only role can't lock pg_authid, so pg_dump fails, and
+      # a superuser's dump holds DDL for the catalog's own objects, which
+      # won't load into arena. --extension alone still brings an extension
+      # that lives there, such as plperl.
+      def system_schema?(name) = name == "information_schema" || name.start_with?("pg_")
 
       # Each extension's name, but plpgsql's, to its schema's.
       def extensions(connection)
