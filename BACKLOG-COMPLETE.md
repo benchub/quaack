@@ -3009,3 +3009,13 @@ These are minor findings from the review of 20260927-23:
 - **Design:** Teardown.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. `Teardown#call` rescues any StandardError. A non-EnclaveError becomes `driver_error`, with the `quaacks teardown` hint. A signal during teardown prints the run's original error, then re-raises. The reviewer checked that printing `Class: message` for a non-EnclaveError can't carry unapproved enclave output, since the transport turns every bad reply into an EnclaveError with no cause. The minor findings went to 20260930-1.
+
+### 20260929-17. Test the prompt-pack template's recovery from a failed build.
+
+`PromptPack.template` in `script/prompt_pack/run.rb` builds under `pack_template_building`, renames it once the build is complete, and first drops any leftover `pack_template_building`. No test needs that. Building straight into `pack_template`, or skipping the drop, leaves the spec green. Then a data.sql or ANALYZE failure in one replay would leave a half-built template for the next replay to copy. The reviewer confirmed by hand that the real code recovers. Add a spec that plants a one-time build failure and checks that the retry produces a complete copy. Also rewrap the odd header comment at run.rb:9-10.
+
+- **Depends on:** 20260929-13.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness only.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to fix. A new example in spec/prompt_pack_databases_spec.rb wraps `PG.connect` so the first build's ANALYZE fails once. It checks that no `pack_template` is left, then that the retry builds a complete copy. Both mutations named here go red, and it doesn't disturb the replay specs. The header comment in run.rb is rewrapped.

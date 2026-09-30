@@ -764,14 +764,7 @@ Minor findings from the review of 20260929-8.
 - **Design:** Step 4.
 - **Status:** todo
 
-### 20260929-17. Test the prompt-pack template's recovery from a failed build.
-
-`PromptPack.template` in `script/prompt_pack/run.rb` builds under `pack_template_building`, renames it once the build is complete, and first drops any leftover `pack_template_building`. No test needs that. Building straight into `pack_template`, or skipping the drop, leaves the spec green. Then a data.sql or ANALYZE failure in one replay would leave a half-built template for the next replay to copy. The reviewer confirmed by hand that the real code recovers. Add a spec that plants a one-time build failure and checks that the retry produces a complete copy. Also rewrap the odd header comment at run.rb:9-10.
-
-- **Depends on:** 20260929-13.
-- **Came from:** Review of 20260929-13, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
+### 20260929-17. Test the prompt-pack template's recovery from a failed build. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
 
