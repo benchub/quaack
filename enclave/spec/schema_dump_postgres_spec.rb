@@ -156,18 +156,18 @@ RSpec.describe Quaack::Enclave::SchemaDump do
   end
 
   describe "the full dump" do
-    it "is stored as the schema-only pg_dump of every schema the query touches, plus public" do
+    it "is stored as the schema-only pg_dump of every schema the query or its FK ancestors touch, plus public" do
       conn.exec("GRANT SELECT ON sales.items TO PUBLIC")
       result = run([table("sales", "items")])
 
-      expect(result.namespaces).to eq(%w[public sales])
+      expect(result.namespaces).to eq(%w[audit public sales])
       stored = store.read("schema_dump")
       expect(stored.keys).to eq(%w[namespaces ddl])
-      expect(stored["namespaces"]).to eq(%w[public sales])
+      expect(stored["namespaces"]).to eq(%w[audit public sales])
       expect(created_tables(stored["ddl"])).to eq(
-        %w[public.customers public.orders sales.a sales.b sales.item_notes sales.items sales.regions sales.skus
-           sales.unrelated sales.warehouse_east sales.warehouse_west sales.warehouse_west_low sales.warehouses
-           sales.zones]
+        %w[audit.a audit.items audit.vendors public.customers public.orders sales.a sales.b sales.item_notes
+           sales.items sales.regions sales.skus sales.unrelated sales.warehouse_east sales.warehouse_west
+           sales.warehouse_west_low sales.warehouses sales.zones]
       )
       expect(stored["ddl"]).not_to match(/OWNER TO|GRANT|^COPY |INSERT INTO/)
     end
@@ -194,6 +194,44 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(result.namespaces).to eq(%w[other])
       expect(store.read("schema_dump")["namespaces"]).to eq(%w[other])
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[other.lonely])
+    end
+  end
+
+  # The subset follows FKs into schemas the query doesn't touch, and so must
+  # the full dump, or arena can't create the FK: sales.skus references
+  # audit.vendors, and here audit.vendors references vault.countries in turn.
+  describe "the full dump of FK parents in other schemas" do
+    let(:target) { "quaack_fk_load_#{Process.pid}" }
+    let(:admin) { TestPostgres.server.admin }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA vault;
+        CREATE TABLE vault.countries (id int PRIMARY KEY);
+        ALTER TABLE audit.vendors ADD COLUMN country_id int REFERENCES vault.countries;
+      SQL
+    end
+
+    after { admin.exec(%(DROP DATABASE IF EXISTS "#{target}" WITH (FORCE))) }
+
+    it "holds each FK ancestor's schema, at any depth, and loads into arena" do
+      result = run([table("sales", "items")])
+      stored = store.read("schema_dump")
+
+      expect(result.namespaces).to eq(%w[audit public sales vault])
+      expect(stored["namespaces"]).to eq(%w[audit public sales vault])
+      expect(created_tables(stored["ddl"])).to include("audit.vendors", "vault.countries")
+      expect(created_tables(stored["ddl"])).not_to include("other.lonely")
+
+      admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
+      arena = PG.connect(**db.connection_params, dbname: target)
+      Quaack::Enclave::Arena.load_dump(arena, stored["ddl"])
+      parents = arena.exec("SELECT confrelid::regclass::text FROM pg_constraint " \
+                           "WHERE contype = 'f' AND conrelid IN ('sales.skus'::regclass, 'audit.vendors'::regclass) " \
+                           "ORDER BY 1").column_values(0)
+      expect(parents).to eq(%w[audit.vendors vault.countries])
+    ensure
+      arena&.close
     end
   end
 

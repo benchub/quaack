@@ -6,10 +6,10 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3b: the schema-only dump of every namespace the query touches,
-    # plus public, and the subset: the query's tables and their whole FK
-    # ancestor chain. Both go into the governed store, and nothing here
-    # leaves the enclave.
+    # DESIGN.md 3b: the schema-only dump of every namespace the query's
+    # tables, or their FK ancestors, live in, plus public, and the subset:
+    # the query's tables and their whole FK ancestor chain. Both go into the
+    # governed store, and nothing here leaves the enclave.
     #
     #   SchemaDump.run(store:, relations: Relations.check(sql, settings, conn).relations,
     #                  connection: conn, conninfo: { host: "db1", dbname: "app" })
@@ -19,8 +19,9 @@ module Quaack
     #
     # The inputs:
     # - relations: the qualified TableNames from Relations.check, the
-    #   query's tables. Their schemas, plus public if the database has it,
-    #   plus the schema of each extension but plpgsql, are the namespaces,
+    #   query's tables. Their schemas and their FK ancestors' schemas, at
+    #   any depth, plus public if the database has it, plus the schema of
+    #   each extension but plpgsql, are the namespaces,
     #   less any system schema (pg_catalog, information_schema, or another
     #   pg_ one). The full dump also names each of those extensions, so it
     #   holds their CREATE EXTENSION IF NOT EXISTS, with no version, even
@@ -135,7 +136,7 @@ module Quaack
         Checks.not_sql_ascii!(connection)
         tables = ancestors(relations, connection)
         new_enough!(pg_dump, connection)
-        namespaces, full = full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
+        namespaces, full = full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout)
         subset = subset_ddl(pg_dump, conninfo, tables, lock_wait_timeout:)
         store.write("schema_dump", { "namespaces" => namespaces, "ddl" => full })
         store.write("schema_subset", { "tables" => tables.map { [it.schema, it.name] }, "ddl" => subset })
@@ -143,10 +144,12 @@ module Quaack
       end
 
       # The full dump's namespaces, with each extension's schema but a
-      # system schema, and its DDL, with each extension.
-      def full_dump(pg_dump, conninfo, relations, connection, lock_wait_timeout)
+      # system schema, and its DDL, with each extension. tables are the
+      # query's tables and their FK ancestors, so an FK into a schema the
+      # query doesn't touch still has its parent table in arena.
+      def full_dump(pg_dump, conninfo, tables, connection, lock_wait_timeout)
         extensions = extensions(connection)
-        namespaces = (namespaces(relations, connection) + extensions.values).uniq.sort
+        namespaces = (namespaces(tables, connection) + extensions.values).uniq.sort
         namespaces = namespaces.reject { system_schema?(it) }
         selections = namespaces.map { "--schema=#{pattern(it)}" } + extensions.keys.map { "--extension=#{pattern(it)}" }
         [namespaces, dump(pg_dump, conninfo, selections, lock_wait_timeout:)]
@@ -198,12 +201,12 @@ module Quaack
         end
       end
 
-      # The relations' schemas, plus public if the database has one, since
+      # The tables' schemas, plus public if the database has one, since
       # --strict-names fails a dump on a schema that isn't there. Sorted by
       # byte, as the tables are.
-      def namespaces(relations, connection)
+      def namespaces(tables, connection)
         public = connection.exec_params(PUBLIC_SQL, []).getvalue(0, 0) == "t"
-        (relations.map(&:schema) + (public ? ["public"] : [])).uniq.sort
+        (tables.map(&:schema) + (public ? ["public"] : [])).uniq.sort
       end
 
       # The relations and their FK ancestors, sorted.
