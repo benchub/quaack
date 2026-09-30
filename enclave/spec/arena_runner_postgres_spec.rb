@@ -205,13 +205,36 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    # The time is measured from the start of each statement, not of the
+    # transaction or the runner: StepNine reuses one runner across
+    # scenarios, so a cancel after the timeout's worth of earlier statements
+    # must still read as a cancel. Each sleep is well under the timeout, and
+    # together they're well over it.
+    it "times each statement from its own start, so earlier statements don't turn a cancel into a timeout" do
+      short = described_class.new(conn, statement_timeout_ms: 2000)
+
+      error = run_error(short, [parent(1, "a")]) do |tx|
+        tx.query("SELECT pg_sleep(1.3)")
+        tx.query("SELECT pg_sleep(1.3)")
+        tx.query("SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+      end
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 2])
+      expect_nothing_persisted
+    end
+
     it "reports an operator's cancel from another session as statement_canceled, whatever the step" do
       pid = conn.backend_pid
       canceler = Thread.new do
         other = arena.connect
-        sleep 0.05 until other.exec_params(
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+        until other.exec_params(
           "SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid]
         ).getvalue(0, 0) == "1"
+          raise "the INSERT never reached pg_sleep" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+          sleep 0.05
+        end
         other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
       ensure
         other&.close
