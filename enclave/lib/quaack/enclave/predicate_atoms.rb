@@ -283,7 +283,9 @@ module Quaack
         def replace_fields(message)
           case message
           when PgQuery::TypeName then nil
-          when Literals.method(:extract_field?) then message.args[1] = replace(message.args[1])
+          when Literals.method(:extract_field?)
+            Literals.lowercase_field(message)
+            message.args[1] = replace(message.args[1])
           else message.class.descriptor.each { |field| replace_field(message, field) }
           end
         end
@@ -318,9 +320,17 @@ module Quaack
             node.funcname.map { |part| part.string.sval } == %w[pg_catalog extract] && field_name?(node.args[0])
         end
 
+        # Postgres lowercases the field in ASCII only, so a Kelvin sign
+        # doesn't make a k.
         def field_name?(arg)
           text = arg.a_const&.sval
-          !text.nil? && EXTRACT_FIELDS.include?(text.sval.downcase)
+          !text.nil? && EXTRACT_FIELDS.include?(text.sval.downcase(:ascii))
+        end
+
+        # Writes an EXTRACT field lowercased, since its case could carry data.
+        def lowercase_field(node)
+          text = node.args[0].a_const.sval
+          text.sval = text.sval.downcase(:ascii)
         end
 
         # A constant the parser made, not one written in the query, such as

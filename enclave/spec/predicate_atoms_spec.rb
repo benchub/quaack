@@ -469,9 +469,34 @@ RSpec.describe Quaack::Enclave::PredicateAtoms do
       sql = "SELECT 1 FROM public.orders o WHERE EXTRACT(epoch FROM o.created_at) > 5 " \
             "AND EXTRACT('ISODOW' FROM o.created_at) = 6 AND extract(Timezone_Hour FROM o.created_at) = 7"
       shapes = in_child(sql).map(&:first)
-      expect(shapes).to eq(["extract ('epoch' FROM o.created_at) > $2", "extract ('ISODOW' FROM o.created_at) = $3",
+      expect(shapes).to eq(["extract ('epoch' FROM o.created_at) > $2", "extract ('isodow' FROM o.created_at) = $3",
                             "extract ('timezone_hour' FROM o.created_at) = $4"])
       shapes.each { |shape| expect { PgQuery.parse("SELECT #{shape}") }.not_to raise_error }
+    end
+
+    # A quoted field keeps the case it was written in, which could carry
+    # data, so it goes out lowercased, the way Postgres reads it.
+    it "writes a kept EXTRACT field lowercased" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT('EpOcH' FROM o.created_at) > 5"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ('epoch' FROM o.created_at) > $2"])
+      expect(shapes.join).not_to include("EpOcH")
+    end
+
+    # Unicode lowercases the Kelvin sign (U+212A) to k, but Postgres reads
+    # a field in ASCII, so 'wee\u212A' isn't a field. It's a literal.
+    it "redacts an EXTRACT field that's a field name only under Unicode lowercasing" do
+      sql = "SELECT 1 FROM public.orders o WHERE EXTRACT('wee\u212A' FROM o.created_at) > 5"
+      shapes = in_child(sql).map(&:first)
+      expect(shapes).to eq(["extract ($2 FROM o.created_at) > $3"])
+      expect(shapes.join).not_to include("\u212A")
+    end
+
+    it "keeps exactly the EXTRACT fields Postgres documents" do
+      expect(described_class.const_get(:Literals)::EXTRACT_FIELDS.sort).to eq(
+        %w[century day decade dow doy epoch hour isodow isoyear julian microseconds millennium milliseconds
+           minute month quarter second timezone timezone_hour timezone_minute week year]
+      )
     end
 
     it "redacts a field name that's a string argument of another SQL-syntax function" do
