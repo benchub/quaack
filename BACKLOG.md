@@ -829,6 +829,127 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 - **Design:** Deploying the enclave.
 - **Status:** todo
 
+### 20260929-7. Say which clients `run_server_other_clients` saw. Done, see BACKLOG-COMPLETE.md.
+
+### 20260929-8. `run_server_other_clients` may count QUAACK's own session. Done, see BACKLOG-COMPLETE.md.
+
+### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18. Done, see BACKLOG-COMPLETE.md.
+
+### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
+
+`enclave/spec/leak_check_spec.rb:374` ("runs a script the same way, with no Bundler in its environment") fails on unchanged main (a762d73) on 2026-09-29. It expected no Bundler variables and got `BUNDLER_VERSION`. A likely cause is Ruby 3.4's bundled bundler re-execing into the lockfile's bundler 4.0.15, which sets `BUNDLER_VERSION`. Find the cause, and scrub the variable, or fix the check, so a script runs with no Bundler in its environment.
+
+- **Depends on:** nothing open.
+- **Came from:** The full check run for 20260929-7.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260929-11. `run_server_other_clients` clients list: minor test gaps.
+
+Minor findings from the first review of 20260929-7. Each is untested, but none is visible outside the enclave on a realistic setup.
+
+- `RunServerCheck` returns nil rather than `[]` when every other client leaves between the count query and the list query. Changing that to `[]` survives the specs. ErrorFilter drops an empty Array, so nothing changes on the wire. Pin it, or drop the special case.
+- In ErrorFilter's client shape check, dropping the key-order check survives the specs. A Hash with its keys reversed then goes out, and the driver drops it, because its key check cares about order. Add a reversed-key-order case, or make both sides agree on whether order matters.
+- `ORDER BY pid` passes the specs as well as `ORDER BY backend_start, pid`. They differ only across pid wraparound.
+
+- **Depends on:** 20260929-7.
+- **Came from:** Review of 20260929-7, round one.
+- **Design:** Step 4.
+- **Status:** todo
+
+### 20260929-12. `clients` shape checks: round-two test gaps.
+
+Minor findings from the second review of 20260929-7. The code is correct, and none of these can leak today, because the enclave builds the start time with a fixed-format `to_char`.
+
+- Changing `\A` to `^` in the start-time pattern survives the specs, in both the enclave's ErrorFilter and the driver's reply parser. So does changing the driver's `\z` to `$`. Add cases with the start time after or before a newline to both suites.
+- The driver never tests keeping exactly 20 clients. With the driver's limit at 19, a real 20-client error line would lose its `clients` field and the specs stay green.
+- Whether the UTC test in `enclave/spec/run_server_check_postgres_spec.rb` catches a 12-hour clock (`HH12`) depends on the time of day the suite runs. Pin it to an afternoon hour.
+- The enclave never tests its exact-class checks on an Array or Hash subclass, only on a String subclass. Loosening them to `respond_to?` survives. Egress's own plain-data check backs them up.
+
+- **Depends on:** 20260929-7.
+- **Came from:** Review of 20260929-7, round two.
+- **Design:** Trust boundary, step 4.
+- **Status:** todo
+
+### 20260929-13. Build the prompt-pack database once per spec process. Done, see BACKLOG-COMPLETE.md.
+
+### 20260929-14. pg_dump finder: minor findings.
+
+Minor findings from the first review of 20260929-9.
+
+- When no pg_dump of the server's major is found, three examples fail, not one: the replay gate, `TestPgDump.bin`'s own example, and the `PromptPack.with_env` example. CLAUDE.md says the replay spec "fails once". Gate the two finder examples the same way, or reword CLAUDE.md.
+- Three pieces of code have no automated test: the load-time gate in `spec/pipeline_replay_spec.rb`, which was only checked by hand; `E2ERun.with_env`'s PATH change; and `TestPgDump.version`'s exit-status check. Ignoring the exit status survives the specs.
+- If `QUAACK_TEST_PG_BIN` holds a pg_dump of the wrong major, the harness quietly falls back to the Homebrew keg. That matches the user's answer, "checks first", and the not-found message lists what each directory held. Consider saying so when it happens.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round one.
+- **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-15. `TestPgDump.server_major`'s regex is under-tested.
+
+The test "reads the major version from the image's FROM line" in `spec/test_pg_dump_spec.rb` uses a fixture Dockerfile with no digits before `FROM`. So weakening the regex to `/(\d+)/` keeps it green. Put a line with a number before `FROM` in the fixture, such as `ARG PG_MAJOR=16` or a comment naming a version, and check that the test still reads the `FROM` line's major.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round two.
+- **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-16. PgBouncer support: minor findings.
+
+Minor findings from the review of 20260929-8.
+
+- DESIGN.md step 4 says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
+- `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
+
+- **Depends on:** 20260929-8.
+- **Came from:** Review of 20260929-8, round one.
+- **Design:** Step 4.
+- **Status:** todo
+
+### 20260929-17. Test the prompt-pack template's recovery from a failed build.
+
+`PromptPack.template` in `script/prompt_pack/run.rb` builds under `pack_template_building`, renames it once the build is complete, and first drops any leftover `pack_template_building`. No test needs that. Building straight into `pack_template`, or skipping the drop, leaves the spec green. Then a data.sql or ANALYZE failure in one replay would leave a half-built template for the next replay to copy. The reviewer confirmed by hand that the real code recovers. Add a spec that plants a one-time build failure and checks that the retry produces a complete copy. Also rewrap the odd header comment at run.rb:9-10.
+
+- **Depends on:** 20260929-13.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
+
+A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
+
+- `spec/fixtures/llm_corpus/group_having/10a-4/reply-claude-3.md`
+- `spec/fixtures/llm_corpus/group_having/10a-5/reply-gemini-3.md`
+- `spec/fixtures/llm_corpus/group_having/10a-9/reply-claude-3.md`
+
+It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
+
+- **Depends on:** nothing open.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness and prompt pack only.
+- **Status:** todo
+
+### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there.
+
+`SchemaDump.full_dump` adds each extension's schema to the full dump's `--schema` list. `plperl` and `plperlu` live in `pg_catalog`, so on the Canvas test database of 2026-09-29 the dump got `--schema=pg_catalog`. pg_dump then tried to dump the system catalog. It warned "typtype of data type ... appears to be invalid" for every pseudo-type, and it emitted DDL for pg_catalog's own objects, which 4a would then try to load into arena.
+
+Answers from the user, 2026-09-29:
+
+- Never dump a system schema: not `pg_catalog`, not `information_schema`, and not any other `pg_*` schema. `--extension=<name>` alone still gets each `CREATE EXTENSION`.
+
+To do:
+
+- Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
+- Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
+- Confirmed as the cause of that run's `pg_dump_failed`. The user's production role isn't a superuser. With `--schema=pg_catalog`, pg_dump fails right away with `ERROR:  permission denied for table pg_authid`. A red test should reproduce that with a non-superuser role.
+
+- **Depends on:** nothing open.
+- **Came from:** The user's first real run, 2026-09-29.
+- **Design:** 3b, 4a.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
@@ -1336,128 +1457,7 @@ Ideas to settle before building:
 - **Design:** Where QUAACK runs, 5a-5, 6a, 10a, 15b.
 - **Status:** todo
 
-### 20260929-7. Say which clients `run_server_other_clients` saw. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-8. `run_server_other_clients` may count QUAACK's own session. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-9. The full check fails on a Mac whose pg_dump is older than 18. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment.
-
-`enclave/spec/leak_check_spec.rb:374` ("runs a script the same way, with no Bundler in its environment") fails on unchanged main (a762d73) on 2026-09-29. It expected no Bundler variables and got `BUNDLER_VERSION`. A likely cause is Ruby 3.4's bundled bundler re-execing into the lockfile's bundler 4.0.15, which sets `BUNDLER_VERSION`. Find the cause, and scrub the variable, or fix the check, so a script runs with no Bundler in its environment.
-
-- **Depends on:** nothing open.
-- **Came from:** The full check run for 20260929-7.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
-
-### 20260929-11. `run_server_other_clients` clients list: minor test gaps.
-
-Minor findings from the first review of 20260929-7. Each is untested, but none is visible outside the enclave on a realistic setup.
-
-- `RunServerCheck` returns nil rather than `[]` when every other client leaves between the count query and the list query. Changing that to `[]` survives the specs. ErrorFilter drops an empty Array, so nothing changes on the wire. Pin it, or drop the special case.
-- In ErrorFilter's client shape check, dropping the key-order check survives the specs. A Hash with its keys reversed then goes out, and the driver drops it, because its key check cares about order. Add a reversed-key-order case, or make both sides agree on whether order matters.
-- `ORDER BY pid` passes the specs as well as `ORDER BY backend_start, pid`. They differ only across pid wraparound.
-
-- **Depends on:** 20260929-7.
-- **Came from:** Review of 20260929-7, round one.
-- **Design:** Step 4.
-- **Status:** todo
-
-### 20260929-12. `clients` shape checks: round-two test gaps.
-
-Minor findings from the second review of 20260929-7. The code is correct, and none of these can leak today, because the enclave builds the start time with a fixed-format `to_char`.
-
-- Changing `\A` to `^` in the start-time pattern survives the specs, in both the enclave's ErrorFilter and the driver's reply parser. So does changing the driver's `\z` to `$`. Add cases with the start time after or before a newline to both suites.
-- The driver never tests keeping exactly 20 clients. With the driver's limit at 19, a real 20-client error line would lose its `clients` field and the specs stay green.
-- Whether the UTC test in `enclave/spec/run_server_check_postgres_spec.rb` catches a 12-hour clock (`HH12`) depends on the time of day the suite runs. Pin it to an afternoon hour.
-- The enclave never tests its exact-class checks on an Array or Hash subclass, only on a String subclass. Loosening them to `respond_to?` survives. Egress's own plain-data check backs them up.
-
-- **Depends on:** 20260929-7.
-- **Came from:** Review of 20260929-7, round two.
-- **Design:** Trust boundary, step 4.
-- **Status:** todo
-
-### 20260929-13. Build the prompt-pack database once per spec process. Done, see BACKLOG-COMPLETE.md.
-
-### 20260929-14. pg_dump finder: minor findings.
-
-Minor findings from the first review of 20260929-9.
-
-- When no pg_dump of the server's major is found, three examples fail, not one: the replay gate, `TestPgDump.bin`'s own example, and the `PromptPack.with_env` example. CLAUDE.md says the replay spec "fails once". Gate the two finder examples the same way, or reword CLAUDE.md.
-- Three pieces of code have no automated test: the load-time gate in `spec/pipeline_replay_spec.rb`, which was only checked by hand; `E2ERun.with_env`'s PATH change; and `TestPgDump.version`'s exit-status check. Ignoring the exit status survives the specs.
-- If `QUAACK_TEST_PG_BIN` holds a pg_dump of the wrong major, the harness quietly falls back to the Homebrew keg. That matches the user's answer, "checks first", and the not-found message lists what each directory held. Consider saying so when it happens.
-
-- **Depends on:** 20260929-9.
-- **Came from:** Review of 20260929-9, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
-
-### 20260929-15. `TestPgDump.server_major`'s regex is under-tested.
-
-The test "reads the major version from the image's FROM line" in `spec/test_pg_dump_spec.rb` uses a fixture Dockerfile with no digits before `FROM`. So weakening the regex to `/(\d+)/` keeps it green. Put a line with a number before `FROM` in the fixture, such as `ARG PG_MAJOR=16` or a comment naming a version, and check that the test still reads the `FROM` line's major.
-
-- **Depends on:** 20260929-9.
-- **Came from:** Review of 20260929-9, round two.
-- **Design:** none. Test harness only.
-- **Status:** todo
-
-### 20260929-16. PgBouncer support: minor findings.
-
-Minor findings from the review of 20260929-8.
-
-- DESIGN.md step 4 says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
-- `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
-
-- **Depends on:** 20260929-8.
-- **Came from:** Review of 20260929-8, round one.
-- **Design:** Step 4.
-- **Status:** todo
-
-### 20260929-17. Test the prompt-pack template's recovery from a failed build.
-
-`PromptPack.template` in `script/prompt_pack/run.rb` builds under `pack_template_building`, renames it once the build is complete, and first drops any leftover `pack_template_building`. No test needs that. Building straight into `pack_template`, or skipping the drop, leaves the spec green. Then a data.sql or ANALYZE failure in one replay would leave a half-built template for the next replay to copy. The reviewer confirmed by hand that the real code recovers. Add a spec that plants a one-time build failure and checks that the retry produces a complete copy. Also rewrap the odd header comment at run.rb:9-10.
-
-- **Depends on:** 20260929-13.
-- **Came from:** Review of 20260929-13, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
-
-### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
-
-A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
-
-- `spec/fixtures/llm_corpus/group_having/10a-4/reply-claude-3.md`
-- `spec/fixtures/llm_corpus/group_having/10a-5/reply-gemini-3.md`
-- `spec/fixtures/llm_corpus/group_having/10a-9/reply-claude-3.md`
-
-It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
-
-- **Depends on:** nothing open.
-- **Came from:** Review of 20260929-13, round one.
-- **Design:** none. Test harness and prompt pack only.
-- **Status:** todo
-
-### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there.
-
-`SchemaDump.full_dump` adds each extension's schema to the full dump's `--schema` list. `plperl` and `plperlu` live in `pg_catalog`, so on the Canvas test database of 2026-09-29 the dump got `--schema=pg_catalog`. pg_dump then tried to dump the system catalog. It warned "typtype of data type ... appears to be invalid" for every pseudo-type, and it emitted DDL for pg_catalog's own objects, which 4a would then try to load into arena.
-
-Answers from the user, 2026-09-29:
-
-- Never dump a system schema: not `pg_catalog`, not `information_schema`, and not any other `pg_*` schema. `--extension=<name>` alone still gets each `CREATE EXTENSION`.
-
-To do:
-
-- Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
-- Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
-- Confirmed as the cause of that run's `pg_dump_failed`. The user's production role isn't a superuser. With `--schema=pg_catalog`, pg_dump fails right away with `ERROR:  permission denied for table pg_authid`. A red test should reproduce that with a non-superuser role.
-
-- **Depends on:** nothing open.
-- **Came from:** The user's first real run, 2026-09-29.
-- **Design:** 3b, 4a.
-- **Status:** todo
-
-### 20260929-20. Post-v1: `quaack deploy` removes old enclave versions.
+### 20260929-20. `quaack deploy` removes old enclave versions.
 
 Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next to the old ones in the jump server's user gem directory, so versions pile up. After a successful install and version check, have deploy remove every version of those two gems older than the last release. It keeps the version it just installed and the one before it, so the operator can still fall back one release.
 
@@ -1470,4 +1470,4 @@ Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next
 - **Depends on:** nothing open.
 - **Came from:** The user, 2026-09-29, after the bump to 0.1.1.
 - **Design:** Where QUAACK runs, "Deploying the enclave".
-- **Status:** todo, post-v1. Don't start it before v1 ships.
+- **Status:** todo
