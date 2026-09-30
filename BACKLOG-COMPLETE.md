@@ -2927,3 +2927,17 @@ Still open from the reviews of 20260923-33:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. Both EXTRACT field matches use `downcase(:ascii)`, and a kept field goes out lowercased, only on the tree copy. A Kelvin-sign `'weeK'` is redacted, and both `EXTRACT_FIELDS` sets are pinned to Postgres 18's 22 fields, checked on a real server. The minor finding went to 20260929-25.
+
+### 20260928-6. LLM provider seam loose ends, part two.
+
+These are minor findings from the second review of 20260928-3:
+- The spec for the CLI's default client builder (`cli_run_spec.rb`, "builds the client from the block's settings") only checks `api_key_env`. A builder that drops the block's model or base_url stays green. Move the builder into a small method that takes a transport, so a spec can pass FakeLLM and assert the model and URL in `fake.asks`.
+- The same spec sets `QUAACK_ALLOW_REAL_LLM=1`, which turns off the `NoNetwork` guard. Its only remaining guard is `ANTHROPIC_BASE_URL=http://127.0.0.1:9`, so a future explicit base URL could send its sentinel key to the real API from `rake`. Keep a refusal at the gem's requester in that example.
+- `AnthropicAdapter` claims a given `api_key:` wins over `api_key_env`, but no spec checks it. Add one, or drop the claim.
+- `quaack run` now reads driver.json. A file that exists but can't be read (EACCES) raises `Errno::EACCES` out of `DriverConfig.read`, uncaught, so the run dies with a stack trace. Rescue `SystemCallError` there as `Bad`, or as a "can't read" usage error. `start` has the same gap.
+
+- **Depends on:** 20260928-3.
+- **Came from:** Second review of 20260928-3.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. Changes: `CLI.build_client(settings, transport:)`, with a FakeLLM spec on model and URL; `NoNetwork.always_refuse`, which refuses even with `QUAACK_ALLOW_REAL_LLM=1`; a spec that a given `api_key:` wins; and an unreadable driver.json, now a clean usage error for `run` and `bad_driver_config` for `start`. The minor findings went to 20260929-27.

@@ -644,18 +644,7 @@ These are minor findings from the build and review of 20260928-3:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20260928-6. LLM provider seam loose ends, part two.
-
-These are minor findings from the second review of 20260928-3:
-- The spec for the CLI's default client builder (`cli_run_spec.rb`, "builds the client from the block's settings") only checks `api_key_env`. A builder that drops the block's model or base_url stays green. Move the builder into a small method that takes a transport, so a spec can pass FakeLLM and assert the model and URL in `fake.asks`.
-- The same spec sets `QUAACK_ALLOW_REAL_LLM=1`, which turns off the `NoNetwork` guard. Its only remaining guard is `ANTHROPIC_BASE_URL=http://127.0.0.1:9`, so a future explicit base URL could send its sentinel key to the real API from `rake`. Keep a refusal at the gem's requester in that example.
-- `AnthropicAdapter` claims a given `api_key:` wins over `api_key_env`, but no spec checks it. Add one, or drop the claim.
-- `quaack run` now reads driver.json. A file that exists but can't be read (EACCES) raises `Errno::EACCES` out of `DriverConfig.read`, uncaught, so the run dies with a stack trace. Rescue `SystemCallError` there as `Bad`, or as a "can't read" usage error. `start` has the same gap.
-
-- **Depends on:** 20260928-3.
-- **Came from:** Second review of 20260928-3.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260928-6. LLM provider seam loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-1. OpenAI-compatible adapter loose ends.
 
@@ -904,6 +893,18 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 - **Depends on:** 20260929-21.
 - **Came from:** The build of 20260929-21.
 - **Design:** 3b, 4a.
+- **Status:** todo
+
+### 20260929-27. LLM seam: minor findings.
+
+Minor findings from the review of 20260928-6:
+
+- No spec checks that `NoNetwork.always_refuse` resets its flag after an exception inside the block. A reset only on normal exit stays green. That fails safe (the guard stays stricter), but add one example that raises inside the block, then checks that a request reaches the closed port with the opt-in set.
+- `DriverConfig.read` treats an unreadable `~/.quaack` directory (mode 000) as a missing driver.json, since `File.file?` returns false. `run` then silently uses the default Anthropic settings, and `start` says `no_driver_config`. Refuse an existing but unreadable `~/.quaack` like an unreadable file. 20260929-4 touches the same code.
+
+- **Depends on:** 20260928-6.
+- **Came from:** Review of 20260928-6, round one.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.
