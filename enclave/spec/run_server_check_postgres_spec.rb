@@ -343,6 +343,24 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
                                      { "pid" => 100, "backend_start" => "2026-09-29T17:00:00Z" }])
     end
 
+    # A client counted but gone by the time the check lists them, as when
+    # each one leaves between the two queries. The view's one client has no
+    # start time, which the count counts and the list leaves out, so the
+    # list comes back empty every time.
+    it "names no client, and still fails, when none is left to name" do
+      record_inventory
+      run_server.exec(<<~SQL)
+        CREATE TEMPORARY VIEW pg_stat_activity AS
+        SELECT 100 AS pid, NULL::timestamptz AS backend_start, 'client backend' AS backend_type
+      SQL
+
+      error = failure
+
+      expect([error.rule, error.clients]).to eq(["run_server_other_clients", []])
+      expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")))
+        .to eq("type" => "error", "step" => "4", "rule" => "run_server_other_clients")
+    end
+
     it "names at most twenty other clients, the oldest, and still fails with more" do
       record_inventory
       run_server
