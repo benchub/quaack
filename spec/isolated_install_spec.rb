@@ -57,6 +57,23 @@ RSpec.describe IsolatedInstall do
     expect(probe("puts ENV.key?('BUNDLER_VERSION')", "BUNDLER_VERSION" => "4.0.15")).to eq("false\n")
   end
 
+  # Any Bundler variable, not just the ones Bundler itself sets, such as a
+  # leftover BUNDLER_ORIG_* in a developer's shell. Bundler puts its own
+  # BUNDLER_ORIG_PATH in this process's ENV too, so BUNDLER_QUAACK_LEFTOVER,
+  # which only the parent's environment holds, shows the child's environment
+  # is what gets scrubbed.
+  it "ignores every BUNDLE* variable in the parent's environment" do
+    leak = { "BUNDLER_ORIG_PATH" => "/leak/bin", "BUNDLE_SOMETHING" => "leak", "BUNDLER_QUAACK_LEFTOVER" => "leak" }
+
+    expect(probe("puts ENV.keys.grep(/\\ABUNDLE/).sort", leak)).to eq("")
+  end
+
+  it "still passes its own GEM_HOME and GEM_PATH to the child" do
+    home = File.realpath(@install.home)
+
+    expect(probe("puts File.realpath(ENV['GEM_HOME']), File.realpath(ENV['GEM_PATH'])")).to eq("#{home}\n#{home}\n")
+  end
+
   it "loads a closure gem such as quaack-protocol from the installed copy, not the repo" do
     protocol = @install.gem_dirs.fetch("quaack-protocol")
     loaded = probe(%(require "quaack/protocol"; puts $LOADED_FEATURES.grep(%r{/quaack/protocol\\.rb\\z}))).split("\n")

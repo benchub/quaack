@@ -47,9 +47,9 @@ class IsolatedInstall
     FileUtils.rm_f(features_file)
     dumper = self.dumper
     File.write(dumper, "at_exit { File.write(ENV.fetch('QUAACK_FEATURES_OUT'), $LOADED_FEATURES.join(\"\\n\")) }\n")
-    env = isolated_env.merge(env, "RUBYOPT" => "-r#{dumper}", "QUAACK_FEATURES_OUT" => features_file)
     out, err, status = Bundler.with_unbundled_env do
-      Open3.capture3(env, RbConfig.ruby, script, *, stdin_data: stdin)
+      child_env = isolated_env.merge(env, "RUBYOPT" => "-r#{dumper}", "QUAACK_FEATURES_OUT" => features_file)
+      Open3.capture3(child_env, RbConfig.ruby, script, *, stdin_data: stdin)
     end
     features = File.exist?(features_file) ? File.read(features_file).split("\n") : []
     Run.new(out, err, status, features)
@@ -66,15 +66,15 @@ class IsolatedInstall
 
   private
 
-  # BUNDLER_VERSION is here because Bundler.with_unbundled_env keeps it: when
-  # `bundle exec` re-execs into the lockfile's Bundler version, it sets
-  # BUNDLER_VERSION before the new process records its original environment.
+  # Call it inside Bundler.with_unbundled_env, so ENV is what the child would
+  # inherit. It unsets every BUNDLE* variable there, since that call keeps
+  # BUNDLER_* ones, such as BUNDLER_VERSION, which `bundle exec` sets before
+  # it records the original environment, or a leftover BUNDLER_ORIG_* in a
+  # developer's shell.
   def isolated_env
-    {
-      "GEM_HOME" => @home, "GEM_PATH" => @home, "RUBYOPT" => nil, "RUBYLIB" => nil,
-      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "BUNDLER_SETUP" => nil, "BUNDLER_VERSION" => nil,
-      "RUBYGEMS_GEMDEPS" => nil
-    }
+    bundler_keys = ENV.keys.grep(/\ABUNDLE/).to_h { |key| [key, nil] }
+    bundler_keys.merge("GEM_HOME" => @home, "GEM_PATH" => @home, "RUBYOPT" => nil, "RUBYLIB" => nil,
+                       "RUBYGEMS_GEMDEPS" => nil)
   end
 
   def repo_gemspec(name) = @sources[name] || RepoGems.gemspec_path_of(name)
