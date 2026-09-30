@@ -812,17 +812,7 @@ Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through th
 - **Design:** 5a-7, step 8.
 - **Status:** todo
 
-### 20260930-1. Teardown: capture the run's error exactly.
-
-Minor findings from the review of 20260927-25:
-
-- `Teardown.around` takes the run's in-flight error from `$ERROR_INFO` in its `ensure`. That's exact today, but if `around` is ever called from inside a rescue body, a successful run that gets a signal during teardown would report the outer error as the run's. Capture it explicitly, with `rescue Exception => e; run_error = e; raise`, or add a comment.
-- A signal that arrives while the `rescue StandardError` clause is printing, or in `around` after `call` returns, still loses the run's error. So does a non-StandardError from the transport, such as a LoadError. Both need a tiny window or an unusual setup.
-
-- **Depends on:** 20260927-25.
-- **Came from:** Review of 20260927-25, round one.
-- **Design:** Teardown.
-- **Status:** todo
+### 20260930-1. Teardown: capture the run's error exactly. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix. Done, see BACKLOG-COMPLETE.md.
 

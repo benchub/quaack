@@ -3161,3 +3161,16 @@ Minor findings from the review of 20260929-10:
 - **Design:** none. Test harness and deploy only.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. `isolated_env` unsets every `/\ABUNDLE/` key in `ENV`, and it's always computed inside `Bundler.with_unbundled_env`, where `ENV` is what the child inherits. So a separate `Bundler.original_env` scan isn't needed. `Deploy::UNBUNDLED` also drops `BUNDLER_VERSION`, and a deploy_spec example pins what `gem build` sees. The minor finding went to 20260930-10.
+
+### 20260930-1. Teardown: capture the run's error exactly.
+
+Minor findings from the review of 20260927-25:
+
+- `Teardown.around` takes the run's in-flight error from `$ERROR_INFO` in its `ensure`. That's exact today, but if `around` is ever called from inside a rescue body, a successful run that gets a signal during teardown would report the outer error as the run's. Capture it explicitly, with `rescue Exception => e; run_error = e; raise`, or add a comment.
+- A signal that arrives while the `rescue StandardError` clause is printing, or in `around` after `call` returns, still loses the run's error. So does a non-StandardError from the transport, such as a LoadError. Both need a tiny window or an unusual setup.
+
+- **Depends on:** 20260927-25.
+- **Came from:** Review of 20260927-25, round one.
+- **Design:** Teardown.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to act on. `Teardown.around` captures the run's error with a `rescue Exception` instead of reading `$ERROR_INFO`. `call` handles signals first, then treats any other exception, such as a LoadError, as `driver_error`, which never masks the run's error. The instant-long signal windows are documented in the class comment, not closed. The reviewer noted that an `exit` from a transport during teardown now reports `driver_error`. Its status is kept when the run succeeded, and it gives way to the run's error otherwise. No transport calls `exit` today.
