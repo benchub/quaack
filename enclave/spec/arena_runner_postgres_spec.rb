@@ -189,6 +189,40 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
       expect_nothing_persisted
     end
+
+    # A cancel shares the timeout's SQLSTATE, 57014, and its message depends
+    # on lc_messages, so the runner tells them apart by time, as
+    # RunDiscipline does: one that comes before the timeout could have
+    # fired isn't the timeout.
+    it "turns a cancel that isn't the timeout into a statement_canceled error and rolls back" do
+      error = run_error(runner, [parent(1, "a")]) do |tx|
+        tx.query("SELECT 1")
+        tx.query("SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+      end
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 1])
+      expect(error.message).to eq("a statement in the arena transaction was canceled")
+      expect_nothing_persisted
+    end
+
+    it "reports an operator's cancel from another session as statement_canceled, whatever the step" do
+      pid = conn.backend_pid
+      canceler = Thread.new do
+        other = arena.connect
+        sleep 0.05 until other.exec_params(
+          "SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid]
+        ).getvalue(0, 0) == "1"
+        other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
+      ensure
+        other&.close
+      end
+
+      error = run_error(runner, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+      canceler.join
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :insert, 0])
+      expect_nothing_persisted
+    end
   end
 
   describe "index scans" do

@@ -208,15 +208,27 @@ module Quaack
       end
 
       # Runs a connection call and turns anything it raises into an Error
-      # that keeps only the SQLSTATE. A statement_timeout cancel becomes its
-      # own rule, whatever the step.
+      # that keeps only the SQLSTATE. A cancel (SQLSTATE 57014) becomes its
+      # own rule, whatever the step: statement_timeout if it came at least
+      # the timeout after the call started, and statement_canceled if it
+      # came sooner, such as a self-cancel or an operator's
+      # pg_cancel_backend. The two share the SQLSTATE and the message text
+      # depends on lc_messages, so time tells them apart, as in
+      # RunDiscipline.
       def database(rule, step, index = nil)
+        started = now_ms
         yield
       rescue StandardError => e
         sqlstate = sqlstate_of(e)
-        rule = :statement_timeout if sqlstate == QUERY_CANCELED
+        rule = cancel_rule(started) if sqlstate == QUERY_CANCELED
         raise Error.new(rule, step:, sqlstate:, index:), cause: nil
       end
+
+      def cancel_rule(started)
+        now_ms - started >= @statement_timeout_ms ? :statement_timeout : :statement_canceled
+      end
+
+      def now_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
 
       # PG::Error#result is the failed PG::Result, or nil when there's none.
       # Any other error has no SQLSTATE.
