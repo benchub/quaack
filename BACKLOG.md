@@ -848,24 +848,7 @@ It's a false positive. No prompt in the corpus holds that date. The models gener
 - **Design:** none. Test harness and prompt pack only.
 - **Status:** todo
 
-### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there.
-
-`SchemaDump.full_dump` adds each extension's schema to the full dump's `--schema` list. `plperl` and `plperlu` live in `pg_catalog`, so on the Canvas test database of 2026-09-29 the dump got `--schema=pg_catalog`. pg_dump then tried to dump the system catalog. It warned "typtype of data type ... appears to be invalid" for every pseudo-type, and it emitted DDL for pg_catalog's own objects, which 4a would then try to load into arena.
-
-Answers from the user, 2026-09-29:
-
-- Never dump a system schema: not `pg_catalog`, not `information_schema`, and not any other `pg_*` schema. `--extension=<name>` alone still gets each `CREATE EXTENSION`.
-
-To do:
-
-- Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
-- Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
-- Confirmed as the cause of that run's `pg_dump_failed`. The user's production role isn't a superuser. With `--schema=pg_catalog`, pg_dump fails right away with `ERROR:  permission denied for table pg_authid`. A red test should reproduce that with a non-superuser role.
-
-- **Depends on:** nothing open.
-- **Came from:** The user's first real run, 2026-09-29.
-- **Design:** 3b, 4a.
-- **Status:** todo
+### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-21. The full schema dump misses schemas that FK parent tables live in.
 
@@ -885,9 +868,20 @@ This is likely to bite the user's Canvas database, where shard schemas such as `
 
 With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in 3a. List it as unsupported in v1.
 
+- Also from the 20260929-19 review: suppose no `public` schema exists, and every query relation and extension is in a system schema. Then the full dump gets no `--schema` flags, and pg_dump dumps every schema. Refusing system relations fixes this too.
+
 - **Depends on:** 20260929-19.
-- **Came from:** The build of 20260929-19.
+- **Came from:** The build and review of 20260929-19.
 - **Design:** 3a, 3b.
+- **Status:** todo
+
+### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`.
+
+Changing `start_with?("pg_")` to `start_with?("pg")` leaves every spec green. That version would silently drop a user schema like `pgbouncer` (common for PgBouncer's auth_query) or `pgaudit_log`, and the query's tables would be missing from the dump and arena. Add an example with such a schema holding a query table, and assert it stays in the namespaces and the DDL.
+
+- **Depends on:** 20260929-19.
+- **Came from:** Review of 20260929-19, round one.
+- **Design:** 3b.
 - **Status:** todo
 
 ## After version 1.

@@ -2884,3 +2884,23 @@ Answers from the user, 2026-09-29:
 - **Design:** none. This is test harness speed only.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings, so there was no fix round. The template is built as `pack_template_building` and renamed to `pack_template` once it's complete, and it refuses connections. ANALYZE samples randomly, so two fresh builds give different `pg_stats` for orders and line_items. So the spec checks each copy against the template exactly, and against a fresh build wherever a fresh build is deterministic. The root suite went from about 26m34s to 24m27s. The minor findings went to 20260929-17 and 20260929-18.
+
+### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there.
+
+`SchemaDump.full_dump` adds each extension's schema to the full dump's `--schema` list. `plperl` and `plperlu` live in `pg_catalog`, so on the Canvas test database of 2026-09-29 the dump got `--schema=pg_catalog`. pg_dump then tried to dump the system catalog. It warned "typtype of data type ... appears to be invalid" for every pseudo-type, and it emitted DDL for pg_catalog's own objects, which 4a would then try to load into arena.
+
+Answers from the user, 2026-09-29:
+
+- Never dump a system schema: not `pg_catalog`, not `information_schema`, and not any other `pg_*` schema. `--extension=<name>` alone still gets each `CREATE EXTENSION`.
+
+To do:
+
+- Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
+- Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
+- Confirmed as the cause of that run's `pg_dump_failed`. The user's production role isn't a superuser. With `--schema=pg_catalog`, pg_dump fails right away with `ERROR:  permission denied for table pg_authid`. A red test should reproduce that with a non-superuser role.
+
+- **Depends on:** nothing open.
+- **Came from:** The user's first real run, 2026-09-29.
+- **Design:** 3b, 4a.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. `SchemaDump.system_schema?` drops `information_schema` and every `pg_*` schema from the full dump's namespaces, while `--extension` is still passed, so plperl reaches arena. The test image now installs plperl, and a read-only-role spec reproduces the user's `permission denied for table pg_authid` before the fix. The minor findings went to 20260929-22 and 20260929-23.
