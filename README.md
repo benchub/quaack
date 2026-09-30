@@ -132,7 +132,7 @@ flowchart TB
 **On your laptop:**
 
 - A checkout of this repo and Ruby 3.4. On a Mac with Homebrew, `ruby@3.4` is keg-only, so put it first on `PATH`: `export PATH=/opt/homebrew/opt/ruby@3.4/bin:$PATH`.
-- Access to an LLM: Claude through the Anthropic API (an API key, or a login with the `ant` command-line tool), or any OpenAI-compatible API, such as OpenAI, Groq, Gemini, OpenRouter, or a local Ollama. See [Give the driver access to an LLM](#3-give-the-driver-access-to-an-llm).
+- Access to an LLM: Claude through the Anthropic API (an API key, or a login with the `ant` command-line tool), Claude on AWS Bedrock (your AWS credentials), or any OpenAI-compatible API, such as OpenAI, Groq, Gemini, OpenRouter, or a local Ollama. See [Give the driver access to an LLM](#3-give-the-driver-access-to-an-llm).
 - ssh access to the production jump server, without a password prompt (i.e. use keys or an agent).
 
 **On the jump server:**
@@ -205,10 +205,12 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 
 | Key | What it does | Default |
 | --- | --- | --- |
-| `provider` | Which API to call: `anthropic`, or `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API. | `anthropic` |
+| `provider` | Which API to call: `anthropic`, `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API, or `bedrock` for Claude on AWS Bedrock. | `anthropic` |
 | `model` | The model to ask. Required for any provider but `anthropic`. | `claude-opus-5-5` |
 | `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
-| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
+| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Not for `bedrock`. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
+| `aws_region` | For `bedrock` only: the AWS region to call, such as `us-east-1`. | `AWS_REGION`, `AWS_DEFAULT_REGION`, or your AWS profile's region |
+| `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
 
@@ -245,6 +247,32 @@ The models are examples. Use one your account can call, and **make it a strong m
 **Structured output.** At several steps, QUAACK asks for JSON in a fixed shape, and checks every reply. A reply in the wrong shape gets one more try. If the model gets it wrong twice, the run stops with `llm_bad_response`. Strong models rarely do.
 
 > **Privacy: other OpenAI settings go to every provider.** The `openai` gem reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`, and sends what they hold to whatever `base_url` you use, not just to OpenAI. So a custom header carrying a secret, or your OpenAI organization and project IDs, would reach Groq, Gemini, or whichever provider you point QUAACK at. Unset those variables before `quaack run` unless your provider is OpenAI.
+
+#### AWS Bedrock.
+
+With `"provider": "bedrock"`, the driver asks Claude on AWS Bedrock, through the `anthropic` gem's Bedrock client, which calls Bedrock's InvokeModel API and signs each request with your AWS credentials. QUAACK stores no credentials. It finds them the way the AWS CLI and SDKs do:
+
+1. A Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`, if it's set. It's sent as a bearer token, and nothing below is looked at.
+2. The profile `aws_profile` names, from `~/.aws/config` and `~/.aws/credentials`: static keys, SSO (run `aws sso login` first), an assumed role, or a `credential_process`.
+3. Otherwise the AWS SDK's own chain: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN` for temporary ones), the profile `AWS_PROFILE` names or the default one, then a container or EC2 instance role.
+
+Finding none, a profile that can't be loaded, or an empty `AWS_BEARER_TOKEN_BEDROCK` makes `quaack run` fail with `llm_auth` before it touches the jump server. So does a Bedrock API key with `aws_profile` set, since they name different credentials: it's a usage error, exit 64. The credentials are read once, when the run starts, so an SSO session that expires partway through fails that run with `llm_auth`. Log in again, and start a new run.
+
+Give a `model`, since there's no default: Bedrock's model IDs vary by region and by inference profile. Use the ID the Bedrock console shows for your region, such as `anthropic.claude-opus-5-5`, or a cross-region inference profile such as `us.anthropic.claude-opus-5-5`. With no region anywhere, `quaack run` exits with 64. `base_url` is for a private endpoint, and a Bedrock API key needs no region when there's a `base_url`.
+
+```json
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "bedrock",
+    "model": "us.anthropic.claude-opus-5-5",
+    "aws_region": "us-east-1",
+    "aws_profile": "bedrock"
+  }
+}
+```
+
+Your AWS identity needs `bedrock:InvokeModel` on the model, and your account needs access to the model in that region. If AWS refuses either, the run fails with `llm_auth`.
 
 
 ### 4. Install the enclave script on the jump server.
@@ -591,7 +619,7 @@ Common rules:
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
 | `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
-| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
+| `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, the AWS credential chain found nothing (for `bedrock`), or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. For Bedrock, check your AWS credentials, for example with `aws sts get-caller-identity`, or run `aws sso login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
