@@ -898,7 +898,7 @@ Minor findings from the review of 20260928-5:
 
 ### 20260930-4. An assertion in index_candidate_expression_spec passes a value as its failure message.
 
-The enclave suite prints "WARNING: ignoring the provided expectation message argument(5) since it is not a string or a proc", and the same for `(:lower)`, from enclave/spec/index_candidate_expression_spec.rb:50. So an `expect(...).to(matcher, value)` there passes a value where RSpec expects a failure message. Check whether the example asserts what its name says, or whether the value was meant to be part of the expected result. Fix it, and confirm it goes red when the code under test is broken.
+The enclave suite prints "WARNING: ignoring the provided expectation message argument(5) since it is not a string or a proc", and the same for `(:lower)`, from enclave/spec/index_candidate_expression_spec.rb:50. The line is `expect { key_column.new(expression: bad) }.to raise_error(ArgumentError, /expression/), bad`, inside a loop over bad inputs. `bad` is only meant to label which input failed, and RSpec ignores it for the non-string inputs `5` and `:lower`. The assertion still runs for every input, so nothing is untested. Pass `bad.inspect` so the label works and the warning goes away.
 
 - **Depends on:** nothing open.
 - **Came from:** The build of 20260929-15.
