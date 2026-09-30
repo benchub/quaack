@@ -3174,3 +3174,17 @@ Minor findings from the review of 20260927-25:
 - **Design:** Teardown.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to act on. `Teardown.around` captures the run's error with a `rescue Exception` instead of reading `$ERROR_INFO`. `call` handles signals first, then treats any other exception, such as a LoadError, as `driver_error`, which never masks the run's error. The instant-long signal windows are documented in the class comment, not closed. The reviewer noted that an `exit` from a transport during teardown now reports `driver_error`. Its status is kept when the run succeeded, and it gives way to the run's error otherwise. No transport calls `exit` today.
+
+### 20260930-8. Anthropic credential docs and one spec line: tidy.
+
+Minor findings from the review of 20260930-3:
+
+- README.md:190 is one long sentence ("So does an empty `ANTHROPIC_API_KEY`, or an empty `ANTHROPIC_AUTH_TOKEN` when ..., since ..."). DESIGN.md:139's parenthetical is dense too. Both are accurate. Split them into short sentences, in the house style.
+- In driver/spec/llm_client_spec.rb:415, the second assertion of the positional-arguments example checks only that `warn_env_shadow` returns nil. An override that prints and returns nil would pass it. Add `not_to output.to_stderr`, as the first assertion has.
+- The class comment at anthropic_adapter.rb:16-18 has uneven line lengths after the reflow.
+
+- **Depends on:** 20260930-3.
+- **Came from:** Review of 20260930-3, round one.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. The README and DESIGN credential text is now in short sentences, checked against the code. The positional-arguments spec also checks stderr on the keyword call, which catches an override that warns and returns nil. The adapter comment is rewrapped. The minor findings went to 20260930-12.

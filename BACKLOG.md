@@ -847,18 +847,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-8. Anthropic credential docs and one spec line: tidy.
-
-Minor findings from the review of 20260930-3:
-
-- README.md:190 is one long sentence ("So does an empty `ANTHROPIC_API_KEY`, or an empty `ANTHROPIC_AUTH_TOKEN` when ..., since ..."). DESIGN.md:139's parenthetical is dense too. Both are accurate. Split them into short sentences, in the house style.
-- In driver/spec/llm_client_spec.rb:415, the second assertion of the positional-arguments example checks only that `warn_env_shadow` returns nil. An override that prints and returns nil would pass it. Add `not_to output.to_stderr`, as the first assertion has.
-- The class comment at anthropic_adapter.rb:16-18 has uneven line lengths after the reflow.
-
-- **Depends on:** 20260930-3.
-- **Came from:** Review of 20260930-3, round one.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260930-8. Anthropic credential docs and one spec line: tidy. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-9. Qualify the catalog names the run server check reads.
 
@@ -900,6 +889,18 @@ Answers from the user, 2026-09-30:
 - **Depends on:** nothing open.
 - **Came from:** The user, 2026-09-30.
 - **Design:** Where QUAACK runs, LLM client.
+- **Status:** todo
+
+### 20260930-12. Anthropic credential wording nits.
+
+Minor findings from the review of 20260930-8:
+
+- In DESIGN.md's LLM client section, "So an empty value there is `llm_auth`" leans on "there" to mean the first of the two variables that's set. Say it outright.
+- The class comment in driver/lib/quaack/driver/llm/anthropic_adapter.rb still uses semicolons ("wins; then ... not empty; else ..."). Split it into sentences.
+
+- **Depends on:** 20260930-8.
+- **Came from:** Review of 20260930-8, round one.
+- **Design:** LLM client.
 - **Status:** todo
 
 ## After version 1.
