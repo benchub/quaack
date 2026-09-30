@@ -15,7 +15,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     # Schema names are case-sensitive, so "Information_Schema" is a user
     # schema of its own, and pgbouncer or pgaudit_log only starts with pg.
     it "leaves every other schema to the user" do
-      %w[public pgbouncer pgaudit_log Information_Schema PG_toast pg].each do |name|
+      %w[public pgbouncer pgaudit_log Information_Schema PG_toast pg app_pg_x].each do |name|
         expect(described_class.system_schema?(name)).to be(false), name
       end
     end
