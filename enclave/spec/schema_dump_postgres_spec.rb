@@ -354,6 +354,26 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(created_tables(ddl)).to eq(%w[other.lonely public.customers public.orders])
     end
 
+    # Only pg_ names a system schema. A user schema can start with pg and
+    # no underscore, such as pgbouncer for PgBouncer's auth_query, or
+    # pgaudit_log, and its tables belong in both dumps like any other's.
+    it "keeps a user schema whose name starts with pg but not pg_" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA pgbouncer;
+        CREATE TABLE pgbouncer.users (id int);
+        CREATE SCHEMA pgaudit_log;
+        CREATE TABLE pgaudit_log.entries (id int);
+      SQL
+      result = run([table("pgbouncer", "users"), table("pgaudit_log", "entries")])
+
+      expect(result.namespaces).to eq(%w[pgaudit_log pgbouncer public])
+      expect(store.read("schema_dump")["namespaces"]).to eq(%w[pgaudit_log pgbouncer public])
+      expect(created_tables(store.read("schema_dump")["ddl"])).to eq(
+        %w[pgaudit_log.entries pgbouncer.users public.customers public.orders]
+      )
+      expect(created_tables(store.read("schema_subset")["ddl"])).to eq(%w[pgaudit_log.entries pgbouncer.users])
+    end
+
     # information_schema isn't pg_*, but it's a system schema all the same.
     it "leaves out information_schema too, when an extension lives there" do
       conn.exec("CREATE EXTENSION citext SCHEMA information_schema")
