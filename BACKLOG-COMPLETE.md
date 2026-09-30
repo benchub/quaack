@@ -2956,3 +2956,16 @@ This is likely to bite the user's Canvas database, where shard schemas such as `
 - **Design:** 3b, 4a.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no findings to fix. `SchemaDump.run` passes the FK ancestors, not just the query relations, to `full_dump`, so every ancestor's schema is dumped, at any depth, still without system schemas. A spec loads a two-level cross-schema chain into arena. The reviewer noted that a widely referenced parent schema, such as `auth`, is now dumped whole, and its tables must be lockable by the read-only role. Before the fix, that dump failed to load anyway. The builder's related findings went to 20260929-26.
+
+### 20260923-22. MCV statistics loose ends.
+
+Still open from the second review of 20260923-19:
+- An invalid-UTF-8 literal on a t/f column raises `Encoding::CompatibilityError` from `strip`. It fails closed and doesn't leak.
+- Optional: a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
+
+- **Depends on:** 20260923-19.
+- **Came from:** Second review of 20260923-19.
+- **Design:** 3c.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no findings to fix. `ColumnStatistics#boolean_text` leaves an invalid-UTF-8 literal unchanged, so it misses the t/f MCVs and gets the non-MCV estimate instead of raising. The guard is defensive, since pg_query already refuses invalid UTF-8. A real-Postgres spec pins `= false` on a nullable boolean to freq(f).

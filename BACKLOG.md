@@ -205,17 +205,7 @@ Still open from the reviews of 20260922-30 and 20260923-20:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260923-22. MCV statistics loose ends.
-
-Still open from the second review of 20260923-19:
-- An invalid-UTF-8 literal on a t/f column raises `Encoding::CompatibilityError` from `strip`. It fails closed and doesn't leak.
-- Optional: a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
-
-- **Depends on:** 20260923-19.
-- **Came from:** Second review of 20260923-19.
-- **Design:** 3c.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260923-22. MCV statistics loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1. Done, see BACKLOG-COMPLETE.md.
 
