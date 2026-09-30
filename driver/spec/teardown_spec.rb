@@ -104,6 +104,65 @@ RSpec.describe Quaack::Driver::Teardown do
     end
   end
 
+  # Task 20260927-25: a transport at the edge that fails in a way the real
+  # ones don't, or that gets a signal while teardown runs.
+  context "with a transport that raises something other than an EnclaveError" do
+    let(:transport) { Class.new { def call(*, **) = raise(IOError, "sentinel-io-7f3a") }.new }
+    let(:driver_error) do
+      "quaack: couldn't tear down run #{run_id} (driver_error). " \
+        "Run this on the jump server: quaacks teardown --run #{run_id}\n"
+    end
+
+    it "never masks the run's own error, and tells the operator how to finish teardown" do
+      expect { around_run { raise ArgumentError, "boom" } }.to raise_error(ArgumentError, "boom")
+      expect(stderr.string).to eq(driver_error)
+    end
+
+    it "fails an otherwise good run with that error" do
+      expect { around_run }.to raise_error(IOError, "sentinel-io-7f3a")
+      expect(stderr.string).to eq(driver_error)
+    end
+  end
+
+  context "when a signal interrupts teardown" do
+    let(:transport) { Class.new { def call(*, **) = Process.kill("TERM", Process.pid) && sleep(5) }.new }
+    let(:finish) { "Run this on the jump server: quaacks teardown --run #{run_id}\n" }
+
+    it "lets the signal through, and first prints the run's own error and how to finish teardown" do
+      expect { around_run { raise ArgumentError, "boom" } }.to raise_error(SignalException, "SIGTERM")
+      expect(stderr.string).to eq("quaack: run #{run_id} failed (ArgumentError: boom), " \
+                                  "and a signal interrupted its teardown. #{finish}")
+    end
+
+    it "names only the rule of a run that failed with an EnclaveError" do
+      run_error = Quaack::Driver::EnclaveError.new(subcommand: "explain", rule: "timeout", step: "explain")
+      expect { around_run { raise run_error } }.to raise_error(SignalException, "SIGTERM")
+      expect(stderr.string).to eq("quaack: run #{run_id} failed (timeout), " \
+                                  "and a signal interrupted its teardown. #{finish}")
+    end
+
+    it "says only how to finish teardown after a run that succeeded" do
+      expect { around_run }.to raise_error(SignalException, "SIGTERM")
+      expect(stderr.string).to eq("quaack: a signal interrupted the teardown of run #{run_id}. #{finish}")
+    end
+  end
+
+  # A second Ctrl-C, in a child process with Ruby's own INT handler (RSpec
+  # traps INT in this one).
+  it "still stops the process on a second Ctrl-C during teardown, after printing the run's own error" do
+    source = <<~RUBY
+      require "quaack/driver/teardown"
+      transport = Class.new { def call(*, **) = Process.kill("INT", Process.pid) && sleep(5) }.new
+      Quaack::Driver::Teardown.around(transport:, run_id: ARGV[0], stderr: $stderr) { raise ArgumentError, "boom" }
+      puts "still running"
+    RUBY
+    out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", source, run_id)
+    expect([out, status.termsig]).to eq(["", Signal.list.fetch("INT")])
+    expect(err).to start_with("quaack: run #{run_id} failed (ArgumentError: boom), " \
+                              "and a signal interrupted its teardown. " \
+                              "Run this on the jump server: quaacks teardown --run #{run_id}\n")
+  end
+
   it "skips teardown with keep, and prints the run ID and the command to run later" do
     expect(around_run(keep: true)).to eq(:result)
     expect(File.exist?(store)).to be(true)
