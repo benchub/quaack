@@ -126,6 +126,27 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     end
   end
 
+  # The root's cost, not one of its children's, which a single-node plan
+  # can't tell apart.
+  it "costs a join by its root, the way EXPLAIN with the literal inlined does" do
+    candidate = candidate(key: ["s"])
+    query = "SELECT * FROM t JOIN t u ON u.a = t.b WHERE t.s = $1"
+    report = run(query, { slow: ["10"] }, [candidate])
+
+    baseline = inline_explain(query.sub("$1", "10"))
+    oid = conn.exec_params("SELECT indexrelid FROM hypopg_create_index($1)", [candidate.to_ddl]).getvalue(0, 0)
+    with_index = inline_explain(query.sub("$1", "10"))
+    conn.exec("SELECT hypopg_reset()")
+
+    expect([baseline, with_index].map { |p| p.first["Plan"]["Plans"].size }).to eq([2, 2])
+    expect(report.results.first.plans[:slow].used).to be(true)
+    expect(report.baseline.plans[:slow].total_cost).to eq(baseline.first["Plan"]["Total Cost"])
+    expect(report.results.first.plans[:slow].total_cost).to eq(with_index.first["Plan"]["Total Cost"])
+    expect(report.results.first.plans[:slow].canonical_plan)
+      .to be_matches(Quaack::Enclave::CanonicalPlan.new(with_index,
+                                                        hypothetical_indexes: { Integer(oid) => candidate.to_ddl }))
+  end
+
   # A bound NULL parameter, as the production session sends it. An inlined
   # NULL would turn into "flag IS NULL" at parse time.
   it "plans a nil literal as NULL" do
@@ -528,6 +549,25 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: last_reset_fails.new(conn))
 
     expect(error).to have_attributes(rule: :cleanup_failed, sqlstate: nil, cause: nil)
+  end
+
+  # The wrapper sends the first DEALLOCATE, the one after the first
+  # EXPLAIN, to a statement that doesn't exist, so Postgres fails it. The
+  # cleanup's own DEALLOCATE then removes the real one.
+  it "raises a cleanup failure when deallocating after an EXPLAIN fails" do
+    first_deallocate_fails = Class.new(SimpleDelegator) do
+      def exec(sql, *)
+        if sql.start_with?("DEALLOCATE") && !@failed
+          @failed = true
+          sql = "DEALLOCATE quaack_5a4_missing"
+        end
+        super
+      end
+    end
+    error = run_error("SELECT * FROM t WHERE a = $1", { slow: ["5"] }, connection: first_deallocate_fails.new(conn))
+
+    expect(error).to have_attributes(rule: :cleanup_failed, sqlstate: "26000", cause: nil)
+    expect(leftovers).to eq(clean)
   end
 
   it "doesn't count a real index the plan uses as the candidate" do
