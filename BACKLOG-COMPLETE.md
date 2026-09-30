@@ -3075,3 +3075,18 @@ Minor findings from the review of 20260923-37:
 - **Design:** Step 9.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. A new test with a 2000 ms timeout runs two `pg_sleep(1.3)` calls, then a self-cancel, and expects `statement_canceled`. It goes red if the runner keeps one start time for its whole life. The operator-cancel test's poll loop now gives up after 10 s instead of hanging. It passed 10 times under heavy load with no flakes. The minor findings went to 20260930-5.
+
+### 20260929-12. `clients` shape checks: round-two test gaps.
+
+Minor findings from the second review of 20260929-7. The code is correct, and none of these can leak today, because the enclave builds the start time with a fixed-format `to_char`.
+
+- Changing `\A` to `^` in the start-time pattern survives the specs, in both the enclave's ErrorFilter and the driver's reply parser. So does changing the driver's `\z` to `$`. Add cases with the start time after or before a newline to both suites.
+- The driver never tests keeping exactly 20 clients. With the driver's limit at 19, a real 20-client error line would lose its `clients` field and the specs stay green.
+- Whether the UTC test in `enclave/spec/run_server_check_postgres_spec.rb` catches a 12-hour clock (`HH12`) depends on the time of day the suite runs. Pin it to an afternoon hour.
+- The enclave never tests its exact-class checks on an Array or Hash subclass, only on a String subclass. Loosening them to `respond_to?` survives. Egress's own plain-data check backs them up.
+
+- **Depends on:** 20260929-7.
+- **Came from:** Review of 20260929-7, round two.
+- **Design:** Trust boundary, step 4.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. New tests cover four gaps. Newline cases pin the start-time anchors in ErrorFilter and the driver. The driver keeps exactly 20 clients. Array and Hash subclasses are dropped by ErrorFilter's own exact-class check. The start-time `to_char` is now the constant `BACKEND_START_SQL`, tested on a fixed afternoon timestamp, so HH12 is caught at any time of day. The minor findings went to 20260930-6.

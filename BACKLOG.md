@@ -704,19 +704,7 @@ Minor findings from the first review of 20260929-7. Each is untested, but none i
 - **Design:** Step 4.
 - **Status:** todo
 
-### 20260929-12. `clients` shape checks: round-two test gaps.
-
-Minor findings from the second review of 20260929-7. The code is correct, and none of these can leak today, because the enclave builds the start time with a fixed-format `to_char`.
-
-- Changing `\A` to `^` in the start-time pattern survives the specs, in both the enclave's ErrorFilter and the driver's reply parser. So does changing the driver's `\z` to `$`. Add cases with the start time after or before a newline to both suites.
-- The driver never tests keeping exactly 20 clients. With the driver's limit at 19, a real 20-client error line would lose its `clients` field and the specs stay green.
-- Whether the UTC test in `enclave/spec/run_server_check_postgres_spec.rb` catches a 12-hour clock (`HH12`) depends on the time of day the suite runs. Pin it to an afternoon hour.
-- The enclave never tests its exact-class checks on an Array or Hash subclass, only on a String subclass. Loosening them to `respond_to?` survives. Egress's own plain-data check backs them up.
-
-- **Depends on:** 20260929-7.
-- **Came from:** Review of 20260929-7, round two.
-- **Design:** Trust boundary, step 4.
-- **Status:** todo
+### 20260929-12. `clients` shape checks: round-two test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-13. Build the prompt-pack database once per spec process. Done, see BACKLOG-COMPLETE.md.
 
@@ -898,6 +886,19 @@ Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_post
 - **Depends on:** 20260929-28.
 - **Came from:** Review of 20260929-28, round one.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20260930-6. `clients` shape checks: minor findings, round three.
+
+Minor findings from the review of 20260929-12:
+
+- The 24-hour-clock test runs `BACKEND_START_SQL` alone, not `OTHER_CLIENTS_SQL`. Inlining an HH12 format into the query in place of the constant stays green before noon UTC. Assert `OTHER_CLIENTS_SQL.include?(BACKEND_START_SQL)`, or run the query itself against a temp view `pg_temp.pg_stat_activity` with a pinned afternoon `backend_start`.
+- In enclave/spec/error_filter_spec.rb, the subclass cases' `to_json` override never runs, because egress's plain-data check rejects a subclass first. The comment saying it "writes itself out as a sentinel" is misleading. Fix the comment.
+- Watch for a flake in "names the oldest other client first" (run_server_check_postgres_spec.rb). It failed once in one review run and passed on every rerun. Look into it only if it recurs.
+
+- **Depends on:** 20260929-12.
+- **Came from:** Review of 20260929-12, round one.
+- **Design:** Step 4.
 - **Status:** todo
 
 ## After version 1.
