@@ -849,19 +849,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-8. Anthropic credential docs and one spec line: tidy. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-9. Qualify the catalog names the run server check reads.
-
-`RunServerCheck`'s `CLIENTS_SQL` and `OTHER_CLIENTS_SQL` read `pg_stat_activity`, and `PLANNER_SQL` reads `pg_settings`, without `pg_catalog.`. Those unqualified names can be shadowed. In the review of 20260929-11, the reviewer set `search_path = public, pg_catalog` on the run server's database and created an empty `public.pg_stat_activity` table. The quiet check then passed with another client connected. If such a table had `pid` and `backend_start` columns, its values would go out as "clients", still in the pid and timestamp shape. The setup is unusual, but the fix is cheap.
-
-- Qualify every catalog relation and function the run server check reads with `pg_catalog.`, and check the rest of step 4, such as `Inventory::Production`'s settings SQL, for the same gap. 20260924-24 already notes `current_setting` and `json_array_elements_text` there.
-- Red test: shadow `pg_stat_activity` through the database's search_path, with another client connected, and expect `run_server_other_clients`.
-- Qualifying the name breaks the temp-view technique of two tests from 20260929-11: "names no client, and still fails, when none is left to name" and "names the oldest other client first, even when its pid is the higher one". Replace it, for example by running the check's SQL constants against a stand-in source.
-- Comment nits from the same review: run_server_check.rb:48's "none if none is left to name" should say "an empty list". error_filter.rb:37-39 should say the two keys must come in that order.
-
-- **Depends on:** 20260929-11.
-- **Came from:** Review of 20260929-11, round one.
-- **Design:** Step 4.
-- **Status:** todo
+### 20260930-9. Qualify the catalog names the run server check reads. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
@@ -901,6 +889,39 @@ Minor findings from the review of 20260930-8:
 - **Depends on:** 20260930-8.
 - **Came from:** Review of 20260930-8, round one.
 - **Design:** LLM client.
+- **Status:** todo
+
+### 20260930-13. Run server check shadowing: one untested qualification, and operators.
+
+Minor findings from the review of 20260930-9:
+
+- In `RunServerCheck::PLANNER_SQL`, the second `pg_catalog.pg_settings_get_flags(name)`, the one in the WHERE clause, has no test that fails when it's unqualified. Under `search_path = public, pg_catalog`, a `public.pg_settings_get_flags` returning `'{}'` drops every EXPLAIN-flagged setting outside Query Tuning. A run server with `SET effective_io_concurrency = 7` then passes when it should fail with `run_server_guc_mismatch`. Add that example to the "a search_path whose public schema shadows the catalog" group. The reviewer confirmed it goes red with the qualifier removed.
+- Operators (`=`, `<>`, `LIKE`, `= ANY`) in the check's SQL aren't qualified. Exploiting that needs a deliberately built operator in `public`, and a blunt one breaks the planner check first. List it as unsupported in v1 in DESIGN.md step 4, or qualify with `OPERATOR(pg_catalog.=)`.
+
+- **Depends on:** 20260930-9.
+- **Came from:** Review of 20260930-9, round one.
+- **Design:** Step 4.
+- **Status:** todo
+
+### 20260930-14. Unqualified catalog names elsewhere in the enclave.
+
+The 20260930-9 builder listed catalog relations and functions the enclave still reads without `pg_catalog.`, outside step 4. Each can be shadowed by the same search_path setup. Qualify them, or decide per step which are safe, such as ones on the arena, which QUAACK builds itself.
+
+- arena_runner/sequences.rb: `pg_sequence`, `pg_get_serial_sequence()`.
+- arena_schema.rb, arena_schema/domain_checks.rb, arena_schema/unique_indexes.rb: `format_type()`, `pg_get_expr()`, `pg_attribute`, `pg_attrdef`, `unnest()`, `pg_get_constraintdef()`, `pg_constraint`, `pg_class`, `pg_namespace`, `to_regclass()`, `pg_type`, `pg_get_indexdef()`, `generate_series()`, `pg_depend`, `pg_proc`, `pg_index`.
+- assumption_check.rb, from_functions.rb, relation_qualifier.rb, steps/rewrite_check.rb: `unnest()`.
+- index_build.rb: `pg_relation_size()`, `pg_class`, `pg_namespace`, `pg_index`, `unnest()`.
+- measurement.rb: `pg_prepared_statements`.
+- planner_statistics/catalog.rb: `pg_stats`. This one reads production, so it matters most.
+- racetrack.rb: `count(*)`. redaction/binding.rb: `json_agg()`.
+- result_comparison/tiebreaker.rb, scenarios/ties.rb, scenarios/values.rb, value_pools.rb: `pg_type`, `pg_range`, `pg_attribute`, `pg_collation`, `pg_enum`, `count()`.
+- schema_dump.rb: `pg_database`, `current_database()`, `current_setting()`. These also read production.
+- single_candidate_test.rb: the hypopg functions live in the extension's schema, not `pg_catalog`, so they need the extension's schema, not `pg_catalog.`.
+- steps/index_search.rb: `format_type()`.
+
+- **Depends on:** 20260930-9.
+- **Came from:** The build of 20260930-9.
+- **Design:** What goes into the enclave.
 - **Status:** todo
 
 ## After version 1.

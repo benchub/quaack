@@ -3188,3 +3188,18 @@ Minor findings from the review of 20260930-3:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. The README and DESIGN credential text is now in short sentences, checked against the code. The positional-arguments spec also checks stderr on the keyword call, which catches an override that warns and returns nil. The adapter comment is rewrapped. The minor findings went to 20260930-12.
+
+### 20260930-9. Qualify the catalog names the run server check reads.
+
+`RunServerCheck`'s `CLIENTS_SQL` and `OTHER_CLIENTS_SQL` read `pg_stat_activity`, and `PLANNER_SQL` reads `pg_settings`, without `pg_catalog.`. Those unqualified names can be shadowed. In the review of 20260929-11, the reviewer set `search_path = public, pg_catalog` on the run server's database and created an empty `public.pg_stat_activity` table. The quiet check then passed with another client connected. If such a table had `pid` and `backend_start` columns, its values would go out as "clients", still in the pid and timestamp shape. The setup is unusual, but the fix is cheap.
+
+- Qualify every catalog relation and function the run server check reads with `pg_catalog.`, and check the rest of step 4, such as `Inventory::Production`'s settings SQL, for the same gap. 20260924-24 already notes `current_setting` and `json_array_elements_text` there.
+- Red test: shadow `pg_stat_activity` through the database's search_path, with another client connected, and expect `run_server_other_clients`.
+- Qualifying the name breaks the temp-view technique of two tests from 20260929-11: "names no client, and still fails, when none is left to name" and "names the oldest other client first, even when its pid is the higher one". Replace it, for example by running the check's SQL constants against a stand-in source.
+- Comment nits from the same review: run_server_check.rb:48's "none if none is left to name" should say "an empty list". error_filter.rb:37-39 should say the two keys must come in that order.
+
+- **Depends on:** 20260929-11.
+- **Came from:** Review of 20260929-11, round one.
+- **Design:** Step 4.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. Every catalog relation and function in `RunServerCheck` and `Inventory::Production` is `pg_catalog.`-qualified, including `count(*)`, `to_char`, and the `text` cast. The one exception is `$1::json`, since `json` is a keyword. Shadow tests plant look-alikes in `public` under `search_path = public, pg_catalog` and show both still read the real catalog. The two temp-view tests now swap only the FROM clause of the real constants. The follow-ups went to 20260930-13 and 20260930-14.
