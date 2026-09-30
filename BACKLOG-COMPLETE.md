@@ -2983,3 +2983,17 @@ Still open from the second review of 20260922-46:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. A 57014 is `statement_timeout` only once `statement_timeout_ms` has passed since the connection call started, as in run discipline. Anything sooner is the new rule `statement_canceled`, in `arena_runner/cancel.rb`. New specs cover a self-cancel, an operator cancel, an Interrupt surviving a failed rollback, and the fixture check coming before the idle check. The minor findings went to 20260929-28 and 20260929-29.
+
+### 20260924-1. 5a-4 loose ends.
+
+Still open from the second review of 20260923-56:
+- Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
+- The exact-cost assertions use single-node plans only. Add one on a join.
+- `CanonicalPlan` treats any `"<N>…"` index name as hypothetical, so a real index named that way is canonicalized wrong.
+
+- **Depends on:** 20260923-56.
+- **Came from:** Second review of 20260923-56.
+- **Design:** 5a-4.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. New specs pin `cleanup_failed` on a failed DEALLOCATE and a join's exact root cost. CanonicalPlan now treats an index name as hypothetical only when its `<oid>` is in the map SingleCandidateTest builds from HypoPG's `indexrelid`, so a real index named `"<1>..."` no longer breaks the plan gate. An oid the map leaves out now counts as a real index instead of making the plan not comparable, which is a deliberate trade-off. The minor finding went to 20260929-30.

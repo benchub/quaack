@@ -309,18 +309,7 @@ Still open from the reviews of 20260922-4 and 20260923-53:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-1. 5a-4 loose ends.
-
-Still open from the second review of 20260923-56:
-- Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
-- The exact-cost assertions use single-node plans only. Add one on a join.
-- `CanonicalPlan` treats any `"<N>…"` index name as hypothetical, so a real index named that way is canonicalized wrong.
-
-- **Depends on:** 20260923-56.
-- **Came from:** Second review of 20260923-56.
-- **Design:** 5a-4.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Status:** todo
+### 20260924-1. 5a-4 loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
 
@@ -893,6 +882,15 @@ In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-5
 - **Depends on:** 20260923-37.
 - **Came from:** Review of 20260923-37, round one.
 - **Design:** Steps 9 and 10.
+- **Status:** todo
+
+### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps.
+
+Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through the oid map SingleCandidateTest builds. Step 8's cross-session plan match (ThreeConfigurationPruning), and 5a-7's IndexRanking, depend on it. Passing an empty or nil map from SCT fails SCT's own specs, but no pruning or ranking spec. Add a pruning test that would break if the same index got a different oid in each session and the map were missing.
+
+- **Depends on:** 20260924-1.
+- **Came from:** Review of 20260924-1, round one.
+- **Design:** 5a-7, step 8.
 - **Status:** todo
 
 ## After version 1.
