@@ -72,8 +72,11 @@ module Quaack
       private
 
       # When every MCV is t or f, the column is almost surely boolean, so a
-      # literal in one of boolin's full spellings reads as t or f.
+      # literal in one of boolin's full spellings reads as t or f. A literal
+      # whose bytes aren't valid in its encoding can't be one of them, and
+      # strip and downcase raise on it, so it's left as it is and misses.
       def boolean_text(literal_text)
+        return literal_text unless literal_text.valid_encoding?
         return literal_text unless most_common_vals.all? { |v| %w[t f].include?(v) }
 
         ColumnStatistics::BOOLEAN_SPELLINGS.fetch(literal_text.strip.downcase, literal_text)
