@@ -691,18 +691,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 
 ### 20260929-10. The leak check sees BUNDLER_VERSION in a script's environment. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-11. `run_server_other_clients` clients list: minor test gaps.
-
-Minor findings from the first review of 20260929-7. Each is untested, but none is visible outside the enclave on a realistic setup.
-
-- `RunServerCheck` returns nil rather than `[]` when every other client leaves between the count query and the list query. Changing that to `[]` survives the specs. ErrorFilter drops an empty Array, so nothing changes on the wire. Pin it, or drop the special case.
-- In ErrorFilter's client shape check, dropping the key-order check survives the specs. A Hash with its keys reversed then goes out, and the driver drops it, because its key check cares about order. Add a reversed-key-order case, or make both sides agree on whether order matters.
-- `ORDER BY pid` passes the specs as well as `ORDER BY backend_start, pid`. They differ only across pid wraparound.
-
-- **Depends on:** 20260929-7.
-- **Came from:** Review of 20260929-7, round one.
-- **Design:** Step 4.
-- **Status:** todo
+### 20260929-11. `run_server_other_clients` clients list: minor test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-12. `clients` shape checks: round-two test gaps. Done, see BACKLOG-COMPLETE.md.
 
@@ -896,6 +885,20 @@ Minor findings from the review of 20260930-3:
 - **Depends on:** 20260930-3.
 - **Came from:** Review of 20260930-3, round one.
 - **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20260930-9. Qualify the catalog names the run server check reads.
+
+`RunServerCheck`'s `CLIENTS_SQL` and `OTHER_CLIENTS_SQL` read `pg_stat_activity`, and `PLANNER_SQL` reads `pg_settings`, without `pg_catalog.`. Those unqualified names can be shadowed. In the review of 20260929-11, the reviewer set `search_path = public, pg_catalog` on the run server's database and created an empty `public.pg_stat_activity` table. The quiet check then passed with another client connected. If such a table had `pid` and `backend_start` columns, its values would go out as "clients", still in the pid and timestamp shape. The setup is unusual, but the fix is cheap.
+
+- Qualify every catalog relation and function the run server check reads with `pg_catalog.`, and check the rest of step 4, such as `Inventory::Production`'s settings SQL, for the same gap. 20260924-24 already notes `current_setting` and `json_array_elements_text` there.
+- Red test: shadow `pg_stat_activity` through the database's search_path, with another client connected, and expect `run_server_other_clients`.
+- Qualifying the name breaks the temp-view technique of two tests from 20260929-11: "names no client, and still fails, when none is left to name" and "names the oldest other client first, even when its pid is the higher one". Replace it, for example by running the check's SQL constants against a stand-in source.
+- Comment nits from the same review: run_server_check.rb:48's "none if none is left to name" should say "an empty list". error_filter.rb:37-39 should say the two keys must come in that order.
+
+- **Depends on:** 20260929-11.
+- **Came from:** Review of 20260929-11, round one.
+- **Design:** Step 4.
 - **Status:** todo
 
 ## After version 1.
