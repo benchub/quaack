@@ -683,11 +683,23 @@ RSpec.describe Quaack::Driver::Transport do
     end
 
     good = "2026-09-29T16:01:02Z"
+
+    it "keeps twenty clients" do
+      clients = Array.new(20) { { "pid" => it + 1, "backend_start" => good } }
+      error = refusal(%({"type":"error","rule":"run_server_other_clients","clients":#{JSON.generate(clients)}}))
+
+      expect(error.clients).to eq(clients)
+      expect(error.message).to include("pid 20 started #{good}, exit 0)")
+    end
+
     [
       ["an application_name beside the pid", %([{"pid":1,"backend_start":"#{good}","application_name":"SENTINEL"}])],
       ["a sentinel for a start time", %([{"pid":1,"backend_start":"SENTINEL"}])],
       ["a sentinel before a start time", %([{"pid":1,"backend_start":"SENTINEL #{good}"}])],
       ["a sentinel after a start time", %([{"pid":1,"backend_start":"#{good} SENTINEL"}])],
+      ["a sentinel on a line before a start time", %([{"pid":1,"backend_start":"SENTINEL\\n#{good}"}])],
+      ["a sentinel on a line after a start time", %([{"pid":1,"backend_start":"#{good}\\nSENTINEL"}])],
+      ["a newline after a start time", %([{"pid":1,"backend_start":"#{good}\\n"}])],
       ["a String pid", %([{"pid":"1","backend_start":"#{good}"}])],
       ["a zero pid", %([{"pid":0,"backend_start":"#{good}"}])],
       ["a Float pid", %([{"pid":1.0,"backend_start":"#{good}"}])],

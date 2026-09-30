@@ -83,8 +83,10 @@ module Quaack
       # the UTC time it started, oldest first, at most MAX_CLIENTS. Nothing
       # else about a client is read.
       MAX_CLIENTS = 20
+      # A client's start time, in UTC, whatever the session's TimeZone.
+      BACKEND_START_SQL = %(to_char(backend_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
       OTHER_CLIENTS_SQL = <<~SQL.freeze
-        SELECT pid, to_char(backend_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        SELECT pid, #{BACKEND_START_SQL}
         FROM pg_stat_activity
         WHERE backend_type = 'client backend' AND pid <> ALL($1::int[]) AND backend_start IS NOT NULL
         ORDER BY backend_start, pid

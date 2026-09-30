@@ -280,6 +280,21 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect([line, error.message, error.clients.inspect]).to all(satisfy { !it.include?("sentinel-app") })
     end
 
+    # The example above can't choose its clients' start times, so whether it
+    # catches a 12-hour clock depends on the hour it runs. This runs the
+    # check's own start time expression on an afternoon start, from a session
+    # at +05:30.
+    it "shows a start time on a 24-hour clock, in UTC" do
+      conn = connect
+      conn.exec("SET TimeZone = 'Asia/Kolkata'")
+      started = conn.exec(
+        "SELECT #{described_class::BACKEND_START_SQL} " \
+        "FROM (VALUES ('2026-09-29 16:01:02+00'::timestamptz)) AS client(backend_start)"
+      ).getvalue(0, 0)
+
+      expect(started).to eq("2026-09-29T16:01:02Z")
+    end
+
     # pg_stat_activity lists backends by slot, not by age, once a slot an
     # older backend doesn't hold comes free. So a young client that lands in
     # an earlier slot is listed before an old one, and only the check's own

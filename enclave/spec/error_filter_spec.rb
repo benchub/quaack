@@ -166,6 +166,8 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
 
       good = "2026-09-29T16:01:02Z"
+      # A subclass of base that writes itself out as a sentinel.
+      sneaky = ->(base) { Class.new(base) { def to_json(*) = ERROR_SENTINEL.to_json } }
       [
         ["an application_name beside the pid",
          [{ "pid" => 4242, "backend_start" => good, "application_name" => ERROR_SENTINEL }]],
@@ -173,6 +175,9 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         ["a sentinel before the start time", [{ "pid" => 4242, "backend_start" => "#{ERROR_SENTINEL} #{good}" }]],
         ["a sentinel after the start time", [{ "pid" => 4242, "backend_start" => "#{good} #{ERROR_SENTINEL}" }]],
         ["a start time on a line of its own", [{ "pid" => 4242, "backend_start" => "#{good}\n#{ERROR_SENTINEL}" }]],
+        ["a start time on a line after a sentinel",
+         [{ "pid" => 4242, "backend_start" => "#{ERROR_SENTINEL}\n#{good}" }]],
+        ["a start time with a newline after it", [{ "pid" => 4242, "backend_start" => "#{good}\n" }]],
         ["a start time with a fraction", [{ "pid" => 4242, "backend_start" => "2026-09-29T16:01:02.5Z" }]],
         ["a start time with an offset", [{ "pid" => 4242, "backend_start" => "2026-09-29T16:01:02+00:00" }]],
         ["a start time that's a String subclass", [{ "pid" => 4242, "backend_start" => Class.new(String).new(good) }]],
@@ -187,9 +192,11 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         ["Symbol keys", [{ pid: 4242, backend_start: good }]],
         ["a key that's a String subclass", [{ Class.new(String).new("pid") => 4242, "backend_start" => good }]],
         ["an entry that isn't a Hash", [[4242, good]]],
+        ["an entry that's a Hash subclass", [sneaky.call(Hash).new.merge!("pid" => 4242, "backend_start" => good)]],
         ["a good entry and a sentinel", [{ "pid" => 4242, "backend_start" => good }, ERROR_SENTINEL]],
         ["an empty Array", []],
         ["twenty-one entries", Array.new(21) { |i| { "pid" => i + 1, "backend_start" => good } }],
+        ["an Array subclass", sneaky.call(Array).new([{ "pid" => 4242, "backend_start" => good }])],
         ["a String", ERROR_SENTINEL],
         ["a lone Hash", { "pid" => 4242, "backend_start" => good }],
         ["nil", nil]
