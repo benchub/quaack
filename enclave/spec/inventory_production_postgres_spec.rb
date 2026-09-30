@@ -3,6 +3,7 @@
 require "delegate"
 require "quaack/enclave/inventory/production"
 require_relative "support/production_server"
+require_relative "support/catalog_shadow"
 
 # What step 2 reads from production (DESIGN.md, step 2), against a stand-in
 # production database on the test harness's Postgres.
@@ -112,6 +113,20 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
       expect(inventory["plan_settings"]).to eq("transaction_read_only" => "on",
                                                "transaction_isolation" => "repeatable read")
       expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+    end
+
+    # A search_path that puts public before pg_catalog, and public holding
+    # relations, functions, and types named like the catalog's (see
+    # CatalogShadow): read still reads the catalog, so it records what it
+    # did before they were planted.
+    it "reads the catalog, not what a public schema shadows it with" do
+      conn.exec("SET search_path = public, pg_catalog")
+      plan_settings = %w[enable_hashjoin search_path]
+      before = production_module.read(conn, plan_settings:)
+      CatalogShadow.plant(conn)
+
+      expect(production_module.read(conn, plan_settings:)).to eq(before)
+      expect(before["extensions"]).to include("hypopg")
     end
   end
 

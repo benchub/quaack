@@ -45,9 +45,16 @@ module Quaack
     # ErrorFilter sends only the rule. Nothing is stored. The one exception
     # is run_server_other_clients, whose Error also carries clients: each
     # other client's pid and UTC start time, oldest first, at most
-    # MAX_CLIENTS, and none if none is left to name. ErrorFilter sends those
-    # too, so the operator can find and stop them. No other pg_stat_activity
-    # column is read.
+    # MAX_CLIENTS, and an empty list if none is left to name. ErrorFilter
+    # sends those too, so the operator can find and stop them. No other
+    # pg_stat_activity column is read.
+    #
+    # Every catalog relation, function, and type the check's SQL names is
+    # qualified with pg_catalog, as is Inventory::Production's SQL, which
+    # the check shares. A search_path can put another schema before
+    # pg_catalog, and an unqualified name would then find a relation or
+    # function there, such as a public.pg_stat_activity that hides the
+    # other clients. Operators, such as = and LIKE, aren't qualified.
     #
     # Not checked, so unsupported in v1: per-tablespace random_page_cost
     # and seq_page_cost, which the inventory doesn't record, and schedulers
@@ -71,29 +78,29 @@ module Quaack
       # value fits a plan whose SETTINGS doesn't list it: SETTINGS would
       # list it (the flag), and it's at its built-in default.
       PLANNER_SQL = <<~SQL
-        SELECT name, 'EXPLAIN' = ANY(pg_settings_get_flags(name))
+        SELECT name, 'EXPLAIN' = ANY(pg_catalog.pg_settings_get_flags(name))
                      AND setting IS NOT DISTINCT FROM boot_val AS unlisted_ok
-        FROM pg_settings
-        WHERE 'EXPLAIN' = ANY(pg_settings_get_flags(name)) OR category LIKE 'Query Tuning%'
+        FROM pg_catalog.pg_settings
+        WHERE 'EXPLAIN' = ANY(pg_catalog.pg_settings_get_flags(name)) OR category LIKE 'Query Tuning%'
            OR name IN ('TimeZone', 'DateStyle', 'IntervalStyle')
       SQL
-      CLIENTS_SQL = "SELECT count(*) FROM pg_stat_activity " \
+      CLIENTS_SQL = "SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity " \
                     "WHERE backend_type = 'client backend' AND pid <> ALL($1::int[])"
       # The other clients, for the operator to find: only each one's pid and
       # the UTC time it started, oldest first, at most MAX_CLIENTS. Nothing
       # else about a client is read.
       MAX_CLIENTS = 20
       # A client's start time, in UTC, whatever the session's TimeZone.
-      BACKEND_START_SQL = %(to_char(backend_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+      BACKEND_START_SQL = %(pg_catalog.to_char(backend_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
       OTHER_CLIENTS_SQL = <<~SQL.freeze
         SELECT pid, #{BACKEND_START_SQL}
-        FROM pg_stat_activity
+        FROM pg_catalog.pg_stat_activity
         WHERE backend_type = 'client backend' AND pid <> ALL($1::int[]) AND backend_start IS NOT NULL
         ORDER BY backend_start, pid
         LIMIT #{MAX_CLIENTS}
       SQL
-      HYPOPG_SQL = "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
-      CRON_ACTIVE_SQL = "SELECT count(*) FROM cron.job WHERE active"
+      HYPOPG_SQL = "SELECT 1 FROM pg_catalog.pg_available_extensions WHERE name = 'hypopg'"
+      CRON_ACTIVE_SQL = "SELECT pg_catalog.count(*) FROM cron.job WHERE active"
 
       module_function
 
@@ -113,7 +120,7 @@ module Quaack
       # which pg_stat_activity lists. libpq's backend_pid is the one the
       # server sent at connect time, and behind a pooler such as PgBouncer
       # it's one the pooler made up.
-      def server_pid(connection) = Integer(value(connection, "SELECT pg_backend_pid()"), 10)
+      def server_pid(connection) = Integer(value(connection, "SELECT pg_catalog.pg_backend_pid()"), 10)
 
       def check_access(connection)
         fail!("run_server_not_superuser", "is_superuser") unless show(connection, "is_superuser") == "on"
@@ -189,18 +196,18 @@ module Quaack
       # pg_cron, when it's loaded, defines cron.database_name, the one
       # database it runs jobs from.
       def check_cron(connection)
-        database = value(connection, "SELECT current_setting('cron.database_name', true)")
+        database = value(connection, "SELECT pg_catalog.current_setting('cron.database_name', true)")
         fail!("run_server_cron_elsewhere", "cron.database_name") unless database.nil? || database == current(connection)
-        return unless value(connection, "SELECT to_regclass('cron.job')")
+        return unless value(connection, "SELECT pg_catalog.to_regclass('cron.job')")
 
         fail!("run_server_cron_active", "cron.job") unless value(connection, CRON_ACTIVE_SQL) == "0"
       end
 
       def fail!(rule, name) = raise(Error.new(rule, name))
 
-      def show(connection, name) = value(connection, "SELECT current_setting($1)", name)
+      def show(connection, name) = value(connection, "SELECT pg_catalog.current_setting($1)", name)
 
-      def current(connection) = value(connection, "SELECT current_database()")
+      def current(connection) = value(connection, "SELECT pg_catalog.current_database()")
 
       # The first column of the first row, or nil if there's no row.
       def value(connection, sql, *params)
