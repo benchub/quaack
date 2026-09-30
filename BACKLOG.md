@@ -817,14 +817,7 @@ Minor findings from the review of 20260929-10:
 - **Design:** none. Test harness and deploy only.
 - **Status:** todo
 
-### 20260929-25. Pin the guard on EXTRACT field lowercasing in the query redaction.
-
-In `Redaction::Query#lowercase_field` (enclave/lib/quaack/enclave/redaction/query.rb), dropping `&& extract_field?(constant)` leaves every spec green. Every SQL-syntax EXTRACT's first argument would then be lowercased, recognized or not, so a redacted `'Years'` would be stored as `years`. Nothing leaks, since the value is redacted either way. Make the Kelvin test in redaction_query_spec use an uppercase ASCII letter, such as `'WEEK'` with the Kelvin sign, and expect the placeholder map to keep the original case.
-
-- **Depends on:** 20260923-40.
-- **Came from:** Review of 20260923-40, round one.
-- **Design:** 3g.
-- **Status:** todo
+### 20260929-25. Pin the guard on EXTRACT field lowercasing in the query redaction. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-26. The full dump misses objects in other schemas that dumped objects depend on.
 

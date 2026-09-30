@@ -3019,3 +3019,13 @@ These are minor findings from the review of 20260927-23:
 - **Design:** none. Test harness only.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to fix. A new example in spec/prompt_pack_databases_spec.rb wraps `PG.connect` so the first build's ANALYZE fails once. It checks that no `pack_template` is left, then that the retry builds a complete copy. Both mutations named here go red, and it doesn't disturb the replay specs. The header comment in run.rb is rewrapped.
+
+### 20260929-25. Pin the guard on EXTRACT field lowercasing in the query redaction.
+
+In `Redaction::Query#lowercase_field` (enclave/lib/quaack/enclave/redaction/query.rb), dropping `&& extract_field?(constant)` leaves every spec green. Every SQL-syntax EXTRACT's first argument would then be lowercased, recognized or not, so a redacted `'Years'` would be stored as `years`. Nothing leaks, since the value is redacted either way. Make the Kelvin test in redaction_query_spec use an uppercase ASCII letter, such as `'WEEK'` with the Kelvin sign, and expect the placeholder map to keep the original case.
+
+- **Depends on:** 20260923-40.
+- **Came from:** Review of 20260923-40, round one.
+- **Design:** 3g.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. The Kelvin example in redaction_query_spec now uses `'WEEK'` with the Kelvin sign, and expects the placeholder value to keep its case. Dropping the `extract_field?` guard, or reintroducing the Unicode downcase from 20260923-40, turns it red. The full rake on the branch passed with 0 failures.
