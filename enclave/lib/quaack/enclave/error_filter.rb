@@ -35,8 +35,9 @@ module Quaack
     # - The clients come from the error's clients method, and are sent only
     #   when the rule is run_server_other_clients (DESIGN.md, step 4). They must
     #   be a non-empty Array of at most MAX_CLIENTS Hashes, each with exactly
-    #   the String keys pid, a positive Integer, and backend_start, a UTC
-    #   time such as 2026-09-29T16:01:02Z. Otherwise the whole field is
+    #   two String keys, which must come in this order: pid, a positive
+    #   Integer, then backend_start, a UTC time such as
+    #   2026-09-29T16:01:02Z. Otherwise the whole field is
     #   left out, so no other detail of a client is ever sent.
     #
     # The enclave script runs its work inside guard, with stderr silenced by

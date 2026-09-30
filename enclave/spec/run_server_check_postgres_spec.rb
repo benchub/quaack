@@ -8,6 +8,7 @@ require "quaack/enclave/error_filter"
 require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
 require_relative "support/production_server"
+require_relative "support/catalog_shadow"
 
 # Step 4's run server checks (DESIGN.md, step 4). The stand-in production
 # database from ProductionServer is production and the run server both:
@@ -326,21 +327,36 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       pids.index(young.backend_pid) < pids.index(old.backend_pid)
     end
 
-    # Once pids wrap around, a younger client can have a lower pid. The test
-    # server's pids don't wrap, so a temporary view on the check's own
-    # connection stands in for pg_stat_activity: an unqualified name finds
-    # the session's temporary schema before pg_catalog.
+    # Some cases the test server can't make happen on its own, such as pids
+    # that wrap around. For those, a temporary view on the check's own
+    # connection stands in for pg_stat_activity, and the check's two
+    # client queries, exactly as they are but for the relation they read,
+    # read it instead. The check reads pg_catalog.pg_stat_activity, which
+    # nothing can shadow (see "a search_path whose public schema shadows
+    # the catalog"), so its own text has to be pointed at the view. The
+    # view's pids are above Linux's highest pid_max, 4194304, so none is
+    # the pid of the check's own connection, which the check leaves out.
+    def stand_in_for_pg_stat_activity(rows_sql)
+      run_server.exec("CREATE TEMPORARY VIEW stand_in_activity AS #{rows_sql}")
+      %i[CLIENTS_SQL OTHER_CLIENTS_SQL].each do |name|
+        sql = described_class.const_get(name)
+        expect(sql.scan("FROM pg_catalog.pg_stat_activity").size).to eq(1), "#{name} reads it once"
+        stub_const("#{described_class}::#{name}",
+                   sql.sub("FROM pg_catalog.pg_stat_activity", "FROM pg_temp.stand_in_activity"))
+      end
+    end
+
+    # Once pids wrap around, a younger client can have a lower pid.
     it "names the oldest other client first, even when its pid is the higher one" do
       record_inventory
-      run_server.exec(<<~SQL)
-        CREATE TEMPORARY VIEW pg_stat_activity AS
-        SELECT * FROM (VALUES (100, '2026-09-29 17:00:00+00'::timestamptz, 'client backend'),
-                              (200, '2026-09-29 16:00:00+00'::timestamptz, 'client backend'))
+      stand_in_for_pg_stat_activity(<<~SQL)
+        SELECT * FROM (VALUES (5000100, '2026-09-29 17:00:00+00'::timestamptz, 'client backend'),
+                              (5000200, '2026-09-29 16:00:00+00'::timestamptz, 'client backend'))
                       AS activity(pid, backend_start, backend_type)
       SQL
 
-      expect(failure.clients).to eq([{ "pid" => 200, "backend_start" => "2026-09-29T16:00:00Z" },
-                                     { "pid" => 100, "backend_start" => "2026-09-29T17:00:00Z" }])
+      expect(failure.clients).to eq([{ "pid" => 5_000_200, "backend_start" => "2026-09-29T16:00:00Z" },
+                                     { "pid" => 5_000_100, "backend_start" => "2026-09-29T17:00:00Z" }])
     end
 
     # A client counted but gone by the time the check lists them, as when
@@ -349,9 +365,8 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
     # list comes back empty every time.
     it "names no client, and still fails, when none is left to name" do
       record_inventory
-      run_server.exec(<<~SQL)
-        CREATE TEMPORARY VIEW pg_stat_activity AS
-        SELECT 100 AS pid, NULL::timestamptz AS backend_start, 'client backend' AS backend_type
+      stand_in_for_pg_stat_activity(<<~SQL)
+        SELECT 5000100 AS pid, NULL::timestamptz AS backend_start, 'client backend' AS backend_type
       SQL
 
       error = failure
@@ -486,6 +501,62 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect([error&.rule, error&.message]).to eq(["run_server_autovacuum_on", "run_server_autovacuum_on: autovacuum"])
     ensure
       TestPostgres.remove_server(extra) if extra
+    end
+  end
+
+  # The database's search_path puts public before pg_catalog, and public
+  # holds relations, functions, and types named like the catalog's (see
+  # CatalogShadow), planted after production's inventory is read. The check
+  # must read the catalog anyway.
+  describe "a search_path whose public schema shadows the catalog" do
+    def shadow(*names)
+      conn = production.connect
+      CatalogShadow.plant(conn, *names)
+      conn.close
+    end
+
+    before { alter_database("search_path = public, pg_catalog") }
+
+    it "still sees another client that a public pg_stat_activity would hide, and names it" do
+      record_inventory
+      shadow(:pg_stat_activity, :to_char)
+      other = connect
+
+      error = failure
+      expect([error&.rule, error&.message])
+        .to eq(["run_server_other_clients", "run_server_other_clients: pg_stat_activity"])
+      epoch = TestPostgres.server.admin.exec_params(
+        "SELECT floor(extract(epoch FROM backend_start))::bigint FROM pg_stat_activity WHERE pid = $1",
+        [other.backend_pid]
+      ).getvalue(0, 0)
+      started = Time.at(Integer(epoch, 10)).utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+      expect(error.clients).to eq([{ "pid" => other.backend_pid, "backend_start" => started }])
+    end
+
+    it "passes a run server that matches production's inventory, whatever public shadows" do
+      record_inventory
+      shadow
+
+      expect(run_check).to be_nil
+    end
+
+    it "finds HypoPG available, whatever public shadows" do
+      record_inventory { it["extensions"].delete("hypopg") }
+      run_server.exec("DROP EXTENSION hypopg")
+      shadow
+
+      expect(run_check).to be_nil
+    end
+
+    it "reads pg_cron's settings and jobs, whatever public shadows" do
+      record_inventory
+      run_server.exec("CREATE SCHEMA cron")
+      run_server.exec("CREATE TABLE cron.job (jobid bigint, active boolean)")
+      run_server.exec("INSERT INTO cron.job VALUES (1, false)")
+      run_server.exec(%(SET cron.database_name = "#{production.name}"))
+      shadow
+
+      expect(run_check).to be_nil
     end
   end
 
