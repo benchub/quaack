@@ -2997,3 +2997,15 @@ Still open from the second review of 20260923-56:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. New specs pin `cleanup_failed` on a failed DEALLOCATE and a join's exact root cost. CanonicalPlan now treats an index name as hypothetical only when its `<oid>` is in the map SingleCandidateTest builds from HypoPG's `indexrelid`, so a real index named `"<1>..."` no longer breaks the plan gate. An oid the map leaves out now counts as a real index instead of making the plan not comparable, which is a deliberate trade-off. The minor finding went to 20260929-30.
+
+### 20260927-25. Teardown loose ends.
+
+These are minor findings from the review of 20260927-23:
+- A second Ctrl-C, or any other signal, during teardown in the `ensure` replaces the run's original exception. No test covers this.
+- `Teardown#call` rescues only `EnclaveError`. Today the transport wraps every failure in one, but any other exception raised during teardown after a failed run would mask the run's error. Broaden the rescue, or comment why it's safe.
+
+- **Depends on:** 20260927-23.
+- **Came from:** Review of 20260927-23.
+- **Design:** Teardown.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. `Teardown#call` rescues any StandardError. A non-EnclaveError becomes `driver_error`, with the `quaacks teardown` hint. A signal during teardown prints the run's original error, then re-raises. The reviewer checked that printing `Class: message` for a non-EnclaveError can't carry unapproved enclave output, since the transport turns every bad reply into an EnclaveError with no cause. The minor findings went to 20260930-1.

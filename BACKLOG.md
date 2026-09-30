@@ -893,6 +893,18 @@ Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through th
 - **Design:** 5a-7, step 8.
 - **Status:** todo
 
+### 20260930-1. Teardown: capture the run's error exactly.
+
+Minor findings from the review of 20260927-25:
+
+- `Teardown.around` takes the run's in-flight error from `$ERROR_INFO` in its `ensure`. That's exact today, but if `around` is ever called from inside a rescue body, a successful run that gets a signal during teardown would report the outer error as the run's. Capture it explicitly, with `rescue Exception => e; run_error = e; raise`, or add a comment.
+- A signal that arrives while the `rescue StandardError` clause is printing, or in `around` after `call` returns, still loses the run's error. So does a non-StandardError from the transport, such as a LoadError. Both need a tiny window or an unusual setup.
+
+- **Depends on:** 20260927-25.
+- **Came from:** Review of 20260927-25, round one.
+- **Design:** Teardown.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
@@ -1316,16 +1328,7 @@ These are minor findings from the review of 20260927-21:
 
 ### 20260927-24. Corpus replay loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260927-25. Teardown loose ends.
-
-These are minor findings from the review of 20260927-23:
-- A second Ctrl-C, or any other signal, during teardown in the `ensure` replaces the run's original exception. No test covers this.
-- `Teardown#call` rescues only `EnclaveError`. Today the transport wraps every failure in one, but any other exception raised during teardown after a failed run would mask the run's error. Broaden the rescue, or comment why it's safe.
-
-- **Depends on:** 20260927-23.
-- **Came from:** Review of 20260927-23.
-- **Design:** Teardown.
-- **Status:** todo
+### 20260927-25. Teardown loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260927-26. Chat-friendly versions of multi-turn prompt-pack prompts. Done, see BACKLOG-COMPLETE.md.
 
