@@ -1450,7 +1450,7 @@ To do:
 
 - Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
 - Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
-- The same run's `pg_dump_failed` may have been this or something else. The full dump exited 0 when tried by hand, and the `--table` subset dump hadn't been tried yet.
+- Confirmed as the cause of that run's `pg_dump_failed`. The user's production role isn't a superuser. With `--schema=pg_catalog`, pg_dump fails right away with `ERROR:  permission denied for table pg_authid`. A red test should reproduce that with a non-superuser role.
 
 - **Depends on:** nothing open.
 - **Came from:** The user's first real run, 2026-09-29.
