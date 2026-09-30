@@ -62,12 +62,13 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
   end
 
   # Unicode lowercases the Kelvin sign (U+212A) to k, but Postgres reads a
-  # field in ASCII, so 'wee\u212A' isn't a field. It's a literal.
-  it "redacts an EXTRACT field that's a field name only under Unicode lowercasing" do
-    result = redact("SELECT EXTRACT('wee\u212A' FROM o.created_at) FROM public.orders o")
+  # field in ASCII, so 'WEE\u212A' isn't a field. It's a literal, and a
+  # literal keeps its case: only a kept field goes out lowercased.
+  it "redacts an EXTRACT field that's a field name only under Unicode lowercasing, keeping its case" do
+    result = redact("SELECT EXTRACT('WEE\u212A' FROM o.created_at) FROM public.orders o")
     expect(result.sql).to eq("SELECT extract ($1 FROM o.created_at) FROM public.orders o")
     expect(result.sql).not_to include("\u212A")
-    expect(result.placeholder_map).to eq("$1" => { "value" => "wee\u212A", "type" => "unknown" })
+    expect(result.placeholder_map).to eq("$1" => { "value" => "WEE\u212A", "type" => "unknown" })
   end
 
   it "keeps exactly the EXTRACT fields Postgres documents" do
