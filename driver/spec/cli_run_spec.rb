@@ -351,6 +351,21 @@ RSpec.describe "quaack run" do
         })
       end
 
+      it "builds the client with the settings' model and base_url, on the transport it's given" do
+        block = { "model" => "claude-from-block", "base_url" => "https://llm.example.com",
+                  "api_key_env" => "QUAACK_SPEC_KEY" }
+        settings = Quaack::Driver::LLM.settings(block, env: {})
+        client = without_anthropic_credentials("QUAACK_SPEC_KEY" => "fake-key") do
+          Quaack::Driver::CLI.build_client(settings, transport: fake)
+        end
+        fake.reply("6a", "ok")
+        client.ask(step: "6a", messages: [{ role: "user", content: "hi" }], max_tokens: 10)
+
+        expect(fake.asks.map { [it.body[:model], it.url] })
+          .to eq([["claude-from-block", "https://llm.example.com/v1/messages"]])
+        expect(client.burndown).to be_a(Quaack::Driver::Burndown)
+      end
+
       it "builds the client from the block's settings" do
         write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
         env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
