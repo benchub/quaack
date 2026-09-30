@@ -127,6 +127,28 @@ RSpec.describe "the statistics input" do
         expect(%w[maybe tru 2 yess].map { |t| stats.mcv_frequency(t) }).to all(be_nil)
       end
 
+      # Bytes that aren't valid UTF-8 can't be one of boolin's spellings, so
+      # they miss like any other literal that isn't an MCV. strip and
+      # downcase raise on them (Encoding::CompatibilityError or
+      # ArgumentError, depending on where the bad byte sits), so they must
+      # not reach either.
+      it "misses, without raising, for a literal that isn't valid UTF-8" do
+        stats = with_mcvs(%w[t f], [0.95, 0.05])
+        sentinel = "SENTINEL-9e4a17"
+        literals = ["#{sentinel}\xFF ", "\xFF#{sentinel}", " t\xFF", "\xFF"].map { |t| t.dup.force_encoding("UTF-8") }
+
+        expect(literals.map(&:valid_encoding?)).to all(be(false))
+        expect(literals.map { |t| stats.mcv_frequency(t) }).to all(be_nil)
+      end
+
+      it "estimates an invalid-UTF-8 literal on a t/f column as a value that isn't an MCV" do
+        flag = Quaack::Enclave::ColumnStatistics.new(n_distinct: 3.0, null_frac: 0.0, correlation: nil,
+                                                     most_common_vals: %w[t f], most_common_freqs: [0.7, 0.2])
+        stats = table({ "flag" => flag })
+
+        expect(stats.value_frequency("flag", +"SENTINEL-9e4a17\xFF ")).to be_within(1e-12).of(0.1)
+      end
+
       it "doesn't read boolean spellings into an MCV list that isn't only t and f" do
         stats = with_mcvs(%w[t f x], [0.5, 0.25, 0.1])
 
