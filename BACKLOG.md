@@ -193,69 +193,47 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 ### 20260923-21. 5a-1 loose ends.
 
-Minor findings from the reviews of 20260922-30:
-- **Missed `IS NULL` candidates after join reduction.** 5a-1 decides nullability from the syntax alone. Once a strict counted conjunct on a table rejects its nulls, Postgres turns the outer join inner, or turns FULL into LEFT or RIGHT. Then an `IS NULL` on that table is pushed down too, but 5a-1 still skips it. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)` (cost 67 against 4440), and the FULL JOIN version misses the same index. `IS NOT NULL` counts as strict here too. Count an `IS NULL` on a table once a strict counted conjunct on that table rejects its nulls at or above the outer join.
-- **ON conjuncts dropped before join reduction.** `Join#keeps?` drops FULL JOIN ON conjuncts that touch one side, and LEFT/RIGHT ON conjuncts that touch only the preserved side. Once a strict WHERE qual reduces the join, Postgres pushes those down. HypoPG examples: `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`, and a FULL JOIN case uses `orders(customer_id, region, status)` at cost 4.08 against 12.10. This is the same syntax-only family as the IS NULL item above.
-- **BRIN on prefix-LIKE columns.** BRIN can't serve LIKE, and HypoPG shows it unused. Restrict BRIN to comparison ranges.
-- **Tests to add:** nullability at depth for RIGHT and FULL joins (the mutants `JOIN_RIGHT then left.last(1)` and `JOIN_FULL then left.last(1) + right.last(1)` survive); "USING always counts" for outer joins; "LIKE with ESCAPE doesn't count"; and the error sentinel test should also check `full_message` and the cause.
-- **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table. It's harmless, but say so.
-- **Alias matching isn't pinned as case-sensitive.** A case-insensitive alias match passes every test, but `SELECT created_at AS "ID" ... ORDER BY id` sorts by the table's `id` in Postgres. Add a test.
-- An ORDER BY on a nullable-side table's columns becomes a key, such as `LEFT JOIN o ... ORDER BY o.created_at`. The table can't be the outer side, so the index is wasted.
-- `FOR UPDATE OF o` is falsely refused as an unqualified relation.
-- `(o).*` isn't recognized as a star, for ordinals or INCLUDE.
-- Column alias lists like `AS o(a, b)` aren't modeled.
-- `col = NULL` yields a candidate.
-- INCLUDE covers only the select list and GROUP BY, so index-only scans are rare.
-- A prefix LIKE needs `text_pattern_ops` unless the collation is C.
-- Incremental sort isn't handled.
+Still open from the reviews of 20260922-30 and 20260923-20:
+- **Join reduction.** 5a-1 decides nullability from syntax alone. Once a strict WHERE conjunct on a table rejects its nulls, Postgres reduces the outer join. Then it pushes down that table's `IS NULL` and the ON conjuncts `Join#keeps?` drops, but 5a-1 still skips them. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)`. `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`.
+- **Tests:** nullability at depth for RIGHT and FULL joins (two mutants survive), "USING always counts" for outer joins, and the error sentinel test checking `full_message` and the cause.
+- **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table.
+- **Smaller gaps:** an ORDER BY on a nullable-side table's columns becomes a wasted key; `FOR UPDATE OF o` is falsely refused; `(o).*` isn't recognized as a star; `AS o(a, b)` alias lists aren't modeled; INCLUDE covers only the select list and GROUP BY; a prefix LIKE needs `text_pattern_ops` unless the collation is C; incremental sort isn't handled.
 
 - **Depends on:** 20260923-20.
 - **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
 - **Design:** 5a-1.
-- **Landed (2026-09-26):** BRIN only from comparison ranges, `col = NULL` not a constant, and tests for LIKE ESCAPE and alias case. Still open: join reduction for IS NULL and ON conjuncts, RIGHT and FULL nullability tests, the USING test, the error sentinel check, the comment fix, and the ORDER BY, FOR UPDATE OF, `(o).*`, alias list, INCLUDE, `text_pattern_ops` and incremental sort items.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-22. MCV statistics loose ends.
 
-Minor findings from the second review of 20260923-19:
-- **The boolean guard is only half pinned.** The only negative case is `%w[t f x]`. The mutants `size <= 2`, `include?(most_common_vals.last)`, and `!include?("x")` all survive. Add a two-value non-boolean case such as `%w[1 0]` or `%w[x t]`.
-- **A text column with only `t` and `f` as MCVs** maps `true` and `1` onto them. The doc could name `varchar`, `"char"`, and `char(1)`, and say that the harm is limited to literals that match no rows.
-- **An invalid-UTF-8 literal on a t/f column** raises `Encoding::CompatibilityError` from `strip`. It doesn't leak.
-- **`TableStatistics#finite` quotes a rejected `reltuples`,** unlike `in_range`. Drop the value for consistency.
-- **Optional:** add a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
+Still open from the second review of 20260923-19:
+- An invalid-UTF-8 literal on a t/f column raises `Encoding::CompatibilityError` from `strip`. It fails closed and doesn't leak.
+- Optional: a real-Postgres test that pins `= false` on a nullable boolean to `freq(f)`.
 
 - **Depends on:** 20260923-19.
 - **Came from:** Second review of 20260923-19.
 - **Design:** 3c.
-- **Landed (2026-09-26):** two-value tests, `finite` no longer quoting reltuples, and doc updates. Still open: the invalid-UTF-8 `strip` error and an optional real-Postgres `= false` test.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260923-24. 5a-2 loose ends.
 
-Findings from the reviews of 20260922-31:
-- **Common values spelled differently get a partial (wasted candidates).** When a literal's text doesn't match its `pg_stats` spelling and the MCVs cover the column, `value_frequency` returns 0.0, so a common value looks rare. HypoPG examples: `n = 1.5` on a numeric printed as `1.50` (33% of rows), `c = 'cd'::bpchar` on `char(4)` (90%), and `(i)::numeric = 7.0` on an int column (80%). Give no partial when the column side is cast to another type. Also consider treating a literal that isn't an MCV as unknown when `sum(most_common_freqs) + null_frac` is about 1.
-- **Booleans never reach the partial path.** Postgres prints `b = true` as `b` and `b = false` as `(NOT b)`, so a rare-flag partial like `WHERE NOT deleted` is never proposed.
-- **Test gaps:**
-  - Putting back a blanket `rescue ArgumentError` stays green.
-  - `check_analyze` using `any?` survives, since there's no multi-element EXPLAIN array.
-  - Sort equality columns from deeper scans aren't tested.
-  - Column refs inside function arguments aren't tested.
-  - `removed_fraction` for a node that read no rows isn't tested.
-  - `PlanNode#inner` as `children.last` survives.
-  - "Skips a relation with no statistics" is weak.
-- **`(InitPlan 1).col1` conditions** are dropped whole, since pg_query can't parse them.
-- **Other:**
-  - `COLLATE` filters propose nothing.
-  - A 3,000-deep plan raises SystemStackError. The caller's `JSON.parse` fails first at about depth 49 anyway, so whoever parses stored plans should pass `max_nesting: false`.
-  - Fix the grammar slip "a Actual Rows".
-  - Leave `inner.size == 1`, Merge Append sort keys, the weak INCLUDE and BitmapOr variants, and exposing the private helpers for 20260923-12.
+Still open from the reviews of 20260922-31:
+- **Needs a decision:** common values spelled differently get a wasted partial. For example, `n = 1.5` on a numeric that pg_stats prints as `1.50` looks rare. Either skip the partial when the column side is cast, or treat a non-MCV literal as unknown when MCVs plus nulls cover about 1.
+- **Booleans never reach the partial path.** Postgres prints `b = false` as `(NOT b)`, so a partial like `WHERE NOT deleted` is never proposed.
+- `(InitPlan 1).col1` conditions are dropped whole, since pg_query can't parse them.
+- `COLLATE` filters propose nothing.
+- A 3,000-deep plan raises SystemStackError. Whoever parses stored plans should pass `max_nesting: false`.
+- **Test gaps:** a blanket `rescue ArgumentError` stays green; sort equality columns from deeper scans; column refs inside function arguments; "skips a relation with no statistics" is weak.
+- Fix the grammar slip "a Actual Rows".
 
 - **Depends on:** 20260922-31.
 - **Came from:** Both reviews of 20260922-31.
 - **Design:** 5a-2.
-- **Landed (2026-09-26):** tests pinning `PlanNode#inner`, the NaN removed fraction, and the multi-statement ANALYZE check. **Needs a decision:** whether to skip a partial when the column side is cast (varchar shows as `(col)::text`), and whether to treat a non-MCV literal as unknown when MCVs plus nulls cover about 1. Still open: boolean partials, InitPlan, COLLATE, deep plans, and the remaining test gaps.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -270,28 +248,13 @@ Findings from the reviews of 20260922-31:
 
 ### 20260923-30. Predicate atom loose ends.
 
-Findings from both reviews of 20260922-43 that don't block it:
-- **pg_query deparse bugs make `with_true` wrong for a whole query.**
-  - `IS NOT DISTINCT FROM (a AND b)` loses its parentheses, which changes the meaning.
-  - `XMLTABLE ... PASSING CAST(x AS xml)` deparses to invalid SQL.
-  - A typed CYCLE mark deparses as `TO '2020-01-01'::date`, which Postgres rejects. That makes `with_true` invalid for every atom in such a query, and the shape doesn't parse either.
-  - `xmlexists('//a' PASSING BY REF (x::xml))` loses its parentheses.
-  - `(ARRAY(SELECT 1))[1]` deparses as `ARRAY(SELECT 1)[1]`, which is a syntax error.
-  - Add a round-trip guard: after deparsing, reparse and compare the tree with the expected one, and raise if they differ. Use every case above as a test.
-- **NATURAL JOIN gives no atoms.** When both sides are plain tables, compute the common columns, or at least emit a marker that can't be replaced, so the report counts it.
-- **USING atoms can't be replaced.** 9c (20260922-48) has to mark them untested, not skip them silently.
-- **Column resolution is conservative.**
-  - A merged USING column, `(o).status`, and a LATERAL item that sees later FROM items are left unplaced where Postgres resolves them.
-  - It loses precision, but it never places a column wrong.
-- **`with_true` on a recursive CTE's stop condition loops forever.** 9a's `statement_timeout` covers it, but 9c should expect it.
-- **A simple CASE rewritten as searched** evaluates its argument once per WHEN. That's only a problem when the argument is volatile.
-- **Typmods keep their literals,** such as `::foo('x')`. That's the documented choice, but 3g should know.
-- **Wire in qualification.** `extract` assumes a qualified query. Its caller should run `RelationQualifier` (20260922-14) first.
+Still open from the reviews of 20260922-43:
+- **Needs a decision:** NATURAL JOIN gives no atoms. When both sides are plain tables, compute the common columns, or emit a marker that can't be replaced, so the report counts it.
 
 - **Depends on:** 20260923-29.
 - **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
 - **Design:** Step 9 and 9c.
-- **Checked (2026-09-26):** the deparse guard and qualification items are already done. **Needs a decision:** NATURAL JOIN atoms (compute the common columns, or emit a marker that can't be replaced). The rest are notes.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-31. Finish 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
@@ -306,32 +269,29 @@ Findings from both reviews of 20260922-43 that don't block it:
 
 ### 20260923-36. 5a-3 loose ends.
 
-Findings from the reviews of 20260922-32 and 20260923-31:
-- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for every index on a partitioned table's parent (`ON ONLY`), for any index `WITH (fillfactor=...)` or `WITH (deduplicate_items=off)`, and for unique indexes with `NULLS NOT DISTINCT`. So a candidate identical to one of them is proposed and tested as if it were new, and 15a won't report it as a duplicate. None of these options changes which queries the index can serve.
-- **`IndexCandidate` accepts a predicate whose deparse doesn't parse again.** For example, `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`. Dedupe drops it, but other consumers would raise. `IndexSql.normalize_predicate` should re-parse its output.
-- **Array bounds on a cast aren't checked,** as in `status::text[12345] IS NULL`. It's the same class as the integer typmods the user accepted, but the doc comment doesn't say so.
-- **Dead or defensive code:** `left = unwrap(node.lexpr)` in `column_comparison?` is redundant, and the `A_Const` check in `plain_type?` can't be reached through Dedupe.
-- **DESIGN.md 5a-3 says GIN and GiST,** but HypoPG also refuses SP-GiST, and SP-GiST is set aside too. Say "any method HypoPG can't model."
-- **Open question for the user:** the rule drops every partial that uses a column that isn't low-cardinality, including partials with no literal at all, like `WHERE deleted_at IS NULL`. Those carry no PII risk and are common. Should they get an exception?
-- **Decided:** Yes. Allow partial indexes whose predicate holds no literal: IS NULL, IS NOT NULL, or a bare boolean column.
+Still open from the reviews of 20260922-32 and 20260923-31:
+- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for `ON ONLY` indexes on a partitioned parent, for any `WITH (...)` index, and for `NULLS NOT DISTINCT` unique indexes. A candidate identical to one is tested as new, and 15a won't report it as a duplicate.
+- `IndexSql.normalize_predicate` should re-parse its output. `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`.
+- The doc comment should say array bounds on a cast (`status::text[12345]`) aren't checked, like integer typmods.
+- Dead code: `left = unwrap(node.lexpr)` in `column_comparison?`, and the unreachable `A_Const` check in `plain_type?`.
 
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
 - **Design:** 5a-3.
-- **Landed (2026-09-26):** the Decided item (partials with literal-free predicates are allowed; a sentinel test covers it) and DESIGN.md note. Still open: the `from_ddl` nil cases (`ON ONLY`, `WITH (...)`, `NULLS NOT DISTINCT`), `normalize_predicate` re-parsing, the array-bounds doc note, and the dead-code cleanup.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-37. Arena runner loose ends.
 
-Minor findings from the second review of 20260922-46:
-- **Every 57014 is reported as `statement_timeout`,** including a self-cancel or an operator cancel. Name the rule `statement_canceled`, or document it.
-- **A non-StandardError from the block, followed by a failed rollback, loses the primary error.** Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
-- **Which error wins changes with check order.** Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
-- **pg_query uses the PG17 grammar and the server is PG18,** so PG18-only SQL fails as `statement_unparsable`. That's fail-closed.
+Still open from the second review of 20260922-46:
+- `ArenaRunner` reports every 57014 as `statement_timeout`, including a self-cancel or an operator cancel. Name it `statement_canceled`, or document it. 20260926-5 fixed this for run discipline only.
+- A non-StandardError from the block, followed by a failed rollback, loses the primary error. Changing `rescue Exception` to `rescue StandardError` in `in_transaction` stays green. Add a test that uses an Interrupt.
+- Moving `check_fixture` after `refuse_unless_idle` stays green. It only changes which error wins when bad rows meet a busy connection.
 
 - **Depends on:** 20260922-46.
 - **Came from:** Second review of 20260922-46.
 - **Design:** Step 9.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-38. Error filtering loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -340,15 +300,14 @@ Minor findings from the second review of 20260922-46:
 
 ### 20260923-40. Allowlist loose ends.
 
-Minor findings from the reviews of 20260923-33:
-- **EXTRACT's field match uses Unicode `downcase`,** so `'weeK'` with a Kelvin sign is kept, and Postgres rejects that field. Use `downcase(:ascii)` and print the field lowercased, so quoted mixed case such as `'EpOcH'` doesn't pass through verbatim.
-- **Tests don't pin `EXTRACT_FIELDS`.** Removing a name only over-redacts, but nothing pins the list.
-- **Two doc-comment lines in `generator_one.rb` run long.**
-- **Keyset pagination question:** answered by 20260924-31, which supports row comparisons in v1.
+Still open from the reviews of 20260923-33:
+- EXTRACT's field match uses Unicode `downcase`, in both `predicate_atoms.rb` and `redaction/query.rb`, so `'weeK'` with a Kelvin sign is kept. Use `downcase(:ascii)`, and print the field lowercased.
+- No test pins `EXTRACT_FIELDS`.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The reviews of 20260923-33.
 - **Design:** Step 1.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260923-53. Finish the enclave CLI. Done, see BACKLOG-COMPLETE.md.
@@ -361,69 +320,51 @@ Minor findings from the reviews of 20260923-33:
 
 ### 20260923-57. Rewrite candidate check loose ends.
 
-Minor findings from the reviews of 20260922-10:
-- **Only-the-last mutants survive.** `used.last(1).each` in the relkind loop and `.last(1).find` in the placeholder check both stay green, because every test puts the bad item last. Add a view-before-table case and a bad-before-good placeholder case.
-- **The reparse of the qualified SQL can raise a raw `PgQuery::ParseError`.** An example is `(ARRAY(SELECT ...))[1]`. It fails closed as `internal_error`, but it should be the check's own error. 20260923-55 covers this.
-- **Partitioned tables are refused.** A candidate against relkind `p` is refused, consistent with 3a (20260922-17). Revisit that if 3a starts allowing them.
+Still open from the reviews of 20260922-10:
+- `RewriteCandidateCheck` still has its own qualify and `plain_table!`. Switch it to `Relations.check`, so its non-table rules become per-kind. Its spec expectations change with it.
 
 - **Depends on:** 20260922-10.
 - **Came from:** The reviews of 20260922-10.
 - **Design:** What goes into the enclave.
-- **Landed (2026-09-26):** tests killing the `.last(1)` mutants. Still open: moving to `Relations.check`.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
-- **Note (from 20260922-17):** Switch to `Relations.check` in place of this check's own qualify and `plain_table!`, so its non-table rules become per-kind. Its spec expectations change with it.
 
 ### 20260923-58. Enclave CLI loose ends.
 
-Findings from the reviews of 20260922-4 and 20260923-53:
-- **JSON.parse itself uses 50 to 135 times the input size on dense arrays.** A 64 MB `{"a":[{},{},...]}` peaked at 8.6 GB, and `[0,0,...]` at 3.2 GB. The double parse (`UniqueKeys`, then plain) adds to the peak. Lower `Input::MAX_BYTES`, or cap the element count before parsing.
-- **The scan is slow on dense quotes or backslashes,** about 8 to 10 s for 64 MB. It's linear, and fine at realistic sizes.
-- **Anything printed or warned while `require "quaack/enclave"` loads** goes out before `silence_stderr!` and `claim_stdout!`, and so does a LoadError backtrace. Silence first in `exe/quaacks`, before the require.
-- **`Store#parse` relies on `max_nesting` alone,** and json 3.0.2 doesn't count an empty innermost container. Run `PlainData.check` there too, as `Input` does.
-- **Cancel on SIGTERM:** consider `conn.cancel` or a `statement_timeout` when SIGTERM arrives mid-query. This belongs with 20260922-16.
+Still open from the reviews of 20260922-4 and 20260923-53:
+- **Needs a decision:** `JSON.parse` uses 50 to 135 times the input size on dense arrays. A 64 MB `[0,0,...]` peaked at 3.2 GB. Lower `Input::MAX_BYTES`, or cap the element count before parsing.
 
 - **Depends on:** 20260923-53.
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
 - **Design:** Where QUAACK runs.
-- **Landed (2026-09-26):** stdout is claimed and stderr silenced before `require`, and `Store#parse` runs `PlainData.check`. Still open: `Input::MAX_BYTES` and element caps (a sizing choice), the slow scan, and cancel on SIGTERM.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-1. 5a-4 loose ends.
 
-Minor findings from the second review of 20260923-56:
-- **A result type map breaks the hidden-index check.** With `conn.type_map_for_results = PG::BasicTypeMapForResults.new(conn)`, `getvalue` returns Integer `0`, so `0 != "0"` refuses every run as `indexes_hidden`, and EXPLAIN's json comes back already parsed. Pin a plain type map for the run, or compare with `.to_s`, and add a test.
-- **Empty `literal_sets` is accepted.** Every candidate comes back unused with no error. DESIGN.md says there are always three literal sets, so refuse `{}` as `bad_literal`.
-- **Tests that are missing:**
-  - Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
-  - The exact-cost assertions use single-node plans only. Add one on a join.
-- **`CanonicalPlan` treats any `"<N>…"` index name as hypothetical.** That's in the landed `canonical_plan.rb`, related to 20260923-28. A real index named that way is canonicalized wrong.
-- **The runner depends on step 4 matching production settings.** See the note on 20260922-25.
-
-- **`to_ddl` can stop the whole run.** Now that the round-trip guard is on `main`, `SingleCandidateTest#create` re-raises a `Deparse::Error` from `candidate.to_ddl`, which stops the whole run. Make it a refusal for that one candidate. It takes a name over 63 bytes, so it's nearly unreachable.
+Still open from the second review of 20260923-56:
+- Changing `guarded(:cleanup_failed) { deallocate }` to another rule stays green.
+- The exact-cost assertions use single-node plans only. Add one on a join.
+- `CanonicalPlan` treats any `"<N>…"` index name as hypothetical, so a real index named that way is canonicalized wrong.
 
 - **Depends on:** 20260923-56.
 - **Came from:** Second review of 20260923-56.
 - **Design:** 5a-4.
-- **Landed (2026-09-26):** empty literal_sets refused, the string type map, and the `unrenderable` refusal. Still open: a `cleanup_failed` guard test, and an exact-cost test on a join.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-2. Pin hidden_differences? for every row in a tie group. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-3. Intake loose ends.
 
-Findings from the reviews of 20260922-13:
-- **A hard kill leaves an orphaned partial run.** SIGKILL, an OOM kill, or SIGXFSZ can leave a partial 0700 run directory behind, holding production literals, and print no run ID. Add a sweeper, for example `quaacks teardown --orphans`, or have intake sweep runs older than a day with no finished marker. It fits with 20260922-66.
-- **There are tiny signal windows.** One is between `Store.create` returning and the `begin`. Another is after `with_new_run` returns and before exit, where `done` is printed, then an error line, and the run is kept. The driver treats that run as failed, so it's orphaned.
-- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type once 3a has a connection.
-- **NOFOLLOW covers only the last path component.** That's acceptable under the threat model. Say so in the doc.
-- **Surviving mutant:** `time > now + FUTURE_SLACK` → `>=`. Add a unit test at exactly `now + 86_400` through `ClockAnchor.from(now:)`.
-- **`Step required:` doesn't check that each required name is a declared option.**
-- **DESIGN.md step 1** doesn't list `query_has_parameters` or the `--captured-at` bounds. It also says a refused construct's name is reported, but the `error` whitelist type can't carry it. That's a question for the user: change DESIGN.md, or add a shape-only detail field?
+Still open from the reviews of 20260922-13:
+- **Orphaned partial runs.** SIGKILL, an OOM kill, or SIGXFSZ during intake can leave a 0700 run directory holding production literals, and print no run ID. Tiny signal windows around `Store.create` and after `done` do the same. Add a sweeper, such as `quaacks teardown --orphans`, or have intake sweep old runs with no finished marker.
+- **The query isn't checked against the plan.** A SELECT query with an UPDATE's plan is accepted. Compare the relations and statement type.
 
 - **Depends on:** 20260922-13.
 - **Came from:** Both reviews of 20260922-13.
 - **Design:** Step 1.
-- **Landed (2026-09-26):** the `FUTURE_SLACK` boundary test, the undeclared-option check in `CLI::Step`, the DESIGN.md step 1 text, and the NOFOLLOW doc. Still open: an orphan-run sweeper and the signal windows (see 20260922-66), and checking the query against the plan.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-4. Parenthesize what pg_query deparses wrong. Done, see BACKLOG-COMPLETE.md.
@@ -441,60 +382,50 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 ### 20260924-7. 9d comparator loose ends.
 
-- **Range over a nondeterministic collation passes the collation check.** A custom range type over text with a nondeterministic collation isn't caught, because the check doesn't read `pg_range.rngcollation`. Add `OR c.oid IN (SELECT rngcollation FROM pg_range)`.
-- **A precise check for ties at a cut.** The rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
-- **Interval compare by value, and lower-level nondeterminism.** Intervals could compare by value in the comparator. For nondeterminism below the top level (a subquery LIMIT, DISTINCT, or GROUP BY), see 20260924-5.
-- **DESIGN.md 9d** should describe the two-run tiebreaker and the fail-closed rules.
+**Needs a decision,** from the reviews of 20260922-47 and 20260923-54:
+- A precise check for ties at a cut: the rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
+- Comparing intervals by value in the comparator.
 
 - **Depends on:** 20260922-47.
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
 - **Design:** 9d.
-- **Landed (2026-09-26):** the range-collation check and DESIGN.md tiebreaker text. **Needs a decision:** an exact check for ties at a cut, and comparing intervals by value.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-8. Burndown loose ends.
 
-Findings from the second review of 20260922-61:
-- **`Protocol::Burndown.valid?` raises ArgumentError instead of returning false** on a record that mixes String and Symbol keys, because `record.keys.sort` can't compare them. It fails closed, but it breaks egress's contract of raising `Egress::Error`. Check that every key is a String before sorting.
-- **Integer counts have no upper bound.** A 16-digit number could go out as a count if an Integer from the database were passed in. Consider a sanity cap, such as counts below 10**12.
-- **Misuse double-counts instead of being refused.** Calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`, is accepted. Consider deriving `since` from the stored burndown for each search.
-- **`since` and the Dedupe live only in memory.** 5a-5 needs a separate enclave call after the driver's LLM call, so the next process has to rebuild both. Add a note for 20260922-33.
-- **`record_single_candidate_test` doesn't tie its report to the Dedupe's proposals.**
-- **Decided:** No. Keep the pattern for drop reasons and total names. (The original question was whether they should be closed lists in the protocol gem, like `STAGES`.) Today any lowercase word passes, so a one-word value could be stored as a reason.
+**Needs a decision,** from the second review of 20260922-61:
+- Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`. Consider deriving `since` from the stored burndown for each search.
+- Tie `record_single_candidate_test`'s report to the Dedupe's proposals.
+- 5a-4's `unrenderable` refusal is counted as `hypopg_refused`.
 
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
 - **Design:** 15b.
-- **Landed (2026-09-26):** mixed keys return false, and counts are capped at 10**12. **Needs a decision:** refusing misuse such as a double `record_dedupe` or a stale `since`, deriving `since` from the stored burndown, and tying `record_single_candidate_test` to the Dedupe's proposals. Also, 5a-4's new `unrenderable` refusal is counted as `hypopg_refused`.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-9. Load-order loose ends.
 
-Findings from both reviews of 20260924-5:
-- **A surviving mutant hides a relabeling bug.** Changing `raise unless positions && e.rule == :fixture_load_failed` to `raise unless positions` stays green. With that change, a query failure in the reverse run would be relabeled `reverse_load_failed` and given the wrong index. Add a test where only the reverse run hits `query_failed`, and check that the rule stays `query_failed`.
-- **A symmetric middle pick survives.** In an odd-sized tie group with the pick exactly in the middle (`OFFSET 1 LIMIT 1` over three ties), the pick is the same in both orders. So is a rare top-N heapsort pick. A third order, such as rotating each table's run by one, would catch both.
-- **Self-referencing foreign keys always fail the reverse load**, as `reverse_load_failed`. That fails closed, but it discards every candidate for fixtures with tree-shaped tables. Keep such tables in forward order, or reverse them level by level, using a catalog lookup of self-referencing FKs.
-- **Partitioned tables are scanned in a fixed partition order**, so the reverse load only flips rows within each partition. 3a (20260922-17) refuses partitioned tables, so today this is moot. Revisit it if 3a starts allowing them.
-- **DESIGN.md 9d wording:** name the hash-order and heap-sort gaps, and soften "a small sort keeps its input order for ties."
-- **Deferrable constraints** would allow any load order, but production FKs usually aren't deferrable. This is only a note.
+**Needs a decision,** from the reviews of 20260924-5:
+- A third load order, such as rotating each table's run by one. It would catch a tie pick exactly in the middle of an odd-sized group, and a rare top-N heapsort pick, which both orders agree on today.
+- Self-referencing foreign keys always fail the reverse load, as `reverse_load_failed`, which discards every candidate for tree-shaped tables. Keep such tables in forward order, or reverse them level by level.
 
 - **Depends on:** 20260924-5.
 - **Came from:** Both reviews of 20260924-5.
 - **Design:** 9d.
-- **Landed (2026-09-26):** the reverse-only query_failed test and DESIGN.md gaps text. **Needs a decision:** a third load order, and keeping self-referencing FK tables in forward order.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-10. 5a-7 loose ends.
 
-Findings from the reviews of 20260922-35:
-- **Duplicate candidates in `results`** can make `top` list the same index twice. 5a-3 dedupes within a search, so this can't happen in 5a-7's own flow. Step 8's caller should dedupe first.
-- **`rank` checks the literal-set names against the baseline, but not the values.** It's a documented precondition, but a caller who passes different values under the same names would compare against the wrong baseline.
-- **The greedy search never drops an index once added.** A smarter search could find `[a, c]` where the greedy keeps `[b, a]`. It follows DESIGN.md's greedy rule, so change it only if someone wants that.
+**Needs a decision,** from the reviews of 20260922-35:
+- `rank` checks the literal-set names against the baseline, but not the values. Checking the values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
 
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
 - **Design:** 5a-7.
-- **Checked (2026-09-26):** the duplicate-candidates item is stale. **Needs a decision:** checking literal-set values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-11. Finish 3g redaction. Done, see BACKLOG-COMPLETE.md.
@@ -525,89 +456,78 @@ Findings from the reviews of 20260922-35:
 
 ### 20260924-24. Production inventory loose ends.
 
-Findings from the build and reviews of 20260922-16:
-- **No connect_timeout or statement_timeout on the production connection.** A host that silently drops packets hangs the step. The SIGTERM and cancel note in 20260923-58 applies too.
-- **The recorded "production values" are the operator's session values.** They include `PGOPTIONS` and `ALTER ROLE ... SET`. Fix DESIGN.md wording, or connect with `options: ""`. Step 4 (20260922-25) decided: the run server is compared with production's own recorded values.
-- **Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`,** so a role's search_path can't shadow them.
-- **`"memory_command": null` counts as not configured,** but DESIGN.md says that's `bad_config`.
-- **There's no upper bound on the memory size.**
-- **A background child that holds stdout makes the memory command wait out the full timeout,** and a `setsid` child escapes the process-group kill.
-- **`pg` now loads for every `quaacks` subcommand.**
-- **Spec noise:** `ProductionServer` prints NOTICE lines into the rake output.
-- **Surviving mutants:**
-  - config: invalid UTF-8 handling
-  - memory: a double space before the unit, `reap`, the TIMEOUT and MAX_OUTPUT values, and a spawn failure
-  - inventory: closing the connection
-  - the step: a hardcoded `major_version`
-- **3a's `Relations.check`** could use `Inventory::Production.connect` and `read_only`.
+Still open from the build and reviews of 20260922-16:
+- No `statement_timeout` on the production connection, so a host that silently drops packets hangs the step. The operator's `PGCONNECT_TIMEOUT` covers only the connect.
+- The recorded "production values" are the operator's session values, including `PGOPTIONS` and `ALTER ROLE ... SET`. Fix the DESIGN.md wording, or connect with `options: ""`.
+- Qualify `current_setting` and `json_array_elements_text` with `pg_catalog.`, so a role's search_path can't shadow them.
+- `"memory_command": null` counts as not configured, but DESIGN.md says it's `bad_config`. There's no upper bound on the memory size.
+- A background child holding stdout makes the memory command wait out its timeout, and a `setsid` child escapes the process-group kill.
+- `ProductionServer` prints NOTICE lines into the rake output.
+- **Surviving mutants:** config's invalid UTF-8 handling; memory's double space before the unit, `reap`, TIMEOUT and MAX_OUTPUT values, and spawn failure; inventory closing its connection; the step's hardcoded `major_version`.
 
 - **Depends on:** 20260922-16.
 - **Came from:** The build and reviews of 20260922-16.
 - **Design:** Step 2.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-25. 3g redaction loose ends.
 
-Findings from the builds and reviews of 20260922-23, 20260924-11, and 20260924-16:
-- **Placeholders of different types can collide on one plan literal.** With `$1 = 101` and `$2 = B'101'`, the plan shows `$1`, and `X'05'` matches integer 101. No value leaks, but `$n` and the row annotation can be wrong. Prefer the candidate whose type matches the literal's cast.
-- **Expressions Postgres treats as equal but that are written differently** (`status || '-x'` against `o.status || '-x'`, or `'-x'::text` against `'-x'`) still get separate placeholders. They fail closed as `prepare_failed` 42803 or 42P10.
-- **Date and timestamp normalization for row annotations,** through the racetrack.
-- **Masks on planner-made TRUE and FALSE inflate the masked count.**
-- **The broad typmod rule.**
-- **Egress max_nesting:** plans more than about 48 levels deep can't go out. Decide whether to flatten them, raise the limit, or refuse with a clear rule.
-- **Decided:** Refuse with a clear rule, and list it as unsupported in v1.
-- **The 42P18 retry depends on English `lc_messages`.**
-- **Preparing in a failed transaction gives 3B001, not 25P02.**
-- **PredicateAtoms should use 3g's numbering.**
-- **SingleCandidateTest and ArenaRunner should adopt Binding,** so types get declared through PREPARE.
-- **Three `Cast` survivors in `expression.rb`** can't be reached from a real PG18 plan: the WITH line, `after_word?`, and the `break` on `","`.
-- **The huge-exponent test's `Timeout`** is now a subprocess. Keep it that way.
+Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
+- **Decided, not built:** a plan more than about 48 levels deep can't go out through egress. Refuse it with a clear rule, and list it as unsupported in v1.
+- Placeholders of different types can collide on one plan literal. With `$1 = 101` and `$2 = B'101'`, `X'05'` matches 101. No value leaks, but `$n` and the row annotation can be wrong. Prefer the candidate whose type matches the literal's cast.
+- Expressions Postgres treats as equal but that are written differently get separate placeholders. They fail closed as `prepare_failed`.
+- Date and timestamp normalization for row annotations, through the racetrack.
+- Masks on planner-made TRUE and FALSE inflate the masked count.
+- The 42P18 retry depends on English `lc_messages`, and preparing in a failed transaction gives 3B001, not 25P02.
+- PredicateAtoms should use 3g's numbering. SingleCandidateTest and ArenaRunner should adopt Binding, so types get declared through PREPARE.
 
 - **Depends on:** 20260924-16.
 - **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
 - **Design:** 3g.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-26. 3c statistics loose ends.
 
-Findings from the build and reviews of 20260922-19:
-- **pg_stats and pg_stats_ext silently hide columns the operator can't SELECT,** so a role with limited privileges gets missing statistics with no error. Detect this and refuse it, or record it.
-- **Values and names aren't converted to UTF-8,** unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
-- **Resolved:** 20260922-22 removed `few_distinct`, and replaced it with `PiiClassification#low_cardinality`.
-- **The pg_stats inherited-filter mutant is killed only by luck:** without the filter, row order decides which duplicate wins.
-- **A column type with a delimiter other than a comma (such as `box`)** would make PgArray raise and abort 3c. That's rare, so list it as unsupported in v1 or skip it.
+Still open from the build and reviews of 20260922-19:
+- pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
+- Values and names aren't converted to UTF-8, unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
+- The pg_stats inherited-filter mutant is killed only by luck, since row order decides which duplicate wins.
+- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort 3c. List it as unsupported in v1, or skip it.
 
 - **Depends on:** 20260922-19.
 - **Came from:** The build and reviews of 20260922-19.
 - **Design:** 3c.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-28. 3e literal set loose ends.
 
-Findings from the build and reviews of 20260922-21:
-- **Django date filters get no worst-case or typical value.** psycopg2 writes datetimes and dates as `'...'::timestamptz` and `'...'::date`, and arrays as `'{..}'::bigint[]`. 3g turns these into `$n::type` cast placeholders, and 3e always falls back on those. Handle a cast placeholder whose cast matches the column's type.
-- **3g doesn't store the redacted SQL,** so whatever wires 3e in (step 5 or step 9 orchestration) has to pass it in or store it.
-- **The boolean `t`/`f` check at `literal_set.rb:326` survives mutation.** pg_stats always emits `t` or `f`, so either pin it with a planted bad value or drop it.
+Still open from the build and reviews of 20260922-21:
+- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which 3g turns into cast placeholders, and 3e always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
 
 - **Depends on:** 20260922-21.
 - **Came from:** The build and reviews of 20260922-21.
 - **Design:** 3e.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-29. Run server check loose ends.
 
-Findings from the build and reviews of 20260922-25:
-- **Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked.** The inventory doesn't record production's tablespace spcoptions. Record them in step 2, then compare them here.
-- **`shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.** Only pg_extension is.
-- **PGTZ and PGDATESTYLE in the operator's libpq environment** change the session's TimeZone and DateStyle on both connections, so the check compares session values, not server values.
-- **The debug_parallel_query test goes through the recorded-value path,** not the boot_val path its name suggests.
-- **The required superuser bypasses row-level security.** The step 5 plan gate catches that for the original query.
+Still open from the build and reviews of 20260922-25:
+- Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked. Record production's tablespace spcoptions in step 2, then compare them.
+- `shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.
+- PGTZ and PGDATESTYLE in the operator's environment change both sessions' TimeZone and DateStyle, so the check compares session values, not server values.
+- The debug_parallel_query test goes through the recorded-value path, not the boot_val path its name suggests.
 
 - **Depends on:** 20260922-25.
 - **Came from:** The build and reviews of 20260922-25.
 - **Design:** Steps 2 and 4.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-30. Include extensions in the 3b schema dump. Done, see BACKLOG-COMPLETE.md.
@@ -618,16 +538,14 @@ Findings from the build and reviews of 20260922-25:
 
 ### 20260925-2. Insert check loose ends.
 
-Minor findings from the first review of 20260922-12:
-- **The variadic arity branch is untested.** Dropping `OR p.provariadic <> 0` in `insert_values.rb` MUTABLE_SQL stays green. Add a test that `concat('a','b')` is refused as `not_immutable`.
-- **The `attisdropped` clause in COLUMNS_SQL is unproven.** Removing it stays green, because dropped columns get unmatchable names. Keep it or drop it.
-- **Implicit coercion is unchecked.** An uncast literal into a column whose type has a volatile input function, or a domain `CHECK` that calls one, runs that function at insert time. The function comes from the production schema, not the LLM. Document this in DESIGN.md, or check column-type input functions and domain checks.
-- **Values aren't pinned to be deterministic.** TimeZone-dependent timestamptz literals and `'now'`, `'today'` are accepted. Set a fixed TimeZone in the arena session, or refuse the special date and time inputs, or note it in DESIGN.md.
+Still open from the first review of 20260922-12:
+- **Needs a decision:** values aren't pinned to be deterministic. TimeZone-dependent timestamptz literals and `'now'` or `'today'` are accepted. Fix the arena session's TimeZone, or refuse the special date and time inputs.
+- Removing the `attisdropped` clause in COLUMNS_SQL stays green. Keep it or drop it.
 
 - **Depends on:** 20260922-12.
 - **Came from:** The first review of 20260922-12.
 - **Design:** What goes into the enclave.
-- **Landed (2026-09-26):** the variadic test and DESIGN.md notes on unchecked coercions. **Needs a decision:** fix the arena TimeZone, or refuse special date inputs, instead of just documenting them.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260925-3. Plan gate loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -662,15 +580,14 @@ Minor findings from the first review of 20260922-12:
 
 ### 20260925-18. Qualify loose ends.
 
-Minor findings from the first review of 20260925-8:
-- **No read-only transaction.** `steps/qualify.rb` reads production outside a read-only transaction, unlike inventory. Every statement is a fixed catalog SELECT today. Wrap `Relations.check` in `Inventory::Production.read_only`, both for defense in depth and for one snapshot across the lookups.
-- **`"$user"` is the operator's role.** It resolves to the operator's role, not the role of the application that made the plan. Say so in DESIGN.md, or refuse a `$user` path entry that matches an existing schema other than the operator's own.
-- **The step spec covers one join only.** Add step-level cases for a CTE, a subquery, quoted identifiers, and already-qualified names.
+Still open from the first review of 20260925-8:
+- **Needs a decision:** wrap `Relations.check` in `Inventory::Production.read_only` in the qualify step, without a failing test first, since no test can observe it.
+- Refuse a `$user` search_path entry that matches an existing schema other than the operator's own.
 
 - **Depends on:** 20260925-8.
 - **Came from:** The first review of 20260925-8.
 - **Design:** Step 1, 3a.
-- **Landed (2026-09-26):** the qualify step case and the `$user` DESIGN.md note. **Needs a decision:** add the `Production.read_only` wrapper to qualify without a failing test first, since no test can observe it. Still open: refusing a `$user` entry that matches another schema.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260925-19. Schema-dump loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -1140,12 +1057,11 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-32. Measurement test gaps.
 
 - No real-Postgres test produces an unstable literal. Making block counts move between runs deterministically, inside a read-only transaction, was hard, so only the `summarize` unit test covers that path.
-- The `rewrites.empty?` check in `Pipeline`'s `generate` has no observable effect, because `OperatorCandidates#run` already returns early. Remove it as a cleanup.
 
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
 - **Design:** Step 13.
-- **Landed (2026-09-26):** removed the dead `rewrites.empty?` check. Still open: a real-Postgres test that produces an unstable literal.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-33. Wire steps 4b and 12 to 14 into the pipeline. Done, see BACKLOG-COMPLETE.md.
@@ -1171,13 +1087,12 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - The StepNine dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
 - "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
 - A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
-- The `knocked_out` test has no case where the stored `rewrite_survived` says `"survived" => false` (changing `== true` to `!= false` stays green).
 - LLM call counts on a resumed run include only calls from the current process.
 
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
 - **Design:** Step 15.
-- **Landed (2026-09-26):** the knocked_out missing-entry test. Still open: the StepNine dropped count, per-round covered shapes, schema-less plan nodes, and LLM counts on resume.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-43. Payload fidelity loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -1186,20 +1101,15 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-45. Driver, LLM client and harness items left from 20260924-13, -14, -20.
 
-These were skipped as needing a design choice or a larger rework:
-- **Remote quaacks on timeout:** when the driver's timeout fires, the remote `quaacks` keeps running. **Landed:** The enclave exits on hangup. `quaacks` notices when its stdin/stdout close (ssh dropping), cancels any running query, and stops.
-- **Lazy-load `anthropic`:** it adds about 0.5s to every CLI start. Loading it lazily touches load order and the boundary checks.
-- **Pump/Child rework:** covers a child that closes stdout and then reads stdin, and a grandchild that holds stdout open.
-- **Per-example timeout for driver specs:** needs tuning so it doesn't cause flakes.
-- **Shared `NoNetwork`:** share the prepend with the root suite.
-- **Error-message tests:** pin exact error-message text in the LLM client specs.
-- **JSON harness column:** add a JSON column to the harness schema (a fixture design change).
-- **Streaming:** add LLM streaming, only if ever needed.
+- **Needs a decision:** lazy-loading `anthropic` would save about 0.5s per CLI start, but breaks `runtime_boundary_spec`, which expects every driver file to load the gem. Change that spec to build a client first, or keep the eager load.
+- **Pump/Child rework:** cover a child that closes stdout and then reads stdin, and a grandchild that holds stdout open.
+- **Per-example timeout for driver specs,** tuned so it doesn't cause flakes.
+- **JSON harness column:** add a JSON column to the harness schema.
 
 - **Depends on:** 20260924-13, -14, -20.
 - **Came from:** The build of those tasks.
 - **Design:** Where QUAACK runs, LLM client.
-- **Landed (2026-09-27):** NoNetwork is shared with the root suite, and the LLM error text is pinned. **Needs a decision:** lazy-loading `anthropic` breaks `runtime_boundary_spec` (it expects every driver file to load the gem). Change that spec to build a client first, or keep the eager load. Still open: the Pump/Child rework, per-example timeouts, the JSON harness column, and streaming.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
@@ -1210,17 +1120,15 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-49. Schema dump, clock anchoring and deparse items left over.
 
-- A dbname like `app:prod` is refused as `secret_in_conninfo`. That's rare, but a false refusal.
+- An empty conninfo has no defined behavior in the schema dump, and no test.
 - Restore LLM candidates by their anchored form, not by position. This is a large redesign.
 - The subset DDL doesn't restore into an empty arena on its own (schemas, types, extensions), and a partitioned query table needs its parent in the dump.
-- The schema-dump paths for lock-wait timeout, signal kill and empty conninfo are untested.
 - Table sort order for EUC_JP and WIN1252 databases.
-- Pin the four surviving `parentheses.rb` mutants. The deparse matrix adds about 20s to the suite.
 
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
 - **Design:** 3b, 3h, step 1.
-- **Landed (2026-09-27):** the `app:prod` false refusal is fixed (libpq's exact rule), and the parentheses mutants are pinned. The lock-wait and signal tests already existed. Still open: empty conninfo (no defined behavior), candidates restored by anchored form, subset DDL restore, and EUC_JP/WIN1252 sort order.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-50. FROM functions: non-FuncCall items crash. Done, see BACKLOG-COMPLETE.md.
@@ -1232,13 +1140,12 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-53. Candidate clock anchoring loose ends.
 
-- Step 9 (counterexamples) and steps 13 and 14 use the anchored candidate SQL, but only 14c has its own end-to-end clock test.
-- `RewriteEntry.run_sql` falls back to `"sql"` for entries without `anchored_sql`. Only hand-written spec fixtures and stores from before the change hit that path. Consider requiring `anchored_sql` and updating the fixtures (about 30 writes).
+- `RewriteEntry.run_sql` falls back to `"sql"` for entries without `anchored_sql`. Only hand-written spec fixtures and stores from before the change hit it. Consider requiring `anchored_sql` and updating the fixtures (about 30 writes).
 
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
 - **Design:** 3h.
-- **Landed (2026-09-26):** end-to-end clock tests for step 9 and candidate-runs. Still open: dropping the `anchored_sql` fallback.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-54. Test infrastructure items left from 20260923-16, -18, -25.
@@ -1260,7 +1167,6 @@ These were skipped as needing a design choice or a larger rework:
 
 ### 20260926-55. Keyset and expression-unique leftovers.
 
-- The realistic-schema step 9 spec has no keyset query, so tie rows aren't tested against the prompt-pack schema's unique keys and FKs. Add one.
 - No pools for `=` or `<>` row comparisons, or rows built on expressions (listed as a v1 limit).
 - Perturb-and-retry for colliding expression keys.
 - A generated column counts as NULL when an expression key is worked out.
@@ -1268,22 +1174,20 @@ These were skipped as needing a design choice or a larger rework:
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
 - **Design:** Step 9.
-- **Landed (2026-09-26):** a realistic-schema keyset test (expanded form and dropped keyset). Still open: `=`/`<>` pools, perturb-and-retry, the generated-column item, and the tie-breaker gap (see 20260926-59).
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-56. Items left from 20260923-27, -28, -35, -38.
 
-- **Qualify only relations? (needs a decision):** functions, types, operators, and names inside string literals aren't qualified. Rewrite them, or refuse them?
-- **Comments and layout:** deparse drops comments and layout.
-- **Shared parse helper:** merge PlanExpression's parse helper with CanonicalPlan's parse step. This is a refactor only, and it changes a shared signature.
-- **ArgumentError rules:** give rules to the ArgumentErrors raised in PredicateAtoms and IndexCandidate. For IndexCandidate, the question is whether to change the error class that callers rescue.
+- **Needs a decision:** functions, types, operators, and names inside string literals aren't qualified. Rewrite them, or refuse them?
+- **Shared parse helper:** merge PlanExpression's parse helper with CanonicalPlan's parse step. Refactor only, but it changes a shared signature.
+- **ArgumentError rules:** give rules to the ArgumentErrors raised in PredicateAtoms and IndexCandidate. For IndexCandidate, decide whether to change the error class callers rescue.
 - **Operator messages:** a driver-side table mapping rules to text for operators. The texts need deciding.
-- **The `"any"` attribute match:** a column named exactly like a volatile `"any"` function (`pg_restore_*_stats`) still aborts. This was kept on purpose.
-- **Known volatility limits:** a volatile cast to a common type makes every cast to it abort; provolatile is trusted; STABLE functions that read other tables pass.
 
 - **Depends on:** 20260923-27, -28, -35, -38.
 - **Came from:** Their build and reviews.
 - **Design:** 3a, 3d, step 1.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
@@ -1427,11 +1331,11 @@ These are minor findings from the review of 20260927-24:
 ### 20260927-29. Deploy loose ends.
 
 - `QUAACKS_DEV_CHECKOUT=1` turns off the driver-present guard, and it's a plain environment variable. No production path sets it, but an operator could export it on a jump server by mistake.
-- The deploy spec never installs pg_query or pg from rubygems, and never compiles them. It never runs over real ssh or on a real Linux jump server. Check these on the first real `quaack deploy`.
 
 - **Depends on:** 20260923-2.
 - **Came from:** Reviews of 20260923-2.
 - **Design:** Where QUAACK runs.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260929-2. Several LLM providers in one run.
