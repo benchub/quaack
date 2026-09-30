@@ -3062,3 +3062,16 @@ The test "reads the major version from the image's FROM line" in `spec/test_pg_d
 - **Design:** none. Test harness only.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to fix. The fixture now has a comment naming `FROM postgres:16` and an `ARG PG_MAJOR=16` before `FROM postgres:17`, so an unanchored or digit-anywhere regex reads 16 and goes red. Dropping the `\b` isn't caught. That's harmless for the real Dockerfile, which pins a plain major.
+
+### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait.
+
+Minor findings from the review of 20260923-37:
+
+- No test pins that `ArenaRunner` records a statement's start time per connection call. Recording one start for the runner's whole life leaves every spec green. StepNine reuses one runner across scenarios, so after the timeout's worth of total time, an operator's cancel would read as `statement_timeout`. Add a test with a short timeout: two `pg_sleep` calls, each under it, then a self-cancel. Expect `statement_canceled`.
+- In `arena_runner_postgres_spec.rb`, the operator-cancel test's canceler thread polls for the `PgSleep` wait event with no deadline. If a regression stops the INSERT from running, `canceler.join` blocks forever and the suite hangs. Give the loop a deadline.
+
+- **Depends on:** 20260923-37.
+- **Came from:** Review of 20260923-37, round one.
+- **Design:** Step 9.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. A new test with a 2000 ms timeout runs two `pg_sleep(1.3)` calls, then a self-cancel, and expects `statement_canceled`. It goes red if the runner keeps one start time for its whole life. The operator-cancel test's poll loop now gives up after 10 s instead of hanging. It passed 10 times under heavy load with no flakes. The minor findings went to 20260930-5.

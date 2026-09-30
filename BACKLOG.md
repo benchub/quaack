@@ -825,17 +825,7 @@ Minor findings from the review of 20260928-6:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait.
-
-Minor findings from the review of 20260923-37:
-
-- No test pins that `ArenaRunner` records a statement's start time per connection call. Recording one start for the runner's whole life leaves every spec green. StepNine reuses one runner across scenarios, so after the timeout's worth of total time, an operator's cancel would read as `statement_timeout`. Add a test with a short timeout: two `pg_sleep` calls, each under it, then a self-cancel. Expect `statement_canceled`.
-- In `arena_runner_postgres_spec.rb`, the operator-cancel test's canceler thread polls for the `PgSleep` wait event with no deadline. If a regression stops the INSERT from running, `canceler.join` blocks forever and the suite hangs. Give the loop a deadline.
-
-- **Depends on:** 20260923-37.
-- **Came from:** Review of 20260923-37, round one.
-- **Design:** Step 9.
-- **Status:** todo
+### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite.
 
@@ -896,6 +886,18 @@ The enclave suite prints "WARNING: ignoring the provided expectation message arg
 - **Depends on:** nothing open.
 - **Came from:** The build of 20260929-15.
 - **Design:** 5a-3.
+- **Status:** todo
+
+### 20260930-5. Clean up the operator-cancel test's canceler thread.
+
+Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_postgres_spec.rb's operator-cancel test:
+
+- If the example fails before `canceler.join`, for example because no INSERT runs and `run_error` raises first, nothing kills the canceler thread. It polls until the after hook's `DROP DATABASE ... WITH (FORCE)` ends its connection, then dies with a `PG::ConnectionBad` trace on stderr. There's no hang and no stuck backend, just noise. Kill and join it in an `ensure`.
+- The deadline's clearer message, "the INSERT never reached pg_sleep", shows up only when the test reaches `join`. Surface it when `run_error` fails first too, if that's cheap.
+
+- **Depends on:** 20260929-28.
+- **Came from:** Review of 20260929-28, round one.
+- **Design:** Step 9.
 - **Status:** todo
 
 ## After version 1.
