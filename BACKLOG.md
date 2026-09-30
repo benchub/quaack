@@ -1437,3 +1437,22 @@ It's a false positive. No prompt in the corpus holds that date. The models gener
 - **Came from:** Review of 20260929-13, round one.
 - **Design:** none. Test harness and prompt pack only.
 - **Status:** todo
+
+### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there.
+
+`SchemaDump.full_dump` adds each extension's schema to the full dump's `--schema` list. `plperl` and `plperlu` live in `pg_catalog`, so on the Canvas test database of 2026-09-29 the dump got `--schema=pg_catalog`. pg_dump then tried to dump the system catalog. It warned "typtype of data type ... appears to be invalid" for every pseudo-type, and it emitted DDL for pg_catalog's own objects, which 4a would then try to load into arena.
+
+Answers from the user, 2026-09-29:
+
+- Never dump a system schema: not `pg_catalog`, not `information_schema`, and not any other `pg_*` schema. `--extension=<name>` alone still gets each `CREATE EXTENSION`.
+
+To do:
+
+- Check that arena's load, 4a, still gets every extension it needs, including one in `pg_catalog` such as plperl.
+- Add a Postgres spec with an extension in `pg_catalog`, whichever is simplest to install in the test image. Show that the dump has no `--schema=pg_catalog`, and that it loads into arena.
+- The same run's `pg_dump_failed` may have been this or something else. The full dump exited 0 when tried by hand, and the `--table` subset dump hadn't been tried yet.
+
+- **Depends on:** nothing open.
+- **Came from:** The user's first real run, 2026-09-29.
+- **Design:** 3b, 4a.
+- **Status:** todo
