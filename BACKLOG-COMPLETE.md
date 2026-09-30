@@ -3090,3 +3090,13 @@ Minor findings from the second review of 20260929-7. The code is correct, and no
 - **Design:** Trust boundary, step 4.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. New tests cover four gaps. Newline cases pin the start-time anchors in ErrorFilter and the driver. The driver keeps exactly 20 clients. Array and Hash subclasses are dropped by ErrorFilter's own exact-class check. The start-time `to_char` is now the constant `BACKEND_START_SQL`, tested on a fixed afternoon timestamp, so HH12 is caught at any time of day. The minor findings went to 20260930-6.
+
+### 20260930-4. An assertion in index_candidate_expression_spec passes a value as its failure message.
+
+The enclave suite prints "WARNING: ignoring the provided expectation message argument(5) since it is not a string or a proc", and the same for `(:lower)`, from enclave/spec/index_candidate_expression_spec.rb:50. The line is `expect { key_column.new(expression: bad) }.to raise_error(ArgumentError, /expression/), bad`, inside a loop over bad inputs. `bad` is only meant to label which input failed, and RSpec ignores it for the non-string inputs `5` and `:lower`. The assertion still runs for every input, so nothing is untested. Pass `bad.inspect` so the label works and the warning goes away.
+
+- **Depends on:** nothing open.
+- **Came from:** The build of 20260929-15.
+- **Design:** 5a-3.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. The label is now `bad.inspect`, so the warning is gone and a failure names its input. No other spec file had the warning.
