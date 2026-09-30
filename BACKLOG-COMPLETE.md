@@ -3148,3 +3148,16 @@ In driver/lib/quaack/driver/llm/openai_compatible_adapter.rb (about line 113), t
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. `named_key` says "isn't set" for an unset variable and "is set but empty" for an empty one, as the Anthropic adapter does. Specs cover both the `api_key_env` variable and `OPENAI_API_KEY`, and check that no attempt is made or counted.
+
+### 20260929-24. Scrub every Bundler variable, not a named list.
+
+Minor findings from the review of 20260929-10:
+
+- `IsolatedInstall#isolated_env` unsets Bundler variables by name. Another `BUNDLER_*` in a developer's shell, such as a leftover `BUNDLER_ORIG_*`, still reaches the child. The leak check then fails loudly, so nothing slips through. Unset every key matching `/\ABUNDLE/` in `ENV` and `Bundler.original_env` instead.
+- `Deploy::UNBUNDLED` (driver/lib/quaack/driver/deploy.rb) and deploy_spec's `clean` env don't unset `BUNDLER_VERSION`. It's harmless today, since `gem build` ignores it and ssh doesn't forward it. Add it for consistency with deploy_diagnosis_spec.
+
+- **Depends on:** 20260929-10.
+- **Came from:** Review of 20260929-10, round one.
+- **Design:** none. Test harness and deploy only.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. `isolated_env` unsets every `/\ABUNDLE/` key in `ENV`, and it's always computed inside `Bundler.with_unbundled_env`, where `ENV` is what the child inherits. So a separate `Bundler.original_env` scan isn't needed. `Deploy::UNBUNDLED` also drops `BUNDLER_VERSION`, and a deploy_spec example pins what `gem build` sees. The minor finding went to 20260930-10.

@@ -758,17 +758,7 @@ With a `pg_toast` table as a query relation, the subset's `--table` dump fails w
 
 ### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-24. Scrub every Bundler variable, not a named list.
-
-Minor findings from the review of 20260929-10:
-
-- `IsolatedInstall#isolated_env` unsets Bundler variables by name. Another `BUNDLER_*` in a developer's shell, such as a leftover `BUNDLER_ORIG_*`, still reaches the child. The leak check then fails loudly, so nothing slips through. Unset every key matching `/\ABUNDLE/` in `ENV` and `Bundler.original_env` instead.
-- `Deploy::UNBUNDLED` (driver/lib/quaack/driver/deploy.rb) and deploy_spec's `clean` env don't unset `BUNDLER_VERSION`. It's harmless today, since `gem build` ignores it and ssh doesn't forward it. Add it for consistency with deploy_diagnosis_spec.
-
-- **Depends on:** 20260929-10.
-- **Came from:** Review of 20260929-10, round one.
-- **Design:** none. Test harness and deploy only.
-- **Status:** todo
+### 20260929-24. Scrub every Bundler variable, not a named list. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-25. Pin the guard on EXTRACT field lowercasing in the query redaction. Done, see BACKLOG-COMPLETE.md.
 
@@ -892,6 +882,15 @@ Minor findings from the review of 20260930-3:
 - **Depends on:** 20260929-11.
 - **Came from:** Review of 20260929-11, round one.
 - **Design:** Step 4.
+- **Status:** todo
+
+### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
+
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces.
+
+- **Depends on:** 20260929-24.
+- **Came from:** Review of 20260929-24, round one.
+- **Design:** none. Test harness only.
 - **Status:** todo
 
 ## After version 1.
