@@ -1378,19 +1378,7 @@ Minor findings from the second review of 20260929-7. The code is correct, and no
 - **Design:** Trust boundary, step 4.
 - **Status:** todo
 
-### 20260929-13. Build the prompt-pack database once per spec process.
-
-`PromptPack.databases` builds each replay's production database from scratch: it creates it from template0, loads `script/prompt_pack/schema.sql` and `data.sql`, and runs ANALYZE. The data script generates about 420,000 rows, which takes about 3 seconds, and the pipeline replay spec does that for each of its 39 runs. The data is the same for every query. Copying a database with `CREATE DATABASE ... TEMPLATE` takes about 0.07 seconds.
-
-- Build the loaded, analyzed database once per spec process, on the first run that needs it, and create each run's production database as a copy of it. The racetrack database is already a copy of production, so it stays as it is.
-- Every copy must hold the same schema, data, extensions, and statistics as a fresh build. A spec should prove a copy matches.
-- The template database must have no connections left open when it's copied, and no replay run may change it.
-- `script/prompt_pack/run.rb` uses the same helper, so it gets the same speedup.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-09-29, after timing the full check.
-- **Design:** none. This is test harness speed only.
-- **Status:** todo
+### 20260929-13. Build the prompt-pack database once per spec process. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-14. pg_dump finder: minor findings.
 
@@ -1424,4 +1412,28 @@ Minor findings from the review of 20260929-8.
 - **Depends on:** 20260929-8.
 - **Came from:** Review of 20260929-8, round one.
 - **Design:** Step 4.
+- **Status:** todo
+
+### 20260929-17. Test the prompt-pack template's recovery from a failed build.
+
+`PromptPack.template` in `script/prompt_pack/run.rb` builds under `pack_template_building`, renames it once the build is complete, and first drops any leftover `pack_template_building`. No test needs that. Building straight into `pack_template`, or skipping the drop, leaves the spec green. Then a data.sql or ANALYZE failure in one replay would leave a half-built template for the next replay to copy. The reviewer confirmed by hand that the real code recovers. Add a spec that plants a one-time build failure and checks that the retry produces a complete copy. Also rewrap the odd header comment at run.rb:9-10.
+
+- **Depends on:** 20260929-13.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness only.
+- **Status:** todo
+
+### 20260929-18. The prompt pack's leak check flags LLM replies that invent a sentinel date.
+
+A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
+
+- `spec/fixtures/llm_corpus/group_having/10a-4/reply-claude-3.md`
+- `spec/fixtures/llm_corpus/group_having/10a-5/reply-gemini-3.md`
+- `spec/fixtures/llm_corpus/group_having/10a-9/reply-claude-3.md`
+
+It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
+
+- **Depends on:** nothing open.
+- **Came from:** Review of 20260929-13, round one.
+- **Design:** none. Test harness and prompt pack only.
 - **Status:** todo

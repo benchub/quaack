@@ -2869,3 +2869,18 @@ Answers from the user, 2026-09-29:
 - **Design:** Step 4.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings, so there was no fix round. `RunServerCheck` now reads each own pid with `SELECT pg_backend_pid()`. The test image runs PgBouncer 1.26 in session mode, on demand, and the spec failed with the real error through it before the fix. DESIGN.md step 4 covers poolers. The minor findings went to 20260929-16. The builder's full check passed apart from 20260929-10.
+
+### 20260929-13. Build the prompt-pack database once per spec process.
+
+`PromptPack.databases` builds each replay's production database from scratch: it creates it from template0, loads `script/prompt_pack/schema.sql` and `data.sql`, and runs ANALYZE. The data script generates about 420,000 rows, which takes about 3 seconds, and the pipeline replay spec does that for each of its 39 runs. The data is the same for every query. Copying a database with `CREATE DATABASE ... TEMPLATE` takes about 0.07 seconds.
+
+- Build the loaded, analyzed database once per spec process, on the first run that needs it, and create each run's production database as a copy of it. The racetrack database is already a copy of production, so it stays as it is.
+- Every copy must hold the same schema, data, extensions, and statistics as a fresh build. A spec should prove a copy matches.
+- The template database must have no connections left open when it's copied, and no replay run may change it.
+- `script/prompt_pack/run.rb` uses the same helper, so it gets the same speedup.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-29, after timing the full check.
+- **Design:** none. This is test harness speed only.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings, so there was no fix round. The template is built as `pack_template_building` and renamed to `pack_template` once it's complete, and it refuses connections. ANALYZE samples randomly, so two fresh builds give different `pg_stats` for orders and line_items. So the spec checks each copy against the template exactly, and against a fresh build wherever a fresh build is deterministic. The root suite went from about 26m34s to 24m27s. The minor findings went to 20260929-17 and 20260929-18.
