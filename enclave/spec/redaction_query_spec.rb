@@ -51,6 +51,32 @@ RSpec.describe Quaack::Enclave::Redaction, ".query" do
     expect(result.placeholder_map.keys).to eq(%w[$1])
   end
 
+  # A quoted field keeps the case it was written in, which could carry
+  # data, so it goes out lowercased, the way Postgres reads it.
+  it "writes a kept EXTRACT field lowercased" do
+    result = redact("SELECT EXTRACT('EpOcH' FROM o.created_at), EXTRACT('ISODOW' FROM o.created_at) " \
+                    "FROM public.orders o")
+    expect(result.sql).to eq("SELECT extract ('epoch' FROM o.created_at), extract ('isodow' FROM o.created_at) " \
+                             "FROM public.orders o")
+    expect(result.placeholder_map).to eq({})
+  end
+
+  # Unicode lowercases the Kelvin sign (U+212A) to k, but Postgres reads a
+  # field in ASCII, so 'wee\u212A' isn't a field. It's a literal.
+  it "redacts an EXTRACT field that's a field name only under Unicode lowercasing" do
+    result = redact("SELECT EXTRACT('wee\u212A' FROM o.created_at) FROM public.orders o")
+    expect(result.sql).to eq("SELECT extract ($1 FROM o.created_at) FROM public.orders o")
+    expect(result.sql).not_to include("\u212A")
+    expect(result.placeholder_map).to eq("$1" => { "value" => "wee\u212A", "type" => "unknown" })
+  end
+
+  it "keeps exactly the EXTRACT fields Postgres documents" do
+    expect(described_class.const_get(:Query)::EXTRACT_FIELDS.sort).to eq(
+      %w[century day decade dow doy epoch hour isodow isoyear julian microseconds millennium milliseconds
+         minute month quarter second timezone timezone_hour timezone_minute week year]
+    )
+  end
+
   it "redacts a field name that isn't EXTRACT's: in date_part, AT TIME ZONE, or extract called as a function" do
     result = redact("SELECT date_part('year', o.created_at), o.created_at AT TIME ZONE 'epoch', " \
                     "pg_catalog.extract('year', o.created_at), position('year' IN o.status) FROM public.orders o")

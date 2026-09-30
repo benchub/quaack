@@ -79,6 +79,7 @@ module Quaack
 
           unless @replacing
             @surroundings.note(message)
+            lowercase_field(message)
             @notes << message if message.is_a?(PgQuery::SelectStmt) || message.is_a?(PgQuery::FuncCall)
           end
           message.class.descriptor.each { |field| visit_field(message, field) if field.type == :message }
@@ -149,7 +150,16 @@ module Quaack
             node.funcname.map { |part| part.string.sval } == %w[pg_catalog extract]
         end
 
-        def extract_field?(constant) = EXTRACT_FIELDS.include?(constant.sval&.sval.to_s.downcase)
+        # Postgres lowercases EXTRACT's field in ASCII only, so a Kelvin sign
+        # doesn't make a k.
+        def extract_field?(constant) = EXTRACT_FIELDS.include?(constant.sval&.sval.to_s.downcase(:ascii))
+
+        # Writes EXTRACT's field lowercased, when it's kept, since its case
+        # could carry data.
+        def lowercase_field(message)
+          constant = message.args[0].a_const if extract?(message)
+          constant.sval.sval = constant.sval.sval.downcase(:ascii) if constant && extract_field?(constant)
+        end
 
         def param(constant)
           PgQuery::Node.new(param_ref: PgQuery::ParamRef.new(number: @numbers.fetch(constant.location)))
