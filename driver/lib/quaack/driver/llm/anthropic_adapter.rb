@@ -12,13 +12,13 @@ module Quaack
       # shape, structured output, stop reasons, the gem's retries and
       # credentials, and which of its errors is which rule.
       #
-      # Credentials: a key given (specs pass one) wins; then the variable
-      # the settings' api_key_env names, which must be set and not empty;
-      # else the gem finds them itself, in its own order: ANTHROPIC_API_KEY, then
+      # Credentials: a key given (specs pass one) wins; then the variable the
+      # settings' api_key_env names, which must be set and not empty; else the
+      # gem finds them itself, in its own order: ANTHROPIC_API_KEY, then
       # ANTHROPIC_AUTH_TOKEN as a bearer token, then a profile, such as the
       # one `ant auth login` writes. Finding none is llm_auth. The gem takes
-      # the first of those variables that's set, even set but empty, and
-      # looks no further, so that's llm_auth too, before any attempt.
+      # the first of those variables that's set, even set but empty, and looks
+      # no further, so that's llm_auth too, before any attempt.
       #
       # Retries are the gem's own: it retries a 408, 409, 429, or 5xx
       # (including 529, overloaded) and a dropped connection, up to
