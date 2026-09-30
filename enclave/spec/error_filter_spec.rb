@@ -190,6 +190,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         ["a missing start time", [{ "pid" => 4242 }]],
         ["a missing pid", [{ "backend_start" => good }]],
         ["Symbol keys", [{ pid: 4242, backend_start: good }]],
+        ["its keys in reverse order", [{ "backend_start" => good, "pid" => 4242 }]],
         ["a key that's a String subclass", [{ Class.new(String).new("pid") => 4242, "backend_start" => good }]],
         ["an entry that isn't a Hash", [[4242, good]]],
         ["an entry that's a Hash subclass", [sneaky.call(Hash).new.merge!("pid" => 4242, "backend_start" => good)]],

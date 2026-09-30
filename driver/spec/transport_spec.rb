@@ -704,6 +704,7 @@ RSpec.describe Quaack::Driver::Transport do
       ["a zero pid", %([{"pid":0,"backend_start":"#{good}"}])],
       ["a Float pid", %([{"pid":1.0,"backend_start":"#{good}"}])],
       ["a missing start time", %([{"pid":1}])],
+      ["its keys in reverse order", %([{"backend_start":"#{good}","pid":1}])],
       ["a good entry and a sentinel", %([{"pid":1,"backend_start":"#{good}"},"SENTINEL"])],
       ["an empty Array", "[]"],
       ["twenty-one entries", JSON.generate(Array.new(21) { { "pid" => it + 1, "backend_start" => good } })],

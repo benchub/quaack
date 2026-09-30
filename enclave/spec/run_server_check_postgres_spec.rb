@@ -326,6 +326,41 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       pids.index(young.backend_pid) < pids.index(old.backend_pid)
     end
 
+    # Once pids wrap around, a younger client can have a lower pid. The test
+    # server's pids don't wrap, so a temporary view on the check's own
+    # connection stands in for pg_stat_activity: an unqualified name finds
+    # the session's temporary schema before pg_catalog.
+    it "names the oldest other client first, even when its pid is the higher one" do
+      record_inventory
+      run_server.exec(<<~SQL)
+        CREATE TEMPORARY VIEW pg_stat_activity AS
+        SELECT * FROM (VALUES (100, '2026-09-29 17:00:00+00'::timestamptz, 'client backend'),
+                              (200, '2026-09-29 16:00:00+00'::timestamptz, 'client backend'))
+                      AS activity(pid, backend_start, backend_type)
+      SQL
+
+      expect(failure.clients).to eq([{ "pid" => 200, "backend_start" => "2026-09-29T16:00:00Z" },
+                                     { "pid" => 100, "backend_start" => "2026-09-29T17:00:00Z" }])
+    end
+
+    # A client counted but gone by the time the check lists them, as when
+    # each one leaves between the two queries. The view's one client has no
+    # start time, which the count counts and the list leaves out, so the
+    # list comes back empty every time.
+    it "names no client, and still fails, when none is left to name" do
+      record_inventory
+      run_server.exec(<<~SQL)
+        CREATE TEMPORARY VIEW pg_stat_activity AS
+        SELECT 100 AS pid, NULL::timestamptz AS backend_start, 'client backend' AS backend_type
+      SQL
+
+      error = failure
+
+      expect([error.rule, error.clients]).to eq(["run_server_other_clients", []])
+      expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "4")))
+        .to eq("type" => "error", "step" => "4", "rule" => "run_server_other_clients")
+    end
+
     it "names at most twenty other clients, the oldest, and still fails with more" do
       record_inventory
       run_server

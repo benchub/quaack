@@ -45,7 +45,7 @@ module Quaack
     # ErrorFilter sends only the rule. Nothing is stored. The one exception
     # is run_server_other_clients, whose Error also carries clients: each
     # other client's pid and UTC start time, oldest first, at most
-    # MAX_CLIENTS, and nil if none is left to name. ErrorFilter sends those
+    # MAX_CLIENTS, and none if none is left to name. ErrorFilter sends those
     # too, so the operator can find and stop them. No other pg_stat_activity
     # column is read.
     #
@@ -178,13 +178,12 @@ module Quaack
         fail!("run_server_autovacuum_on", "autovacuum") unless show(connection, "autovacuum") == "off"
       end
 
-      # The other clients' pids and start times, or nil if none is left to
-      # name, as when each one left after the count.
+      # The other clients' pids and start times, which are none if each one
+      # left after the count. ErrorFilter sends no clients then.
       def other_clients(connection, pids)
-        clients = connection.exec_params(OTHER_CLIENTS_SQL, [pids]).values.map do |pid, started|
+        connection.exec_params(OTHER_CLIENTS_SQL, [pids]).values.map do |pid, started|
           { "pid" => Integer(pid, 10), "backend_start" => started }
         end
-        clients unless clients.empty?
       end
 
       # pg_cron, when it's loaded, defines cron.database_name, the one
