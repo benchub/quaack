@@ -19,7 +19,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
   describe "with no llm block" do
     it "is Anthropic with claude-opus-5-5, the gem's own base URL, and no key variable" do
       expect(fields(settings)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
-                                     api_key_env: nil)
+                                     api_key_env: nil, aws_region: nil, aws_profile: nil)
     end
 
     it "is the same for an empty block" do
@@ -33,7 +33,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                 "api_key_env" => "MY_ANTHROPIC_KEY" }
 
       expect(fields(settings(block))).to eq(provider: "anthropic", model: "claude-sonnet-5-5",
-                                            base_url: "https://llm.example.com", api_key_env: "MY_ANTHROPIC_KEY")
+                                            base_url: "https://llm.example.com", api_key_env: "MY_ANTHROPIC_KEY",
+                                            aws_region: nil, aws_profile: nil)
     end
 
     it "takes an http base URL, for a local server" do
@@ -69,7 +70,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       env = { "QUAACK_MODEL" => "", "QUAACK_LLM_BASE_URL" => "", "QUAACK_LLM_PROVIDER" => "" }
 
       expect(fields(settings(block, env:))).to eq(provider: "anthropic", model: "claude-from-config",
-                                                  base_url: "https://config.example.com", api_key_env: nil)
+                                                  base_url: "https://config.example.com", api_key_env: nil,
+                                                  aws_region: nil, aws_profile: nil)
     end
 
     it "reads the process environment when no env is given" do
@@ -85,12 +87,14 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     {
       "a block that isn't an object" => [["SENTINEL-VALUE"], "llm in ~/.quaack/driver.json must be an object"],
       "an unknown key" => [{ "api_key" => "SENTINEL-VALUE" }, "llm.api_key in ~/.quaack/driver.json isn't a " \
-                                                              "setting: use provider, model, base_url, or api_key_env"],
+                                                              "setting: use provider, model, base_url, api_key_env, " \
+                                                              "aws_region, or aws_profile"],
       "an unknown provider" => [{ "provider" => "SENTINEL-VALUE" },
-                                "llm.provider in ~/.quaack/driver.json must be anthropic or openai_compatible"],
+                                "llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, or " \
+                                "bedrock"],
       "a provider that isn't a string" => [{ "provider" => ["SENTINEL-VALUE"] },
-                                           "llm.provider in ~/.quaack/driver.json must be anthropic or " \
-                                           "openai_compatible"],
+                                           "llm.provider in ~/.quaack/driver.json must be anthropic, " \
+                                           "openai_compatible, or bedrock"],
       "an empty model" => [{ "model" => "" }, "llm.model in ~/.quaack/driver.json must be a non-empty string"],
       "a model that isn't a string" => [{ "model" => 5 }, "llm.model in ~/.quaack/driver.json must be a " \
                                                           "non-empty string"],
@@ -104,7 +108,20 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                                         "llm.api_key_env in ~/.quaack/driver.json must be the " \
                                                         "name of an environment variable"],
       "an empty api_key_env" => [{ "api_key_env" => "" }, "llm.api_key_env in ~/.quaack/driver.json must be the " \
-                                                          "name of an environment variable"]
+                                                          "name of an environment variable"],
+      "an aws_region that isn't a region" => [{ "provider" => "bedrock", "model" => "m",
+                                                "aws_region" => "SENTINEL-VALUE" },
+                                              "llm.aws_region in ~/.quaack/driver.json must be an AWS region, " \
+                                              "such as us-east-1"],
+      "an aws_region that isn't a string" => [{ "provider" => "bedrock", "model" => "m", "aws_region" => 1 },
+                                              "llm.aws_region in ~/.quaack/driver.json must be an AWS region, " \
+                                              "such as us-east-1"],
+      "an empty aws_profile" => [{ "provider" => "bedrock", "model" => "m", "aws_profile" => "" },
+                                 "llm.aws_profile in ~/.quaack/driver.json must be the name of an AWS profile"],
+      "an aws_profile with a line break" => [{ "provider" => "bedrock", "model" => "m",
+                                               "aws_profile" => "SENTINEL-VALUE\nx" },
+                                             "llm.aws_profile in ~/.quaack/driver.json must be the name of an AWS " \
+                                             "profile"]
     }.each do |what, (block, message)|
       it "fails on #{what}, naming the key and not the value" do
         e = config_error(block)
@@ -117,7 +134,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "fails on a bad QUAACK_LLM_PROVIDER, naming the variable and not its value" do
       e = config_error(nil, env: { "QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE" })
 
-      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic or openai_compatible")
+      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, or bedrock")
     end
 
     it "fails on a bad QUAACK_LLM_BASE_URL, naming the variable and not its value" do
@@ -157,12 +174,79 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                 "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }
 
       expect(fields(settings(block))).to eq(provider: "openai_compatible", model: "llama-3.3-70b-versatile",
-                                            base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY")
+                                            base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
+                                            aws_region: nil, aws_profile: nil)
     end
 
     it "has an adapter for every provider it takes" do
       expect(Quaack::Driver::LLM::PROVIDERS.map { Quaack::Driver::LLM.adapter(it).name.split("::").last })
-        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter])
+        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter BedrockAdapter])
+    end
+  end
+
+  describe "the bedrock provider" do
+    let(:block) do
+      { "provider" => "bedrock", "model" => "us.anthropic.claude-opus-5-5", "aws_region" => "us-west-2",
+        "aws_profile" => "quaack-bedrock", "base_url" => "https://bedrock.example.com" }
+    end
+
+    it "takes a model, an AWS region and profile, and a base URL" do
+      expect(fields(settings(block))).to eq(provider: "bedrock", model: "us.anthropic.claude-opus-5-5",
+                                            base_url: "https://bedrock.example.com", api_key_env: nil,
+                                            aws_region: "us-west-2", aws_profile: "quaack-bedrock")
+    end
+
+    it "needs neither the region nor the profile, since the AWS SDK can find them" do
+      result = settings({ "provider" => "bedrock", "model" => "anthropic.claude-opus-5-5" })
+
+      expect([result.aws_region, result.aws_profile]).to eq([nil, nil])
+    end
+
+    it "takes each region form AWS uses" do
+      %w[us-east-1 eu-central-1 ap-southeast-2 us-gov-west-1 ca-west-1].each do |region|
+        expect(settings(block.merge("aws_region" => region)).aws_region).to eq(region)
+      end
+    end
+
+    it "requires a model, since Bedrock's model IDs vary by region and inference profile" do
+      e = config_error({ "provider" => "bedrock", "aws_region" => "us-west-2" })
+
+      expect(e.message).to eq("llm.model in ~/.quaack/driver.json is required unless the provider is anthropic")
+    end
+
+    it "is picked by QUAACK_LLM_PROVIDER, with the model from QUAACK_MODEL" do
+      env = { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "anthropic.claude-opus-5-5" }
+
+      expect(fields(settings(nil, env:))).to eq(provider: "bedrock", model: "anthropic.claude-opus-5-5",
+                                                base_url: nil, api_key_env: nil, aws_region: nil, aws_profile: nil)
+    end
+
+    it "refuses api_key_env, since its credentials come from AWS" do
+      e = config_error({ "provider" => "bedrock", "model" => "m", "api_key_env" => "SENTINEL_VALUE" })
+
+      expect(e.message).to eq("llm.api_key_env in ~/.quaack/driver.json doesn't apply to provider bedrock")
+    end
+
+    %w[aws_region aws_profile].each do |name|
+      it "is the only provider that takes #{name}" do
+        value = name == "aws_region" ? "us-west-2" : "SENTINEL-VALUE"
+        [{ "provider" => "openai_compatible", "model" => "m" }, {}].each do |base|
+          e = config_error(base.merge(name => value))
+
+          provider = base.fetch("provider", "anthropic")
+          expect(e.message).to eq("llm.#{name} in ~/.quaack/driver.json doesn't apply to provider #{provider}")
+          expect(e.message).not_to include("SENTINEL")
+        end
+      end
+    end
+
+    it "judges which keys apply by the provider QUAACK_LLM_PROVIDER picks" do
+      e = config_error(block, env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+
+      expect(e.message).to eq("llm.aws_region in ~/.quaack/driver.json doesn't apply to provider anthropic")
+      expect(settings({ "aws_region" => "us-west-2" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock",
+                                                              "QUAACK_MODEL" => "m" }).aws_region)
+        .to eq("us-west-2")
     end
   end
 end

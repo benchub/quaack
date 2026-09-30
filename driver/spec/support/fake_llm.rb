@@ -94,6 +94,9 @@ class FakeLLM
   # The system prompt an attempt sent.
   def system_prompt(ask) = ask.body[:system]
 
+  # The model an attempt asked for.
+  def model(ask) = ask.body[:model]
+
   # The transport interface LLM::Client calls, once per attempt: the gem's
   # per-attempt request, and the step it's for. Returns the gem's response.
   def call(request, step:)

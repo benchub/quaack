@@ -11,7 +11,10 @@ module Quaack
     # provider's API. Callers see nothing of either SDK.
     #
     # Which provider and model come from the llm block of the driver config,
-    # ~/.quaack/driver.json, with environment overrides. See `settings`.
+    # ~/.quaack/driver.json, with environment overrides. See `settings`. The
+    # providers are anthropic (the Anthropic API), openai_compatible (any
+    # OpenAI-compatible Chat Completions API), and bedrock (Anthropic models
+    # on AWS Bedrock).
     #
     # The driver never holds a production value, so a prompt only ever
     # carries shapes. Client doesn't check that. The callers that build the
@@ -26,11 +29,12 @@ module Quaack
 
       # Every provider the llm block may name, and the default model of each
       # that has one. Any other needs a model.
-      PROVIDERS = %w[anthropic openai_compatible].freeze
+      PROVIDERS = %w[anthropic openai_compatible bedrock].freeze
       DEFAULT_MODELS = { "anthropic" => DEFAULT_MODEL }.freeze
 
       # The adapter class for each provider, by constant name under LLM.
-      ADAPTERS = { "anthropic" => :AnthropicAdapter, "openai_compatible" => :OpenAICompatibleAdapter }.freeze
+      ADAPTERS = { "anthropic" => :AnthropicAdapter, "openai_compatible" => :OpenAICompatibleAdapter,
+                   "bedrock" => :BedrockAdapter }.freeze
 
       BLOCK = "llm"
       FILE = "~/.quaack/driver.json"
@@ -42,22 +46,32 @@ module Quaack
 
       # What an adapter is built from. base_url nil means the provider's own
       # default. api_key_env is the name of the variable that holds the key,
-      # or nil for the provider's usual lookup.
-      Settings = Data.define(:provider, :model, :base_url, :api_key_env)
+      # or nil for the provider's usual lookup. aws_region and aws_profile are
+      # bedrock's, each nil for the AWS SDK's own lookup.
+      Settings = Data.define(:provider, :model, :base_url, :api_key_env, :aws_region, :aws_profile)
 
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
       URL = %r{\Ahttps?://[^\s/]+\S*\z}
+      # An AWS region's name, such as us-east-1 or us-gov-west-1.
+      REGION = /\A[a-z]{2}(-[a-z]+)+-\d+\z/
 
       # Each key of the block: whether a value is good, and what a bad one
       # is told.
       CHECKS = {
-        "provider" => [->(v) { PROVIDERS.include?(v) }, "must be #{PROVIDERS.join(" or ")}"],
+        "provider" => [->(v) { PROVIDERS.include?(v) }, "must be #{PROVIDERS[0..-2].join(", ")}, or #{PROVIDERS.last}"],
         "model" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be a non-empty string"],
         "base_url" => [->(v) { v.is_a?(String) && URL.match?(v) }, "must be an http or https URL"],
-        "api_key_env" => [->(v) { v.is_a?(String) && NAME.match?(v) }, "must be the name of an environment variable"]
+        "api_key_env" => [->(v) { v.is_a?(String) && NAME.match?(v) }, "must be the name of an environment variable"],
+        "aws_region" => [->(v) { v.is_a?(String) && REGION.match?(v) }, "must be an AWS region, such as us-east-1"],
+        "aws_profile" => [->(v) { v.is_a?(String) && LINE.match?(v) }, "must be the name of an AWS profile"]
       }.freeze
       KEYS = CHECKS.keys.freeze
+
+      # The keys that apply only to some providers, and which. bedrock's
+      # credentials come from AWS, so it has no api_key_env.
+      ONLY = { "api_key_env" => %w[anthropic openai_compatible], "aws_region" => %w[bedrock],
+               "aws_profile" => %w[bedrock] }.freeze
 
       # The variable that overrides each key that has one.
       VARIABLES = { "provider" => PROVIDER_ENV, "model" => MODEL_ENV, "base_url" => BASE_URL_ENV }.freeze
@@ -66,13 +80,16 @@ module Quaack
       # (nil when there's none), and env. QUAACK_MODEL, QUAACK_LLM_PROVIDER,
       # and QUAACK_LLM_BASE_URL override the block, and an empty one counts
       # as unset. With neither, it's Anthropic with DEFAULT_MODEL. Raises
-      # ConfigError for a bad value.
+      # ConfigError for a bad value, or a key that doesn't apply to the
+      # provider.
       def self.settings(block = nil, env: ENV)
         block = check_block(block)
         provider = pick(env, block, "provider") || "anthropic"
+        check_applies(block, provider)
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
         model or raise ConfigError, "#{key("model")} is required unless the provider is anthropic"
-        Settings.new(provider:, model:, base_url: pick(env, block, "base_url"), api_key_env: block["api_key_env"])
+        Settings.new(provider:, model:, base_url: pick(env, block, "base_url"), api_key_env: block["api_key_env"],
+                     aws_region: block["aws_region"], aws_profile: block["aws_profile"])
       end
 
       # The adapter class for a provider that has one.
@@ -89,6 +106,15 @@ module Quaack
           end
 
           check(key(name), name, value)
+        end
+      end
+
+      # Raises unless every key of block applies to provider.
+      def self.check_applies(block, provider)
+        block.each_key do |name|
+          next if ONLY.fetch(name, [provider]).include?(provider)
+
+          raise ConfigError, "#{key(name)} doesn't apply to provider #{provider}"
         end
       end
 
@@ -110,7 +136,7 @@ module Quaack
 
       def self.key(name) = "#{BLOCK}.#{name} in #{FILE}"
 
-      private_class_method :check_block, :pick, :check, :key
+      private_class_method :check_block, :check_applies, :pick, :check, :key
     end
   end
 end
@@ -119,3 +145,4 @@ require_relative "llm/error"
 require_relative "llm/client"
 require_relative "llm/anthropic_adapter"
 require_relative "llm/openai_compatible_adapter"
+require_relative "llm/bedrock_adapter"

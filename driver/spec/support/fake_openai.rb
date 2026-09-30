@@ -113,6 +113,9 @@ class FakeOpenAI
     first[:content] if first[:role] == "system"
   end
 
+  # The model an attempt asked for.
+  def model(ask) = ask.body[:model]
+
   # The transport interface the adapter calls, once per attempt: the gem's
   # per-attempt request, and the step it's for. Returns the gem's response.
   def call(request, step:)

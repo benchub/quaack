@@ -7,8 +7,9 @@ require "quaack/driver/llm"
 # reply's text, the burndown count, the step check, reading JSON replies,
 # replies that can't be used, and the error rules. Each adapter's spec runs
 # these against its own fake, which scripts answers the same way:
-# `reply`, `cut_short`, `error`, `raw`, `drop`, `client`, `asks`, and
-# `system_prompt(ask)`. See FakeLLM and FakeOpenAI.
+# `reply`, `cut_short`, `error`, `raw`, `drop`, `client`, `asks`,
+# `system_prompt(ask)`, and `model(ask)`. See FakeLLM, FakeOpenAI, and
+# FakeBedrock.
 #
 # The including group defines `fake`.
 RSpec.shared_examples "an LLM client" do
@@ -286,7 +287,7 @@ RSpec.shared_examples "an LLM client" do
       fake.reply("5a-5", "ok")
       fake.client(burndown: burndown, model: "other-model-1").ask(step: "5a-5", messages: messages, max_tokens: 10)
 
-      expect(fake.asks.first.body[:model]).to eq("other-model-1")
+      expect(fake.model(fake.asks.first)).to eq("other-model-1")
     end
   end
 end

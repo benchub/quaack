@@ -8,6 +8,7 @@ require "quaack/driver/cli"
 require "quaack/driver/enclave_error"
 require "quaack/driver/runs"
 require_relative "support/anthropic_credentials"
+require_relative "support/aws_credentials"
 require_relative "support/fake_llm"
 
 RSpec.describe "quaack run" do
@@ -373,7 +374,7 @@ RSpec.describe "quaack run" do
 
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-from-config", base_url: nil,
-                                        api_key_env: "MY_KEY" }])
+                                        api_key_env: "MY_KEY", aws_region: nil, aws_profile: nil }])
     end
 
     it "gives the defaults, with the environment's overrides, when there's no driver.json or no block" do
@@ -382,22 +383,24 @@ RSpec.describe "quaack run" do
       run_with
 
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-opus-5-5",
-                                        base_url: "https://env.example.com", api_key_env: nil },
+                                        base_url: "https://env.example.com", api_key_env: nil, aws_region: nil,
+                                        aws_profile: nil },
                                       { provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
-                                        api_key_env: nil }])
+                                        api_key_env: nil, aws_region: nil, aws_profile: nil }])
     end
 
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
       write_config(JSON.generate("llm" => { "provider" => "SENTINEL-VALUE" }))
 
-      expect([run_with, stdout.string, errors])
-        .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic or openai_compatible\n"])
+      expect([run_with, stdout.string, stderr.string])
+        .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
+                        "or bedrock\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
     it "fails with a usage error for a bad override" do
-      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), errors])
-        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic or openai_compatible\n"])
+      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), stderr.string])
+        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, or bedrock\n"])
       expect(hosts).to eq([])
     end
 
@@ -448,7 +451,18 @@ RSpec.describe "quaack run" do
 
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "openai_compatible", model: "llama-3.3-70b-versatile",
-                                        base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY" }])
+                                        base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
+                                        aws_region: nil, aws_profile: nil }])
+    end
+
+    it "gives the client bedrock settings" do
+      block = { "provider" => "bedrock", "model" => "us.anthropic.claude-opus-5-5", "aws_region" => "us-west-2",
+                "aws_profile" => "quaack-bedrock" }
+      write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+
+      expect(run_with).to eq(0)
+      expect(seen.map(&:to_h)).to eq([{ provider: "bedrock", model: "us.anthropic.claude-opus-5-5", base_url: nil,
+                                        api_key_env: nil, aws_region: "us-west-2", aws_profile: "quaack-bedrock" }])
     end
 
     # The CLI's own client builder, not a spec's. build_client takes a
@@ -519,6 +533,32 @@ RSpec.describe "quaack run" do
         expect([status, stdout.string, errors])
           .to eq([1, "", "quaack run failed: llm_auth: QUAACK_SPEC_UNSET_KEY isn't set\n"])
         expect([hosts, transport.calls]).to eq([[], []])
+      end
+
+      describe "for bedrock" do
+        include AWSCredentials
+
+        let(:block) { { "provider" => "bedrock", "model" => "us.anthropic.claude-opus-5-5" } }
+
+        it "fails the same way when the AWS chain finds no credentials" do
+          llm = block.merge("aws_region" => "us-west-2")
+          write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => llm))
+          status = without_aws_credentials { run_with }
+
+          expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+          expect([hosts, transport.calls]).to eq([[], []])
+        end
+
+        it "fails with a usage error when there's no AWS region, before touching the jump server" do
+          write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+          env = { "AWS_ACCESS_KEY_ID" => "AKIAQUAACKSPECENV001", "AWS_SECRET_ACCESS_KEY" => "s" }
+          status = without_aws_credentials(env) { run_with }
+
+          expect([status, stdout.string, stderr.string])
+            .to eq([64, "", "quaack run: no AWS region for Bedrock: set llm.aws_region in ~/.quaack/driver.json, " \
+                            "AWS_REGION, or a region in the AWS profile\n"])
+          expect([hosts, transport.calls]).to eq([[], []])
+        end
       end
     end
   end
