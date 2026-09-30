@@ -867,6 +867,29 @@ To do:
 - **Design:** 3b, 4a.
 - **Status:** todo
 
+### 20260929-21. The full schema dump misses schemas that FK parent tables live in.
+
+`SchemaDump.full_dump` dumps the schemas the query's tables live in, plus public. The subset follows foreign keys to parent tables in other schemas, but the full dump doesn't add their schemas. So a query on `sales.items` gets `public` and `sales`, while `sales.skus` has an FK to `audit.vendors`. Loading that full dump into arena then fails with `schema "audit" does not exist` (`arena_dump_load_failed`). The 20260929-19 builder hit this with the existing sample fixture.
+
+This is likely to bite the user's Canvas database, where shard schemas such as `cluster44_shard_7236` may have foreign keys into other schemas.
+
+- Add each FK ancestor's schema to the full dump's namespaces, as `ancestors` already finds them, still leaving out system schemas (20260929-19).
+- Red test: the cross-schema FK fixture above, loaded into arena.
+
+- **Depends on:** 20260929-19.
+- **Came from:** The build of 20260929-19.
+- **Design:** 3b, 4a.
+- **Status:** todo
+
+### 20260929-22. The subset dump takes a query table in a system schema.
+
+With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in 3a. List it as unsupported in v1.
+
+- **Depends on:** 20260929-19.
+- **Came from:** The build of 20260929-19.
+- **Design:** 3a, 3b.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
