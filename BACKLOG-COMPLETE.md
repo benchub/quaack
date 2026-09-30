@@ -3052,3 +3052,13 @@ These are minor findings from the build and review of 20260928-3:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. With no key passed, the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set must be non-empty. Otherwise the run fails with `llm_auth: <VAR> is set but empty` before any attempt. When QUAACK passes the key, a `GivenKeyClient` subclass skips the gem's misleading precedence warning. start_spec covers `not json`, `[1]`, and `null`. The builder worked while the safety classifier was down. The reviewer confirmed the diff touches only the five files the task calls for. The minor findings went to 20260930-3.
+
+### 20260929-15. `TestPgDump.server_major`'s regex is under-tested.
+
+The test "reads the major version from the image's FROM line" in `spec/test_pg_dump_spec.rb` uses a fixture Dockerfile with no digits before `FROM`. So weakening the regex to `/(\d+)/` keeps it green. Put a line with a number before `FROM` in the fixture, such as `ARG PG_MAJOR=16` or a comment naming a version, and check that the test still reads the `FROM` line's major.
+
+- **Depends on:** 20260929-9.
+- **Came from:** Review of 20260929-9, round two.
+- **Design:** none. Test harness only.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no findings to fix. The fixture now has a comment naming `FROM postgres:16` and an `ARG PG_MAJOR=16` before `FROM postgres:17`, so an unanchored or digit-anywhere regex reads 16 and goes red. Dropping the `\b` isn't caught. That's harmless for the real Dockerfile, which pins a plain major.

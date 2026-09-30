@@ -733,14 +733,7 @@ Minor findings from the first review of 20260929-9.
 - **Design:** none. Test harness only.
 - **Status:** todo
 
-### 20260929-15. `TestPgDump.server_major`'s regex is under-tested.
-
-The test "reads the major version from the image's FROM line" in `spec/test_pg_dump_spec.rb` uses a fixture Dockerfile with no digits before `FROM`. So weakening the regex to `/(\d+)/` keeps it green. Put a line with a number before `FROM` in the fixture, such as `ARG PG_MAJOR=16` or a comment naming a version, and check that the test still reads the `FROM` line's major.
-
-- **Depends on:** 20260929-9.
-- **Came from:** Review of 20260929-9, round two.
-- **Design:** none. Test harness only.
-- **Status:** todo
+### 20260929-15. `TestPgDump.server_major`'s regex is under-tested. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-16. PgBouncer support: minor findings.
 
