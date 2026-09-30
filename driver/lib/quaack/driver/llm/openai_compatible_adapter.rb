@@ -110,7 +110,8 @@ module Quaack
 
         def named_key(variable)
           key = ENV.fetch(variable, nil)
-          raise Error.new("llm_auth", "#{variable} isn't set") if key.to_s.empty?
+          raise Error.new("llm_auth", "#{variable} isn't set") if key.nil?
+          raise Error.new("llm_auth", "#{variable} is set but empty") if key.empty?
 
           key
         end
