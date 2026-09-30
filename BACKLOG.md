@@ -600,17 +600,7 @@ Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --aren
 
 ### 20260928-4. OpenAI-compatible LLM adapter. Done, see BACKLOG-COMPLETE.md.
 
-### 20260928-5. LLM provider seam loose ends.
-
-These are minor findings from the build and review of 20260928-3:
-- A set-but-empty `ANTHROPIC_API_KEY` hides other credentials. The anthropic gem treats `""` as a set key, so it skips `ANTHROPIC_AUTH_TOKEN` and profile discovery, then sends no credential header. With `ANTHROPIC_AUTH_TOKEN` also set, the run fails `llm_auth` after one counted attempt. With a valid `ant auth login` profile, it fails with "no Anthropic credentials". Refuse up front with "ANTHROPIC_API_KEY is set but empty", or pass the token or discovered credentials explicitly. Also fix the comment on `AnthropicAdapter#credentials?`, which says an empty key is sent as no header.
-- `Start`'s `rescue DriverConfig::Bad` has no spec. A driver.json of `not json`, `[1]`, or `null` gives `bad_driver_config` today, but deleting the rescue keeps every spec green. Add those cases to `start_spec.rb`.
-- The anthropic gem prints precedence warnings on stderr, such as "ANTHROPIC_API_KEY is set and takes precedence over ... auto-discovery", even when `api_key_env` supplied the key. They leak no values, but they mislead. Silence them or explain them.
-
-- **Depends on:** 20260928-3.
-- **Came from:** The build report and round-one review of 20260928-3.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260928-5. LLM provider seam loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-6. LLM provider seam loose ends, part two. Done, see BACKLOG-COMPLETE.md.
 
@@ -891,6 +881,19 @@ Changing `start_with?("pg_")` to `include?("pg_")` in `SchemaDump.system_schema?
 - **Depends on:** 20260929-23.
 - **Came from:** Review of 20260929-23, round one.
 - **Design:** 3b.
+- **Status:** todo
+
+### 20260930-3. Anthropic credential checks: minor findings.
+
+Minor findings from the review of 20260928-5:
+
+- `GivenKeyClient#warn_env_shadow(**)` accepts only keyword arguments. If the anthropic gem starts passing positional arguments, building the client raises ArgumentError. Use `(*, **)`. A rename is already caught, because llm_client_spec's warning example goes red.
+- README.md and DESIGN.md read as if any empty Anthropic variable fails the run. Only the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set is checked. Tighten the wording.
+- When `api_key_env` names a variable that's set but empty, the message is "`<VAR>` isn't set", while the new check says "is set but empty". Make them agree.
+
+- **Depends on:** 20260928-5.
+- **Came from:** Review of 20260928-5, round one.
+- **Design:** Where QUAACK runs.
 - **Status:** todo
 
 ## After version 1.

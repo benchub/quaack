@@ -3039,3 +3039,16 @@ Changing `start_with?("pg_")` to `start_with?("pg")` leaves every spec green. Th
 - **Design:** 3b.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. A Postgres example keeps `pgbouncer` and `pgaudit_log` query tables in the dump. A new unit spec pins `system_schema?` on system and look-alike names, which were checked on a real server: Postgres reserves only a lowercase `pg_` prefix. The minor finding went to 20260930-2.
+
+### 20260928-5. LLM provider seam loose ends.
+
+These are minor findings from the build and review of 20260928-3:
+- A set-but-empty `ANTHROPIC_API_KEY` hides other credentials. The anthropic gem treats `""` as a set key, so it skips `ANTHROPIC_AUTH_TOKEN` and profile discovery, then sends no credential header. With `ANTHROPIC_AUTH_TOKEN` also set, the run fails `llm_auth` after one counted attempt. With a valid `ant auth login` profile, it fails with "no Anthropic credentials". Refuse up front with "ANTHROPIC_API_KEY is set but empty", or pass the token or discovered credentials explicitly. Also fix the comment on `AnthropicAdapter#credentials?`, which says an empty key is sent as no header.
+- `Start`'s `rescue DriverConfig::Bad` has no spec. A driver.json of `not json`, `[1]`, or `null` gives `bad_driver_config` today, but deleting the rescue keeps every spec green. Add those cases to `start_spec.rb`.
+- The anthropic gem prints precedence warnings on stderr, such as "ANTHROPIC_API_KEY is set and takes precedence over ... auto-discovery", even when `api_key_env` supplied the key. They leak no values, but they mislead. Silence them or explain them.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The build report and round-one review of 20260928-3.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. With no key passed, the first of `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` that's set must be non-empty. Otherwise the run fails with `llm_auth: <VAR> is set but empty` before any attempt. When QUAACK passes the key, a `GivenKeyClient` subclass skips the gem's misleading precedence warning. start_spec covers `not json`, `[1]`, and `null`. The builder worked while the safety classifier was down. The reviewer confirmed the diff touches only the five files the task calls for. The minor findings went to 20260930-3.
