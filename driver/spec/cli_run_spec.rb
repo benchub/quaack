@@ -424,6 +424,23 @@ RSpec.describe "quaack run" do
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
+    # The same for a driver.json in a directory it can't read, rather than
+    # taking it for a missing driver.json and running with the defaults. A
+    # mode 000 ~/.quaack itself stops run sooner, at the run ID lookup in
+    # ~/.quaack/runs, so this links driver.json into a directory that is.
+    it "fails with a usage error for a driver.json in a directory it can't read" do
+      locked = File.join(home, "locked").tap { FileUtils.mkdir_p(it) }
+      File.write(File.join(locked, "driver.json"), JSON.generate("llm" => {}))
+      File.symlink(File.join(locked, "driver.json"), File.join(home, ".quaack", "driver.json"))
+      File.chmod(0o000, locked)
+      skip "this user can read a directory with mode 000" if File.readable?(File.join(locked, "driver.json"))
+
+      expect([run_with, stdout.string, stderr.string]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      expect([hosts, transport.calls, seen]).to eq([[], [], []])
+    ensure
+      File.chmod(0o700, locked)
+    end
+
     it "gives the client openai_compatible settings" do
       block = { "provider" => "openai_compatible", "model" => "llama-3.3-70b-versatile",
                 "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "GROQ_API_KEY" }

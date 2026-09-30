@@ -121,6 +121,33 @@ RSpec.describe Quaack::Driver::Start do
     expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
   end
 
+  # A ~/.quaack that exists but can't be read is refused the same way,
+  # not taken for a missing config.
+  it "refuses a ~/.quaack it can't read" do
+    quaack = File.join(home, ".quaack")
+    configure("echo jump-1")
+    File.chmod(0o000, quaack)
+    skip "this user can read a directory with mode 000" if File.readable?(File.join(quaack, "driver.json"))
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+  ensure
+    File.chmod(0o700, quaack)
+  end
+
+  it "refuses a driver.json that isn't a file, not taking it for a missing one" do
+    FileUtils.mkdir_p(File.join(home, ".quaack", "driver.json"))
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+  end
+
+  it "counts a ~/.quaack without a driver.json, or that isn't a directory, as no config" do
+    quaack = File.join(home, ".quaack")
+    FileUtils.mkdir_p(quaack)
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+    FileUtils.rm_rf(quaack)
+    File.write(quaack, "")
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "no_driver_config")
+  end
+
   it "times out a jump_command that runs too long" do
     configure("sleep 5; echo jump-1")
     expect { start(jump_timeout: 0.3) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")

@@ -16,16 +16,29 @@ module Quaack
 
       def self.path(home) = File.join(home, ".quaack", "driver.json")
 
-      # The config under home as a Hash, or nil when there's no file.
+      # The config under home as a Hash, or nil when nothing is there. A
+      # driver.json it can't reach, such as one in a directory it can't
+      # read, or one that isn't a file, is Bad, not missing.
       def self.read(home)
         path = path(home)
-        return unless File.file?(path)
+        return unless there?(path)
 
         config = parse(path)
         raise Bad unless config.is_a?(Hash)
 
         config
       end
+
+      # Whether something is at path. Unlike File.exist?, it raises Bad
+      # when it can't tell, or when what's there isn't a file.
+      def self.there?(path)
+        File.stat(path).file? or raise Bad, "can't read ~/.quaack/driver.json"
+      rescue Errno::ENOENT, Errno::ENOTDIR
+        false
+      rescue SystemCallError
+        raise Bad, "can't read ~/.quaack/driver.json"
+      end
+      private_class_method :there?
 
       # The file's JSON, or nil if it isn't JSON.
       def self.parse(path)
