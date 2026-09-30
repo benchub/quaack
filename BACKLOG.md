@@ -822,19 +822,7 @@ It's a false positive. No prompt in the corpus holds that date. The models gener
 
 ### 20260929-19. Schema dump selects `pg_catalog` when an extension lives there. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-21. The full schema dump misses schemas that FK parent tables live in.
-
-`SchemaDump.full_dump` dumps the schemas the query's tables live in, plus public. The subset follows foreign keys to parent tables in other schemas, but the full dump doesn't add their schemas. So a query on `sales.items` gets `public` and `sales`, while `sales.skus` has an FK to `audit.vendors`. Loading that full dump into arena then fails with `schema "audit" does not exist` (`arena_dump_load_failed`). The 20260929-19 builder hit this with the existing sample fixture.
-
-This is likely to bite the user's Canvas database, where shard schemas such as `cluster44_shard_7236` may have foreign keys into other schemas.
-
-- Add each FK ancestor's schema to the full dump's namespaces, as `ancestors` already finds them, still leaving out system schemas (20260929-19).
-- Red test: the cross-schema FK fixture above, loaded into arena.
-
-- **Depends on:** 20260929-19.
-- **Came from:** The build of 20260929-19.
-- **Design:** 3b, 4a.
-- **Status:** todo
+### 20260929-21. The full schema dump misses schemas that FK parent tables live in. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-22. The subset dump takes a query table in a system schema.
 

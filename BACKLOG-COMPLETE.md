@@ -2941,3 +2941,18 @@ These are minor findings from the second review of 20260928-3:
 - **Design:** Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-09-29):** Landed on `main` after one review with no blocking findings. Changes: `CLI.build_client(settings, transport:)`, with a FakeLLM spec on model and URL; `NoNetwork.always_refuse`, which refuses even with `QUAACK_ALLOW_REAL_LLM=1`; a spec that a given `api_key:` wins; and an unreadable driver.json, now a clean usage error for `run` and `bad_driver_config` for `start`. The minor findings went to 20260929-27.
+
+### 20260929-21. The full schema dump misses schemas that FK parent tables live in.
+
+`SchemaDump.full_dump` dumps the schemas the query's tables live in, plus public. The subset follows foreign keys to parent tables in other schemas, but the full dump doesn't add their schemas. So a query on `sales.items` gets `public` and `sales`, while `sales.skus` has an FK to `audit.vendors`. Loading that full dump into arena then fails with `schema "audit" does not exist` (`arena_dump_load_failed`). The 20260929-19 builder hit this with the existing sample fixture.
+
+This is likely to bite the user's Canvas database, where shard schemas such as `cluster44_shard_7236` may have foreign keys into other schemas.
+
+- Add each FK ancestor's schema to the full dump's namespaces, as `ancestors` already finds them, still leaving out system schemas (20260929-19).
+- Red test: the cross-schema FK fixture above, loaded into arena.
+
+- **Depends on:** 20260929-19.
+- **Came from:** The build of 20260929-19.
+- **Design:** 3b, 4a.
+- **Status:** done
+- **Note (landed 2026-09-29):** Landed on `main` after one review with no findings to fix. `SchemaDump.run` passes the FK ancestors, not just the query relations, to `full_dump`, so every ancestor's schema is dumped, at any depth, still without system schemas. A spec loads a two-level cross-schema chain into arena. The reviewer noted that a widely referenced parent schema, such as `auth`, is now dumped whole, and its tables must be lockable by the read-only role. Before the fix, that dump failed to load anyway. The builder's related findings went to 20260929-26.
