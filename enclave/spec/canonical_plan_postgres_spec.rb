@@ -74,7 +74,9 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     expect(described_class.new(before).matches?(described_class.new(after))).to be(false)
   end
 
-  it "matches plans that use the same hypothetical index under different oids" do
+  # Without a map, a name HypoPG made is kept, oid and all, since a real
+  # index can have a name like that.
+  it "tells apart plans that use the same hypothetical index under different oids without a map" do
     conn = test_database.connection
     conn.exec("CREATE EXTENSION hypopg")
     query = "SELECT o.id FROM public.orders o WHERE o.total_cents = 5100"
@@ -89,7 +91,40 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     names = plans.map { |p| p.dig(0, "Plan", "Index Name") }
     expect(names.uniq.size).to eq(2)
     expect(names).to all(end_with("btree_orders_total_cents"))
-    expect(described_class.new(plans.first).matches?(described_class.new(plans.last))).to be(true)
+    expect(described_class.new(plans.first).matches?(described_class.new(plans.last))).to be(false)
+  end
+
+  # A quoted identifier can look like a name HypoPG makes. The step 1 plan
+  # has no map, and the racetrack's has one for its hypothetical indexes,
+  # none here, as step 5 compares them.
+  describe "a real index named like a hypothetical one" do
+    let(:query) { "SELECT o.id FROM public.orders o WHERE o.total_cents = 5100" }
+
+    before do
+      conn = test_database.connection
+      conn.exec("CREATE EXTENSION hypopg")
+      conn.exec('CREATE INDEX "<1>orders_total_cents" ON public.orders (total_cents)')
+    end
+
+    it "matches itself from production to the racetrack" do
+      production = explain(query, CANONICAL_PLAN_PRODUCTION)
+      racetrack = explain(query)
+      expect(racetrack.dig(0, "Plan", "Index Name")).to eq("<1>orders_total_cents")
+      expect(described_class.new(production)
+               .matches?(described_class.new(racetrack, hypothetical_indexes: {}))).to be(true)
+    end
+
+    it "doesn't match another real index whose name is the rest of it" do
+      conn = test_database.connection
+      before = explain(query)
+      conn.exec('DROP INDEX public."<1>orders_total_cents"')
+      conn.exec("CREATE INDEX orders_total_cents ON public.orders (total_cents)")
+      after = explain(query)
+      expect(after.dig(0, "Plan", "Index Name")).to eq("orders_total_cents")
+      expect(described_class.new(before).matches?(described_class.new(after))).to be(false)
+      expect(described_class.new(before, hypothetical_indexes: {})
+               .matches?(described_class.new(after, hypothetical_indexes: {}))).to be(false)
+    end
   end
 
   # HypoPG names an index for its method, table, and columns only, so two
@@ -130,7 +165,6 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
         (a, a_map), (b, b_map) = [first, second].map { |ddl| with_hypothetical(ddl, query) }
         names = [a, b].map { |p| p.dig(0, "Plan", "Index Name").sub(/\A<\d+>/, "") }
         expect(names.uniq.size).to eq(1)
-        expect(described_class.new(a).matches?(described_class.new(b))).to be(true)
         expect(described_class.new(a, hypothetical_indexes: a_map)
                  .matches?(described_class.new(b, hypothetical_indexes: b_map))).to be(false)
       end

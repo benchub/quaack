@@ -433,6 +433,7 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
 
     expect(index_names(report.results.first.plans[:slow].raw_plan)).to eq(["<1>t_a"])
     expect(report.results.first.used?).to be(false)
+    expect(report.results.first.plans[:slow].canonical_plan).to be_matches(report.baseline.plans[:slow].canonical_plan)
   end
 
   it "plans a join deeper than JSON's default nesting limit" do
