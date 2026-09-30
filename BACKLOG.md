@@ -796,14 +796,7 @@ With a `pg_toast` table as a query relation, the subset's `--table` dump fails w
 - **Design:** 3a, 3b.
 - **Status:** todo
 
-### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`.
-
-Changing `start_with?("pg_")` to `start_with?("pg")` leaves every spec green. That version would silently drop a user schema like `pgbouncer` (common for PgBouncer's auth_query) or `pgaudit_log`, and the query's tables would be missing from the dump and arena. Add an example with such a schema holding a query table, and assert it stays in the namespaces and the DDL.
-
-- **Depends on:** 20260929-19.
-- **Came from:** Review of 20260929-19, round one.
-- **Design:** 3b.
-- **Status:** todo
+### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-24. Scrub every Bundler variable, not a named list.
 
@@ -889,6 +882,15 @@ Minor findings from the review of 20260927-25:
 - **Depends on:** 20260927-25.
 - **Came from:** Review of 20260927-25, round one.
 - **Design:** Teardown.
+- **Status:** todo
+
+### 20260930-2. Pin that `system_schema?` matches `pg_` only as a prefix.
+
+Changing `start_with?("pg_")` to `include?("pg_")` in `SchemaDump.system_schema?` leaves every spec green. That version would drop a user schema such as `app_pg_stats`, and its query tables would be missing from the dump and arena. Add a name like `app_pg_x` to the "leaves every other schema to the user" list in enclave/spec/schema_dump_spec.rb.
+
+- **Depends on:** 20260929-23.
+- **Came from:** Review of 20260929-23, round one.
+- **Design:** 3b.
 - **Status:** todo
 
 ## After version 1.

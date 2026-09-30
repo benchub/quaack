@@ -3029,3 +3029,13 @@ In `Redaction::Query#lowercase_field` (enclave/lib/quaack/enclave/redaction/quer
 - **Design:** 3g.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no findings. The Kelvin example in redaction_query_spec now uses `'WEEK'` with the Kelvin sign, and expects the placeholder value to keep its case. Dropping the `extract_field?` guard, or reintroducing the Unicode downcase from 20260923-40, turns it red. The full rake on the branch passed with 0 failures.
+
+### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`.
+
+Changing `start_with?("pg_")` to `start_with?("pg")` leaves every spec green. That version would silently drop a user schema like `pgbouncer` (common for PgBouncer's auth_query) or `pgaudit_log`, and the query's tables would be missing from the dump and arena. Add an example with such a schema holding a query table, and assert it stays in the namespaces and the DDL.
+
+- **Depends on:** 20260929-19.
+- **Came from:** Review of 20260929-19, round one.
+- **Design:** 3b.
+- **Status:** done
+- **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. A Postgres example keeps `pgbouncer` and `pgaudit_log` query tables in the dump. A new unit spec pins `system_schema?` on system and look-alike names, which were checked on a real server: Postgres reserves only a lowercase `pg_` prefix. The minor finding went to 20260930-2.
