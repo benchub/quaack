@@ -100,8 +100,17 @@ RSpec.describe TestPgDump do
     expect(described_class.server_major).to eq(running_major)
   end
 
+  # Numbers come before the FROM line, even one in a comment that quotes an
+  # old FROM line, so only the real FROM line gives 17.
   it "reads the major version from the image's FROM line" do
-    File.write(File.join(@tmp, "Dockerfile"), "# A comment.\nFROM postgres:17\n\nRUN true\n")
+    dockerfile = <<~DOCKERFILE
+      # This image was FROM postgres:16 before the upgrade.
+      ARG PG_MAJOR=16
+      FROM postgres:17
+
+      RUN true
+    DOCKERFILE
+    File.write(File.join(@tmp, "Dockerfile"), dockerfile)
     expect(described_class.server_major(@tmp)).to eq(17)
   end
 end
