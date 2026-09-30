@@ -888,6 +888,24 @@ In `Redaction::Query#lowercase_field` (enclave/lib/quaack/enclave/redaction/quer
 - **Design:** 3g.
 - **Status:** todo
 
+### 20260929-26. The full dump misses objects in other schemas that dumped objects depend on.
+
+Found while building 20260929-21. `pg_dump --schema=X` dumps only the objects in X. So anything a dumped object depends on in another schema is missing, and arena's load fails with `arena_dump_load_failed`. The builder confirmed each case below with a throwaway spec:
+
+1. **A sibling FK.** A table in a dumped schema has an FK into a schema that isn't dumped, and it isn't in the query's FK chain. For example, `s.sib REFERENCES z.p`, with the query on `s.q`. `--schema=s` brings in all of `s`, `s.sib` included, but not `z`. The ancestor schemas 20260929-21 adds come in whole too, so their other tables can do the same. This is the case most likely to hit the user's Canvas shard schemas.
+2. **A column type or domain in another schema,** such as `CREATE DOMAIN types.pos ...` used by `s.q`.
+3. **A column default that calls a function in another schema,** such as `DEFAULT util.one()`.
+4. **A default that uses a sequence in another schema,** such as `DEFAULT nextval('seqs.ids')`.
+
+Check constraints and triggers likely have the same gaps as items 2 to 4.
+
+- **Needs a decision:** close the dumped schema set over dependencies, or refuse cleanly and list it as unsupported in v1. Closing over could mean the FKs of every table in the dumped schemas, or walking `pg_depend` from the dumped objects to the schemas they depend on. It could also pull in large unrelated schemas.
+
+- **Depends on:** 20260929-21.
+- **Came from:** The build of 20260929-21.
+- **Design:** 3b, 4a.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
