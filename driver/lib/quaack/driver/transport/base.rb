@@ -48,9 +48,15 @@ module Quaack
         # Values must be Strings of valid UTF-8, with no NUL, and all of
         # argv at most MAX_ARGV_BYTES. input is a Hash, sent as one JSON
         # document written by JSON.generate, or nil to send nothing.
-        def call(subcommand, args: {}, input: nil)
+        #
+        # A block, if given, gets each progress message (a type in
+        # Protocol::PROGRESS, with only its whitelisted fields) as soon as
+        # its line arrives, while the run goes on. Progress messages are
+        # left out of the Result, and the run is read and checked as a whole
+        # once it ends, just as without a block.
+        def call(subcommand, args: {}, input: nil, &progress)
           argv = argv(subcommand, args)
-          run = run(argv, stdin(input))
+          run = run(argv, stdin(input), progress && ->(line) { Reply.progress(line)&.then(&progress) })
           raise Reply.failure(argv.first, run.status, rule: run.limit.name), cause: nil if run.limit
 
           Result.new(messages: Reply.parse(run.stdout, run.status, subcommand: argv.first))
@@ -58,8 +64,8 @@ module Quaack
 
         private
 
-        def run(argv, stdin)
-          Child.run(command(argv), stdin:, timeout: @timeout, max_output_bytes: @max_output_bytes)
+        def run(argv, stdin, on_line)
+          Child.run(command(argv), stdin:, timeout: @timeout, max_output_bytes: @max_output_bytes, on_line:)
         rescue Child::NotStarted
           raise EnclaveError.new(subcommand: argv.first, rule: "not_started"), cause: nil
         end
