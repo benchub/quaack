@@ -94,7 +94,7 @@ module Quaack
         # At the deadline it just stops: Child.wait then finds the child
         # still running and calls it a timeout.
         class Pump
-          def initialize(input, output, stdin, deadline:, max_bytes:, on_line: nil)
+          def initialize(input, output, stdin, deadline:, max_bytes:, on_line: nil) # rubocop:disable Metrics/ParameterLists
             @input = input
             @output = output
             # An empty stdin is written as zero bytes, which closes input.

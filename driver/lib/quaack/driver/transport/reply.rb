@@ -101,7 +101,7 @@ module Quaack
           raise failure(subcommand, status), cause: nil unless status.success? && done?(lines.last)
           raise failure(subcommand, status, rule: "unexpected_output"), cause: nil unless allowed?(lines)
 
-          messages[0...-1].reject { PROGRESS.include?(it["type"]) }
+          messages[0...-1].reject { progress?(it) }
         end
 
         # One line of stdout as a progress message, if it's one the
@@ -111,8 +111,10 @@ module Quaack
           return unless line.valid_encoding?
 
           message = line(line)
-          message if message.is_a?(Hash) && PROGRESS.include?(message["type"]) && message?(message)
+          message if message.is_a?(Hash) && progress?(message) && message?(message)
         end
+
+        def progress?(message) = PROGRESS.include?(message["type"])
 
         # Raises the first error line's EnclaveError, if there's one.
         def error!(subcommand, status, messages)

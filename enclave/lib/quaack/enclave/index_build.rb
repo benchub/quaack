@@ -3,8 +3,6 @@
 require "digest"
 require "json"
 require "pg_query"
-require_relative "candidate_ddl_redaction"
-require_relative "index_candidate"
 require_relative "index_store"
 
 module Quaack
@@ -35,29 +33,25 @@ module Quaack
 
       module_function
 
-      # progress, if given, is called before each index is built with an
-      # index_build_progress message: its 1-based position, the total, and
-      # its DDL through CandidateDdlRedaction, named, since the stored DDL
-      # can hold a literal.
-      def build(store, connection, progress: nil)
+      # starting, if given, is called before each index is built with its
+      # 1-based position, the total, and its stored DDL, which can hold a
+      # literal, so the caller must redact it before it leaves.
+      def build(store, connection, starting: nil)
         SETTINGS.each { |k, v| connection.exec("SET #{k} = '#{v}'") }
         combinations = combinations(store)
-        ddls = combinations.values.flatten.uniq
-        redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"]) if progress
-        indexes = ddls.each_with_index.to_h do |ddl, i|
-          progress&.call(type: :index_build_progress, index: i + 1, total: ddls.size, ddl: shown(redaction, ddl))
-          [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
-        end
+        indexes = create_all(connection, combinations.values.flatten.uniq, starting)
         hide_all(connection, "indexes" => indexes)
         store.write("index_build", "indexes" => indexes,
                                    "combinations" => combinations.transform_values { it.map { name(it) } })
       end
 
-      # ddl through redaction, with the index's name, or nil if it can't be
-      # read as a candidate.
-      def shown(redaction, ddl)
-        candidate = IndexCandidate.from_ddl(ddl, sources: [:llm]) or return
-        redaction.ddl(candidate).sub(/\ACREATE INDEX ON /, "CREATE INDEX #{name(ddl)} ON ")
+      # Builds each of ddls, telling starting first, and returns
+      # { name => { "ddl", "size" } }.
+      def create_all(connection, ddls, starting)
+        ddls.each_with_index.to_h do |ddl, i|
+          starting&.call(i + 1, ddls.size, ddl)
+          [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
+        end
       end
 
       # Every search's combinations, as DDL lists.
@@ -172,11 +166,10 @@ module Quaack
       end
 
       def index_names(node)
-        case node
-        when Hash then node.flat_map { |k, v| k == "Index Name" ? [v] : index_names(v) }
-        when Array then node.flat_map { index_names(it) }
-        else []
-        end
+        return node.flat_map { index_names(it) } if node.is_a?(Array)
+        return [] unless node.is_a?(Hash)
+
+        node.flat_map { |k, v| k == "Index Name" ? [v] : index_names(v) }
       end
     end
   end

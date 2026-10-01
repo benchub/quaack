@@ -42,8 +42,7 @@ module Quaack
 
         def run(transport:, client:, run_id:, entries:, progress: Progress::NULL, **) # rubocop:disable Metrics/ParameterLists
           args = { run: run_id, search: SEARCH }
-          Pipeline.run_step(progress, entries["index_search_#{SEARCH}"], "index-search",
-                            "plan gate and index search") do
+          Pipeline.run_step(progress, entries["index_search_#{SEARCH}"], "index-search") do
             transport.call("index-search", args:)
           end
           llm(transport, client, run_id, SEARCH, { generated: entries["index_generated_#{SEARCH}"],
@@ -58,11 +57,11 @@ module Quaack
           payload = lambda do
             fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
           end
-          Pipeline.run_step(progress, done[:generated], "5a-5", "generator three (LLM)") do
+          Pipeline.run_step(progress, done[:generated], "5a-5") do
             generate(transport, client, run_id, search, payload.call)
           end
-          progress.step("5a-6", "refinement round (LLM)") { refine(transport, client, run_id, search, payload) }
-          Pipeline.run_step(progress, done[:ranked], "5a-7", "index-rank") { transport.call("index-rank", args:) }
+          Pipeline.step(progress, "5a-6") { refine(transport, client, run_id, search, payload) }
+          Pipeline.run_step(progress, done[:ranked], "5a-7") { transport.call("index-rank", args:) }
         end
 
         def generate(transport, client, run_id, search, payload)
@@ -97,9 +96,9 @@ module Quaack
 
         def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
           entries = generated(transport, client, run_id, entries, rewrites, progress)
-          progress.step("step 8", "rewrite index searches") do
+          Pipeline.step(progress, "step 8") do
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
-              step8(transport, run_id, entries, number, progress.within("rewrite_#{number}"))
+              step8(transport, run_id, entries, number, progress.within("Rewrite #{number}"))
             end
           end
         end
@@ -108,8 +107,8 @@ module Quaack
         # running them; else the skips are printed.
         def generated(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
           if Pipeline.checked?(entries, rewrites)
-            progress.skip("6a")
-            progress.skip("step 7") if rewrites
+            Pipeline.skip(progress, "6a")
+            Pipeline.skip(progress, "step 7") if rewrites
             return entries
           end
           generate(transport, client, run_id, entries, rewrites, progress)
@@ -119,7 +118,7 @@ module Quaack
         def generate(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
           payload = transport.call("rewrite-payload", args: { run: run_id }).messages
                              .find { it["type"] == "rewrite_payload" }
-          Pipeline.run_step(progress, entries["rewrites_generated"], "6a", "rewrite generation (LLM)") do
+          Pipeline.run_step(progress, entries["rewrites_generated"], "6a") do
             RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
                              .run(payload)
           end
@@ -128,7 +127,7 @@ module Quaack
 
         # Step 7, unless the store says it ran.
         def operator(transport, client, run_id, entries, rewrites, payload, progress) # rubocop:disable Metrics/ParameterLists
-          Pipeline.run_step(progress, entries["operator_rewrites_checked"], "step 7", "operator rewrites (LLM)") do
+          Pipeline.run_step(progress, entries["operator_rewrites_checked"], "step 7") do
             raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
 
             OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
@@ -155,11 +154,12 @@ module Quaack
         module_function
 
         def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
-          progress.step("steps 9-10", "counterexamples (LLM)") do
+          Pipeline.step(progress, "steps 9-10") do
             entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
-              sub = progress.within("rewrite_#{number}")
-              next sub.skip("steps 9-10") if entries["rewrite_survived_#{number}"]
+              sub = progress.within("Rewrite #{number}")
+              decided = entries["rewrite_survived_#{number}"]
+              next sub.skip("steps 9-10", Pipeline::SAY.fetch("rewrite-tested")) if decided
 
               rewrite(transport, client, { run: run_id, search: "rewrite_#{number}" },
                       entries["rewrite_tested_#{number}"], sub)
@@ -173,7 +173,7 @@ module Quaack
           end
           return unless tested || passed
 
-          progress.step("counterexample rounds (LLM)") do
+          Pipeline.step(progress, "10a-10c") do
             payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
             Counterexamples.new(client:).run(payload, compare: compare(transport, args))
           end
@@ -206,12 +206,12 @@ module Quaack
         module_function
 
         def run(transport:, client:, run_id:, progress: Progress::NULL, **)
-          progress.step("step 11", "rewrite indexes (LLM)") do
+          Pipeline.step(progress, "step 11") do
             entries = Pipeline.status(transport, run_id)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.select { entries["rewrite_step11_#{it}"] }.each do |n|
               IndexStage.llm(transport, client, run_id, "rewrite_#{n}",
                              { generated: entries["index_generated_rewrite_#{n}"],
-                               ranked: entries["index_llm_ranked_rewrite_#{n}"] }, progress.within("rewrite_#{n}"))
+                               ranked: entries["index_llm_ranked_rewrite_#{n}"] }, progress.within("Rewrite #{n}"))
             end
           end
         end
@@ -223,7 +223,7 @@ module Quaack
         module_function
 
         def run(transport:, run_id:, entries:, progress: Progress::NULL, **)
-          Pipeline.run_step(progress, entries["arena_setup"], "4b", "arena-setup") do
+          Pipeline.run_step(progress, entries["arena_setup"], "4b") do
             transport.call("arena-setup", args: { run: run_id })
           end
         end
@@ -245,11 +245,19 @@ module Quaack
 
         def run(transport:, run_id:, entries:, progress: Progress::NULL, **)
           STEPS.each_with_object(entries.dup) do |(subcommand, output), done|
-            Pipeline.run_step(progress, done[output], NUMBERS.fetch(subcommand), subcommand) do
-              transport.call(subcommand, args: { run: run_id })
+            Pipeline.run_step(progress, done[output], NUMBERS.fetch(subcommand)) do
+              transport.call(subcommand, args: { run: run_id }) { progress.note(building(it)) }
               done[output] = true
             end
           end
+        end
+
+        # A 12a progress message as its line: which index is starting, and
+        # its DDL, which the enclave sends only through
+        # CandidateDdlRedaction, when there is one.
+        def building(message)
+          line = "Building index #{message["index"].to_i}/#{message["total"].to_i}"
+          message["ddl"].is_a?(String) ? "#{line}: #{message["ddl"]}" : line
         end
       end
 
@@ -264,7 +272,7 @@ module Quaack
         def run(transport:, run_id:, out:, client: nil, progress: Progress::NULL, **) # rubocop:disable Metrics/ParameterLists
           return unless out
 
-          progress.step("15", "report") do
+          Pipeline.step(progress, "15") do
             payload = CounterexampleStage.message(transport.call("report-payload", args: { run: run_id }), "report")
             Report.write(payload, run_id:, path: out, llm_calls: client ? client.burndown.llm_calls : {})
           end
@@ -280,9 +288,42 @@ module Quaack
       def self.total(rewrites:, out:) = 16 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0)
 
       # Skips the step, printing so, if done, or runs the block as a step.
-      def self.run_step(progress, done, name, description = nil, &)
-        done ? progress.skip(name) : progress.step(name, description, &)
+      def self.run_step(progress, done, name, &)
+        done ? skip(progress, name) : step(progress, name, &)
       end
+
+      # Runs the block as the step name, saying what it does.
+      def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), &)
+
+      def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
+
+      # What each step does, in plain English, for its progress line. The
+      # step's ID follows it in parentheses.
+      SAY = {
+        "index-search" => "Checking the query plan and searching for indexes",
+        "5a-5" => "Asking the LLM for index ideas the mechanical search missed",
+        "5a-6" => "Asking the LLM to improve its index ideas",
+        "5a-7" => "Ranking the index ideas",
+        "6a" => "Asking the LLM for rewrites of the query",
+        "step 7" => "Checking your own rewrites",
+        "step 8" => "Searching for indexes for each rewrite",
+        "index-rank" => "Ranking the index ideas",
+        "rewrite-prune" => "Dropping the rewrite if its plan can't win",
+        "4b" => "Setting up the arena, a second database for test rows",
+        "steps 9-10" => "Testing each rewrite for wrong results",
+        "rewrite-tested" => "Testing the rewrite for wrong results",
+        "rewrite-test" => "Testing the rewrite on generated rows",
+        "10a-10c" => "Asking the LLM for rows that could break the rewrite",
+        "step 11" => "Asking the LLM for index ideas for each rewrite",
+        "12a" => "Building the candidate indexes",
+        "13" => "Measuring the original query",
+        "13a" => "Measuring the original query with each set of indexes",
+        "14" => "Measuring each rewrite",
+        "14b" => "Dropping choices that lose to the original on any literal",
+        "14c" => "Checking that each rewrite returns the same rows on production data",
+        "14d" => "Picking the top three",
+        "15" => "Writing the report"
+      }.freeze
 
       # The entries `quaacks status` says the run's store holds.
       def self.status(transport, run_id)

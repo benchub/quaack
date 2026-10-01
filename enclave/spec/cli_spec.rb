@@ -137,8 +137,8 @@ RSpec.describe "quaacks executable" do
         [{ type: :version, version: "1" }]
       RUBY
 
-      expect(out).to eq(%({"type":"index_build_progress","index":1,"total":2,"ddl":"d"}\n) +
-                        %({"type":"version","version":"1"}\n#{done}))
+      progress_line = %({"type":"index_build_progress","index":1,"total":2,"ddl":"d"}\n)
+      expect(out).to eq(%(#{progress_line}{"type":"version","version":"1"}\n#{done}))
       expect([err, status.exitstatus]).to eq(["", 0])
     end
 

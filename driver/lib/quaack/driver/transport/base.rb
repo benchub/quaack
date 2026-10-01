@@ -56,7 +56,7 @@ module Quaack
         # once it ends, just as without a block.
         def call(subcommand, args: {}, input: nil, &progress)
           argv = argv(subcommand, args)
-          run = run(argv, stdin(input), progress && ->(line) { Reply.progress(line)&.then(&progress) })
+          run = run(argv, stdin(input), on_line(progress))
           raise Reply.failure(argv.first, run.status, rule: run.limit.name), cause: nil if run.limit
 
           Result.new(messages: Reply.parse(run.stdout, run.status, subcommand: argv.first))
@@ -69,6 +69,10 @@ module Quaack
         rescue Child::NotStarted
           raise EnclaveError.new(subcommand: argv.first, rule: "not_started"), cause: nil
         end
+
+        # What Child calls with each line: it hands progress each progress
+        # message. nil without a block.
+        def on_line(progress) = progress && ->(line) { Reply.progress(line)&.then(&progress) }
 
         # Raises ArgumentError with no cause.
         def refuse(message) = raise(ArgumentError, message, cause: nil)

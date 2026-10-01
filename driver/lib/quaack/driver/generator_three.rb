@@ -87,20 +87,22 @@ module Quaack
 
       def run(payload)
         messages = [{ role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }]
-        first = ask(messages)
+        first = ask(messages, "Asking the LLM for index ideas")
         rounds = test([], first)
         dropped = dropped(rounds.last, first)
         return Result.new(rounds:) if dropped.empty?
 
         messages += [{ role: :assistant, content: JSON.generate("indexes" => first) },
                      { role: :user, content: replacement_ask(dropped) }]
-        Result.new(rounds: test(rounds, ask(messages)))
+        Result.new(rounds: test(rounds, ask(messages, "Asking the LLM again, for replacements for the dropped ideas")))
       end
 
       private
 
-      def ask(messages)
-        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("indexes")
+      # purpose is what progress hears the ask is for.
+      def ask(messages, purpose)
+        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
+               .fetch("indexes")
       end
 
       def test(rounds, ddls)

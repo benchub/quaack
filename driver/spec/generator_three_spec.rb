@@ -106,6 +106,15 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       expect(fake.asks.last.body[:messages][1]).to eq(role: :assistant, content: JSON.generate("indexes" => first))
     end
 
+    it "tells progress the second ask is for replacements, not a repeat of the first" do
+      notes = []
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
+      run
+
+      expect(notes).to eq(["Asking the LLM for index ideas (5a-5)",
+                           "Asking the LLM again, for replacements for the dropped ideas (5a-5)"])
+    end
+
     it "tests the replacements, and asks only once even if more are dropped" do
       answers[1] = [dropped(1, "duplicate")]
       result = run

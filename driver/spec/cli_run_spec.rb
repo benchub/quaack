@@ -43,15 +43,20 @@ RSpec.describe "quaack run" do
 
   # Stands in for ssh, at the edge: records each call.
   let(:failing) { {} }
+  # Progress messages a call hands its block, by subcommand, as the real
+  # transport does while the run goes on.
+  let(:streamed) { {} }
   let(:transport) do
     r = replies
     f = failing
+    s = streamed
     Class.new do
       attr_reader :calls
 
       define_method(:initialize) { @calls = [] }
-      define_method(:call) do |subcommand, **options|
+      define_method(:call) do |subcommand, **options, &progress|
         @calls << [subcommand, options]
+        s.fetch(subcommand, []).each { progress&.call(it) }
         raise f[subcommand] if f.key?(subcommand)
 
         Data.define(:messages).new(messages: r.fetch(subcommand, []))
@@ -104,26 +109,32 @@ RSpec.describe "quaack run" do
   def errors = stderr.string.lines.grep_v(%r{\Aquaack: \[\d+/\d+\] }).join
 
   # stderr's progress lines, with each time as Ns.
-  def progress = stderr.string.lines.grep(%r{\Aquaack: \[\d+/\d+\] }).map { it.sub(/ in \d+s$/, " in Ns") }
+  def progress = stderr.string.lines.grep(%r{\Aquaack: \[\d+/\d+\] }).map { it.sub(/ in \d+s \(/, " in Ns (") }
 
   describe "progress on stderr" do
-    it "prints each step as it starts and ends, numbered out of the run's steps, and each skip" do
+    it "says in plain English what each step does as it starts and ends, numbered, and each skip" do
       entries.transform_values! { false }.merge!("index_search_original" => true, "index_generated_original" => true,
                                                  "index_ranking_original" => true, "rewrites_generated" => true)
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
-      steps = [["4b", "arena-setup"], ["steps 9-10", "counterexamples (LLM)"], ["step 11", "rewrite indexes (LLM)"],
-               %w[12a index-build], %w[13 baseline], %w[13a index-baseline], %w[14 candidate-runs],
-               %w[14b minimax], %w[14c result-comparison], %w[14d selection], %w[15 report]]
+      steps = [["4b", "Setting up the arena, a second database for test rows"],
+               ["steps 9-10", "Testing each rewrite for wrong results"],
+               ["step 11", "Asking the LLM for index ideas for each rewrite"],
+               ["12a", "Building the candidate indexes"], ["13", "Measuring the original query"],
+               ["13a", "Measuring the original query with each set of indexes"], ["14", "Measuring each rewrite"],
+               ["14b", "Dropping choices that lose to the original on any literal"],
+               ["14c", "Checking that each rewrite returns the same rows on production data"],
+               ["14d", "Picking the top three"], ["15", "Writing the report"]]
       expect(progress).to eq(
-        ["quaack: [1/17] index-search: already done, skipping\n",
-         "quaack: [2/17] 5a-5: already done, skipping\n",
-         "quaack: [3/17] 5a-6 refinement round (LLM)\n", "quaack: [3/17] 5a-6 done in Ns\n",
-         "quaack: [4/17] 5a-7: already done, skipping\n",
-         "quaack: [5/17] 6a: already done, skipping\n",
-         "quaack: [6/17] step 8 rewrite index searches\n", "quaack: [6/17] step 8 done in Ns\n",
+        ["quaack: [1/17] Already done, skipping: Checking the query plan and searching for indexes (index-search)\n",
+         "quaack: [2/17] Already done, skipping: " \
+         "Asking the LLM for index ideas the mechanical search missed (5a-5)\n",
+         "quaack: [3/17] Asking the LLM to improve its index ideas (5a-6)\n", "quaack: [3/17] Done in Ns (5a-6)\n",
+         "quaack: [4/17] Already done, skipping: Ranking the index ideas (5a-7)\n",
+         "quaack: [5/17] Already done, skipping: Asking the LLM for rewrites of the query (6a)\n",
+         "quaack: [6/17] Searching for indexes for each rewrite (step 8)\n", "quaack: [6/17] Done in Ns (step 8)\n",
          *steps.each_with_index.flat_map do |(name, description), i|
-           ["quaack: [#{7 + i}/17] #{name} #{description}\n", "quaack: [#{7 + i}/17] #{name} done in Ns\n"]
+           ["quaack: [#{7 + i}/17] #{description} (#{name})\n", "quaack: [#{7 + i}/17] Done in Ns (#{name})\n"]
          end]
       )
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
@@ -138,10 +149,12 @@ RSpec.describe "quaack run" do
 
       expect(cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])).to eq(0)
 
-      expect(progress).to include("quaack: [5/18] 6a rewrite generation (LLM)\n", "quaack: [5/18] LLM ask 6a\n",
-                                  "quaack: [6/18] step 7 operator rewrites (LLM)\n",
-                                  "quaack: [6/18] LLM ask step7\n", "quaack: [6/18] LLM ask step7: attempt 2\n",
-                                  "quaack: [6/18] step 7 done in Ns\n", "quaack: [18/18] 15 report\n")
+      expect(progress).to include("quaack: [5/18] Asking the LLM for rewrites of the query (6a)\n",
+                                  "quaack: [5/18] Asking the LLM (6a)\n",
+                                  "quaack: [6/18] Checking your own rewrites (step 7)\n",
+                                  "quaack: [6/18] Asking the LLM (step7)\n",
+                                  "quaack: [6/18] Asking the LLM, attempt 2 (step7)\n",
+                                  "quaack: [6/18] Done in Ns (step 7)\n", "quaack: [18/18] Writing the report (15)\n")
     end
 
     it "prints a step's sub-steps for each rewrite, under the step" do
@@ -150,9 +163,28 @@ RSpec.describe "quaack run" do
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
-      expect(progress).to include("quaack: [6/17] rewrite_1 index-search: already done, skipping\n",
-                                  "quaack: [6/17] rewrite_1 index-rank\n",
-                                  "quaack: [6/17] rewrite_1 rewrite-prune: already done, skipping\n")
+      skipped = "Rewrite 1: Already done, skipping:"
+      expect(progress).to include(
+        "quaack: [6/17] #{skipped} Checking the query plan and searching for indexes (index-search)\n",
+        "quaack: [6/17] Rewrite 1: Ranking the index ideas (index-rank)\n",
+        "quaack: [6/17] #{skipped} Dropping the rewrite if its plan can't win (rewrite-prune)\n",
+        "quaack: [8/17] #{skipped} Testing the rewrite for wrong results (steps 9-10)\n"
+      )
+    end
+
+    it "prints each index 12a builds as the enclave reports it, with its redacted DDL" do
+      entries["index_build"] = false
+      ddl = "CREATE INDEX quaack_505c95b84989bfd37136 ON public.orders USING btree (id, status) WHERE note = ?"
+      streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => ddl },
+                                 { "type" => "index_build_progress", "index" => 2, "total" => 2, "ddl" => nil }]
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      lines = progress.select { it.start_with?("quaack: [10/17]") }
+      expect(lines).to eq(["quaack: [10/17] Building the candidate indexes (12a)\n",
+                           "quaack: [10/17] Building index 1/2: #{ddl}\n",
+                           "quaack: [10/17] Building index 2/2\n",
+                           "quaack: [10/17] Done in Ns (12a)\n"])
     end
 
     it "prints a failed line for the step that fails, before the failure" do
@@ -160,7 +192,7 @@ RSpec.describe "quaack run" do
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
 
-      expect(progress.last).to eq("quaack: [3/17] 5a-6 failed after 0s\n")
+      expect(progress.last).to eq("quaack: [3/17] Failed after 0s (5a-6)\n")
       expect(errors).to eq("#{torn}quaack run failed: arena_missing\n")
     end
   end

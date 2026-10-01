@@ -71,8 +71,8 @@ RSpec.describe "quaacks index-build, against a real server" do
   # CandidateDdlRedaction, never the stored DDL with its literals.
   it "sends a progress line before building each index, with its name and redacted DDL, never a literal" do
     ranked_run
-    planted = Quaack::Enclave::IndexCandidate.new(table: orders, key: ["total"], predicate: "note = '#{sentinels.text}'",
-                                                  sources: [:parse])
+    predicate = "note = '#{sentinels.text}'"
+    planted = Quaack::Enclave::IndexCandidate.new(table: orders, key: ["total"], predicate:, sources: [:parse])
     entry = store.read("index_search_original")
     entry["set_aside"] = [Quaack::Enclave::IndexStore.candidate_plain(planted)]
     store.write("index_search_original", entry)
