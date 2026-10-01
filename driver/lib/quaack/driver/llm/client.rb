@@ -63,6 +63,10 @@ module Quaack
         # The Burndown each call is counted in, for the report (15b).
         attr_reader :burndown
 
+        # Told, with note, when each ask starts and at each attempt after the
+        # first, such as a Progress. nil tells nothing.
+        attr_writer :progress
+
         # settings are LLM.settings, the environment's alone, unless given.
         # model, if given, overrides theirs. The other options go to the
         # adapter, such as api_key: or max_retries: for Anthropic.
@@ -93,7 +97,7 @@ module Quaack
         # was and what filled the request.
         def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false) # rubocop:disable Metrics/ParameterLists
           system = [system, JSON_ONLY].compact.join("\n\n") if schema
-          ask_once(step:, system:, messages:, max_tokens:, schema:, json:)
+          ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count: counter(step))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
           raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}"), cause: e.cause
@@ -101,8 +105,7 @@ module Quaack
 
         private
 
-        def ask_once(step:, system:, messages:, max_tokens:, schema:, json:) # rubocop:disable Metrics/ParameterLists
-          count = -> { @burndown.llm_call(step) }
+        def ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count:) # rubocop:disable Metrics/ParameterLists
           text = @adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:)
           return text unless schema || json
 
@@ -112,6 +115,17 @@ module Quaack
 
           messages = [*messages, { role: "assistant", content: text }, { role: "user", content: reask(e) }]
           ReplyJSON.parse(@adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:), schema)
+        end
+
+        # The count an adapter calls before each attempt of one ask: it counts
+        # the attempt in the burndown, then tells progress.
+        def counter(step)
+          attempt = 0
+          lambda do
+            @burndown.llm_call(step)
+            attempt += 1
+            @progress&.note(attempt == 1 ? "LLM ask #{step}" : "LLM ask #{step}: attempt #{attempt}")
+          end
         end
 
         # Whether error calls for a re-ask: there's a schema the adapter

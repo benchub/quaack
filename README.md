@@ -393,6 +393,8 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [5/17] 6a rewrite generation (LLM)` and `quaack: [5/17] 6a done in 42s`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that runs past 30 seconds prints `still running` with its time every 30 seconds. The lines carry only step names, counts, and timings.
+
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
 For this query, the report's top answer is one index:

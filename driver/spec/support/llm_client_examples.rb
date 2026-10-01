@@ -71,6 +71,16 @@ RSpec.shared_examples "an LLM client" do
       expect(fake.asks.size).to eq(3)
     end
 
+    it "tells its progress when each ask starts, and each attempt after the first" do
+      notes = []
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
+      fake.error("6a", status: 529).error("6a", status: 429).reply("6a", "ok").reply("5a-5", "ok")
+      ask("6a")
+      ask("5a-5")
+
+      expect(notes).to eq(["LLM ask 6a", "LLM ask 6a: attempt 2", "LLM ask 6a: attempt 3", "LLM ask 5a-5"])
+    end
+
     it "counts attempts that end in an error" do
       3.times { fake.error("step7", status: 529) }
 

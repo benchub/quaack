@@ -138,7 +138,7 @@ module Quaack
       # run is torn down when the pipeline ends, however it ends, unless keep.
       def drive(transport, client, run_id, sqls, options)
         path = Teardown.around(transport:, run_id:, stderr: @stderr, keep: options[:keep]) do
-          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out]).run
+          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out], stderr: @stderr).run
         end
         @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"
