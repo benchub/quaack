@@ -23,8 +23,13 @@ module Quaack
       # deleted again unless the call succeeds all the way through its done
       # line, so a failed call leaves no run behind, and none that holds
       # inputs the step went on to refuse.
-      Step = Data.define(:handler, :input, :run, :new_run, :run_id, :options, :required) do
-        def initialize(handler:, input: false, run: false, new_run: false, run_id: false, options: {}, required: [])
+      #
+      # A step that reports progress while it works (progress: true) gets
+      # progress:, which sends one Protocol::PROGRESS message through egress
+      # at once (see CLI#progress).
+      Step = Data.define(:handler, :input, :run, :new_run, :run_id, :options, :required, :progress) do
+        def initialize(handler:, input: false, run: false, new_run: false, run_id: false, options: {}, required: [], # rubocop:disable Metrics/ParameterLists
+                       progress: false)
           raise ArgumentError, "a step can't both start a run and open one" if run && new_run
           raise ArgumentError, "a step that names a run can't also open or start one" if run_id && (run || new_run)
 

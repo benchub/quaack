@@ -53,6 +53,22 @@ RSpec.describe Quaack::Driver::Transport::Ssh do
     expect(File.exist?(pwned)).to be(false)
   end
 
+  it "hands the call's block each progress message while the remote step is still running" do
+    go = File.join(dir, "go")
+    body = "inputs[:progress].call(type: :index_build_progress, index: 1, total: 1, ddl: 'd'); " \
+           "sleep 0.01 until File.exist?(#{go.inspect}); []"
+    EnclaveCommands.remote_quaacks(File.join(dir, "remote-bin"), EnclaveCommands.probe(dir, body, progress: true))
+    seen = []
+
+    result = described_class.new(host: "jump-1", ssh:, timeout: 20).call("probe") do |message|
+      seen << message
+      File.write(go, "")
+    end
+
+    expect(seen).to eq([{ "type" => "index_build_progress", "index" => 1, "total" => 1, "ddl" => "d" }])
+    expect(result.messages).to eq([])
+  end
+
   it "runs ssh with its options, then --, then the host, then the remote command as one quoted string" do
     echo_quaacks
     described_class.new(host: "user@jump-1.example", ssh:).call("probe", args: { "v0" => "a b" }, input: {})

@@ -146,7 +146,8 @@ module Quaack
       # run with_new_run started, if any.
       def dispatch(step, arguments, input, new_store)
         store = step.run ? open_store(arguments.run_id) : new_store
-        messages = call_step(step, input:, store:, options: arguments.options, **named_run(step, arguments.run_id))
+        messages = call_step(step, input:, store:, options: arguments.options, **named_run(step, arguments.run_id),
+                                   **({ progress: method(:progress) } if step.progress))
         raise TypeError, "a step must return an Array of messages" unless messages.instance_of?(Array)
 
         [*messages.filter_map { Egress.serialize(it) }, DONE].map { "#{it}\n" }.join
@@ -189,6 +190,18 @@ module Quaack
       end
 
       def store_base = @store_base || Store.default_base
+
+      # What a progress step calls, as it works, to send one message of a
+      # Protocol::PROGRESS type through egress, at once. A message of any
+      # other type is an internal error: it would be sent ahead of the
+      # step's success, so only the driver's fixed progress types may be.
+      def progress(message)
+        type = message[:type] || message["type"]
+        raise ArgumentError, "not a progress type" unless Protocol::PROGRESS.map(&:name).include?(type.to_s)
+
+        line = Egress.serialize(message)
+        write("#{line}\n") if line
+      end
 
       def write(text)
         @out.write(text)

@@ -128,6 +128,32 @@ RSpec.describe "quaacks executable" do
       end
     end
 
+    # A step declared with progress: true gets progress:, which sends a
+    # Protocol::PROGRESS message through egress at once, ahead of the
+    # step's own lines.
+    it "sends a progress step's progress messages through egress at once, before its other lines" do
+      out, err, status = main(<<~RUBY, progress: true)
+        inputs[:progress].call(type: :index_build_progress, index: 1, total: 2, ddl: "d", note: "#{sentinel}")
+        [{ type: :version, version: "1" }]
+      RUBY
+
+      expect(out).to eq(%({"type":"index_build_progress","index":1,"total":2,"ddl":"d"}\n) +
+                        %({"type":"version","version":"1"}\n#{done}))
+      expect([err, status.exitstatus]).to eq(["", 0])
+    end
+
+    it "fails a step that sends progress of a type that isn't a progress type, sending none of it" do
+      out, _, status = main(%(inputs[:progress].call(type: :version, version: "#{sentinel}"); []), progress: true)
+
+      expect([out, status.exitstatus]).to eq([error_line("internal_error"), 70])
+    end
+
+    it "gives progress only to a step that declares it" do
+      out, = main("[{ type: :version, version: inputs.key?(:progress).to_s }]")
+
+      expect(out).to eq(%({"type":"version","version":"false"}\n#{done}))
+    end
+
     # exit! ends the process at once, skipping every rescue and ensure, so
     # the CLI can't catch it. It prints nothing, not even the done line, so
     # the driver can tell it from a success that sent no messages.
