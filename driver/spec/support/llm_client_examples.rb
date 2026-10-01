@@ -36,7 +36,7 @@ RSpec.shared_examples "an LLM client" do
   def llm_error(rule, message = nil)
     raise_error(Quaack::Driver::LLM::Error) do |e|
       expect(e.rule).to eq(rule)
-      expect(e.message).to eq(message) if message
+      expect(sans_sizes(e.message)).to eq(message) if message
     end
   end
 
@@ -161,7 +161,7 @@ RSpec.shared_examples "an LLM client" do
       e = ask_error("6a", json: true)
 
       expect(e.rule).to eq("llm_bad_response")
-      expect(e.message).to eq("llm_bad_response: the reply wasn't valid JSON")
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply wasn't valid JSON")
       # The parser's own error quotes the reply, so it isn't kept as the cause.
       expect(e.cause).to be_nil
     end

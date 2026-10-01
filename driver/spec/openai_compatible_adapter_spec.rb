@@ -146,25 +146,25 @@ RSpec.describe "the OpenAI-compatible adapter" do
       fake.error_body("5a-5", status: 400,
                               body: { error: { message: "sentinel reason", type: "invalid_request_error" } })
 
-      expect(ask_error.message).to match(/\Allm_bad_request: .*sentinel reason\z/)
+      expect(sans_sizes(ask_error.message)).to match(/\Allm_bad_request: .*sentinel reason\z/)
     end
 
     it "puts the whole JSON body in the detail when its error has no message" do
       fake.error_body("5a-5", status: 400, body: { error: { type: "sentinel_type" } })
 
-      expect(ask_error.message).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
+      expect(sans_sizes(ask_error.message)).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
     end
 
     it "puts a text body in the detail as it is" do
       fake.error_body("5a-5", status: 400, body: "sentinel text body")
 
-      expect(ask_error.message).to end_with("sentinel text body")
+      expect(sans_sizes(ask_error.message)).to end_with("sentinel text body")
     end
 
     it "keeps an llm_auth detail to the status, without the body" do
       fake.error_body("5a-5", status: 401, body: { error: { message: "sentinel key sk-123" } })
 
-      expect(ask_error.message).to eq("llm_auth: the API refused the key (401)")
+      expect(sans_sizes(ask_error.message)).to eq("llm_auth: the API refused the key (401)")
     end
 
     it "doesn't ask again on a rejected request that had no schema" do
@@ -209,7 +209,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
       e = ask_error(schema: schema)
 
       expect(e.rule).to eq("llm_bad_response")
-      expect(e.message).to eq(no_match)
+      expect(sans_sizes(e.message)).to eq(no_match)
       expect(burndown.llm_calls).to eq("5a-5" => 2)
     end
 
@@ -229,14 +229,14 @@ RSpec.describe "the OpenAI-compatible adapter" do
       it "fails with llm_bad_response on finish reason #{reason}" do
         fake.reply("5a-5", "CREATE INDEX ON t (a)", finish_reason: reason)
 
-        expect(ask_error.message).to eq(stopped_for(reason))
+        expect(sans_sizes(ask_error.message)).to eq(stopped_for(reason))
       end
     end
 
     it "fails with llm_bad_response on a reply with no content" do
       fake.reply_message("5a-5", { role: "assistant", content: nil })
 
-      expect(ask_error.message).to eq("llm_bad_response: the reply had no text")
+      expect(sans_sizes(ask_error.message)).to eq("llm_bad_response: the reply had no text")
     end
 
     it "fails with llm_bad_response on a refusal, without quoting it" do
@@ -244,13 +244,13 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
       e = ask_error
 
-      expect(e.message).to eq("llm_bad_response: the reply was a refusal")
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply was a refusal")
     end
 
     it "fails with llm_bad_response on a completion with no choices" do
       fake.raw("5a-5", JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m", choices: []))
 
-      expect(ask_error.message).to eq("llm_bad_response: the reply had no choices")
+      expect(sans_sizes(ask_error.message)).to eq("llm_bad_response: the reply had no choices")
     end
 
     # Some proxies, such as OpenRouter for an upstream failure, answer 200
@@ -261,7 +261,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
       e = ask_error("6a")
 
       expect(e.rule).to eq("llm_bad_response")
-      expect(e.message).to eq("llm_bad_response: the reply had no choices")
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply had no choices")
       expect(e.message).not_to include("SENTINEL")
       expect(e.cause).to be_nil
       expect(burndown.llm_calls).to eq("6a" => 1)
@@ -273,7 +273,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
       e = ask_error
 
-      expect(e.message).to eq("llm_bad_response: the reply couldn't be read as a message")
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message")
       expect(e.cause).to be_nil
     end
   end
@@ -351,7 +351,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
     it "fails with llm_auth on a refused key without quoting the API's message, which can echo the key" do
       fake.error("5a-5", status: 401)
 
-      expect(ask_error.message).to eq("llm_auth: the API refused the key (401)")
+      expect(sans_sizes(ask_error.message)).to eq("llm_auth: the API refused the key (401)")
     end
   end
 
