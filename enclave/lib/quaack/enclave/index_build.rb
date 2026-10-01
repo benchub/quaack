@@ -33,15 +33,25 @@ module Quaack
 
       module_function
 
-      def build(store, connection)
+      # starting, if given, is called before each index is built with its
+      # 1-based position, the total, and its stored DDL, which can hold a
+      # literal, so the caller must redact it before it leaves.
+      def build(store, connection, starting: nil)
         SETTINGS.each { |k, v| connection.exec("SET #{k} = '#{v}'") }
         combinations = combinations(store)
-        indexes = combinations.values.flatten.uniq.to_h do |ddl|
-          [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
-        end
+        indexes = create_all(connection, combinations.values.flatten.uniq, starting)
         hide_all(connection, "indexes" => indexes)
         store.write("index_build", "indexes" => indexes,
                                    "combinations" => combinations.transform_values { it.map { name(it) } })
+      end
+
+      # Builds each of ddls, telling starting first, and returns
+      # { name => { "ddl", "size" } }.
+      def create_all(connection, ddls, starting)
+        ddls.each_with_index.to_h do |ddl, i|
+          starting&.call(i + 1, ddls.size, ddl)
+          [name(ddl), { "ddl" => ddl, "size" => create(connection, name(ddl), ddl) }]
+        end
       end
 
       # Every search's combinations, as DDL lists.
@@ -156,11 +166,10 @@ module Quaack
       end
 
       def index_names(node)
-        case node
-        when Hash then node.flat_map { |k, v| k == "Index Name" ? [v] : index_names(v) }
-        when Array then node.flat_map { index_names(it) }
-        else []
-        end
+        return node.flat_map { index_names(it) } if node.is_a?(Array)
+        return [] unless node.is_a?(Hash)
+
+        node.flat_map { |k, v| k == "Index Name" ? [v] : index_names(v) }
       end
     end
   end

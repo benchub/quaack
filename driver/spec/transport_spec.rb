@@ -467,6 +467,52 @@ RSpec.describe Quaack::Driver::Transport do
     end
   end
 
+  # A long step, such as 12a, sends progress lines while it works, and the
+  # driver hands each to the call's block as it arrives, not once the run
+  # has ended. Only Protocol::PROGRESS types reach the block.
+  describe "progress as it arrives" do
+    let(:go) { File.join(dir, "go") }
+    let(:progress_line) { %({"type":"index_build_progress","index":1,"total":2,"ddl":"CREATE INDEX x"}) }
+
+    # A run that prints line, then waits for the go file before it ends.
+    def waiting(line, timeout: 10)
+      local.new(command: EnclaveCommands.raw(<<~RUBY), timeout:)
+        $stdout.sync = true
+        print #{"#{line}\n".inspect}
+        sleep 0.01 until File.exist?(#{go.inspect})
+        print %({"type":"done"}\\n)
+      RUBY
+    end
+
+    it "hands each progress message to the block while the run is still going, and leaves it out of the result" do
+      seen = []
+      result = waiting(progress_line).call("probe") do |message|
+        seen << message
+        File.write(go, "")
+      end
+
+      expect(seen).to eq([{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => "CREATE INDEX x" }])
+      expect(result.messages).to eq([])
+    end
+
+    it "hands the block nothing but progress messages the whitelist allows" do
+      File.write(go, "")
+      seen = []
+      waiting(%({"type":"version","version":"1"})).call("probe") { seen << it }
+      planted = waiting(%({"type":"index_build_progress","index":1,"#{sentinel}":"#{sentinel}"}))
+
+      expect { planted.call("probe") { seen << it } }
+        .to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("unexpected_output") }
+      expect(seen).to eq([])
+    end
+
+    it "reads a run with progress lines the same way when the call has no block" do
+      File.write(go, "")
+
+      expect(waiting(progress_line).call("probe").messages).to eq([])
+    end
+  end
+
   # The enclave's egress function already sends only what
   # Protocol::WHITELIST allows. The driver checks again, so a version
   # mismatch between the two sides shows up as a refusal, not a message the

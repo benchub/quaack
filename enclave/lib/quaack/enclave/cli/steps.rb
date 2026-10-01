@@ -78,7 +78,7 @@ module Quaack
         "counterexample-round" => Step.new(handler: Steps::Counterexamples::Round, run: true, input: true,
                                            options: Steps::Counterexamples::Round::OPTIONS,
                                            required: Steps::Counterexamples::Round::REQUIRED),
-        "index-build" => Step.new(handler: Steps::IndexBuild, run: true),
+        "index-build" => Step.new(handler: Steps::IndexBuild, run: true, progress: true),
         "baseline" => Step.new(handler: Steps::Baseline, run: true),
         "index-baseline" => Step.new(handler: Steps::IndexBaseline, run: true),
         "candidate-runs" => Step.new(handler: Steps::CandidateRuns, run: true),

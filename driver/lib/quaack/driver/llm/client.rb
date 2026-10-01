@@ -60,6 +60,9 @@ module Quaack
         # ReplyJSON's message, which never quotes the reply.
         REASK = "That reply couldn't be used: %s. Reply again with only the JSON object, matching the schema."
 
+        # What progress hears an ask is for, unless the caller says.
+        ASKING = "Asking the LLM"
+
         # The Burndown each call is counted in, for the report (15b).
         attr_reader :burndown
 
@@ -95,9 +98,13 @@ module Quaack
         # An Error it raises ends with the request's sizes (see
         # RequestSizes), keeping its rule, so a failure says which step it
         # was and what filled the request.
-        def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false) # rubocop:disable Metrics/ParameterLists
+        #
+        # purpose is what progress hears the ask is for, in plain English,
+        # such as "Asking the LLM again for replacements". It never goes to
+        # the LLM.
+        def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false, purpose: ASKING) # rubocop:disable Metrics/ParameterLists
           system = [system, JSON_ONLY].compact.join("\n\n") if schema
-          ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count: counter(step))
+          ask_once(step:, system:, messages:, max_tokens:, schema:, json:, count: counter(step, purpose))
         rescue Error => e
           sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
           raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}"), cause: e.cause
@@ -119,12 +126,12 @@ module Quaack
 
         # The count an adapter calls before each attempt of one ask: it counts
         # the attempt in the burndown, then tells progress.
-        def counter(step)
+        def counter(step, purpose)
           attempt = 0
           lambda do
             @burndown.llm_call(step)
             attempt += 1
-            @progress&.note(attempt == 1 ? "LLM ask #{step}" : "LLM ask #{step}: attempt #{attempt}")
+            @progress&.note(attempt == 1 ? "#{purpose} (#{step})" : "#{purpose}, attempt #{attempt} (#{step})")
           end
         end
 

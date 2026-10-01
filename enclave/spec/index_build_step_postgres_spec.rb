@@ -39,7 +39,9 @@ RSpec.describe "quaacks index-build, against a real server" do
 
     outcome = run("index-build")
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    lines = outcome.stdout.lines
+    expect([lines.last, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect(lines[0...-1].map { JSON.parse(it)["type"] }).to all(eq("index_build_progress"))
     expect_no_leaks(sentinels, outcome)
     build = stored.read("index_build")
     ranking = stored.read("index_ranking_original")
@@ -59,10 +61,38 @@ RSpec.describe "quaacks index-build, against a real server" do
 
     again = run("index-build")
 
-    expect(again.stdout).to eq(%({"type":"done"}\n))
+    expect(again.stdout.lines.last).to eq(%({"type":"done"}\n))
     expect(indexes(conn)).to eq(rows)
   ensure
     conn&.close
+  end
+
+  # Each index's progress line carries its DDL through
+  # CandidateDdlRedaction, never the stored DDL with its literals.
+  it "sends a progress line before building each index, with its name and redacted DDL, never a literal" do
+    ranked_run
+    predicate = "note = '#{sentinels.text}'"
+    planted = Quaack::Enclave::IndexCandidate.new(table: orders, key: ["total"], predicate:, sources: [:parse])
+    entry = store.read("index_search_original")
+    entry["set_aside"] = [Quaack::Enclave::IndexStore.candidate_plain(planted)]
+    store.write("index_search_original", entry)
+
+    outcome = run("index-build")
+
+    lines = outcome.stdout.lines.map { JSON.parse(it) }
+    build = stored.read("index_build")
+    expect(build["indexes"].values.map { it["ddl"] }).to include(planted.to_ddl)
+    expect(planted.to_ddl).to include(sentinels.text)
+    expect(lines.last).to eq("type" => "done")
+    progress = lines[0...-1]
+    total = build["indexes"].size
+    expect(progress.map { it.values_at("type", "index", "total") })
+      .to eq((1..total).map { ["index_build_progress", it, total] })
+    name = build["combinations"]["original:set_aside:2"].first
+    expect(progress.map { it["ddl"] })
+      .to include("CREATE INDEX #{name} ON public.orders USING btree (total) WHERE note = ?")
+    expect(progress.map { it["ddl"] }).to all(start_with("CREATE INDEX quaack_"))
+    expect_no_leaks(sentinels, outcome)
   end
 
   it "builds the unused low-cardinality B-tree candidates 5a-4 set aside (20260927-11)" do
@@ -72,7 +102,7 @@ RSpec.describe "quaacks index-build, against a real server" do
     entry["set_aside"] = [Quaack::Enclave::IndexStore.candidate_plain(btree)]
     store.write("index_search_original", entry)
 
-    expect(run("index-build").stdout).to eq(%({"type":"done"}\n))
+    expect(run("index-build").stdout.lines.last).to eq(%({"type":"done"}\n))
 
     build = stored.read("index_build")
     expect(build["combinations"]["original:set_aside:2"].map { build["indexes"][it]["ddl"] }).to eq([btree.to_ddl])

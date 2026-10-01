@@ -22,6 +22,9 @@ module Quaack
     class Counterexamples
       STEP = "10a"
       MAX_TOKENS = 4000
+      # What progress hears each round's ask is for.
+      FIRST = "Asking the LLM for rows that could break the rewrite"
+      AGAIN = "Asking the LLM again, for different rows"
 
       SCHEMA = {
         type: :object,
@@ -63,8 +66,8 @@ module Quaack
       def run(payload, compare:)
         messages = [payload_message(payload)]
         rounds = []
-        ROUNDS.times do
-          inserts = ask_with(messages)
+        ROUNDS.times do |round|
+          inserts = ask_with(messages, round.zero? ? FIRST : AGAIN)
           rounds << Round.new(inserts:, outcome: compare.call(inserts))
           break if rounds.last.outcome["match"] == false
 
@@ -91,8 +94,9 @@ module Quaack
         { role: :user, content: "The payload:\n\n```json\n#{JSON.generate(payload)}\n```" }
       end
 
-      def ask_with(messages)
-        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA).fetch("inserts")
+      def ask_with(messages, purpose = FIRST)
+        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
+               .fetch("inserts")
       end
 
       def result_line(outcome)

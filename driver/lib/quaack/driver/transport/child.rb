@@ -38,13 +38,15 @@ module Quaack
         module_function
 
         # argv is the command and its arguments, and stdin is a String or
-        # nil. timeout is in seconds.
-        def run(argv, stdin:, timeout:, max_output_bytes:)
+        # nil. timeout is in seconds. on_line, if given, is called with each
+        # whole line of stdout, without its newline, as it arrives. stdout
+        # still holds every line.
+        def run(argv, stdin:, timeout:, max_output_bytes:, on_line: nil)
           deadline = now + timeout
           # The [command, argv0] form never goes through a shell, even when
           # argv has only one element.
           input, output, waiter = start(argv)
-          stdout, limit = Pump.new(input, output, stdin, deadline:, max_bytes: max_output_bytes).run
+          stdout, limit = Pump.new(input, output, stdin, deadline:, max_bytes: max_output_bytes, on_line:).run
           limit ||= wait(waiter, deadline)
           terminate(waiter) if limit
           Run.new(stdout:, status: waiter.value, limit:)
@@ -92,7 +94,7 @@ module Quaack
         # At the deadline it just stops: Child.wait then finds the child
         # still running and calls it a timeout.
         class Pump
-          def initialize(input, output, stdin, deadline:, max_bytes:)
+          def initialize(input, output, stdin, deadline:, max_bytes:, on_line: nil) # rubocop:disable Metrics/ParameterLists
             @input = input
             @output = output
             # An empty stdin is written as zero bytes, which closes input.
@@ -100,6 +102,9 @@ module Quaack
             @deadline = deadline
             @max_bytes = max_bytes
             @stdout = +""
+            @on_line = on_line
+            # Where the first line not yet given to on_line starts.
+            @line_start = 0
           end
 
           def run
@@ -141,7 +146,19 @@ module Quaack
             return if chunk == :wait_readable
 
             @stdout << chunk
-            :output_too_large if @stdout.bytesize > @max_bytes
+            return :output_too_large if @stdout.bytesize > @max_bytes
+
+            lines if @on_line
+            nil
+          end
+
+          # Gives on_line each whole line read since the last call.
+          def lines
+            while (newline = @stdout.byteindex("\n", @line_start))
+              line = @stdout.byteslice(@line_start...newline)
+              @line_start = newline + 1
+              @on_line.call(line)
+            end
           end
         end
       end

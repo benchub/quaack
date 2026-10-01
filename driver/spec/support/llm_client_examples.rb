@@ -78,7 +78,17 @@ RSpec.shared_examples "an LLM client" do
       ask("6a")
       ask("5a-5")
 
-      expect(notes).to eq(["LLM ask 6a", "LLM ask 6a: attempt 2", "LLM ask 6a: attempt 3", "LLM ask 5a-5"])
+      expect(notes).to eq(["Asking the LLM (6a)", "Asking the LLM, attempt 2 (6a)", "Asking the LLM, attempt 3 (6a)",
+                           "Asking the LLM (5a-5)"])
+    end
+
+    it "says what an ask is for when the caller does" do
+      notes = []
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
+      fake.reply("5a-5", "ok")
+      ask("5a-5", purpose: "Asking the LLM again for replacements")
+
+      expect(notes).to eq(["Asking the LLM again for replacements (5a-5)"])
     end
 
     it "counts attempts that end in an error" do

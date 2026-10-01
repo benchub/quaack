@@ -71,6 +71,18 @@ RSpec.describe Quaack::Driver::Counterexamples do
       expect(second[2][:content]).to include("insert_select", "same results")
     end
 
+    it "tells progress what each round's ask is for" do
+      notes = []
+      client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
+      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      outcomes.push(clean, clean, clean)
+      run
+
+      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (10a)",
+                           "Asking the LLM again, for different rows (10a)",
+                           "Asking the LLM again, for different rows (10a)"])
+    end
+
     it "stops once a round disproves the candidate" do
       2.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
       outcomes.push(clean, { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })

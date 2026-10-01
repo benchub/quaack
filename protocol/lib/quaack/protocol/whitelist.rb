@@ -142,9 +142,20 @@ module Quaack
       # totals, as the burndown message carries them.
       report: %i[top excluded infinite_sets verdicts measurements candidates indexes original_plan
                  timed_out_count negative burndown].freeze,
+      # One line of 12a's progress, sent while `quaacks index-build` works,
+      # just before it builds each index: index is its 1-based position,
+      # total how many there are, and ddl its DDL through the enclave's
+      # CandidateDdlRedaction, as report carries it, with the index's
+      # quaack_ name, which report carries too.
+      index_build_progress: %i[index total ddl].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze
     }.freeze
+
+    # The types a step may send while it's still running, ahead of its
+    # other lines (see the enclave's CLI). The driver hands only these to a
+    # call's progress block, and leaves them out of the call's messages.
+    PROGRESS = %i[index_build_progress].freeze
   end
 end

@@ -71,6 +71,9 @@ module Quaack
         # The whitelist with String names, as parsed JSON has them.
         FIELDS = Protocol::WHITELIST.to_h { |type, fields| [type.name, fields.map(&:name)] }.freeze
 
+        # The progress types, with String names.
+        PROGRESS = Protocol::PROGRESS.map(&:name).freeze
+
         # A line that is JSON, but not a message the protocol allows.
         REFUSED = Object.new.freeze
 
@@ -98,8 +101,20 @@ module Quaack
           raise failure(subcommand, status), cause: nil unless status.success? && done?(lines.last)
           raise failure(subcommand, status, rule: "unexpected_output"), cause: nil unless allowed?(lines)
 
-          messages[0...-1]
+          messages[0...-1].reject { progress?(it) }
         end
+
+        # One line of stdout as a progress message, if it's one the
+        # whitelist allows, of a Protocol::PROGRESS type, or else nil.
+        def progress(line)
+          line = line.b.force_encoding(Encoding::UTF_8)
+          return unless line.valid_encoding?
+
+          message = line(line)
+          message if message.is_a?(Hash) && progress?(message) && message?(message)
+        end
+
+        def progress?(message) = PROGRESS.include?(message["type"])
 
         # Raises the first error line's EnclaveError, if there's one.
         def error!(subcommand, status, messages)
