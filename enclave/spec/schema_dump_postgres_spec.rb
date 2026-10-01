@@ -185,6 +185,29 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(store.read("schema_dump")["ddl"]).to match(/^CREATE SCHEMA public;$/)
     end
 
+    # 20261001-9: a dumped function can reference dba, so arena needs it.
+    it "includes dba when the database has it, though no table is there, and leaves it out of the subset" do
+      conn.exec("CREATE SCHEMA dba")
+      conn.exec("CREATE TABLE dba.settings (k text)")
+      conn.exec("CREATE FUNCTION other.setting_count() RETURNS bigint LANGUAGE sql " \
+                "BEGIN ATOMIC SELECT count(*) FROM dba.settings; END")
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[dba other public])
+      expect(store.read("schema_dump")["namespaces"]).to eq(%w[dba other public])
+      ddl = store.read("schema_dump")["ddl"]
+      expect(ddl).to match(/^CREATE SCHEMA dba;$/)
+      expect(created_tables(ddl)).to include("dba.settings")
+      expect(store.read("schema_subset")["ddl"]).not_to include("dba")
+    end
+
+    it "leaves out dba when the database has none" do
+      result = run([table("other", "lonely")])
+
+      expect(result.namespaces).to eq(%w[other public])
+      expect(store.read("schema_dump")["ddl"]).not_to include("dba")
+    end
+
     # --strict-names would fail the dump on a --schema for a public that
     # isn't there.
     it "leaves out public when the database has none" do
