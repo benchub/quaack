@@ -1442,3 +1442,30 @@ The review of 20261001-3 found three minor items:
 - **Came from:** The second review of 20261001-3, 2026-10-01.
 - **Design:** 5a-5.
 - **Status:** todo
+
+### 20261001-5. An LLM error reads the reason out of a JSON array body.
+
+Gemini's OpenAI-compatible endpoint answered a 503 and QUAACK printed no reason. Its error body seems to be a JSON array, such as `[{"error": {"message": "..."}}]`, which isn't confirmed. The detail code from 20261001-1 only reads a Hash or a String. When the body is an array, take the error message from its first element the same way. If no message is there, give the whole body as JSON. `llm_auth` stays status-only.
+
+- **Depends on:** 20261001-1.
+- **Came from:** The user, 2026-10-01, a Gemini 503 with no reason shown.
+- **Design:** LLM client.
+- **Status:** todo
+
+### 20261001-6. The `llm` block in driver.json takes an optional `max_retries`.
+
+The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, with backoff. That's too few to ride out an overloaded provider during a long run. Add an optional `max_retries` (a non-negative integer) to the `llm` block in `~/.quaack/driver.json`, and pass it to both adapters. Without the key, keep today's default. A value that isn't a non-negative integer is a usage error naming the key, the same way other bad keys in the block are handled.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, after Gemini returned 503s.
+- **Design:** LLM client, driver.json.
+- **Status:** todo
+
+### 20261001-7. Send stats only for the columns the query references.
+
+The 5a-5 payload's `stats` covers every column of each table the query uses. On wide tables that came to 52k characters for one query. Send stats only for the columns the query references anywhere (select list, WHERE, JOIN, GROUP BY, ORDER BY), found with pg_query from the qualified query. Keep the stored statistics whole. Update DESIGN.md (5a-5) to match. Settle against DESIGN.md first whether 6a or any other LLM step sends stats too.
+
+- **Depends on:** 20261001-3.
+- **Came from:** The user, 2026-10-01.
+- **Design:** 3f, 5a-5.
+- **Status:** todo
