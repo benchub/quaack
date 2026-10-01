@@ -78,7 +78,7 @@ RSpec.describe "quaack run" do
                                                "index_ranking_original" => true, "rewrites_generated" => true)
     status = cli.run(["run", "--run", run_id, "--out", out])
 
-    expect([status, stderr.string]).to eq([0, torn])
+    expect([status, errors]).to eq([0, torn])
     expect(hosts).to eq(["jump-1"])
     expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build baseline
                                                   index-baseline candidate-runs minimax result-comparison selection
@@ -93,11 +93,76 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
-    expect([status, stderr.string]).to eq([0, torn])
+    expect([status, errors]).to eq([0, torn])
     expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback rewrite-payload rewrite-check status
                                                   status status report-payload teardown])
     expect(transport.calls[4].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
     expect(fake.asks.map(&:step)).to eq(["step7"])
+  end
+
+  # stderr without its progress lines.
+  def errors = stderr.string.lines.grep_v(%r{\Aquaack: \[\d+/\d+\] }).join
+
+  # stderr's progress lines, with each time as Ns.
+  def progress = stderr.string.lines.grep(%r{\Aquaack: \[\d+/\d+\] }).map { it.sub(/ in \d+s$/, " in Ns") }
+
+  describe "progress on stderr" do
+    it "prints each step as it starts and ends, numbered out of the run's steps, and each skip" do
+      entries.transform_values! { false }.merge!("index_search_original" => true, "index_generated_original" => true,
+                                                 "index_ranking_original" => true, "rewrites_generated" => true)
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      steps = [["4b", "arena-setup"], ["steps 9-10", "counterexamples (LLM)"], ["step 11", "rewrite indexes (LLM)"],
+               %w[12a index-build], %w[13 baseline], %w[13a index-baseline], %w[14 candidate-runs],
+               %w[14b minimax], %w[14c result-comparison], %w[14d selection], %w[15 report]]
+      expect(progress).to eq(
+        ["quaack: [1/17] index-search: already done, skipping\n",
+         "quaack: [2/17] 5a-5: already done, skipping\n",
+         "quaack: [3/17] 5a-6 refinement round (LLM)\n", "quaack: [3/17] 5a-6 done in Ns\n",
+         "quaack: [4/17] 5a-7: already done, skipping\n",
+         "quaack: [5/17] 6a: already done, skipping\n",
+         "quaack: [6/17] step 8 rewrite index searches\n", "quaack: [6/17] step 8 done in Ns\n",
+         *steps.each_with_index.flat_map do |(name, description), i|
+           ["quaack: [#{7 + i}/17] #{name} #{description}\n", "quaack: [#{7 + i}/17] #{name} done in Ns\n"]
+         end]
+      )
+      expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
+    end
+
+    it "counts step 7, and prints each LLM ask and retry, when there's a rewrites file" do
+      fake.error("step7", status: 529).reply("step7", { "rewrites" => [{ "transformation" => "t",
+                                                                         "assumptions" => [] }] })
+      entries["rewrites_generated"] = false
+      replies["rewrite-check"] = []
+      fake.reply("6a", { "rewrites" => [] })
+
+      expect(cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])).to eq(0)
+
+      expect(progress).to include("quaack: [5/18] 6a rewrite generation (LLM)\n", "quaack: [5/18] LLM ask 6a\n",
+                                  "quaack: [6/18] step 7 operator rewrites (LLM)\n",
+                                  "quaack: [6/18] LLM ask step7\n", "quaack: [6/18] LLM ask step7: attempt 2\n",
+                                  "quaack: [6/18] step 7 done in Ns\n", "quaack: [18/18] 15 report\n")
+    end
+
+    it "prints a step's sub-steps for each rewrite, under the step" do
+      entries.merge!("rewrite_1" => true, "index_search_rewrite_1" => true, "index_ranking_rewrite_1" => false,
+                     "rewrite_pruned_1" => true, "rewrite_survived_1" => true)
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      expect(progress).to include("quaack: [6/17] rewrite_1 index-search: already done, skipping\n",
+                                  "quaack: [6/17] rewrite_1 index-rank\n",
+                                  "quaack: [6/17] rewrite_1 rewrite-prune: already done, skipping\n")
+    end
+
+    it "prints a failed line for the step that fails, before the failure" do
+      failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+
+      expect(progress.last).to eq("quaack: [3/17] 5a-6 failed after 0s\n")
+      expect(errors).to eq("#{torn}quaack run failed: arena_missing\n")
+    end
   end
 
   def rewrites_file(text = "SELECT 2 WHERE $1;\n")
@@ -110,7 +175,7 @@ RSpec.describe "quaack run" do
 
   context "when selection is stored" do
     it "writes the report to --out and prints its path before done" do
-      expect([cli.run(["run", "--run", run_id, "--out", out]), stderr.string]).to eq([0, torn])
+      expect([cli.run(["run", "--run", run_id, "--out", out]), errors]).to eq([0, torn])
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
       expect(File.read(out)).to include("QUAACK report #{run_id}")
     end
@@ -134,7 +199,7 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--out", out])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
+    expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
   it "tears the run down after an enclave call fails" do
@@ -149,9 +214,9 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string]).to eq([1, ""])
-    expect(stderr.string).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
-                                "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
-                                "quaack run failed: teardown_failed\n")
+    expect(errors).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
+                         "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
+                         "quaack run failed: teardown_failed\n")
   end
 
   it "skips teardown with --keep, in any position, and prints the command to run later" do
@@ -159,8 +224,8 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, *options])).to eq(0)
     end
     expect(transport.calls.map(&:first)).not_to include("teardown")
-    expect(stderr.string).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
-                                "quaacks teardown --run #{run_id}\n" * 2)
+    expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
+                         "quaacks teardown --run #{run_id}\n" * 2)
   end
 
   it "fails with exit 1 and the LLM error's rule and detail when an LLM call fails" do
@@ -169,8 +234,8 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
     expect([status, stdout.string]).to eq([1, ""])
-    expect(stderr.string).to start_with("#{torn}quaack run failed: llm_bad_request: ")
-    expect(stderr.string).to include("fake invalid_request_error")
+    expect(errors).to start_with("#{torn}quaack run failed: llm_bad_request: ")
+    expect(errors).to include("fake invalid_request_error")
   end
 
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
@@ -178,28 +243,28 @@ RSpec.describe "quaack run" do
 
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: no_rewrite_payload\n"])
+    expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: no_rewrite_payload\n"])
     expect(fake.asks).to eq([])
   end
 
   it "fails with a usage-style error, before touching the jump server, for a rewrites file that won't parse" do
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file("SELECT (;\n")])
 
-    expect([status, stderr.string]).to eq([64, "quaack run: the rewrites file doesn't parse\n"])
+    expect([status, errors]).to eq([64, "quaack run: the rewrites file doesn't parse\n"])
     expect(transport.calls).to eq([])
   end
 
   it "fails with a usage-style error for a run this laptop never started" do
     status = cli.run(["run", "--run", "20260926T010203Z-ffffffff"])
 
-    expect([status, stdout.string, stderr.string]).to eq([64, "", "quaack run: unknown run ID\n"])
+    expect([status, stdout.string, errors]).to eq([64, "", "quaack run: unknown run ID\n"])
     expect(transport.calls).to eq([])
   end
 
   it "fails with a usage-style error, before touching the jump server, for an unreadable rewrites file" do
     status = cli.run(["run", "--run", run_id, "--rewrites", File.join(home, "missing.sql")])
 
-    expect([status, stderr.string]).to eq([64, "quaack run: can't read the rewrites file\n"])
+    expect([status, errors]).to eq([64, "quaack run: can't read the rewrites file\n"])
     expect(transport.calls).to eq([])
   end
 
@@ -207,7 +272,7 @@ RSpec.describe "quaack run" do
     [%w[run], %w[run --run], %w[run --rewrites f], ["run", "--run", run_id, "--rewrites"]].each do |argv|
       expect(cli.run(argv)).to eq(64)
     end
-    expect(stderr.string).to include("quaack run --run <ID> [--rewrites <file>]")
+    expect(errors).to include("quaack run --run <ID> [--rewrites <file>]")
     expect(transport.calls).to eq([])
   end
 
@@ -216,8 +281,8 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, stdout.string]).to eq([1, ""])
-    expect(stderr.string).to eq("quaack run failed: jump-1 has quaacks 0.0.9, but this driver needs " \
-                                "#{Quaack::Driver::ENCLAVE_VERSION}. Run `quaack deploy --host jump-1`.\n")
+    expect(errors).to eq("quaack run failed: jump-1 has quaacks 0.0.9, but this driver needs " \
+                         "#{Quaack::Driver::ENCLAVE_VERSION}. Run `quaack deploy --host jump-1`.\n")
     expect(transport.calls.map(&:first)).to eq(["version"])
   end
 
@@ -226,8 +291,8 @@ RSpec.describe "quaack run" do
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect(status).to eq(1)
-    expect(stderr.string).to eq("quaack run failed: quaacks isn't installed on jump-1, or isn't on PATH for " \
-                                "non-interactive ssh there. Run `quaack deploy --host jump-1`.\n")
+    expect(errors).to eq("quaack run failed: quaacks isn't installed on jump-1, or isn't on PATH for " \
+                         "non-interactive ssh there. Run `quaack deploy --host jump-1`.\n")
     expect(transport.calls.map(&:first)).to eq(["version"])
   end
 
@@ -235,7 +300,7 @@ RSpec.describe "quaack run" do
     replies["version"] = [{ "type" => "version", "version" => "x y\n" }]
     cli.run(["run", "--run", run_id, "--out", out])
 
-    expect(stderr.string).to start_with("quaack run failed: jump-1 has quaacks of an unknown version, but")
+    expect(errors).to start_with("quaack run failed: jump-1 has quaacks of an unknown version, but")
   end
 
   it "expects the enclave's own VERSION" do
@@ -293,13 +358,13 @@ RSpec.describe "quaack run" do
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
       write_config(JSON.generate("llm" => { "provider" => "SENTINEL-VALUE" }))
 
-      expect([run_with, stdout.string, stderr.string])
+      expect([run_with, stdout.string, errors])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic or openai_compatible\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
     it "fails with a usage error for a bad override" do
-      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), stderr.string])
+      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), errors])
         .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic or openai_compatible\n"])
       expect(hosts).to eq([])
     end
@@ -310,7 +375,7 @@ RSpec.describe "quaack run" do
         stderr.truncate(0)
         stderr.rewind
 
-        expect([run_with, stderr.string]).to eq([64, "quaack run: ~/.quaack/driver.json must be a JSON object\n"])
+        expect([run_with, errors]).to eq([64, "quaack run: ~/.quaack/driver.json must be a JSON object\n"])
       end
       expect(hosts).to eq([])
     end
@@ -323,7 +388,7 @@ RSpec.describe "quaack run" do
       File.chmod(0o000, path)
       skip "this user can read a file with mode 000" if File.readable?(path)
 
-      expect([run_with, stdout.string, stderr.string]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      expect([run_with, stdout.string, errors]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
@@ -376,7 +441,7 @@ RSpec.describe "quaack run" do
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
         status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
 
-        expect([status, stdout.string, stderr.string])
+        expect([status, stdout.string, errors])
           .to eq([1, "", "quaack run failed: llm_auth: QUAACK_SPEC_UNSET_KEY isn't set\n"])
         expect([hosts, transport.calls]).to eq([[], []])
       end
@@ -392,7 +457,7 @@ RSpec.describe "quaack run" do
       it "fails with exit 1 and llm_auth before touching the jump server" do
         status = without_anthropic_credentials { run_with }
 
-        expect(stderr.string).to start_with("quaack run failed: llm_auth: no Anthropic credentials")
+        expect(errors).to start_with("quaack run failed: llm_auth: no Anthropic credentials")
         expect([status, stdout.string]).to eq([1, ""])
         expect([hosts, transport.calls]).to eq([[], []])
       end
@@ -402,7 +467,7 @@ RSpec.describe "quaack run" do
         write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
         status = with_env("QUAACK_SPEC_UNSET_KEY" => nil, "OPENAI_API_KEY" => "SENTINEL-KEY") { run_with }
 
-        expect([status, stdout.string, stderr.string])
+        expect([status, stdout.string, errors])
           .to eq([1, "", "quaack run failed: llm_auth: QUAACK_SPEC_UNSET_KEY isn't set\n"])
         expect([hosts, transport.calls]).to eq([[], []])
       end
