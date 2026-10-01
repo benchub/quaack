@@ -1470,14 +1470,7 @@ The 5a-5 payload's `stats` covers every column of each table the query uses. On 
 - **Design:** 3f, 5a-5.
 - **Status:** todo
 
-### 20261001-8. `quaack run` shows its progress.
-
-`quaack run` is silent until it finishes or fails, so the operator can't tell what it's doing or how much is left. Print a progress line to stderr as each step starts, naming the step and where it falls in the run, such as `quaack: [5/18] 5a-5 generator three (LLM)`. Also print a line when a step is skipped because a resumed run already has its output, such as `quaack: [3/18] index-search: already done, skipping`, and when an LLM ask starts and each time it's retried. Lines carry only step names, counts, and timings, never data from the enclave. Stdout stays as it is today. Match the style of `quaack deploy`'s progress lines (20260929-3). Open question to settle before building: should a step that takes a long time also print how long it has been running, or is the start line enough?
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-10-01, during an end-to-end test.
-- **Design:** The `quaack run` command.
-- **Status:** todo
+### 20261001-8. `quaack run` shows its progress. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-9. The full schema dump always includes the `dba` schema.
 
@@ -1495,4 +1488,16 @@ Replaces the hard-coded `dba` of 20261001-9. Objects in the dumped namespaces, s
 - **Depends on:** 20261001-9.
 - **Came from:** The user, 2026-10-01.
 - **Design:** 3b, 4b.
+- **Status:** todo
+
+### 20261001-11. Progress output: minor findings.
+
+The review of 20261001-8 found two minor items:
+
+1. Nothing tests the skip line that step 7 prints on a resumed run with `--rewrites`. If that line broke, every later `[n/18]` number would be off by one, and no spec would catch it. Nothing tests the steps 9-10 skip note for each rewrite either. Add a cli_run progress spec that resumes with `rewrites_generated` and `operator_rewrites_checked` set and passes `--rewrites`. It should assert `[6/18] step 7: already done, skipping`, and cover the steps 9-10 note too.
+2. In `Progress#step`, if the first `say` raises, such as EPIPE on stderr, `start` is still nil. The rescue's `since(nil)` then raises a TypeError that hides the real error. Set `start` before the first `say`.
+
+- **Depends on:** 20261001-8.
+- **Came from:** The review of 20261001-8, 2026-10-01.
+- **Design:** The `quaack run` command.
 - **Status:** todo

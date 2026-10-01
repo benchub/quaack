@@ -3236,3 +3236,12 @@ Apply the same trimming to the 6a payload (`rewrite_payload`) wherever it sends 
 - **Came from:** The user, 2026-10-01.
 - **Design:** 3b, 5a-5, 6a.
 - **Status:** done
+
+### 20261001-8. `quaack run` shows its progress.
+
+`quaack run` is silent until it finishes or fails, so the operator can't tell what it's doing or how much is left. Print a progress line to stderr as each step starts, naming the step and where it falls in the run, such as `quaack: [5/18] 5a-5 generator three (LLM)`. Also print a line when a step is skipped because a resumed run already has its output, such as `quaack: [3/18] index-search: already done, skipping`, and when an LLM ask starts and each time it's retried. Lines carry only step names, counts, and timings, never data from the enclave. Stdout stays as it is today. Match the style of `quaack deploy`'s progress lines (20260929-3). Open question to settle before building: should a step that takes a long time also print how long it has been running, or is the start line enough?
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, during an end-to-end test.
+- **Design:** The `quaack run` command.
+- **Status:** done
