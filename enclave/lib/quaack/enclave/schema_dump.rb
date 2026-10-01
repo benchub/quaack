@@ -20,7 +20,7 @@ module Quaack
     # The inputs:
     # - relations: the qualified TableNames from Relations.check, the
     #   query's tables. Their schemas and their FK ancestors' schemas, at
-    #   any depth, plus public if the database has it, plus the schema of
+    #   any depth, plus public and dba if the database has them, plus the schema of
     #   each extension but plpgsql, are the namespaces,
     #   less any system schema (pg_catalog, information_schema, or another
     #   pg_ one). The full dump also names each of those extensions, so it
@@ -110,7 +110,9 @@ module Quaack
         ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C"
       SQL
 
-      PUBLIC_SQL = "SELECT EXISTS (SELECT FROM pg_catalog.pg_namespace WHERE nspname = 'public')"
+      # public and dba, whichever the database has. dba is there because
+      # functions can reference it (20261001-9; 20261001-10 replaces this).
+      ALWAYS_SQL = "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname IN ('public', 'dba')"
 
       # Every extension but plpgsql, which every database already has, and
       # its schema. pg_dump emits CREATE EXTENSION only for those named with
@@ -201,12 +203,11 @@ module Quaack
         end
       end
 
-      # The tables' schemas, plus public if the database has one, since
+      # The tables' schemas, plus public and dba if the database has them, since
       # --strict-names fails a dump on a schema that isn't there. Sorted by
       # byte, as the tables are.
       def namespaces(tables, connection)
-        public = connection.exec_params(PUBLIC_SQL, []).getvalue(0, 0) == "t"
-        (tables.map(&:schema) + (public ? ["public"] : [])).uniq.sort
+        (tables.map(&:schema) + connection.exec_params(ALWAYS_SQL, []).column_values(0)).uniq.sort
       end
 
       # The relations and their FK ancestors, sorted.
