@@ -1478,3 +1478,21 @@ The 5a-5 payload's `stats` covers every column of each table the query uses. On 
 - **Came from:** The user, 2026-10-01, during an end-to-end test.
 - **Design:** The `quaack run` command.
 - **Status:** todo
+
+### 20261001-9. The full schema dump always includes the `dba` schema.
+
+Arena failed to load 3b's full dump with `arena_dump_load_failed`: the dump holds functions that reference the `dba` schema, which the dump didn't include. To unblock the end-to-end test, `quaacks schema-dump` always adds `dba` to the namespaces it passes to `pg_dump --schema`, like `public`, but only when production has a schema of that name, so a database without one still works. The subset that reaches the LLM doesn't change. Update DESIGN.md 3b. 20261001-10 replaces this with a general fix.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, blocked on arena_dump_load_failed during an end-to-end test.
+- **Design:** 3b.
+- **Status:** todo
+
+### 20261001-10. The full schema dump finds the schemas its objects reference, and takes overrides.
+
+Replaces the hard-coded `dba` of 20261001-9. Objects in the dumped namespaces, such as functions, can reference schemas that weren't dumped, and then arena won't load. Find those schemas and add them to the dump, for example by parsing the dump with pg_query and collecting the schemas named in function bodies, defaults, types, and the like, then dumping again until nothing new turns up. Also let the operator name extra schemas to include, for example a list in the `quaacks` config. Settle the details with the user before building: which references count, whether a dependency query against the catalog (`pg_depend`) beats parsing, and where the override lives.
+
+- **Depends on:** 20261001-9.
+- **Came from:** The user, 2026-10-01.
+- **Design:** 3b, 4b.
+- **Status:** todo
