@@ -1427,17 +1427,18 @@ Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next
 
 ### 20261001-2. A failed LLM call says which step it was and how big the request was. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-3. Trim the LLM payloads to fit a 131k-token window.
+### 20261001-3. Trim the LLM payloads to fit a 131k-token window. Done, see BACKLOG-COMPLETE.md.
 
-A run against Groq (`openai/gpt-oss-120b`, 131k tokens) overflowed at 5a-5. The size report from 20261001-2 showed 550k characters: mechanical_results 322k, schema 154k, stats 52k, and plan 14k. The user settled the cut on 2026-10-01:
 
-- **mechanical_results:** Every candidate keeps its DDL, its sources, whether the planner used it, its total cost per literal, its size, and any refusal. Only the baseline and the single best candidate keep full plans. The best candidate is one the planner used, with the lowest total cost summed over the literals.
-- **Schema:** Send only the query's own tables (the run's `relations`), not their FK parents, plus the indexes and constraints on them. Strip pg_dump's noise: SET and set_config lines, comments, COMMENT ON, ownership, grants, and sequence statements. Keep types, enums, and domains. Use pg_query to split and classify the statements. The stored `schema_subset` stays whole, since fixtures and arena need the FK parents.
-- **Stats:** Send only the columns of the query's own tables, to match the schema.
+### 20261001-4. Payload trimming: minor findings.
 
-Apply the same trimming to the 6a payload (`rewrite_payload`) wherever it sends the same sections. Update DESIGN.md (the 5a-5 and 6a payloads) to say what's sent.
+The review of 20261001-3 found three minor items:
 
-- **Depends on:** 20261001-2.
-- **Came from:** The user, 2026-10-01.
-- **Design:** 3b, 5a-5, 6a.
+1. The spec in `enclave/spec/index_payload_step_postgres_spec.rb` (around lines 104–107) works out its expected best candidate by copying the code it tests. Write the expected value out directly instead. The spec near line 130 already pins the behavior on its own terms.
+2. `IndexPayload#best` doesn't explicitly exclude refused candidates the way `Refinement.used?` does. That's harmless while a refused result never carries a used plan, but adding `!r["refusal"]` would make it explicit.
+3. When a query uses a partitioned parent, the payload drops the partitions' CREATE TABLE and index statements, even though the plans name the partitions. Decide whether to keep the DDL for partitions of the query's tables.
+
+- **Depends on:** 20261001-3.
+- **Came from:** The second review of 20261001-3, 2026-10-01.
+- **Design:** 5a-5.
 - **Status:** todo
