@@ -105,8 +105,10 @@ module Quaack
       # file, then prints the run ID and done. The file is read and the LLM
       # client built first, from the llm block of ~/.quaack/driver.json, so a
       # bad file, a bad block, or missing credentials fail before the jump
-      # server is touched. A bad block is a usage error naming the key. A
-      # failure prints only its rule, as for start.
+      # server is touched. A bad block is a usage error naming the key. An
+      # LLM failure prints its whole message, rule and detail, since the
+      # detail is the provider's own error text. Any other failure prints
+      # only its rule, as for start.
       def run_command(run:, rewrites:, out:, keep:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
@@ -116,7 +118,7 @@ module Quaack
         EnclaveVersion.check!(transport, host)
         drive(transport, client, run, sqls, { out:, keep: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{e.respond_to?(:rule) ? e.rule : e.message}\n"
+        @stderr.print "quaack run failed: #{e.respond_to?(:rule) && !e.is_a?(LLM::Error) ? e.rule : e.message}\n"
         1
       end
 

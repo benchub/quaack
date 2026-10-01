@@ -163,12 +163,14 @@ RSpec.describe "quaack run" do
                                 "quaacks teardown --run #{run_id}\n" * 2)
   end
 
-  it "fails with exit 1 and only the rule when an LLM call fails" do
-    fake.error("step7", status: 401)
+  it "fails with exit 1 and the LLM error's rule and detail when an LLM call fails" do
+    fake.error("step7", status: 400)
 
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
-    expect([status, stdout.string, stderr.string]).to eq([1, "", "#{torn}quaack run failed: llm_auth\n"])
+    expect([status, stdout.string]).to eq([1, ""])
+    expect(stderr.string).to start_with("#{torn}quaack run failed: llm_bad_request: ")
+    expect(stderr.string).to include("fake invalid_request_error")
   end
 
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
@@ -374,7 +376,8 @@ RSpec.describe "quaack run" do
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
         status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
 
-        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([status, stdout.string, stderr.string])
+          .to eq([1, "", "quaack run failed: llm_auth: QUAACK_SPEC_UNSET_KEY isn't set\n"])
         expect([hosts, transport.calls]).to eq([[], []])
       end
     end
@@ -389,7 +392,8 @@ RSpec.describe "quaack run" do
       it "fails with exit 1 and llm_auth before touching the jump server" do
         status = without_anthropic_credentials { run_with }
 
-        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect(stderr.string).to start_with("quaack run failed: llm_auth: no Anthropic credentials")
+        expect([status, stdout.string]).to eq([1, ""])
         expect([hosts, transport.calls]).to eq([[], []])
       end
 
@@ -398,7 +402,8 @@ RSpec.describe "quaack run" do
         write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
         status = with_env("QUAACK_SPEC_UNSET_KEY" => nil, "OPENAI_API_KEY" => "SENTINEL-KEY") { run_with }
 
-        expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+        expect([status, stdout.string, stderr.string])
+          .to eq([1, "", "quaack run failed: llm_auth: QUAACK_SPEC_UNSET_KEY isn't set\n"])
         expect([hosts, transport.calls]).to eq([[], []])
       end
     end
