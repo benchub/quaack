@@ -1427,11 +1427,17 @@ Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next
 
 ### 20261001-2. A failed LLM call says which step it was and how big the request was. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-3. Trim the LLM payloads to what the step needs.
+### 20261001-3. Trim the LLM payloads to fit a 131k-token window.
 
-Once 20261001-2 shows which step and which payload section overflowed Groq's context window, cut that section down to what the step needs, such as only the tables, columns, and statistics the query uses. Settle the exact cut against DESIGN.md before building.
+A run against Groq (`openai/gpt-oss-120b`, 131k tokens) overflowed at 5a-5. The size report from 20261001-2 showed 550k characters: mechanical_results 322k, schema 154k, stats 52k, and plan 14k. The user settled the cut on 2026-10-01:
 
-- **Depends on:** 20261001-2, plus a run that reports the sizes.
+- **mechanical_results:** Every candidate keeps its DDL, its sources, whether the planner used it, its total cost per literal, its size, and any refusal. Only the baseline and the single best candidate keep full plans. The best candidate is one the planner used, with the lowest total cost summed over the literals.
+- **Schema:** Send only the query's own tables (the run's `relations`), not their FK parents, plus the indexes and constraints on them. Strip pg_dump's noise: SET and set_config lines, comments, COMMENT ON, ownership, grants, and sequence statements. Keep types, enums, and domains. Use pg_query to split and classify the statements. The stored `schema_subset` stays whole, since fixtures and arena need the FK parents.
+- **Stats:** Send only the columns of the query's own tables, to match the schema.
+
+Apply the same trimming to the 6a payload (`rewrite_payload`) wherever it sends the same sections. Update DESIGN.md (the 5a-5 and 6a payloads) to say what's sent.
+
+- **Depends on:** 20261001-2.
 - **Came from:** The user, 2026-10-01.
-- **Design:** 5a-5 payload, 6a.
+- **Design:** 3b, 5a-5, 6a.
 - **Status:** todo
