@@ -576,7 +576,7 @@ Read it when the result surprises you. If the LLM proposed five rewrites and all
 
 ## When a run fails.
 
-QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
+QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. When an LLM call fails, `quaack run` adds the provider's error after the rule, as in `quaack run failed: llm_bad_request: <detail>`. The detail comes from the LLM provider, outside the privacy line. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
 
 Common rules:
 

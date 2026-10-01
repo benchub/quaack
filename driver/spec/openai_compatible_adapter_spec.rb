@@ -142,6 +142,31 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false, true])
     end
 
+    it "puts the provider's error message in a rejected request's detail" do
+      fake.error_body("5a-5", status: 400,
+                              body: { error: { message: "sentinel reason", type: "invalid_request_error" } })
+
+      expect(ask_error.message).to match(/\Allm_bad_request: .*sentinel reason\z/)
+    end
+
+    it "puts the whole JSON body in the detail when its error has no message" do
+      fake.error_body("5a-5", status: 400, body: { error: { type: "sentinel_type" } })
+
+      expect(ask_error.message).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
+    end
+
+    it "puts a text body in the detail as it is" do
+      fake.error_body("5a-5", status: 400, body: "sentinel text body")
+
+      expect(ask_error.message).to end_with("sentinel text body")
+    end
+
+    it "keeps an llm_auth detail to the status, without the body" do
+      fake.error_body("5a-5", status: 401, body: { error: { message: "sentinel key sk-123" } })
+
+      expect(ask_error.message).to eq("llm_auth: the API refused the key (401)")
+    end
+
     it "doesn't ask again on a rejected request that had no schema" do
       fake.error("5a-5", status: 400)
 

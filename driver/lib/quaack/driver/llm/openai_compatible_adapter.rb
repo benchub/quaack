@@ -148,11 +148,29 @@ module Quaack
         end
 
         # Some APIs quote part of a refused key back, so an llm_auth message
-        # is only the status.
+        # is only the status. Any other message is the gem's, which holds
+        # only the status and URL, then the provider's explanation from the
+        # body.
         def detail(error)
-          return error.message unless rule_for(error) == "llm_auth"
+          return "the API refused the key (#{error.status})" if rule_for(error) == "llm_auth"
 
-          "the API refused the key (#{error.status})"
+          explanation = body_text(error.respond_to?(:body) ? error.body : nil)
+          explanation ? "#{error.message}: #{explanation}" : error.message
+        end
+
+        # The error object's message from a JSON body, the whole body as
+        # JSON without one, or a text body as it is.
+        def body_text(body)
+          case body
+          when Hash then hash_text(body)
+          when String then body unless body.empty?
+          end
+        end
+
+        def hash_text(body)
+          inner = body.transform_keys(&:to_s)["error"]
+          message = inner.transform_keys(&:to_s)["message"] if inner.is_a?(Hash)
+          message.is_a?(String) ? message : JSON.generate(body)
         end
 
         # A 200 with no choices at all, such as a proxy's error object, has

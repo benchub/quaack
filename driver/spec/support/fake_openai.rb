@@ -73,6 +73,13 @@ class FakeOpenAI
     self
   end
 
+  # Queues one attempt for step that answers status with `body`, a Hash
+  # sent as JSON or text sent as it is.
+  def error_body(step, status:, body:)
+    @scripts[step] << [status, { "retry-after-ms" => "1" }, body]
+    self
+  end
+
   # Queues one attempt for step that answers 200 with `body`, text sent as
   # it is, such as a body that isn't a completion.
   def raw(step, body)
