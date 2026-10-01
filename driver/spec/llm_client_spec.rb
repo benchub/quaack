@@ -51,7 +51,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
   def llm_error(rule, message = nil)
     raise_error(Quaack::Driver::LLM::Error) do |e|
       expect(e.rule).to eq(rule)
-      expect(e.message).to eq(message) if message
+      expect(sans_sizes(e.message)).to eq(message) if message
     end
   end
 
@@ -185,7 +185,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       e = ask_error(schema: schema)
 
       expect(e.rule).to eq("llm_bad_response")
-      expect(e.message).to eq(bad_json)
+      expect(sans_sizes(e.message)).to eq(bad_json)
       # The parser's own error quotes the reply, so it isn't kept as the cause.
       expect(e.cause).to be_nil
     end
@@ -239,7 +239,7 @@ RSpec.describe Quaack::Driver::LLM::Client do
       [ask_error("5a-5"), ask_error("10a")].each do |e|
         expect(e.rule).to eq("llm_bad_response")
         expect(e.cause).to be_nil
-        expect(e.message).to eq(unreadable)
+        expect(sans_sizes(e.message)).to eq(unreadable)
       end
     end
   end
@@ -431,7 +431,9 @@ RSpec.describe Quaack::Driver::LLM::Client do
         write_profile(dir, nil)
         client = described_class.new(burndown: burndown, transport: key_transport)
 
-        expect { ask_with(client) }.to raise_error(Quaack::Driver::LLM::Error, unloadable_credentials)
+        expect { ask_with(client) }.to(raise_error(Quaack::Driver::LLM::Error) do |e|
+          expect(sans_sizes(e.message)).to eq(unloadable_credentials)
+        end)
       end
       expect(key_transport.seen).to eq([])
       expect(burndown.llm_calls).to eq({})
@@ -568,5 +570,51 @@ RSpec.describe Quaack::Driver::LLM do
       expect(status).not_to be_success
       expect(err).to include("RealClientInSpecs")
     end
+  end
+end
+
+RSpec.describe Quaack::Driver::LLM::Client, "the size report on a failed ask" do
+  let(:fake) { FakeLLM.new }
+  let(:client) { fake.client(burndown: Quaack::Driver::Burndown.new) }
+  let(:payload) do
+    { "schema_subset" => "SENTINEL-SCHEMA" * 10, "query" => "SENTINEL-QUERY", "stats" => { "n" => "SENTINEL-N" } }
+  end
+  let(:payload_text) { "Here it is.\n\n```json\n#{JSON.pretty_generate(payload)}\n```\n" }
+
+  def size_error(content)
+    client.ask(step: "5a-5", system: "SENTINEL-SYSTEM", max_tokens: 4000,
+               messages: [{ role: "user", content: content }, { role: "assistant", content: "SENTINEL-A" }])
+    raise "expected an LLM::Error, but the ask succeeded"
+  rescue Quaack::Driver::LLM::Error => e
+    e
+  end
+
+  it "gives the step, max_tokens, system and message sizes, and the payload's keys largest first" do
+    fake.error("5a-5", status: 400)
+    e = size_error(payload_text)
+    keys = payload.map { |k, v| [k, JSON.generate(v).length] }.sort_by { |_, n| -n }.map { |k, n| "#{k} #{n}" }
+
+    expect(e.rule).to eq("llm_bad_request")
+    expect(e.message).to end_with(
+      " [step 5a-5, max_tokens 4000, system 15 chars, messages: " \
+      "user #{payload_text.length} (payload: #{keys.join(", ")}), assistant 10]"
+    )
+    expect(keys.first).to start_with("schema_subset ")
+    expect(e.message.scan("[step").size).to eq(1)
+  end
+
+  it "never puts a payload value, the system prompt, or a message in the message" do
+    fake.error("5a-5", status: 400)
+    message = size_error(payload_text).message
+
+    expect(message).to include("[step 5a-5")
+    expect(message).not_to include("SENTINEL")
+  end
+
+  it "skips the breakdown for a json block that won't parse" do
+    fake.error("5a-5", status: 400)
+    content = "```json\n{ SENTINEL-BROKEN\n```"
+
+    expect(size_error(content).message).to end_with("messages: user #{content.length}, assistant 10]")
   end
 end

@@ -23,6 +23,11 @@ def run_ruby(*)
   Open3.capture3(RbConfig.ruby, *)
 end
 
+# An LLM::Error's message without the request sizes LLM::Client adds to
+# every failed ask, for specs about the rest of the message. It drops only
+# a trailing report that's there, so a message without one is unchanged.
+def sans_sizes(message) = message.sub(/ \[step [^\]]*\]\z/, "")
+
 # Sets each environment variable in changes, a nil value unsetting it, for
 # the block, then puts every one back.
 def with_env(changes)

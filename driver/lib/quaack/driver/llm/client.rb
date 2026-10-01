@@ -2,6 +2,7 @@
 
 require_relative "error"
 require_relative "reply_json"
+require_relative "request_sizes"
 
 module Quaack
   module Driver
@@ -86,8 +87,21 @@ module Quaack
         # Burndown#llm_call refuses a step that isn't one of
         # Protocol::Burndown::LLM_STEPS, and the adapter counts before each
         # attempt goes out, so a bad step raises ArgumentError before any.
+        #
+        # An Error it raises ends with the request's sizes (see
+        # RequestSizes), keeping its rule, so a failure says which step it
+        # was and what filled the request.
         def ask(step:, messages:, max_tokens:, system: nil, schema: nil, json: false) # rubocop:disable Metrics/ParameterLists
           system = [system, JSON_ONLY].compact.join("\n\n") if schema
+          ask_once(step:, system:, messages:, max_tokens:, schema:, json:)
+        rescue Error => e
+          sizes = RequestSizes.new(step:, system:, messages:, max_tokens:)
+          raise Error.new(e.rule, "#{e.message.delete_prefix("#{e.rule}: ")} #{sizes}"), cause: e.cause
+        end
+
+        private
+
+        def ask_once(step:, system:, messages:, max_tokens:, schema:, json:) # rubocop:disable Metrics/ParameterLists
           count = -> { @burndown.llm_call(step) }
           text = @adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:)
           return text unless schema || json
@@ -99,8 +113,6 @@ module Quaack
           messages = [*messages, { role: "assistant", content: text }, { role: "user", content: reask(e) }]
           ReplyJSON.parse(@adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:), schema)
         end
-
-        private
 
         # Whether error calls for a re-ask: there's a schema the adapter
         # doesn't enforce, and a reply, text, came back that ReplyJSON
