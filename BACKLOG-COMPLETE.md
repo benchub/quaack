@@ -3203,3 +3203,12 @@ Minor findings from the review of 20260930-3:
 - **Design:** Step 4.
 - **Status:** done
 - **Note (landed 2026-09-30):** Landed on `main` after one review with no blocking findings. Every catalog relation and function in `RunServerCheck` and `Inventory::Production` is `pg_catalog.`-qualified, including `count(*)`, `to_char`, and the `text` cast. The one exception is `$1::json`, since `json` is a keyword. Shadow tests plant look-alikes in `public` under `search_path = public, pg_catalog` and show both still read the real catalog. The two temp-view tests now swap only the FROM clause of the real constants. The follow-ups went to 20260930-13 and 20260930-14.
+
+### 20261001-1. `quaack run` prints the LLM error's detail.
+
+When an LLM call fails, `quaack run` prints only the rule, such as `quaack run failed: llm_bad_request`, so the operator can't tell why the API refused. The detail is already on `LLM::Error#message` (the provider's own error text; for `llm_auth` it's just the status). Print the whole message for `LLM::Error`, such as `quaack run failed: llm_bad_request: <provider's message>`. Keep printing only the rule for enclave errors. The detail comes from the LLM provider and is printed on the laptop, so it doesn't cross the trust boundary. Update the comment above `run_command` and DESIGN.md wherever it says a run failure prints only its rule.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, blocked on an unexplained `llm_bad_request` during an end-to-end test.
+- **Design:** The `quaack run` command.
+- **Status:** done
