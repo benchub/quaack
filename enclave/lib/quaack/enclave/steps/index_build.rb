@@ -8,13 +8,15 @@ module Quaack
     module Steps
       # `quaacks index-build --run <run ID>` (DESIGN.md 12a): builds and hides
       # every ranked and set-aside index on the racetrack (IndexBuild) and
-      # writes index_build. Its only line is DONE.
+      # writes index_build. Before each index it sends an
+      # index_build_progress line, with the index's DDL through
+      # CandidateDdlRedaction. Its only other line is DONE.
       module IndexBuild
         module_function
 
-        def call(store:, **)
+        def call(store:, progress:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
-          Enclave::IndexBuild.build(store, connection)
+          Enclave::IndexBuild.build(store, connection, progress:)
           []
         ensure
           connection&.close
