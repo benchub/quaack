@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../arena"
+require_relative "../schema_payload"
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
 require_relative "index_search"
@@ -23,7 +23,7 @@ module Quaack
       #                step 1 plan node that consumes it (nil unless exactly one does)
       #   plan         the redacted step 1 plan's explain (3g), without its
       #                Settings, such as search_path, which 5a-5 doesn't need
-      #   schema       the schema_subset entry (3b)
+      #   schema       the schema_subset entry (3b), trimmed by SchemaPayload
       #   mechanical_results
       #                { "baseline" => { set => { "total_cost", "plan" } },
       #                  "candidates" => one per tested candidate, in test
@@ -31,7 +31,8 @@ module Quaack
       #                  "size", "refusal", "plans" => { set => { "used",
       #                  "total_cost", "plan" } } },
       #                  "set_aside" => [{ "ddl", "sources" }] }
-      #                The plans are the stored ones, redacted through 3g.
+      #                The plans are the stored ones, redacted through 3g. Only the
+      #                best candidate (see best) keeps each set's "plan".
       #   stats        the classification's outbound_statistics (3f)
       #
       # Trust boundary. Every field is shape-class except the candidates'
@@ -87,24 +88,29 @@ module Quaack
           end
         end
 
-        # The schema_subset entry, without pg_dump's \restrict and
-        # \unrestrict token lines, which are noise to the LLM.
-        def schema(store)
-          subset = store.read("schema_subset")
-          subset.merge("ddl" => subset["ddl"].gsub(Arena::RESTRICT, ""))
-        end
+        # The schema_subset entry, trimmed by SchemaPayload to the run's
+        # relations and without pg_dump's noise.
+        def schema(store) = SchemaPayload.subset(store.read("schema_subset"), store.read("relations"))
 
         def mechanical(entry, redaction)
           { "baseline" => entry["baseline"].transform_values { it.slice("total_cost", "plan") },
-            "candidates" => entry["results"].map { result(it, redaction) },
+            "candidates" => entry["results"].map { result(it, redaction, best(entry["results"])) },
             "set_aside" => entry["dedupe"]["set_aside"].map { candidate(it, redaction) } }
         end
 
-        def result(result, redaction)
+        # The candidate the planner used whose total cost, summed over the
+        # literals, is lowest: the only one whose plans go out in full.
+        def best(results)
+          results.select { |r| r["plans"].values.any? { it["used"] } }
+                 .min_by { |r| r["plans"].values.sum { it["total_cost"] } }
+        end
+
+        def result(result, redaction, best)
           refusal = result["refusal"]
+          plans = result.equal?(best) ? result["plans"] : result["plans"].transform_values { it.except("plan") }
           candidate(result["candidate"], redaction).merge(
             "partial_constant_only" => !result["candidate"]["predicate"].nil?, "size" => result["size"],
-            "refusal" => refusal&.slice("rule", "sqlstate"), "plans" => result["plans"]
+            "refusal" => refusal&.slice("rule", "sqlstate"), "plans" => plans
           )
         end
 

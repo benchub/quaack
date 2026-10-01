@@ -536,8 +536,8 @@ The LLM has no database connection. The driver builds a payload from what the en
     "$3": {"type": "text",        "shape": "trailing_wildcard","est_rows": 10000,  "actual_rows": 3}
   },
   "plan": "<step 1 plan, quals carrying placeholder ids instead of literals>",
-  "schema": "<step 3b subset, with existing index definitions>",
-  "mechanical_results": "<5a-4 results for every generator one and two candidate: DDL, whether the planner used it, cost per literal, estimated size, and canonical plan redacted through 3g>",
+  "schema": "<step 3b subset, trimmed to the query's own tables, with their indexes and constraints>",
+  "mechanical_results": "<5a-4 results for every generator one and two candidate: DDL, whether the planner used it, cost per literal, estimated size, and any refusal; canonical plans redacted through 3g only for the baseline and the best candidate>",
   "stats": {
     "orders.status":     {"n_distinct": 6,     "null_frac": 0.00, "correlation": 0.21,
                           "mcv_freqs": [0.71, 0.12, 0.09, 0.04, 0.03, 0.01],
@@ -574,7 +574,7 @@ Only ask for partial indexes whose predicates use low-cardinality columns. Tag e
 
 Then run 5a-4 on the LLM's surviving candidates.
 
-The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from 3g, the schema subset from 3b, the outbound statistics from 3f, and the 5a-4 results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved 5a-3 filter and runs 5a-4 on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
+The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from 3g, the schema subset from 3b, the outbound statistics from 3f, and the 5a-4 results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. To fit a 131k-token context window, the payload is trimmed. The schema holds only the query's own tables (the run's `relations`), not their FK parents, plus the indexes and constraints on them and every type, enum, and domain. pg_query splits the DDL into statements, and pg_dump's noise is left out: `SET` and `set_config` lines, comments, `COMMENT ON`, ownership, grants, and sequence statements. A statement it can't classify is kept. The stored `schema_subset` stays whole, since fixtures and arena need the FK parents. Each candidate in `mechanical_results` keeps its DDL, sources, size, refusal, and, per literal, whether the planner used it and its total cost. Only the baseline and the best candidate keep their plans: the best is the used candidate with the lowest total cost summed over the literals. The stats already cover only the query's own tables (3c). It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved 5a-3 filter and runs 5a-4 on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
 
 #### 5a-6. Refinement round.
 
@@ -618,7 +618,7 @@ Keep the top three by that ranking. Also keep the best combination if it beats t
 
 ### 6a. Candidate generation.
 
-Give the LLM the redacted query and annotated plan from step 3g, plus the schema subset from step 3b. Require each rewrite candidate to state two things:
+Give the LLM the redacted query and annotated plan from step 3g, plus the schema subset from step 3b, trimmed the way 5a-5 trims it, to the query's own tables without pg_dump's noise. `quaacks rewrite-payload` sends these with the placeholders and stats, as 5a-5's payload does, less `mechanical_results`. Require each rewrite candidate to state two things:
 
 - The transformation it applied.
 - Every assumption it relies on, such as a column being `NOT NULL` or a key being unique.

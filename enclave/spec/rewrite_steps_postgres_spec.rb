@@ -8,7 +8,11 @@ require_relative "support/index_search_run"
 RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server" do
   include_context "an index search run"
 
-  let(:schema_subset) { { "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);" } }
+  # The query's table and its FK parent, as 3b stores them.
+  let(:schema_subset) do
+    { "tables" => [%w[public orders], %w[public customers]],
+      "ddl" => "CREATE TABLE public.customers (id integer);\nCREATE TABLE public.orders (id integer);\n" }
+  end
   let(:same) { "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2 AND o.note = $1" }
 
   def ready
@@ -45,7 +49,8 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(sent["placeholders"])
         .to eq(Quaack::Enclave::Steps::IndexPayload.placeholders(stored))
       expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
-      expect(sent["schema"]).to eq(schema_subset)
+      expect(sent["schema"])
+        .to eq("tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);\n")
       expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
       expect_no_leaks(sentinels, outcome)
     end
