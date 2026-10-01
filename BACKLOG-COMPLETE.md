@@ -3245,3 +3245,12 @@ Apply the same trimming to the 6a payload (`rewrite_payload`) wherever it sends 
 - **Came from:** The user, 2026-10-01, during an end-to-end test.
 - **Design:** The `quaack run` command.
 - **Status:** done
+
+### 20261001-9. The full schema dump always includes the `dba` schema.
+
+Arena failed to load 3b's full dump with `arena_dump_load_failed`: the dump holds functions that reference the `dba` schema, which the dump didn't include. To unblock the end-to-end test, `quaacks schema-dump` always adds `dba` to the namespaces it passes to `pg_dump --schema`, like `public`, but only when production has a schema of that name, so a database without one still works. The subset that reaches the LLM doesn't change. Update DESIGN.md 3b. 20261001-10 replaces this with a general fix.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, blocked on arena_dump_load_failed during an end-to-end test.
+- **Design:** 3b.
+- **Status:** done
