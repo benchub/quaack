@@ -7,7 +7,12 @@ require_relative "support/index_search_run"
 RSpec.describe "quaacks index-payload, against a real server" do
   include_context "an index search run"
 
-  let(:schema_subset) { { "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);" } }
+  # The query's table and its FK parent, as 3b stores them.
+  let(:schema_subset) do
+    { "tables" => [%w[public orders], %w[public customers]],
+      "ddl" => "SET statement_timeout = 0;\nCREATE TABLE public.customers (id integer);\n\n" \
+               "CREATE TABLE public.orders (id integer);\n" }
+  end
 
   def index_payload(*extra) = quaacks.run("index-payload", "--run", store.run_id, *extra)
   def error_line(rule) = %({"type":"error","step":"index-payload","rule":"#{rule}"}\n)
@@ -48,7 +53,7 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(sent["query"]).to eq(stored.read("redacted_query"))
     expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
     expect(sent["plan"].first).to include("Plan")
-    expect(sent["schema"]).to eq(schema_subset)
+    expect(sent["schema"]).to eq("tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);\n")
     expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
     shapes = stored.read("placeholder_shapes")
     expect(sent["placeholders"].keys).to eq(shapes.keys)
@@ -96,20 +101,46 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(payload(index_payload)["schema"]["ddl"]).to eq("CREATE TABLE public.orders (id integer);\n")
   end
 
-  it "sends each mechanical result as redacted DDL, with its size, refusal, and redacted plans" do
+  # The used candidate with the lowest total cost summed over the literals.
+  def best(results)
+    results.select { |r| r["plans"].values.any? { it["used"] } }
+           .min_by { |r| r["plans"].values.sum { it["total_cost"] } }
+  end
+
+  it "sends each mechanical result as redacted DDL, with its size, refusal, and costs, and only the best one's plans" do
     searched
 
     results = payload(index_payload)["mechanical_results"]
     entry = stored.read("index_search_original")
+    best = best(entry["results"])
 
     expect(results.keys).to eq(%w[baseline candidates set_aside])
     expect(results["baseline"]).to eq(entry["baseline"].transform_values { it.slice("total_cost", "plan") })
-    expect(results["candidates"].size).to eq(entry["results"].size)
+    expect([results["candidates"].size, best.nil?]).to eq([entry["results"].size, false])
+    expect(entry["results"].size).to be > 1
     entry["results"].zip(results["candidates"]).each do |held, sent|
+      plans = held.equal?(best) ? held["plans"] : held["plans"].transform_values { it.except("plan") }
       expect(sent).to eq("ddl" => Quaack::Enclave::IndexStore.candidate(held["candidate"]).to_ddl,
                          "sources" => held["candidate"]["sources"], "partial_constant_only" => false,
-                         "size" => held["size"], "refusal" => nil, "plans" => held["plans"])
+                         "size" => held["size"], "refusal" => nil, "plans" => plans)
     end
+    expect(results["candidates"].count { |c| c["plans"].values.any? { it.key?("plan") } }).to eq(1)
+  end
+
+  it "keeps the plans of the used candidate that costs least, not of a cheaper unused one" do
+    searched
+    entry = stored.read("index_search_original")
+    first = entry["results"].first
+    entry["results"] << first.merge(
+      "plans" => first["plans"].transform_values { it.merge("used" => false, "total_cost" => 0.0) }
+    )
+    stored.write("index_search_original", entry)
+
+    candidates = payload(index_payload)["mechanical_results"]["candidates"]
+
+    expect(candidates.last["plans"].values.map(&:keys).uniq).to eq([%w[used total_cost]])
+    index = entry["results"].index { it.equal?(best(entry["results"])) }
+    expect(candidates[index]["plans"]).to eq(entry["results"][index]["plans"])
   end
 
   it "masks a real literal in a stored candidate's predicate or key expression, and keeps low-cardinality values" do
