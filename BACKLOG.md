@@ -1422,3 +1422,12 @@ Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next
 - **Came from:** The user, 2026-09-29, after the bump to 0.1.1.
 - **Design:** Where QUAACK runs, "Deploying the enclave".
 - **Status:** todo
+
+### 20261001-1. `quaack run` prints the LLM error's detail.
+
+When an LLM call fails, `quaack run` prints only the rule, such as `quaack run failed: llm_bad_request`, so the operator can't tell why the API refused. The detail is already on `LLM::Error#message` (the provider's own error text; for `llm_auth` it's just the status). Print the whole message for `LLM::Error`, such as `quaack run failed: llm_bad_request: <provider's message>`. Keep printing only the rule for enclave errors. The detail comes from the LLM provider and is printed on the laptop, so it doesn't cross the trust boundary. Update the comment above `run_command` and DESIGN.md wherever it says a run failure prints only its rule.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-01, blocked on an unexplained `llm_bad_request` during an end-to-end test.
+- **Design:** The `quaack run` command.
+- **Status:** todo
