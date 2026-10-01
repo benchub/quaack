@@ -3212,3 +3212,12 @@ When an LLM call fails, `quaack run` prints only the rule, such as `quaack run f
 - **Came from:** The user, 2026-10-01, blocked on an unexplained `llm_bad_request` during an end-to-end test.
 - **Design:** The `quaack run` command.
 - **Status:** done
+
+### 20261001-2. A failed LLM call says which step it was and how big the request was.
+
+A run against Groq failed with "Please reduce the length of the messages or completion", and nothing said which step overflowed or what filled the request. When an LLM call fails, add to the `LLM::Error` message: the step (such as `5a-5`), `max_tokens`, the system prompt's size in characters, and each message's role and size. When a message holds a JSON payload (the ```json block the steps send), also give each top-level key's size in characters, largest first. Report only sizes, roles, step names, and key names, never content. Do this once, in `LLM::Client`, so every step and adapter gets it.
+
+- **Depends on:** 20261001-1.
+- **Came from:** The user, 2026-10-01, blocked on a context-length 400 from Groq during an end-to-end test.
+- **Design:** The `quaack run` command; LLM client.
+- **Status:** done
