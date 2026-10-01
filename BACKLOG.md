@@ -1498,3 +1498,14 @@ The review of 20261001-8 found two minor items:
 - **Came from:** The review of 20261001-8, 2026-10-01.
 - **Design:** The `quaack run` command.
 - **Status:** todo
+
+### 20261001-12. `quaack run`'s progress lines say in plain English what each step does, and 12a shows each index it builds.
+
+The progress lines from 20261001-8 work, but they use DESIGN.md's step IDs (`5a-5 generator three`, `4b arena-setup`), which mean nothing to someone who hasn't read DESIGN.md. Rewrite each step's line in plain English, keeping the ID in parentheses at the end, such as `quaack: [2/17] Asking the LLM for index ideas the mechanical search missed (5a-5)`. Do the same for the lines for each rewrite and for the LLM ask lines. A second ask in the same step, such as 5a-5's replacement round, should say what it is (`asking again for replacements`) and not repeat the first line.
+
+12a (`index-build`) can take a long time. Have it report each index as it starts, such as `quaack: [10/17] building index 1/23: CREATE INDEX quaack_505c… ON cluster44_shard_7236.submissions USING btree (id, assignment_id)`. The DDL shown must be the redacted form the enclave already lets out (CandidateDdlRedaction: `?` in place of any constant that isn't a low-cardinality MCV), never the stored DDL with its literals. That needs the enclave to send a progress message for each index while it works, and the driver to print it as it arrives, not after the step exits. Today the transport reads the whole reply after the process ends, so this means the transport has to stream. Any message that arrives early must be one of a small, fixed set of progress types, and it carries only what's listed here.
+
+- **Depends on:** 20261001-8.
+- **Came from:** The user, 2026-10-01, during an end-to-end test.
+- **Design:** The `quaack run` command, 12a, the transport.
+- **Status:** todo
