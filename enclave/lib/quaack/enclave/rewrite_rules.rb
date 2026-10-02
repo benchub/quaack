@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/key_in_self_join"
+require_relative "rewrite_rules/not_in_to_not_exists"
 
 module Quaack
   module Enclave
@@ -53,7 +54,8 @@ module Quaack
       Duplicate = Data.define(:rule)
 
       RULES = [
-        KeyInSelfJoin.new
+        KeyInSelfJoin.new,
+        NotInToNotExists.new
       ].freeze
 
       DEPTH = 2
