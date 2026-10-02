@@ -1173,6 +1173,47 @@ Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it f
 - **Design:** 6c.
 - **Status:** todo
 
+### 20261002-6. 6c rule: `shared_scan_cte`.
+
+A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
+
+The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
+
+The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
+
+- A copy is on the nullable side of an outer join.
+- A shared conjunct calls a volatile function.
+- The query already has a CTE of that name.
+- A copy is in a subquery or CTE rather than the top-level `FROM`.
+
+It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c, 8.
+- **Status:** todo
+
+### 20261002-7. 6c rule: `transitive_predicate_copy`.
+
+The query behind 20261002-6 has `enrollments.course_id = assessor_asset.course_id` in an inner join's `ON`, and `assessor_asset.course_id IN (2883, ...)` in `WHERE`. Together they imply `enrollments.course_id IN (2883, ...)`, so a rule can add that predicate. Postgres carries a constant equality across an equi-join (equivalence classes), but not an `IN` list, a range, `BETWEEN`, or `IS NOT NULL`, so it can't use that implied filter to narrow `enrollments` early.
+
+The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an inner join's `ON`, and each conjunct on `a.x` alone that's an `IN` list of constants, a comparison with a constant (`<`, `<=`, `>`, `>=`), or `BETWEEN` two constants, add the same conjunct on `b.y`, unless one is already there. Keep the original. Refuse when:
+
+- `x` and `y` have different types, or the equality isn't the type's default btree equality.
+- Either column has a nondeterministic collation.
+- Either side is on the nullable side of an outer join.
+
+It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
+
+20261002-3 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
