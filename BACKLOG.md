@@ -897,7 +897,7 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 - **Design:** What goes into the enclave.
 - **Status:** todo
 
-### 20261001-1. Unreadable `~/.quaack/runs` reads as an unknown run ID.
+### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
 
 Found by the build of 20260929-27. With `~/.quaack` or `~/.quaack/runs` unreadable (mode 000), `Runs#host` treats the run record as missing, so `quaack run` says "unknown run ID" instead of saying it can't read the record. Refuse an existing but unreadable path the way `DriverConfig.read` now does, with a message that names no absolute path.
 
@@ -906,7 +906,7 @@ Found by the build of 20260929-27. With `~/.quaack` or `~/.quaack/runs` unreadab
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20261001-2. DriverConfig: minor findings.
+### 20261001-15. DriverConfig: minor findings.
 
 Minor findings from the review of 20260929-27:
 
@@ -919,7 +919,7 @@ Minor findings from the review of 20260929-27:
 - **Design:** Where QUAACK runs.
 - **Status:** todo
 
-### 20261001-3. Bedrock provider: minor findings.
+### 20261001-16. Bedrock provider: minor findings.
 
 Minor findings from the review of 20260930-11:
 
@@ -936,7 +936,7 @@ Minor findings from the review of 20260930-11:
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261001-4. Report payload: send what a legible report needs.
+### 20261001-17. Report payload: send what a legible report needs.
 
 The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
 
@@ -949,14 +949,14 @@ The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat 
 
 Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
 
-Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-6 counts them by reason.
+Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-19 counts them by reason.
 
 - **Depends on:** 20260922-62, -63.
 - **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
 - **Design:** Step 15, 15a.
 - **Status:** todo
 
-### 20261001-5. Report: readable HTML.
+### 20261001-18. Report: readable HTML.
 
 The driver's half of the same complaint. Render the report so someone who has never read DESIGN.md can follow it:
 
@@ -969,12 +969,12 @@ The driver's half of the same complaint. Render the report so someone who has ne
 - **Layout.** A summary of the verdict at the top, then readable typography, tables with aligned numbers, and SQL in code blocks. Plain CSS in the file, no scripts, no animation, and nothing loaded from the network.
 - Update the README's "Reading the report" to match.
 
-- **Depends on:** 20261001-4. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-6 and -7.
+- **Depends on:** 20261001-17. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-19 and -20.
 - **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
 - **Design:** Step 15, 15a, 15b.
 - **Status:** todo
 
-### 20261001-6. Record the rewrite stages in the burndown.
+### 20261001-19. Record the rewrite stages in the burndown.
 
 In a real run the rewrite burndown has one row, step 8, and it's wrong. `Burndown.record` has two production callers, both step 8: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records 6a, 6b, step 7, step 9, step 10, step 11, or step 14.
 
@@ -988,7 +988,7 @@ In a real run the rewrite burndown has one row, step 8, and it's wrong. `Burndow
 - **Design:** 15b.
 - **Status:** todo
 
-### 20261001-7. Record the index stages in the burndown.
+### 20261001-20. Record the index stages in the burndown.
 
 In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records 5a-1, 5a-2, or 5a-7. Wire them in, for the original's search and for each rewrite's (steps 8 and 11):
 
@@ -1003,9 +1003,9 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 - **Design:** 15b.
 - **Status:** todo
 
-### 20261001-8. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
+### 20261001-21. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-9. 6c: the rule generator, and `key_in_self_join`.
+### 20261001-22. 6c: the rule generator, and `key_in_self_join`.
 
 Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
 
@@ -1016,57 +1016,57 @@ Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
 - Test on real Postgres that each rule's output returns the same rows as its input, on data that would expose a wrong one, and that the rule doesn't fire when the key isn't unique or is nullable.
 
 - **Depends on:** None open.
-- **Came from:** 20261001-8.
+- **Came from:** 20261001-21.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-10. 6c: run the rules from `quaack run`, and count them.
+### 20261001-23. 6c: run the rules from `quaack run`, and count them.
 
 The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
 
-- **Depends on:** 20261001-9.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
 - **Design:** 6c, 15b.
 - **Status:** todo
 
-### 20261001-11. 6c rule: `or_to_union`.
+### 20261001-24. 6c rule: `or_to_union`.
 
-- **Depends on:** 20261001-9.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-12. 6c rule: `not_in_to_not_exists`.
+### 20261001-25. 6c rule: `not_in_to_not_exists`.
 
-- **Depends on:** 20261001-9.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-13. 6c rule: `distinct_join_to_exists`.
+### 20261001-26. 6c rule: `distinct_join_to_exists`.
 
-- **Depends on:** 20261001-9.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-14. 6c rule: `unused_join_removal`.
+### 20261001-27. 6c rule: `unused_join_removal`.
 
-- **Depends on:** 20261001-9.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-15. Tell the LLM what the rules already made.
+### 20261001-28. Tell the LLM what the rules already made.
 
 6a's payload carries the rule-made rewrites' SQL, and the prompt says not to repeat them, as 5a-5 does with `mechanical_results`.
 
-- **Depends on:** 20261001-10.
-- **Came from:** 20261001-8.
+- **Depends on:** 20261001-23.
+- **Came from:** 20261001-21.
 - **Design:** 6a, 6c.
 - **Status:** todo
 
-### 20261001-16. Renumber step 6 in running order, and give the rules table examples.
+### 20261001-29. Renumber step 6 in running order, and give the rules table examples.
 
 DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and the assumption check (6b). Number them in the order they run: 6c becomes 6a, 6a becomes 6b, and 6b becomes 6c.
 
@@ -1074,9 +1074,9 @@ DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and th
 - A store written before the rename holds burndown records under the old stage names. Say what a resumed run does with them: refuse, or read them under the new names.
 - Add a before and an after SQL example for each rule to the mechanical rules table.
 
-Do this after 20261001-9 to -15 land, or between two of them, never while one is in flight: it touches the same lines.
+Do this after 20261001-22 to -28 land, or between two of them, never while one is in flight: it touches the same lines.
 
-- **Depends on:** 20261001-9.
+- **Depends on:** 20261001-22.
 - **Came from:** The user, 2026-10-01.
 - **Design:** Step 6.
 - **Status:** todo

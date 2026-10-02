@@ -3277,7 +3277,7 @@ Minor findings from the review of 20260928-6:
 - **Came from:** Review of 20260928-6, round one.
 - **Design:** Where QUAACK runs.
 - **Status:** done
-- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `DriverConfig.read` now stats driver.json: a missing path (ENOENT, ENOTDIR) still counts as no config, but any other error, or something that isn't a regular file, is refused with "can't read ~/.quaack/driver.json". A spec pins that `NoNetwork.always_refuse` resets after a block that raises. The follow-ups went to 20261001-1 and 20261001-2.
+- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `DriverConfig.read` now stats driver.json: a missing path (ENOENT, ENOTDIR) still counts as no config, but any other error, or something that isn't a regular file, is refused with "can't read ~/.quaack/driver.json". A spec pins that `NoNetwork.always_refuse` resets after a block that raises. The follow-ups went to 20261001-14 and 20261001-15.
 
 ### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock.
 
@@ -3297,11 +3297,11 @@ Answers from the user, 2026-09-30:
 - **Came from:** The user, 2026-09-30.
 - **Design:** Where QUAACK runs, LLM client.
 - **Status:** done
-- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `BedrockAdapter` resolves AWS credentials through the standard chain, or takes `AWS_BEARER_TOKEN_BEDROCK`, and maps credential and request failures onto the existing rules without a cause. The llm block takes `aws_region` and `aws_profile`. `aws-sdk-bedrockruntime` is a driver dependency only. The follow-ups went to 20261001-3.
+- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `BedrockAdapter` resolves AWS credentials through the standard chain, or takes `AWS_BEARER_TOKEN_BEDROCK`, and maps credential and request failures onto the existing rules without a cause. The llm block takes `aws_region` and `aws_profile`. `aws-sdk-bedrockruntime` is a driver dependency only. The follow-ups went to 20261001-16.
 
-### 20261001-8. Mechanical rewrite rules.
+### 20261001-21. Mechanical rewrite rules.
 
-**Needs a design. The user, 2026-10-01: settle this before the report work (20261001-4 to -7). It's a critical part they expected to exist already.** QUAACK has no mechanical rewrite rules, and DESIGN.md never had any. The two mechanical generators (5a-1, 5a-2) propose indexes only. Rewrites come from the LLM (6a) and the operator (step 7) and nowhere else, so a weak model means few rewrites, or none. In run 20261001T210856Z-3b7041a3 the LLM gave one, and step 8 found it planned exactly like the original. The README's opening ("QUAACK has mechanical rules to generate candidates that should help") reads as if rewrites were covered. Fix it either way.
+**Needs a design. The user, 2026-10-01: settle this before the report work (20261001-17 to -20). It's a critical part they expected to exist already.** QUAACK has no mechanical rewrite rules, and DESIGN.md never had any. The two mechanical generators (5a-1, 5a-2) propose indexes only. Rewrites come from the LLM (6a) and the operator (step 7) and nowhere else, so a weak model means few rewrites, or none. In run 20261001T210856Z-3b7041a3 the LLM gave one, and step 8 found it planned exactly like the original. The README's opening ("QUAACK has mechanical rules to generate candidates that should help") reads as if rewrites were covered. Fix it either way.
 
 The idea: a generator of sound, catalog-checked transformations that runs in the enclave before 6a, as 5a-1 and 5a-2 run before 5a-5. Each rewrite it makes carries its rule's name and its assumptions in 6b's vocabulary, and goes through steps 8 to 14 like any other. The report then says which rule proposed what.
 
@@ -3312,4 +3312,4 @@ What rules could do for that run's query: `assignments.id` is the primary key, s
 - **Design:** Step 6. Needs a new section.
 - **Open questions:** Which rules are in version 1. Whether rules chain. Whether the LLM is told what the rules already made. Whether operators can assert invariants.
 - **Status:** done
-- **Note (2026-10-01):** The user approved the five starting rules, chaining, and running rule-made rewrites through steps 9 and 10, and asked that adding rules stay easy. The design is DESIGN.md 6c. The work is 20261001-9 to -15. Operator-asserted invariants are left for later.
+- **Note (2026-10-01):** The user approved the five starting rules, chaining, and running rule-made rewrites through steps 9 and 10, and asked that adding rules stay easy. The design is DESIGN.md 6c. The work is 20261001-22 to -28. Operator-asserted invariants are left for later.
