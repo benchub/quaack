@@ -1,0 +1,94 @@
+# frozen_string_literal: true
+
+require "pg_query"
+require_relative "deparse"
+require_relative "rewrite_rules/key_in_self_join"
+
+module Quaack
+  module Enclave
+    # DESIGN.md 6c: the mechanical rewrite rules, and the generator that
+    # chains them.
+    #
+    #   generated = RewriteRules.generate(PgQuery.parse(sql), RewriteRules::Catalog.new(connection))
+    #   generated.rewrites   # => [Candidate(sql:, parse:, rules: [rule, ...], assumptions: [...]), ...]
+    #
+    # A rule is one object that answers three things:
+    #
+    #   name                      its name, such as "key_in_self_join"
+    #   description               one sentence saying what it does
+    #   rewrites(parse, catalog)  zero or more Rewrite(tree:, assumptions:)
+    #
+    # parse is a PgQuery::ParseResult, which the rule must not change, and
+    # catalog the catalog facts (see Catalog). Each Rewrite's tree is the
+    # rewritten query's PgQuery::ParseResult, and its assumptions are the
+    # catalog facts it relies on, in 6b's vocabulary (see
+    # RewriteAssumptions). A rule fires only when the catalog proves them. A
+    # rule's name and description are QUAACK's own constants, never anything
+    # read from the query, so they're shape-class data.
+    #
+    # The generator knows nothing about any one rule: it holds RULES. To add
+    # a rule, add its file under rewrite_rules/, require it above, and add
+    # one line to RULES.
+    #
+    # Rules chain. Every rule runs on the original, in list order. Then
+    # every rule runs on each of those results, in the order they were made,
+    # so every one-rule result comes before any two-rule one. Nothing goes
+    # deeper than DEPTH rules. A rule may run on its own output, which is
+    # how two matches in one query both get rewritten. A result whose
+    # deparsed SQL is the original's, or was already produced, is dropped
+    # and counted in duplicates. So is one pg_query can't deparse faithfully
+    # (see Deparse), though it isn't counted. The first MAX results are
+    # kept, and over_cap counts the rest.
+    #
+    # A Candidate's sql is its tree deparsed, parse that SQL's own parse,
+    # rules the rules applied, in order, and assumptions those of every rule
+    # applied, each once.
+    module RewriteRules
+      Rewrite = Data.define(:tree, :assumptions)
+      Candidate = Data.define(:sql, :parse, :rules, :assumptions)
+      Generated = Data.define(:rewrites, :duplicates, :over_cap)
+
+      RULES = [
+        KeyInSelfJoin.new
+      ].freeze
+
+      DEPTH = 2
+      MAX = 5
+
+      module_function
+
+      def generate(parse, catalog, rules: RULES)
+        original = Candidate.new(sql: Deparse.faithfully(parse.tree), parse:, rules: [], assumptions: [])
+        seen = { original.sql => true }
+        made = []
+        frontier = [original]
+        DEPTH.times { made.concat(frontier = step(frontier, rules, catalog, seen)) }
+        kept = made.reject { it == :duplicate }
+        Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max)
+      end
+
+      # Every rule's results for every candidate in from, with :duplicate
+      # in place of each one already seen.
+      def step(from, rules, catalog, seen)
+        from.grep(Candidate).flat_map do |candidate|
+          rules.flat_map do |rule|
+            rule.rewrites(candidate.parse, catalog).filter_map { chained(candidate, rule, it, seen) }
+          end
+        end
+      end
+
+      # The candidate that rule's rewrite makes of from, :duplicate if its
+      # SQL was already produced, or nil if it doesn't deparse.
+      def chained(from, rule, rewrite, seen)
+        parse = Deparse.faithful_parse(rewrite.tree)
+        return :duplicate if seen.key?(parse.query)
+
+        seen[parse.query] = true
+        Candidate.new(sql: parse.query, parse:, rules: from.rules + [rule],
+                      assumptions: (from.assumptions + rewrite.assumptions).uniq)
+      rescue Deparse::Error
+        nil
+      end
+    end
+  end
+end
