@@ -53,6 +53,8 @@ module Quaack
              { "kind" => "not_null", "table" => table_name, "column" => key }]
           end
 
+          def proven?(catalog) = assumptions.all? { catalog.met?(it) }
+
           # The conditions that take the IN's place among the WHERE's.
           def conditions(names)
             each = arms.map { it.conditions(outer, names) }
@@ -81,7 +83,7 @@ module Quaack
           select = Tree.select(tree)
           conditions = Tree.conjuncts(select.where_clause)
           match = match(select, conditions[index])
-          return unless match&.assumptions&.all? { catalog.met?(it) }
+          return unless match&.proven?(catalog)
 
           conditions[index, 1] = match.conditions(Tree::Names.new(tree))
           select.where_clause = Tree.all_of(conditions)
@@ -89,13 +91,19 @@ module Quaack
         end
 
         def match(select, condition)
+          outer, key = tested(condition)
+          table = outer_table(select.from_clause, outer)
+          arms = table && Arm.all(condition.sub_link.subselect.select_stmt, table, key)
+          Match.new(outer:, table:, key:, arms:) if arms
+        end
+
+        # [name, column] for a condition that is name.column IN (subquery),
+        # or nil.
+        def tested(condition)
           link = condition.sub_link if condition.node == :sub_link
           return unless link && link.sub_link_type == :ANY_SUBLINK && link.oper_name.empty?
 
-          outer, key = Tree.qualified(link.testexpr.column_ref) if link.testexpr.node == :column_ref
-          table = outer_table(select.from_clause, outer)
-          arms = table && Arm.all(link.subselect.select_stmt, table, key)
-          Match.new(outer:, table:, key:, arms:) if arms
+          Tree.qualified(link.testexpr.column_ref) if link.testexpr.node == :column_ref
         end
 
         # The RangeVar the outer query reads as name, if the rule can use it.

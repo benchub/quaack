@@ -96,14 +96,22 @@ module Quaack
           # which reads the table as outer: the ones on the table alone,
           # moved to it, then an EXISTS on the other tables with the rest.
           def conditions(outer, names)
-            renames = { inner => outer, **others.to_h { [it.name, names.fresh(it.name)] } }
             moved, kept = predicates.partition { (qualifiers(it) - [inner]).empty? }
-            columns(predicates).each { Tree.qualify!(it, renames.fetch(Tree.qualified(it).first)) }
+            renames = rename!(outer, names)
             moved += [exists(kept, renames)] unless others.empty?
             moved.empty? ? [Tree.true_const] : moved
           end
 
           private
+
+          # Renames the table of every column in the conditions: inner to
+          # outer, and each other table to a fresh alias. It returns the
+          # new name for each old one.
+          def rename!(outer, names)
+            renames = { inner => outer, **others.to_h { [it.name, names.fresh(it.name)] } }
+            columns(predicates).each { Tree.qualify!(it, renames.fetch(Tree.qualified(it).first)) }
+            renames
+          end
 
           def movable?
             names = others.map(&:name)

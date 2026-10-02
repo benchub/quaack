@@ -59,12 +59,15 @@ module Quaack
 
       def generate(parse, catalog, rules: RULES)
         original = Candidate.new(sql: Deparse.faithfully(parse.tree), parse:, rules: [], assumptions: [])
-        seen = { original.sql => true }
-        made = []
-        frontier = [original]
-        DEPTH.times { made.concat(frontier = step(frontier, rules, catalog, seen)) }
-        kept = made.reject { it == :duplicate }
+        made = chain([original], rules, catalog, { original.sql => true })
+        kept = made.grep(Candidate)
         Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max)
+      end
+
+      # Every result DEPTH rounds of the rules make of from, shallowest
+      # first, with :duplicate in place of each one already seen.
+      def chain(from, rules, catalog, seen)
+        Array.new(DEPTH) { from = step(from, rules, catalog, seen) }.flatten
       end
 
       # Every rule's results for every candidate in from, with :duplicate

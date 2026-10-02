@@ -100,8 +100,9 @@ module Quaack
       # The DESIGN.md 6a payload, from `quaacks rewrite-payload`: the same
       # shape-class fields as index_payload, without mechanical_results.
       rewrite_payload: %i[query placeholders plan schema stats].freeze,
-      # What `quaacks rewrite-check` made of one rewrite (6a or step 7),
-      # never its SQL or its statements. index is its 1-based position in
+      # What `quaacks rewrite-check` made of one rewrite (6a or step 7), or
+      # `quaacks rewrite-rules` of one rule-made rewrite (6c), never its SQL
+      # or its statements. index is its 1-based position in
       # the input. outcome is accepted or rejected. rule is nil or one of
       # the enclave's rule constants. rewrite is nil or the store entry it
       # was saved as, such as rewrite_2. warnings is an Array of

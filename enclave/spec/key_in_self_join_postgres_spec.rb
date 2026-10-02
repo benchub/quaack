@@ -145,7 +145,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       rewrites = rewritten(sql)
 
       expect(rewrites).to eq(
-        ["SELECT u_1.id FROM public.t u_1 WHERE EXISTS (SELECT 1 FROM public.u u_2 WHERE u_2.y = 2 AND u_2.t_id = u_1.id)"]
+        ["SELECT u_1.id FROM public.t u_1 WHERE " \
+         "EXISTS (SELECT 1 FROM public.u u_2 WHERE u_2.y = 2 AND u_2.t_id = u_1.id)"]
       )
       expect(same_rows(sql, rewrites)).to eq([["4"]])
     end
@@ -196,7 +197,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
     # Each is the query that fires, changed in one way that makes it unsafe
     # or unproven.
     {
-      "the key isn't unique" => "SELECT t.id FROM public.t WHERE t.loose IN (SELECT t2.loose FROM public.t t2 WHERE t2.x = 1)",
+      "the key isn't unique" =>
+        "SELECT t.id FROM public.t WHERE t.loose IN (SELECT t2.loose FROM public.t t2 WHERE t2.x = 1)",
       "the key is unique but nullable" =>
         "SELECT t.id FROM public.t WHERE t.code IN (SELECT t2.code FROM public.t t2 WHERE t2.x = 1)",
       "the key is unique with NULLS NOT DISTINCT, but nullable" =>
@@ -275,7 +277,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       "the subquery refers to the outer query" =>
         "SELECT o.id FROM public.t o WHERE o.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = o.x)",
       "the subquery has a three-part column" =>
-        "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 JOIN public.u ON public.u.t_id = t2.id)",
+        "SELECT t.id FROM public.t WHERE t.id IN " \
+        "(SELECT t2.id FROM public.t t2 JOIN public.u ON public.u.t_id = t2.id)",
       "the subquery has a whole-row reference" =>
         "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.* IS NOT NULL)",
       "one UNION ALL arm doesn't read the table by its key" =>
@@ -323,7 +326,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       "the outer table's alias renames columns" =>
         "SELECT t.id FROM public.t t (id, x) WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the outer table is a CTE" =>
-        "WITH t AS (SELECT * FROM public.t) SELECT t.id FROM t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
+        "WITH t AS (SELECT * FROM public.t) SELECT t.id FROM t WHERE t.id IN " \
+        "(SELECT t2.id FROM public.t t2 WHERE t2.x = 1)",
       "the query is a UNION" =>
         "SELECT t.id FROM public.t WHERE t.id IN (SELECT t2.id FROM public.t t2 WHERE t2.x = 1) " \
         "UNION ALL SELECT u.id FROM public.u"

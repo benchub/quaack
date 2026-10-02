@@ -50,8 +50,12 @@ module Quaack
       #                    written, for the payloads and the report. A
       #                    candidate ClockAnchoring refuses is rejected by
       #                    that error's rule.
-      # The transformation and assumptions come from the LLM, so they're
-      # kept in the store only, never sent.
+      #   "source"         where it came from: "rule" (6c), "llm" (6a), or
+      #                    "operator" (step 7)
+      #   "rules"          only for a rule-made rewrite (6c): the names of
+      #                    the rules applied, in order
+      # The transformation and assumptions come from the LLM (or, for 6c,
+      # from the rules), so they're kept in the store only, never sent.
       #
       # Each call adds its counts to the step 8 burndown (StructuralDiscard.
       # record, search rewrites), with the inbound check's rejections as
@@ -75,12 +79,21 @@ module Quaack
 
         def call(store:, input:, **)
           rewrites, inferred = rewrites(input)
-          connection = Enclave::RunServer.connect(store, :racetrack)
-          context = { store:, connection:, inferred:, original: original(store),
-                      settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
-          outcomes = rewrites.each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
-          record(store, outcomes)
+          outcomes = check(store, source: inferred ? "operator" : "llm") { rewrites }
           store.write(inferred ? "operator_rewrites_checked" : "rewrites_generated", {})
+          outcomes
+        end
+
+        # Checks the rewrites the block gives, stores the survivors, and
+        # records the step 8 burndown. It returns one rewrite_outcome per
+        # rewrite. The block gets the racetrack connection every check runs
+        # on. `quaacks rewrite-rules` (6c) shares this, with source "rule".
+        def check(store, source:)
+          connection = Enclave::RunServer.connect(store, :racetrack)
+          context = { store:, connection:, source:, inferred: source == "operator", original: original(store),
+                      settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
+          outcomes = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
+          record(store, outcomes)
           outcomes
         ensure
           connection&.close
@@ -117,7 +130,7 @@ module Quaack
         end
 
         def outcome(index, rewrite, context)
-          return rejected(index, "too_many") if index > MAX && !context[:inferred]
+          return rejected(index, "too_many") if index > MAX && context[:source] == "llm"
           return rejected(index, "bad_assumption") unless RewriteAssumptions.valid?(rewrite["assumptions"])
 
           sql, types, warnings = checked(rewrite, context)
@@ -175,7 +188,8 @@ module Quaack
           store.write(name, "sql" => sql, "transformation" => rewrite["transformation"],
                             "assumptions" => rewrite["assumptions"], "inferred" => context[:inferred],
                             "warnings" => warnings,
-                            "result_types" => types, "anchored_sql" => anchored(sql, context))
+                            "result_types" => types, "anchored_sql" => anchored(sql, context),
+                            "source" => context[:source], **rewrite.slice("rules"))
           name
         end
 

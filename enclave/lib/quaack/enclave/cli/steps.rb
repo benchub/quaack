@@ -24,6 +24,7 @@ require_relative "../steps/index_payload"
 require_relative "../steps/index_test"
 require_relative "../steps/rewrite_payload"
 require_relative "../steps/rewrite_check"
+require_relative "../steps/rewrite_rules"
 require_relative "../steps/rewrite_prune"
 require_relative "../steps/counterexamples"
 require_relative "../steps/index_build"
@@ -67,6 +68,7 @@ module Quaack
         "status" => Step.new(handler: Steps::Status, run: true),
         "index-test" => Step.new(handler: Steps::IndexTest, run: true, input: true, options: Steps::IndexTest::OPTIONS),
         "rewrite-payload" => Step.new(handler: Steps::RewritePayload, run: true),
+        "rewrite-rules" => Step.new(handler: Steps::RewriteRules, run: true),
         "rewrite-check" => Step.new(handler: Steps::RewriteCheck, run: true, input: true),
         "rewrite-prune" => Step.new(handler: Steps::RewritePrune, run: true, options: Steps::RewritePrune::OPTIONS,
                                     required: Steps::RewritePrune::REQUIRED),

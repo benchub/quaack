@@ -648,13 +648,13 @@ The rules in version 1, each one something Postgres's planner doesn't do for its
 | `distinct_join_to_exists` | `SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others. | The select list holds a unique, not-null key of the kept table. |
 | `unused_join_removal` | An inner join to a table that's read nowhere else is removed. | A foreign key from the joining columns to the joined table's key, and the joining columns not null. |
 
-Rules chain. A rule runs on the original and on other rules' output, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most five rewrites.
+Rules chain. A rule runs on the original and on every rule's output, its own included, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most five rewrites.
 
 A rule is one object with a name, and one method that takes a parse tree and the catalog facts and returns zero or more rewritten trees, each with its assumptions. The generator knows nothing about any one rule: it holds a list. Adding a rule means adding one file and one line in that list. A rule's name and its description are QUAACK's own constants, so they're shape-class data and the report can show them.
 
 Each rewrite goes through the same checks as an LLM's, in `rewrite-check`'s order: the inbound check, 6b, and step 8's structural discards. Survivors are stored as `rewrite_<n>` before 6a's, with their source (`rule`) and the names of the rules applied, in order. From there they go through steps 8 to 14 like any other rewrite. Rules are sound by design, but the tests still run: a rule's rewrite that steps 9, 10, or 14c disprove is a bug in QUAACK, and the report says so prominently, naming the rule.
 
-`quaacks rewrite-rules --run <run ID>` runs this. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
+`quaacks rewrite-rules --run <run ID>` runs this. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. The marker holds how many results were dropped as duplicates and how many were over the cap. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
 
 An operator can't yet assert a fact the schema doesn't state, such as "a content participation belongs to its submission's user". A rewrite that needs one is disproved in step 9 or 10.
 

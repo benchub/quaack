@@ -85,11 +85,11 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
       expect_no_leaks(sentinels, outcome)
       held = stored.read("rewrite_1")
-      expect(held.keys).to eq(%w[sql transformation assumptions inferred warnings result_types anchored_sql])
+      expect(held.keys).to eq(%w[sql transformation assumptions inferred warnings result_types anchored_sql source])
       expect(held["sql"]).to include("public.orders")
-      expect(held.slice("transformation", "assumptions", "inferred", "warnings", "result_types"))
+      expect(held.slice("transformation", "assumptions", "inferred", "warnings", "result_types", "source"))
         .to eq("transformation" => "t #{sentinels.text}", "assumptions" => [not_null_id], "inferred" => false,
-               "warnings" => [], "result_types" => %w[text text])
+               "warnings" => [], "result_types" => %w[text text], "source" => "llm")
     end
 
     it "records that 6a ran when the LLM proposed no rewrites" do
@@ -148,7 +148,8 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_1", warning))
       expect(lines(outcome)[5]["rewrite"]).to eq("rewrite_6")
       expect_no_leaks(sentinels, outcome)
-      expect(stored.read("rewrite_1").slice("inferred", "warnings")).to eq("inferred" => true, "warnings" => warning)
+      expect(stored.read("rewrite_1").slice("inferred", "warnings", "source"))
+        .to eq("inferred" => true, "warnings" => warning, "source" => "operator")
     end
 
     it "checks an operator's rewrite by the same inbound check" do
