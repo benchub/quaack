@@ -1066,6 +1066,21 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6a, 6c.
 - **Status:** todo
 
+### 20261001-16. Renumber step 6 in running order, and give the rules table examples.
+
+DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and the assumption check (6b). Number them in the order they run: 6c becomes 6a, 6a becomes 6b, and 6b becomes 6c.
+
+- Rename everywhere, not only in DESIGN.md: README, BACKLOG.md's open tasks, code comments, error and report text, and names that carry the number, such as the protocol's burndown stages and LLM steps (`6a`, `6b`) and the driver's `STEP`. BACKLOG-COMPLETE.md stays as written, with one note at its top giving the old-to-new mapping.
+- A store written before the rename holds burndown records under the old stage names. Say what a resumed run does with them: refuse, or read them under the new names.
+- Add a before and an after SQL example for each rule to the mechanical rules table.
+
+Do this after 20261001-9 to -15 land, or between two of them, never while one is in flight: it touches the same lines.
+
+- **Depends on:** 20261001-9.
+- **Came from:** The user, 2026-10-01.
+- **Design:** Step 6.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
