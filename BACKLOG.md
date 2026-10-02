@@ -1070,7 +1070,7 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 
 DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and the assumption check (6b). Number them in the order they run: 6c becomes 6a, 6a becomes 6b, and 6b becomes 6c.
 
-- Rename everywhere, not only in DESIGN.md: README, BACKLOG.md's open tasks, code comments, error and report text, and names that carry the number, such as the protocol's burndown stages and LLM steps (`6a`, `6b`) and the driver's `STEP`. BACKLOG-COMPLETE.md stays as written, with one note at its top giving the old-to-new mapping.
+- Rename everywhere, not only in DESIGN.md: README, BACKLOG.md's open tasks, code comments, error and report text, and names that carry the number, such as the protocol's burndown stages and LLM steps (`6a`, `6b`) and the driver's `STEP`. Rename in BACKLOG-COMPLETE.md too (the user, 2026-10-01), so every file uses one numbering.
 - A store written before the rename holds burndown records under the old stage names. Say what a resumed run does with them: refuse, or read them under the new names.
 - Add a before and an after SQL example for each rule to the mechanical rules table.
 
