@@ -3265,3 +3265,36 @@ The progress lines from 20261001-8 work, but they use DESIGN.md's step IDs (`5a-
 - **Came from:** The user, 2026-10-01, during an end-to-end test.
 - **Design:** The `quaack run` command, 12a, the transport.
 - **Status:** done
+
+### 20260929-27. LLM seam: minor findings.
+
+Minor findings from the review of 20260928-6:
+
+- No spec checks that `NoNetwork.always_refuse` resets its flag after an exception inside the block. A reset only on normal exit stays green. That fails safe (the guard stays stricter), but add one example that raises inside the block, then checks that a request reaches the closed port with the opt-in set.
+- `DriverConfig.read` treats an unreadable `~/.quaack` directory (mode 000) as a missing driver.json, since `File.file?` returns false. `run` then silently uses the default Anthropic settings, and `start` says `no_driver_config`. Refuse an existing but unreadable `~/.quaack` like an unreadable file. 20260929-4 touches the same code.
+
+- **Depends on:** 20260928-6.
+- **Came from:** Review of 20260928-6, round one.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `DriverConfig.read` now stats driver.json: a missing path (ENOENT, ENOTDIR) still counts as no config, but any other error, or something that isn't a regular file, is refused with "can't read ~/.quaack/driver.json". A spec pins that `NoNetwork.always_refuse` resets after a block that raises. The follow-ups went to 20261001-1 and 20261001-2.
+
+### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock.
+
+The driver's `llm` block accepts only `anthropic` and `openai_compatible`, so QUAACK can't call Anthropic models on AWS Bedrock with AWS credentials. The anthropic gem already ships `Anthropic::BedrockClient`, which signs requests with SigV4 using the standard AWS credential chain. It needs the `aws-sdk-bedrockruntime` gem.
+
+Answers from the user, 2026-09-30:
+
+- Add a third provider, `"provider": "bedrock"`, backed by `Anthropic::BedrockClient` through a new adapter behind the provider-neutral client, like the other two.
+- Credentials come from the standard AWS chain: environment variables, `~/.aws` profiles, and SSO. A Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` also works, since the client reads it itself. QUAACK stores no credentials.
+- The llm block takes optional `aws_region` and `aws_profile`, plus the usual `model` and `base_url`. `model` is required, since Bedrock model IDs vary by region and inference profile, so there's no default. Check the new keys the way the block's existing keys are checked. A bad value is a usage error naming the key, never the value.
+- Map the client's errors onto the existing rules: `llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`. That includes AWS credential errors raised before a request is sent, so no SDK exception escapes.
+- Add `aws-sdk-bedrockruntime` as a driver dependency only. The enclave must never depend on it: add its require name to `LLM_SDK_REQUIRES` in spec/support/boundary.rb, and keep the boundary specs green.
+- No spec may reach AWS. Keep the `NoNetwork` guard working for the new client's requests, and fake at the transport edge as the other adapters' specs do.
+- Document it in README.md's LLM setup section and DESIGN.md's LLM client section.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-30.
+- **Design:** Where QUAACK runs, LLM client.
+- **Status:** done
+- **Note (landed 2026-10-01):** Landed on `main` after one review with no blocking findings. `BedrockAdapter` resolves AWS credentials through the standard chain, or takes `AWS_BEARER_TOKEN_BEDROCK`, and maps credential and request failures onto the existing rules without a cause. The llm block takes `aws_region` and `aws_profile`. `aws-sdk-bedrockruntime` is a driver dependency only. The follow-ups went to 20261001-3.

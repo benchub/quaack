@@ -780,17 +780,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 - **Design:** 3b, 4a.
 - **Status:** todo
 
-### 20260929-27. LLM seam: minor findings.
-
-Minor findings from the review of 20260928-6:
-
-- No spec checks that `NoNetwork.always_refuse` resets its flag after an exception inside the block. A reset only on normal exit stays green. That fails safe (the guard stays stricter), but add one example that raises inside the block, then checks that a request reaches the closed port with the opt-in set.
-- `DriverConfig.read` treats an unreadable `~/.quaack` directory (mode 000) as a missing driver.json, since `File.file?` returns false. `run` then silently uses the default Anthropic settings, and `start` says `no_driver_config`. Refuse an existing but unreadable `~/.quaack` like an unreadable file. 20260929-4 touches the same code.
-
-- **Depends on:** 20260928-6.
-- **Came from:** Review of 20260928-6, round one.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260929-27. LLM seam: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-28. Arena runner cancel tests: pin the start time, and bound the wait. Done, see BACKLOG-COMPLETE.md.
 
@@ -860,24 +850,7 @@ Minor findings from the review of 20260929-12:
 - **Design:** none. Test harness only.
 - **Status:** todo
 
-### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock.
-
-The driver's `llm` block accepts only `anthropic` and `openai_compatible`, so QUAACK can't call Anthropic models on AWS Bedrock with AWS credentials. The anthropic gem already ships `Anthropic::BedrockClient`, which signs requests with SigV4 using the standard AWS credential chain. It needs the `aws-sdk-bedrockruntime` gem.
-
-Answers from the user, 2026-09-30:
-
-- Add a third provider, `"provider": "bedrock"`, backed by `Anthropic::BedrockClient` through a new adapter behind the provider-neutral client, like the other two.
-- Credentials come from the standard AWS chain: environment variables, `~/.aws` profiles, and SSO. A Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK` also works, since the client reads it itself. QUAACK stores no credentials.
-- The llm block takes optional `aws_region` and `aws_profile`, plus the usual `model` and `base_url`. `model` is required, since Bedrock model IDs vary by region and inference profile, so there's no default. Check the new keys the way the block's existing keys are checked. A bad value is a usage error naming the key, never the value.
-- Map the client's errors onto the existing rules: `llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`. That includes AWS credential errors raised before a request is sent, so no SDK exception escapes.
-- Add `aws-sdk-bedrockruntime` as a driver dependency only. The enclave must never depend on it: add its require name to `LLM_SDK_REQUIRES` in spec/support/boundary.rb, and keep the boundary specs green.
-- No spec may reach AWS. Keep the `NoNetwork` guard working for the new client's requests, and fake at the transport edge as the other adapters' specs do.
-- Document it in README.md's LLM setup section and DESIGN.md's LLM client section.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-09-30.
-- **Design:** Where QUAACK runs, LLM client.
-- **Status:** todo
+### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-12. Anthropic credential wording nits.
 
@@ -922,6 +895,45 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 - **Depends on:** 20260930-9.
 - **Came from:** The build of 20260930-9.
 - **Design:** What goes into the enclave.
+- **Status:** todo
+
+### 20261001-1. Unreadable `~/.quaack/runs` reads as an unknown run ID.
+
+Found by the build of 20260929-27. With `~/.quaack` or `~/.quaack/runs` unreadable (mode 000), `Runs#host` treats the run record as missing, so `quaack run` says "unknown run ID" instead of saying it can't read the record. Refuse an existing but unreadable path the way `DriverConfig.read` now does, with a message that names no absolute path.
+
+- **Depends on:** 20260929-27.
+- **Came from:** The build of 20260929-27.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261001-2. DriverConfig: minor findings.
+
+Minor findings from the review of 20260929-27:
+
+- The not-a-regular-file check in `DriverConfig#there?` (driver_config.rb:35) is untested. A directory driver.json is already refused through EISDIR, so replacing the check with `true` stays green. It matters for a FIFO, where `File.read` would block. Add a FIFO example, or drop the check.
+- In cli_run_spec.rb's unreadable-directory example, if the `mkdir_p` line raised, `locked` would be nil and the `ensure`'s `File.chmod(0o700, nil)` would hide the real error with a TypeError. Guard the chmod.
+- A dangling driver.json symlink counts as no config, since `File.stat` follows it and gets ENOENT. A user whose symlink points at a moved file silently gets the defaults. Consider refusing a symlink whose target is missing.
+
+- **Depends on:** 20260929-27.
+- **Came from:** Review of 20260929-27, round one.
+- **Design:** Where QUAACK runs.
+- **Status:** todo
+
+### 20261001-3. Bedrock provider: minor findings.
+
+Minor findings from the review of 20260930-11:
+
+- Keys for another provider break a one-run override. `check_applies` (llm.rb:267) checks keys against the provider after `QUAACK_LLM_PROVIDER` overrides it, so `QUAACK_LLM_PROVIDER=anthropic` against a bedrock block fails naming `aws_region`. The user's answer, 2026-10-01: loosen it. Ignore keys that belong to a provider other than the one in effect, so the override works for one run.
+- A bad `AWS_REGION` or `AWS_DEFAULT_REGION` isn't checked (bedrock_adapter.rb:398). In bearer mode `"us east 1"` raises `URI::InvalidURIError` out of the client build, and `quaack run` crashes with a backtrace. In SigV4 mode the same typo reads as `llm_auth: the AWS credentials couldn't be loaded`. Apply the `aws_region` check to the variables, and make a bad value a usage error naming the variable, not the value.
+- The region pattern (llm.rb:219) rejects `eusc-de-east-1`, the AWS European Sovereign Cloud region, since it requires a two-letter prefix. Allow `[a-z]{2,4}`.
+- The "spec-time network guard, for Bedrock" describe (bedrock_adapter_spec.rb:317-340) builds `Anthropic::BedrockClient` outside `without_aws_credentials`, so it reads the developer's real `~/.aws/config` and `~/.aws/credentials`. It's harmless today. Wrap it.
+- Mutation `credentials&.set?` to `credentials` (bedrock_adapter.rb:408) survives: no spec covers the chain returning credentials that aren't set, such as an empty key in a profile. Add one, or drop `.set?`.
+- DESIGN.md's llm block paragraph still says the provider is "`anthropic` or `openai_compatible`", which contradicts the bedrock paragraph after it. Add bedrock to the list.
+- README nit: the gem also reads `ANTHROPIC_BEDROCK_BASE_URL` when no `base_url` is set. Mention it, or say QUAACK ignores it.
+
+- **Depends on:** 20260930-11.
+- **Came from:** Review of 20260930-11, round one.
+- **Design:** LLM client.
 - **Status:** todo
 
 ## After version 1.
