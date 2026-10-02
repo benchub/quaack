@@ -90,7 +90,7 @@ module Quaack
           # null, or nil. With a LIMIT or OFFSET, it must be sorted by too.
           def key(catalog)
             table = kept.table
-            columns = selected.flat_map { it == :star ? catalog.columns(table.schemaname, table.relname) : [it] }.uniq
+            columns = selected.flat_map { it == :star ? catalog.column_names(table.schemaname, table.relname) : [it] }.uniq
             columns &= sorted if limited
             columns.find { |column| assumptions(column).all? { catalog.met?(it) } }
           end

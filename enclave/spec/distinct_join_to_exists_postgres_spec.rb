@@ -419,19 +419,19 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     it "are the table's, in order, without dropped or system columns" do
       conn.exec("ALTER TABLE public.comments DROP COLUMN s_id")
 
-      expect(catalog.columns("public", "comments")).to eq(%w[id body])
-      expect(catalog.columns("public", "my a")).to eq(%w[id title])
+      expect(catalog.column_names("public", "comments")).to eq(%w[id body])
+      expect(catalog.column_names("public", "my a")).to eq(%w[id title])
     end
 
     it "are those of the table in the schema named, not of another schema's table of the same name" do
       conn.exec("CREATE SCHEMA other; CREATE TABLE other.comments (ref int, note text, at date)")
 
-      expect(catalog.columns("public", "comments")).to eq(%w[id s_id body])
-      expect(catalog.columns("other", "comments")).to eq(%w[ref note at])
+      expect(catalog.column_names("public", "comments")).to eq(%w[id s_id body])
+      expect(catalog.column_names("other", "comments")).to eq(%w[ref note at])
     end
 
     it "are none for a table that doesn't exist" do
-      expect(catalog.columns("public", "missing")).to eq([])
+      expect(catalog.column_names("public", "missing")).to eq([])
     end
   end
 end
