@@ -3329,3 +3329,13 @@ Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
 - **Design:** 6c.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. `RewriteRules.generate` chains a list of rules; a rule has `name`, `description`, and `rewrites(parse, catalog)`. `key_in_self_join` fires only on a top-level AND condition and refuses anything not clearly safe. `quaacks rewrite-rules` shares `RewriteCheck.check` with `rewrite-check`, and every stored rewrite now has a `source`. The builder changed 6c: a rule may run on its own output, and the marker holds the duplicate and over-cap counts. Adding a rule is one file and two lines. The follow-ups went to 20261002-1.
+
+### 20261001-23. 6c: run the rules from `quaack run`, and count them.
+
+The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. A rerun stores its rewrites again, so the marker is the only guard; the marker has no per-rule counts, which 15b's row needs. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c, 15b.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `quaack run` calls `rewrite-rules` before 6a, with no LLM call. A rerun of the step changes nothing. The 6c burndown record counts results by their last rule. `report-payload` sends each rewrite's `source` and `rules`, and `rule_bugs`: rule-made rewrites that step 9, step 10, or a real 14c mismatch disproved. A 14c timeout or `unsupported_order` isn't one. The replay spec runs a rule-made rewrite end to end. The follow-ups went to 20261002-2.

@@ -1007,14 +1007,7 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-22. 6c: the rule generator, and `key_in_self_join`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-23. 6c: run the rules from `quaack run`, and count them.
-
-The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. A rerun stores its rewrites again, so the marker is the only guard; the marker has no per-rule counts, which 15b's row needs. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c, 15b.
-- **Status:** todo
+### 20261001-23. 6c: run the rules from `quaack run`, and count them. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-24. 6c rule: `or_to_union`.
 
@@ -1083,6 +1076,26 @@ Minor findings from both reviews of 20261001-22:
 - **Depends on:** 20261001-22.
 - **Came from:** The build and both reviews of 20261001-22.
 - **Design:** 6b, 6c.
+- **Status:** todo
+
+### 20261002-2. Running the rules: minor findings.
+
+Minor findings from the build and both reviews of 20261001-23:
+
+- **False rule bugs from steps 9 and 10.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. StepNine also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as 14c's `MISMATCHES` does. Step 10 can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
+- **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and step 8 prunes it. DESIGN.md 6c's table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
+- `rewrite-check` has the double-store window that 6c closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
+- A rule-made rewrite that fails the checks counts in 6c's `failed_checks` and in step 8's drops, so 6c's out isn't step 8's in. Settle it with 20261001-19.
+- A store where 6a ran before 6c existed gets its rule rewrites numbered after 6a's. DESIGN.md 6c says "before 6a's" without the exception.
+- `CounterexampleStage` asks `status` again right after `RewriteStage` did.
+- Test gaps where a wrong change stays green: `rule_bugs` when nothing beat the original (`report_payload.rb:74`); "shows the 6c row first" only checks against step 9 (`report_spec.rb:188`); a rerun with two or more stored rule rewrites, or after a call that stored only some; the 6c and step 8 records going in one write; the step 9 disproof line's source label (`report.rb:171`).
+- The spec helper `compared` builds 14c's entry by hand. Call `ResultComparison.entry`.
+- An empty `rules` renders "made by QUAACK's rules " with nothing after it (`report.rb:113`).
+- In a negative result, a rule-made rewrite that step 8 pruned now reads "(made by QUAACK's rule ...): disproved in step 9 ... (rule discarded)". 20261001-17 fixes the root cause.
+
+- **Depends on:** 20261001-23.
+- **Came from:** The build and both reviews of 20261001-23.
+- **Design:** 6c, step 9, step 10, 15, 15b.
 - **Status:** todo
 
 ## After version 1.
