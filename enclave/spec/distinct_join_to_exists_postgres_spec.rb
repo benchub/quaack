@@ -160,6 +160,23 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expect(same_rows(sql, rewritten(sql)).map(&:last).sort).to eq(%w[s1 s2 s5 s6 s7])
   end
 
+  # id and slug are both proven keys of assignments.
+  {
+    "a.id, a.slug" => "id",
+    "a.slug, a.id" => "slug",
+    "a.title, a.slug, a.id" => "slug",
+    "a.*" => "id"
+  }.each do |list, key|
+    it "states the first of two proven keys in the select list: #{key} for #{list}" do
+      sql = "SELECT DISTINCT #{list} FROM public.assignments a JOIN public.submissions s ON s.a_id = a.id"
+
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "unique", "table" => "public.assignments", "columns" => [key] },
+          { "kind" => "not_null", "table" => "public.assignments", "column" => key }]]
+      )
+    end
+  end
+
   it "puts every other table in one EXISTS, so their conditions are met by the same rows" do
     sql = "SELECT DISTINCT a.id FROM public.assignments a JOIN public.submissions s ON s.a_id = a.id " \
           "JOIN public.comments c ON c.s_id = s.id WHERE s.state = 'done' AND c.body = 'hi'"
@@ -404,6 +421,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
 
       expect(catalog.columns("public", "comments")).to eq(%w[id body])
       expect(catalog.columns("public", "my a")).to eq(%w[id title])
+    end
+
+    it "are those of the table in the schema named, not of another schema's table of the same name" do
+      conn.exec("CREATE SCHEMA other; CREATE TABLE other.comments (ref int, note text, at date)")
+
+      expect(catalog.columns("public", "comments")).to eq(%w[id s_id body])
+      expect(catalog.columns("other", "comments")).to eq(%w[ref note at])
     end
 
     it "are none for a table that doesn't exist" do
