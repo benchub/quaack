@@ -61,6 +61,53 @@ RSpec.describe PipelineReplay do
       end
     end
 
+    # Task 20261001-23: DESIGN.md 6c end to end. The rule's rewrite is the
+    # run's only one, since every LLM ask gets an empty answer.
+    describe "a query the key_in_self_join rule fires on" do
+      let(:outcome) { described_class.cached(TestPostgres.server, described_class::RULE_QUERY, described_class::EMPTY) }
+      let(:candidates) { outcome.report["candidates"].select { it["label"].start_with?("rewrite_1:") } }
+
+      it "applies the rules before 6a, storing the rule's rewrite, and ends in a report" do
+        expect(outcome.error).to be_nil
+        expect(outcome.entries).to include("rewrite_rules_applied" => true, "rewrite_1" => true,
+                                           "rewrites_generated" => true, "rewrite_step11_1" => true)
+        expect(outcome.entries).not_to include("rewrite_2")
+        expect(outcome.log).to include("6a-1: empty answer (no reply)")
+        expect(outcome.log.grep(/replayed\z/)).to be_empty
+      end
+
+      it "ranks the rule's rewrite in the report, with its source and its rule" do
+        expect(candidates).not_to be_empty
+        expect(candidates).to all(include("source" => "rule", "rules" => ["key_in_self_join"]))
+        expect(candidates.map { it["sql"] }.uniq)
+          .to eq(["SELECT o.id, o.total_cents FROM public.orders o WHERE (o.created_at >= $1 " \
+                  "AND o.created_at < $2) OR o.status = $3 ORDER BY o.id"])
+        expect(outcome.report["top"].map { it["label"] }).to include(*candidates.map { it["label"] })
+      end
+
+      it "records the 6c burndown, and flags no rule bug, since no test disproved the rewrite" do
+        expect(outcome.report["burndown"]["stages"]["6c"]["rewrites"])
+          .to include("added" => { "key_in_self_join" => 1 }, "out" => 1)
+        expect(outcome.report["rule_bugs"]).to eq([])
+      end
+
+      it "shows the source and the 6c row in the report file `quaack run` writes" do
+        expect(outcome.html).to include("Source: made by QUAACK&#39;s rule key_in_self_join.")
+        expect(outcome.html).to include("<tr><td>6c</td><td>0</td><td>key_in_self_join: 1</td>")
+        expect(outcome.html).not_to include("quaack-bugs")
+      end
+
+      it "keeps the query's literals out of the report" do
+        text = JSON.generate(outcome.report) + outcome.html
+        [PromptPack::SINCE, PromptPack::UNTIL].each { expect(text).not_to include(it[0, 10]) }
+      end
+
+      it "tears the run down when it ends, deleting its store" do
+        expect(outcome.store_left).to be(false)
+        expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
+      end
+    end
+
     describe "the planted replies" do
       def run(name)
         query = PromptPack::QUERIES.find { it.name == name }

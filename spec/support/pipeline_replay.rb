@@ -39,9 +39,30 @@ module PipelineReplay
   # prompt doesn't match the saved prompt.md.
   # wrong holds the numbers n of the replayed 6a rewrites, stored as
   # rewrite_<n>, whose SQL carries the query's subtly wrong condition, and
-  # rewrites_text the replayed 6a reply's text, or nil.
-  Outcome = Data.define(:variant, :error, :report, :entries, :log, :drift, :wrong, :rewrites_text, :store_left,
+  # rewrites_text the replayed 6a reply's text, or nil. html is the report
+  # file the run wrote, or nil.
+  Outcome = Data.define(:variant, :error, :report, :html, :entries, :log, :drift, :wrong, :rewrites_text, :store_left,
                         :teardown)
+
+  # A query DESIGN.md 6c's key_in_self_join rule fires on (task 20261001-23):
+  # orders whose id is in a UNION ALL of two subqueries that each read orders
+  # again by its primary key. The rule drops both subqueries and joins their
+  # conditions with OR. The subquery has two arms on purpose: Postgres 18's
+  # planner removes a single self-join on a key by itself, so the rule's
+  # rewrite of a one-arm IN plans as the original does, and step 8 prunes
+  # it before it reaches the report.
+  #
+  # It isn't one of PromptPack::QUERIES, so it has no prompts in the corpus,
+  # and it runs with empty LLM answers and no operator rewrites: its only
+  # rewrite is the rule's.
+  RULE_QUERY = PromptPack::Query.new(
+    name: "key_in_self_join",
+    sql: "SELECT o.id, o.total_cents FROM public.orders o WHERE o.id IN " \
+         "(SELECT o2.id FROM public.orders o2 WHERE o2.created_at >= '#{PromptPack::SINCE}' " \
+         "AND o2.created_at < '#{PromptPack::UNTIL}' " \
+         "UNION ALL SELECT o3.id FROM public.orders o3 WHERE o3.status = 'refunded') ORDER BY o.id",
+    rewrites: nil, indexes: [], order: "id", bug: nil
+  )
 
   module_function
 
@@ -169,6 +190,7 @@ module PipelineReplay
     client = E2ERun::CaseLLM.new(replies:).client(burndown: Quaack::Driver::Burndown.new)
     error = drive { Quaack::Driver::Pipeline.new(transport:, client:, run_id:, rewrites: query.rewrites, out:).run }
     Outcome.new(variant:, error:, report: error ? nil : report(transport, run_id),
+                html: (File.read(out) if File.exist?(out)),
                 entries: Quaack::Driver::Pipeline.status(transport, run_id), store_left: nil, teardown: nil,
                 **read_back(query, replies))
   end
