@@ -10,7 +10,7 @@ module Quaack
     module Burndown
       # One per row of the DESIGN.md 15b tables. 5a-3 through 5a-7 also key
       # the index searches of steps 8 and 11, one search per rewrite.
-      STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7 6a 6b
+      STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7 6c 6a 6b
                   step7 step8 step9 step10 step11 step14].map(&:freeze).freeze
 
       # The steps the driver runs that call an LLM (DESIGN.md, "Which part runs

@@ -8,7 +8,7 @@ require "quaack/protocol/burndown"
 # and the driver counts LLM calls under LLM_STEPS, so both sides use one list.
 RSpec.describe Quaack::Protocol::Burndown do
   it "lists each stage of the DESIGN.md 15b tables once, as a frozen String" do
-    expect(described_class::STAGES).to eq(%w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7 6a 6b
+    expect(described_class::STAGES).to eq(%w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7 6c 6a 6b
                                              step7 step8 step9 step10 step11 step14])
     expect(described_class::STAGES).to be_frozen.and(all(be_frozen))
   end

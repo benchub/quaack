@@ -78,6 +78,28 @@ RSpec.describe Quaack::Enclave::Burndown do
       expect(stages.dig("5a-3", "rewrite2", "out")).to eq(2)
     end
 
+    describe ".record_all" do
+      it "stores several stages' records in one write, as record stores each" do
+        described_class.record_all(store, [["6c", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
+                                           ["step8", :rewrites, { in: 2, dropped: { failed_to_plan: 1 }, out: 1 }]])
+
+        expect(described_class.read(reopened)["stages"]).to eq(
+          "6c" => { "rewrites" => { "in" => 0, "added" => { "some_rule" => 2 }, "dropped" => {}, "set_aside" => 0,
+                                    "out" => 2, "extra" => {} } },
+          "step8" => { "rewrites" => { "in" => 2, "added" => {}, "dropped" => { "failed_to_plan" => 1 },
+                                       "set_aside" => 0, "out" => 1, "extra" => {} } }
+        )
+      end
+
+      it "stores none of them when one is refused" do
+        expect_refused(/a step8 record's in/) do
+          described_class.record_all(store, [["6c", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
+                                             ["step8", :rewrites, { in: 2, out: 1 }]])
+        end
+        expect(store.entry?("burndown")).to be(false)
+      end
+    end
+
     describe "across calls to the enclave script" do
       it "adds each call's counts to what earlier calls stored, never losing one" do
         record(in: 5, added: { generator_one: 1 }, dropped: { duplicate: 2 }, out: 4, extra: { retries: 1 })

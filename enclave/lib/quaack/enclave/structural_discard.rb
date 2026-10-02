@@ -59,9 +59,14 @@ module Quaack
       end
 
       def record(store, result, inbound_rejected:)
+        Burndown.record_all(store, [stage_record(result, inbound_rejected:)])
+      end
+
+      # What record records, as a [stage, search, counts] triple for
+      # Burndown.record_all, for a caller that stores it with other stages'.
+      def stage_record(result, inbound_rejected:)
         dropped = { inbound_check: inbound_rejected, **result.dropped }
-        Burndown.record(store, "step8", :rewrites, in: result.kept.size + dropped.values.sum,
-                                                   dropped:, out: result.kept.size)
+        ["step8", :rewrites, { in: result.kept.size + dropped.values.sum, dropped:, out: result.kept.size }]
       end
 
       def reason(connection, sql, literals, expected, param_types: [])

@@ -38,7 +38,9 @@ module Quaack
     # deparsed SQL is the original's, or was already produced, is dropped
     # and counted in duplicates. So is one pg_query can't deparse faithfully
     # (see Deparse), though it isn't counted. The first MAX results are
-    # kept, and over_cap counts the rest.
+    # kept, and over_cap counts the rest. made counts every result that was
+    # kept, a duplicate, or over the cap, by the name of the last rule
+    # applied to make it, for the 6c burndown (DESIGN.md 15b).
     #
     # A Candidate's sql is its tree deparsed, parse that SQL's own parse,
     # rules the rules applied, in order, and assumptions those of every rule
@@ -46,7 +48,9 @@ module Quaack
     module RewriteRules
       Rewrite = Data.define(:tree, :assumptions)
       Candidate = Data.define(:sql, :parse, :rules, :assumptions)
-      Generated = Data.define(:rewrites, :duplicates, :over_cap)
+      Generated = Data.define(:rewrites, :duplicates, :over_cap, :made)
+      # A result whose SQL was already produced, and the rule that made it.
+      Duplicate = Data.define(:rule)
 
       RULES = [
         KeyInSelfJoin.new
@@ -61,16 +65,17 @@ module Quaack
         original = Candidate.new(sql: Deparse.faithfully(parse.tree), parse:, rules: [], assumptions: [])
         made = chain([original], rules, catalog, { original.sql => true })
         kept = made.grep(Candidate)
-        Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max)
+        Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max,
+                      made: made.map { (it.is_a?(Candidate) ? it.rules.last : it.rule).name }.tally)
       end
 
       # Every result DEPTH rounds of the rules make of from, shallowest
-      # first, with :duplicate in place of each one already seen.
+      # first, with a Duplicate in place of each one already seen.
       def chain(from, rules, catalog, seen)
         Array.new(DEPTH) { from = step(from, rules, catalog, seen) }.flatten
       end
 
-      # Every rule's results for every candidate in from, with :duplicate
+      # Every rule's results for every candidate in from, with a Duplicate
       # in place of each one already seen.
       def step(from, rules, catalog, seen)
         from.grep(Candidate).flat_map do |candidate|
@@ -80,11 +85,11 @@ module Quaack
         end
       end
 
-      # The candidate that rule's rewrite makes of from, :duplicate if its
+      # The candidate that rule's rewrite makes of from, a Duplicate if its
       # SQL was already produced, or nil if it doesn't deparse.
       def chained(from, rule, rewrite, seen)
         parse = Deparse.faithful_parse(rewrite.tree)
-        return :duplicate if seen.key?(parse.query)
+        return Duplicate.new(rule:) if seen.key?(parse.query)
 
         seen[parse.query] = true
         Candidate.new(sql: parse.query, parse:, rules: from.rules + [rule],

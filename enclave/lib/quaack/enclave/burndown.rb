@@ -78,6 +78,11 @@ module Quaack
       # Adds one run of a stage to the burndown, for one search.
       def record(store, stage, search, **counts) = add(store, [[stage, search, counts]], {})
 
+      # Adds one run of each of several stages in one write, so a call that
+      # dies never leaves some of them stored. records are [stage, search,
+      # counts] triples, each as record takes them.
+      def record_all(store, records) = add(store, records, {})
+
       # Adds to the work totals, such as hypothetical_explains,
       # indexes_built, measurement_runs, and fixture_loads.
       def add_totals(store, **counts) = add(store, [], counts)

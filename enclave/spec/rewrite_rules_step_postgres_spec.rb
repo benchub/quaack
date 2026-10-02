@@ -83,6 +83,96 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
                                                         "output_mismatch" => 0 })
   end
 
+  def burndown(stage) = Quaack::Enclave::Burndown.read(stored)["stages"].dig(stage, "rewrites")
+
+  def six_c(added, out, **dropped)
+    { "in" => 0, "added" => added, "set_aside" => 0, "out" => out, "extra" => {},
+      "dropped" => { "duplicate" => 0, "over_cap" => 0, "failed_checks" => 0 }.merge(dropped.transform_keys(&:to_s)) }
+  end
+
+  it "records the 6c burndown: its rewrites, counted by the last rule applied" do
+    prepare
+
+    rewrite_rules
+
+    expect(burndown("6c")).to eq(six_c({ "key_in_self_join" => 1 }, 1))
+  end
+
+  # A crash between storing the rewrites and writing the marker leaves a run
+  # the driver sends here again (DESIGN.md 6c). Each example puts the store
+  # in the state such a crash leaves.
+  describe "run again after a call that died before writing its marker" do
+    def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
+
+    def rerun
+      outcome = rewrite_rules
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      outcome
+    end
+
+    it "stores no rewrite twice, and counts none twice, when it died after recording its burndown" do
+      prepare
+      rewrite_rules
+      first = [stored.read("rewrite_1"), Quaack::Enclave::Burndown.read(stored)]
+      remove("rewrite_rules_applied")
+
+      outcome = rerun
+
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+      expect(stored.entry?("rewrite_2")).to be(false)
+      expect([stored.read("rewrite_1"), Quaack::Enclave::Burndown.read(stored)]).to eq(first)
+      expect(status["entries"]).to include("rewrite_rules_applied" => true)
+    end
+
+    it "stores no rewrite twice, and records its burndown once, when it died before recording it" do
+      prepare
+      expect(stored.entry?("burndown")).to be(false)
+      rewrite_rules
+      first = Quaack::Enclave::Burndown.read(stored)
+      expect(first["stages"].keys).to eq(%w[step8 6c])
+      remove("rewrite_rules_applied")
+      remove("burndown")
+
+      rerun
+
+      expect(stored.entry?("rewrite_2")).to be(false)
+      expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
+    end
+
+    it "is the same when it's run again with its marker written" do
+      prepare
+      rewrite_rules
+      first = Quaack::Enclave::Burndown.read(stored)
+
+      rerun
+
+      expect(stored.entry?("rewrite_2")).to be(false)
+      expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
+    end
+
+    it "still stores 6a's copy of a rule's rewrite as a rewrite of its own" do
+      prepare
+      rewrite_rules
+      llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
+
+      quaacks.run("rewrite-check", "--run", store.run_id, stdin: JSON.generate(llm), env: libpq_env)
+
+      expect(stored.read("rewrite_2")).to include("sql" => rewritten, "source" => "llm")
+    end
+
+    it "still stores a rule's rewrite when only 6a's copy of it is stored" do
+      prepare
+      llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
+      quaacks.run("rewrite-check", "--run", store.run_id, stdin: JSON.generate(llm), env: libpq_env)
+
+      outcome = rerun
+
+      expect(lines(outcome).first).to eq(outcome_line(1, "accepted", nil, "rewrite_2"))
+      expect((1..2).map { stored.read("rewrite_#{it}").values_at("sql", "source") })
+        .to eq([[rewritten, "llm"], [rewritten, "rule"]])
+    end
+  end
+
   context "when no rule fires" do
     let(:query) { plain_query }
 
@@ -94,6 +184,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect([lines(outcome), outcome.status.exitstatus]).to eq([[{ "type" => "done" }], 0])
       expect(stored.entry?("rewrite_1")).to be(false)
       expect(stored.entry?("rewrite_rules_applied")).to be(true)
+      expect(burndown("6c")).to eq(six_c({}, 0))
     end
   end
 
@@ -139,6 +230,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["rewrites"])
         .to include("in" => 3, "out" => 1, "dropped" => { "inbound_check" => 1, "failed_to_plan" => 0,
                                                           "output_mismatch" => 1 })
+      expect(burndown("6c")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
     end
 
     it "stores a chained rewrite with every rule's name and description, in order, and counts what it dropped" do
@@ -164,6 +256,19 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "transformation" => "the fake rule first the fake rule second", "rules" => %w[first second]
       )
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 1, "over_cap" => 0)
+      expect(burndown("6c")).to eq(six_c({ "first" => 2, "second" => 1 }, 2, duplicate: 1))
+    end
+
+    it "counts the rewrites over the cap in the marker and the 6c burndown" do
+      prepare
+      select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
+      six = (1..6).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
+
+      outcomes = call_step(six)
+
+      expect(outcomes.map { it[:rewrite] }).to eq((1..5).map { "rewrite_#{it}" })
+      expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 1)
+      expect(burndown("6c")).to eq(six_c((1..6).to_h { ["rule#{it}", 1] }, 5, over_cap: 1))
     end
   end
 

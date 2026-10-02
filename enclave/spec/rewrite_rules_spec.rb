@@ -90,6 +90,33 @@ RSpec.describe Quaack::Enclave::RewriteRules do
     expect(sqls(generated)).to eq(["SELECT 3"])
   end
 
+  describe "made, for the 6c burndown" do
+    it "counts every result by the last rule applied, those kept and those over the cap" do
+      # a, b, a a, a b, and b a are kept, and b b is over the cap.
+      expect(generate(appending("a"), appending("b")).made).to eq("a" => 3, "b" => 3)
+    end
+
+    it "counts a chained result under its last rule, not its first" do
+      after_a = rule("b") { it.include?("'a'") ? "#{it}, 'b'" : [] }
+      generated = generate(appending("a"), after_a)
+
+      expect([names(generated), generated.made]).to eq([[%w[a], %w[a a], %w[a b]], { "a" => 2, "b" => 1 }])
+    end
+
+    it "counts a duplicate under the rule that made it" do
+      generated = generate(rule("two") { "SELECT 2" }, rule("also_two") { "select  2 /* again */" })
+
+      expect(generated.made).to eq("two" => 2, "also_two" => 2)
+      expect(generated.made.values.sum).to eq(generated.rewrites.size + generated.duplicates + generated.over_cap)
+    end
+
+    it "leaves out a result pg_query can't deparse faithfully, and a rule that made nothing" do
+      generated = generate(rule("unfaithful") { ["SELECT 't'::boolean", "SELECT 3"] }, rule("none") { [] })
+
+      expect([generated.made, generated.duplicates]).to eq([{ "unfaithful" => 2 }, 1])
+    end
+  end
+
   it "hands every rule the catalog facts" do
     seen = []
     spy = fake_rule.new(name: "spy", assumption: nil, change: ->(_sql, given) { (seen << given) && [] })
