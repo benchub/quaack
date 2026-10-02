@@ -44,7 +44,8 @@ module Quaack
       #                    excluded reason) }] }; each disproved or
       #                    knocked_out rewrite with "source" and "rules" too
       #   rule_bugs        [{ "rewrite", "rules", "step" (step9, step10, or
-      #                    14c) }]: each rule-made rewrite a test disproved,
+      #                    14c) }]: each rule-made rewrite a test disproved
+      #                    (never a 14c timeout, which compares nothing),
       #                    a bug in QUAACK (DESIGN.md 6c, RuleBugs), sent
       #                    whether or not top is empty
       #   burndown         { "stages", "totals" }, the 15b counts as

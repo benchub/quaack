@@ -581,7 +581,7 @@ A rewrite's SQL uses the same placeholders as the redacted query. Put your real 
 
 You should never see this section. It appears at the very top of the report, above the ranking, when a test proved one of the rules' own rewrites wrong, such as "rewrite_1, made by QUAACK's rule key_in_self_join, was disproved in step 9". QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about your query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
 
-A rewrite that was only dropped for planning the same way as the original isn't listed here. That happens when Postgres already makes the rule's change by itself, and it says nothing about whether the rule is right.
+Only a test that found different results counts. A rule's rewrite that timed out in the final check on production data isn't listed here: a timeout means the rewrite was too slow there, not that it's wrong. A rewrite that was only dropped for planning the same way as the original isn't listed here either. That happens when Postgres already makes the rule's change by itself, and it says nothing about whether the rule is right.
 
 ### Proposed indexes.
 

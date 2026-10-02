@@ -187,11 +187,22 @@ RSpec.describe "quaacks report-payload" do
         { "passed" => passed, "scenario" => scenario, "rule" => rule, "untested" => 0, "untested_atoms" => [] }
       end
 
-      def rule_made(store, number, tested, survived)
-        store.write("rewrite_#{number}", "sql" => "SELECT #{number}", "source" => "rule",
-                                         "rules" => %w[key_in_self_join key_in_self_join])
+      def rule_made(store, number, tested, survived, rules: %w[key_in_self_join key_in_self_join])
+        store.write("rewrite_#{number}", "sql" => "SELECT #{number}", "source" => "rule", "rules" => rules)
         store.write("rewrite_tested_#{number}", tested)
         store.write("rewrite_survived_#{number}", "survived" => survived)
+      end
+
+      # Writes 14c's entry as ResultComparison.entry does, from each
+      # rewrite's verdict rules by literal set (nil for a pass).
+      def compared(store, **rules)
+        verdicts = rules.to_h do |number, sets|
+          ["rewrite_#{number}", sets.transform_keys(&:to_s).transform_values do |rule|
+            { "result" => rule ? "fail" : "pass", "rule" => rule }
+          end]
+        end
+        failed = verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys
+        store.write("result_comparison", "verdicts" => verdicts, "discarded" => failed, "partial_count" => 0)
       end
 
       it "is empty when no rule-made rewrite was disproved" do
@@ -204,7 +215,7 @@ RSpec.describe "quaacks report-payload" do
             rule_made(store, 2, tested(false, "null_semantics", "S3"), false)
             rule_made(store, 3, tested(true), false)
             rule_made(store, 4, tested(true), true)
-            store.write("result_comparison", "verdicts" => {}, "discarded" => ["rewrite_4"], "partial_count" => 0)
+            compared(store, "4": { slow: nil, typical: "multiset" })
           end
         end
 
@@ -216,6 +227,54 @@ RSpec.describe "quaacks report-payload" do
              { "rewrite" => "rewrite_3", "rules" => both, "step" => "step10" },
              { "rewrite" => "rewrite_4", "rules" => both, "step" => "14c" }]
           )
+        end
+      end
+
+      # 14c drops a candidate for any failing verdict, but only a result
+      # mismatch disproves it.
+      %w[timed_out unsupported_order].each do |rule|
+        context "with a rule-made rewrite that 14c dropped only as #{rule}" do
+          let(:outcome) do
+            with_rewrite do |store|
+              rule_made(store, 2, tested(true), true)
+              compared(store, "2": { slow: rule, typical: nil, worst_case: rule })
+            end
+          end
+
+          it "isn't a bug: 14c never compared its results" do
+            expect(report["rule_bugs"]).to eq([])
+          end
+        end
+      end
+
+      %w[column_count column_types row_count value multiset subset candidate_unordered].each do |rule|
+        context "with a rule-made rewrite whose 14c results differed, rule #{rule}, on one literal set" do
+          let(:outcome) do
+            with_rewrite do |store|
+              rule_made(store, 2, tested(true), true)
+              compared(store, "2": { slow: "timed_out", typical: rule, worst_case: nil })
+            end
+          end
+
+          it "is a bug, though 14c timed out on another set" do
+            expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "14c",
+                                                 "rules" => %w[key_in_self_join key_in_self_join] }])
+          end
+        end
+      end
+
+      context "with a disproved rule-made rewrite whose stored rules hold names that aren't QUAACK's own" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "null_semantics", "S3"), false,
+                      rules: [REPORT_WORD_SENTINEL, "key_in_self_join", sentinel])
+          end
+        end
+
+        it "names only QUAACK's own rules in rule_bugs, and leaks neither" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"],
+                                               "step" => "step9" }])
+          expect_no_leaks(sentinels, outcome)
         end
       end
 
@@ -234,7 +293,7 @@ RSpec.describe "quaacks report-payload" do
             store.write("rewrite_2", "sql" => "SELECT 2", "source" => "llm")
             rule_made(store, 3, tested(true), true)
             store.write("rewrite_3", "sql" => "SELECT 3", "source" => "operator")
-            store.write("result_comparison", "verdicts" => {}, "discarded" => ["rewrite_3"], "partial_count" => 0)
+            compared(store, "3": { slow: "row_count" })
           end
         end
 
