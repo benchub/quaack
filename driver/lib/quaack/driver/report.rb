@@ -17,6 +17,11 @@ module Quaack
     # The burndown section (15b) renders the payload's burndown counts, plus
     # llm_calls, the driver's own Burndown#llm_calls.
     #
+    # Each rewrite is shown with where it came from (DESIGN.md 6c): the
+    # rules that made it, the LLM, or the operator. If the payload's
+    # rule_bugs lists a rule-made rewrite that a test disproved, a section
+    # above everything else says so, as a bug in QUAACK, naming the rules.
+    #
     #   Report.render(payload, run_id:, llm_calls: burndown.llm_calls)
     module Report
       TEMPLATE = <<~HTML
@@ -25,6 +30,11 @@ module Quaack
         <style>body{font-family:sans-serif;margin:2em}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:2px 6px}pre{background:#f4f4f4;padding:6px}</style>
         </head><body>
         <h1>QUAACK report <%= h run_id %></h1>
+        <% unless rule_bugs.empty? %><section id="quaack-bugs"><h2>QUAACK bug: a rule made a wrong rewrite</h2>
+        <p><%= h BUG %></p>
+        <ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
+        </section>
+        <% end %>
         <section id="ranking"><h2>Overall ranking</h2>
         <table><tr><th>#</th><th>Candidate</th><th>Slow blocks</th><th>Sum across literals</th><th>Index footprint</th></tr>
         <% top.each_with_index do |t, i| %><tr class="rank"><td><%= i + 1 %></td><td><%= h t["label"] %></td><td><%= t["slow_blocks"] %></td><td><%= t["total_blocks_sum"] %></td><td><%= size(t["footprint"]) %></td></tr>
@@ -41,6 +51,7 @@ module Quaack
         </section>
         <% candidates.each do |c| %><section class="candidate"><h2><%= h c["label"] %></h2>
         <pre><%= h c["sql"] %></pre>
+        <% if origin(c) %><p class="source">Source: <%= h origin(c) %>.</p><% end %>
         <table><tr><th>Literal set</th><th>Blocks</th><th>Hit</th><th>Read</th><th>Verdict</th><th>Stability</th></tr>
         <% (measurements[c["label"]] || {}).each do |set, s| %><tr><td><%= h set %></td><td><%= s["timed_out"] ? "timed out" : s["total_blocks"] %></td><td><%= s["hit"] %></td><td><%= s["read"] %></td><td><%= h verdicts.dig(c["label"], set) %></td><td><%= s["stable"] == false ? "unstable" : "" %></td></tr>
         <% end %></table>
@@ -57,7 +68,7 @@ module Quaack
         <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
         <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["search"] %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
         <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["search"] %>: <%= h e["ddl"] %>: already covered by <%= h e["covered_by"] %></li><% end %></ul>
-        <p>Rewrites that passed steps 9 and 10 but were knocked out:</p><ul><% negative.fetch("knocked_out", []).each do |k| %><li><%= h k["label"] %>: passed steps 9 and 10, but <%= h knocked_out(k["reason"]) %></li><% end %></ul>
+        <p>Rewrites that passed steps 9 and 10 but were knocked out:</p><ul><% negative.fetch("knocked_out", []).each do |k| %><li><%= h labeled(k["label"], k) %>: passed steps 9 and 10, but <%= h knocked_out(k["reason"]) %></li><% end %></ul>
         <% end %></section>
         <section id="burndown"><h2>Burndown</h2>
         <% [["index", "Index candidates for the original query", index_rows], ["rewrite", "Rewrite candidates", rewrite_rows]].each do |id, title, rows| %><h3><%= h title %></h3>
@@ -84,7 +95,31 @@ module Quaack
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
 
         INDEX_STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7].freeze
-        REWRITE_STAGES = %w[6a step7 6b step8 step9 step10].freeze
+        REWRITE_STAGES = %w[6c 6a step7 6b step8 step9 step10].freeze
+
+        BUG = "QUAACK's own rules are meant to be sound: a rewrite one makes should return the same rows as the " \
+              "original on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped " \
+              "these rewrites. Please report this, with the names of the rules."
+        STEPS = { "step9" => "step 9", "step10" => "step 10", "14c" => "step 14c, on production data" }.freeze
+        SOURCES = { "llm" => "proposed by the LLM", "operator" => "your own rewrite" }.freeze
+
+        # DESIGN.md 6c: the rule-made rewrites a test disproved.
+        def rule_bugs = @payload["rule_bugs"] || []
+
+        def bug(entry)
+          "#{entry["rewrite"]}, #{made_by(entry["rules"])}, was disproved in #{STEPS.fetch(entry["step"], entry["step"])}"
+        end
+
+        # Where a rewrite came from, or nil if the payload doesn't say.
+        def origin(entry) = entry["source"] == "rule" ? made_by(entry["rules"]) : SOURCES[entry["source"]]
+
+        def made_by(rules)
+          rules = Array(rules)
+          "made by QUAACK's #{rules.size == 1 ? "rule" : "rules"} #{rules.join(", then ")}"
+        end
+
+        # name, with where the rewrite came from after it if the payload says.
+        def labeled(name, entry) = origin(entry) ? "#{name} (#{origin(entry)})" : name
 
         # DESIGN.md 15b: the recorded counts, { "stages", "totals" }.
         def burndown = @payload["burndown"] || { "stages" => {}, "totals" => {} }
@@ -126,12 +161,13 @@ module Quaack
         def knocked_out(reason) = KNOCKED_OUT.fetch(reason) { "14d excluded it (#{reason})" }
 
         def disproof(entry)
+          rewrite = labeled(entry["rewrite"], entry)
           if entry["step"] == "step10"
             round = ", counterexample round #{entry["round"]}" if entry["round"]
-            return "#{entry["rewrite"]}: disproved in step 10#{round}"
+            return "#{rewrite}: disproved in step 10#{round}"
           end
 
-          "#{entry["rewrite"]}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
+          "#{rewrite}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
         end
 
         def declined(entry)

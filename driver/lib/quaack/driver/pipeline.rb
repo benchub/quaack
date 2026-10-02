@@ -77,14 +77,18 @@ module Quaack
         end
       end
 
-      # DESIGN.md 6a, step 7, and step 8, after step 5:
-      # 1. 6a: RewriteGeneration on rewrite-payload, unless the store says
+      # DESIGN.md 6c, 6a, step 7, and step 8, after step 5:
+      # 1. 6c: rewrite-rules, the mechanical rules, unless the store says
+      #    they were applied (rewrite_rules_applied). It needs no LLM and
+      #    no payload, and the enclave stores its survivors as rewrite_<n>.
+      #    6a: RewriteGeneration on rewrite-payload, unless the store says
       #    it ran (rewrites_generated). Its rewrite-check stores the
-      #    survivors as rewrite_<n>.
+      #    survivors after 6c's.
       #    Step 7: OperatorCandidates on the same payload, for the operator's
       #    rewrites, unless there are none or the store says it ran
       #    (operator_rewrites_checked). Its survivors are stored after 6a's.
-      #    If either ran, status is asked again for them.
+      #    If any of the three ran, status is asked again for them. The
+      #    payload is fetched only if 6a or step 7 has to run.
       # 2. Step 8, for each stored rewrite_<n> in order: index-search,
       #    index-rank, and rewrite-prune, each skipped when its output is
       #    stored.
@@ -103,16 +107,27 @@ module Quaack
           end
         end
 
-        # entries, asked again if 6a or step 7 still had to run, after
+        # entries, asked again if 6c, 6a, or step 7 still had to run, after
         # running them; else the skips are printed.
         def generated(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
-          if Pipeline.checked?(entries, rewrites)
-            Pipeline.skip(progress, "6a")
-            Pipeline.skip(progress, "step 7") if rewrites
-            return entries
+          return skipped(entries, rewrites, progress) if Pipeline.checked?(entries, rewrites)
+
+          Pipeline.run_step(progress, entries["rewrite_rules_applied"], "6c") do
+            transport.call("rewrite-rules", args: { run: run_id })
           end
-          generate(transport, client, run_id, entries, rewrites, progress)
+          if Pipeline.llm_checked?(entries, rewrites)
+            skipped(entries, rewrites, progress, from: 1)
+          else
+            generate(transport, client, run_id, entries, rewrites, progress)
+          end
           Pipeline.status(transport, run_id)
+        end
+
+        # Prints the skips of 6c, 6a, and step 7, or of those from the
+        # given one on, and returns entries.
+        def skipped(entries, rewrites, progress, from: 0)
+          ["6c", "6a", ("step 7" if rewrites)].compact.drop(from).each { Pipeline.skip(progress, it) }
+          entries
         end
 
         def generate(transport, client, run_id, entries, rewrites, progress) # rubocop:disable Metrics/ParameterLists
@@ -144,7 +159,7 @@ module Quaack
         end
       end
 
-      # DESIGN.md steps 9 and 10, after step 8. If 6a or step 7 ran in this run, it asks
+      # DESIGN.md steps 9 and 10, after step 8. If 6c, 6a, or step 7 ran in this run, it asks
       # status again, for the rewrites it stored. For each stored rewrite_<n> not yet decided
       # (rewrite_survived_<n>): rewrite-test (step 9), unless it's stored
       # (rewrite_tested_<n>), and, if the rewrite passed, the three 10a to
@@ -281,11 +296,11 @@ module Quaack
 
       STAGES = [IndexStage, RewriteStage, ArenaStage, CounterexampleStage, RewriteIndexStage].freeze
 
-      # The number of steps a run counts in its progress: 16, plus step 7
+      # The number of steps a run counts in its progress: 17, plus step 7
       # with rewrites, plus the report with out. Sub-steps for each rewrite
       # print under their step, uncounted, since how many there are isn't
       # known until the run gets there.
-      def self.total(rewrites:, out:) = 16 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0)
+      def self.total(rewrites:, out:) = 17 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0)
 
       # Skips the step, printing so, if done, or runs the block as a step.
       def self.run_step(progress, done, name, &)
@@ -304,6 +319,7 @@ module Quaack
         "5a-5" => "Asking the LLM for index ideas the mechanical search missed",
         "5a-6" => "Asking the LLM to improve its index ideas",
         "5a-7" => "Ranking the index ideas",
+        "6c" => "Applying QUAACK's own rewrite rules to the query",
         "6a" => "Asking the LLM for rewrites of the query",
         "step 7" => "Checking your own rewrites",
         "step 8" => "Searching for indexes for each rewrite",
@@ -330,8 +346,12 @@ module Quaack
         transport.call("status", args: { run: run_id }).messages.find { it["type"] == "status" }.fetch("entries")
       end
 
+      # Whether entries say 6c and 6a ran, and step 7 too if there are
+      # rewrites.
+      def self.checked?(entries, rewrites) = entries["rewrite_rules_applied"] && llm_checked?(entries, rewrites)
+
       # Whether entries say 6a ran, and step 7 too if there are rewrites.
-      def self.checked?(entries, rewrites)
+      def self.llm_checked?(entries, rewrites)
         entries["rewrites_generated"] && (rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"])
       end
 
