@@ -95,33 +95,25 @@ module Quaack
         # step 8's. If it gives nil, nothing is recorded, step 8's included:
         # that's how 6c, run again, says an earlier call recorded them all.
         #
-        # A rewrite of source "rule" is stored once: if the store already
-        # holds a rule-made rewrite with the same accepted SQL, from before
-        # this call, that entry is the survivor and nothing new is written.
-        # So `quaacks rewrite-rules` can run again after a call that died.
-        def check(store, source:, also: ->(_) { [] })
+        # stored is { accepted SQL => entry name }, the rewrites an earlier
+        # call already stored. A survivor whose accepted SQL is there keeps
+        # that entry, and nothing new is written for it. That's how 6c, run
+        # again after a call that died, stores no rewrite twice.
+        def check(store, source:, stored: {}, also: ->(_) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
-          context = { store:, connection:, source:, inferred: source == "operator", original: original(store),
-                      settings: store.read("plan")[0]["Settings"], stored: stored(store, source),
-                      **structure(store, connection) }
+          context = context(store, connection, source).merge(stored: stored.dup)
           outcomes = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           more = also.call(outcomes)
-          Burndown.record_all(store, [step8(outcomes), *more]) if more
+          Burndown.record_all(store, [Step8.record(outcomes), *more]) if more
           outcomes
         ensure
           connection&.close
         end
 
-        # { accepted SQL => entry name } for the rule-made rewrites the
-        # store already holds, when source is "rule"; else none.
-        def stored(store, source)
-          return {} unless source == "rule"
-
-          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
-          names.each_with_object({}) do |name, found|
-            entry = store.read(name)
-            found[entry["sql"]] ||= name if entry["source"] == "rule"
-          end
+        # What every rewrite of a call is checked with.
+        def context(store, connection, source)
+          { store:, connection:, source:, inferred: source == "operator", original: original(store),
+            settings: store.read("plan")[0]["Settings"], **structure(store, connection) }
         end
 
         def rewrites(input)
@@ -159,7 +151,7 @@ module Quaack
           return rejected(index, "bad_assumption") unless RewriteAssumptions.valid?(rewrite["assumptions"])
 
           sql, types, warnings = checked(rewrite, context)
-          name = save(context, rewrite, sql, types, warnings)
+          name = context[:stored].delete(sql) || save(context, rewrite, sql, types, warnings)
           { type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }
         rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
           rejected(index, e.rule)
@@ -192,15 +184,19 @@ module Quaack
                      .map { |assumption, i| { "assumption" => i + 1, "kind" => assumption["kind"] } }
         end
 
-        # The step 8 burndown record for this call: the rewrites the inbound
+        # The step 8 burndown record for a call: the rewrites the inbound
         # check rejected, those StructuralDiscard dropped, and the survivors.
         # Rejections by this step's own rules (6a and 6b) aren't step 8's.
-        def step8(outcomes)
-          rules = outcomes.map { it[:rule]&.to_s }
-          dropped = STRUCTURAL.to_h { |rule| [rule.to_sym, rules.count(rule)] }
-          inbound = rules.count { it && !(STRUCTURAL + OWN).include?(it) }
-          kept = outcomes.filter_map { it[:rewrite] }
-          StructuralDiscard.stage_record(StructuralDiscard::Result.new(kept:, dropped:), inbound_rejected: inbound)
+        module Step8
+          module_function
+
+          def record(outcomes)
+            rules = outcomes.map { it[:rule]&.to_s }
+            dropped = STRUCTURAL.to_h { |rule| [rule.to_sym, rules.count(rule)] }
+            inbound = rules.count { it && !(STRUCTURAL + OWN).include?(it) }
+            kept = outcomes.filter_map { it[:rewrite] }
+            StructuralDiscard.stage_record(StructuralDiscard::Result.new(kept:, dropped:), inbound_rejected: inbound)
+          end
         end
 
         def rejected(index, rule)
@@ -209,8 +205,6 @@ module Quaack
 
         def save(context, rewrite, sql, types, warnings)
           store = context[:store]
-          return context[:stored].delete(sql) if context[:stored].key?(sql)
-
           name = (1..).lazy.map { "rewrite_#{it}" }.find { !store.entry?(it) }
           store.write(name, "sql" => sql, "transformation" => rewrite["transformation"],
                             "assumptions" => rewrite["assumptions"], "inferred" => context[:inferred],

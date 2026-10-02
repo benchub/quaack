@@ -6,7 +6,7 @@
 
 QUAACK is a pipeline that optimizes one Postgres query. You provide it the query and some information about the environment it ran in. QUAACK gives you back an HTML report: the indexes and rewrites that make it faster, which have been proven on a full-size copy of real data on real hardware, ranked by how much work those changes saved. And in the sad case when nothing helps, the report says why.
 
-QUAACK has mechanical rules to generate candidates that should help, and additionally, it uses an LLM to come up with crazy ideas that *just might work*. Of course, the LLM never sees your data. In fact, your data never leaves your production environment.
+QUAACK has mechanical rules that propose both indexes and rewrites of the query, which need no LLM. Additionally, it uses an LLM to come up with crazy ideas that *just might work*. Of course, the LLM never sees your data. In fact, your data never leaves your production environment.
 
 > **Status.** QUAACK is at version 1 and ready for its first real runs. Two rough edges you'll hit right away:
 >
@@ -110,7 +110,7 @@ flowchart TB
 1. **Collect.** Read the schema, planner statistics, and settings from production (read only). Take the literal values out of the query and the plan, so that the LLM only sees `$1`, `$2`, and so on. Make a note of which columns look like personal data, so that even their statistics stay back.
 2. **Check the copy.** Plan the query on the racetrack. If the plan doesn't match production's, stop. Tuning against a copy that behaves differently is a waste of time.
 3. **Propose indexes.** Two rule-based generators read the query and the plan. Then an LLM makes its own suggestions, which might include things the mechanical generators don't know how to work with: partial indexes, expression indexes, BRIN, and operator classes. Each idea is tried with HypoPG, as a hypothetical index, which is free. Ideas the planner won't use are dropped. The LLM sees how its ideas did, and gets one chance to fix things that didn't pan out.
-4. **Propose rewrites.** The LLM suggests rewrites, and remarks what each suggestion assumes, such as "this column is never NULL". QUAACK checks those claims against the schema. You can add your own rewrites from your big brain too. Each rewrite gets its own index search, since a rewrite may want different indexes.
+4. **Propose rewrites.** First, QUAACK's own rewrite rules read the query. Each rule is a change that can't alter the result, given facts the schema states, such as a key being unique, and that Postgres's planner doesn't always make for itself. A rule only fires when the schema proves those facts. Then the LLM suggests rewrites, and remarks what each suggestion assumes, such as "this column is never NULL". QUAACK checks those claims against the schema, for the rules' rewrites and the LLM's alike. You can add your own rewrites from your big brain too. Each rewrite gets its own index search, since a rewrite may want different indexes.
 5. **Try to break the rewrites.** Build test data in the arena aimed at every condition in the query: rows that just match, rows that just miss, NULLs, duplicates, orphans, and empty tables. Then ask the LLM up to three times for data that would provide different answers from the original query and the rewrite candidate. Any difference kills the rewrite.
 6. **Measure.** Build the surviving indexes for real on the racetrack, hidden from the planner except when being measured. Run the original and every query candidate with each of the three value sets, three times each, and count the blocks they hit.
 7. **Recheck for accuracy on real data.** Run the winners once more, this time comparing the actual rows returned against the original query on full production data. The previous accuracy checks were against small sets of carefully chosen synthetic data.
@@ -421,7 +421,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [5/17] 6a rewrite generation (LLM)` and `quaack: [5/17] 6a done in 42s`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that runs past 30 seconds prints `still running` with its time every 30 seconds. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that runs past 30 seconds prints `Still working` with its time every 30 seconds. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
@@ -572,9 +572,16 @@ Indexes: `quaack_5d1e07b2`
 - **Blocks** is the total. **Hit** and **Read** split it by whether the block was already in memory. Blocks matter most. Hit and Read show whether a win saves disk reads or just saves work in memory.
 - **Verdict** is `better`, `no_worse`, or `worse`, against the original on the same values.
 - **Stability** says `unstable` if the block count moved between the three runs. That usually means the plan changed between runs, so be wary of that row.
+- **Source,** on a rewrite, says where it came from: `made by QUAACK's rule key_in_self_join` for one of QUAACK's own rewrite rules (two rules applied in a row are both named, in order), `proposed by the LLM`, or `your own rewrite`. Every rewrite goes through the same tests, whatever its source.
 - **Untested atoms,** when listed, are conditions in the `WHERE` clause that the test data never managed to exercise, such as `o.status = $1`. A rewrite that changed such a condition wasn't really checked there. Read those rewrites extra carefully.
 
 A rewrite's SQL uses the same placeholders as the redacted query. Put your real values or bind parameters back in the same spots.
+
+### QUAACK bug: a rule made a wrong rewrite.
+
+You should never see this section. It appears at the very top of the report, above the ranking, when a test proved one of the rules' own rewrites wrong, such as "rewrite_1, made by QUAACK's rule key_in_self_join, was disproved in step 9". QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about your query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
+
+A rewrite that was only dropped for planning the same way as the original isn't listed here. That happens when Postgres already makes the rule's change by itself, and it says nothing about whether the rule is right.
 
 ### Proposed indexes.
 
@@ -591,7 +598,7 @@ To ship an index, build it on production yourself, usually with `CREATE INDEX CO
 
 This section appears only when no candidate won. It lists:
 
-- **Rewrites disproved,** and what disproved them, such as "rewrite_1: disproved in step 9 by scenario S2". Scenarios are kinds of test data: `S0` empty tables, `S1` rows that just match and just miss, `S2` NULLs, `S3` duplicate join keys, `S4` rows with no join partner, `S5` extreme values, `S6` groups of one, many, and none. A rewrite disproved in step 10 was caught by LLM-written test data.
+- **Rewrites disproved,** and what disproved them, such as "rewrite_1: disproved in step 9 by scenario S2". Scenarios are kinds of test data: `S0` empty tables, `S1` rows that just match and just miss, `S2` NULLs, `S3` duplicate join keys, `S4` rows with no join partner, `S5` extreme values, `S6` groups of one, many, and none. A rewrite disproved in step 10 was caught by LLM-written test data. Each rewrite is listed with its source.
 - **Indexes the planner declined,** because it never chose them, even hypothetically.
 - **Proposed indexes that already existed,** and which existing index covers each. If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.
 - **Rewrites that passed the tests but lost,** because they weren't enough faster, tied with something smaller, or returned different results on production data.
@@ -600,7 +607,7 @@ This section appears only when no candidate won. It lists:
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. The rewrite table's first row, `6c`, is QUAACK's own rewrite rules: how many rewrites each rule made, and how many were dropped as a duplicate of another, as over the limit of five, or for failing the schema checks. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
 
 Read it when the result surprises you. If the LLM proposed five rewrites and all five failed the schema checks, the problem is different than if all five were disproved by NULLs.
 

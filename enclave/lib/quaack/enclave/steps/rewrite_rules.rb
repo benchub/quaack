@@ -41,8 +41,8 @@ module Quaack
       # marker can be repeated. The writes go in this order: each survivor,
       # then the 6c and step 8 burndown records in one write, then the
       # marker. A survivor an earlier call stored is found again by its SQL
-      # and kept, not stored twice (RewriteCheck.check). The burndown is
-      # recorded only if it holds no 6c record yet.
+      # and kept, not stored twice (stored, and RewriteCheck.check). The
+      # burndown is recorded only if it holds no 6c record yet.
       #
       # Its only output is one rewrite_outcome per rewrite, as rewrite-check
       # sends: index, outcome, rule (why it was rejected, one of the check's
@@ -59,12 +59,22 @@ module Quaack
           generated = nil
           recorded = Burndown.read(store)["stages"].key?(STAGE)
           also = ->(outcomes) { [[STAGE, :rewrites, counts(generated, outcomes)]] unless recorded }
-          outcomes = RewriteCheck.check(store, source: "rule", also:) do |connection|
+          outcomes = RewriteCheck.check(store, source: "rule", stored: stored(store), also:) do |connection|
             generated = generate(store, connection, rules)
             generated.rewrites.map { rewrite(it) }
           end
           store.write("rewrite_rules_applied", "duplicates" => generated.duplicates, "over_cap" => generated.over_cap)
           outcomes
+        end
+
+        # { accepted SQL => entry name } for the rule-made rewrites the store
+        # already holds, the earliest of each.
+        def stored(store)
+          names = (1..).lazy.map { "rewrite_#{it}" }.take_while { store.entry?(it) }
+          names.each_with_object({}) do |name, found|
+            entry = store.read(name)
+            found[entry["sql"]] ||= name if entry["source"] == "rule"
+          end
         end
 
         # The 6c burndown record's counts.

@@ -66,8 +66,12 @@ module Quaack
         made = chain([original], rules, catalog, { original.sql => true })
         kept = made.grep(Candidate)
         Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max,
-                      made: made.map { (it.is_a?(Candidate) ? it.rules.last : it.rule).name }.tally)
+                      made: tally(made))
       end
+
+      # How many of made, Candidates and Duplicates, each rule made, by the
+      # name of the last rule applied.
+      def tally(made) = made.map { (it.is_a?(Candidate) ? it.rules.last : it.rule).name }.tally
 
       # Every result DEPTH rounds of the rules make of from, shallowest
       # first, with a Duplicate in place of each one already seen.

@@ -124,7 +124,8 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "names each rewrite, the rules that made it, and the step that disproved it" do
-      expect(section).to include("<li>rewrite_2, made by QUAACK&#39;s rule key_in_self_join, was disproved in step 9</li>")
+      expect(section).to include("<li>rewrite_2, made by QUAACK&#39;s rule key_in_self_join, " \
+                                 "was disproved in step 9</li>")
       expect(section).to include("<li>rewrite_3, made by QUAACK&#39;s rules or_to_union, then key_in_self_join, " \
                                  "was disproved in step 10</li>")
       expect(section).to include("<li>rewrite_4, made by QUAACK&#39;s rule &lt;b&gt;, was disproved in step 14c, " \
@@ -235,13 +236,14 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says which rewrites were disproved, and by which scenario or round" do
       expect(section).to include("<li>rewrite_2: disproved in step 9 by scenario S3 (rule null_&lt;semantics&gt;)</li>")
-      expect(section).to include("<li>rewrite_3 (proposed by the LLM): disproved in step 10, counterexample round 2</li>")
+      expect(section).to include("<li>rewrite_3 (proposed by the LLM): disproved in step 10, " \
+                                 "counterexample round 2</li>")
       expect(section).to include("<li>rewrite_4: disproved in step 10</li>")
     end
 
     it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
-      expect(section).to include("<li>rewrite_5:none (made by QUAACK&#39;s rule key_in_self_join): passed steps 9 and " \
-                                 "10, but minimax found it not better than the original</li>")
+      expect(section).to include("<li>rewrite_5:none (made by QUAACK&#39;s rule key_in_self_join): passed steps 9 " \
+                                 "and 10, but minimax found it not better than the original</li>")
       expect(section).to include("<li>rewrite_6:top:1: passed steps 9 and 10, but its results didn't match " \
                                  "the original's in 14c</li>".gsub("'", "&#39;"))
     end

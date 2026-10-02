@@ -131,6 +131,10 @@ RSpec.describe "quaacks report-payload" do
       populate(store)
       store.write("rewrite_1", store.read("rewrite_1").merge(fields.transform_keys(&:to_s)).compact)
       yield store if block_given?
+      report_payload(store)
+    end
+
+    def report_payload(store)
       quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
     end
 

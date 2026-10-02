@@ -107,7 +107,8 @@ module Quaack
         def rule_bugs = @payload["rule_bugs"] || []
 
         def bug(entry)
-          "#{entry["rewrite"]}, #{made_by(entry["rules"])}, was disproved in #{STEPS.fetch(entry["step"], entry["step"])}"
+          step = STEPS.fetch(entry["step"], entry["step"])
+          "#{entry["rewrite"]}, #{made_by(entry["rules"])}, was disproved in #{step}"
         end
 
         # Where a rewrite came from, or nil if the payload doesn't say.

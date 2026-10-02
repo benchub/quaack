@@ -68,7 +68,8 @@ flowchart TD
     s4 --> s5{"5. Does the racetrack plan match production's plan?"}
     s5 -- no --> abort(["Abort: statistics don't match"])
     s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
-    s5 -- yes --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
+    s5 -- yes --> s6c["6c. Mechanical rewrite rules"]
+    s6c --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
     s6a --> s6b["6b. Assumption check<br/>against constraints and indexes"]
     s5a --> s8
     s6b --> s8["8. Plan-based pruning<br/>drop rewrites whose plan never changes"]
@@ -87,7 +88,7 @@ flowchart TD
     classDef enclave fill:#ffe0b8,stroke:#b36b12,color:#000
     classDef driver fill:#cfe3ff,stroke:#3b6db3,color:#000
     classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
-    class s1,s2,s3,s4,s5,s6b,s8,s9,s12,s14 enclave
+    class s1,s2,s3,s4,s5,s6c,s6b,s8,s9,s12,s14 enclave
     class s6a,s15 driver
     class s5a,s10,s11 both
 ```
@@ -187,7 +188,7 @@ Result rows, fixture contents, and literals never come out.
 
 **Which part runs each step:**
 
-- **The enclave script** runs steps 1 through 4, step 5, 5a-1 through 5a-4, 5a-7, 6b, step 8, step 9, 10b, 10c, the re-ranking in step 11, and steps 12 through 14.
+- **The enclave script** runs steps 1 through 4, step 5, 5a-1 through 5a-4, 5a-7, 6b, 6c, step 8, step 9, 10b, 10c, the re-ranking in step 11, and steps 12 through 14.
 - **The driver** runs 5a-5, 5a-6, 6a, step 7, 10a, generator three in step 11, and step 15. These are the steps that talk to an LLM or an operator, plus the report.
 
 Inside the enclave, the enclave script keeps its data in three places:
@@ -654,7 +655,13 @@ A rule is one object with a name, and one method that takes a parse tree and the
 
 Each rewrite goes through the same checks as an LLM's, in `rewrite-check`'s order: the inbound check, 6b, and step 8's structural discards. Survivors are stored as `rewrite_<n>` before 6a's, with their source (`rule`) and the names of the rules applied, in order. From there they go through steps 8 to 14 like any other rewrite. Rules are sound by design, but the tests still run: a rule's rewrite that steps 9, 10, or 14c disprove is a bug in QUAACK, and the report says so prominently, naming the rule.
 
-`quaacks rewrite-rules --run <run ID>` runs this. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. The marker holds how many results were dropped as duplicates and how many were over the cap. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
+`quaacks rewrite-rules --run <run ID>` runs this. The driver calls it right before 6a, with no LLM call and no payload. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. The marker holds how many results were dropped as duplicates and how many were over the cap. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
+
+It records the 6c burndown stage: every result the rules made, counted by the last rule applied, and how many were dropped as a duplicate, as over the cap, or for failing the checks. A result pg_query can't deparse faithfully isn't counted.
+
+The marker is its last write, so a call that dies can leave rewrites stored with no marker, and the driver then calls it again. Running it again must change nothing. It writes in this order: each survivor, then the 6c and step 8 burndown records together in one write, then the marker. A second call keeps a rule-made rewrite the store already holds with the same SQL instead of storing it again, and records the burndown only if no 6c record is there yet.
+
+`report-payload` sends each rewrite's source (`rule`, `llm`, or `operator`) and, for a rule-made one, its rule names. It sends a source or a rule name only if it's one of QUAACK's own, never what a store entry holds as it is. It also sends `rule_bugs`: each rule-made rewrite that step 9, step 10, or 14c disproved, with its rule names and the step. A rewrite step 8 pruned for planning as the original does was never tested, so it isn't one: on Postgres 18 the planner removes a single self-join on a key by itself, so `key_in_self_join`'s plainest rewrite is pruned that way.
 
 An operator can't yet assert a fact the schema doesn't state, such as "a content participation belongs to its submission's user". A rewrite that needs one is disproved in step 9 or 10.
 
@@ -908,7 +915,9 @@ Keep the top three candidates by total blocks.
 
 The driver builds the report from the results the enclave script sent back. Everything it needs is shape-class data.
 
-Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them.
+Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them. Say where each rewrite came from: the 6c rules that made it, the LLM, or the operator.
+
+If a test disproved a rule-made rewrite (6c), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
 
 For each proposed index, include:
 

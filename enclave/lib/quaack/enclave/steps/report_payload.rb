@@ -67,9 +67,13 @@ module Quaack
           [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
              verdicts: store.read("minimax")["verdicts"].slice(*labels),
              measurements: measurements(store, labels), **shapes(store, labels),
-             timed_out_count: store.read("candidate_runs")["timed_out_count"],
-             negative: labels.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
-             burndown: Burndown.read(store) }]
+             timed_out_count: store.read("candidate_runs")["timed_out_count"], **findings(store, labels) }]
+        end
+
+        # 15a, 6c, and 15b: what the report says beyond the candidates.
+        def findings(store, labels)
+          { negative: labels.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
+            burndown: Burndown.read(store) }
         end
 
         def shapes(store, labels)
