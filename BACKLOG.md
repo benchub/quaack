@@ -1156,7 +1156,7 @@ Test it with this query's shape. Also test that the rule refuses when the select
 
 The same query also had `enrollments.workflow_state <> 'deleted' AND enrollments.workflow_state = 'active'` and `enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment', ...) AND enrollments.type = 'TeacherEnrollment'`. Rails scopes stack predicates like this. Postgres doesn't remove the implied ones. It multiplies their selectivities, so it underestimates rows, and that can pick a bad plan.
 
-The rule: in a top-level `AND` (and in each `AND` of a subquery's `WHERE`), when one conjunct is `col = c`, drop any other conjunct on the same column that `col = c` implies:
+The rule: in a top-level `AND` (and in each `AND` of a subquery's `WHERE`), when one conjunct is `col = c`, drop any other conjunct on the same column that `col = c` implies. Treat the conjuncts of every inner join's `ON` at that level as part of the same `AND`, since for inner joins they filter the same rows. When the same conjunct is in both `ON` and `WHERE`, as in `JOIN assignments ON ... AND assignments.type = 'Assignment' ... WHERE assignments.type = 'Assignment'`, drop the one in `WHERE`. Never move a conjunct into or out of an outer join's `ON`, and never use one as proof. The conjuncts it drops:
 
 - `col <> d` with `c` and `d` different.
 - `col IN (..., c, ...)`.
@@ -1248,6 +1248,38 @@ The rule: for a query whose `FROM` is one subquery that's a `UNION` or `UNION AL
 It's sound with no catalog facts: every row an arm outputs passed that arm's `WHERE`, and `GROUP BY` doesn't change a grouped row's value for a column it groups by or one that depends on it. It states no assumptions.
 
 Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees one shared CTE.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-10. 6c rule: `existence_in_flip`.
+
+A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
+
+```sql
+SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
+WHERE enrollments.user_id = 6504 AND ...
+  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
+LIMIT 1;
+```
+
+The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
+
+The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
+
+- Every select-list item is a constant.
+- It has `LIMIT 1`.
+- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
+
+The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
+
+It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
+
+Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+Add it to 6c's table in DESIGN.md.
 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
