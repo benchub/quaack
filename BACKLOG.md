@@ -1127,6 +1127,52 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 - **Design:** 6b, 6c, 15.
 - **Status:** todo
 
+### 20261002-4. `distinct_join_to_exists`: handle what Rails sends.
+
+A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
+
+```sql
+SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
+FROM users JOIN enrollments ON users.id = enrollments.user_id
+WHERE enrollments.course_id = 341535 AND ...
+ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC
+LIMIT 20 OFFSET 0;
+```
+
+This is `distinct_join_to_exists`'s case, but the rule must handle three things 20261001-26's entry doesn't mention. Check what 20261001-26 landed, and add whichever of these it lacks:
+
+- `t.*` in the select list. It holds the kept table's key.
+- Select-list expressions that read only the kept table's columns, such as `col COLLATE ...`, a cast, or a function call. A volatile function stays refused.
+- `ORDER BY`, `LIMIT`, and `OFFSET`, carried over unchanged. Their expressions read only the kept table, as `DISTINCT` already requires them to appear in the select list.
+
+Test it with this query's shape. Also test that the rule refuses when the select list reads a column of a table it would remove.
+
+- **Depends on:** 20261001-26.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-5. 6c rule: `implied_predicate_removal`.
+
+The same query also had `enrollments.workflow_state <> 'deleted' AND enrollments.workflow_state = 'active'` and `enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment', ...) AND enrollments.type = 'TeacherEnrollment'`. Rails scopes stack predicates like this. Postgres doesn't remove the implied ones. It multiplies their selectivities, so it underestimates rows, and that can pick a bad plan.
+
+The rule: in a top-level `AND` (and in each `AND` of a subquery's `WHERE`), when one conjunct is `col = c`, drop any other conjunct on the same column that `col = c` implies:
+
+- `col <> d` with `c` and `d` different.
+- `col IN (..., c, ...)`.
+- `col NOT IN (d1, d2, ...)` with `c` in none of them.
+- A range such as `col > d`, `col >= d`, or `col BETWEEN d1 AND d2` that `c` satisfies.
+- An exact duplicate of another conjunct, such as `score IS NOT NULL` written twice. This one doesn't need `col = c`.
+
+NULLs are safe: `col = c` already drops the rows where `col` is NULL. It needs no catalog facts, so it states no assumptions. Refuse when the column has a nondeterministic collation, or when comparing the constants needs anything but the column type's default operators. Compare the constants in Postgres, in the enclave, with the column's type and collation, not in Ruby. Dropping a conjunct can leave a `WHERE` with one item, so deparse it without an empty `AND`.
+
+Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it first in the rules list, so later rules see the simpler query.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
