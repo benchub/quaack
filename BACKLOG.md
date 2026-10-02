@@ -1005,24 +1005,11 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-21. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-22. 6c: the rule generator, and `key_in_self_join`.
-
-Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
-
-- A rule is one object: a name, a description, and a method from a pg_query parse tree and catalog facts to zero or more rewritten trees, each with its assumptions in 6b's vocabulary. The generator holds a list of rules and knows nothing about any one of them. Adding a rule is one file and one line.
-- The generator chains: breadth first, list order, at most two rules deep, duplicates by deparsed SQL dropped, at most five kept.
-- `key_in_self_join`, as 6c's table says, including the `UNION ALL` arms.
-- `quaacks rewrite-rules --run <run ID>`: runs the generator on the redacted query, puts each result through `rewrite-check`'s checks (inbound, 6b, structural), stores survivors as `rewrite_<n>` with `"source" => "rule"` and `"rules" => [names]`, writes `rewrite_rules_applied`, adds it to `status`, and sends one `rewrite_outcome` each. 6a's and step 7's entries get `"source"` too (`llm`, `operator`).
-- Test on real Postgres that each rule's output returns the same rows as its input, on data that would expose a wrong one, and that the rule doesn't fire when the key isn't unique or is nullable.
-
-- **Depends on:** None open.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-22. 6c: the rule generator, and `key_in_self_join`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-23. 6c: run the rules from `quaack run`, and count them.
 
-The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
+The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. A rerun stores its rewrites again, so the marker is the only guard; the marker has no per-rule counts, which 15b's row needs. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
 
 - **Depends on:** 20261001-22.
 - **Came from:** 20261001-21.
@@ -1079,6 +1066,23 @@ Do this after 20261001-22 to -28 land, or between two of them, never while one i
 - **Depends on:** 20261001-22.
 - **Came from:** The user, 2026-10-01.
 - **Design:** Step 6.
+- **Status:** todo
+
+### 20261002-1. Rule generator: minor findings.
+
+Minor findings from both reviews of 20261001-22:
+
+- **Legacy inheritance.** `AssumptionCheck`'s `unique` ignores `INHERITS` children, whose rows a parent's key doesn't cover, so `key_in_self_join` can drop rows on such a parent. Make `unique` unmet when the table has non-partition children, and list it in DESIGN.md as unsupported. Partitioned tables are fine.
+- **Test gaps where a wrong change stays green:** no firing example on a non-public schema (`key_in_self_join.rb:51`, hardcoding `public` survives); no column-free arm predicate such as Rails's `1=0` (`arm.rb:99`); no IN inside a nested AND (`tree.rb:52`); the single-column guard (`arm.rb:79`) and single-statement guard (`tree.rb:37`); the marker's `over_cap` (`steps/rewrite_rules.rb:48`).
+- The rules' exemption from `too_many` can't be observed, since the generator's cap and `RewriteCheck::MAX` are both 5. Share one constant.
+- A rule file can't be required alone: it uses `RewriteRules::Rewrite`, defined in the file that requires it. Move `Rewrite` to its own file.
+- `Tree::Names`'s comment says it avoids every name in the tree. It collects only names in column references.
+- A query with three or more matching INs never gets its fully rewritten form, given depth two and the cap of five.
+- Wider coverage for later: nested SELECTs and derived tables, unqualified columns, an IN in a join's ON, `= ANY (subquery)`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The build and both reviews of 20261001-22.
+- **Design:** 6b, 6c.
 - **Status:** todo
 
 ## After version 1.

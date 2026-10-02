@@ -3313,3 +3313,19 @@ What rules could do for that run's query: `assignments.id` is the primary key, s
 - **Open questions:** Which rules are in version 1. Whether rules chain. Whether the LLM is told what the rules already made. Whether operators can assert invariants.
 - **Status:** done
 - **Note (2026-10-01):** The user approved the five starting rules, chaining, and running rule-made rewrites through steps 9 and 10, and asked that adding rules stay easy. The design is DESIGN.md 6c. The work is 20261001-22 to -28. Operator-asserted invariants are left for later.
+
+### 20261001-22. 6c: the rule generator, and `key_in_self_join`.
+
+Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
+
+- A rule is one object: a name, a description, and a method from a pg_query parse tree and catalog facts to zero or more rewritten trees, each with its assumptions in 6b's vocabulary. The generator holds a list of rules and knows nothing about any one of them. Adding a rule is one file and one line.
+- The generator chains: breadth first, list order, at most two rules deep, duplicates by deparsed SQL dropped, at most five kept.
+- `key_in_self_join`, as 6c's table says, including the `UNION ALL` arms.
+- `quaacks rewrite-rules --run <run ID>`: runs the generator on the redacted query, puts each result through `rewrite-check`'s checks (inbound, 6b, structural), stores survivors as `rewrite_<n>` with `"source" => "rule"` and `"rules" => [names]`, writes `rewrite_rules_applied`, adds it to `status`, and sends one `rewrite_outcome` each. 6a's and step 7's entries get `"source"` too (`llm`, `operator`).
+- Test on real Postgres that each rule's output returns the same rows as its input, on data that would expose a wrong one, and that the rule doesn't fire when the key isn't unique or is nullable.
+
+- **Depends on:** None open.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. `RewriteRules.generate` chains a list of rules; a rule has `name`, `description`, and `rewrites(parse, catalog)`. `key_in_self_join` fires only on a top-level AND condition and refuses anything not clearly safe. `quaacks rewrite-rules` shares `RewriteCheck.check` with `rewrite-check`, and every stored rewrite now has a `source`. The builder changed 6c: a rule may run on its own output, and the marker holds the duplicate and over-cap counts. Adding a rule is one file and two lines. The follow-ups went to 20261002-1.
