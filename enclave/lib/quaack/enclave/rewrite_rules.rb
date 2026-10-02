@@ -5,6 +5,7 @@ require_relative "deparse"
 require_relative "rewrite_rules/distinct_join_to_exists"
 require_relative "rewrite_rules/key_in_self_join"
 require_relative "rewrite_rules/not_in_to_not_exists"
+require_relative "rewrite_rules/or_to_union"
 
 module Quaack
   module Enclave
@@ -56,6 +57,7 @@ module Quaack
 
       RULES = [
         KeyInSelfJoin.new,
+        OrToUnion.new,
         NotInToNotExists.new,
         DistinctJoinToExists.new
       ].freeze
