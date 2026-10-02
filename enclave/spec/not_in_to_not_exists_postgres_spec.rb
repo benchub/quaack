@@ -445,6 +445,59 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     end
   end
 
+  # app.users and app.memberships have public's names, but their columns
+  # are nullable and each holds a NULL. app.people and app.visits are only
+  # in app, with columns that are not null.
+  context "with another schema, some of whose tables have public's names" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA app;
+        CREATE TABLE app.users (id int);
+        CREATE TABLE app.memberships (user_id int, group_id int NOT NULL);
+        CREATE TABLE app.people (id int PRIMARY KEY);
+        CREATE TABLE app.visits (person_id int NOT NULL);
+        INSERT INTO app.users VALUES (2), (NULL);
+        INSERT INTO app.memberships VALUES (1, 7), (NULL, 7);
+        INSERT INTO app.people VALUES (1), (2);
+        INSERT INTO app.visits VALUES (1), (1);
+      SQL
+    end
+
+    it "fires on that schema's tables, and names them by it in the assumptions" do
+      sql = "SELECT people.id FROM app.people WHERE people.id NOT IN (SELECT visits.person_id FROM app.visits)"
+
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).map(&:assumptions)).to eq(
+        [[{ "kind" => "not_null", "table" => "app.people", "column" => "id" },
+          { "kind" => "not_null", "table" => "app.visits", "column" => "person_id" }]]
+      )
+      expect(same_rows(sql, rewritten(sql))).to eq([["2"]])
+    end
+
+    it "doesn't fire on a nullable tested column whose table has the name of a public one that's not null" do
+      original = "SELECT users.id FROM app.users WHERE users.id NOT IN " \
+                 "(SELECT memberships.user_id FROM public.memberships WHERE memberships.group_id = 7)"
+      not_exists = "SELECT users.id FROM app.users WHERE NOT EXISTS (SELECT 1 FROM public.memberships " \
+                   "WHERE memberships.group_id = 7 AND users.id = memberships.user_id)"
+
+      expect(rewritten(original.sub("app.users", "public.users")).size).to eq(1)
+      expect(rewritten(original)).to eq([])
+      expect(rows(original)).to eq([["2"]])
+      expect(rows(not_exists)).to eq([["2"], [nil]])
+    end
+
+    it "doesn't fire on a nullable selected column whose table has the name of a public one that's not null" do
+      original = "SELECT users.id FROM public.users WHERE users.id NOT IN " \
+                 "(SELECT memberships.user_id FROM app.memberships WHERE memberships.group_id = 7)"
+      not_exists = "SELECT users.id FROM public.users WHERE NOT EXISTS (SELECT 1 FROM app.memberships " \
+                   "WHERE memberships.group_id = 7 AND users.id = memberships.user_id)"
+
+      expect(rewritten(original.sub("app.memberships", "public.memberships")).size).to eq(1)
+      expect(rewritten(original)).to eq([])
+      expect(rows(original)).to eq([])
+      expect(rows(not_exists)).to eq([["2"], ["3"], ["4"], ["5"]])
+    end
+  end
+
   # What the rule would write if it fired anyway.
   def forced(column, subquery) = "SELECT users.id FROM public.users WHERE NOT EXISTS (#{subquery} = #{column})"
 
