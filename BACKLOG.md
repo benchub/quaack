@@ -1302,7 +1302,7 @@ With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261002-12. Two bedrock driver specs fail on `main`.
+### 20261002-13. Two bedrock driver specs fail on `main`.
 
 Two driver specs fail on `main`, every run, whatever the environment:
 
@@ -1312,7 +1312,7 @@ Two driver specs fail on `main`, every run, whatever the environment:
 The bedrock provider (20260930-11, commit e23b414) was written before 20261001-1 (`quaack run` prints the LLM error's detail, merged 85e4332) and 20261001-2 (a failed LLM ask says its step and request sizes, merged 6f22fae) landed. Those two changed the messages on purpose, and the bedrock specs weren't updated. Check what DESIGN.md and those two tasks say the messages should be. If the code is right, fix the specs, and make sure the fixed assertions are still specific: they must still prove the adapter doesn't quote AWS's own message and doesn't retry. If the code is wrong, fix the code with a failing test first. Check the other bedrock and provider specs for the same staleness.
 
 - **Depends on:** 20260930-11, 20261001-1, 20261001-2.
-- **Came from:** The baseline full check before 20261002-11, 2026-10-02.
+- **Came from:** The baseline full check before 20261002-11, 2026-10-02. (First filed as 20261002-12, which another session had already taken for the `copilot_cli` provider.)
 - **Design:** The driver's LLM client.
 - **Status:** todo
 
