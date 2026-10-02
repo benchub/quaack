@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "rewrite_rules/distinct_join_to_exists"
 require_relative "rewrite_rules/key_in_self_join"
 require_relative "rewrite_rules/not_in_to_not_exists"
 
@@ -55,7 +56,8 @@ module Quaack
 
       RULES = [
         KeyInSelfJoin.new,
-        NotInToNotExists.new
+        NotInToNotExists.new,
+        DistinctJoinToExists.new
       ].freeze
 
       DEPTH = 2

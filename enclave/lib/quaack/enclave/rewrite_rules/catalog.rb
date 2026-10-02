@@ -18,10 +18,30 @@ module Quaack
       # assumption the vocabulary can't state, such as one on a table whose
       # name has a space, is never met. Each answer is kept for the life of
       # the Catalog. connection is read only, as AssumptionCheck reads it.
+      #
+      # It also gives a table's column names, in the table's order, which
+      # is what a star in a select list stands for:
+      #
+      #   catalog.columns("public", "orders")   # => ["id", "customer_id", "total"]
+      #
+      # A table that doesn't exist has none. They're read once per table.
       class Catalog
+        COLUMNS = <<~SQL
+          SELECT a.attname FROM pg_catalog.pg_attribute a
+          JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+          ORDER BY a.attnum
+        SQL
+
         def initialize(connection)
           @connection = connection
           @met = {}
+          @columns = {}
+        end
+
+        def columns(schema, table)
+          @columns[[schema, table]] ||= @connection.exec_params(COLUMNS, [schema, table]).column_values(0)
         end
 
         def met?(assumption)

@@ -104,6 +104,12 @@ module Quaack
 
         def same_table?(one, other) = [one.schemaname, one.relname] == [other.schemaname, other.relname]
 
+        # Whether every one of a FROM clause's Items is a plain table under
+        # a name of its own.
+        def tables?(items)
+          items.all? { it.table && plain_table?(it.table) } && items.map(&:name).uniq.size == items.size
+        end
+
         # The Items of a FROM clause.
         def from_items(nodes, nullable: false) = nodes.flat_map { from_item(it, nullable) }
 

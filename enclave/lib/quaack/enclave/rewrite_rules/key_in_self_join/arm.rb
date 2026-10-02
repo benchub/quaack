@@ -52,16 +52,11 @@ module Quaack
           def self.read(select, table, key)
             items = Tree.from_items(select.from_clause)
             conditions = Tree.inner_conditions(select.from_clause)
-            return unless Tree.plain_select?(select) && conditions && tables?(items)
+            return unless Tree.plain_select?(select) && conditions && Tree.tables?(items)
 
             arm = new(inner: key_table(select, key), others: items, predicates: Tree.conjuncts(select.where_clause) +
                                                                                 conditions)
             arm.without_inner(table)
-          end
-
-          # Whether every FROM item is a plain table under a name of its own.
-          def self.tables?(items)
-            items.all? { it.table && Tree.plain_table?(it.table) } && items.map(&:name).uniq.size == items.size
           end
 
           # The qualifier of the select list's one column, if that's key.
