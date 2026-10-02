@@ -1125,9 +1125,12 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 - **Depends on:** 20261001-22, 20261001-23.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6b, 6c, 15.
+- **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
 - **Status:** todo
 
 ### 20261002-4. `distinct_join_to_exists`: handle what Rails sends.
+
+- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands.
 
 A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
 
@@ -1171,6 +1174,7 @@ Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it f
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
+- **Note (2026-10-02, answers):** Rules never see literal values. This task adds a `Literals` object, the first rule to need one,, passed to rules beside `Catalog`, that answers with booleans only: `same?(a, b)` (two placeholders have the same literal text and shape, a safe under-approximation of equal values) and `holds?(expr)` (evaluates a boolean expression over placeholders on the racetrack connection, with the real values bound as parameters, never spliced). Rule code never reads `placeholder_map`, and nothing a rule outputs carries a value. A merged copy keeps the first copy's placeholder.
 - **Status:** todo
 
 ### 20261002-6. 6c rule: `shared_scan_cte`.
@@ -1193,6 +1197,7 @@ Add it to 6c's table in DESIGN.md.
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c, 8.
+- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-5's `Literals#same?`, never by reading values.
 - **Status:** todo
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`.
@@ -1232,6 +1237,7 @@ Add it to 6c's table in DESIGN.md.
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
+- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-5's `Literals#same?` for their placeholders, never by reading values.
 - **Status:** todo
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`.
@@ -1252,6 +1258,7 @@ Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
+- **Note (2026-10-02, answers):** Match conjuncts with 20261002-5's `Literals#same?` for their placeholders, never by reading values.
 - **Status:** todo
 
 ### 20261002-10. 6c rule: `existence_in_flip`.
@@ -1283,6 +1290,15 @@ Add it to 6c's table in DESIGN.md.
 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-11. 6c keeps up to ten rewrites.
+
+With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules::MAX` to 10, keep `DEPTH` at 2, and update DESIGN.md 6c ("Keep at most five rewrites") and any spec that pins five.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The user, 2026-10-02.
 - **Design:** 6c.
 - **Status:** todo
 
