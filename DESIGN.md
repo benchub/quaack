@@ -632,6 +632,32 @@ Attach these statements to each candidate. Later steps use them to guide adversa
 
 Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. The inbound check plans the candidate first, then this check runs. Reject any candidate with an unmet assumption before anything executes it.
 
+### 6c. Mechanical rules.
+
+This runs first, before 6a, as 5a-1 and 5a-2 run before 5a-5. It needs no LLM, so a run with a weak model still gets rewrites.
+
+The enclave script walks the redacted query's pg_query parse and applies a list of rules. Each rule is a sound transformation: given the catalog facts it names, its output returns the same rows as its input for every data set the schema allows. A rule only fires when the catalog proves those facts, and it states them as assumptions in 6b's vocabulary (`not_null`, `unique`, `foreign_key`, `check`), so 6b checks them again like anyone else's.
+
+The rules in version 1, each one something Postgres's planner doesn't do for itself and ORMs often write:
+
+| Rule | Transformation | Needs |
+| --- | --- | --- |
+| `key_in_self_join` | `t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key: drop the inner `t2`, move its predicates to the outer `t`, and leave an `EXISTS` on what's left of the subquery, correlated on `t.k`. With nothing left, only the predicates remain. Each arm of a `UNION ALL` in the subquery is handled on its own, and the arms are joined with `OR`. | `k` unique and not null. |
+| `or_to_union` | A top-level `OR` whose arms read different tables or subqueries becomes a `UNION` of one query per arm. | A unique, not-null key of every `FROM` table, so `UNION` removes exactly the rows both arms return. |
+| `not_in_to_not_exists` | `x NOT IN (SELECT y ...)` becomes `NOT EXISTS (... WHERE y = x)`. | `x` and `y` not null. |
+| `distinct_join_to_exists` | `SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others. | The select list holds a unique, not-null key of the kept table. |
+| `unused_join_removal` | An inner join to a table that's read nowhere else is removed. | A foreign key from the joining columns to the joined table's key, and the joining columns not null. |
+
+Rules chain. A rule runs on the original and on other rules' output, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most five rewrites.
+
+A rule is one object with a name, and one method that takes a parse tree and the catalog facts and returns zero or more rewritten trees, each with its assumptions. The generator knows nothing about any one rule: it holds a list. Adding a rule means adding one file and one line in that list. A rule's name and its description are QUAACK's own constants, so they're shape-class data and the report can show them.
+
+Each rewrite goes through the same checks as an LLM's, in `rewrite-check`'s order: the inbound check, 6b, and step 8's structural discards. Survivors are stored as `rewrite_<n>` before 6a's, with their source (`rule`) and the names of the rules applied, in order. From there they go through steps 8 to 14 like any other rewrite. Rules are sound by design, but the tests still run: a rule's rewrite that steps 9, 10, or 14c disprove is a bug in QUAACK, and the report says so prominently, naming the rule.
+
+`quaacks rewrite-rules --run <run ID>` runs this. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
+
+An operator can't yet assert a fact the schema doesn't state, such as "a content participation belongs to its submission's user". A rewrite that needs one is disproved in step 9 or 10.
+
 ## 7. Operator candidates.
 
 Operators can submit their own rewrites through the driver as plain SQL. They write them with the 3g placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred.
@@ -917,6 +943,7 @@ For each stage, show how many items came in, how many the stage added, how many 
 
 | Stage | Adds | Drops, by reason |
 | --- | --- | --- |
+| 6c | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of five, or failed the checks. |
 | 6a and step 7 | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
 | 6b | None. | Unmet assumption. Also count the step 7 warnings, which don't drop anything. |
 | Step 8 | None. | Failed to plan, output columns didn't match, or couldn't run any differently from the original. |

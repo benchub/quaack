@@ -936,6 +936,136 @@ Minor findings from the review of 20260930-11:
 - **Design:** LLM client.
 - **Status:** todo
 
+### 20261001-4. Report payload: send what a legible report needs.
+
+The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
+
+- **The original query, always.** The redacted query with the clock put back, as `original_sql` gives it today for an index-only winner.
+- **Every stored rewrite,** not only the ranked ones: its SQL, its source (the LLM in 6a, or the operator in step 7, from `inferred`), and one fate. The fates: step 8 found its plans the same as the original's; step 9 disproved it, with the scenario and rule; step 10 disproved it, with the round; 14c found different results on production data; it was measured and wasn't better; it was ranked.
+- **A step 8 prune is not a step 9 disproof.** `rewrite-test` stores a pruned rewrite as `passed` false with rule `discarded`, and NegativeResult sends that as a step 9 disproof. The report then says "rewrite_1: disproved in step 9 by scenario  (rule discarded)" for a rewrite that was never tested for correctness. Send the step 8 fate instead.
+- **Every measured label,** not only `top`: its measurements, its per-literal verdicts, and the indexes it ran with (their built names), so the report can say what `original:top:1` was and how many blocks it read against the original.
+- **Existing index sizes.** For `covered_by` and `makes_redundant`, send each existing index's `size_bytes` from the planner statistics with its name.
+- **No repeats in 15a's lists.** In the real run the same DDL was listed twice under one search (`user_id, cached_due_date`), a partial index appeared once with `'deleted'::text` and once with `'deleted'`, and the rewrite's search repeated nearly all of the original's lines. Send each declined or existing index once, with the searches it came up in.
+
+Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
+
+Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-6 counts them by reason.
+
+- **Depends on:** 20260922-62, -63.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** Step 15, 15a.
+- **Status:** todo
+
+### 20261001-5. Report: readable HTML.
+
+The driver's half of the same complaint. Render the report so someone who has never read DESIGN.md can follow it:
+
+- **Queries.** Show the original query first, then every rewrite, each pretty-printed. pg_query 6.2 does this (`PgQuery.deparse(tree, opts: PgQuery::DeparseOpts.new(pretty_print: true, ...))`), and it's already a driver dependency.
+- **No internal labels or rule names.** `original:top:1: not_better` becomes words: the original query with the index on `submissions (assignment_id, user_id, cached_due_date)` read so many blocks on the slow values against so many for the original, which isn't more than 5% fewer. The same goes for `footprint_tie`, `same_plans`, `never_used`, and the rest.
+- **Sizes.** Use the unit that fits (kB, MB, GB) with thousands separators, right-aligned, so indexes compare at a glance. Show the existing indexes' sizes in the last two columns of the index table.
+- **Who proposed what.** Say where each idea came from and what became of it, by source: the LLM's rewrites, the operator's rewrites, the two mechanical index generators, and the LLM's index proposals. **Decided (the user, 2026-10-01):** a table with one row per source and one column per outcome. One table for rewrites (proposed, refused on arrival, same plan as the original, wrong results, not better, ranked) and one for indexes (proposed, already existed, planner ignored, built and measured, not better, ranked).
+- **Burndown and LLM calls in English.** "Index suggestions for the original query: 2 calls", not "LLM calls, 5a-5: 2". Stage names too.
+- **A negative result's index table isn't "Proposed indexes".** Nothing is being proposed. Call it what it is: indexes QUAACK built and measured.
+- **Layout.** A summary of the verdict at the top, then readable typography, tables with aligned numbers, and SQL in code blocks. Plain CSS in the file, no scripts, no animation, and nothing loaded from the network.
+- Update the README's "Reading the report" to match.
+
+- **Depends on:** 20261001-4. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-6 and -7.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** Step 15, 15a, 15b.
+- **Status:** todo
+
+### 20261001-6. Record the rewrite stages in the burndown.
+
+In a real run the rewrite burndown has one row, step 8, and it's wrong. `Burndown.record` has two production callers, both step 8: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records 6a, 6b, step 7, step 9, step 10, step 11, or step 14.
+
+- Record every stage in DESIGN.md 15b's rewrite table. 6a and step 7: the rewrites the LLM gave and the operator gave, counted separately, and those refused on arrival, by rule. 6b: unmet assumptions, and step 7's warnings. Step 9: disproved by scenario, untested atoms, 9c retries. Step 10: disproved by round. Step 14: by minimax and 14c reason.
+- Make step 8 one record per rewrite that adds up across its two halves, so "in" is the rewrites that reached step 8 and "out" is those that went on.
+- Record the work totals: indexes built, measurement runs, fixture loads.
+- A step that's skipped on a resumed run mustn't be counted twice, and one that's rerun mustn't either.
+
+- **Depends on:** 20260922-61, -64.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** 15b.
+- **Status:** todo
+
+### 20261001-7. Record the index stages in the burndown.
+
+In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records 5a-1, 5a-2, or 5a-7. Wire them in, for the original's search and for each rewrite's (steps 8 and 11):
+
+- `index-search`: 5a-1 and 5a-2 (candidates per generator), 5a-3, and 5a-4 with its set-asides.
+- `index-test`: 5a-5 and 5a-6, one record per round, saying whether the refinement round ran.
+- `index-rank`: 5a-7, combinations tested and what didn't make the cut.
+
+This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiring bullet of 20260927-19. Settle 20260924-8's `since` question on the way, since `index-test` runs in a different process from `index-search`.
+
+- **Depends on:** 20260922-61, -64.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** 15b.
+- **Status:** todo
+
+### 20261001-8. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
+
+### 20261001-9. 6c: the rule generator, and `key_in_self_join`.
+
+Build DESIGN.md 6c's generator in the enclave gem, with its first rule.
+
+- A rule is one object: a name, a description, and a method from a pg_query parse tree and catalog facts to zero or more rewritten trees, each with its assumptions in 6b's vocabulary. The generator holds a list of rules and knows nothing about any one of them. Adding a rule is one file and one line.
+- The generator chains: breadth first, list order, at most two rules deep, duplicates by deparsed SQL dropped, at most five kept.
+- `key_in_self_join`, as 6c's table says, including the `UNION ALL` arms.
+- `quaacks rewrite-rules --run <run ID>`: runs the generator on the redacted query, puts each result through `rewrite-check`'s checks (inbound, 6b, structural), stores survivors as `rewrite_<n>` with `"source" => "rule"` and `"rules" => [names]`, writes `rewrite_rules_applied`, adds it to `status`, and sends one `rewrite_outcome` each. 6a's and step 7's entries get `"source"` too (`llm`, `operator`).
+- Test on real Postgres that each rule's output returns the same rows as its input, on data that would expose a wrong one, and that the rule doesn't fire when the key isn't unique or is nullable.
+
+- **Depends on:** None open.
+- **Came from:** 20261001-8.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261001-10. 6c: run the rules from `quaack run`, and count them.
+
+The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is stored. Record the 6c burndown stage (add `6c` to the protocol's stages). `report-payload` sends each rewrite's source and rule names, and flags a rule-made rewrite that steps 9, 10, or 14c disproved as a QUAACK bug. Extend the replay spec to cover a rule-made rewrite end to end. Reword the README's opening and step list to say rules propose rewrites too.
+
+- **Depends on:** 20261001-9.
+- **Came from:** 20261001-8.
+- **Design:** 6c, 15b.
+- **Status:** todo
+
+### 20261001-11. 6c rule: `or_to_union`.
+
+- **Depends on:** 20261001-9.
+- **Came from:** 20261001-8.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261001-12. 6c rule: `not_in_to_not_exists`.
+
+- **Depends on:** 20261001-9.
+- **Came from:** 20261001-8.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261001-13. 6c rule: `distinct_join_to_exists`.
+
+- **Depends on:** 20261001-9.
+- **Came from:** 20261001-8.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261001-14. 6c rule: `unused_join_removal`.
+
+- **Depends on:** 20261001-9.
+- **Came from:** 20261001-8.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261001-15. Tell the LLM what the rules already made.
+
+6a's payload carries the rule-made rewrites' SQL, and the prompt says not to repeat them, as 5a-5 does with `mechanical_results`.
+
+- **Depends on:** 20261001-10.
+- **Came from:** 20261001-8.
+- **Design:** 6a, 6c.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
