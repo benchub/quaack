@@ -9,9 +9,12 @@ require "quaack/enclave/store"
 
 # `quaacks report-payload --run <run ID>` (DESIGN.md step 15): one report
 # message of shape-class data, from the store, with no connection.
+# A sentinel that is a lowercase word, as a rule name is.
+REPORT_WORD_SENTINEL = "qsentinel_rule_name"
+
 RSpec.describe "quaacks report-payload" do
   let(:quaacks) { LeakCheck::Quaacks.new }
-  let(:sentinels) { LeakCheck::Sentinels.new(extra: { planted: "QSENTINEL7741" }) }
+  let(:sentinels) { LeakCheck::Sentinels.new(extra: { planted: "QSENTINEL7741", word: REPORT_WORD_SENTINEL }) }
   let(:sentinel) { sentinels.needles[:planted] }
 
   after { quaacks.remove }
@@ -73,7 +76,9 @@ RSpec.describe "quaacks report-payload" do
                   { "label" => "original:top:1", "slow_blocks" => 400, "total_blocks_sum" => 590,
                     "footprint" => 8192 }
                 ], "excluded" => { "rewrite_1:top:1" => "worse" }, "infinite_sets" => [])
-    store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1")
+    store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
+                             "transformation" => "moved #{sentinel}", "assumptions" => [{ "kind" => sentinel }],
+                             "source" => "rule", "rules" => ["key_in_self_join"])
     store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 1,
                                     "untested_atoms" => [{ "shape" => "column = $n" }])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
@@ -115,6 +120,125 @@ RSpec.describe "quaacks report-payload" do
     expect(rewrite["untested_atoms"]).to eq([{ "shape" => "column = $n" }])
     expect(rewrite["evidence"]).to be(false)
     expect(original["indexes"]).to eq(["quaack_a"])
+  end
+
+  describe "where each rewrite came from (6c)" do
+    def rewrite_candidate = report["candidates"].find { it["label"] == "rewrite_1:none" }
+
+    # Runs report-payload on the populated store with rewrite_1 changed.
+    def with_rewrite(**fields)
+      store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+      populate(store)
+      store.write("rewrite_1", store.read("rewrite_1").merge(fields.transform_keys(&:to_s)).compact)
+      yield store if block_given?
+      quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
+    end
+
+    it "sends a rule-made rewrite as source rule, with the rules applied, in order" do
+      expect(rewrite_candidate).to include("source" => "rule", "rules" => ["key_in_self_join"])
+    end
+
+    it "sends no source for a candidate that is the original query" do
+      expect(report["candidates"].find { it["label"] == "original:top:1" }.keys).not_to include("source", "rules")
+    end
+
+    %w[llm operator].each do |source|
+      context "for a rewrite of source #{source}" do
+        let(:outcome) { with_rewrite(source:, rules: nil) }
+
+        it "sends the source, and no rules" do
+          expect(rewrite_candidate).to include("source" => source, "rules" => nil)
+        end
+      end
+    end
+
+    context "for a rewrite stored before rewrites had a source" do
+      let(:outcome) { with_rewrite(source: nil, rules: nil) }
+
+      it "sends no source" do
+        expect(rewrite_candidate).to include("source" => nil, "rules" => nil)
+      end
+    end
+
+    context "when a stored rewrite holds a source and rule names that aren't QUAACK's own" do
+      let(:outcome) { with_rewrite(source: REPORT_WORD_SENTINEL, rules: [REPORT_WORD_SENTINEL]) }
+
+      it "sends neither" do
+        expect(rewrite_candidate).to include("source" => nil, "rules" => nil)
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    context "when a rule-made rewrite's rules hold a name that isn't one of QUAACK's rules" do
+      let(:outcome) { with_rewrite(rules: [REPORT_WORD_SENTINEL, "key_in_self_join", sentinel, 7]) }
+
+      it "sends only QUAACK's own rule names" do
+        expect(rewrite_candidate).to include("source" => "rule", "rules" => ["key_in_self_join"])
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    describe "rule_bugs: rule-made rewrites that a test disproved" do
+      def tested(passed, rule = nil, scenario = nil)
+        { "passed" => passed, "scenario" => scenario, "rule" => rule, "untested" => 0, "untested_atoms" => [] }
+      end
+
+      def rule_made(store, number, tested, survived)
+        store.write("rewrite_#{number}", "sql" => "SELECT #{number}", "source" => "rule",
+                                         "rules" => %w[key_in_self_join key_in_self_join])
+        store.write("rewrite_tested_#{number}", tested)
+        store.write("rewrite_survived_#{number}", "survived" => survived)
+      end
+
+      it "is empty when no rule-made rewrite was disproved" do
+        expect(report["rule_bugs"]).to eq([])
+      end
+
+      context "with rule-made rewrites that steps 9, 10, and 14c disproved, though a candidate won" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "null_semantics", "S3"), false)
+            rule_made(store, 3, tested(true), false)
+            rule_made(store, 4, tested(true), true)
+            store.write("result_comparison", "verdicts" => {}, "discarded" => ["rewrite_4"], "partial_count" => 0)
+          end
+        end
+
+        it "names each one, its rules, and the step that disproved it" do
+          expect(report["top"]).not_to be_empty
+          both = %w[key_in_self_join key_in_self_join]
+          expect(report["rule_bugs"]).to eq(
+            [{ "rewrite" => "rewrite_2", "rules" => both, "step" => "step9" },
+             { "rewrite" => "rewrite_3", "rules" => both, "step" => "step10" },
+             { "rewrite" => "rewrite_4", "rules" => both, "step" => "14c" }]
+          )
+        end
+      end
+
+      context "with a rule-made rewrite that step 8 pruned for planning as the original does" do
+        let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, "discarded"), false) } }
+
+        it "isn't a bug: a pruned rewrite was never disproved" do
+          expect(report["rule_bugs"]).to eq([])
+        end
+      end
+
+      context "with rewrites the LLM and the operator made that were disproved" do
+        let(:outcome) do
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "null_semantics", "S3"), false)
+            store.write("rewrite_2", "sql" => "SELECT 2", "source" => "llm")
+            rule_made(store, 3, tested(true), true)
+            store.write("rewrite_3", "sql" => "SELECT 3", "source" => "operator")
+            store.write("result_comparison", "verdicts" => {}, "discarded" => ["rewrite_3"], "partial_count" => 0)
+          end
+        end
+
+        it "flags neither" do
+          expect(report["rule_bugs"]).to eq([])
+        end
+      end
+    end
   end
 
   it "sends each proposed index's redacted DDL, size, prefix coverage, and redundancy" do
@@ -184,7 +308,7 @@ RSpec.describe "quaacks report-payload" do
       store.write("rewrite_tested_2", "passed" => false, "scenario" => "S3", "rule" => "null_semantics",
                                       "untested" => 0, "untested_atoms" => [])
       store.write("rewrite_survived_2", "survived" => false)
-      store.write("rewrite_3", "sql" => "SELECT 2")
+      store.write("rewrite_3", "sql" => "SELECT 2", "source" => "llm", "transformation" => sentinel)
       store.write("rewrite_tested_3", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 0,
                                       "untested_atoms" => [])
       store.write("rewrite_round_3", "round" => 2, "evidence" => true)
@@ -216,14 +340,16 @@ RSpec.describe "quaacks report-payload" do
       quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
     end
 
-    it "says which rewrites were disproved, and by which step 9 scenario or step 10 round" do
+    it "says which rewrites were disproved, by which step 9 scenario or step 10 round, and where each came from" do
+      unknown = { "source" => nil, "rules" => nil }
       expect(report["negative"]["disproved"]).to eq(
         [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_semantics", "scenario" => "S3",
-           "round" => nil },
-         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2 },
-         { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => nil },
+           "round" => nil, **unknown },
+         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2,
+           "source" => "llm", "rules" => nil },
+         { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => nil, **unknown },
          { "rewrite" => "rewrite_6", "step" => "step9", "rule" => "duplicates", "scenario" => "S1",
-           "round" => nil }]
+           "round" => nil, **unknown }]
       )
     end
 
@@ -246,7 +372,8 @@ RSpec.describe "quaacks report-payload" do
     end
 
     it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
-      expect(report["negative"]["knocked_out"]).to eq([{ "label" => "rewrite_1:none", "reason" => "not_better" }])
+      expect(report["negative"]["knocked_out"]).to eq([{ "label" => "rewrite_1:none", "reason" => "not_better",
+                                                         "source" => "rule", "rules" => ["key_in_self_join"] }])
     end
 
     it "never sends a literal value" do

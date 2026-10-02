@@ -8,6 +8,8 @@ require_relative "../index_candidate"
 require_relative "../planner_statistics"
 require_relative "../table_name"
 require_relative "negative_result"
+require_relative "rewrite_source"
+require_relative "rule_bugs"
 
 module Quaack
   module Enclave
@@ -23,7 +25,10 @@ module Quaack
       #                    original and each top candidate; hit and read are
       #                    the run with the most blocks
       #   candidates       one per top label: { "label", "sql", "indexes",
-      #                    "plan", "untested_atoms", "evidence" }
+      #                    "plan", "untested_atoms", "evidence" }, and for a
+      #                    rewrite its "source" (rule, llm, or operator) and
+      #                    "rules", the names of the rules that made it, or
+      #                    nil (RewriteSource)
       #   indexes          { built index name => { "ddl", "size",
       #                    "covered_by", "makes_redundant" } }
       #   original_plan    the redacted step 1 plan's node shapes
@@ -36,7 +41,12 @@ module Quaack
       #                    "existing" => [{ "search", "ddl", "covered_by"
       #                    (the existing index's name) }],
       #                    "knocked_out" => [{ "label", "reason" (the 14d
-      #                    excluded reason) }] }
+      #                    excluded reason) }] }; each disproved or
+      #                    knocked_out rewrite with "source" and "rules" too
+      #   rule_bugs        [{ "rewrite", "rules", "step" (step9, step10, or
+      #                    14c) }]: each rule-made rewrite a test disproved,
+      #                    a bug in QUAACK (DESIGN.md 6c, RuleBugs), sent
+      #                    whether or not top is empty
       #   burndown         { "stages", "totals" }, the 15b counts as
       #                    Burndown.read checks them: names and counts only
       #
@@ -46,7 +56,8 @@ module Quaack
       # the LLM wrote. DDL goes through CandidateDdlRedaction. A plan node
       # sends only its type, relation, index name, and row counts, never a
       # Filter or Index Cond. Measurements are counts. Index names and
-      # relations are schema.
+      # relations are schema. A source and a rule name are QUAACK's own
+      # constants: RewriteSource sends no other.
       module ReportPayload
         module_function
 
@@ -57,7 +68,8 @@ module Quaack
              verdicts: store.read("minimax")["verdicts"].slice(*labels),
              measurements: measurements(store, labels), **shapes(store, labels),
              timed_out_count: store.read("candidate_runs")["timed_out_count"],
-             negative: labels.empty? ? NegativeResult.call(store) : nil, burndown: Burndown.read(store) }]
+             negative: labels.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
+             burndown: Burndown.read(store) }]
         end
 
         def shapes(store, labels)
@@ -89,8 +101,9 @@ module Quaack
           out = { "label" => label, "indexes" => build["combinations"].fetch(label, []) }
           return out.merge("sql" => original_sql(store), "plan" => nil) if search == "original"
 
-          out.merge("sql" => store.read(search)["sql"], "plan" => rewrite_plan(store, search, stats),
-                    **checks(store, search.delete_prefix("rewrite_")))
+          rewrite = store.read(search)
+          out.merge("sql" => rewrite["sql"], "plan" => rewrite_plan(store, search, stats),
+                    **checks(store, search.delete_prefix("rewrite_")), **RewriteSource.fields(rewrite))
         end
 
         def rewrite_plan(store, search, stats)

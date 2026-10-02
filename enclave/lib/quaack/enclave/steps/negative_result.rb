@@ -2,6 +2,7 @@
 
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
+require_relative "rewrite_source"
 
 module Quaack
   module Enclave
@@ -9,11 +10,14 @@ module Quaack
       # DESIGN.md 15a, for ReportPayload's negative field when the selection is
       # empty: which rewrites steps 9 and 10 disproved, which index
       # candidates 5a-4 found the planner never used or HypoPG refused, and
-      # which the 5a-3 Dedupe dropped as covered by an existing index.
+      # which the 5a-3 Dedupe dropped as covered by an existing index. Each
+      # disproved or knocked-out rewrite comes with its "source" and "rules"
+      # (RewriteSource).
       #
       # Trust boundary. Rule, scenario, and search names, round numbers,
-      # SQLSTATEs, existing index names (schema), and DDL through
-      # CandidateDdlRedaction. Never a plan or a literal.
+      # SQLSTATEs, existing index names (schema), DDL through
+      # CandidateDdlRedaction, and each rewrite's source and rule names
+      # through RewriteSource. Never a plan or a literal.
       module NegativeResult
         REWRITE = /\Arewrite_[1-9]\d*\z/
 
@@ -45,22 +49,23 @@ module Quaack
             number = label.split(":").first[/\Arewrite_(\d+)\z/, 1] or next
             next unless optional(store, "rewrite_survived_#{number}")&.fetch("survived") == true
 
-            { "label" => label, "reason" => reason }
+            { "label" => label, "reason" => reason, **RewriteSource.fields(optional(store, "rewrite_#{number}") || {}) }
           end
         end
 
         def disproved(store, search)
           number = search.delete_prefix("rewrite_")
           tested = optional(store, "rewrite_tested_#{number}") or return
-          return disproof(search, "step9", tested["rule"], tested["scenario"], nil) unless tested["passed"]
+          return disproof(store, search, "step9", tested["rule"], tested["scenario"], nil) unless tested["passed"]
 
           return unless optional(store, "rewrite_survived_#{number}")&.fetch("survived") == false
 
-          disproof(search, "step10", nil, nil, optional(store, "rewrite_round_#{number}")&.fetch("round"))
+          disproof(store, search, "step10", nil, nil, optional(store, "rewrite_round_#{number}")&.fetch("round"))
         end
 
-        def disproof(rewrite, step, rule, scenario, round)
-          { "rewrite" => rewrite, "step" => step, "rule" => rule, "scenario" => scenario, "round" => round }
+        def disproof(store, rewrite, step, rule, scenario, round) # rubocop:disable Metrics/ParameterLists
+          { "rewrite" => rewrite, "step" => step, "rule" => rule, "scenario" => scenario, "round" => round,
+            **RewriteSource.fields(store.read(rewrite)) }
         end
 
         def declined(store, search, redaction)

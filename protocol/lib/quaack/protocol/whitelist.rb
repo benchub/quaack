@@ -140,9 +140,16 @@ module Quaack
       # step is where this is reviewed. negative is the 15a negative
       # result: rule, scenario, and round names, redacted DDL, SQLSTATEs,
       # and existing index names. burndown is the 15b burndown's stages and
-      # totals, as the burndown message carries them.
+      # totals, as the burndown message carries them. Each rewrite among
+      # candidates and in negative also carries its source (rule, llm, or
+      # operator) and, if a 6c rule made it, the rule names. rule_bugs is
+      # the rule-made rewrites a test disproved (DESIGN.md 6c): each one's
+      # entry name, rule names, and the step that disproved it (step9,
+      # step10, or 14c). Sources, rule names, and steps are the enclave's
+      # own constants: its RewriteSource sends a source or a rule name only
+      # if it's on its own list, never what a store entry holds as it is.
       report: %i[top excluded infinite_sets verdicts measurements candidates indexes original_plan
-                 timed_out_count negative burndown].freeze,
+                 timed_out_count negative rule_bugs burndown].freeze,
       # One line of 12a's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's
