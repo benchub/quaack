@@ -1214,6 +1214,46 @@ It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` 
 - **Design:** 6c.
 - **Status:** todo
 
+### 20261002-8. 6c rule: `cte_hoist_dedupe`.
+
+A hand-tuned Canvas user search got much faster by hoisting a CTE. The original is a `UNION` of five arms in a subquery in `FROM`. Each arm, and the outer `WHERE`, has `users.id IN (WITH users_in_account AS MATERIALIZED (SELECT user_id FROM user_account_associations WHERE account_id = 1) SELECT user_id FROM users_in_account)`. Postgres builds each of those six identical CTEs separately. The tuned version defines it once in a top-level `WITH`, and each `IN` reads from that.
+
+The rule: find every CTE, at any depth, whose body deparses to the same SQL as another's, and that has the same materialization option (`MATERIALIZED`, `NOT MATERIALIZED`, or none). Define one copy in the top-level `WITH`, and point every reference at it, renaming it if its name clashes there. Refuse a CTE that:
+
+- Is correlated, reading a column from outside its own body.
+- Is recursive or modifies data.
+- Calls a volatile function.
+- Would be hidden by a nearer CTE of the same name at some reference after hoisting.
+
+It's sound with no catalog facts, since every copy reads the same snapshot and gives the same rows, and it states no assumptions. Hoisting a single copy changes nothing, so fire only when at least two copies merge.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-9. 6c rule: `union_outer_filter_removal`.
+
+The query behind 20261002-8 filters the `UNION`'s result with `WHERE users.id IN (SELECT user_id FROM users_in_account) AND users.workflow_state <> 'deleted'`, when every arm already applies both conjuncts, in its own `WHERE`, to the column it outputs. The outer copy can't drop a row, but Postgres still runs it: here, as a semi-join over the union's result.
+
+The rule: for a query whose `FROM` is one subquery that's a `UNION` or `UNION ALL` (or such a subquery under inner joins), drop a top-level `WHERE` conjunct on that subquery's output columns when every arm has the same conjunct in its top-level `WHERE`, applied to the expression each arm outputs in those columns. Map output columns by position, expanding `t.*` from the catalog. Compare by deparsed form, with the column references replaced by placeholders. A conjunct with a subquery matches only when the subqueries deparse the same and read the same CTE (after 20261002-8, the same top-level one). Refuse when:
+
+- A conjunct calls a volatile function.
+- An arm outputs the column as an aggregate.
+- An arm has the conjunct only in `HAVING`.
+- The set operation is `INTERSECT` or `EXCEPT`.
+
+It's sound with no catalog facts: every row an arm outputs passed that arm's `WHERE`, and `GROUP BY` doesn't change a grouped row's value for a column it groups by or one that depends on it. It states no assumptions.
+
+Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees one shared CTE.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
