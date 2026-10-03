@@ -3355,3 +3355,11 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6c.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `SELECT DISTINCT` of one table's plain columns or its `*` over inner or cross joins becomes that table with one `EXISTS` holding every condition that reads the others, without the DISTINCT. It fires only when the select list holds a single-column key the catalog proves unique and not null; LIMIT or OFFSET only when the ORDER BY names that key. `Catalog#columns` lists a table's columns; `Tree.tables?` moved from `key_in_self_join`. The follow-ups went to 20261002-4.
+
+### 20261001-24. 6c rule: `or_to_union`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. A top-level OR whose arms read different tables or subqueries becomes a UNION of one arm each, every arm selecting the columns the query uses plus a unique not-null key of each FROM table; the select list, aggregates, DISTINCT, ORDER BY, LIMIT and OFFSET read that UNION as a derived table, so duplicate join rows survive and `count(*)` stays right. It refuses GROUP BY, outer joins, composite keys, same-table ORs, and columns UNION can't compare. At landing its `Catalog#columns` merged with 20261001-26's (now `columns` and `column_names`) and the shared helper is `Tree.tables?`. The follow-ups went to 20261002-5.

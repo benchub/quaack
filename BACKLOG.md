@@ -1009,12 +1009,7 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-23. 6c: run the rules from `quaack run`, and count them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-24. 6c rule: `or_to_union`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-24. 6c rule: `or_to_union`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-25. 6c rule: `not_in_to_not_exists`. Done, see BACKLOG-COMPLETE.md.
 
@@ -1118,6 +1113,22 @@ Minor findings from the build and both reviews of 20261001-26:
 - **Depends on:** 20261001-26.
 - **Came from:** The build and both reviews of 20261001-26.
 - **Design:** 6b, 6c.
+- **Status:** todo
+
+### 20261002-5. `or_to_union`: minor findings.
+
+Minor findings from both reviews of 20261001-24:
+
+- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. Steps 9, 10 or 14c could then report a sound rewrite as a rule bug. Fix in 3h: type a placeholder when every occurrence feeds a column of the same date type.
+- **Guarding arms can raise.** Split arms are all evaluated, so `i.qty = 0 OR i.total / i.qty > 10 OR o.vip` raises division by zero where the original returns rows. Never wrong rows. Refuse, or note it in DESIGN.md.
+- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm steps 9 and 10 don't report that as a rule bug.
+- Test gaps: the `@columns` cache key's schema part (`catalog.rb`); column names of 62 or 63 characters, which the `_1` suffix pushes past Postgres's limit (no rewrite results, but untested).
+- DESIGN.md's row leaves out several refusals: a subquery in the select list or ORDER BY; unqualified columns, a bare `*`, or ORDER BY an output name; an unnamed cast, COALESCE or CASE over a column; NATURAL or USING joins; ONLY; column aliases.
+- Extensions for later: composite keys, GROUP BY, outer joins, a bare `*`.
+
+- **Depends on:** 20261001-24.
+- **Came from:** Both reviews of 20261001-24.
+- **Design:** 3h, 6c.
 - **Status:** todo
 
 ## After version 1.
