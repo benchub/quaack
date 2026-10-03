@@ -3739,3 +3739,40 @@ Minor findings from the review of 20260929-6:
   - **Not-installed advice:** when `gem` isn't beside `ruby`, the advice names both paths. It explains that quaacks went into the other Ruby's user gem directory, and says to put Ruby 3.4's bin first. Each path it prints is filtered first. DESIGN.md's Deploy paragraph is updated.
   - **Review:** one round, clean.
   - **Follow-ups:** minor findings went to 20261003-13.
+
+### 20261002-8. 6c rule: `cte_hoist_dedupe`.
+
+A hand-tuned Canvas user search got much faster by hoisting a CTE. The original is a `UNION` of five arms in a subquery in `FROM`. Each arm, and the outer `WHERE`, has `users.id IN (WITH users_in_account AS MATERIALIZED (SELECT user_id FROM user_account_associations WHERE account_id = 1) SELECT user_id FROM users_in_account)`. Postgres builds each of those six identical CTEs separately. The tuned version defines it once in a top-level `WITH`, and each `IN` reads from that.
+
+The rule: find every CTE, at any depth, whose body deparses to the same SQL as another's, and that has the same materialization option (`MATERIALIZED`, `NOT MATERIALIZED`, or none). Define one copy in the top-level `WITH`, and point every reference at it, renaming it if its name clashes there. Refuse a CTE that:
+
+- Is correlated, reading a column from outside its own body.
+- Is recursive or modifies data.
+- Calls a volatile function.
+- Would be hidden by a nearer CTE of the same name at some reference after hoisting. **(As built, the rule renames the merged CTE to a fresh `quaack_cte_<n>` instead of refusing. See the landing note.)**
+
+It's sound with no catalog facts, since every copy reads the same snapshot and gives the same rows, and it states no assumptions. Hoisting a single copy changes nothing, so fire only when at least two copies merge.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-03, answers):** Merge CTEs with any materialization option, as long as every copy has the same one, and keep it. Merged plain CTEs may become materialized, and steps 8 onward decide whether that helps. A hoisted CTE whose name clashes at the top level is renamed `quaack_cte_<n>`.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-8.
+  - **Change:** the new rule `rewrite_rules/cte_hoist_dedupe.rb` (with `scopes.rb`) is last in RULES.
+    - CTEs at any depth with the same body, materialization option and column names merge into one CTE at the front of the top-level WITH.
+    - Placeholders are matched only with `Literals#same?`.
+    - A clash, or a nearer CTE that would hide the merged one, renames it to a fresh `quaack_cte_<n>`, and renamed references keep the old name as an alias.
+    - It refuses correlated, volatile, recursive and data-modifying CTEs, and copies that read an outside CTE.
+    - The new Catalog checks are `self_contained?` (PREPARE and DEALLOCATE of placeholder-only SQL, inside a savepoint) and `calls_volatile?`.
+    - DESIGN.md's 6c table has the rule.
+  - **Departure:** renaming instead of refusing when a CTE would be hidden. The reviewer found it sound, since the fresh name is used nowhere else in the query.
+  - **Tests:** 27 rule examples, plus catalog specs. The builder ran 36 mutations and the reviewer 16; every one went red except removing the catalog cache, which only saves repeated queries.
+  - **Review:** one round, clean.
+    - 21 realistic queries all returned the original's rows. They covered LATERAL, EXISTS, UNION arms, column-alias lists and scalar subqueries.
+    - FOR UPDATE is refused upstream by SupportedSql.
+  - **Known trade-off (accepted):** merging can make a plain CTE materialized. A body expression that can error, such as `1/x`, could then raise on rows the outer filter used to exclude. Result comparison catches that.
+  - **Follow-ups:** the build's out-of-scope findings went to 20261003-14.

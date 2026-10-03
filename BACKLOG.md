@@ -1072,27 +1072,7 @@ Add it to 6c's table in DESIGN.md.
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-8. 6c rule: `cte_hoist_dedupe`.
-
-A hand-tuned Canvas user search got much faster by hoisting a CTE. The original is a `UNION` of five arms in a subquery in `FROM`. Each arm, and the outer `WHERE`, has `users.id IN (WITH users_in_account AS MATERIALIZED (SELECT user_id FROM user_account_associations WHERE account_id = 1) SELECT user_id FROM users_in_account)`. Postgres builds each of those six identical CTEs separately. The tuned version defines it once in a top-level `WITH`, and each `IN` reads from that.
-
-The rule: find every CTE, at any depth, whose body deparses to the same SQL as another's, and that has the same materialization option (`MATERIALIZED`, `NOT MATERIALIZED`, or none). Define one copy in the top-level `WITH`, and point every reference at it, renaming it if its name clashes there. Refuse a CTE that:
-
-- Is correlated, reading a column from outside its own body.
-- Is recursive or modifies data.
-- Calls a volatile function.
-- Would be hidden by a nearer CTE of the same name at some reference after hoisting.
-
-It's sound with no catalog facts, since every copy reads the same snapshot and gives the same rows, and it states no assumptions. Hoisting a single copy changes nothing, so fire only when at least two copies merge.
-
-Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
-- **Note (2026-10-03, answers):** Merge CTEs with any materialization option, as long as every copy has the same one, and keep it. Merged plain CTEs may become materialized, and steps 8 onward decide whether that helps. A hoisted CTE whose name clashes at the top level is renamed `quaack_cte_<n>`.
-- **Status:** todo
+### 20261002-8. 6c rule: `cte_hoist_dedupe`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`.
 
@@ -1959,4 +1939,17 @@ Minor findings from the review of 20261003-9:
 - **Depends on:** 20261003-9.
 - **Came from:** The review of 20261003-9, 2026-10-03.
 - **Design:** Deploy.
+- **Status:** todo
+
+### 20261003-14. `cte_hoist_dedupe`: build-time loose ends.
+
+Out-of-scope findings from the build of 20261002-8:
+
+- **Untyped body placeholders are treated as text.** If Postgres can't infer a placeholder's type in a CTE body, `self_contained?` prepares it as text. Some bodies may then be refused, or matched, for the wrong reason. Check whether this costs real rewrites.
+- **Unqualified table names resolve with the catalog connection's `search_path`.** If that differs from the app's, the rule could judge a body against the wrong table. Pin the search_path, or refuse unqualified names when it's ambiguous.
+- **Some older refusal tests in the rule spec have no positive control.** Mutation testing shows they aren't vacuous, but a positive twin for each would make that obvious.
+
+- **Depends on:** 20261002-8.
+- **Came from:** The build of 20261002-8, 2026-10-03.
+- **Design:** 6c.
 - **Status:** todo
