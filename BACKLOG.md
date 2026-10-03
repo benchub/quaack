@@ -1016,12 +1016,7 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261001-25. 6c rule: `not_in_to_not_exists`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-25. 6c rule: `not_in_to_not_exists`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-26. 6c rule: `distinct_join_to_exists`.
 
@@ -1096,6 +1091,21 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Depends on:** 20261001-23.
 - **Came from:** The build and both reviews of 20261001-23.
 - **Design:** 6c, step 9, step 10, 15, 15b.
+- **Status:** todo
+
+### 20261002-3. `not_in_to_not_exists`: minor findings.
+
+Minor findings from both reviews of 20261001-25:
+
+- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and step 8 drops it. Collect FROM names too.
+- Untested lines: the fresh alias avoiding a taken name (`not_in_to_not_exists.rb:178`); `assumptions.uniq` (`:83`); `realias!` keeping column aliases (`:187`).
+- A column whose type is a domain with a NOT NULL constraint doesn't count as not null, since `AssumptionCheck` reads only `pg_constraint`'s `n` and `p`. Conservative: a missed rewrite, not a wrong one.
+- The rule assumes `=` gives true or false for two non-NULL values. A user-defined `=` that returns NULL breaks that. Noted in the rule's header.
+- Extensions for later: row-valued NOT IN, set-operation subqueries arm by arm, NOT IN outside the top-level WHERE, `<> ALL`.
+
+- **Depends on:** 20261001-25.
+- **Came from:** The build and both reviews of 20261001-25.
+- **Design:** 6b, 6c.
 - **Status:** todo
 
 ## After version 1.
