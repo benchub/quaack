@@ -96,7 +96,9 @@ module Quaack
         check_applies(block, provider)
         model = pick(env, block, "model") || DEFAULT_MODELS[provider]
         model or raise ConfigError, "#{key("model")} is required unless the provider is anthropic"
-        Settings.new(provider:, model:, base_url: pick(env, block, "base_url"), api_key_env: block["api_key_env"],
+        base_url = pick(env, block, "base_url")
+        check_applies({ "base_url" => base_url }, provider, "base_url" => BASE_URL_ENV) if from_env?(env, "base_url")
+        Settings.new(provider:, model:, base_url:, api_key_env: block["api_key_env"],
                      aws_region: block["aws_region"], aws_profile: block["aws_profile"],
                      command_template: block["command_template"], timeout_seconds: block["timeout_seconds"])
       end
@@ -119,11 +121,11 @@ module Quaack
       end
 
       # Raises unless every key of block applies to provider.
-      def self.check_applies(block, provider)
+      def self.check_applies(block, provider, labels = {})
         block.each_key do |name|
           next if ONLY.fetch(name, [provider]).include?(provider)
 
-          raise ConfigError, "#{key(name)} doesn't apply to provider #{provider}"
+          raise ConfigError, "#{labels.fetch(name, key(name))} doesn't apply to provider #{provider}"
         end
       end
 
@@ -133,6 +135,11 @@ module Quaack
         variable = VARIABLES.fetch(name)
         value = env[variable]
         value.nil? || value.empty? ? block[name] : check(variable, name, value)
+      end
+
+      def self.from_env?(env, name)
+        value = env[VARIABLES.fetch(name)]
+        !value.nil? && !value.empty?
       end
 
       # value, if it's good for the key name, or raises, calling it label.
@@ -151,7 +158,7 @@ module Quaack
         value.any? { it.include?("{prompt_file}") } && value.any? { it.include?("{model}") }
       end
 
-      private_class_method :check_block, :check_applies, :pick, :check, :key, :command_template?
+      private_class_method :check_block, :check_applies, :pick, :from_env?, :check, :key, :command_template?
     end
   end
 end

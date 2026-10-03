@@ -293,6 +293,30 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect([result.provider, result.model]).to eq(%w[copilot_cli claude-opus-5.5])
     end
 
+    it "refuses QUAACK_LLM_BASE_URL when QUAACK_LLM_PROVIDER picks copilot_cli" do
+      e = config_error(nil, env: { "QUAACK_LLM_PROVIDER" => "copilot_cli",
+                                   "QUAACK_LLM_BASE_URL" => "https://sentinel.example" })
+
+      expect(e.message).to eq("QUAACK_LLM_BASE_URL doesn't apply to provider copilot_cli")
+      expect(e.message).not_to include("sentinel")
+    end
+
+    it "refuses a block base_url when QUAACK_LLM_PROVIDER switches to copilot_cli" do
+      e = config_error({ "base_url" => "https://sentinel.example" },
+                       env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
+
+      expect(e.message).to eq("llm.base_url in ~/.quaack/driver.json doesn't apply to provider copilot_cli")
+      expect(e.message).not_to include("sentinel")
+    end
+
+    it "refuses copilot-only block keys when QUAACK_LLM_PROVIDER switches away" do
+      template = ["copilot", "{prompt_file}", "{model}"]
+      e = config_error({ "provider" => "copilot_cli", "command_template" => template },
+                       env: { "QUAACK_LLM_PROVIDER" => "anthropic" })
+
+      expect(e.message).to eq("llm.command_template in ~/.quaack/driver.json doesn't apply to provider anthropic")
+    end
+
     it "takes its command template and timeout" do
       template = ["/opt/bin/copilot", "--model={model}", "-p", "Read {prompt_file}"]
       result = settings({ "provider" => "copilot_cli", "command_template" => template, "timeout_seconds" => 12.5 })

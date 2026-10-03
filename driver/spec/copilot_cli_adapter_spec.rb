@@ -67,6 +67,19 @@ RSpec.describe "the copilot_cli adapter" do
 
   def record_path = File.join(@dir, "record.json")
 
+  def process_alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH
+    false
+  end
+
+  def process_alive_after_wait?(pid)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
+    sleep 0.05 while process_alive?(pid) && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+    process_alive?(pid)
+  end
+
   it "runs the command template with the model and a private 0600 prompt file, then removes it" do
     command = File.join(@dir, "fake-copilot")
     record_script(command)
@@ -166,15 +179,25 @@ RSpec.describe "the copilot_cli adapter" do
 
   it "kills the process group on timeout" do
     command = File.join(@dir, "fake-copilot")
-    script(command, <<~RUBY)
-      sleep 60
-    RUBY
-    template = [command, "{prompt_file}", "{model}"]
+    grandchild = File.join(@dir, "grandchild.pid")
+    begin
+      script(command, <<~RUBY)
+        require "rbconfig"
+        pid = spawn(RbConfig.ruby, "-e", "sleep 60", out: File::NULL, err: File::NULL)
+        File.write(#{grandchild.dump}, pid)
+        Process.wait(pid)
+      RUBY
+      template = [command, "{prompt_file}", "{model}"]
 
-    expect { ask(template: template, timeout: 0.2) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
-      expect(e.rule).to eq("llm_unavailable")
-      expect(sans_sizes(e.message)).to include("timed out")
-    }
-    expect(burndown.llm_calls).to eq("5a-5" => 1)
+      expect { ask(template: template, timeout: 1.0) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+        expect(e.rule).to eq("llm_unavailable")
+        expect(sans_sizes(e.message)).to include("timed out")
+      }
+      expect(burndown.llm_calls).to eq("5a-5" => 1)
+      grandchild_pid = Integer(File.read(grandchild))
+      expect(process_alive_after_wait?(grandchild_pid)).to be(false)
+    ensure
+      Process.kill("KILL", grandchild_pid) if grandchild_pid && process_alive?(grandchild_pid)
+    end
   end
 end
