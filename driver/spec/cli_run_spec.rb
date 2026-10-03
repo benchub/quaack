@@ -398,14 +398,14 @@ RSpec.describe "quaack run" do
       write_config(JSON.generate("jump_command" => "echo jump-1",
                                  "llm" => { "provider" => "SENTINEL-VALUE" }))
 
-      expect([run_with, stdout.string, stderr.string])
+      expect([run_with, stdout.string, errors])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
                         "or bedrock\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
     it "fails with a usage error for a bad override" do
-      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), stderr.string])
+      expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), errors])
         .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, or bedrock\n"])
       expect(hosts).to eq([])
     end
@@ -579,11 +579,9 @@ RSpec.describe "quaack run" do
           llm = block.merge("aws_region" => "us-west-2")
           write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => llm))
           status = without_aws_credentials { run_with }
-          expected = "quaack run failed: llm_auth: no AWS credentials: set AWS_ACCESS_KEY_ID and " \
-                     "AWS_SECRET_ACCESS_KEY, name a profile in llm.aws_profile in ~/.quaack/driver.json " \
-                     "or AWS_PROFILE, or set AWS_BEARER_TOKEN_BEDROCK\n"
 
-          expect([status, stdout.string, stderr.string]).to eq([1, "", expected])
+          expect([status, stdout.string, errors])
+            .to eq([1, "", "quaack run failed: llm_auth: #{Quaack::Driver::LLM::BedrockAdapter::NO_CREDENTIALS}\n"])
           expect([hosts, transport.calls]).to eq([[], []])
         end
 
