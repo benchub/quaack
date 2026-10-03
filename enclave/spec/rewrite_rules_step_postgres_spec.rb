@@ -263,8 +263,10 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       prepare
       select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
       eleven = (1..11).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
+      duplicates = [fake_rule.new(name: "duplicate_rule2", sql: "#{select} AND 2 = 2", assumptions: []),
+                    fake_rule.new(name: "duplicate_rule7", sql: "#{select} AND 7 = 7", assumptions: [])]
 
-      outcomes = call_step(eleven)
+      outcomes = call_step([*eleven, *duplicates])
 
       expect(outcomes.map { it[:rewrite] }).to eq((1..10).map { "rewrite_#{it}" })
       expect(stored.read("rewrite_1").slice("sql", "transformation", "rules")).to eq(
@@ -274,8 +276,10 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "sql" => "#{select} AND 10 = 10", "transformation" => "the fake rule rule10", "rules" => ["rule10"]
       )
       expect(stored.entry?("rewrite_11")).to be(false)
-      expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 1)
-      expect(burndown("6c")).to eq(six_c((1..11).to_h { ["rule#{it}", 1] }, 10, over_cap: 1))
+      expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 2, "over_cap" => 1)
+      expect(burndown("6c"))
+        .to eq(six_c((1..11).to_h { ["rule#{it}", 1] }.merge("duplicate_rule2" => 1, "duplicate_rule7" => 1),
+                     10, duplicate: 2, over_cap: 1))
     end
   end
 

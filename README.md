@@ -607,7 +607,7 @@ This section appears only when no candidate won. It lists:
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. The rewrite table's first row, `6c`, is QUAACK's own rewrite rules: how many rewrites each rule made, and how many were dropped as a duplicate of another, as over the limit of five, or for failing the schema checks. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. The rewrite table's first row, `6c`, is QUAACK's own rewrite rules: how many rewrites each rule made, and how many were dropped as a duplicate of another, as over the limit of ten, or for failing the schema checks. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
 
 Read it when the result surprises you. If the LLM proposed five rewrites and all five failed the schema checks, the problem is different than if all five were disproved by NULLs.
 
