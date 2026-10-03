@@ -18,8 +18,8 @@ module Quaack
     # non-interactive ssh command, the PATH a bare `quaacks` gets.
     class DeployDiagnosis
       # A path it shows: absolute, and nothing a shell would expand inside
-      # double quotes. Spaces are fine there, but not at the end.
-      PLAIN_PATH = %r{\A/[A-Za-z0-9._/+ -]{0,255}(?<! )\z}
+      # double quotes. Spaces are fine there.
+      PLAIN_PATH = %r{\A/[A-Za-z0-9._/+ -]{0,255}\z}
       SHELL_NAME = /\A[a-z0-9]{1,16}\z/
       UNSUPPORTED = %w[fish csh tcsh].freeze
       EARLY_RETURN = "above any line that returns early for non-interactive shells"
@@ -64,7 +64,7 @@ module Quaack
         found = facts["quaacks"]
         return not_found(facts, shell, bin) unless found
         return unless PLAIN_PATH.match?(found)
-        return not_installed(found, bin) if facts["installed"] != "yes"
+        return not_installed(facts, shell, found, bin) if facts["installed"] != "yes"
         return other_quaacks(shell, found, bin) if facts["same"] != "yes"
 
         "quaacks is on PATH for non-interactive ssh on #{@host}, at #{found}, but `quaacks version` didn't answer " \
@@ -92,10 +92,19 @@ module Quaack
           "#{file(shell)}:\n#{line(bin)}"
       end
 
-      def not_installed(found, bin)
+      def not_installed(facts, shell, found, bin)
         "quaacks isn't installed for the ruby on PATH for non-interactive ssh on #{@host}: it isn't in #{bin}, " \
-          "that Ruby's user gem bin directory. Run `quaack deploy` to install it there. The quaacks on PATH there, " \
+          "that Ruby's user gem bin directory. #{where_it_went(facts, shell)} The quaacks on PATH there, " \
           "#{found}, is another one, which may belong to another Ruby or gem directory."
+      end
+
+      def where_it_went(facts, shell)
+        gem, ruby = other_gem(facts)
+        return "Run `quaack deploy` to install it there." unless gem
+
+        "The gem on PATH there, #{gem}, isn't beside that ruby, #{ruby}, so gem install put quaacks in the user " \
+          "gem directory of the Ruby that gem belongs to, and this Ruby doesn't load gems from there. " \
+          "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}."
       end
 
       def other_ruby(facts, shell, bin)
@@ -105,13 +114,17 @@ module Quaack
       end
 
       def which_gem(facts)
-        gem, ruby = facts.values_at("gem", "ruby_path")
-        if facts["gem_dir"] != "same" && [gem, ruby].all? { PLAIN_PATH.match?(it.to_s) }
-          return "The gem on PATH there, #{gem}, isn't beside that ruby, #{ruby}, " \
-                 "so gem install may have used another Ruby."
-        end
+        gem, ruby = other_gem(facts)
+        return "The gem that installed it may belong to another Ruby." unless gem
 
-        "The gem that installed it may belong to another Ruby."
+        "The gem on PATH there, #{gem}, isn't beside that ruby, #{ruby}, so gem install may have used another Ruby."
+      end
+
+      # The gem and ruby on PATH, when they're in different directories and
+      # both paths are plain; otherwise nil.
+      def other_gem(facts)
+        paths = facts.values_at("gem", "ruby_path")
+        paths if facts["gem_dir"] != "same" && paths.all? { PLAIN_PATH.match?(it.to_s) }
       end
 
       def not_on_path(shell, bin)

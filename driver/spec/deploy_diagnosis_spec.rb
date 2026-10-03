@@ -201,6 +201,42 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     MSG
   end
 
+  it "says where gem install put quaacks when it's not installed for this Ruby and the gem on PATH isn't beside it" do
+    login_shell("/bin/bash")
+    other = File.join(dir, "other")
+    executable(File.join(other, "quaacks"), "echo other")
+    other_ruby = File.join(dir, "other-ruby")
+    executable(File.join(other_ruby, "gem"), "echo gem")
+
+    expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir, other])).to eq(<<~MSG.chomp)
+      quaacks isn't installed for the ruby on PATH for non-interactive ssh on jump-1: it isn't in #{bin}, that Ruby's user gem bin directory. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install put quaacks in the user gem directory of the Ruby that gem belongs to, and this Ruby doesn't load gems from there. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells. The quaacks on PATH there, #{other}/quaacks, is another one, which may belong to another Ruby or gem directory.
+      #{check}
+    MSG
+  end
+
+  it "says to run `quaack deploy` when quaacks isn't installed for this Ruby and the gem on PATH is beside it" do
+    login_shell("/bin/bash")
+    other = File.join(dir, "other")
+    executable(File.join(other, "quaacks"), "echo other")
+    executable(File.join(ruby_dir, "gem"), "echo gem")
+
+    expect(diagnose(path: [stubs, tools, ruby_dir, other]))
+      .to start_with("quaacks isn't installed for the ruby on PATH for non-interactive ssh on jump-1: it isn't in " \
+                     "#{bin}, that Ruby's user gem bin directory. Run `quaack deploy` to install it there.")
+  end
+
+  it "says to run `quaack deploy` when quaacks isn't installed for this Ruby and the gem's path isn't plain" do
+    login_shell("/bin/bash")
+    other = File.join(dir, "other")
+    executable(File.join(other, "quaacks"), "echo other")
+    other_ruby = File.join(dir, "other$ruby")
+    executable(File.join(other_ruby, "gem"), "echo gem")
+
+    expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir, other]))
+      .to start_with("quaacks isn't installed for the ruby on PATH for non-interactive ssh on jump-1: it isn't in " \
+                     "#{bin}, that Ruby's user gem bin directory. Run `quaack deploy` to install it there.")
+  end
+
   it "says when the ruby on PATH isn't the one whose gem installed quaacks" do
     login_shell("/bin/bash")
     executable(File.join(bin, "rake"), "echo rake")
@@ -221,6 +257,48 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
       The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem on PATH there, #{other_ruby}/gem, isn't beside that ruby, #{ruby_dir}/ruby, so gem install may have used another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
       #{check}
     MSG
+  end
+
+  ["other$ruby", "other\e[31mruby"].each do |name|
+    it "doesn't name the gem and ruby on PATH when the gem's path isn't plain, as with #{name.inspect}" do
+      login_shell("/bin/bash")
+      other_ruby = File.join(dir, name)
+      executable(File.join(other_ruby, "gem"), "echo gem")
+
+      expect(diagnose(path: [stubs, tools, other_ruby, ruby_dir])).to eq(<<~MSG.chomp)
+        The ruby on PATH for non-interactive ssh on jump-1 uses the user gem directory #{user_dir}, but quaacks isn't in #{bin}. The gem that installed it may belong to another Ruby. Put Ruby 3.4's bin directory first on PATH in ~/.bashrc on jump-1, above any line that returns early for non-interactive shells.
+        #{check}
+      MSG
+    end
+  end
+
+  # A plain `cd` resolves "link/.." in the text, to "dir", but the kernel
+  # follows link first, so the gem's PATH entry is really elsewhere/ruby.
+  it "compares the gem's and ruby's directories by their physical paths" do
+    login_shell("/bin/bash")
+    FileUtils.mkdir_p(File.join(dir, "elsewhere", "sub"))
+    File.symlink(File.join(dir, "elsewhere", "sub"), File.join(dir, "link"))
+    executable(File.join(dir, "elsewhere", "ruby", "gem"), "echo gem")
+    gem_entry = File.join(dir, "link", "..", "ruby")
+
+    expect(diagnose(path: [stubs, tools, gem_entry, ruby_dir])).to include(
+      "The gem on PATH there, #{gem_entry}/gem, isn't beside that ruby, #{ruby_dir}/ruby,"
+    )
+  end
+
+  # As above: "link/../bin" reads as the user gem bin dir, but is really
+  # elsewhere/bin.
+  it "compares the quaacks on PATH with the user gem bin dir by their physical paths" do
+    login_shell("/bin/bash")
+    installed
+    FileUtils.mkdir_p(File.join(dir, "elsewhere", "sub"))
+    File.symlink(File.join(dir, "elsewhere", "sub"), File.join(user_dir, "link"))
+    executable(File.join(dir, "elsewhere", "bin", "quaacks"), "echo other")
+    entry = File.join(user_dir, "link", "..", "bin")
+
+    expect(diagnose(path: [stubs, tools, ruby_dir, entry])).to start_with(
+      "The quaacks on PATH for non-interactive ssh on jump-1 is #{entry}/quaacks, not the one just installed"
+    )
   end
 
   it "gives the line for a user gem dir whose path has a space" do

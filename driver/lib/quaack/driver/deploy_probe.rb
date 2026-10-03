@@ -15,7 +15,10 @@ module Quaack
     # Whether the user gem bin dir is on PATH shows in where `command -v
     # quaacks` finds it: nowhere, there (`same`), or somewhere else first.
     # `same` compares directories by their physical paths, so a symlinked
-    # PATH entry still counts. `gem_dir` does the same for the directories
+    # PATH entry still counts. It uses `cd -P`, not `cd` and `pwd -P`: a
+    # plain cd resolves "link/.." in the text, before following link, and
+    # then `pwd -P` sees the wrong directory. After `cd -P`, `pwd` prints
+    # the physical path. `gem_dir` does the same for the directories
     # of `gem` and `ruby`, since deploy's gem install runs whichever `gem`
     # comes first.
     module DeployProbe
@@ -29,7 +32,7 @@ module Quaack
           if [ -x "$d/bin/quaacks" ]; then echo "quaack-probe:installed=yes"; else echo "quaack-probe:installed=no"; fi
           if g=$(command -v gem 2>/dev/null); then
             echo "quaack-probe:gem=$g"
-            a=$(cd "${g%/*}" 2>/dev/null && pwd -P); b=$(cd "${r%/*}" 2>/dev/null && pwd -P)
+            a=$(cd -P "${g%/*}" 2>/dev/null && pwd); b=$(cd -P "${r%/*}" 2>/dev/null && pwd)
             if [ -n "$a" ] && [ "$a" = "$b" ]; then echo "quaack-probe:gem_dir=same"; fi
           fi
         else
@@ -37,7 +40,7 @@ module Quaack
         fi
         if q=$(command -v quaacks 2>/dev/null); then
           echo "quaack-probe:quaacks=$q"
-          a=$(cd "${q%/*}" 2>/dev/null && pwd -P); b=$(cd "$d/bin" 2>/dev/null && pwd -P)
+          a=$(cd -P "${q%/*}" 2>/dev/null && pwd); b=$(cd -P "$d/bin" 2>/dev/null && pwd)
           if [ -n "$a" ] && [ "$a" = "$b" ]; then echo "quaack-probe:same=yes"; fi
         fi
       SH
