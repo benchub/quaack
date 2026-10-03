@@ -52,8 +52,6 @@ module Quaack
         RULE = /\A[a-z][a-z0-9_]{0,62}\z/
         STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
-        # A volatile_function refusal's function (DESIGN.md 3d), as the
-        # enclave's ErrorFilter shapes it: one unquoted qualified name.
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
         # A run_server_other_clients failure's clients (DESIGN.md, step 4), as
         # the enclave's ErrorFilter shapes them: 1 to MAX_CLIENTS entries, each
@@ -207,8 +205,10 @@ module Quaack
 
         def error_fields(error)
           rule = shaped(error["rule"], RULE) || "unexpected_output"
-          { rule:, step: shaped(error["step"], STEP),
-            sqlstate: shaped(error["sqlstate"], SQLSTATE), function: shaped(error["function"], FUNCTION),
+          { rule:, step: shaped(error["step"], STEP), sqlstate: shaped(error["sqlstate"], SQLSTATE),
+            reason: (error["reason"] if %w[query_unreadable plan_unreadable].include?(rule) &&
+                                      %w[missing symlink not_regular_file permission_denied].include?(error["reason"])),
+            function: shaped(error["function"], FUNCTION),
             clients: (clients(error["clients"]) if rule == CLIENTS_RULE) }
         end
 

@@ -69,9 +69,10 @@ module Quaack
       # errors already went through its egress.
       def start(options)
         require_relative "start"
-        @stdout.print "#{Start.new.call(**options)}\n"
-        0
+        @stdout.puts(Start.new.call(**options)) || 0
       rescue Start::Error, EnclaveError, EnclaveVersion::Mismatch => e
+        return @stderr.print("quaack start: #{e.message}\n") || EX_USAGE if e.is_a?(Start::UsageError)
+
         @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
       end

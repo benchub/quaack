@@ -51,13 +51,19 @@ RSpec.describe "quaacks intake" do
   end
 
   def runs = File.directory?(base) ? Dir.children(base) : []
-  def error_line(rule) = %({"type":"error","step":"intake","rule":"#{rule}"}\n)
+
+  def error_line(rule, reason: nil)
+    fields = { "type" => "error", "step" => "intake", "rule" => rule }
+    fields["reason"] = reason if reason
+    "#{JSON.generate(fields)}\n"
+  end
+
   def only_run = Quaack::Enclave::Store.open(runs.fetch(0), base:)
 
   # Every refusal: exit 70, only the rule, no sentinel or production
   # literal, and no run left behind.
-  def expect_refused(rule, status, why = nil)
-    expect(out.string).to eq(error_line(rule)), why
+  def expect_refused(rule, status, why = nil, reason: nil)
+    expect(out.string).to eq(error_line(rule, reason:)), why
     expect(status).to eq(70), why
     expect_no_leaks(sentinels, stdout: out.string, why:)
     expect(runs).to eq([]), why
@@ -255,7 +261,30 @@ RSpec.describe "quaacks intake" do
   end
 
   describe "reading the files" do
-    it "refuses a path that's missing, a directory, a symlink, or a FIFO as query_unreadable or plan_unreadable" do
+    it "expands a leading ~/ on the jump server, but not ~otheruser/" do
+      jump_home = File.join(dir, "jump-home").tap { Dir.mkdir(it) }
+      nested = File.join(jump_home, "q").tap { Dir.mkdir(it) }
+      File.binwrite(File.join(nested, "query.sql"), query_text)
+      File.binwrite(File.join(nested, "plan.json"), plan_text)
+      allow(Dir).to receive(:home).and_return(jump_home)
+
+      expect(intake_with(query: "~/q/query.sql", plan: "~/q/plan.json")).to eq(0)
+      expect(only_run.read("query")).to eq(query_text)
+
+      FileUtils.rm_rf(base)
+      out.truncate(0) && out.rewind
+      expect_refused("query_unreadable", intake_with(query: "~otheruser/q/query.sql"), "~otheruser",
+                     reason: "missing")
+    end
+
+    it "refuses a bare ~ as a directory, because it expands to the jump server user's home" do
+      jump_home = File.join(dir, "jump-home").tap { Dir.mkdir(it) }
+      allow(Dir).to receive(:home).and_return(jump_home)
+
+      expect_refused("query_unreadable", intake_with(query: "~"), "bare ~", reason: "not_regular_file")
+    end
+
+    it "says why a missing path, directory, symlink, or FIFO is query_unreadable or plan_unreadable" do
       missing = File.join(dir, "#{INTAKE_SENTINEL}-missing")
       directory = File.join(dir, "#{INTAKE_SENTINEL}-dir").tap { Dir.mkdir(it) }
       fifo = File.join(dir, "#{INTAKE_SENTINEL}-fifo").tap { File.mkfifo(it) }
@@ -264,11 +293,15 @@ RSpec.describe "quaacks intake" do
 
       [missing, directory, fifo, query_link].each do |path|
         out.truncate(0) && out.rewind
-        expect_refused("query_unreadable", intake_with(query: path), path)
+        reason = { missing => "missing", directory => "not_regular_file", fifo => "not_regular_file",
+                   query_link => "symlink" }.fetch(path)
+        expect_refused("query_unreadable", intake_with(query: path), path, reason:)
       end
       [missing, directory, fifo, plan_link].each do |path|
         out.truncate(0) && out.rewind
-        expect_refused("plan_unreadable", intake_with(plan: path), path)
+        reason = { missing => "missing", directory => "not_regular_file", fifo => "not_regular_file",
+                   plan_link => "symlink" }.fetch(path)
+        expect_refused("plan_unreadable", intake_with(plan: path), path, reason:)
       end
     end
 
@@ -276,9 +309,9 @@ RSpec.describe "quaacks intake" do
       File.chmod(0o000, query_file)
       File.chmod(0o000, plan_file)
 
-      expect_refused("query_unreadable", intake_with(plan: file("p2.json", plan_text)))
+      expect_refused("query_unreadable", intake_with(plan: file("p2.json", plan_text)), reason: "permission_denied")
       out.truncate(0) && out.rewind
-      expect_refused("plan_unreadable", intake_with(query: file("q2.sql", query_text)))
+      expect_refused("plan_unreadable", intake_with(query: file("q2.sql", query_text)), reason: "permission_denied")
     end
 
     it "reads a file of up to 16 MB and refuses a bigger one as query_too_large or plan_too_large" do

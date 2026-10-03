@@ -73,6 +73,19 @@ RSpec.describe "quaack executable" do
       expect([out, err, status.exitstatus]).to eq(["", "quaack start failed: jump_command_failed\n", 1])
     end
 
+    it "refuses a query path under this laptop's home as a usage error before ssh" do
+      e = env
+      laptop_path = File.join(dir, "q", "query.sql")
+      out, err, status = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", laptop_path,
+                                        "--plan", "q/plan.json")
+
+      expect([out, status.exitstatus]).to eq(["", 64])
+      expect(err).to eq("quaack start: query looks like a path on this laptop; --query and --plan are paths on " \
+                        "the jump server. Give a path relative to your home there, such as q/query.sql, or an " \
+                        "absolute path there.\n")
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
     # The enclave's error line carries only the rule, so the driver adds the
     # parser note itself.
     it "names the parser's Postgres version when intake can't parse the query" do
