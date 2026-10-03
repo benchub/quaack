@@ -1884,20 +1884,7 @@ Minor findings from the review of 20260929-6:
 - **Design:** Deploy.
 - **Status:** todo
 
-### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures.
-
-Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postgres_spec.rb's `cancel_once_sleeping` (around line 245):
-
-- **The clear message can mislabel a failure.** "The INSERT never reached pg_sleep" depends only on `canceler[:canceled]`, which the thread sets just after `pg_cancel_backend` returns.
-  - If the test's call fails between the cancel and the flag being set, the message wrongly blames pg_sleep. The reviewer couldn't make this race happen.
-  - If the thread dies for another reason, such as a PG error while polling, `stop` swallows that error, and the message still blames pg_sleep.
-  - The original error stays attached as the cause in both cases. Surface the thread's own error, and set the flag before the cancel, or make it clear the flag can be late.
-- **A dropped `stop` would go unnoticed.** The thread's own error report is off, so a later change that dropped the `stop` call would let the thread die silently when the database is dropped. Consider a comment, or a check that the thread is gone after each example.
-
-- **Depends on:** 20260930-5.
-- **Came from:** The review of 20260930-5, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-3. Report payload: minor findings.
 
