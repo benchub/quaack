@@ -3611,3 +3611,35 @@ Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_post
     - The reviewer broke the production cancel handling, and the test went red.
     - A run with an INSERT that skips `pg_sleep` printed the thread's error trace on main. On the branch it gave the clear message in about 2.6s.
   - **Follow-ups:** minor findings went to 20261003-10.
+
+### 20261002-7. 6c rule: `transitive_predicate_copy`.
+
+The query behind 20261002-6 has `enrollments.course_id = assessor_asset.course_id` in an inner join's `ON`, and `assessor_asset.course_id IN (2883, ...)` in `WHERE`. Together they imply `enrollments.course_id IN (2883, ...)`, so a rule can add that predicate. Postgres carries a constant equality across an equi-join (equivalence classes), but not an `IN` list, a range, `BETWEEN`, or `IS NOT NULL`, so it can't use that implied filter to narrow `enrollments` early.
+
+The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an inner join's `ON`, and each conjunct on `a.x` alone that's an `IN` list of constants, a comparison with a constant (`<`, `<=`, `>`, `>=`), or `BETWEEN` two constants, add the same conjunct on `b.y`, unless one is already there. Keep the original. Refuse when:
+
+- `x` and `y` have different types, or the equality isn't the type's default btree equality.
+- Either column has a nondeterministic collation.
+- Either side is on the nullable side of an outer join.
+
+It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
+
+20261002-15 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-7.
+  - **Change:** the new rule `rewrite_rules/transitive_predicate_copy.rb` runs after `implied_predicate_removal`.
+    - It copies IN lists, ranges and BETWEEN across equalities to a fixed point, including inside subqueries.
+    - It refuses when:
+      - the filter has casts, COLLATE, function calls, IS NOT NULL, NOT IN, `<>` or `=`;
+      - the two columns differ in type or collation, or a collation is nondeterministic;
+      - the type's comparisons aren't its default btree operators;
+      - a column is on an outer join's nullable side.
+    - `Catalog#default_btree?` is new. DESIGN.md's 6c table has the rule.
+  - **Tests:** 22 examples on real Postgres, with mutation checks on every branch.
+  - **Review:** one round, clean. The reviewer ran 20 Rails-style queries on data with NULLs and duplicates, and every rewrite returned the same rows.
+  - **Follow-ups:** minor findings and the build's out-of-scope gaps went to 20261003-11. Nested SELECTs for `implied_predicate_removal` are already in 20261003-6.

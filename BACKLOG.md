@@ -1077,25 +1077,7 @@ Add it to 6c's table in DESIGN.md.
 - **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
 - **Status:** todo
 
-### 20261002-7. 6c rule: `transitive_predicate_copy`.
-
-The query behind 20261002-6 has `enrollments.course_id = assessor_asset.course_id` in an inner join's `ON`, and `assessor_asset.course_id IN (2883, ...)` in `WHERE`. Together they imply `enrollments.course_id IN (2883, ...)`, so a rule can add that predicate. Postgres carries a constant equality across an equi-join (equivalence classes), but not an `IN` list, a range, `BETWEEN`, or `IS NOT NULL`, so it can't use that implied filter to narrow `enrollments` early.
-
-The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an inner join's `ON`, and each conjunct on `a.x` alone that's an `IN` list of constants, a comparison with a constant (`<`, `<=`, `>`, `>=`), or `BETWEEN` two constants, add the same conjunct on `b.y`, unless one is already there. Keep the original. Refuse when:
-
-- `x` and `y` have different types, or the equality isn't the type's default btree equality.
-- Either column has a nondeterministic collation.
-- Either side is on the nullable side of an outer join.
-
-It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
-
-20261002-15 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
-- **Status:** todo
+### 20261002-7. 6c rule: `transitive_predicate_copy`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-8. 6c rule: `cte_hoist_dedupe`.
 
@@ -1984,4 +1966,19 @@ Then have the report render them. Trust boundary: sources are constants, DDL goe
 - **Depends on:** 20261001-18, -20.
 - **Came from:** The build of 20261001-18, 2026-10-03.
 - **Design:** Step 15, 15a.
+- **Status:** todo
+
+### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
+
+Findings from the build and review of 20261002-7:
+
+- **An untested soundness guard.** Equalities come only from the WHERE and inner-join ONs, which is right, but no test pins it. A mutation that also took equalities from outer-join ONs stayed green. Add `FROM posts p JOIN users u ON u.id = p.id LEFT JOIN accounts a ON p.account_id = u.account_id WHERE u.account_id IN (1,2)` and expect no rewrite.
+- **`Catalog#default_btree?`'s `families.size == 1`** (catalog.rb ~146) survives being changed to `>= 1`. Test it, or accept it as untested.
+- **Typmods block common Rails rewrites.** `Catalog::Info.type` comes from `format_type`, so `varchar(255) = varchar` and `numeric(10,2) = numeric(12,2)` are refused. Compare base types (`atttypid`) instead.
+- **Enum, domain and array columns are refused,** since they have no default btree family of their own. Resolve the base type or the generic family (`anyenum`, `anyarray`) if it's safe.
+- **Inner joins nested on an outer join's nullable side get no copies,** though copying within that nested inner join would be sound.
+
+- **Depends on:** 20261002-7.
+- **Came from:** The build and review of 20261002-7, 2026-10-03.
+- **Design:** 6c.
 - **Status:** todo
