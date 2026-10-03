@@ -2020,3 +2020,42 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 - **Design:** Progress lines for `quaack run`.
 - **Note (2026-10-03, answers):** The clock goes on the latest line printed, including notes. When the output isn't a terminal, there are no live updates and no "Still working" lines. The closing line gives the final time.
 - **Status:** todo
+
+### 20261003-17. Step 9: break foreign-key cycles through nullable columns.
+
+A user's `quaack run` failed at steps 9-10 with `fk_cycle`. Step 9 loads fixtures for the query's tables and their foreign-key closure (`ArenaSchema.load_closure`), parents first. `Scenarios::Topology#load_order` raises `:fk_cycle` when no order exists. Real schemas often have cycles, such as Canvas's `accounts.course_template_id → courses` alongside `courses.account_id → accounts`, so on such a schema step 9 can't test any rewrite.
+
+Most cycles have an edge whose child columns are nullable. The rule: when ordering the load, ignore a foreign key if all its child columns are nullable and no predicate atom reads any of them. Fixture rows set those columns to NULL rather than the type's typical value, and those columns join no key class. If a cycle remains with no such edge, still refuse with `fk_cycle`. A self-referencing foreign key is already ignored and stays that way.
+
+Also check the other users of `Topology`: `Counterexamples` orders the LLM's rows with it (`counterexamples.rb:110`). An LLM row that gives a value for an ignored column would break the load order. Set the column to NULL there too, or refuse the row with a rule, and say which in DESIGN.md.
+
+Update DESIGN.md's "Unsupported in v1" note for step 9. Test it against real Postgres with a two-table cycle (one nullable edge) and a three-table cycle, and check that a cycle with no nullable edge still refuses. A cycle through a column the query filters on must also still refuse.
+
+- **Depends on:** none.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-18. A scenario refusal shouldn't end the run.
+
+When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check` or `expression_unique_index`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
+
+The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
+
+Test it end to end against real Postgres with a schema that refuses (a complex `CHECK` is the easiest). The run should finish, the report should name the rule, and no rewrite should be recommended.
+
+- **Depends on:** none.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Steps 9-10, step 15.
+- **Status:** todo
+
+### 20261003-19. Name the tables in an `fk_cycle` refusal.
+
+`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
+
+Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
+
+- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
