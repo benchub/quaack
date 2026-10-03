@@ -1283,14 +1283,7 @@ Add it to 6c's table in DESIGN.md.
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261002-11. 6c keeps up to ten rewrites.
-
-With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules::MAX` to 10, keep `DEPTH` at 2, and update DESIGN.md 6c ("Keep at most five rewrites") and any spec that pins five.
-
-- **Depends on:** 20261001-22.
-- **Came from:** The user, 2026-10-02.
-- **Design:** 6c.
-- **Status:** todo
+### 20261002-11. 6c keeps up to ten rewrites. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-13. Two bedrock driver specs fail on `main`. Done, see BACKLOG-COMPLETE.md.
 

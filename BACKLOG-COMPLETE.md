@@ -3355,6 +3355,16 @@ The bedrock provider (20260930-11, commit e23b414) was written before 20261001-1
 - **Status:** done
 - **Note (landed 2026-10-02):** The code was right, and only the specs were stale. The two specs now expect the request-size suffix and the printed LLM detail. They still assert that AWS's message (a sentinel) never appears and that there's exactly one call. Mutation checks confirmed both go red. The first review was clean. The sandbox's block on `~/.config/anthropic` went to 20261002-14. Another machine fixed the same two specs on its own (73678d1), with an exact `eq` on the whole message, which is stricter. Merging origin/main kept that version.
 
+### 20261002-11. 6c keeps up to ten rewrites.
+
+With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules::MAX` to 10, keep `DEPTH` at 2, and update DESIGN.md 6c ("Keep at most five rewrites") and any spec that pins five.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The user, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round that fixed only the tests, checked by a third reviewer. `MAX` is 10 and `DEPTH` stays 2. DESIGN.md 6c and README's burndown text say ten. The cap specs, the unit spec and the `rewrite-rules` step spec, use eleven unique rule rewrites plus two duplicates. They assert that rule1 to rule10 are kept, that rule11 is over the cap, and the exact `over_cap` and `duplicate` counts. The mutations `last(MAX)`, MAX=9, MAX=11, counting duplicates as over the cap, and disabling duplicate detection all go red. The full check passed after merging the other machine's three rules.
+
 ### 20261001-25. 6c rule: `not_in_to_not_exists`.
 
 - **Depends on:** 20261001-22.
