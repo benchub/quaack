@@ -395,7 +395,8 @@ RSpec.describe "quaack run" do
     end
 
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
-      write_config(JSON.generate("llm" => { "provider" => "SENTINEL-VALUE" }))
+      write_config(JSON.generate("jump_command" => "echo jump-1",
+                                 "llm" => { "provider" => "SENTINEL-VALUE" }))
 
       expect([run_with, stdout.string, stderr.string])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
@@ -532,7 +533,8 @@ RSpec.describe "quaack run" do
       end
 
       it "builds the client from the block's settings" do
-        write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
+        write_config(JSON.generate("jump_command" => "echo jump-1",
+                                   "llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
         env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
         status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
