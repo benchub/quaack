@@ -709,13 +709,21 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.message).to include("function pg_catalog.random")
     end
 
-    it "shows an intake unreadable refusal's fixed reason to the operator" do
-      error = refusal(%({"type":"error","step":"intake","rule":"query_unreadable","reason":"missing"}))
+    {
+      "missing" => "no such file on the jump server",
+      "symlink" => "path is a symlink on the jump server",
+      "not_regular_file" => "not a regular file on the jump server",
+      "permission_denied" => "permission denied on the jump server"
+    }.each do |reason, text|
+      %w[query_unreadable plan_unreadable].each do |rule|
+        it "tells the operator #{rule} with reason #{reason} as #{text.inspect}" do
+          error = refusal(%({"type":"error","step":"intake","rule":"#{rule}","reason":"#{reason}"}))
 
-      expect(error.reason).to eq("missing")
-      expect(error.rule_with_note).to eq("query_unreadable: no such file on the jump server")
-      expect(error.message).to eq("quaacks probe failed: query_unreadable (step intake, " \
-                                  "reason no such file on the jump server, exit 0)")
+          expect(error.reason).to eq(reason)
+          expect(error.rule_with_note).to eq("#{rule}: #{text}")
+          expect(error.message).to eq("quaacks probe failed: #{rule} (step intake, reason #{text}, exit 0)")
+        end
+      end
     end
 
     it "drops an intake unreadable reason that is not one fixed cause" do
