@@ -1316,6 +1316,15 @@ The bedrock provider (20260930-11, commit e23b414) was written before 20261001-1
 - **Design:** The driver's LLM client.
 - **Status:** todo
 
+### 20261002-14. The network guard specs read the real `~/.config/anthropic`.
+
+`spec/network_guard_spec.rb` and `driver/spec/network_guard_spec.rb` build a real `Anthropic::Client`. Its constructor (`warn_env_shadow`, then `Anthropic::Credentials.auto_discoverable_credentials?`) reads `~/.config/anthropic/active_config` from the developer's home. Under a sandbox that blocks that path, the specs fail with `Errno::EPERM` instead of testing the guard. Specs shouldn't touch the developer's real credential files at all. Point the SDK's config discovery at an empty temp directory for these specs (whatever env var or home override the SDK honors), and check that the suite never opens anything under the real `~/.config/anthropic`. Check the other specs that build SDK clients for the same leak.
+
+- **Depends on:** none.
+- **Came from:** The 20261002-13 build, 2026-10-02.
+- **Design:** Development (CLAUDE.md, the full check).
+- **Status:** todo
+
 ## After version 1.
 
 These tasks are worth doing, but they don't block version 1. Pick them up after the full pipeline (20260922-65) works.
