@@ -26,6 +26,7 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   end
 
   def appending(name, assumption = nil) = rule(name, assumption) { "#{it}, '#{name}'" }
+  def one_shot(name, sql_name = name) = rule(name) { |sql| sql == "SELECT 1" ? "#{sql}, '#{sql_name}'" : [] }
   def generate(*rules) = described_class.generate(original, catalog, rules:)
   def sqls(generated) = generated.rewrites.map(&:sql)
   def names(generated) = generated.rewrites.map { |rewrite| rewrite.rules.map(&:name) }
@@ -46,14 +47,18 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   it "chains breadth first: every one-rule result comes before any two-rule result, each in list order" do
     generated = described_class.generate(original, catalog, rules: [appending("a"), appending("b")])
 
-    expect(names(generated)).to eq([%w[a], %w[b], %w[a a], %w[a b], %w[b a]])
-    expect(sqls(generated).last).to eq("SELECT 1, 'b', 'a'")
+    expect(names(generated)).to eq([%w[a], %w[b], %w[a a], %w[a b], %w[b a], %w[b b]])
+    expect(sqls(generated).last).to eq("SELECT 1, 'b', 'b'")
   end
 
-  it "keeps at most five, and counts the rest as over the cap" do
-    generated = generate(appending("a"), appending("b"))
+  it "keeps at most ten, and counts the rest as over the cap" do
+    generated = generate(*(1..11).map { one_shot("rule#{it}") },
+                         one_shot("duplicate_rule2", "rule2"), one_shot("duplicate_rule7", "rule7"))
 
-    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([5, 1, 0])
+    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([10, 1, 2])
+    expect(names(generated)).to eq((1..10).map { ["rule#{it}"] })
+    expect([sqls(generated).first, sqls(generated).last]).to eq(["SELECT 1, 'rule1'", "SELECT 1, 'rule10'"])
+    expect(generated.made).to include("rule11" => 1, "duplicate_rule2" => 1, "duplicate_rule7" => 1)
   end
 
   it "goes at most two rules deep" do
@@ -127,7 +132,8 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   end
 
   it "lists QUAACK's rules, each with a name, a description, and the rewrites method" do
-    expect(described_class::RULES.map(&:name)).to eq(%w[key_in_self_join])
+    expect(described_class::RULES.map(&:name))
+      .to eq(%w[key_in_self_join or_to_union not_in_to_not_exists distinct_join_to_exists])
     expect(described_class::RULES).to all(respond_to(:rewrites) & have_attributes(description: a_kind_of(String)))
   end
 end

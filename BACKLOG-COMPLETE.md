@@ -3339,3 +3339,68 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6c, 15b.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `quaack run` calls `rewrite-rules` before 6a, with no LLM call. A rerun of the step changes nothing. The 6c burndown record counts results by their last rule. `report-payload` sends each rewrite's `source` and `rules`, and `rule_bugs`: rule-made rewrites that step 9, step 10, or a real 14c mismatch disproved. A 14c timeout or `unsupported_order` isn't one. The replay spec runs a rule-made rewrite end to end. The follow-ups went to 20261002-2.
+
+### 20261002-13. Two bedrock driver specs fail on `main`.
+
+Two driver specs fail on `main`, every run, whatever the environment:
+
+- `driver/spec/bedrock_adapter_spec.rb:179` expects `e.message` to be `"llm_auth: AWS refused the credentials (403)"`, but it's `"... (403) [step 5a-5, max_tokens 1000, system 0 chars, messages: user 31]"`.
+- `driver/spec/cli_run_spec.rb:548` expects stderr `"quaack run failed: llm_auth\n"`, but it's `"quaack run failed: llm_auth: no AWS credentials: set AWS_ACCESS_KEY_ID ..."`.
+
+The bedrock provider (20260930-11, commit e23b414) was written before 20261001-1 (`quaack run` prints the LLM error's detail, merged 85e4332) and 20261001-2 (a failed LLM ask says its step and request sizes, merged 6f22fae) landed. Those two changed the messages on purpose, and the bedrock specs weren't updated. Check what DESIGN.md and those two tasks say the messages should be. If the code is right, fix the specs, and make sure the fixed assertions are still specific: they must still prove the adapter doesn't quote AWS's own message and doesn't retry. If the code is wrong, fix the code with a failing test first. Check the other bedrock and provider specs for the same staleness.
+
+- **Depends on:** 20260930-11, 20261001-1, 20261001-2.
+- **Came from:** The baseline full check before 20261002-11, 2026-10-02. (First filed as 20261002-12, which another session had already taken for the `copilot_cli` provider.)
+- **Design:** The driver's LLM client.
+- **Status:** done
+- **Note (landed 2026-10-02):** The code was right, and only the specs were stale. The two specs now expect the request-size suffix and the printed LLM detail. They still assert that AWS's message (a sentinel) never appears and that there's exactly one call. Mutation checks confirmed both go red. The first review was clean. The sandbox's block on `~/.config/anthropic` went to 20261002-14. Another machine fixed the same two specs on its own (73678d1), with an exact `eq` on the whole message, which is stricter. Merging origin/main kept that version.
+
+### 20261002-11. 6c keeps up to ten rewrites.
+
+With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules::MAX` to 10, keep `DEPTH` at 2, and update DESIGN.md 6c ("Keep at most five rewrites") and any spec that pins five.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The user, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round that fixed only the tests, checked by a third reviewer. `MAX` is 10 and `DEPTH` stays 2. DESIGN.md 6c and README's burndown text say ten. The cap specs, the unit spec and the `rewrite-rules` step spec, use eleven unique rule rewrites plus two duplicates. They assert that rule1 to rule10 are kept, that rule11 is over the cap, and the exact `over_cap` and `duplicate` counts. The mutations `last(MAX)`, MAX=9, MAX=11, counting duplicates as over the cap, and disabling duplicate detection all go red. The full check passed after merging the other machine's three rules.
+
+### 20260929-4. Say why driver.json is bad.
+
+`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
+- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
+- valid JSON but not an object;
+- no `jump_command`;
+- `jump_command` isn't one non-blank line.
+
+Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round the user allowed that fixed only the specs, checked by a third reviewer. Messages read `bad_driver_config: <path>: <problem>`. The problems are: not valid JSON (line and column only, never the parser's message); not an object; can't be read (permission denied); not a file; no `jump_command`; and `jump_command` isn't one non-blank line. `DriverConfig.read` validates `jump_command` whenever driver.json exists, so `quaack start` and `quaack run` share the checks. A missing driver.json still works for `quaack run`. Sentinel specs show that the file's contents never appear. README shows a complete driver.json. The answers: the message shape is rule, then path, then problem; the EACCES cause is included.
+
+### 20261001-25. 6c rule: `not_in_to_not_exists`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. The rule fires only on a top-level ANDed `x NOT IN (SELECT y ...)` or `NOT (x IN ...)`, with x and y plain qualified columns the catalog proves not null, neither on the nullable side of an outer join. The correlation is `x = y`. A subquery table that shadows the outer one gets a fresh alias. It refuses `<> ALL`, row-valued NOT IN, and set-operation or grouped subqueries. Three helpers moved into `Tree`. The follow-ups went to 20261002-3.
+
+### 20261001-26. 6c rule: `distinct_join_to_exists`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `SELECT DISTINCT` of one table's plain columns or its `*` over inner or cross joins becomes that table with one `EXISTS` holding every condition that reads the others, without the DISTINCT. It fires only when the select list holds a single-column key the catalog proves unique and not null; LIMIT or OFFSET only when the ORDER BY names that key. `Catalog#columns` lists a table's columns; `Tree.tables?` moved from `key_in_self_join`. The follow-ups went to 20261002-4.
+
+### 20261001-24. 6c rule: `or_to_union`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. A top-level OR whose arms read different tables or subqueries becomes a UNION of one arm each, every arm selecting the columns the query uses plus a unique not-null key of each FROM table; the select list, aggregates, DISTINCT, ORDER BY, LIMIT and OFFSET read that UNION as a derived table, so duplicate join rows survive and `count(*)` stays right. It refuses GROUP BY, outer joins, composite keys, same-table ORs, and columns UNION can't compare. At landing its `Catalog#columns` merged with 20261001-26's (now `columns` and `column_names`) and the shared helper is `Tree.tables?`. The follow-ups went to 20261002-5.

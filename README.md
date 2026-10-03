@@ -170,7 +170,13 @@ Run `quaack` from the checkout with `bundle exec`. The rest of this README just 
 Create `~/.quaack/driver.json`:
 
 ```json
-{ "jump_command": "echo jump1.prod.example.com" }
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-opus-5-5"
+  }
+}
 ```
 
 `jump_command` is a shell command that prints the ssh host of the jump server for a production server. `{server}` in the command becomes the server name you pass to `quaack start`. With one jump server, a plain `echo` is enough. With several, map the server to a host:
@@ -215,6 +221,8 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 | `timeout_seconds` | For `copilot_cli` only: a positive number of seconds for each command run. | `600` |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
+
+If `driver.json` itself is bad, `quaack start` and `quaack run` say which file and why, such as `bad_driver_config: /Users/me/.quaack/driver.json: no jump_command` or `bad_driver_config: /Users/me/.quaack/driver.json: not valid JSON (line 3, column 5)`.
 
 #### OpenAI-compatible providers.
 
@@ -641,7 +649,7 @@ This section appears only when no candidate won. It lists:
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. The rewrite table's first row, `6c`, is QUAACK's own rewrite rules: how many rewrites each rule made, and how many were dropped as a duplicate of another, as over the limit of five, or for failing the schema checks. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas and one for rewrites. For each stage, it shows how many ideas came in, how many were added, how many were dropped and why, and how many went on. The rewrite table's first row, `6c`, is QUAACK's own rewrite rules: how many rewrites each rule made, and how many were dropped as a duplicate of another, as over the limit of ten, or for failing the schema checks. After those comes a list of totals: LLM calls, hypothetical plans, real indexes built, measurement runs, and test data loads.
 
 Read it when the result surprises you. If the LLM proposed five rewrites and all five failed the schema checks, the problem is different than if all five were disproved by NULLs.
 

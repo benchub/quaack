@@ -54,12 +54,9 @@ module Quaack
 
       def jump_command
         config = DriverConfig.read(@home) or raise Error, "no_driver_config"
-        command = config["jump_command"]
-        raise Error, "bad_driver_config" unless command.is_a?(String) && command.match?(/\A[^\n\r]*\S[^\n\r]*\z/)
-
-        command
-      rescue DriverConfig::Bad
-        raise Error, "bad_driver_config"
+        config["jump_command"]
+      rescue DriverConfig::Bad => e
+        raise Error, e.message
       end
 
       def jump_host(template, server)

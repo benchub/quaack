@@ -92,7 +92,7 @@ module Quaack
 
         def match(select, condition)
           outer, key = tested(condition)
-          table = outer_table(select.from_clause, outer)
+          table = Tree.plain_table_named(select.from_clause, outer)
           arms = table && Arm.all(condition.sub_link.subselect.select_stmt, table, key)
           Match.new(outer:, table:, key:, arms:) if arms
         end
@@ -104,16 +104,6 @@ module Quaack
           return unless link && link.sub_link_type == :ANY_SUBLINK && link.oper_name.empty?
 
           Tree.qualified(link.testexpr.column_ref) if link.testexpr.node == :column_ref
-        end
-
-        # The RangeVar the outer query reads as name, if the rule can use it.
-        def outer_table(from, name)
-          items = Tree.from_items(from)
-          named = items.select { it.name == name }
-          return unless name && items.none? { it.name.nil? } && named.size == 1
-
-          item = named.first
-          item.table if item.table && !item.nullable && Tree.plain_table?(item.table)
         end
       end
     end
