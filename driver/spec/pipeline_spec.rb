@@ -457,8 +457,9 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
   let(:dir) { Dir.mktmpdir("quaack-report") }
   let(:out) { File.join(dir, "report.html") }
   let(:report) do
-    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
-      "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "original_sql" => "SELECT 1",
+      "original_measurements" => {}, "labels" => [], "rewrites" => [], "indexes" => {}, "original_plan" => [],
+      "timed_out_count" => 0 }
   end
   let(:done) do
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,

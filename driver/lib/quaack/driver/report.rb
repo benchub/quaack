@@ -12,8 +12,16 @@ module Quaack
     #   Report.render(payload, run_id:)  # => HTML String
     #   Report.write(payload, run_id:, path:)  # => path
     #
+    # The payload carries more than this renders (20261001-18 renders the
+    # rest): the original query, every measured label, and every stored
+    # rewrite with its fate. This shows a section for each ranked label,
+    # built from its label entry and, for a rewrite's, its rewrite entry.
+    #
     # The negative-result section (15a) is filled only when the payload
     # carries negative, which the enclave sends when the selection is empty.
+    # Its two rewrite lists come from the rewrites' fates: STOPPED for the
+    # first, KNOCKED_OUT for the second. A rewrite step 8 pruned (fate
+    # same_plans) was never tested, and is in neither.
     # The burndown section (15b) renders the payload's burndown counts, plus
     # llm_calls, the driver's own Burndown#llm_calls.
     #
@@ -53,7 +61,7 @@ module Quaack
         <pre><%= h c["sql"] %></pre>
         <% if origin(c) %><p class="source">Source: <%= h origin(c) %>.</p><% end %>
         <table><tr><th>Literal set</th><th>Blocks</th><th>Hit</th><th>Read</th><th>Verdict</th><th>Stability</th></tr>
-        <% (measurements[c["label"]] || {}).each do |set, s| %><tr><td><%= h set %></td><td><%= s["timed_out"] ? "timed out" : s["total_blocks"] %></td><td><%= s["hit"] %></td><td><%= s["read"] %></td><td><%= h verdicts.dig(c["label"], set) %></td><td><%= s["stable"] == false ? "unstable" : "" %></td></tr>
+        <% c["measurements"].each do |set, s| %><tr><td><%= h set %></td><td><%= s["timed_out"] ? "timed out" : s["total_blocks"] %></td><td><%= s["hit"] %></td><td><%= s["read"] %></td><td><%= h c["verdicts"][set] %></td><td><%= s["stable"] == false ? "unstable" : "" %></td></tr>
         <% end %></table>
         <% if c["untested_atoms"] %><p>Untested atoms<%= c["evidence"] == false ? " (no counterexample round loaded its inserts, so step 10 gave no evidence)" : " (step 10's rounds exercised them)" %>:</p>
         <ul><% c["untested_atoms"].each do |a| %><li><%= h(a.is_a?(Hash) ? a.values.join(" ") : a) %></li><% end %></ul><% end %>
@@ -62,13 +70,13 @@ module Quaack
         <% end %>
         <section id="indexes"><h2>Proposed indexes</h2>
         <table><tr><th>Name</th><th>DDL</th><th>Built size</th><th>Existing index covering it</th><th>Existing indexes it makes redundant</th></tr>
-        <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h(i["ddl"] || "(the enclave could not parse this DDL)") %></td><td><%= size(i["size"]) %></td><td><%= h i["covered_by"] %></td><td><%= h i["makes_redundant"].join(", ") %></td></tr>
+        <% indexes.each do |name, i| %><tr><td><%= h name %></td><td><%= h(i["ddl"] || "(the enclave could not parse this DDL)") %></td><td><%= size(i["size"]) %></td><td><%= h names([i["covered_by"]]) %></td><td><%= h names(i["makes_redundant"]) %></td></tr>
         <% end %></table></section>
         <section id="negative-result"><% if negative %><h2>Why nothing beat the original</h2>
-        <p>Rewrites disproved:</p><ul><% negative["disproved"].each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
-        <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["search"] %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
-        <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["search"] %>: <%= h e["ddl"] %>: already covered by <%= h e["covered_by"] %></li><% end %></ul>
-        <p>Rewrites that passed steps 9 and 10 but were knocked out:</p><ul><% negative.fetch("knocked_out", []).each do |k| %><li><%= h labeled(k["label"], k) %>: passed steps 9 and 10, but <%= h knocked_out(k["reason"]) %></li><% end %></ul>
+        <p>Rewrites disproved:</p><ul><% disproved.each do |d| %><li><%= h disproof(d) %></li><% end %></ul>
+        <p>Indexes the planner declined:</p><ul><% negative["declined"].each do |d| %><li><%= h d["searches"].join(", ") %>: <%= h d["ddl"] %>: <%= h declined(d) %></li><% end %></ul>
+        <p>Proposed indexes that already existed:</p><ul><% negative["existing"].each do |e| %><li><%= h e["searches"].join(", ") %>: <%= h e["ddl"] %>: already covered by <%= h names([e["covered_by"]]) %></li><% end %></ul>
+        <p>Rewrites that passed steps 9 and 10 but were knocked out:</p><ul><% knocked_out.each do |k| %><li><%= h labeled(k["rewrite"], k) %>: passed steps 9 and 10, but <%= h KNOCKED_OUT.fetch(k["fate"]) %></li><% end %></ul>
         <% end %></section>
         <section id="burndown"><h2>Burndown</h2>
         <% [["index", "Index candidates for the original query", index_rows], ["rewrite", "Rewrite candidates", rewrite_rows]].each do |id, title, rows| %><h3><%= h title %></h3>
@@ -81,6 +89,28 @@ module Quaack
         </body></html>
       HTML
 
+      # The fates of a rewrite that passed steps 9 and 10 and was then
+      # dropped, with what the report says dropped it.
+      KNOCKED_OUT = { "not_better" => "minimax found it not better than the original",
+                      "footprint_tie" => "minimax dropped it for tying a candidate with a smaller index footprint",
+                      "below_top_three" => "it fell outside the top three",
+                      "production_mismatch" => "its results didn't match the original's in 14c",
+                      "production_timed_out" => "14c timed out before comparing its results",
+                      "production_not_compared" => "14c couldn't compare its results",
+                      "measurement_timed_out" => "every measurement run of it timed out" }.freeze
+
+      # The fates of a rewrite steps 9 and 10 stopped, with what the report
+      # says: a test found different results, or one failed and compared
+      # nothing, which is no disproof.
+      STOPPED = {
+        "step9_disproved" => "disproved in step 9 by scenario %<scenario>s (rule %<rule>s)",
+        "step10_disproved" => "disproved in step 10, counterexample round %<round>s",
+        "step9_failed" => "dropped, not disproved: step 9 failed in scenario %<scenario>s without comparing " \
+                          "results (rule %<rule>s)",
+        "step10_failed" => "dropped, not disproved: step 10 failed in counterexample round %<round>s without " \
+                           "comparing results (rule %<rule>s)"
+      }.freeze
+
       # The template's view of one payload.
       class View
         def initialize(payload, run_id, llm_calls = {})
@@ -91,8 +121,23 @@ module Quaack
 
         attr_reader :run_id
 
-        %w[top excluded infinite_sets verdicts measurements candidates indexes original_plan
+        %w[top excluded infinite_sets labels rewrites indexes original_sql original_plan original_measurements
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
+
+        # One per ranked label, in rank order: what it measured, and the
+        # query it ran (a rewrite's SQL, with its plan, checks, and source,
+        # or the original query under the label's indexes).
+        def candidates = top.map { candidate(it["label"]) }
+
+        def candidate(label)
+          measured = labels.find { it["label"] == label } || {}
+          rewrite = rewrites.find { it["rewrite"] == label.split(":").first }
+          { "label" => label, "indexes" => measured["indexes"] || [], "measurements" => measured["measurements"] || {},
+            "verdicts" => measured["verdicts"] || {}, "sql" => original_sql, "plan" => nil, **(rewrite || {}) }
+        end
+
+        # The names of existing indexes, each sent as { "name", "size_bytes" }.
+        def names(existing) = existing.compact.map { it["name"] }.join(", ")
 
         INDEX_STAGES = %w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7].freeze
         REWRITE_STAGES = %w[6c 6a step7 6b step8 step9 step10].freeze
@@ -155,20 +200,13 @@ module Quaack
         # DESIGN.md 15a, sent only when the selection is empty.
         def negative = @payload["negative"]
 
-        KNOCKED_OUT = { "not_better" => "minimax found it not better than the original",
-                        "footprint_tie" => "minimax dropped it for tying a candidate with a smaller index footprint",
-                        "result_mismatch" => "its results didn't match the original's in 14c" }.freeze
+        def disproved = rewrites.select { STOPPED.key?(it["fate"]) }
 
-        def knocked_out(reason) = KNOCKED_OUT.fetch(reason) { "14d excluded it (#{reason})" }
+        def knocked_out = rewrites.select { KNOCKED_OUT.key?(it["fate"]) }
 
         def disproof(entry)
-          rewrite = labeled(entry["rewrite"], entry)
-          if entry["step"] == "step10"
-            round = ", counterexample round #{entry["round"]}" if entry["round"]
-            return "#{rewrite}: disproved in step 10#{round}"
-          end
-
-          "#{rewrite}: disproved in step 9 by scenario #{entry["scenario"]} (rule #{entry["rule"]})"
+          text = format(STOPPED.fetch(entry["fate"]), entry.slice("scenario", "rule", "round").transform_keys(&:to_sym))
+          "#{labeled(entry["rewrite"], entry)}: #{text.delete_suffix(", counterexample round ")}"
         end
 
         def declined(entry)
@@ -180,14 +218,14 @@ module Quaack
 
         def h(value) = ERB::Util.html_escape(value.to_s)
 
-        def winner = candidates.find { it["label"] == top.first&.fetch("label") }
+        def winner = candidates.first
 
         def size(bytes) = bytes.nil? ? "" : "#{bytes / 1024} kB"
 
         def explanation
           label = winner["label"]
-          ours = measurements.dig(label, "slow", "total_blocks")
-          theirs = measurements.dig("original", "slow", "total_blocks")
+          ours = winner["measurements"].dig("slow", "total_blocks")
+          theirs = original_measurements.dig("slow", "total_blocks")
           "#{label} reads #{ours} blocks on the slow literal set, #{versus(ours, theirs)}."
         end
 
