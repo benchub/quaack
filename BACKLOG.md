@@ -656,7 +656,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 
 - **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
 - **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
-- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH.
+- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH. **Decided (the user, 2026-10-03):** say quaacks isn't installed for this Ruby, tell the user to run `quaack deploy`, and mention the other quaacks on PATH.
 - **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
 - **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
 - **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
@@ -830,7 +830,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
-`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces.
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
 
 - **Depends on:** 20260929-24.
 - **Came from:** Review of 20260929-24, round one.
@@ -1106,6 +1106,7 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 
 - **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
 - **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
+- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
 
 A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
 
@@ -1175,6 +1176,7 @@ Add it to 6c's table in DESIGN.md.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c, 8.
 - **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
+- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
 - **Status:** todo
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`.
@@ -1194,6 +1196,7 @@ It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
+- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
 - **Status:** todo
 
 ### 20261002-8. 6c rule: `cte_hoist_dedupe`.
@@ -1215,6 +1218,7 @@ Add it to 6c's table in DESIGN.md.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
 - **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-03, answers):** Merge CTEs with any materialization option, as long as every copy has the same one, and keep it. Merged plain CTEs may become materialized, and steps 8 onward decide whether that helps. A hoisted CTE whose name clashes at the top level is renamed `quaack_cte_<n>`.
 - **Status:** todo
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`.
@@ -1262,6 +1266,8 @@ The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHE
 It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
 
 Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
 
 Add it to 6c's table in DESIGN.md.
 
@@ -1921,29 +1927,68 @@ The review of 20261001-12 found two minor items:
 - **Design:** The transport.
 - **Status:** todo
 
-### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command.
+### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command. Done, see BACKLOG-COMPLETE.md.
 
-The driver can call Anthropic, an OpenAI-compatible API, or Bedrock. Add a fourth provider, `"provider": "copilot_cli"`, that runs a local command, such as GitHub's `copilot` CLI, once per ask, through a new adapter behind the provider-neutral client, like the other three. The prompts can be hundreds of thousands of characters, too big for a command line. So the adapter writes each prompt to a file, runs a command that points the model at the file, and reads the reply from stdout. For example: `copilot --model claude-opus-5.5 -p 'Please follow my prompt in <file>'`.
+### 20261003-1. `copilot_cli`: pin the drain after the child exits.
 
-The user settled these on 2026-10-02:
+The third review of 20261002-12 found one surviving mutation. Returning before the adapter drains stdout and stderr after the child's exit status arrives still passes every spec. It also passed an ad hoc check with 120KB on each pipe, so it's no known bug. But nothing pins the ordering, and a reply still in the pipe when the child exits could be cut short. Add a spec where the fake writes a large reply (at least several pipe buffers) and exits at once, and assert the whole reply arrives. Confirm the mutation goes red.
 
-- **The command is a template in the llm block.** The operator gives it with placeholders for the prompt file and the model. Store it as an argv array, not a shell string, and run it without a shell, so a path or model never needs quoting. Give it a default that runs `copilot` from PATH with `--model` and `-p`. Check against `copilot --help` which flags make it non-interactive and print only the reply. A bad template, such as one missing the prompt-file placeholder, is a usage error naming the key.
-- **Copilot gets read-only access.** It may read the prompt file and nothing else: no shell, no file writes, no network tools. Find the flags that enforce that (`--deny-tool`, `--available-tools`, or whatever the CLI offers) and put them in the default template. Run the command from an empty private temp directory, so no repo instructions (AGENTS.md, CLAUDE.md, `.github/...`) load. The CLI also loads the operator's global instructions on every run, wherever it runs: `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/**`, and any directories in `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. These must not reach QUAACK's prompts, since they can push the reply away from bare JSON. Before building, find the flag (or setting) that turns custom instructions off, using `copilot --help` and GitHub's Copilot CLI docs, and put it in the default template. Also unset `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` in the child's environment. If no such flag exists, stop and report back rather than work around it. Pointing copilot's config dir at an empty folder may also hide its login, so the user decides.
-- **The prompt file is deleted after each ask.** Write it with mode 0600 in a private temp directory (`Dir.mktmpdir`), and remove the directory after the ask, whether or not the ask succeeded.
-- **The default model is `claude-opus-5.5`.** Note that it's spelled with a dot, unlike the Anthropic default `claude-opus-5-5`.
-- **Each ask has a timeout.** It's an optional `timeout_seconds` (a positive number) in the block, with a sensible default. A command that runs too long is killed, along with its process group, and the ask is `llm_unavailable`.
+- **Depends on:** 20261002-12.
+- **Came from:** The third review of 20261002-12, 2026-10-03.
+- **Design:** LLM client.
+- **Status:** todo
 
-Other details:
+### 20261003-2. Take the recorded replay runs out of the per-commit check.
 
-- **Schemas.** The CLI can't enforce a JSON schema, so the adapter says it doesn't. The client's existing check and its one re-ask cover the rest. Every command run counts in the burndown.
-- **The prompt file.** It holds the system prompt, the JSON-only instruction, and the schema, followed by the whole conversation as a plainly labeled transcript, so the multi-turn exchanges (5a-5's replacement round, 10a's rounds, the re-ask) still work.
-- **Errors.** A command that isn't found is `llm_unavailable` with a clear message, or a usage error when the client is built if it's checked then. Decide which and document it. A non-zero exit is `llm_unavailable`, with the exit status and a short tail of stderr as the detail. Empty stdout is `llm_bad_response`. Strip whatever framing the CLI adds around the reply, if any. Spot `copilot`'s not-logged-in message, if it's distinctive, and map it to `llm_auth`.
-- **Config.** `QUAACK_LLM_PROVIDER` takes `copilot_cli`. `base_url`, `api_key_env`, `aws_region`, and `aws_profile` don't apply to it, and giving any of them is a usage error naming the key. The new keys, the command template and `timeout_seconds`, apply to no other provider.
-- **Trust boundary.** The adapter runs on the laptop, in the driver, like every LLM call. The enclave never runs or depends on it. No new gem should be needed, since `Open3` or `Process.spawn` is in the standard library. Keep the boundary specs green.
-- **Tests.** Fake the CLI at the edge with a stub script on PATH or in the template. It should record its argv, its cwd, and the prompt file's contents and mode, and print a canned reply, exit non-zero, or hang. Assert that the file is gone afterward and that a hang is killed at the timeout. Don't call the real `copilot` in specs. A manual check through `script/llm_smoke.rb` is fine.
-- **Docs.** Add the provider to DESIGN.md's LLM client section and the llm block paragraph, and to README.md's provider table.
+The full check takes about 54 minutes. The root `spec/` suite takes 38½ of them, the enclave suite 13, and the driver suite 2 (measured while landing 20261002-12). Most of the root suite is probably `spec/pipeline_replay_spec.rb`. It runs the whole driver pipeline on real Postgres once per replay variant: 4 queries × 3 models × 3 recorded runs (36), plus 3 planted runs and the `key_in_self_join` rule run. First, time it to confirm. RSpec's `--profile` works, or time the suite with that file left out. Also note where the enclave's 13 minutes go, as a separate finding.
 
-- **Depends on:** 20260930-11.
-- **Came from:** The user, 2026-10-02.
-- **Design:** LLM client, driver.json.
+The user settled on 2026-10-03:
+
+- Plain `bundle exec rake`, the per-commit check, keeps the planted runs, the rule run, and one recorded run per query.
+- A separate command runs every recorded variant, such as `rake replay` or `rake full`, or an env switch on `rake`. Pick one and document it.
+- The full replay must run every time a version is bumped. Settle with the user which versions count (the gems' `version.rb` files, the enclave version, or all of them) and whether a spec or the Rakefile should enforce it, for example by refusing to pass when a version changed without the full replay recorded.
+- Update CLAUDE.md's development section, which today says one command is the whole check, and the "Land" step if it changes.
+
+Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
+
+- **Note (2026-10-03, answers):** The command is `rake full`. A bump of any gem's `VERSION` (protocol, driver, or enclave) needs the full replay. Enforce it with a stamp: `rake full` writes a committed stamp file of the versions it passed at, and a per-commit spec fails when the current versions don't match the stamp. Landing must run `rake full` only when the task bumps a version.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
+- **Design:** none (development tooling).
+- **Status:** todo
+
+### 20261003-3. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+
+Minor findings from the second review of 20261002-17:
+
+- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
+- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
+- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
+- **Mutations that survive:**
+  - dropping the column's `COLLATE` in `typed`;
+  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
+- **Missing tests:**
+  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
+  - a positive `NOT IN` case;
+  - an ON clause that dropping empties.
+- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
+
+- **Depends on:** 20261002-17.
+- **Came from:** The second review of 20261002-17, 2026-10-03.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261003-4. Intake unreadable causes: minor findings.
+
+Minor findings from the first review of 20260929-5:
+
+- `start.rb:72`: changing `start_with?("#{home_path}/")` to `start_with?(home_path.to_s)` stays green. Add a test where home is `/Users/bench` and the path is `/Users/benchX/q.sql`.
+- `operator_file.rb:54`: removing `ENOTDIR` (a parent that's a regular file) stays green. That case would then be `not_regular_file` instead of `missing`. Pin it.
+- `error_filter.rb:11`: the comment still says "for two rules" and has a stray indent. Restore the `FUNCTION` comment that was deleted from `reply.rb:55`.
+- The driver repeats the list of four reasons in `reply.rb` and `enclave_error.rb`. Share one constant from the protocol gem.
+
+- **Depends on:** 20260929-5.
+- **Came from:** The first review of 20260929-5, 2026-10-03.
+- **Design:** Step 1.
 - **Status:** todo
