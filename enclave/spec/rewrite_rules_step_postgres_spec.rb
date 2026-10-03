@@ -43,7 +43,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     outcome = rewrite_rules
 
     expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
-    rule = Quaack::Enclave::RewriteRules::RULES.first
+    rule = Quaack::Enclave::RewriteRules::RULES.find { it.name == "key_in_self_join" }
     expect(stored.read("rewrite_1")).to eq(
       "sql" => rewritten, "transformation" => rule.description, "assumptions" => key_assumptions,
       "inferred" => false, "warnings" => [], "result_types" => %w[text text], "anchored_sql" => rewritten,
@@ -194,7 +194,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       Data.define(:name, :sql, :assumptions) do
         def description = "the fake rule #{name}"
 
-        def rewrites(parse, _catalog)
+        def rewrites(parse, _catalog, _literals)
           return [] unless parse.query.include?("o.note = $1 AND o.status = $2")
 
           [Quaack::Enclave::RewriteRules::Rewrite.new(tree: PgQuery.parse(sql).tree, assumptions:)]
@@ -240,7 +240,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       second = Data.define(:name) do
         def description = "the fake rule #{name}"
 
-        def rewrites(parse, _catalog)
+        def rewrites(parse, _catalog, _literals)
           return [] unless parse.query.end_with?("WHERE o.status = $2")
 
           tree = PgQuery.parse("#{parse.query} AND o.note = $1").tree
@@ -295,5 +295,28 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     expect((1..3).map { stored.read("rewrite_#{it}").slice("source", "rules") })
       .to eq([{ "source" => "rule", "rules" => ["key_in_self_join"] }, { "source" => "llm" },
               { "source" => "operator" }])
+  end
+
+  context "when implied_predicate_removal uses sentinel literals" do
+    let(:query) do
+      "SELECT o.note, o.status FROM public.orders o WHERE o.note <> 'ordinary' AND " \
+        "o.note = '#{sentinels.text}' AND o.status = 'held'"
+    end
+    let(:rewritten) { "SELECT o.note, o.status FROM public.orders o WHERE o.note = $2 AND o.status = $3" }
+
+    it "stores only the redacted rewrite and never sends the sentinel value out" do
+      prepare
+      expect(stored.read("placeholder_map").to_s).to include(sentinels.text)
+
+      outcome = rewrite_rules
+
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+      expect(stored.read("rewrite_1")).to include(
+        "sql" => rewritten, "source" => "rule", "rules" => ["implied_predicate_removal"]
+      )
+      expect_no_leaks(sentinels, outcome)
+      expect_no_leaks(sentinels, objects: { rewrite: stored.read("rewrite_1"),
+                                            burndown: Quaack::Enclave::Burndown.read(stored) })
+    end
   end
 end

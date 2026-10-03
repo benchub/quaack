@@ -11,8 +11,8 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   fake_rule = Data.define(:name, :assumption, :change) do
     def description = "the fake rule #{name}"
 
-    def rewrites(parse, catalog)
-      change.call(PgQuery.deparse(parse.tree), catalog).map do |sql|
+    def rewrites(parse, catalog, literals)
+      change.call(PgQuery.deparse(parse.tree), catalog, literals).map do |sql|
         Quaack::Enclave::RewriteRules::Rewrite.new(tree: PgQuery.parse(sql).tree, assumptions: [assumption].compact)
       end
     end
@@ -20,14 +20,15 @@ RSpec.describe Quaack::Enclave::RewriteRules do
 
   let(:original) { PgQuery.parse("SELECT 1") }
   let(:catalog) { Object.new }
+  let(:literals) { Object.new }
 
   define_method(:rule) do |name, assumption = nil, &change|
-    fake_rule.new(name:, assumption:, change: ->(sql, _catalog) { Array(change.call(sql)) })
+    fake_rule.new(name:, assumption:, change: ->(sql, _catalog, _literals) { Array(change.call(sql)) })
   end
 
   def appending(name, assumption = nil) = rule(name, assumption) { "#{it}, '#{name}'" }
   def one_shot(name, sql_name = name) = rule(name) { |sql| sql == "SELECT 1" ? "#{sql}, '#{sql_name}'" : [] }
-  def generate(*rules) = described_class.generate(original, catalog, rules:)
+  def generate(*rules) = described_class.generate(original, catalog, literals, rules:)
   def sqls(generated) = generated.rewrites.map(&:sql)
   def names(generated) = generated.rewrites.map { |rewrite| rewrite.rules.map(&:name) }
 
@@ -124,16 +125,25 @@ RSpec.describe Quaack::Enclave::RewriteRules do
 
   it "hands every rule the catalog facts" do
     seen = []
-    spy = fake_rule.new(name: "spy", assumption: nil, change: ->(_sql, given) { (seen << given) && [] })
+    spy = fake_rule.new(name: "spy", assumption: nil, change: ->(_sql, given, _literals) { (seen << given) && [] })
 
     generate(spy)
 
     expect(seen).to eq([catalog])
   end
 
+  it "hands every rule the literals oracle" do
+    seen = []
+    spy = fake_rule.new(name: "spy", assumption: nil, change: ->(_sql, _catalog, given) { (seen << given) && [] })
+
+    generate(spy)
+
+    expect(seen).to eq([literals])
+  end
+
   it "lists QUAACK's rules, each with a name, a description, and the rewrites method" do
     expect(described_class::RULES.map(&:name))
-      .to eq(%w[key_in_self_join or_to_union not_in_to_not_exists distinct_join_to_exists])
+      .to eq(%w[implied_predicate_removal key_in_self_join or_to_union not_in_to_not_exists distinct_join_to_exists])
     expect(described_class::RULES).to all(respond_to(:rewrites) & have_attributes(description: a_kind_of(String)))
   end
 end

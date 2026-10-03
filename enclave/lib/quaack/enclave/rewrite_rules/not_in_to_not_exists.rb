@@ -63,7 +63,7 @@ module Quaack
             "correlated on the two."
         end
 
-        def rewrites(parse, catalog)
+        def rewrites(parse, catalog, _literals = nil)
           count = Tree.conjuncts(Tree.select(parse.tree)&.where_clause).size
           Array.new(count) { rewrite(parse.tree, it, catalog) }.compact
         end

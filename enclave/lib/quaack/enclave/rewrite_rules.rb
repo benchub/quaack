@@ -3,7 +3,9 @@
 require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/distinct_join_to_exists"
+require_relative "rewrite_rules/implied_predicate_removal"
 require_relative "rewrite_rules/key_in_self_join"
+require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
 
@@ -56,6 +58,7 @@ module Quaack
       Duplicate = Data.define(:rule)
 
       RULES = [
+        ImpliedPredicateRemoval.new,
         KeyInSelfJoin.new,
         OrToUnion.new,
         NotInToNotExists.new,
@@ -67,9 +70,9 @@ module Quaack
 
       module_function
 
-      def generate(parse, catalog, rules: RULES)
+      def generate(parse, catalog, literals = nil, rules: RULES)
         original = Candidate.new(sql: Deparse.faithfully(parse.tree), parse:, rules: [], assumptions: [])
-        made = chain([original], rules, catalog, { original.sql => true })
+        made = chain([original], rules, catalog, literals, { original.sql => true })
         kept = made.grep(Candidate)
         Generated.new(rewrites: kept.first(MAX), duplicates: made.size - kept.size, over_cap: [kept.size - MAX, 0].max,
                       made: tally(made))
@@ -81,16 +84,16 @@ module Quaack
 
       # Every result DEPTH rounds of the rules make of from, shallowest
       # first, with a Duplicate in place of each one already seen.
-      def chain(from, rules, catalog, seen)
-        Array.new(DEPTH) { from = step(from, rules, catalog, seen) }.flatten
+      def chain(from, rules, catalog, literals, seen)
+        Array.new(DEPTH) { from = step(from, rules, catalog, literals, seen) }.flatten
       end
 
       # Every rule's results for every candidate in from, with a Duplicate
       # in place of each one already seen.
-      def step(from, rules, catalog, seen)
+      def step(from, rules, catalog, literals, seen)
         from.grep(Candidate).flat_map do |candidate|
           rules.flat_map do |rule|
-            rule.rewrites(candidate.parse, catalog).filter_map { chained(candidate, rule, it, seen) }
+            rule.rewrites(candidate.parse, catalog, literals).filter_map { chained(candidate, rule, it, seen) }
           end
         end
       end

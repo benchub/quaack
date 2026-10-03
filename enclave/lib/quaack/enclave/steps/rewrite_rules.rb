@@ -87,7 +87,9 @@ module Quaack
 
         def generate(store, connection, rules)
           parse = PgQuery.parse(store.read("redacted_query"))
-          Enclave::RewriteRules.generate(parse, Enclave::RewriteRules::Catalog.new(connection), rules:)
+          literals = Enclave::RewriteRules::Literals.new(connection, store.read("placeholder_map"),
+                                                         store.read("placeholder_shapes"))
+          Enclave::RewriteRules.generate(parse, Enclave::RewriteRules::Catalog.new(connection), literals, rules:)
         end
 
         # A generated candidate as RewriteCheck takes a rewrite, with its
