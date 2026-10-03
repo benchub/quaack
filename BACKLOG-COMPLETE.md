@@ -3550,3 +3550,24 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
   - **Change:** the plant stays. Its comment now says it's belt and braces, and that it would only matter if `isolated_env` ran outside `with_unbundled_env`.
   - **Verified:** narrowing the scan to `/\ABUNDLER_/` still leaves the spec green, so the plant can't fail today.
   - **Review:** one round, clean.
+
+### 20260930-5. Clean up the operator-cancel test's canceler thread.
+
+Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_postgres_spec.rb's operator-cancel test:
+
+- If the example fails before `canceler.join`, for example because no INSERT runs and `run_error` raises first, nothing kills the canceler thread. It polls until the after hook's `DROP DATABASE ... WITH (FORCE)` ends its connection, then dies with a `PG::ConnectionBad` trace on stderr. There's no hang and no stuck backend, just noise. Kill and join it in an `ensure`.
+- The deadline's clearer message, "the INSERT never reached pg_sleep", shows up only when the test reaches `join`. Surface it when `run_error` fails first too, if that's cheap.
+
+- **Depends on:** 20260929-28.
+- **Came from:** Review of 20260929-28, round one.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20260930-5.
+  - **Change:** the new helper `cancel_once_sleeping` handles the canceler thread.
+    - It opens the thread's connection on the main thread, then kills the thread, joins it, and closes the connection in an `ensure`.
+    - The thread's own error report is turned off, but any error it raises still comes out through the join.
+    - If the INSERT fails before the cancel goes out, the test fails with "the INSERT never reached pg_sleep", with the original error kept as the cause.
+  - **Review:** one round, clean.
+    - The reviewer broke the production cancel handling, and the test went red.
+    - A run with an INSERT that skips `pg_sleep` printed the thread's error trace on main. On the branch it gave the clear message in about 2.6s.
+  - **Follow-ups:** minor findings went to 20261003-7.
