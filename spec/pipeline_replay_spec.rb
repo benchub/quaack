@@ -108,9 +108,10 @@ RSpec.describe PipelineReplay do
       end
 
       it "shows the source and the 6c row in the report file `quaack run` writes" do
-        expect(outcome.html).to include("Source: made by QUAACK&#39;s rule key_in_self_join.")
-        expect(outcome.html).to include("<tr><td>6c</td><td>0</td><td>key_in_self_join: 1</td>")
-        expect(outcome.html).not_to include("quaack-bugs")
+        expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
+        expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
+                                        '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
+        expect(outcome.html).not_to include('id="quaack-bugs"')
       end
 
       it "keeps the query's literals out of the report" do

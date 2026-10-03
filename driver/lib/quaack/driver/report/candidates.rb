@@ -1,0 +1,131 @@
+# frozen_string_literal: true
+
+module Quaack
+  module Driver
+    module Report
+      # A measured label in words. The payload names a candidate by a label
+      # such as original:top:1, which says nothing to a reader, so the
+      # report says what it is: the query it ran, and the new indexes it
+      # ran with, from the label's entry in the payload's labels.
+      #
+      #   describe("original:top:1")  # => "Your query with a new index on public.t (a, b)"
+      #   describe("rewrite_2:none")  # => "Rewrite 2 with no new indexes"
+      #
+      # It also says, for each label 14d left out of the ranking, what it
+      # read against the original and why that wasn't enough.
+      module Candidates
+        DDL = /\ACREATE INDEX ON (\S+) USING (\w+) (.*)\z/m
+        ORIGINAL = "your query as it is"
+        LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indexes take less " \
+                                    "disk space.",
+                 "below_top_three" => "beat #{ORIGINAL}, but three other candidates did better." }.freeze
+
+        # The label's entry in the payload's labels, or nil.
+        def measured(label) = labels.find { it["label"] == label }
+
+        def describe(label)
+          search, key = label.to_s.split(":", 2)
+          "#{search == "original" ? "Your query" : Words.rewrite(search)} #{with(measured(label), key)}"
+        end
+
+        # The new indexes a label ran with. Without the label's entry, only
+        # whether it had any, which its name says.
+        def with(entry, key)
+          return key == "none" ? "with no new indexes" : "with new indexes" unless entry
+
+          on = entry["indexes"].map { target(it) }
+          return "with no new indexes" if on.empty?
+          return "with a new index #{on.first}" if on.size == 1
+
+          "with new indexes #{list([on.first, *on.drop(1).map { it.delete_prefix("on ") }])}"
+        end
+
+        # A built index by what it's on, such as "on public.t (a, b)", from
+        # its DDL. A method other than btree is named after it.
+        def target(name)
+          ddl = indexes.dig(name, "ddl") or return "QUAACK couldn't describe (#{name})"
+          table, method, rest = DDL.match(ddl)&.captures
+          return "on #{ddl}" unless table
+
+          "on #{table} #{rest}#{" (#{method})" unless method == "btree"}"
+        end
+
+        def list(items) = items.size < 3 ? items.join(" and ") : "#{items[0..-2].join(", ")}, and #{items.last}"
+
+        # One sentence for each measured label that isn't ranked: 14d's
+        # excluded ones, then the ones whose measurement timed out.
+        def unranked
+          excluded.map { |label, reason| "#{describe(label)} #{lost(label, reason)}" } +
+            timed_out_labels.map { "#{describe(it)} timed out while QUAACK measured it." }
+        end
+
+        # The labels that timed out, which 14d neither ranks nor excludes.
+        def timed_out_labels = labels.select { it["timed_out"] }.map { it["label"] } - excluded.keys - ranked_labels
+
+        def ranked_labels = top.map { it["label"] }
+
+        def lost(label, reason)
+          return LOST[reason] if LOST.key?(reason)
+          return not_better(label) if reason == "not_better"
+          return "wasn't ranked." unless reason == "result_mismatch"
+
+          "was dropped when QUAACK compared the rewrite's results with your query's on the real data. " \
+            "See #{Words.search(label.to_s.split(":").first)} under the queries."
+        end
+
+        # Why minimax found a label not better, with the blocks that say so.
+        def not_better(label)
+          entry = measured(label) || {}
+          ours, theirs = blocks(entry, "slow")
+          return "was no better than #{ORIGINAL}." unless ours && theirs
+          return "#{slow_blocks(ours, theirs)}, which isn't more than 5% fewer." unless better?(entry, "slow")
+
+          worse = (entry["verdicts"] || {}).key("worse") or return "was no better than #{ORIGINAL}."
+          "read fewer blocks on the slow values (#{pair(ours, theirs)}), but #{worse_on(entry, worse)}"
+        end
+
+        def better?(entry, set) = entry.dig("verdicts", set) == "better"
+
+        def slow_blocks(ours, theirs)
+          "read #{Format.number(ours)} blocks on the slow values, against #{Format.number(theirs)} for #{ORIGINAL}"
+        end
+
+        def pair(ours, theirs) = "#{Format.number(ours)}, against #{Format.number(theirs)}"
+
+        def worse_on(entry, set)
+          ours, theirs = blocks(entry, set)
+          return "timed out on the #{Words.set(set)} values." unless ours
+          return "was worse on the #{Words.set(set)} values." unless theirs
+
+          "read #{Format.number(ours)} on the #{Words.set(set)} values, against #{Format.number(theirs)} for " \
+            "#{ORIGINAL}, which is more than 5% more."
+        end
+
+        # The label's blocks and the original's on one literal set, each nil
+        # if it timed out or wasn't measured.
+        def blocks(entry, set)
+          [entry.dig("measurements", set, "total_blocks"), original_measurements.dig(set, "total_blocks")]
+        end
+
+        # A ranked label's measurements, one row of cells per literal set.
+        def measurement_rows(label)
+          entry = measured(label) || {}
+          (entry["measurements"] || {}).map do |set, counts|
+            [Words.set(set), total(counts), total(original_measurements[set]), Format.number(counts["hit"]),
+             Format.number(counts["read"]), verdict_words(entry.dig("verdicts", set)),
+             counts["stable"] == false ? "unstable: the count changed between runs" : ""]
+          end
+        end
+
+        def verdict_words(verdict) = Words::VERDICTS.fetch(verdict) { Words.plain(verdict) }
+
+        # One literal set's blocks, for the label or the original.
+        def total(counts)
+          return Words::MISSING unless counts
+
+          counts["timed_out"] ? "timed out" : Format.number(counts["total_blocks"])
+        end
+      end
+    end
+  end
+end
