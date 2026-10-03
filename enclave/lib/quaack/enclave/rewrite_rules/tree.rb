@@ -38,6 +38,19 @@ module Quaack
           stmt.select_stmt if stmt&.node == :select_stmt
         end
 
+        # Whether select has no ORDER BY, LIMIT, OFFSET, or locking clause.
+        def unlimited?(select)
+          select.sort_clause.empty? && select.limit_count.nil? && select.limit_offset.nil? &&
+            select.locking_clause.empty?
+        end
+
+        # Whether select is unlimited and has no WITH, GROUP BY, HAVING,
+        # WINDOW, or DISTINCT ON. It may have a plain DISTINCT.
+        def plain_select?(select)
+          unlimited?(select) && select.with_clause.nil? && select.group_clause.empty? &&
+            select.having_clause.nil? && select.window_clause.empty? && select.distinct_clause.all? { it.node.nil? }
+        end
+
         # Every node of type in node, or in an Array of nodes, in tree order.
         def find(node, type)
           node.is_a?(Array) ? node.flat_map { find(it, type) } : RewriteCandidateCheck.nodes(node, type)
@@ -91,6 +104,12 @@ module Quaack
 
         def same_table?(one, other) = [one.schemaname, one.relname] == [other.schemaname, other.relname]
 
+        # Whether every one of a FROM clause's Items is a plain table under
+        # a name of its own.
+        def tables?(items)
+          items.all? { it.table && plain_table?(it.table) } && items.map(&:name).uniq.size == items.size
+        end
+
         # The Items of a FROM clause.
         def from_items(nodes, nullable: false) = nodes.flat_map { from_item(it, nullable) }
 
@@ -107,6 +126,19 @@ module Quaack
           return [Item.new(name: nil, table: nil, nullable:)] if left.nil? || join.alias
 
           from_item(join.larg, nullable || left) + from_item(join.rarg, nullable || right)
+        end
+
+        # The RangeVar a FROM clause reads as name, if a not-null column of it
+        # can be relied on: every FROM item has a name this can read, only
+        # one has this name, and it is a plain table that is not on the
+        # nullable side of an outer join.
+        def plain_table_named(from, name)
+          items = from_items(from)
+          named = items.select { it.name == name }
+          return unless name && items.none? { it.name.nil? } && named.size == 1
+
+          item = named.first
+          item.table if item.table && !item.nullable && plain_table?(item.table)
         end
 
         # The ON conditions of every join in a FROM clause, which with its
