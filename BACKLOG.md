@@ -1120,29 +1120,7 @@ Test it with this query's shape. Also test that the rule refuses when the select
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261002-17. 6c rule: `implied_predicate_removal`.
-
-- **Note:** First filed as 20261002-5. Renumbered when merging another machine's work, which had already used -5.
-
-The same query also had `enrollments.workflow_state <> 'deleted' AND enrollments.workflow_state = 'active'` and `enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment', ...) AND enrollments.type = 'TeacherEnrollment'`. Rails scopes stack predicates like this. Postgres doesn't remove the implied ones. It multiplies their selectivities, so it underestimates rows, and that can pick a bad plan.
-
-The rule: in a top-level `AND` (and in each `AND` of a subquery's `WHERE`), when one conjunct is `col = c`, drop any other conjunct on the same column that `col = c` implies. Treat the conjuncts of every inner join's `ON` at that level as part of the same `AND`, since for inner joins they filter the same rows. When the same conjunct is in both `ON` and `WHERE`, as in `JOIN assignments ON ... AND assignments.type = 'Assignment' ... WHERE assignments.type = 'Assignment'`, drop the one in `WHERE`. Never move a conjunct into or out of an outer join's `ON`, and never use one as proof. The conjuncts it drops:
-
-- `col <> d` with `c` and `d` different.
-- `col IN (..., c, ...)`.
-- `col NOT IN (d1, d2, ...)` with `c` in none of them.
-- A range such as `col > d`, `col >= d`, or `col BETWEEN d1 AND d2` that `c` satisfies.
-- An exact duplicate of another conjunct, such as `score IS NOT NULL` written twice. This one doesn't need `col = c`.
-
-NULLs are safe: `col = c` already drops the rows where `col` is NULL. It needs no catalog facts, so it states no assumptions. Refuse when the column has a nondeterministic collation, or when comparing the constants needs anything but the column type's default operators. Compare the constants in Postgres, in the enclave, with the column's type and collation, not in Ruby. Dropping a conjunct can leave a `WHERE` with one item, so deparse it without an empty `AND`.
-
-Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it first in the rules list, so later rules see the simpler query.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Note (2026-10-02, answers):** Rules never see literal values. This task adds a `Literals` object, the first rule to need one,, passed to rules beside `Catalog`, that answers with booleans only: `same?(a, b)` (two placeholders have the same literal text and shape, a safe under-approximation of equal values) and `holds?(expr)` (evaluates a boolean expression over placeholders on the racetrack connection, with the real values bound as parameters, never spliced). Rule code never reads `placeholder_map`, and nothing a rule outputs carries a value. A merged copy keeps the first copy's placeholder.
-- **Status:** todo
+### 20261002-17. 6c rule: `implied_predicate_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-6. 6c rule: `shared_scan_cte`.
 
