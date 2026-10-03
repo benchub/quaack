@@ -2059,3 +2059,22 @@ Add a sentinel test: plant a row value in the cycle's tables, and check that it 
 - **Came from:** A failed `quaack run` the user hit, 2026-10-03.
 - **Design:** Step 9.
 - **Status:** todo
+
+### 20261003-20. Give each rewrite a whimsical name.
+
+Rewrites are called "Rewrite 1", "Rewrite 2" and so on, in the progress lines (`pipeline.rb`'s `progress.within("Rewrite #{number}")`) and in the report (`report/words.rb` and `report/candidates.rb`). Numbers are easy to mix up across runs. Give each rewrite a name instead, such as "Rewrite Silver Fox" or "Rewrite Blue Lagoon".
+
+The rule:
+
+- Add two hand-written word lists to the driver: 200 adjectives and 200 nouns, each of one or two syllables. Keep them family-friendly, with no duplicates, and each word in only one list. Record each word's syllable count next to it, so nothing has to count syllables at run time.
+- A name is "Adjective Noun", title case, with three syllables in total: a one-syllable adjective with a two-syllable noun, or the other way round.
+- The names in one run are all different, and the same run always gives the same names, so a resumed run (or a report rebuilt later) agrees with the first. Pick them with a random generator seeded from the run ID, in rewrite order.
+- The name is only a label. The store keys, protocol messages and the enclave keep the rewrite's number (`rewrite_3`), and the driver maps the number to the name wherever a person reads it: progress lines, the readable report, `candidates.rb`'s descriptions, and the LLM prompts that talk about a rewrite. The report payload carries both.
+- Names come from the driver's own lists, never from enclave data, so nothing new crosses the trust boundary.
+
+Tests check that both lists have 200 words, no duplicates, and the syllable counts given, and that every name has three syllables. They check that one run ID always gives the same names, that names don't repeat in a run, and that the progress lines and report use the names. Spot-check the syllable counts by hand at review.
+
+- **Depends on:** none. 20261003-15 and -16 also change the progress lines. Whichever lands later fits in with the others.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`, step 15.
+- **Status:** todo
