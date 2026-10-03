@@ -1951,6 +1951,8 @@ The user settled on 2026-10-03:
 
 Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
 
+- **Note (2026-10-03, answers):** The command is `rake full`. A bump of any gem's `VERSION` (protocol, driver, or enclave) needs the full replay. Enforce it with a stamp: `rake full` writes a committed stamp file of the versions it passed at, and a per-commit spec fails when the current versions don't match the stamp. Landing must run `rake full` only when the task bumps a version.
+
 - **Depends on:** nothing open.
 - **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
 - **Design:** none (development tooling).
