@@ -1018,12 +1018,7 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-25. 6c rule: `not_in_to_not_exists`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-26. 6c rule: `distinct_join_to_exists`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-26. 6c rule: `distinct_join_to_exists`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-27. 6c rule: `unused_join_removal`.
 
@@ -1105,6 +1100,23 @@ Minor findings from both reviews of 20261001-25:
 
 - **Depends on:** 20261001-25.
 - **Came from:** The build and both reviews of 20261001-25.
+- **Design:** 6b, 6c.
+- **Status:** todo
+
+### 20261002-4. `distinct_join_to_exists`: minor findings.
+
+Minor findings from the build and both reviews of 20261001-26:
+
+- No committed spec runs this rule through `quaacks rewrite-rules`; only `key_in_self_join` is covered that way. A review probe showed the path works. Add one.
+- One guard in `Tree.tables?` (a FROM item with no table) is killed only by a pg_query segfault, not an assertion. Have the rule refuse a nil table explicitly.
+- Composite keys are refused. Supporting them needs not-null stated per key column.
+- A unique index in a different collation or operator class from its column could make DISTINCT's equality differ from the index's. An `AssumptionCheck` matter, shared with the other rules.
+- Select-list expressions beside the key, and subqueries in conditions on the kept table alone, are refused though some are sound.
+- `Catalog#columns` on a star with no single-column key costs a catalog query per column. One query for the table's keys would be cheaper.
+- `spec/support/test_postgres.rb:245` raises when two spec processes remove the same stale container at once, which gives spurious red runs while agents run in parallel. Treat "already in progress" as success.
+
+- **Depends on:** 20261001-26.
+- **Came from:** The build and both reviews of 20261001-26.
 - **Design:** 6b, 6c.
 - **Status:** todo
 

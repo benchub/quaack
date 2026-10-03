@@ -3347,3 +3347,11 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6c.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. The rule fires only on a top-level ANDed `x NOT IN (SELECT y ...)` or `NOT (x IN ...)`, with x and y plain qualified columns the catalog proves not null, neither on the nullable side of an outer join. The correlation is `x = y`. A subquery table that shadows the outer one gets a fresh alias. It refuses `<> ALL`, row-valued NOT IN, and set-operation or grouped subqueries. Three helpers moved into `Tree`. The follow-ups went to 20261002-3.
+
+### 20261001-26. 6c rule: `distinct_join_to_exists`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** 6c.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `SELECT DISTINCT` of one table's plain columns or its `*` over inner or cross joins becomes that table with one `EXISTS` holding every condition that reads the others, without the DISTINCT. It fires only when the select list holds a single-column key the catalog proves unique and not null; LIMIT or OFFSET only when the ORDER BY names that key. `Catalog#columns` lists a table's columns; `Tree.tables?` moved from `key_in_self_join`. The follow-ups went to 20261002-4.
