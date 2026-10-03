@@ -79,6 +79,28 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
     expect(rows(rewrite, original.placeholder_map)).to eq(rows(original.sql, original.placeholder_map))
   end
 
+  describe Quaack::Enclave::RewriteRules::Literals do
+    it "evaluates boolean expressions over bound placeholders" do
+      _redacted, literals = literals_for(
+        "SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = 5"
+      )
+
+      expect(literals.holds?("$1::integer = 5")).to be(true)
+      expect(literals.holds?("$1::integer > 10")).to be(false)
+    end
+
+    it "compares placeholder text and shape without treating different values as equal" do
+      _redacted, literals = literals_for(
+        "SELECT enrollments.id FROM public.enrollments WHERE " \
+        "enrollments.score = 1 AND enrollments.score = 2 AND " \
+        "enrollments.type = 'active' AND enrollments.workflow_state = 'active'"
+      )
+
+      expect(literals.same?("$1", "$2")).to be(false)
+      expect(literals.same?("$3", "$4")).to be(true)
+    end
+  end
+
   it "has a name and a description that are QUAACK's own constants" do
     expect([rule.name, rule.description]).to eq(
       ["implied_predicate_removal",
@@ -112,6 +134,30 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
       ["SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = $4 AND " \
        "enrollments.score IS NOT NULL"]
     )
+  end
+
+  it "keeps contradictory stacked scopes that the equality does not prove" do
+    {
+      "workflow_state = 'active' AND workflow_state = 'deleted'" =>
+        "enrollments.workflow_state = 'active' AND enrollments.workflow_state = 'deleted'",
+      "type = 'TeacherEnrollment' AND type IN ('StudentEnrollment', 'TaEnrollment')" =>
+        "enrollments.type = 'TeacherEnrollment' AND enrollments.type IN ('StudentEnrollment', 'TaEnrollment')",
+      "score = 5 AND score > 10" =>
+        "enrollments.score = 5 AND enrollments.score > 10",
+      "type = 'TeacherEnrollment' AND type NOT IN ('TeacherEnrollment', 'StudentEnrollment')" =>
+        "enrollments.type = 'TeacherEnrollment' AND " \
+        "enrollments.type NOT IN ('TeacherEnrollment', 'StudentEnrollment')"
+    }.each_value do |where|
+      sql = "SELECT enrollments.id FROM public.enrollments WHERE #{where}"
+
+      expect(rewritten(sql)).to eq([])
+    end
+  end
+
+  it "does not treat equalities with different literals as exact duplicates" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = 1 AND enrollments.score = 2"
+
+    expect(rewritten(sql)).to eq([])
   end
 
   it "uses inner-join ON conjuncts as proofs and drops the duplicate from WHERE" do
