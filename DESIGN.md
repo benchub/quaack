@@ -956,6 +956,18 @@ Each existing index named there comes with its size from the planner statistics.
 
 Explain why the winning candidate touches fewer blocks and what that means for cache pressure. Use only plans and selectivities in that explanation. Never use literal values.
 
+Write the report for a reader who hasn't read this document:
+
+- Open with the verdict: what won and by how much, or that nothing did.
+- Show the original query, then every stored rewrite, each pretty-printed by pg_query. SQL it can't parse is shown as sent.
+- Show no internal label, step number, or verdict name. A candidate is named by the query it ran and the indexes it ran with, not as `original:top:1`. A fate, a stage, and a drop reason are each said in words. For a label that wasn't ranked, give the blocks it read against the original's. A 6c rule's name is the exception, since a bug report needs it.
+- Give sizes in the unit that fits (kB, MB, GB).
+- Call an index proposed only if a ranked candidate ran with it. The rest are indexes QUAACK built and measured. When nothing is ranked, none is proposed.
+- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, refused on arrival, same plan as the original, wrong results, not better, ranked, and stopped for another reason. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored, built and measured, not better, and ranked.
+- Where the payload doesn't carry a count, say "not recorded". Never show a zero for something that wasn't counted.
+
+The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network.
+
 ### 15a. Negative result.
 
 If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out. The rewrites' fates say the first and the last.
