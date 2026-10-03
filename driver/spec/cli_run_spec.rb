@@ -379,7 +379,8 @@ RSpec.describe "quaack run" do
 
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-from-config", base_url: nil,
-                                        api_key_env: "MY_KEY", aws_region: nil, aws_profile: nil }])
+                                        api_key_env: "MY_KEY", aws_region: nil, aws_profile: nil,
+                                        command_template: nil, timeout_seconds: nil }])
     end
 
     it "gives the defaults, with the environment's overrides, when there's no driver.json or no block" do
@@ -389,9 +390,10 @@ RSpec.describe "quaack run" do
 
       expect(seen.map(&:to_h)).to eq([{ provider: "anthropic", model: "claude-opus-5-5",
                                         base_url: "https://env.example.com", api_key_env: nil, aws_region: nil,
-                                        aws_profile: nil },
+                                        aws_profile: nil, command_template: nil, timeout_seconds: nil },
                                       { provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
-                                        api_key_env: nil, aws_region: nil, aws_profile: nil }])
+                                        api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                        command_template: nil, timeout_seconds: nil }])
     end
 
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
@@ -400,13 +402,13 @@ RSpec.describe "quaack run" do
 
       expect([run_with, stdout.string, errors])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
-                        "or bedrock\n"])
+                        "bedrock, or copilot_cli\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
     it "fails with a usage error for a bad override" do
       expect([run_with("QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE"), errors])
-        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, or bedrock\n"])
+        .to eq([64, "quaack run: QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, or copilot_cli\n"])
       expect(hosts).to eq([])
     end
 
@@ -486,7 +488,8 @@ RSpec.describe "quaack run" do
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "openai_compatible", model: "llama-3.3-70b-versatile",
                                         base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
-                                        aws_region: nil, aws_profile: nil }])
+                                        aws_region: nil, aws_profile: nil, command_template: nil,
+                                        timeout_seconds: nil }])
     end
 
     it "gives the client bedrock settings" do
@@ -496,7 +499,19 @@ RSpec.describe "quaack run" do
 
       expect(run_with).to eq(0)
       expect(seen.map(&:to_h)).to eq([{ provider: "bedrock", model: "us.anthropic.claude-opus-5-5", base_url: nil,
-                                        api_key_env: nil, aws_region: "us-west-2", aws_profile: "quaack-bedrock" }])
+                                        api_key_env: nil, aws_region: "us-west-2", aws_profile: "quaack-bedrock",
+                                        command_template: nil, timeout_seconds: nil }])
+    end
+
+    it "gives the client copilot_cli settings" do
+      template = ["copilot", "--model={model}", "-p", "Read {prompt_file}"]
+      block = { "provider" => "copilot_cli", "command_template" => template, "timeout_seconds" => 123 }
+      write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => block))
+
+      expect(run_with).to eq(0)
+      expect(seen.map(&:to_h)).to eq([{ provider: "copilot_cli", model: "claude-opus-5.5", base_url: nil,
+                                        api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                        command_template: template, timeout_seconds: 123 }])
     end
 
     # The CLI's own client builder, not a spec's. build_client takes a
