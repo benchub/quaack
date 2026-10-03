@@ -22,7 +22,7 @@ RSpec.describe PipelineReplay do
 
   replays do
     PromptPack::QUERIES.each do |query|
-      described_class.variants(query.name).each do |variant|
+      described_class.selected_variants(query.name, full: FullReplay.on?).each do |variant|
         context "#{query.name}, replaying #{variant}" do
           let(:outcome) { described_class.cached(TestPostgres.server, query, variant) }
 
@@ -204,6 +204,34 @@ RSpec.describe PipelineReplay do
     it "fall back to all empty answers for a query with no replies" do
       Dir.mktmpdir do |root|
         expect(described_class.variants("keyset_pagination", roots: [root])).to eq([described_class::EMPTY])
+      end
+    end
+  end
+
+  describe ".selected_variants" do
+    it "keeps planted replies and the first recorded run of the first model in the per-commit replay" do
+      variants = described_class.selected_variants("group_having")
+
+      expect(variants).to eq(
+        [
+          described_class::Variant.new(llm: "claude", k: 1),
+          described_class::Variant.new(llm: "planted", k: 1)
+        ]
+      )
+    end
+
+    it "keeps every variant in the full replay" do
+      expect(described_class.selected_variants("group_having", full: true))
+        .to eq(described_class.variants("group_having"))
+    end
+
+    it "fails instead of silently running no recorded examples in the per-commit replay" do
+      Dir.mktmpdir do |root|
+        FileUtils.mkdir_p(File.join(root, "query", "6a-1"))
+        File.write(File.join(root, "query", "6a-1", "reply-planted-1.md"), "{}")
+
+        expect { described_class.selected_variants("query", roots: [root]) }
+          .to raise_error(/no recorded replay variants for query/)
       end
     end
   end
