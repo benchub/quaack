@@ -205,12 +205,14 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 
 | Key | What it does | Default |
 | --- | --- | --- |
-| `provider` | Which API to call: `anthropic`, `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API, or `bedrock` for Claude on AWS Bedrock. | `anthropic` |
-| `model` | The model to ask. Required for any provider but `anthropic`. | `claude-opus-5-5` |
-| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
-| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Not for `bedrock`. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
+| `provider` | Which API to call: `anthropic`, `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API, `bedrock` for Claude on AWS Bedrock, or `copilot_cli` for a local Copilot CLI command. | `anthropic` |
+| `model` | The model to ask. Required for `openai_compatible` and `bedrock`. | `claude-opus-5-5` for `anthropic`; `claude-opus-5.5` for `copilot_cli` |
+| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. Not for `copilot_cli`. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
+| `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Only for `anthropic` and `openai_compatible`. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
 | `aws_region` | For `bedrock` only: the AWS region to call, such as `us-east-1`. | `AWS_REGION`, `AWS_DEFAULT_REGION`, or your AWS profile's region |
 | `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
+| `command_template` | For `copilot_cli` only: an argv array, run without a shell, with `{prompt_file}` and `{model}` placeholders. `{prompt_dir}` is also available. | A locked-down `copilot` prompt-mode command |
+| `timeout_seconds` | For `copilot_cli` only: a positive number of seconds for each command run. | `600` |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
 
@@ -273,6 +275,36 @@ Give a `model`, since there's no default: Bedrock's model IDs vary by region and
 ```
 
 Your AWS identity needs `bedrock:InvokeModel` on the model, and your account needs access to the model in that region. If AWS refuses either, the run fails with `llm_auth`.
+
+#### GitHub Copilot CLI.
+
+With `"provider": "copilot_cli"`, the driver runs a local command once for each LLM ask and reads the answer from stdout. The default command runs `copilot` from `PATH` in prompt mode with `--model`, `-p`, and `-s`, and writes the QUAACK prompt to a private 0600 file in an otherwise empty temporary current directory. That directory is removed after the ask.
+
+The default command locks Copilot down with `--disable-builtin-mcps`, `--no-ask-user`, `--no-custom-instructions`, `--available-tools=view`, `--allow-tool=read({prompt_dir})`, and denials for shell, write, and URL tools. The child process also unsets `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. The Copilot CLI command reference says `--no-custom-instructions` disables `AGENTS.md` and related files and always takes priority. It does not explicitly say whether that covers user-level `~/.copilot/copilot-instructions.md` and `~/.copilot/instructions/**`; run a manual canary before relying on this provider for production runs.
+
+```json
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "copilot_cli",
+    "timeout_seconds": 900
+  }
+}
+```
+
+To use another wrapper, set `command_template` as an argv array. It must include `{prompt_file}` and `{model}`:
+
+```json
+{
+  "llm": {
+    "provider": "copilot_cli",
+    "command_template": ["/usr/local/bin/copilot", "--model={model}", "-s", "-p", "Please follow my prompt in {prompt_file}"],
+    "timeout_seconds": 600
+  }
+}
+```
+
+The CLI cannot enforce JSON schemas itself, so QUAACK includes the schema in the prompt file and checks the answer. A missing command, timeout, or non-zero exit is `llm_unavailable`; a distinctive not-logged-in message is `llm_auth`; empty stdout is `llm_bad_response`.
 
 
 ### 4. Install the enclave script on the jump server.

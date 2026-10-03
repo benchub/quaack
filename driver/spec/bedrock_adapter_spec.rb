@@ -181,7 +181,7 @@ RSpec.describe "the bedrock adapter" do
 
       e = ask_error
 
-      expect(e.message).to eq("llm_auth: AWS refused the credentials (403)")
+      expect(sans_sizes(e.message)).to eq("llm_auth: AWS refused the credentials (403)")
       expect(e.cause).to be_nil
       expect(burndown.llm_calls).to eq("5a-5" => 1)
     end

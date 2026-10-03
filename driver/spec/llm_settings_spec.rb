@@ -19,7 +19,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
   describe "with no llm block" do
     it "is Anthropic with claude-opus-5-5, the gem's own base URL, and no key variable" do
       expect(fields(settings)).to eq(provider: "anthropic", model: "claude-opus-5-5", base_url: nil,
-                                     api_key_env: nil, aws_region: nil, aws_profile: nil)
+                                     api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                     command_template: nil, timeout_seconds: nil)
     end
 
     it "is the same for an empty block" do
@@ -34,7 +35,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block))).to eq(provider: "anthropic", model: "claude-sonnet-5-5",
                                             base_url: "https://llm.example.com", api_key_env: "MY_ANTHROPIC_KEY",
-                                            aws_region: nil, aws_profile: nil)
+                                            aws_region: nil, aws_profile: nil, command_template: nil,
+                                            timeout_seconds: nil)
     end
 
     it "takes an http base URL, for a local server" do
@@ -71,7 +73,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block, env:))).to eq(provider: "anthropic", model: "claude-from-config",
                                                   base_url: "https://config.example.com", api_key_env: nil,
-                                                  aws_region: nil, aws_profile: nil)
+                                                  aws_region: nil, aws_profile: nil, command_template: nil,
+                                                  timeout_seconds: nil)
     end
 
     it "reads the process environment when no env is given" do
@@ -88,13 +91,14 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       "a block that isn't an object" => [["SENTINEL-VALUE"], "llm in ~/.quaack/driver.json must be an object"],
       "an unknown key" => [{ "api_key" => "SENTINEL-VALUE" }, "llm.api_key in ~/.quaack/driver.json isn't a " \
                                                               "setting: use provider, model, base_url, api_key_env, " \
-                                                              "aws_region, or aws_profile"],
+                                                              "aws_region, aws_profile, command_template, or " \
+                                                              "timeout_seconds"],
       "an unknown provider" => [{ "provider" => "SENTINEL-VALUE" },
-                                "llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, or " \
-                                "bedrock"],
+                                "llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
+                                "bedrock, or copilot_cli"],
       "a provider that isn't a string" => [{ "provider" => ["SENTINEL-VALUE"] },
                                            "llm.provider in ~/.quaack/driver.json must be anthropic, " \
-                                           "openai_compatible, or bedrock"],
+                                           "openai_compatible, bedrock, or copilot_cli"],
       "an empty model" => [{ "model" => "" }, "llm.model in ~/.quaack/driver.json must be a non-empty string"],
       "a model that isn't a string" => [{ "model" => 5 }, "llm.model in ~/.quaack/driver.json must be a " \
                                                           "non-empty string"],
@@ -121,7 +125,28 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       "an aws_profile with a line break" => [{ "provider" => "bedrock", "model" => "m",
                                                "aws_profile" => "SENTINEL-VALUE\nx" },
                                              "llm.aws_profile in ~/.quaack/driver.json must be the name of an AWS " \
-                                             "profile"]
+                                             "profile"],
+      "a command_template that isn't an array" => [{ "provider" => "copilot_cli", "command_template" => "copilot" },
+                                                   "llm.command_template in ~/.quaack/driver.json must be an argv " \
+                                                   "array with {prompt_file} and {model} placeholders"],
+      "a command_template with a bad arg" => [{ "provider" => "copilot_cli",
+                                                "command_template" => ["copilot", 1, "{prompt_file}", "{model}"] },
+                                              "llm.command_template in ~/.quaack/driver.json must be an argv array " \
+                                              "with {prompt_file} and {model} placeholders"],
+      "a command_template without the prompt placeholder" => [
+        { "provider" => "copilot_cli", "command_template" => ["copilot", "{model}"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
+        "placeholders"
+      ],
+      "a command_template without the model placeholder" => [
+        { "provider" => "copilot_cli", "command_template" => ["copilot", "{prompt_file}"] },
+        "llm.command_template in ~/.quaack/driver.json must be an argv array with {prompt_file} and {model} " \
+        "placeholders"
+      ],
+      "a non-positive timeout" => [{ "provider" => "copilot_cli", "timeout_seconds" => 0 },
+                                   "llm.timeout_seconds in ~/.quaack/driver.json must be a positive number"],
+      "a timeout that isn't numeric" => [{ "provider" => "copilot_cli", "timeout_seconds" => "SENTINEL-VALUE" },
+                                         "llm.timeout_seconds in ~/.quaack/driver.json must be a positive number"]
     }.each do |what, (block, message)|
       it "fails on #{what}, naming the key and not the value" do
         e = config_error(block)
@@ -134,7 +159,7 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "fails on a bad QUAACK_LLM_PROVIDER, naming the variable and not its value" do
       e = config_error(nil, env: { "QUAACK_LLM_PROVIDER" => "SENTINEL-VALUE" })
 
-      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, or bedrock")
+      expect(e.message).to eq("QUAACK_LLM_PROVIDER must be anthropic, openai_compatible, bedrock, or copilot_cli")
     end
 
     it "fails on a bad QUAACK_LLM_BASE_URL, naming the variable and not its value" do
@@ -175,12 +200,13 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
 
       expect(fields(settings(block))).to eq(provider: "openai_compatible", model: "llama-3.3-70b-versatile",
                                             base_url: "https://api.groq.com/openai/v1", api_key_env: "GROQ_API_KEY",
-                                            aws_region: nil, aws_profile: nil)
+                                            aws_region: nil, aws_profile: nil, command_template: nil,
+                                            timeout_seconds: nil)
     end
 
     it "has an adapter for every provider it takes" do
       expect(Quaack::Driver::LLM::PROVIDERS.map { Quaack::Driver::LLM.adapter(it).name.split("::").last })
-        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter BedrockAdapter])
+        .to eq(%w[AnthropicAdapter OpenAICompatibleAdapter BedrockAdapter CopilotCLIAdapter])
     end
   end
 
@@ -193,7 +219,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
     it "takes a model, an AWS region and profile, and a base URL" do
       expect(fields(settings(block))).to eq(provider: "bedrock", model: "us.anthropic.claude-opus-5-5",
                                             base_url: "https://bedrock.example.com", api_key_env: nil,
-                                            aws_region: "us-west-2", aws_profile: "quaack-bedrock")
+                                            aws_region: "us-west-2", aws_profile: "quaack-bedrock",
+                                            command_template: nil, timeout_seconds: nil)
     end
 
     it "needs neither the region nor the profile, since the AWS SDK can find them" do
@@ -218,7 +245,8 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       env = { "QUAACK_LLM_PROVIDER" => "bedrock", "QUAACK_MODEL" => "anthropic.claude-opus-5-5" }
 
       expect(fields(settings(nil, env:))).to eq(provider: "bedrock", model: "anthropic.claude-opus-5-5",
-                                                base_url: nil, api_key_env: nil, aws_region: nil, aws_profile: nil)
+                                                base_url: nil, api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                                command_template: nil, timeout_seconds: nil)
     end
 
     it "refuses api_key_env, since its credentials come from AWS" do
@@ -247,6 +275,53 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       expect(settings({ "aws_region" => "us-west-2" }, env: { "QUAACK_LLM_PROVIDER" => "bedrock",
                                                               "QUAACK_MODEL" => "m" }).aws_region)
         .to eq("us-west-2")
+    end
+  end
+
+  describe "the copilot_cli provider" do
+    it "has claude-opus-5.5 as its default model" do
+      result = settings({ "provider" => "copilot_cli" })
+
+      expect(fields(result)).to eq(provider: "copilot_cli", model: "claude-opus-5.5", base_url: nil,
+                                   api_key_env: nil, aws_region: nil, aws_profile: nil,
+                                   command_template: nil, timeout_seconds: nil)
+    end
+
+    it "is picked by QUAACK_LLM_PROVIDER, with its default model" do
+      result = settings(nil, env: { "QUAACK_LLM_PROVIDER" => "copilot_cli" })
+
+      expect([result.provider, result.model]).to eq(%w[copilot_cli claude-opus-5.5])
+    end
+
+    it "takes its command template and timeout" do
+      template = ["/opt/bin/copilot", "--model={model}", "-p", "Read {prompt_file}"]
+      result = settings({ "provider" => "copilot_cli", "command_template" => template, "timeout_seconds" => 12.5 })
+
+      expect(result.command_template).to eq(template)
+      expect(result.timeout_seconds).to eq(12.5)
+    end
+
+    %w[base_url api_key_env aws_region aws_profile].each do |name|
+      it "refuses #{name}, which applies to another provider" do
+        value = case name
+                when "base_url" then "https://example.com"
+                when "aws_region" then "us-west-2"
+                else "SENTINEL_VALUE"
+                end
+        e = config_error({ "provider" => "copilot_cli", name => value })
+
+        expect(e.message).to eq("llm.#{name} in ~/.quaack/driver.json doesn't apply to provider copilot_cli")
+        expect(e.message).not_to include("SENTINEL")
+      end
+    end
+
+    %w[anthropic openai_compatible bedrock].each do |provider|
+      it "is the only provider that takes command_template and timeout_seconds, not #{provider}" do
+        base = { "provider" => provider, "model" => "m" }
+        e = config_error(base.merge("command_template" => ["copilot", "{prompt_file}", "{model}"]))
+
+        expect(e.message).to eq("llm.command_template in ~/.quaack/driver.json doesn't apply to provider #{provider}")
+      end
     end
   end
 end
