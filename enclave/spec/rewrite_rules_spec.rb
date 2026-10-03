@@ -143,7 +143,8 @@ RSpec.describe Quaack::Enclave::RewriteRules do
 
   it "lists QUAACK's rules, each with a name, a description, and the rewrites method" do
     expect(described_class::RULES.map(&:name))
-      .to eq(%w[implied_predicate_removal key_in_self_join or_to_union not_in_to_not_exists distinct_join_to_exists])
+      .to eq(%w[implied_predicate_removal transitive_predicate_copy key_in_self_join or_to_union
+                not_in_to_not_exists distinct_join_to_exists])
     expect(described_class::RULES).to all(respond_to(:rewrites) & have_attributes(description: a_kind_of(String)))
   end
 end

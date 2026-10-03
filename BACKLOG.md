@@ -877,43 +877,9 @@ Minor findings from the review of 20260930-11:
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261001-17. Report payload: send what a legible report needs.
+### 20261001-17. Report payload: send what a legible report needs. Done, see BACKLOG-COMPLETE.md.
 
-The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
-
-- **The original query, always.** The redacted query with the clock put back, as `original_sql` gives it today for an index-only winner.
-- **Every stored rewrite,** not only the ranked ones: its SQL, its source (the LLM in 6a, or the operator in step 7, from `inferred`), and one fate. The fates: step 8 found its plans the same as the original's; step 9 disproved it, with the scenario and rule; step 10 disproved it, with the round; 14c found different results on production data; it was measured and wasn't better; it was ranked.
-- **A step 8 prune is not a step 9 disproof.** `rewrite-test` stores a pruned rewrite as `passed` false with rule `discarded`, and NegativeResult sends that as a step 9 disproof. The report then says "rewrite_1: disproved in step 9 by scenario  (rule discarded)" for a rewrite that was never tested for correctness. Send the step 8 fate instead.
-- **Every measured label,** not only `top`: its measurements, its per-literal verdicts, and the indexes it ran with (their built names), so the report can say what `original:top:1` was and how many blocks it read against the original.
-- **Existing index sizes.** For `covered_by` and `makes_redundant`, send each existing index's `size_bytes` from the planner statistics with its name.
-- **No repeats in 15a's lists.** In the real run the same DDL was listed twice under one search (`user_id, cached_due_date`), a partial index appeared once with `'deleted'::text` and once with `'deleted'`, and the rewrite's search repeated nearly all of the original's lines. Send each declined or existing index once, with the searches it came up in.
-
-Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
-
-Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-19 counts them by reason.
-
-- **Depends on:** 20260922-62, -63.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** Step 15, 15a.
-- **Status:** todo
-
-### 20261001-18. Report: readable HTML.
-
-The driver's half of the same complaint. Render the report so someone who has never read DESIGN.md can follow it:
-
-- **Queries.** Show the original query first, then every rewrite, each pretty-printed. pg_query 6.2 does this (`PgQuery.deparse(tree, opts: PgQuery::DeparseOpts.new(pretty_print: true, ...))`), and it's already a driver dependency.
-- **No internal labels or rule names.** `original:top:1: not_better` becomes words: the original query with the index on `submissions (assignment_id, user_id, cached_due_date)` read so many blocks on the slow values against so many for the original, which isn't more than 5% fewer. The same goes for `footprint_tie`, `same_plans`, `never_used`, and the rest.
-- **Sizes.** Use the unit that fits (kB, MB, GB) with thousands separators, right-aligned, so indexes compare at a glance. Show the existing indexes' sizes in the last two columns of the index table.
-- **Who proposed what.** Say where each idea came from and what became of it, by source: the LLM's rewrites, the operator's rewrites, the two mechanical index generators, and the LLM's index proposals. **Decided (the user, 2026-10-01):** a table with one row per source and one column per outcome. One table for rewrites (proposed, refused on arrival, same plan as the original, wrong results, not better, ranked) and one for indexes (proposed, already existed, planner ignored, built and measured, not better, ranked).
-- **Burndown and LLM calls in English.** "Index suggestions for the original query: 2 calls", not "LLM calls, 5a-5: 2". Stage names too.
-- **A negative result's index table isn't "Proposed indexes".** Nothing is being proposed. Call it what it is: indexes QUAACK built and measured.
-- **Layout.** A summary of the verdict at the top, then readable typography, tables with aligned numbers, and SQL in code blocks. Plain CSS in the file, no scripts, no animation, and nothing loaded from the network.
-- Update the README's "Reading the report" to match.
-
-- **Depends on:** 20261001-17. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-19 and -20.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** Step 15, 15a, 15b.
-- **Status:** todo
+### 20261001-18. Report: readable HTML. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-19. Record the rewrite stages in the burndown.
 
@@ -1111,25 +1077,7 @@ Add it to 6c's table in DESIGN.md.
 - **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
 - **Status:** todo
 
-### 20261002-7. 6c rule: `transitive_predicate_copy`.
-
-The query behind 20261002-6 has `enrollments.course_id = assessor_asset.course_id` in an inner join's `ON`, and `assessor_asset.course_id IN (2883, ...)` in `WHERE`. Together they imply `enrollments.course_id IN (2883, ...)`, so a rule can add that predicate. Postgres carries a constant equality across an equi-join (equivalence classes), but not an `IN` list, a range, `BETWEEN`, or `IS NOT NULL`, so it can't use that implied filter to narrow `enrollments` early.
-
-The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an inner join's `ON`, and each conjunct on `a.x` alone that's an `IN` list of constants, a comparison with a constant (`<`, `<=`, `>`, `>=`), or `BETWEEN` two constants, add the same conjunct on `b.y`, unless one is already there. Keep the original. Refuse when:
-
-- `x` and `y` have different types, or the equality isn't the type's default btree equality.
-- Either column has a nondeterministic collation.
-- Either side is on the nullable side of an outer join.
-
-It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
-
-20261002-15 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
-- **Status:** todo
+### 20261002-7. 6c rule: `transitive_predicate_copy`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-8. 6c rule: `cte_hoist_dedupe`.
 
@@ -1872,7 +1820,7 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-3. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
 
 Minor findings from the second review of 20261002-17:
 
@@ -1893,7 +1841,7 @@ Minor findings from the second review of 20261002-17:
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261003-4. Intake unreadable causes: minor findings.
+### 20261003-7. Intake unreadable causes: minor findings.
 
 Minor findings from the first review of 20260929-5:
 
@@ -1912,7 +1860,7 @@ Minor findings from the first review of 20260929-5:
 - **Design:** Step 1.
 - **Status:** todo
 
-### 20261003-5. `rake full`: harden the stamp and close test gaps.
+### 20261003-8. `rake full`: harden the stamp and close test gaps.
 
 Minor findings from the first review of 20261003-2:
 
@@ -1929,7 +1877,7 @@ Minor findings from the first review of 20261003-2:
 - **Design:** none (development tooling).
 - **Status:** todo
 
-### 20261003-6. `quaack deploy` diagnosis: minor findings, round two.
+### 20261003-9. `quaack deploy` diagnosis: minor findings, round two.
 
 Minor findings from the review of 20260929-6:
 
@@ -1943,7 +1891,7 @@ Minor findings from the review of 20260929-6:
 - **Design:** Deploy.
 - **Status:** todo
 
-### 20261003-7. Operator-cancel test: don't blame pg_sleep for other failures.
+### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures.
 
 Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postgres_spec.rb's `cancel_once_sleeping` (around line 245):
 
@@ -1956,4 +1904,81 @@ Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postg
 - **Depends on:** 20260930-5.
 - **Came from:** The review of 20260930-5, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-3. Report payload: minor findings.
+
+The build and review of 20261001-17 found these:
+
+- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends 14d's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
+- **Selection calls every 14c discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a 14c timeout.
+- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A step 9 or 10 failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
+- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles 14d saying `result_mismatch` when 14c's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
+- **15a still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
+- **Rewrite numbering gaps.** `CandidateRuns.candidates` and `IndexBuild.searches` stop at the first gap in rewrite numbers, while the report lists rewrites across gaps. A rewrite after a gap would never be measured and would read `unfinished`. Find out whether a real run can leave a gap, and make the two agree.
+- **`NegativeResult.disproved` is a shim** kept only for `RuleBugs`. 20261002-5 moves `RuleBugs` onto an allowlist; have it use `RewriteFate` and `ResultComparator::MISMATCHES`, then delete the shim and `RuleBugs`' own copy of `MISMATCHES`.
+- **`e2e/run.rb`'s `why_none`** now tallies rewrite fates, and nobody has run it since.
+- **`spec/pipeline_replay_spec.rb` takes about 24 minutes** on its own. See whether it can share setup or run less.
+
+- **Depends on:** 20261001-17.
+- **Came from:** The build and review of 20261001-17, 2026-10-03.
+- **Design:** Step 15, 15a.
+- **Status:** todo
+
+### 20261003-4. Readable report: minor findings.
+
+The build and both reviews of 20261001-18 found these:
+
+- **Run the full check.** 20261001-18 landed without the enclave suite or the Docker-backed root specs. Run `bundle exec rake` on `main` and fix what's red, starting with the three assertions in `spec/pipeline_replay_spec.rb` that were reworded and never executed.
+- **Test gaps where a wrong change stays green** (the code is right):
+  - The LLM row's "Already existed" count: the fixture has one `covered_by_existing` and one `duplicate`, so swapping them passes. Use different counts.
+  - The kB to MB and MB to GB boundaries, and `Format.fewer`'s rounding.
+  - The "It built and measured" paragraph being left out when there's a winner.
+  - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
+  - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
+  - The outcome column for five of the fates under "Stopped for another reason"; only `step9_failed`, `footprint_tie`, and `unfinished` are pinned.
+  - An index whose label 14c dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
+  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `step10_disproved` rewrite.
+- **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
+- **The "refused on arrival" note leaves out a reason.** For rule rewrites, 6c's `failed_checks` also covers a 6b assumption failure and clock anchoring. The README has the same gap.
+- **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
+- **`Format.fewer` raises `FloatDomainError`** if the original read 0 blocks on the slow values.
+- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no step 7 warnings, so no report has ever shown one. Send them, or change the README.
+- **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
+- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing 6c rule names.
+
+- **Depends on:** 20261001-18.
+- **Came from:** The build and both reviews of 20261001-18, 2026-10-03.
+- **Design:** Step 15, 15a, 15b.
+- **Status:** todo
+
+### 20261003-5. Report payload: what the index accountability table still lacks.
+
+20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
+
+- **Built and measured, not better, and ranked, per source.** `indexes` in the report message carries no source. The store has it (`IndexCandidate` sources). Send it through a closed list of QUAACK's constants.
+- **Already existed and planner ignored, for the two generators.** The 5a-3 and 5a-4 drops aren't recorded by source.
+- **Already existed and planner ignored, in a winning report.** `negative` goes out only when nothing is ranked. Send the declined and existing lists every time.
+- **The plan with the new indexes.** The payload has a plan only for rewrites, and that plan is the rewrite with no new indexes, even when the winning label ran with some. Send the winning label's plan, for an index-only winner too.
+
+Then have the report render them. Trust boundary: sources are constants, DDL goes through CandidateDdlRedaction, and a plan node sends only its type, relation, index name, and row counts.
+
+- **Depends on:** 20261001-18, -20.
+- **Came from:** The build of 20261001-18, 2026-10-03.
+- **Design:** Step 15, 15a.
+- **Status:** todo
+
+### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
+
+Findings from the build and review of 20261002-7:
+
+- **An untested soundness guard.** Equalities come only from the WHERE and inner-join ONs, which is right, but no test pins it. A mutation that also took equalities from outer-join ONs stayed green. Add `FROM posts p JOIN users u ON u.id = p.id LEFT JOIN accounts a ON p.account_id = u.account_id WHERE u.account_id IN (1,2)` and expect no rewrite.
+- **`Catalog#default_btree?`'s `families.size == 1`** (catalog.rb ~146) survives being changed to `>= 1`. Test it, or accept it as untested.
+- **Typmods block common Rails rewrites.** `Catalog::Info.type` comes from `format_type`, so `varchar(255) = varchar` and `numeric(10,2) = numeric(12,2)` are refused. Compare base types (`atttypid`) instead.
+- **Enum, domain and array columns are refused,** since they have no default btree family of their own. Resolve the base type or the generic family (`anyenum`, `anyarray`) if it's safe.
+- **Inner joins nested on an outer join's nullable side get no copies,** though copying within that nested inner join would be sound.
+
+- **Depends on:** 20261002-7.
+- **Came from:** The build and review of 20261002-7, 2026-10-03.
+- **Design:** 6c.
 - **Status:** todo
