@@ -768,17 +768,7 @@ Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through th
 
 ### 20260930-4. An assertion in index_candidate_expression_spec passes a value as its failure message. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-5. Clean up the operator-cancel test's canceler thread.
-
-Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_postgres_spec.rb's operator-cancel test:
-
-- If the example fails before `canceler.join`, for example because no INSERT runs and `run_error` raises first, nothing kills the canceler thread. It polls until the after hook's `DROP DATABASE ... WITH (FORCE)` ends its connection, then dies with a `PG::ConnectionBad` trace on stderr. There's no hang and no stuck backend, just noise. Kill and join it in an `ensure`.
-- The deadline's clearer message, "the INSERT never reached pg_sleep", shows up only when the test reaches `join`. Surface it when `run_error` fails first too, if that's cheap.
-
-- **Depends on:** 20260929-28.
-- **Came from:** Review of 20260929-28, round one.
-- **Design:** Step 9.
-- **Status:** todo
+### 20260930-5. Clean up the operator-cancel test's canceler thread. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-6. `clients` shape checks: minor findings, round three.
 
@@ -1951,4 +1941,19 @@ Minor findings from the review of 20260929-6:
 - **Depends on:** 20260929-6.
 - **Came from:** The review of 20260929-6, 2026-10-03.
 - **Design:** Deploy.
+- **Status:** todo
+
+### 20261003-7. Operator-cancel test: don't blame pg_sleep for other failures.
+
+Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postgres_spec.rb's `cancel_once_sleeping` (around line 245):
+
+- **The clear message can mislabel a failure.** "The INSERT never reached pg_sleep" depends only on `canceler[:canceled]`, which the thread sets just after `pg_cancel_backend` returns.
+  - If the test's call fails between the cancel and the flag being set, the message wrongly blames pg_sleep. The reviewer couldn't make this race happen.
+  - If the thread dies for another reason, such as a PG error while polling, `stop` swallows that error, and the message still blames pg_sleep.
+  - The original error stays attached as the cause in both cases. Surface the thread's own error, and set the flag before the cancel, or make it clear the flag can be late.
+- **A dropped `stop` would go unnoticed.** The thread's own error report is off, so a later change that dropped the `stop` call would let the thread die silently when the database is dropped. Consider a comment, or a check that the thread is gone after each example.
+
+- **Depends on:** 20260930-5.
+- **Came from:** The review of 20260930-5, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo
