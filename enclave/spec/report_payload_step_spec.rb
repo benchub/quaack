@@ -49,7 +49,7 @@ RSpec.describe "quaacks report-payload" do
     store.write("statistics", "tables" => [{
                   "schema" => "public", "name" => "orders", "reltuples" => 1000.0,
                   "column_names" => %w[id created_at note], "columns" => {},
-                  "indexes" => [{ "name" => "orders_created_at_id_idx",
+                  "indexes" => [{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960,
                                   "definition" => "CREATE INDEX orders_created_at_id_idx ON public.orders " \
                                                   "USING btree (created_at, id)" }]
                 }])
@@ -58,24 +58,32 @@ RSpec.describe "quaacks report-payload" do
                 ] })
     store.write("redacted_plan", "explain" => [{ "Plan" => node("Seq Scan", 50, relation: "orders").except("Schema") }])
     store.write("index_build", "indexes" => proposed.transform_values { { "ddl" => it, "size" => 8192 } },
-                               "combinations" => { "original:top:1" => ["quaack_a"],
-                                                   "rewrite_1:top:1" => %w[quaack_b quaack_c] })
+                               "combinations" => { "original:top:1" => ["quaack_a"], "original:top:2" => ["quaack_b"],
+                                                   "rewrite_1:top:1" => %w[quaack_b quaack_c],
+                                                   "rewrite_1:top:2" => ["quaack_a"] })
     store.write("baseline", "sets" => { "slow" => m(1000, 100), "typical" => m(200, 150) },
                             "timed_out" => [], "timeout_ms" => 5000)
-    store.write("index_baseline", "combinations" => { "original:top:1" => { "slow" => m(400, 300),
-                                                                            "typical" => m(190, 190) } },
-                                  "timed_out" => [])
-    store.write("candidate_runs", "candidates" => { "rewrite_1" => { "none" => { "slow" => m(300, 30, stable: false),
-                                                                                 "typical" => m(100, 100) } } },
-                                  "timed_out" => [], "timed_out_count" => 0)
+    # original:top:2 timed out on a set, and so did the run rewrite_1:top:2,
+    # which candidate-runs drops without its measurements.
+    store.write("index_baseline",
+                "combinations" => { "original:top:1" => { "slow" => m(400, 300), "typical" => m(190, 190) },
+                                    "original:top:2" => { "slow" => { "timed_out" => true }, "typical" => m(210, 0) } },
+                "timed_out" => ["original:top:2"])
+    store.write("candidate_runs",
+                "candidates" => { "rewrite_1" => { "none" => { "slow" => m(300, 30, stable: false),
+                                                               "typical" => m(100, 100) },
+                                                   "rewrite_1:top:1" => { "slow" => m(1200, 7),
+                                                                          "typical" => m(100, 100) } } },
+                "timed_out" => ["rewrite_1:top:2"], "timed_out_count" => 1)
     store.write("minimax", "survivors" => [], "discarded_ties" => [], "infinite_sets" => [],
                            "verdicts" => { "rewrite_1:none" => { "slow" => "better", "typical" => "better" },
+                                           "rewrite_1:top:1" => { "slow" => "worse", "typical" => "no_worse" },
                                            "original:top:1" => { "slow" => "better", "typical" => "no_worse" } })
     store.write("selection", "top" => [
                   { "label" => "rewrite_1:none", "slow_blocks" => 300, "total_blocks_sum" => 400, "footprint" => 0 },
                   { "label" => "original:top:1", "slow_blocks" => 400, "total_blocks_sum" => 590,
                     "footprint" => 8192 }
-                ], "excluded" => { "rewrite_1:top:1" => "worse" }, "infinite_sets" => [])
+                ], "excluded" => { "rewrite_1:top:1" => "not_better" }, "infinite_sets" => [])
     store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
                              "transformation" => "moved #{sentinel}", "assumptions" => [{ "kind" => sentinel }],
                              "source" => "rule", "rules" => ["key_in_self_join"])
@@ -101,29 +109,273 @@ RSpec.describe "quaacks report-payload" do
     lines.find { it["type"] == "report" }
   end
 
-  it "sends the rankings, per-literal blocks with hit/read and stability" do
-    expect(report["top"].map { it["label"] }).to eq(%w[rewrite_1:none original:top:1])
-    expect(report["excluded"]).to eq("rewrite_1:top:1" => "worse")
-    expect(report["verdicts"]["original:top:1"]).to eq("slow" => "better", "typical" => "no_worse")
-    expect(report["measurements"]["original"]["slow"]).to eq("total_blocks" => 1000, "hit" => 100, "read" => 900,
-                                                             "stable" => true, "timed_out" => false)
-    expect(report["measurements"]["rewrite_1:none"]["slow"]).to include("total_blocks" => 300, "stable" => false)
-    expect(report["measurements"]["original:top:1"]["typical"]).to include("hit" => 190, "read" => 0)
+  def label(name) = report["labels"].find { it["label"] == name }
+  def rewrite(number) = report["rewrites"].find { it["rewrite"] == "rewrite_#{number}" }
+
+  # Runs report-payload on the populated store, changed by the block.
+  def payload_of
+    store = Quaack::Enclave::Store.create(base: quaacks.store_base)
+    populate(store)
+    yield store
+    quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
   end
 
-  it "sends each top candidate's query with placeholders and the clock functions put back" do
-    original = report["candidates"].find { it["label"] == "original:top:1" }
-    expect(original["sql"]).to include("now()").and include("$2")
-    expect(original["sql"]).not_to include("clock_anchor")
-    rewrite = report["candidates"].find { it["label"] == "rewrite_1:none" }
-    expect(rewrite["sql"]).to start_with("SELECT id FROM public.orders WHERE note = $2")
-    expect(rewrite["untested_atoms"]).to eq([{ "shape" => "column = $n" }])
-    expect(rewrite["evidence"]).to be(false)
-    expect(original["indexes"]).to eq(["quaack_a"])
+  it "sends the rankings, and the original's per-literal blocks with hit/read and stability" do
+    expect(report["top"].map { it["label"] }).to eq(%w[rewrite_1:none original:top:1])
+    expect(report["excluded"]).to eq("rewrite_1:top:1" => "not_better")
+    expect(report["original_measurements"]).to eq(
+      "slow" => { "total_blocks" => 1000, "hit" => 100, "read" => 900, "stable" => true, "timed_out" => false },
+      "typical" => { "total_blocks" => 200, "hit" => 150, "read" => 50, "stable" => true, "timed_out" => false }
+    )
+  end
+
+  it "sends the original query, with placeholders and the clock functions put back" do
+    expect(report["original_sql"])
+      .to eq("SELECT id FROM public.orders WHERE created_at > (now() - $1::interval) AND note = $2")
+  end
+
+  describe "every measured label, not only the ranked ones" do
+    it "lists each of the original's index combinations and each rewrite run, in the order they were measured" do
+      expect(report["labels"].map { it["label"] })
+        .to eq(%w[original:top:1 original:top:2 rewrite_1:none rewrite_1:top:1 rewrite_1:top:2])
+      expect(report["labels"].map { it["search"] }).to eq(%w[original original rewrite_1 rewrite_1 rewrite_1])
+    end
+
+    it "sends a ranked label's blocks, per-literal verdicts, and the built indexes it ran with" do
+      expect(label("original:top:1")).to eq(
+        "label" => "original:top:1", "search" => "original", "indexes" => ["quaack_a"], "timed_out" => false,
+        "measurements" => {
+          "slow" => { "total_blocks" => 400, "hit" => 300, "read" => 100, "stable" => true, "timed_out" => false },
+          "typical" => { "total_blocks" => 190, "hit" => 190, "read" => 0, "stable" => true, "timed_out" => false }
+        },
+        "verdicts" => { "slow" => "better", "typical" => "no_worse" }
+      )
+      expect(label("rewrite_1:none")).to include("indexes" => [],
+                                                 "verdicts" => { "slow" => "better", "typical" => "better" })
+      expect(label("rewrite_1:none")["measurements"]["slow"]).to include("total_blocks" => 300, "stable" => false)
+    end
+
+    it "sends the same for a label that wasn't ranked" do
+      expect(label("rewrite_1:top:1")).to include(
+        "search" => "rewrite_1", "indexes" => %w[quaack_b quaack_c], "timed_out" => false,
+        "verdicts" => { "slow" => "worse", "typical" => "no_worse" }
+      )
+      expect(label("rewrite_1:top:1")["measurements"]["slow"]).to include("total_blocks" => 1200, "hit" => 7,
+                                                                          "read" => 1193)
+    end
+
+    it "marks an index combination of the original's that timed out, which minimax gave no verdicts" do
+      expect(label("original:top:2")).to include(
+        "indexes" => ["quaack_b"], "timed_out" => true, "verdicts" => nil,
+        "measurements" => { "slow" => { "timed_out" => true },
+                            "typical" => { "total_blocks" => 210, "hit" => 0, "read" => 210, "stable" => true,
+                                           "timed_out" => false } }
+      )
+    end
+
+    it "lists a rewrite run dropped for timing out, with its indexes and no measurements" do
+      expect(label("rewrite_1:top:2")).to eq("label" => "rewrite_1:top:2", "search" => "rewrite_1",
+                                             "indexes" => ["quaack_a"], "timed_out" => true,
+                                             "measurements" => nil, "verdicts" => nil)
+    end
+
+    context "when a label in the store isn't a label QUAACK makes" do
+      let(:outcome) do
+        payload_of do |store|
+          runs = store.read("candidate_runs")
+          runs["candidates"]["rewrite_1"][REPORT_WORD_SENTINEL] = runs["candidates"]["rewrite_1"]["none"]
+          store.write("candidate_runs", runs.merge("timed_out" => [REPORT_WORD_SENTINEL, "rewrite_1:top:2"]))
+        end
+      end
+
+      it "doesn't send it" do
+        expect(report["labels"].map { it["label"] })
+          .to eq(%w[original:top:1 original:top:2 rewrite_1:none rewrite_1:top:1 rewrite_1:top:2])
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+  end
+
+  describe "every stored rewrite" do
+    it "sends a ranked rewrite's SQL, plan, untested atoms, and step 10 evidence" do
+      expect(rewrite(1)).to include(
+        "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
+        "untested_atoms" => [{ "shape" => "column = $n" }], "evidence" => false
+      )
+      expect(rewrite(1)["plan"].first).to include("node" => "Index Scan", "index" => "orders_created_at_id_idx",
+                                                  "selectivity" => 0.005)
+    end
+
+    context "with a rewrite that was stored and taken no further" do
+      let(:outcome) { payload_of { it.write("rewrite_2", "sql" => "SELECT $1", "source" => "operator") } }
+
+      it "sends its SQL and source all the same, with nothing it doesn't have" do
+        expect(report["rewrites"].map { it["rewrite"] }).to eq(%w[rewrite_1 rewrite_2])
+        expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
+                                 "rules" => nil, "fate" => "unfinished", "scenario" => nil, "rule" => nil,
+                                 "round" => nil, "after" => nil, "plan" => nil, "untested_atoms" => nil,
+                                 "evidence" => nil)
+      end
+    end
+  end
+
+  describe "each rewrite's fate" do
+    def tested(passed, scenario = nil, rule = nil)
+      { "passed" => passed, "scenario" => scenario, "rule" => rule, "untested" => [], "untested_atoms" => [] }
+    end
+
+    # Stores rewrite_<number> as far as the steps given took it: tested is
+    # rewrite_tested_<n>, round is rewrite_round_<n>, survived is
+    # rewrite_survived_<n>'s survived, and pruned is rewrite_pruned_<n>'s
+    # discarded.
+    def stored(store, number, tested: nil, round: nil, survived: nil, pruned: nil) # rubocop:disable Metrics/ParameterLists
+      store.write("rewrite_#{number}", "sql" => "SELECT #{number}", "source" => "llm")
+      store.write("rewrite_pruned_#{number}", "discarded" => pruned) unless pruned.nil?
+      store.write("rewrite_tested_#{number}", tested) if tested
+      store.write("rewrite_round_#{number}", round) if round
+      store.write("rewrite_survived_#{number}", "survived" => survived) unless survived.nil?
+    end
+
+    # A rewrite that passed steps 9 and 10, measured under each key
+    # (none, or a combination key), with 14d's reason for each label.
+    def measured(store, number, reasons)
+      stored(store, number, tested: tested(true), round: { "round" => 3, "evidence" => true, "rule" => nil },
+                            survived: true, pruned: false)
+      runs = store.read("candidate_runs")
+      runs["candidates"]["rewrite_#{number}"] = reasons.keys.to_h { [it, { "slow" => m(900, 1) }] }
+      store.write("candidate_runs", runs)
+      labels = reasons.transform_keys { it == "none" ? "rewrite_#{number}:none" : it }.compact
+      selection = store.read("selection")
+      store.write("selection", selection.merge("excluded" => selection["excluded"].merge(labels)))
+    end
+
+    # 14c's entry, as ResultComparison.entry writes it, from each
+    # rewrite's verdict rule by literal set (nil for a pass).
+    def compared(store, rules)
+      verdicts = rules.to_h do |number, sets|
+        ["rewrite_#{number}", sets.transform_values { { "result" => it ? "fail" : "pass", "rule" => it } }]
+      end
+      failed = verdicts.select { |_, sets| sets.values.any? { it["result"] == "fail" } }.keys
+      store.write("result_comparison", "verdicts" => verdicts, "discarded" => failed, "partial_count" => 0)
+    end
+
+    def fate(number) = rewrite(number).slice("fate", "scenario", "rule", "round", "after").compact
+
+    let(:outcome) do
+      payload_of do |store|
+        stored(store, 2, pruned: true, tested: tested(false, nil, "discarded"), survived: false)
+        stored(store, 3, pruned: false, tested: tested(false, "s3", "multiset"), survived: false)
+        stored(store, 4, pruned: false, tested: tested(false, "s0", "unsupported_order"), survived: false)
+        stored(store, 5, tested: tested(false, "s2", "query_failed"), survived: false)
+        stored(store, 6, tested: tested(true), round: { "round" => 2, "evidence" => true, "rule" => "row_count" },
+                         survived: false)
+        stored(store, 7, tested: tested(true), survived: false,
+                         round: { "round" => 1, "evidence" => true, "rule" => "statement_timeout" })
+        measured(store, 8, "none" => "result_mismatch")
+        measured(store, 9, "none" => "result_mismatch", "rewrite_9:top:1" => "not_better")
+        measured(store, 10, "none" => "not_better")
+        compared(store, 8 => { "slow" => "timed_out", "typical" => "multiset" },
+                        9 => { "slow" => "timed_out", "typical" => nil },
+                        10 => { "slow" => "unsupported_order", "typical" => "unsupported_order" },
+                        11 => { "slow" => nil, "typical" => nil })
+        measured(store, 11, "none" => "not_better", "rewrite_11:top:1" => "not_better")
+        measured(store, 12, "none" => "not_better", "rewrite_12:top:1" => "footprint_tie")
+        measured(store, 13, "none" => "footprint_tie", "rewrite_13:top:1" => "below_top_three",
+                            "rewrite_13:top:2" => "not_better")
+        stored(store, 14, tested: tested(true), round: { "round" => 3, "evidence" => true, "rule" => nil },
+                          survived: true)
+        runs = store.read("candidate_runs")
+        store.write("candidate_runs", runs.merge("timed_out" => [*runs["timed_out"], "rewrite_14:none",
+                                                                 "rewrite_14:top:1"]))
+        stored(store, 15)
+        stored(store, 16, tested: tested(true), round: { "round" => 1, "evidence" => true, "rule" => nil })
+        stored(store, 17, tested: tested(true), round: { "round" => 3, "evidence" => true, "rule" => nil },
+                          survived: true)
+        measured(store, 18, "none" => nil)
+        # As a store written before rounds kept their rule holds them.
+        stored(store, 19, tested: tested(true), round: { "round" => 3, "evidence" => true }, survived: false)
+        stored(store, 20, tested: tested(true), survived: false)
+        # A rewrite step 8 pruned that rewrite-test never reached.
+        stored(store, 21, pruned: true)
+        # A rewrite ranked under one label and excluded under another.
+        measured(store, 22, "none" => "not_better", "rewrite_22:top:1" => nil)
+        selection = store.read("selection")
+        store.write("selection", selection.merge("top" => [*selection["top"], { "label" => "rewrite_22:top:1" }]))
+        # No run stores this: a rewrite step 9 disproved is never measured.
+        # If a store held both, the earlier step is the fate.
+        measured(store, 23, "none" => "not_better")
+        store.write("rewrite_tested_23", tested(false, "s1", "value"))
+      end
+    end
+
+    {
+      1 => { "fate" => "ranked" },
+      2 => { "fate" => "same_plans" },
+      3 => { "fate" => "step9_disproved", "scenario" => "s3", "rule" => "multiset" },
+      4 => { "fate" => "step9_failed", "scenario" => "s0", "rule" => "unsupported_order" },
+      5 => { "fate" => "step9_failed", "scenario" => "s2", "rule" => "query_failed" },
+      6 => { "fate" => "step10_disproved", "round" => 2, "rule" => "row_count" },
+      7 => { "fate" => "step10_failed", "round" => 1, "rule" => "statement_timeout" },
+      8 => { "fate" => "production_mismatch", "rule" => "multiset" },
+      9 => { "fate" => "production_timed_out" },
+      10 => { "fate" => "production_not_compared", "rule" => "unsupported_order" },
+      11 => { "fate" => "not_better" },
+      12 => { "fate" => "footprint_tie" },
+      13 => { "fate" => "below_top_three" },
+      14 => { "fate" => "measurement_timed_out" },
+      15 => { "fate" => "unfinished" },
+      16 => { "fate" => "unfinished", "after" => "step9" },
+      17 => { "fate" => "unfinished", "after" => "step10" },
+      18 => { "fate" => "unfinished", "after" => "measurement" },
+      19 => { "fate" => "step10_disproved", "round" => 3 },
+      20 => { "fate" => "step10_disproved" },
+      21 => { "fate" => "same_plans" },
+      22 => { "fate" => "ranked" },
+      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" }
+    }.each do |number, expected|
+      it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
+        expect(fate(number)).to eq(expected)
+      end
+    end
+
+    it "sends step 10 evidence only for a rewrite that survived step 10" do
+      expect([3, 6, 16].map { rewrite(it)["evidence"] }).to eq([nil, nil, nil])
+      expect(rewrite(17)["evidence"]).to be(true)
+    end
+
+    it "never calls a rewrite step 8 pruned disproved, though rewrite-test stores it as not passed" do
+      expect(report["rewrites"].select { it["fate"].include?("disproved") }.map { it["rewrite"] })
+        .to eq(%w[rewrite_3 rewrite_6 rewrite_19 rewrite_20 rewrite_23])
+    end
+
+    context "when the store holds rule, scenario, and round values that aren't QUAACK's own" do
+      let(:outcome) do
+        payload_of do |store|
+          stored(store, 2, tested: tested(false, REPORT_WORD_SENTINEL, REPORT_WORD_SENTINEL), survived: false)
+          stored(store, 3, tested: tested(true), survived: false,
+                           round: { "round" => REPORT_WORD_SENTINEL, "evidence" => true,
+                                    "rule" => REPORT_WORD_SENTINEL })
+          stored(store, 4, tested: tested(true), survived: false,
+                           round: { "round" => 7, "evidence" => true, "rule" => "multiset" })
+          measured(store, 5, "none" => "result_mismatch")
+          measured(store, 6, "none" => "not_better")
+          compared(store, 5 => { "slow" => REPORT_WORD_SENTINEL }, 6 => { REPORT_WORD_SENTINEL => nil })
+        end
+      end
+
+      it "sends a fate that claims no disproof, and none of the values" do
+        expect([2, 3, 4, 5, 6].map { fate(it) }).to eq(
+          [{ "fate" => "step9_failed" }, { "fate" => "step10_failed" },
+           { "fate" => "step10_disproved", "rule" => "multiset" }, { "fate" => "production_not_compared" },
+           { "fate" => "not_better" }]
+        )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
   end
 
   describe "where each rewrite came from (6c)" do
-    def rewrite_candidate = report["candidates"].find { it["label"] == "rewrite_1:none" }
+    def rewrite_candidate = rewrite(1)
 
     # Runs report-payload on the populated store with rewrite_1 changed.
     def with_rewrite(**fields)
@@ -140,10 +392,6 @@ RSpec.describe "quaacks report-payload" do
 
     it "sends a rule-made rewrite as source rule, with the rules applied, in order" do
       expect(rewrite_candidate).to include("source" => "rule", "rules" => ["key_in_self_join"])
-    end
-
-    it "sends no source for a candidate that is the original query" do
-      expect(report["candidates"].find { it["label"] == "original:top:1" }.keys).not_to include("source", "rules")
     end
 
     %w[llm operator].each do |source|
@@ -212,7 +460,7 @@ RSpec.describe "quaacks report-payload" do
       context "with rule-made rewrites that steps 9, 10, and 14c disproved, though a candidate won" do
         let(:outcome) do
           with_rewrite do |store|
-            rule_made(store, 2, tested(false, "null_semantics", "S3"), false)
+            rule_made(store, 2, tested(false, "multiset", "s3"), false)
             rule_made(store, 3, tested(true), false)
             rule_made(store, 4, tested(true), true)
             compared(store, "4": { slow: nil, typical: "multiset" })
@@ -266,7 +514,7 @@ RSpec.describe "quaacks report-payload" do
       context "with a disproved rule-made rewrite whose stored rules hold names that aren't QUAACK's own" do
         let(:outcome) do
           with_rewrite do |store|
-            rule_made(store, 2, tested(false, "null_semantics", "S3"), false,
+            rule_made(store, 2, tested(false, "multiset", "s3"), false,
                       rules: [REPORT_WORD_SENTINEL, "key_in_self_join", sentinel])
           end
         end
@@ -289,7 +537,7 @@ RSpec.describe "quaacks report-payload" do
       context "with rewrites the LLM and the operator made that were disproved" do
         let(:outcome) do
           with_rewrite do |store|
-            rule_made(store, 2, tested(false, "null_semantics", "S3"), false)
+            rule_made(store, 2, tested(false, "multiset", "s3"), false)
             store.write("rewrite_2", "sql" => "SELECT 2", "source" => "llm")
             rule_made(store, 3, tested(true), true)
             store.write("rewrite_3", "sql" => "SELECT 3", "source" => "operator")
@@ -307,11 +555,28 @@ RSpec.describe "quaacks report-payload" do
   it "sends each proposed index's redacted DDL, size, prefix coverage, and redundancy" do
     expect(report["indexes"]["quaack_a"]).to eq(
       "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "size" => 8192,
-      "covered_by" => "orders_created_at_id_idx", "makes_redundant" => []
+      "covered_by" => { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }, "makes_redundant" => []
     )
-    expect(report["indexes"]["quaack_b"]).to include("covered_by" => nil,
-                                                     "makes_redundant" => ["orders_created_at_id_idx"])
+    expect(report["indexes"]["quaack_b"]).to include(
+      "covered_by" => nil, "makes_redundant" => [{ "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }]
+    )
     expect(report["indexes"]["quaack_c"]["ddl"]).to include("note = ?")
+  end
+
+  context "when the statistics hold no size for an existing index, or one that isn't a number" do
+    let(:outcome) do
+      payload_of do |store|
+        statistics = store.read("statistics")
+        statistics["tables"].first["indexes"].first["size_bytes"] = sentinel
+        store.write("statistics", statistics)
+      end
+    end
+
+    it "sends the index's name with no size" do
+      expect(report["indexes"]["quaack_a"]["covered_by"]).to eq("name" => "orders_created_at_id_idx",
+                                                                "size_bytes" => nil)
+      expect_no_leaks(sentinels, outcome)
+    end
   end
 
   it "sends the recorded burndown counts (15b)" do
@@ -325,9 +590,6 @@ RSpec.describe "quaacks report-payload" do
   it "sends plan node shapes with selectivities" do
     expect(report["original_plan"]).to eq([{ "node" => "Seq Scan", "relation" => "public.orders", "index" => nil,
                                              "est_rows" => 50, "actual_rows" => 50, "selectivity" => 0.05 }])
-    rewrite = report["candidates"].find { it["label"] == "rewrite_1:none" }
-    expect(rewrite["plan"].first).to include("node" => "Index Scan", "index" => "orders_created_at_id_idx",
-                                             "selectivity" => 0.005)
   end
 
   it "never sends a literal value or a row value" do
@@ -346,55 +608,44 @@ RSpec.describe "quaacks report-payload" do
         "refusal" => refusal, "plans" => refusal ? {} : { "slow" => { "used" => used, "total_cost" => 1.0 } } }
     end
 
-    def dedupe # rubocop:disable Metrics/MethodLength
+    def covered(ddl)
       existing = "CREATE INDEX orders_created_at_id_idx ON public.orders USING btree (created_at, id)"
-      { "proposals" => [], "set_aside" => [], "considered" => 3,
-        "drops" => [{ "candidate" => plain("CREATE INDEX ON public.orders USING btree (created_at)"),
-                      "reason" => "covered_by_existing",
-                      "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } },
-                    { "candidate" => plain("CREATE INDEX ON public.orders USING btree (created_at) " \
-                                           "WHERE note = '#{sentinel}'"),
-                      "reason" => "covered_by_existing",
-                      "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } },
-                    { "candidate" => plain("CREATE INDEX ON public.orders USING btree (id)"),
-                      "reason" => "duplicate", "covered_by" => nil }] }
+      { "candidate" => plain("CREATE INDEX ON public.orders USING #{ddl}"), "reason" => "covered_by_existing",
+        "covered_by" => { "existing" => "orders_created_at_id_idx", "definition" => plain(existing) } }
     end
+
+    def dedupe(*drops) = { "proposals" => [], "set_aside" => [], "considered" => drops.size, "drops" => drops }
+
+    let(:partial) { "btree (note) WHERE note = '#{sentinel}'" }
+    let(:refused) { result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }) }
 
     def populate_negative(store) # rubocop:disable Metrics/MethodLength,Metrics/AbcSize
       populate(store)
       store.write("selection", "top" => [], "infinite_sets" => [],
-                               "excluded" => { "rewrite_1:none" => "not_better", "rewrite_6:none" => "result_mismatch",
-                                               "rewrite_2:none" => "not_better",
-                                               # No rewrite_survived_7, so it never survived.
-                                               "rewrite_7:none" => "footprint_tie" })
-      store.write("rewrite_2", "sql" => "SELECT 1")
-      store.write("rewrite_tested_2", "passed" => false, "scenario" => "S3", "rule" => "null_semantics",
-                                      "untested" => 0, "untested_atoms" => [])
-      store.write("rewrite_survived_2", "survived" => false)
-      store.write("rewrite_3", "sql" => "SELECT 2", "source" => "llm", "transformation" => sentinel)
-      store.write("rewrite_tested_3", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 0,
-                                      "untested_atoms" => [])
-      store.write("rewrite_round_3", "round" => 2, "evidence" => true)
-      store.write("rewrite_survived_3", "survived" => false)
-      # rewrite_4 passed step 9, and step 10 disproved it, but its round
-      # entry is missing. rewrite_5 was never stored, so rewrite_6 sits
-      # past a gap. It survived steps 9 and 10, and 14c knocked it out.
-      store.write("rewrite_4", "sql" => "SELECT 4")
-      store.write("rewrite_tested_4", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 0,
-                                      "untested_atoms" => [])
-      store.write("rewrite_survived_4", "survived" => false)
-      store.write("rewrite_6", "sql" => "SELECT 6")
-      store.write("rewrite_tested_6", "passed" => false, "scenario" => "S1", "rule" => "duplicates",
-                                      "untested" => 0, "untested_atoms" => [])
-      store.write("rewrite_survived_6", "survived" => false)
-      # btree (status) is unused but set aside for 12a (20260927-11), so it isn't declined.
-      results = [result("btree (status)", used: false),
-                 result("btree (note) WHERE note = '#{sentinel}'", used: false),
-                 result("gin (note)", used: false, refusal: { "rule" => "hypopg_refused", "sqlstate" => "0A000" }),
-                 result("btree (id, note)", used: true)]
+                               "excluded" => { "rewrite_1:none" => "not_better", "rewrite_1:top:1" => "not_better" })
+      # btree (status) is unused but set aside for 12a (20260927-11), so it
+      # isn't declined. The partial index comes up three times in the
+      # original's search: from the generators, again from the LLM, and
+      # once more as a plan prints it, with a cast on its constant.
       store.write("index_search_original",
-                  "dedupe" => dedupe, "llm_results" => [], "results" => results,
+                  "dedupe" => dedupe(covered("btree (created_at)"),
+                                     covered("btree (created_at) WHERE note = '#{sentinel}'"),
+                                     covered("btree (created_at)"),
+                                     { "candidate" => plain("CREATE INDEX ON public.orders USING btree (id)"),
+                                       "reason" => "duplicate", "covered_by" => nil }),
+                  "results" => [result("btree (status)", used: false), result(partial, used: false), refused,
+                                result("btree (id, note)", used: true),
+                                result("btree (note) WHERE (note)::text = '#{sentinel}'::text", used: false)],
+                  "llm_results" => [result(partial, used: false)],
                   "set_aside" => [plain("CREATE INDEX ON public.orders USING btree (status)")])
+      # The rewrite's search repeats the original's lines, and adds one.
+      store.write("index_search_rewrite_1",
+                  store.read("index_search_rewrite_1").merge(
+                    "dedupe" => dedupe(covered("btree (created_at) WHERE note = '#{sentinel}'::text"),
+                                       covered("btree (created_at, id)")),
+                    "results" => [result(partial, used: false), result("btree (id)", used: false)],
+                    "llm_results" => [refused]
+                  ))
     end
 
     let(:outcome) do
@@ -403,40 +654,56 @@ RSpec.describe "quaacks report-payload" do
       quaacks.run("report-payload", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
     end
 
-    it "says which rewrites were disproved, by which step 9 scenario or step 10 round, and where each came from" do
-      unknown = { "source" => nil, "rules" => nil }
-      expect(report["negative"]["disproved"]).to eq(
-        [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_semantics", "scenario" => "S3",
-           "round" => nil, **unknown },
-         { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => 2,
-           "source" => "llm", "rules" => nil },
-         { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil, "round" => nil, **unknown },
-         { "rewrite" => "rewrite_6", "step" => "step9", "rule" => "duplicates", "scenario" => "S1",
-           "round" => nil, **unknown }]
-      )
-    end
-
-    it "says which indexes the planner declined, and why, with redacted DDL" do
+    it "sends each index the planner declined once, with why, redacted DDL, and the searches it came up in" do
       expect(report["negative"]["declined"]).to eq(
-        [{ "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (note) WHERE note = ?",
-           "reason" => "unused", "sqlstate" => nil },
-         { "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING gin (note)",
-           "reason" => "hypopg_refused", "sqlstate" => "0A000" }]
+        [{ "ddl" => "CREATE INDEX ON public.orders USING btree (note) WHERE note = ?", "reason" => "unused",
+           "sqlstate" => nil, "searches" => %w[original rewrite_1] },
+         { "ddl" => "CREATE INDEX ON public.orders USING gin (note)", "reason" => "hypopg_refused",
+           "sqlstate" => "0A000", "searches" => %w[original rewrite_1] },
+         { "ddl" => "CREATE INDEX ON public.orders USING btree (id)", "reason" => "unused", "sqlstate" => nil,
+           "searches" => ["rewrite_1"] }]
       )
     end
 
-    it "says which proposed indexes already existed" do
+    it "sends each proposed index that already existed once, with the existing index's name and size" do
+      by = { "name" => "orders_created_at_id_idx", "size_bytes" => 40_960 }
       expect(report["negative"]["existing"]).to eq(
-        [{ "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)",
-           "covered_by" => "orders_created_at_id_idx" },
-         { "search" => "original", "ddl" => "CREATE INDEX ON public.orders USING btree (created_at) WHERE note = ?",
-           "covered_by" => "orders_created_at_id_idx" }]
+        [{ "ddl" => "CREATE INDEX ON public.orders USING btree (created_at)", "covered_by" => by,
+           "searches" => ["original"] },
+         { "ddl" => "CREATE INDEX ON public.orders USING btree (created_at) WHERE note = ?", "covered_by" => by,
+           "searches" => %w[original rewrite_1] },
+         { "ddl" => "CREATE INDEX ON public.orders USING btree (created_at, id)", "covered_by" => by,
+           "searches" => ["rewrite_1"] }]
       )
     end
 
-    it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
-      expect(report["negative"]["knocked_out"]).to eq([{ "label" => "rewrite_1:none", "reason" => "not_better",
-                                                         "source" => "rule", "rules" => ["key_in_self_join"] }])
+    it "sends the original query, every rewrite, and every measured label, though none was ranked" do
+      expect(report["top"]).to eq([])
+      expect(report["original_sql"]).to include("now() - $1::interval").and include("note = $2")
+      expect(report["rewrites"].map { it.slice("rewrite", "sql", "fate") }).to eq(
+        [{ "rewrite" => "rewrite_1", "fate" => "not_better",
+           "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1" }]
+      )
+      expect(label("original:top:1")["measurements"]["slow"]).to include("total_blocks" => 400)
+      expect(label("rewrite_1:top:1")).to include("indexes" => %w[quaack_b quaack_c])
+    end
+
+    context "when a stored refusal holds a rule and a SQLSTATE that aren't QUAACK's or Postgres's own" do
+      let(:refused) do
+        result("gin (note)", used: false, refusal: { "rule" => REPORT_WORD_SENTINEL, "sqlstate" => sentinel })
+      end
+
+      it "sends the declined index with neither" do
+        expect(report["negative"]["declined"][1]).to eq(
+          "ddl" => "CREATE INDEX ON public.orders USING gin (note)", "reason" => nil, "sqlstate" => nil,
+          "searches" => %w[original rewrite_1]
+        )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    it "sends only the two index lists: the rewrites' fates say what the rest did" do
+      expect(report["negative"].keys).to eq(%w[declined existing])
     end
 
     it "never sends a literal value" do
