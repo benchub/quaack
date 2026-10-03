@@ -938,23 +938,7 @@ Minor findings from the review of 20260930-11:
 
 ### 20261001-17. Report payload: send what a legible report needs. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-18. Report: readable HTML.
-
-The driver's half of the same complaint. Render the report so someone who has never read DESIGN.md can follow it:
-
-- **Queries.** Show the original query first, then every rewrite, each pretty-printed. pg_query 6.2 does this (`PgQuery.deparse(tree, opts: PgQuery::DeparseOpts.new(pretty_print: true, ...))`), and it's already a driver dependency.
-- **No internal labels or rule names.** `original:top:1: not_better` becomes words: the original query with the index on `submissions (assignment_id, user_id, cached_due_date)` read so many blocks on the slow values against so many for the original, which isn't more than 5% fewer. The same goes for `footprint_tie`, `same_plans`, `never_used`, and the rest.
-- **Sizes.** Use the unit that fits (kB, MB, GB) with thousands separators, right-aligned, so indexes compare at a glance. Show the existing indexes' sizes in the last two columns of the index table.
-- **Who proposed what.** Say where each idea came from and what became of it, by source: the LLM's rewrites, the operator's rewrites, the two mechanical index generators, and the LLM's index proposals. **Decided (the user, 2026-10-01):** a table with one row per source and one column per outcome. One table for rewrites (proposed, refused on arrival, same plan as the original, wrong results, not better, ranked) and one for indexes (proposed, already existed, planner ignored, built and measured, not better, ranked).
-- **Burndown and LLM calls in English.** "Index suggestions for the original query: 2 calls", not "LLM calls, 5a-5: 2". Stage names too.
-- **A negative result's index table isn't "Proposed indexes".** Nothing is being proposed. Call it what it is: indexes QUAACK built and measured.
-- **Layout.** A summary of the verdict at the top, then readable typography, tables with aligned numbers, and SQL in code blocks. Plain CSS in the file, no scripts, no animation, and nothing loaded from the network.
-- Update the README's "Reading the report" to match.
-
-- **Depends on:** 20261001-17. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-19 and -20.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** Step 15, 15a, 15b.
-- **Status:** todo
+### 20261001-18. Report: readable HTML. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-19. Record the rewrite stages in the burndown.
 
@@ -1719,5 +1703,48 @@ The build and review of 20261001-17 found these:
 
 - **Depends on:** 20261001-17.
 - **Came from:** The build and review of 20261001-17, 2026-10-03.
+- **Design:** Step 15, 15a.
+- **Status:** todo
+
+### 20261003-2. Readable report: minor findings.
+
+The build and both reviews of 20261001-18 found these:
+
+- **Run the full check.** 20261001-18 landed without the enclave suite or the Docker-backed root specs. Run `bundle exec rake` on `main` and fix what's red, starting with the three assertions in `spec/pipeline_replay_spec.rb` that were reworded and never executed.
+- **Test gaps where a wrong change stays green** (the code is right):
+  - The LLM row's "Already existed" count: the fixture has one `covered_by_existing` and one `duplicate`, so swapping them passes. Use different counts.
+  - The kB to MB and MB to GB boundaries, and `Format.fewer`'s rounding.
+  - The "It built and measured" paragraph being left out when there's a winner.
+  - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
+  - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
+  - The outcome column for five of the fates under "Stopped for another reason"; only `step9_failed`, `footprint_tie`, and `unfinished` are pinned.
+  - An index whose label 14c dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
+  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `step10_disproved` rewrite.
+- **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
+- **The "refused on arrival" note leaves out a reason.** For rule rewrites, 6c's `failed_checks` also covers a 6b assumption failure and clock anchoring. The README has the same gap.
+- **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
+- **`Format.fewer` raises `FloatDomainError`** if the original read 0 blocks on the slow values.
+- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no step 7 warnings, so no report has ever shown one. Send them, or change the README.
+- **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
+- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing 6c rule names.
+
+- **Depends on:** 20261001-18.
+- **Came from:** The build and both reviews of 20261001-18, 2026-10-03.
+- **Design:** Step 15, 15a, 15b.
+- **Status:** todo
+
+### 20261003-3. Report payload: what the index accountability table still lacks.
+
+20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
+
+- **Built and measured, not better, and ranked, per source.** `indexes` in the report message carries no source. The store has it (`IndexCandidate` sources). Send it through a closed list of QUAACK's constants.
+- **Already existed and planner ignored, for the two generators.** The 5a-3 and 5a-4 drops aren't recorded by source.
+- **Already existed and planner ignored, in a winning report.** `negative` goes out only when nothing is ranked. Send the declined and existing lists every time.
+- **The plan with the new indexes.** The payload has a plan only for rewrites, and that plan is the rewrite with no new indexes, even when the winning label ran with some. Send the winning label's plan, for an index-only winner too.
+
+Then have the report render them. Trust boundary: sources are constants, DDL goes through CandidateDdlRedaction, and a plan node sends only its type, relation, index name, and row counts.
+
+- **Depends on:** 20261001-18, -20.
+- **Came from:** The build of 20261001-18, 2026-10-03.
 - **Design:** Step 15, 15a.
 - **Status:** todo
