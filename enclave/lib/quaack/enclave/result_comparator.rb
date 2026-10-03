@@ -76,6 +76,13 @@ module Quaack
       RULES = %i[column_count column_types row_count value multiset subset candidate_unordered
                  unsupported_order].freeze
 
+      # The rules that say the two results differ. unsupported_order isn't
+      # one: it compares nothing. A rule RULES gains later isn't one either
+      # until it's added here. Steps::RewriteFate reads this, so the report
+      # never calls a rewrite disproved for a rule that compared nothing.
+      # (Steps::RuleBugs keeps its own copy until 20261002-5.)
+      MISMATCHES = %i[column_count column_types row_count value multiset subset candidate_unordered].freeze
+
       FLOAT_TYPES = [700, 701].freeze
       NUMERIC_TYPE = 1700
       BPCHAR_TYPE = 1042

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require "quaack/driver/report"
 
 RSpec.describe Quaack::Driver::Report do
@@ -7,104 +8,511 @@ RSpec.describe Quaack::Driver::Report do
     { "total_blocks" => blocks, "hit" => hit, "read" => blocks - hit, "stable" => stable, "timed_out" => false }
   end
 
+  # What ERB's escaping makes of text with an apostrophe in it.
+  def esc(text) = text.gsub("'", "&#39;")
+
+  def render(payload, **) = described_class.render(payload, run_id: "RUN-1", **)
+
+  def section(html, id) = html[%r{<section id="#{id}">.*?</section>}m]
+
+  def fated(number, fate, **details)
+    { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
+      "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
+      "untested_atoms" => nil, "evidence" => nil }.merge(details.transform_keys(&:to_s))
+  end
+
   let(:payload) do
     { "type" => "report",
       "top" => [{ "label" => "rewrite_1:none", "slow_blocks" => 300, "total_blocks_sum" => 400, "footprint" => 0 },
                 { "label" => "original:top:1", "slow_blocks" => 400, "total_blocks_sum" => 590,
                   "footprint" => 8192 }],
-      "excluded" => { "rewrite_1:top:1" => "worse" }, "infinite_sets" => [],
-      "verdicts" => { "rewrite_1:none" => { "slow" => "better", "typical" => "better" },
-                      "original:top:1" => { "slow" => "better", "typical" => "no_worse" } },
-      "measurements" => { "original" => { "slow" => m(1000, 100), "typical" => m(200, 150) },
-                          "rewrite_1:none" => { "slow" => m(300, 30, stable: false), "typical" => m(100, 100) },
-                          "original:top:1" => { "slow" => m(400, 300), "typical" => m(190, 190) } },
-      "candidates" => [
-        { "label" => "rewrite_1:none", "sql" => "SELECT id FROM t WHERE a < $1", "indexes" => [],
+      "excluded" => { "rewrite_1:top:1" => "not_better" }, "infinite_sets" => [],
+      "original_sql" => "SELECT id FROM t WHERE created_at > now() - $1 AND b IN (SELECT b FROM u WHERE c = $2)",
+      "original_measurements" => { "slow" => m(1000, 100), "typical" => m(200, 150) },
+      "labels" => [
+        { "label" => "original:top:1", "search" => "original", "indexes" => ["quaack_a"], "timed_out" => false,
+          "measurements" => { "slow" => m(400, 300), "typical" => m(190, 190) },
+          "verdicts" => { "slow" => "better", "typical" => "no_worse" } },
+        { "label" => "rewrite_1:none", "search" => "rewrite_1", "indexes" => [], "timed_out" => false,
+          "measurements" => { "slow" => m(300, 30, stable: false), "typical" => m(100, 100) },
+          "verdicts" => { "slow" => "better", "typical" => "better" } },
+        { "label" => "rewrite_1:top:1", "search" => "rewrite_1", "indexes" => ["quaack_b"], "timed_out" => false,
+          "measurements" => { "slow" => m(7777, 1), "typical" => m(100, 100) },
+          "verdicts" => { "slow" => "worse", "typical" => "no_worse" } }
+      ],
+      "rewrites" => [
+        { "rewrite" => "rewrite_1", "sql" => "SELECT id FROM t WHERE a < $1 ORDER BY id", "source" => "rule",
+          "rules" => ["key_in_self_join"], "fate" => "ranked", "scenario" => nil, "rule" => nil, "round" => nil,
+          "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
                        "actual_rows" => 5, "selectivity" => 0.005 }],
-          "untested_atoms" => [{ "shape" => "a < $n" }], "evidence" => false, "source" => "rule",
-          "rules" => ["key_in_self_join"] },
-        { "label" => "original:top:1", "sql" => "SELECT id FROM t WHERE created_at > now() - $1",
-          "indexes" => ["quaack_a"], "plan" => nil }
+          "untested_atoms" => [{ "shape" => "a < $n" }], "evidence" => false }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
-                                     "covered_by" => "t_created_at_id_idx", "makes_redundant" => [] },
+                                     "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 },
+                                     "makes_redundant" => [] },
                      "quaack_b" => { "ddl" => "CREATE INDEX ON public.t USING btree (a, b)", "size" => 16_384,
-                                     "covered_by" => nil, "makes_redundant" => ["t_a_idx"] } },
+                                     "covered_by" => nil,
+                                     "makes_redundant" => [{ "name" => "t_a_idx", "size_bytes" => 8192 },
+                                                           { "name" => "t_a_b_idx", "size_bytes" => nil }] } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
                             "actual_rows" => 50, "selectivity" => 0.05 }],
       "timed_out_count" => 2 }
   end
 
-  let(:html) { described_class.render(payload, run_id: "RUN-1") }
+  let(:html) { render(payload) }
 
-  it "ranks the candidates overall, winner first" do
-    expect(html.scan(%r{<tr class="rank"><td>(\d)</td><td>([^<]+)<})).to eq([%w[1 rewrite_1:none],
-                                                                             %w[2 original:top:1]])
+  let(:negative) do
+    by = { "name" => "t_c_d_idx", "size_bytes" => 3 * 1024 * 1024 }
+    { "declined" => [{ "ddl" => "CREATE INDEX ON public.t USING btree (a) WHERE a < ?", "reason" => "unused",
+                       "sqlstate" => nil, "searches" => %w[original rewrite_1] },
+                     { "ddl" => "CREATE INDEX ON public.t USING gin (b)", "reason" => "hypopg_refused",
+                       "sqlstate" => "0A000", "searches" => ["rewrite_1"] },
+                     { "ddl" => nil, "reason" => "unrenderable", "sqlstate" => nil, "searches" => ["original"] }],
+      "existing" => [{ "ddl" => "CREATE INDEX ON public.t USING btree (c)", "covered_by" => by,
+                       "searches" => %w[original rewrite_2] }] }
   end
 
-  it "shows per-literal blocks with hit/read, verdicts, and unstable flags" do
-    expect(html).to include("<td>slow</td><td>300</td><td>30</td><td>270</td><td>better</td><td>unstable</td>")
-    expect(html).to include("<td>typical</td><td>190</td><td>190</td><td>0</td><td>no_worse</td><td></td>")
+  # Nothing ranked: each label read about what the original did.
+  let(:negative_payload) do
+    payload["labels"][0].merge!("measurements" => { "slow" => m(990, 300), "typical" => m(190, 190) },
+                                "verdicts" => { "slow" => "no_worse", "typical" => "no_worse" })
+    payload["labels"][1].merge!("measurements" => { "slow" => m(980, 30), "typical" => m(200, 100) },
+                                "verdicts" => { "slow" => "no_worse", "typical" => "no_worse" })
+    payload.merge("top" => [], "negative" => negative,
+                  "excluded" => { "original:top:1" => "not_better", "rewrite_1:none" => "not_better",
+                                  "rewrite_1:top:1" => "not_better" })
   end
 
-  it "explains the winner from blocks, plan nodes, and selectivities" do
-    expect(html).to include("rewrite_1:none reads 300 blocks on the slow literal set, against 1000 for the " \
-                            "original (70% fewer)")
-    expect(html).to include("Index Scan on public.t using t_a_idx (5 rows, selectivity 0.5%)")
-    expect(html).to include("Seq Scan on public.t (50 rows, selectivity 5.0%)")
-  end
-
-  it "shows each query escaped, with the clock functions as the application wrote them" do
-    expect(html).to include("SELECT id FROM t WHERE a &lt; $1")
-    expect(html).to include("created_at &gt; now() - $1")
-  end
-
-  it "lists untested atoms and whether step 10 covered them" do
-    expect(html).to include("a &lt; $n")
-    expect(html).to include("no counterexample round loaded its inserts")
-  end
-
-  it "gives each index its size, prefix coverage, and redundancy" do
-    expect(html).to include("<td>CREATE INDEX ON public.t USING btree (created_at)</td><td>8 kB</td>" \
-                            "<td>t_created_at_id_idx</td><td></td>")
-    expect(html).to include("<td>16 kB</td><td></td><td>t_a_idx</td>")
-  end
-
-  it "says so when the enclave couldn't parse a built index's DDL" do
-    payload["indexes"]["quaack_b"]["ddl"] = nil
-    expect(html).to include("<td>quaack_b</td><td>(the enclave could not parse this DDL)</td><td>16 kB</td>")
-  end
-
-  describe "where a rewrite came from (6c)" do
-    def candidate(**fields)
-      payload["candidates"].first.merge!(fields.transform_keys(&:to_s))
-      rendered = described_class.render(payload, run_id: "RUN-1")
-      rendered[%r{<section class="candidate"><h2>rewrite_1:none</h2>.*?</section>}m]
+  describe "the layout" do
+    it "is one file of plain HTML and CSS: no scripts, no animation, nothing from the network" do
+      expect(html).to start_with("<!DOCTYPE html>").and include("<style>")
+      expect(html).not_to match(/<script|<link|<img|<iframe|https?:|url\(|@import|animation|transition|src=/i)
     end
 
-    it "says which of QUAACK's rules made a rule-made rewrite" do
-      expect(candidate).to include(%(<p class="source">Source: made by QUAACK's rule key_in_self_join.</p>)
-        .gsub("'", "&#39;"))
+    it "loads nothing from the network in a negative report either" do
+      expect(render(negative_payload)).not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
     end
 
-    it "names every rule of a chained rewrite, in order" do
-      expect(candidate(rules: %w[or_to_union key_in_self_join]))
-        .to include("Source: made by QUAACK&#39;s rules or_to_union, then key_in_self_join.")
+    it "right-aligns numbers, and puts SQL in code blocks" do
+      expect(html).to match(/td\.num,\s*th\.num\s*\{[^}]*text-align:\s*right/)
+      expect(html).to include(%(<pre class="sql"><code>SELECT id))
     end
 
-    it "says when the LLM proposed it, or it's the operator's own" do
-      expect(candidate(source: "llm", rules: nil)).to include(%(<p class="source">Source: proposed by the LLM.</p>))
-      expect(candidate(source: "operator", rules: nil)).to include(%(<p class="source">Source: your own rewrite.</p>))
+    it "puts the verdict first, then the queries, the ranking, the indexes, who proposed what, and the burndown" do
+      ids = html.scan(/<section id="([a-z-]+)">/).flatten
+      expect(ids).to eq(%w[summary queries ranking explanation indexes accountability burndown])
     end
 
-    it "says nothing for a rewrite with no source, or for the original query" do
-      expect(candidate(source: nil, rules: nil)).not_to include("Source:")
-      expect(html[%r{<section class="candidate"><h2>original:top:1</h2>.*?</section>}m]).not_to include("Source:")
+    it "shows no internal label, verdict name, or built index name" do
+      expect(html).not_to match(/rewrite_1|original:top|not_better|no_worse|quaack_[ab]|step ?\d|5a-|6[abc]\b/)
+    end
+  end
+
+  describe "the summary" do
+    it "says what won, and by how much, in words" do
+      expect(section(html, "summary")).to include(
+        "QUAACK found something better than your query as it is: rewrite 1 with no new indexes. It read 300 " \
+        "blocks on the slow values, against 1,000 for your query as it is (70% fewer)."
+      )
     end
 
-    it "escapes a rule name" do
-      expect(candidate(rules: ["<b>"])).to include("rule &lt;b&gt;.").and(satisfy { !it.include?("<b>") })
+    it "says a candidate won where the original timed out" do
+      payload["original_measurements"]["slow"] = { "timed_out" => true }
+      payload["infinite_sets"] = ["slow"]
+      expect(section(html, "summary")).to include("It read 300 blocks on the slow values, where your query as it " \
+                                                  "is timed out.")
+      expect(section(html, "summary")).to include("Your query as it is timed out on the slow values")
+    end
+
+    it "says how many measurement runs timed out, and nothing when none did" do
+      expect(section(html, "summary")).to include("2 measurement runs of candidates timed out")
+      payload["timed_out_count"] = 0
+      expect(section(render(payload), "summary")).not_to include("timed out")
+    end
+
+    it "says nothing beat the query, and how much was tried" do
+      summary = section(render(negative_payload), "summary")
+      expect(summary).to include("Nothing QUAACK tried beat your query as it is.")
+      expect(summary).to include("It built and measured 2 indexes and kept 1 rewrite.")
+      expect(summary).not_to include("found something better")
+    end
+  end
+
+  describe "the queries" do
+    let(:queries) { section(html, "queries") }
+
+    it "shows the original query first, pretty-printed, with its placeholders and clock functions" do
+      expect(queries).to include(
+        "<h3>Your query</h3>\n<pre class=\"sql\"><code>SELECT id\nFROM t\nWHERE\n  created_at &gt; (now() - $1)\n  " \
+        "AND b IN (\n    SELECT b\n    FROM u\n    WHERE c = $2\n  )</code></pre>"
+      )
+      expect(queries.index("<h3>Your query</h3>")).to be < queries.index("<h3>Rewrite 1</h3>")
+    end
+
+    it "shows every rewrite, ranked or not, pretty-printed, in order" do
+      payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5")
+      expect(queries.scan(%r{<article class="rewrite" id="rewrite-(\d+)"><h3>([^<]+)</h3>}))
+        .to eq([["1", "Rewrite 1"], ["2", "Rewrite 2"]])
+      expect(queries).to include("<code>SELECT id\nFROM t\nWHERE a &lt; $1\nORDER BY id</code>")
+      expect(queries).to include("<code>SELECT id\nFROM t\nWHERE b = $1\nLIMIT 5</code>")
+    end
+
+    it "shows SQL that pg_query can't parse as it was sent, escaped" do
+      payload["rewrites"].first["sql"] = "SELECT FROM WHERE <b> $1"
+      expect(queries).to include("<code>SELECT FROM WHERE &lt;b&gt; $1</code>")
+    end
+
+    it "lists the conditions the test data never exercised, and whether a later test did" do
+      expect(queries).to include("<li><code>a &lt; $n</code></li>")
+      expect(queries).to include("No later test exercised them either")
+      payload["rewrites"].first["evidence"] = true
+      expect(section(render(payload), "queries")).to include("The LLM-written test data exercised them afterwards")
+    end
+
+    it "lists no untested conditions for a rewrite that has none, or wasn't tested" do
+      payload["rewrites"].first["untested_atoms"] = []
+      payload["rewrites"] << fated(2, "same_plans")
+      expect(queries).not_to include("never exercised")
+    end
+
+    describe "where a rewrite came from (6c)" do
+      def source(**fields)
+        payload["rewrites"].first.merge!(fields.transform_keys(&:to_s))
+        section(render(payload), "queries")[%r{<p class="source">.*?</p>}m]
+      end
+
+      it "says which of QUAACK's rules made a rule-made rewrite" do
+        expect(source).to eq(esc(%(<p class="source">Where it came from: made by QUAACK's own rewrite rule ) +
+                                 %(key_in_self_join.</p>)))
+      end
+
+      it "names every rule of a chained rewrite, in order" do
+        expect(source(rules: %w[or_to_union key_in_self_join]))
+          .to include(esc("made by QUAACK's own rewrite rules or_to_union, then key_in_self_join."))
+      end
+
+      it "names no rule, and leaves no dangling words, when the payload has none" do
+        expect(source(rules: [])).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</p>"))
+        expect(source(rules: nil)).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</p>"))
+      end
+
+      it "says when the LLM suggested it, or it's the operator's own" do
+        expect(source(source: "llm", rules: nil)).to include("Where it came from: suggested by the LLM.")
+        expect(source(source: "operator", rules: nil)).to include("Where it came from: your own rewrite.")
+      end
+
+      it "says the source wasn't recorded when the payload has none" do
+        expect(source(source: nil, rules: nil)).to include("Where it came from: not recorded.")
+      end
+
+      it "escapes a rule name" do
+        expect(source(rules: ["<b>"])).to include("rule &lt;b&gt;.").and(satisfy { !it.include?("<b>") })
+      end
+    end
+
+    describe "what became of a rewrite" do
+      def fate(name, **details)
+        payload["rewrites"] = [fated(2, name, **details)]
+        section(render(payload), "queries")[%r{<p class="fate">What became of it: (.*?)</p>}m, 1]
+      end
+
+      it "says a ranked rewrite is ranked" do
+        expect(fate("ranked")).to eq("It beat your query and is ranked below.")
+      end
+
+      it "says a rewrite that plans as the original does was never tested" do
+        expect(fate("same_plans")).to eq(esc("Postgres plans it exactly as it plans your query, so it can't run " \
+                                             "any differently. QUAACK didn't test it further."))
+      end
+
+      it "says which made-up data proved a rewrite wrong" do
+        expect(fate("step9_disproved", scenario: "s2", rule: "multiset"))
+          .to eq(esc("It returned different results from your query on made-up test data (NULLs), so it's wrong."))
+        expect(fate("step9_disproved", scenario: "s3", rule: "row_count")).to include("(duplicate join keys)")
+      end
+
+      it "says which round of LLM-written data proved a rewrite wrong" do
+        expect(fate("step10_disproved", round: 2, rule: "row_count"))
+          .to eq(esc("It returned different results from your query on test data the LLM wrote to break it " \
+                     "(round 2), so it's wrong."))
+      end
+
+      it "leaves out a scenario or round the payload doesn't have, with no stray brackets" do
+        expect(fate("step9_disproved")).to eq(esc("It returned different results from your query on made-up test " \
+                                                  "data, so it's wrong."))
+        expect(fate("step10_disproved")).to eq(esc("It returned different results from your query on test data " \
+                                                   "the LLM wrote to break it, so it's wrong."))
+        expect(fate("step9_failed")).to eq(esc("A test on made-up data ended without comparing results, so " \
+                                               "QUAACK dropped it. That says nothing about whether it's right."))
+        expect(fate("step10_failed")).to eq(esc("A test on data the LLM wrote to break it ended without comparing " \
+                                                "results, so QUAACK dropped it. That says nothing about whether " \
+                                                "it's right."))
+      end
+
+      it "says why a test compared nothing" do
+        expect(fate("step9_failed", scenario: "s0", rule: "unsupported_order"))
+          .to eq(esc("A test on made-up data (empty tables) ended without comparing results, because the order " \
+                     "of your query's rows can't be checked, so QUAACK dropped it. That says nothing about " \
+                     "whether it's right."))
+        expect(fate("step10_failed", round: 1, rule: "statement_timeout"))
+          .to include("(round 1) ended without comparing results, because a statement timed out, so")
+        expect(fate("step9_failed", scenario: "s1", rule: "query_failed"))
+          .to include("ended without comparing results, because a statement failed on the test database, so")
+      end
+
+      it "says what the real data showed" do
+        expect(fate("production_mismatch", rule: "multiset"))
+          .to eq(esc("It passed the tests on made-up data, but returned different results from your query on the " \
+                     "real data, so it's wrong."))
+        expect(fate("production_timed_out")).to include("but timed out when QUAACK compared its results with")
+        expect(fate("production_not_compared", rule: "unsupported_order"))
+          .to include(esc("but QUAACK couldn't compare its results with your query's on the real data, because " \
+                          "the order of your query's rows can't be checked, so"))
+        expect(fate("production_not_compared")).to include(esc("on the real data, so QUAACK dropped it."))
+      end
+
+      it "says how a rewrite that passed every test lost" do
+        expect(fate("not_better")).to start_with(esc("It passed every test, but didn't read enough fewer blocks"))
+        expect(fate("footprint_tie")).to include("tied with a candidate whose new indexes take less disk space")
+        expect(fate("below_top_three")).to include("three other candidates did better")
+        expect(fate("measurement_timed_out")).to include("every measurement run of it timed out")
+      end
+
+      it "says how far an unfinished rewrite got" do
+        expect(fate("unfinished")).to eq("QUAACK kept it, but the run ended before testing it.")
+        expect(fate("unfinished", after: "step9")).to include("passed the tests on made-up data, and the run ended")
+        expect(fate("unfinished", after: "step10")).to include("passed every test, and the run ended before")
+        expect(fate("unfinished", after: "measurement")).to include("was measured, and the run ended before")
+      end
+
+      it "never calls a failed, timed-out, or unfinished rewrite wrong" do
+        [["step9_failed", { scenario: "s0", rule: "unsupported_order" }], ["step10_failed", { round: 1 }],
+         ["production_timed_out", {}], ["production_not_compared", {}], ["measurement_timed_out", {}],
+         ["unfinished", {}], ["unfinished", { after: "step9" }], ["same_plans", {}], ["not_better", {}],
+         ["footprint_tie", {}], ["below_top_three", {}]].each do |name, details|
+          expect(fate(name, **details)).not_to match(/wrong|different results|disproved/)
+        end
+      end
+
+      it "says so when the payload's fate is one it doesn't know" do
+        expect(fate("mystery")).to eq("not recorded.")
+        expect(fate(nil)).to eq("not recorded.")
+      end
+    end
+  end
+
+  describe "the ranking" do
+    let(:ranking) { section(html, "ranking") }
+
+    it "ranks the candidates overall, winner first, each described in words" do
+      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>([^<]+)</td>}))
+        .to eq([["1", "Rewrite 1 with no new indexes"],
+                ["2", "Your query with a new index on public.t (created_at)"]])
+    end
+
+    it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do
+      payload["top"][1].merge!("slow_blocks" => 12_345, "total_blocks_sum" => 1_234_567, "footprint" => 5_000_000)
+      expect(ranking).to include('<td class="num">12,345</td><td class="num">1,234,567</td>' \
+                                 '<td class="num">4.8 MB</td></tr>')
+      expect(ranking).to include('<td class="num">300</td><td class="num">400</td><td class="num">0 kB</td></tr>')
+    end
+
+    it "describes a candidate with several indexes, and one whose index definition is missing" do
+      payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
+      expect(ranking).to include("<td>Your query with new indexes on public.t (created_at) and public.t (a, b)</td>")
+      payload["indexes"]["quaack_a"]["ddl"] = nil
+      payload["labels"][0]["indexes"] = %w[quaack_a]
+      expect(section(render(payload), "ranking"))
+        .to include("<td>Your query with a new index QUAACK couldn&#39;t describe (quaack_a)</td>")
+    end
+
+    it "names an index's method when it isn't a btree, and keeps its predicate" do
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING brin (created_at) WHERE a < ?"
+      expect(ranking).to include("Your query with a new index on public.t (created_at) WHERE a &lt; ? (brin)")
+    end
+
+    describe "what was measured and not ranked" do
+      let(:unranked) { ranking[%r{<ul id="not-ranked">.*?</ul>}m] }
+
+      it "says in words, with the numbers, that a candidate wasn't enough better on the slow values" do
+        expect(unranked).to include(
+          "<li>Rewrite 1 with a new index on public.t (a, b) read 7,777 blocks on the slow values, against 1,000 " \
+          "for your query as it is, which isn&#39;t more than 5% fewer.</li>"
+        )
+      end
+
+      it "says which other values a candidate was worse on, when it was better on the slow ones" do
+        payload["labels"][2].merge!("measurements" => { "slow" => m(500, 1), "typical" => m(900, 1) },
+                                    "verdicts" => { "slow" => "better", "typical" => "worse" })
+        expect(unranked).to include(
+          "<li>Rewrite 1 with a new index on public.t (a, b) read fewer blocks on the slow values (500, against " \
+          "1,000), but read 900 on the typical values, against 200 for your query as it is, which is more than " \
+          "5% more.</li>"
+        )
+      end
+
+      it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
+        payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
+        expect(unranked).to include("(a, b) beat your query as it is, but tied with a candidate whose new indexes " \
+                                    "take less disk space.</li>")
+        payload["excluded"] = { "rewrite_1:top:1" => "below_top_three" }
+        expect(section(render(payload), "ranking")).to include("(a, b) beat your query as it is, but three other " \
+                                                               "candidates did better.</li>")
+        payload["excluded"] = { "rewrite_1:top:1" => "result_mismatch" }
+        expect(section(render(payload), "ranking"))
+          .to include("(a, b) was dropped when QUAACK compared the rewrite&#39;s results with your query&#39;s on " \
+                      "the real data. See rewrite 1 under the queries.</li>")
+      end
+
+      it "says a candidate's measurement timed out" do
+        payload["labels"] << { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"],
+                               "timed_out" => true, "measurements" => nil, "verdicts" => nil }
+        expect(unranked).to include("<li>Rewrite 1 with a new index on public.t (created_at) timed out while " \
+                                    "QUAACK measured it.</li>")
+      end
+
+      it "lists a label once, by why it was left out, when one of its sets also timed out" do
+        payload["labels"][2]["timed_out"] = true
+        expect(unranked.scan("<li>").size).to eq(1)
+        expect(unranked).not_to include("timed out while")
+      end
+
+      it "gives no numbers it doesn't have" do
+        payload["labels"].delete_at(2)
+        expect(unranked).to include("<li>Rewrite 1 with new indexes was no better than your query as it is.</li>")
+      end
+
+      it "is left out when everything measured is ranked" do
+        payload["excluded"] = {}
+        expect(ranking).not_to include("not-ranked")
+      end
+    end
+
+    it "says there's no ranking when nothing beat the original, and still says how each candidate measured" do
+      ranking = section(render(negative_payload), "ranking")
+      expect(ranking).to include("Nothing beat your query as it is, so there is no ranking.")
+      expect(ranking).not_to include("<tr")
+      expect(ranking).to include("<li>Your query with a new index on public.t (created_at) read 990 blocks on the " \
+                                 "slow values, against 1,000 for your query as it is, which isn&#39;t more than " \
+                                 "5% fewer.</li>")
+    end
+
+    describe "each ranked candidate" do
+      def candidate(rank) = ranking.scan(%r{<article class="candidate">.*?</article>}m)[rank - 1]
+
+      it "has its own block, in rank order, and no unranked candidate has one" do
+        expect(ranking.scan(%r{<article class="candidate"><h3>([^<]+)</h3>}))
+          .to eq([["1. Rewrite 1 with no new indexes"], ["2. Your query with a new index on public.t (created_at)"]])
+        expect(ranking.scan("<article").size).to eq(2)
+      end
+
+      it "shows blocks per set of values, against the original's, with memory and disk, verdict, and stability" do
+        expect(candidate(1)).to include(
+          '<tr><td>slow</td><td class="num">300</td><td class="num">1,000</td><td class="num">30</td>' \
+          '<td class="num">270</td><td>better</td><td>unstable: the count changed between runs</td></tr>'
+        )
+        expect(candidate(2)).to include(
+          '<tr><td>typical</td><td class="num">190</td><td class="num">200</td><td class="num">190</td>' \
+          '<td class="num">0</td><td>no worse</td><td></td></tr>'
+        )
+      end
+
+      it "says a set of values timed out" do
+        payload["labels"][0]["measurements"]["worst_case"] = { "timed_out" => true }
+        payload["labels"][0]["verdicts"]["worst_case"] = "worse"
+        expect(candidate(2)).to include('<tr><td>worst case</td><td class="num">timed out</td>' \
+                                        '<td class="num">not recorded</td>')
+      end
+
+      it "lists the indexes it ran with, as DDL, and points a rewrite at its SQL" do
+        expect(candidate(2)).to include("<code>CREATE INDEX ON public.t USING btree (created_at)</code>")
+        expect(candidate(1)).not_to include("CREATE INDEX")
+        expect(candidate(1)).to include('<a href="#rewrite-1">')
+        expect(candidate(2)).not_to include("<a ")
+      end
+    end
+  end
+
+  describe "why the winner reads fewer blocks" do
+    let(:explanation) { section(html, "explanation") }
+
+    it "explains the winner from blocks, plan nodes, and selectivities" do
+      expect(explanation).to include("Rewrite 1 with no new indexes read 300 blocks on the slow values, against " \
+                                     "1,000 for your query as it is (70% fewer).")
+      expect(explanation).to include("<li>Index Scan on public.t using t_a_idx (5 rows, 0.5% of the table)</li>")
+      expect(explanation).to include("<li>Seq Scan on public.t (50 rows, 5.0% of the table)</li>")
+    end
+
+    it "says one row, and a share too small to round, in words" do
+      payload["original_plan"] = [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_pkey",
+                                    "est_rows" => 1, "actual_rows" => 1, "selectivity" => 0.000001 },
+                                  { "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 12_345,
+                                    "actual_rows" => nil, "selectivity" => nil }]
+      expect(explanation).to include("<li>Index Scan on public.t using t_pkey (1 row, under 0.1% of the table)</li>")
+      expect(explanation).to include("<li>Limit (12,345 rows)</li>")
+    end
+
+    it "says the winner's plan wasn't recorded when the winner is the original query with new indexes" do
+      payload["top"].reverse!
+      expect(explanation).to include("The plan with the new indexes: not recorded.")
+      expect(explanation).not_to include("t_a_idx")
+    end
+
+    it "is left out when nothing beat the original" do
+      expect(render(negative_payload)).not_to include('id="explanation"')
+    end
+  end
+
+  describe "the index table" do
+    let(:indexes) { section(html, "indexes") }
+
+    it "lists the ranked candidates' indexes as proposed, and the rest as built and measured" do
+      other = "<h3>Other indexes QUAACK built and measured</h3>"
+      expect(indexes).to match(%r{<h2>Proposed indexes</h2>.*btree \(created_at\).*#{other}.*btree \(a, b\)}m)
+      expect(indexes.scan("<table").size).to eq(2)
+    end
+
+    it "gives each index its size, and each existing index it overlaps with its size, in the last two columns" do
+      expect(indexes).to include(
+        '<tr><td><code>CREATE INDEX ON public.t USING btree (created_at)</code></td><td class="num">8 kB</td>' \
+        "<td>t_created_at_id_idx (40 kB)</td><td>none</td></tr>"
+      )
+      expect(indexes).to include('<td class="num">16 kB</td><td>none</td>' \
+                                 "<td>t_a_idx (8 kB)<br>t_a_b_idx (size not recorded)</td></tr>")
+    end
+
+    it "uses the unit that fits, with thousands separators" do
+      sizes = { 1_024_000 => "1,000 kB", 54_456 * 1024 => "53.2 MB", 313_776 * 1024 => "306.4 MB",
+                12_687_440 * 1024 => "12.1 GB", 2_000_000 * 1024 * 1024 => "1,953.1 GB", 0 => "0 kB" }
+      sizes.each do |bytes, text|
+        payload["indexes"]["quaack_a"]["size"] = bytes
+        expect(section(render(payload), "indexes")).to include(%(<td class="num">#{text}</td>))
+      end
+    end
+
+    it "lists only the indexes the payload carries, whatever a label names" do
+      payload["labels"][0]["indexes"] = %w[quaack_a quaack_gone]
+      expect(indexes.scan("<tr><td>").size).to eq(2)
+      expect(indexes).not_to include("quaack_gone")
+    end
+
+    it "says so when a size wasn't recorded" do
+      payload["indexes"]["quaack_a"]["size"] = nil
+      expect(indexes).to include('</code></td><td class="num">not recorded</td>')
+    end
+
+    it "says so when the enclave couldn't parse a built index's DDL" do
+      payload["indexes"]["quaack_b"]["ddl"] = nil
+      expect(indexes).to include(esc("<tr><td>quaack_b (QUAACK couldn't read this index's definition back)</td>" \
+                                     '<td class="num">16 kB</td>'))
+    end
+
+    it "calls a negative result's table what it is, not proposed indexes" do
+      indexes = section(render(negative_payload), "indexes")
+      expect(indexes).to include("<h2>Indexes QUAACK built and measured</h2>")
+      expect(indexes).to include("btree (created_at)").and include("btree (a, b)")
+      expect(render(negative_payload)).not_to match(/Proposed indexes|Other indexes/)
     end
   end
 
@@ -114,33 +522,261 @@ RSpec.describe Quaack::Driver::Report do
        { "rewrite" => "rewrite_3", "rules" => %w[or_to_union key_in_self_join], "step" => "step10" },
        { "rewrite" => "rewrite_4", "rules" => ["<b>"], "step" => "14c" }]
     end
-    let(:bug_html) { described_class.render(payload.merge("rule_bugs" => bugs), run_id: "RUN-1") }
-    let(:section) { bug_html[%r{<section id="quaack-bugs">.*?</section>}m] }
+    let(:bug_html) { render(payload.merge("rule_bugs" => bugs)) }
+    let(:bug_section) { section(bug_html, "quaack-bugs") }
 
-    it "says so first, above the ranking, as a bug in QUAACK" do
-      expect(bug_html.index(%(<section id="quaack-bugs">))).to be < bug_html.index(%(<section id="ranking">))
-      expect(section).to include("<h2>QUAACK bug: a rule made a wrong rewrite</h2>")
-      expect(section).to include("a rule has a bug")
+    it "says so first, above everything else, as a bug in QUAACK" do
+      expect(bug_html.scan(/<section id="([a-z-]+)">/).flatten.first(2)).to eq(%w[quaack-bugs summary])
+      expect(bug_section).to include("<h2>QUAACK bug: a rule made a wrong rewrite</h2>")
+      expect(bug_section).to include("a rule has a bug")
     end
 
-    it "names each rewrite, the rules that made it, and the step that disproved it" do
-      expect(section).to include("<li>rewrite_2, made by QUAACK&#39;s rule key_in_self_join, " \
-                                 "was disproved in step 9</li>")
-      expect(section).to include("<li>rewrite_3, made by QUAACK&#39;s rules or_to_union, then key_in_self_join, " \
-                                 "was disproved in step 10</li>")
-      expect(section).to include("<li>rewrite_4, made by QUAACK&#39;s rule &lt;b&gt;, was disproved in step 14c, " \
-                                 "on production data</li>")
-      expect(section).not_to include("<b>")
+    it "names each rewrite, the rules that made it, and the test that proved it wrong" do
+      expect(bug_section).to include(esc("<li>Rewrite 2, made by QUAACK's own rewrite rule key_in_self_join, " \
+                                         "returned different results on made-up test data.</li>"))
+      expect(bug_section).to include(esc("<li>Rewrite 3, made by QUAACK's own rewrite rules or_to_union, then " \
+                                         "key_in_self_join, returned different results on test data the LLM " \
+                                         "wrote to break it.</li>"))
+      expect(bug_section).to include(esc("<li>Rewrite 4, made by QUAACK's own rewrite rule &lt;b&gt;, returned " \
+                                         "different results on the real data.</li>"))
+      expect(bug_section).not_to include("<b>")
     end
 
     it "is left out when no rule-made rewrite was disproved, or the enclave sent no list" do
-      expect(described_class.render(payload.merge("rule_bugs" => []), run_id: "RUN-1")).not_to include("quaack-bugs")
-      expect(html).not_to include("quaack-bugs")
+      expect(render(payload.merge("rule_bugs" => []))).not_to include('id="quaack-bugs"')
+      expect(html).not_to include('id="quaack-bugs"')
     end
   end
 
-  it "leaves the negative result empty when a candidate beat the original" do
-    expect(html).to include(%(<section id="negative-result"></section>))
+  describe "when nothing beat the original (15a)" do
+    let(:rewrites) do
+      [fated(2, "step9_disproved", scenario: "s3", rule: "multiset"),
+       fated(3, "step10_disproved", round: 2, rule: "row_count", source: "llm"),
+       fated(5, "not_better", source: "rule", rules: ["key_in_self_join"]),
+       fated(7, "same_plans", source: "operator"),
+       fated(8, "step9_failed", scenario: "s0", rule: "unsupported_order")]
+    end
+
+    let(:negative_html) { render(negative_payload.merge("rewrites" => rewrites)) }
+    let(:why) { section(negative_html, "negative-result") }
+
+    it "comes after the ranking, and only when nothing was ranked" do
+      expect(negative_html.scan(/<section id="([a-z-]+)">/).flatten)
+        .to eq(%w[summary queries ranking negative-result indexes accountability burndown])
+      expect(html).not_to include("negative-result")
+    end
+
+    it "says what became of every rewrite, with its source, in words" do
+      list = why[%r{<ul id="negative-rewrites">.*?</ul>}m]
+      expect(list.scan(/<li>(Rewrite \d+)/).flatten).to eq(["Rewrite 2", "Rewrite 3", "Rewrite 5", "Rewrite 7",
+                                                            "Rewrite 8"])
+      expect(list).to include(esc("<li>Rewrite 2 (source not recorded): It returned different results from your " \
+                                  "query on made-up test data (duplicate join keys), so it's wrong.</li>"))
+      expect(list).to include("<li>Rewrite 3 (suggested by the LLM): It returned different results")
+      expect(list).to include(esc("<li>Rewrite 5 (made by QUAACK's own rewrite rule key_in_self_join): It passed"))
+      expect(list).to include("<li>Rewrite 7 (your own rewrite): Postgres plans it exactly as")
+      expect(list).to include("<li>Rewrite 8 (source not recorded): A test on made-up data (empty tables) ended " \
+                              "without comparing results")
+    end
+
+    it "says so when no rewrite was kept" do
+      expect(section(render(negative_payload.merge("rewrites" => [])), "negative-result"))
+        .to include("QUAACK kept no rewrite to test.")
+    end
+
+    it "says which indexes the planner wouldn't use, and why, once each, with the queries they were tried for" do
+      table = why[%r{<table id="declined-indexes">.*?</table>}m]
+      expect(table).to include("<tr><td><code>CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?</code></td>" \
+                               "<td>your query, rewrite 1</td><td>The planner never chose it.</td></tr>")
+      expect(table).to include(esc("<tr><td><code>CREATE INDEX ON public.t USING gin (b)</code></td><td>rewrite 1" \
+                                   "</td><td>HypoPG, which QUAACK uses to try an index without building it, " \
+                                   "couldn't create it (Postgres error code 0A000).</td></tr>"))
+      expect(table).to include(esc("<tr><td>an index QUAACK couldn't write out</td><td>your query</td>" \
+                                   "<td>QUAACK couldn't write its definition.</td></tr>"))
+    end
+
+    it "leaves out an error code the payload doesn't have, with no empty brackets" do
+      negative["declined"][1]["sqlstate"] = nil
+      expect(why).to include(esc("without building it, couldn't create it.</td>"))
+    end
+
+    it "says a decline's reason wasn't recorded when the payload has none" do
+      negative["declined"] = [{ "ddl" => "CREATE INDEX ON public.t USING btree (z)", "reason" => nil,
+                                "sqlstate" => nil, "searches" => ["original"] }]
+      expect(why).to include("<td>your query</td><td>not recorded</td></tr>")
+    end
+
+    it "says which suggested indexes already existed, with the existing index and its size" do
+      table = why[%r{<table id="existing-indexes">.*?</table>}m]
+      expect(table).to include("<tr><td><code>CREATE INDEX ON public.t USING btree (c)</code></td>" \
+                               '<td>your query, rewrite 2</td><td>t_c_d_idx</td><td class="num">3.0 MB</td></tr>')
+    end
+
+    it "says none when no index was declined or already existed" do
+      negative.merge!("declined" => [], "existing" => [])
+      expect(why).to include("The planner would have used every index QUAACK thought of.")
+      expect(why).to include("None of the indexes QUAACK thought of already existed.")
+      expect(why).not_to include("<table")
+    end
+  end
+
+  describe "who proposed what" do
+    def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
+      { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
+        "extra" => extra }
+    end
+
+    def rows(html, id)
+      table = html[%r{<table id="accountability-#{id}">.*?</table>}m]
+      table.scan(%r{<tr><th scope="row">(.*?)</th>(.*?)</tr>})
+           .to_h { |name, cells| [name, cells.scan(%r{<td[^>]*>(.*?)</td>}).flatten] }
+    end
+
+    let(:rewrites) do
+      [fated(1, "ranked", source: "rule", rules: ["key_in_self_join"]),
+       fated(2, "same_plans", source: "llm"), fated(3, "step9_disproved", source: "llm"),
+       fated(4, "step10_disproved", source: "llm"), fated(5, "production_mismatch", source: "llm"),
+       fated(6, "not_better", source: "llm"), fated(7, "step9_failed", source: "llm"),
+       fated(8, "footprint_tie", source: "operator"), fated(9, "unfinished", source: "operator")]
+    end
+
+    let(:stages) do
+      { "6c" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 3 },
+                                          dropped: { "duplicate" => 1, "over_cap" => 0, "failed_checks" => 1 }) },
+        "6a" => { "rewrites" => rec(0, 6, added: { "llm" => 8 }, dropped: { "inbound_check" => 2 }) } }
+    end
+
+    let(:accountable) do
+      render(payload.merge("rewrites" => rewrites, "burndown" => { "stages" => stages, "totals" => {} }))
+    end
+
+    it "has one rewrites table: a row per source, a column per outcome" do
+      table = accountable[%r{<table id="accountability-rewrites">.*?</table>}m]
+      expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
+        .to eq(["Source", "Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
+                "Not better", "Ranked", "Stopped for another reason"])
+      expect(rows(accountable, "rewrites").keys).to eq([esc("QUAACK's own rules"), "The LLM", "You"])
+    end
+
+    it "counts each source's rewrites by what became of them" do
+      counted = rows(accountable, "rewrites")
+      expect(counted[esc("QUAACK's own rules")]).to eq(%w[3 2 0 0 0 1 0])
+      expect(counted["The LLM"]).to eq(%w[8 2 1 3 1 0 1])
+    end
+
+    it "never counts a failed, tied, or unfinished rewrite as wrong or not better" do
+      expect(rows(accountable, "rewrites")["You"].last(5)).to eq(%w[0 0 0 0 2])
+    end
+
+    it "says not recorded, never zero, for proposals and refusals the burndown doesn't count" do
+      expect(rows(accountable, "rewrites")["You"].first(2)).to eq(["not recorded", "not recorded"])
+      expect(rows(html, "rewrites")[esc("QUAACK's own rules")]).to eq(["not recorded", "not recorded", "0", "0",
+                                                                       "0", "1", "0"])
+      expect(html).to include("&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.")
+    end
+
+    it "says not recorded when the recorded proposals are fewer than the rewrites kept" do
+      stages["6a"]["rewrites"] = rec(0, 1, added: { "llm" => 1 })
+      expect(rows(accountable, "rewrites")["The LLM"].first(2)).to eq(["1", "not recorded"])
+    end
+
+    it "adds a row for rewrites whose source the payload doesn't say, only when there are some" do
+      expect(rows(accountable, "rewrites").keys).not_to include("Source not recorded")
+      unsourced = render(payload.merge("rewrites" => rewrites + [fated(10, "not_better")]))
+      expect(rows(unsourced, "rewrites")["Source not recorded"])
+        .to eq(["not recorded", "not recorded", "0", "0", "1", "0", "0"])
+    end
+
+    describe "the index table" do
+      it "has a row per source and one for all of them, and a column per outcome" do
+        table = html[%r{<table id="accountability-indexes">.*?</table>}m]
+        expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
+          .to eq(["Source", "Proposed", "Already existed", "Planner ignored", "Built and measured", "Not better",
+                  "Ranked"])
+        expect(rows(html, "indexes").keys)
+          .to eq(["Generator one, from the query&#39;s text", "Generator two, from the query&#39;s plan", "The LLM",
+                  "All sources together"])
+      end
+
+      it "says not recorded for every count by source that the payload doesn't carry" do
+        missing = ["not recorded"] * 6
+        expect(rows(html, "indexes").values.first(3)).to eq([missing, missing, missing])
+      end
+
+      it "counts what the payload does carry, for all sources together: built, ranked, and not" do
+        expect(rows(html, "indexes")["All sources together"])
+          .to eq(["not recorded", "not recorded", "not recorded", "2", "1", "1"])
+      end
+
+      describe "the not better column" do
+        # Built, not better, ranked, for all sources. quaack_a is ranked.
+        # quaack_b ran only in rewrite_1:top:1, and in other if it's given.
+        def built(reason, other = nil)
+          second = payload["labels"][2].merge("label" => "original:top:2", "search" => "original")
+          changed = payload.merge("excluded" => { "rewrite_1:top:1" => reason, "original:top:2" => other }.compact,
+                                  "labels" => payload["labels"] + (other ? [second] : []))
+          rows(render(changed), "indexes")["All sources together"].last(3)
+        end
+
+        it "counts an index whose every label was not better" do
+          expect(built("not_better")).to eq(%w[2 1 1])
+          expect(built("not_better", "not_better")).to eq(%w[2 1 1])
+        end
+
+        it "doesn't count an index whose only label beat the query and tied on index size" do
+          expect(built("footprint_tie")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index whose only label beat the query and fell below the top three" do
+          expect(built("below_top_three")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index whose only label timed out and was never judged" do
+          payload["labels"][2].merge!("timed_out" => true, "measurements" => nil, "verdicts" => nil)
+          expect(built(nil)).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index with mixed labels: one not better, one that beat the query" do
+          expect(built("not_better", "footprint_tie")).to eq(%w[2 0 1])
+          expect(built("below_top_three", "not_better")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count a built index that no measured label ran with" do
+          payload["indexes"]["quaack_c"] = payload["indexes"]["quaack_b"]
+          expect(built("not_better")).to eq(%w[3 1 1])
+        end
+
+        it "says under the table why the last two columns needn't add up to the built ones" do
+          expect(section(html, "accountability")).to include(
+            "An index counts as not better only if no candidate that ran with it beat your query. A built index " \
+            "whose candidate beat your query and still wasn't ranked (it tied with a smaller one, or three others " \
+            "did better), or whose candidate timed out, is counted only under built and measured."
+          )
+        end
+      end
+
+      it "counts the declined and existing indexes of a negative result" do
+        expect(rows(render(negative_payload), "indexes")["All sources together"])
+          .to eq(["not recorded", "1", "3", "2", "2", "0"])
+      end
+
+      it "fills in each source's proposals, and the LLM's drops, once the burndown records them" do
+        stages.merge!(
+          "5a-1" => { "original" => rec(0, 3, added: { "generator_one" => 3 }),
+                      "rewrite_1" => rec(0, 2, added: { "generator_one" => 2 }) },
+          "5a-2" => { "original" => rec(0, 4, added: { "generator_two" => 4 }) },
+          "5a-5" => { "original" => rec(0, 1, added: { "llm" => 5 },
+                                              dropped: { "covered_by_existing" => 1, "duplicate" => 1,
+                                                         "never_used" => 1, "hypopg_refused" => 1 }) },
+          "5a-6" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
+        )
+        counted = rows(accountable, "indexes")
+        expect(counted["Generator one, from the query&#39;s text"]).to eq(["5"] + (["not recorded"] * 5))
+        expect(counted["Generator two, from the query&#39;s plan"]).to eq(["4"] + (["not recorded"] * 5))
+        expect(counted["The LLM"]).to eq(["6", "1", "3", "not recorded", "not recorded", "not recorded"])
+        expect(counted["All sources together"].first).to eq("15")
+      end
+    end
   end
 
   describe "the burndown (15b)" do
@@ -149,115 +785,245 @@ RSpec.describe Quaack::Driver::Report do
         "extra" => extra }
     end
 
+    def row(name, *cells)
+      added, dropped, extra = cells.values_at(1, 2, 5)
+      %(<tr><th scope="row">#{esc(name)}</th><td class="num">#{cells[0]}</td><td>#{added}</td><td>#{dropped}</td>) +
+        %(<td class="num">#{cells[3]}</td><td class="num">#{cells[4]}</td><td>#{extra}</td></tr>)
+    end
+
     let(:burndown) do
       { "stages" => {
           "5a-1" => { "original" => rec(0, 3, added: { "generator_one" => 3 }) },
           "5a-3" => { "original" => rec(4, 3, dropped: { "duplicate" => 1 }),
                       "rewrite_1" => rec(2, 1, dropped: { "covered_by_existing" => 1 }),
                       "rewrite_2" => rec(3, 1, dropped: { "covered_by_existing" => 1 }, set_aside: 1) },
+          "step8" => { "rewrites" => rec(2, 1, dropped: { "inbound_check" => 0, "failed_to_plan" => 0,
+                                                          "output_mismatch" => 0, "same_plans" => 1 }) },
           "step9" => { "rewrites" => rec(2, 1, dropped: { "s3" => 1 }, extra: { "untested_atoms" => 2 }) },
           "6c" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 2 },
                                             dropped: { "duplicate" => 1, "over_cap" => 0, "failed_checks" => 0 }) }
         },
-        "totals" => { "hypothetical_explains" => 12, "fixture_loads" => 3 } }
+        "totals" => { "hypothetical_explains" => 1234, "fixture_loads" => 3 } }
     end
 
-    let(:section) do
-      described_class.render(payload.merge("burndown" => burndown), run_id: "RUN-1",
-                                                                    llm_calls: { "5a-5" => 2, "6a" => 1 })[
-        %r{<section id="burndown">.*?</section>}m
-      ]
+    let(:llm_calls) { { "5a-5" => 2, "5a-6" => 1, "6a" => 1, "step7" => 1, "10a" => 3, "step11" => 4 } }
+    let(:burndown_section) { section(render(payload.merge("burndown" => burndown), llm_calls:), "burndown") }
+    let(:index_table) { burndown_section[%r{<table id="burndown-index">.*?</table>}m] }
+    let(:rewrite_table) { burndown_section[%r{<table id="burndown-rewrite">.*?</table>}m] }
+
+    it "names the columns in words" do
+      expect(index_table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
+        .to eq(["Stage", "Came in", "Added", "Dropped", "Set aside", "Went on", "Also counted"])
     end
 
-    it "shows the original's index candidates stage by stage, drops by reason" do
-      index = section[%r{<table id="burndown-index">.*?</table>}m]
-      expect(index).to include("<tr><td>5a-1</td><td>0</td><td>generator_one: 3</td><td></td><td>0</td><td>3</td>" \
-                               "<td></td></tr>")
-      expect(index).to include("<tr><td>5a-3</td><td>4</td><td></td><td>duplicate: 1</td><td>0</td><td>3</td>" \
-                               "<td></td></tr>")
+    it "shows the original's index ideas stage by stage, in words, drops by reason" do
+      expect(index_table).to include(row("Ideas from the query's text", 0, "from the query&#39;s text: 3", "none", 0,
+                                         3, "none"))
+      expect(index_table).to include(row("Removing duplicates and indexes you already have", 4, "none",
+                                         "the same as another idea: 1", 0, 3, "none"))
     end
 
-    it "shows the rewrites, with the rewrites' own index searches totaled" do
-      rewrites = section[%r{<table id="burndown-rewrite">.*?</table>}m]
-      expect(rewrites).to include("<tr><td>step9</td><td>2</td><td></td><td>s3: 1</td><td>0</td><td>1</td>" \
-                                  "<td>untested_atoms: 2</td></tr>")
-      expect(rewrites).to include("<tr><td>Steps 8 and 11: 5a-3</td><td>5</td><td></td>" \
-                                  "<td>covered_by_existing: 2</td><td>1</td><td>2</td><td></td></tr>")
+    it "lists every stage, and says not recorded for one the run didn't count" do
+      expect(index_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+        .to eq(["Ideas from the query&#39;s text", "Ideas from the query&#39;s plan",
+                "Removing duplicates and indexes you already have",
+                "Asking the planner whether it would use each one", "Ideas from the LLM",
+                "The LLM&#39;s second round of ideas", "Trying indexes together"])
+      expect(index_table).to include('<tr><th scope="row">Ideas from the LLM</th>' \
+                                     '<td colspan="6" class="missing">not recorded</td></tr>')
+      expect(index_table.scan("not recorded").size).to eq(5)
     end
 
-    it "shows the 6c row first among the rewrites: what each rule made, and what was dropped" do
-      rewrites = section[%r{<table id="burndown-rewrite">.*?</table>}m]
-      row = "<tr><td>6c</td><td>0</td><td>key_in_self_join: 2</td>" \
-            "<td>duplicate: 1, over_cap: 0, failed_checks: 0</td><td>0</td><td>1</td><td></td></tr>"
-      expect(rewrites).to include(row)
-      expect(rewrites.index(row)).to be < rewrites.index("<tr><td>step9</td>")
+    it "shows the rewrite stages in words, in order, with their other counts" do
+      expect(rewrite_table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+        .to eq(["Rewrites from QUAACK&#39;s own rules", "Rewrites from the LLM", "Your own rewrites",
+                "Checking what each rewrite assumes", "Checking each rewrite can run differently from your query",
+                "Testing on made-up edge-case data", "Testing on data the LLM wrote to break them",
+                "Index ideas for the rewrites: removing duplicates and indexes you already have",
+                "Choosing indexes for each rewrite", "Measuring on the real data and choosing"])
+      expect(rewrite_table).to include(row("Testing on made-up edge-case data", 2, "none",
+                                           "wrong on duplicate join keys: 1", 0, 1,
+                                           "conditions the test data never exercised: 2"))
+      expect(rewrite_table).to include('<tr><th scope="row">Rewrites from the LLM</th>' \
+                                       '<td colspan="6" class="missing">not recorded</td></tr>')
     end
 
-    it "shows the work totals, with LLM calls by step" do
-      totals = section[%r{<ul id="burndown-totals">.*?</ul>}m]
-      expect(totals).to include("<li>LLM calls, 5a-5: 2</li>").and include("<li>LLM calls, 6a: 1</li>")
-      expect(totals).to include("<li>hypothetical_explains: 12</li>").and include("<li>fixture_loads: 3</li>")
+    it "leaves a reason with a count of zero out, and names the ones that dropped something" do
+      expect(rewrite_table).to include(row("Checking each rewrite can run differently from your query", 2, "none",
+                                           "planned the same as your query: 1", 0, 1, "none"))
+    end
+
+    it "shows what each rule made" do
+      expect(rewrite_table).to include(row("Rewrites from QUAACK's own rules", 0, "by the rule key_in_self_join: 2",
+                                           "the same as another idea: 1", 0, 1, "none"))
+    end
+
+    it "says how many rule rewrites were over the limit of ten" do
+      burndown["stages"]["6c"]["rewrites"]["dropped"]["over_cap"] = 2
+      expect(rewrite_table).to include("the same as another idea: 1; over the limit of ten: 2")
+    end
+
+    it "totals the rewrites' own index searches per stage" do
+      expect(rewrite_table).to include(
+        row("Index ideas for the rewrites: removing duplicates and indexes you already have", 5, "none",
+            "already covered by an index you have: 2", 1, 2, "none")
+      )
+    end
+
+    it "says the rewrites' index searches weren't recorded when none was" do
+      burndown["stages"].delete("5a-3")
+      expect(rewrite_table).to include('<tr><th scope="row">Index ideas for the rewrites</th>' \
+                                       '<td colspan="6" class="missing">not recorded</td></tr>')
+    end
+
+    it "says each LLM call in English, by what it was for" do
+      calls = burndown_section[%r{<ul id="llm-calls">.*?</ul>}m]
+      expect(calls.scan(%r{<li>(.*?)</li>}).flatten)
+        .to eq(["Index suggestions for the original query: 2 calls",
+                "Revised index suggestions for the original query: 1 call", "Rewrite suggestions: 1 call",
+                "Reading your own rewrites: 1 call", "Test data written to break the rewrites: 3 calls",
+                "Index suggestions for the rewrites: 4 calls"])
+    end
+
+    it "says so when the driver counted no LLM call" do
+      expect(section(html, "burndown")).to include('<ul id="llm-calls"><li>No LLM calls were counted in this run' \
+                                                   ".</li></ul>")
+    end
+
+    it "shows the work totals in words, and says not recorded for one the run didn't count" do
+      totals = burndown_section[%r{<ul id="burndown-totals">.*?</ul>}m]
+      expect(totals.scan(%r{<li>(.*?)</li>}).flatten)
+        .to eq(["Plans tried with an index that wasn&#39;t built: 1,234", "Indexes really built: not recorded",
+                "Measurement runs: not recorded", "Loads of made-up test data: 3"])
+    end
+
+    it "shows a total, a reason, or a source it has no words for, by its name" do
+      burndown["totals"]["wild_guesses"] = 7
+      burndown["stages"]["5a-3"]["original"]["dropped"] = { "odd_reason" => 1 }
+      expect(burndown_section).to include("<li>Wild guesses: 7</li>")
+      expect(index_table).to include("<td>odd reason: 1</td>")
     end
 
     it "escapes the names it shows" do
       burndown["stages"]["5a-3"]["original"]["dropped"] = { "<b>" => 1 }
-      expect(section).to include("&lt;b&gt;: 1")
-      expect(section).not_to include("<b>")
+      expect(burndown_section).to include("&lt;b&gt;: 1")
+      expect(burndown_section).not_to include("<b>")
+    end
+
+    it "says every stage wasn't recorded when the payload has no burndown" do
+      expect(section(html, "burndown").scan('class="missing">not recorded').size).to eq(17)
     end
   end
 
-  describe "when nothing beat the original (15a)" do
-    let(:negative_html) do
-      described_class.render(
-        payload.merge(
-          "top" => [], "candidates" => [],
-          "negative" => {
-            "disproved" => [{ "rewrite" => "rewrite_2", "step" => "step9", "rule" => "null_<semantics>",
-                              "scenario" => "S3", "round" => nil },
-                            { "rewrite" => "rewrite_3", "step" => "step10", "rule" => nil, "scenario" => nil,
-                              "round" => 2, "source" => "llm", "rules" => nil },
-                            { "rewrite" => "rewrite_4", "step" => "step10", "rule" => nil, "scenario" => nil,
-                              "round" => nil }],
-            "knocked_out" => [{ "label" => "rewrite_5:none", "reason" => "not_better", "source" => "rule",
-                                "rules" => ["key_in_self_join"] },
-                              { "label" => "rewrite_6:top:1", "reason" => "result_mismatch" }],
-            "declined" => [{ "search" => "original", "ddl" => "CREATE INDEX ON public.t USING btree (a) WHERE a < ?",
-                             "reason" => "unused", "sqlstate" => nil },
-                           { "search" => "rewrite_1", "ddl" => "CREATE INDEX ON public.t USING gin (b)",
-                             "reason" => "hypopg_refused", "sqlstate" => "0A000" }],
-            "existing" => [{ "search" => "original", "ddl" => "CREATE INDEX ON public.t USING btree (c)",
-                             "covered_by" => "t_c_d_idx" }]
-          }
-        ), run_id: "RUN-1"
+  describe "escaping" do
+    # A sentinel with the characters that would break out of text and out
+    # of an attribute. It goes in every field of the payload that can hold
+    # a String, and in the counts too, since a cell prints whatever it's
+    # given.
+    let(:z) { %(<zz&"zz>) }
+    let(:escaped) { "&lt;zz&amp;&quot;zz&gt;" }
+
+    let(:counts) { { "total_blocks" => z, "hit" => z, "read" => z, "stable" => false, "timed_out" => false } }
+    let(:node) do
+      { "node" => z, "relation" => z, "index" => z, "est_rows" => z, "actual_rows" => z, "selectivity" => nil }
+    end
+    let(:record) do
+      { "in" => z, "added" => { z => 1 }, "dropped" => { z => 1 }, "set_aside" => z, "out" => z,
+        "extra" => { z => 1 } }
+    end
+
+    let(:sentinels) do
+      { "type" => "report",
+        "top" => [{ "label" => "#{z}:top:1", "slow_blocks" => z, "total_blocks_sum" => z, "footprint" => 8192 }],
+        "excluded" => { "#{z}:none" => "not_better", "#{z}:top:2" => z }, "infinite_sets" => [z],
+        "original_sql" => "SELECT #{z}", "original_measurements" => { z => counts, "slow" => { "timed_out" => true } },
+        "labels" => [{ "label" => "#{z}:top:1", "search" => z, "indexes" => ["quaack_z", z], "timed_out" => false,
+                       "measurements" => { z => counts }, "verdicts" => { z => z } },
+                     { "label" => "#{z}:top:3", "search" => z, "indexes" => [z], "timed_out" => true,
+                       "measurements" => nil, "verdicts" => nil }],
+        "rewrites" => [{ "rewrite" => z, "sql" => "SELECT #{z}", "source" => "rule", "rules" => [z, z],
+                         "fate" => "step9_disproved", "scenario" => z, "rule" => z, "round" => z, "after" => z,
+                         "plan" => [node], "untested_atoms" => [{ "shape" => z }, z], "evidence" => false }],
+        "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
+                                       "covered_by" => { "name" => z, "size_bytes" => 1 },
+                                       "makes_redundant" => [{ "name" => z, "size_bytes" => nil }] },
+                       z => { "ddl" => nil, "size" => z, "covered_by" => nil, "makes_redundant" => [] } },
+        "original_plan" => [node], "timed_out_count" => 1,
+        "rule_bugs" => [{ "rewrite" => z, "rules" => [z], "step" => z }],
+        "burndown" => { "stages" => { "5a-3" => { "original" => record, z => record },
+                                      "6c" => { "rewrites" => record } },
+                        "totals" => { z => 1 } } }
+    end
+
+    let(:negative_sentinels) do
+      sentinels.merge(
+        "top" => [],
+        "negative" => { "declined" => [{ "ddl" => z, "reason" => "hypopg_refused", "sqlstate" => z,
+                                         "searches" => [z, "rewrite_#{z}"] },
+                                       { "ddl" => nil, "reason" => z, "sqlstate" => z, "searches" => [z] }],
+                        "existing" => [{ "ddl" => z, "covered_by" => { "name" => z, "size_bytes" => z },
+                                         "searches" => [z] }] }
       )
     end
 
-    let(:section) { negative_html[%r{<section id="negative-result">.*?</section>}m] }
+    def rendered(payload) = described_class.render(payload, run_id: z, llm_calls: { z => 1 })
 
-    it "says which rewrites were disproved, and by which scenario or round" do
-      expect(section).to include("<li>rewrite_2: disproved in step 9 by scenario S3 (rule null_&lt;semantics&gt;)</li>")
-      expect(section).to include("<li>rewrite_3 (proposed by the LLM): disproved in step 10, " \
-                                 "counterexample round 2</li>")
-      expect(section).to include("<li>rewrite_4: disproved in step 10</li>")
+    # Each place a value is printed, by the markup just before it.
+    def expect_escaped(out, *places)
+      places.each { expect(out).to include("#{it}#{escaped}") }
     end
 
-    it "says which rewrites passed steps 9 and 10 but minimax or 14c knocked out" do
-      expect(section).to include("<li>rewrite_5:none (made by QUAACK&#39;s rule key_in_self_join): passed steps 9 " \
-                                 "and 10, but minimax found it not better than the original</li>")
-      expect(section).to include("<li>rewrite_6:top:1: passed steps 9 and 10, but its results didn't match " \
-                                 "the original's in 14c</li>".gsub("'", "&#39;"))
+    it "lets no markup from a winning payload through, in text or in an attribute" do
+      out = rendered(sentinels)
+      expect(out).not_to include("<zz")
+      expect(out).not_to include('"zz')
+      expect(out.scan(escaped).size).to be > 60
     end
 
-    it "says which indexes the planner declined, and why" do
-      expect(section).to include("<li>original: CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?: " \
-                                 "the planner never used it</li>")
-      expect(section).to include("<li>rewrite_1: CREATE INDEX ON public.t USING gin (b): HypoPG refused it " \
-                                 "(SQLSTATE 0A000)</li>")
+    it "lets no markup from a negative payload through, in text or in an attribute" do
+      out = rendered(negative_sentinels)
+      expect(out).not_to include("<zz")
+      expect(out).not_to include('"zz')
+      expect(out.scan(escaped).size).to be > 40
     end
 
-    it "says which proposed indexes already existed" do
-      expect(section).to include("<li>original: CREATE INDEX ON public.t USING btree (c): already covered by " \
-                                 "t_c_d_idx</li>")
+    it "prints, escaped, every value a winning report shows" do
+      expect_escaped(rendered(sentinels),
+                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
+                     %(<article class="rewrite" id="#{escaped}"><h3>), "QUAACK found something better than your " \
+                                                                       "query as it is: ",
+                     "<code>SELECT ", "rewrite rules ", "<li><code>", '<tr class="rank"><td class="num">1</td><td>',
+                     '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
+                     "</td><td>",
+                     %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
+                     "<ul><li>", " on ", " using ", "<td>", "<td>by the rule ")
+    end
+
+    it "prints, escaped, every value a negative report shows" do
+      expect_escaped(rendered(negative_sentinels),
+                     '<ul id="negative-rewrites"><li>', "<tr><td><code>", "</code></td><td>", ", rewrite_",
+                     "(Postgres error code ", %(#{escaped}</td><td>), '<ul id="not-ranked"><li>')
+    end
+
+    it "escapes what the payload carries in the first report too" do
+      payload["original_sql"] = "SELECT <b>orig</b>"
+      payload["rewrites"].first.merge!("sql" => "SELECT <b>rw</b>", "untested_atoms" => ["<b>atom</b>"])
+      payload["indexes"]["quaack_a"].merge!("ddl" => "CREATE INDEX ON <b>t</b>",
+                                            "covered_by" => { "name" => "<b>idx</b>", "size_bytes" => 1 })
+      payload["original_plan"].first["relation"] = "<b>rel</b>"
+      payload["excluded"] = { "<b>label</b>" => "<b>why</b>" }
+      out = described_class.render(payload, run_id: "<b>RUN</b>", llm_calls: { "<b>step</b>" => 1 })
+      expect(out).not_to include("<b>")
+      expect(out).to include("&lt;b&gt;RUN&lt;/b&gt;").and include("&lt;b&gt;orig&lt;/b&gt;")
+      expect(out).to include("&lt;b&gt;idx&lt;/b&gt;").and include("&lt;b&gt;rel&lt;/b&gt;")
+    end
+  end
+
+  it "writes the report to a file" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "r.html")
+      expect(described_class.write(payload, run_id: "RUN-1", path:)).to eq(path)
+      expect(File.read(path)).to eq(html)
     end
   end
 end

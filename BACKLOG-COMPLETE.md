@@ -3405,6 +3405,46 @@ Keep the rule `bad_driver_config` in each message, so scripts still match it. `q
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. A top-level OR whose arms read different tables or subqueries becomes a UNION of one arm each, every arm selecting the columns the query uses plus a unique not-null key of each FROM table; the select list, aggregates, DISTINCT, ORDER BY, LIMIT and OFFSET read that UNION as a derived table, so duplicate join rows survive and `count(*)` stays right. It refuses GROUP BY, outer joins, composite keys, same-table ORs, and columns UNION can't compare. At landing its `Catalog#columns` merged with 20261001-26's (now `columns` and `column_names`) and the shared helper is `Tree.tables?`. The follow-ups went to 20261002-5.
 
+### 20261001-17. Report payload: send what a legible report needs.
+
+The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
+
+- **The original query, always.** The redacted query with the clock put back, as `original_sql` gives it today for an index-only winner.
+- **Every stored rewrite,** not only the ranked ones: its SQL, its source (the LLM in 6a, or the operator in step 7, from `inferred`), and one fate. The fates: step 8 found its plans the same as the original's; step 9 disproved it, with the scenario and rule; step 10 disproved it, with the round; 14c found different results on production data; it was measured and wasn't better; it was ranked.
+- **A step 8 prune is not a step 9 disproof.** `rewrite-test` stores a pruned rewrite as `passed` false with rule `discarded`, and NegativeResult sends that as a step 9 disproof. The report then says "rewrite_1: disproved in step 9 by scenario  (rule discarded)" for a rewrite that was never tested for correctness. Send the step 8 fate instead.
+- **Every measured label,** not only `top`: its measurements, its per-literal verdicts, and the indexes it ran with (their built names), so the report can say what `original:top:1` was and how many blocks it read against the original.
+- **Existing index sizes.** For `covered_by` and `makes_redundant`, send each existing index's `size_bytes` from the planner statistics with its name.
+- **No repeats in 15a's lists.** In the real run the same DDL was listed twice under one search (`user_id, cached_due_date`), a partial index appeared once with `'deleted'::text` and once with `'deleted'`, and the rewrite's search repeated nearly all of the original's lines. Send each declined or existing index once, with the searches it came up in.
+
+Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
+
+Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-19 counts them by reason.
+
+- **Depends on:** 20260922-62, -63.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** Step 15, 15a.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after one review with no blocking findings. The report message now carries `original_sql` always, `original_measurements`, `labels` (one entry per measured label: its search, built index names, measurements, and verdicts), and `rewrites` (every stored rewrite: SQL, source, rules, one fate with its scenario, rule, round, or `after`, and its plan, untested atoms, and evidence). `candidates`, `verdicts`, `measurements`, `negative.disproved`, and `negative.knocked_out` are gone. **Decided (the user, 2026-10-03):** states outside the task's six fates get their own, so there are fourteen (`RewriteFate`), all from closed lists; a step 8 prune is `same_plans`. `covered_by` and `makes_redundant` send `{ name, size_bytes }`. 15a's `declined` and `existing` list each index once with its `searches`, counting two as one when they differ only by casts (`CastlessIndex`). `counterexample-round` stores each round's rule. The driver renders what it did before and nothing new; 20261001-18 renders the rest. The follow-ups went to 20261003-3.
+
+### 20261001-18. Report: readable HTML.
+
+The driver's half of the same complaint. Render the report so someone who has never read DESIGN.md can follow it:
+
+- **Queries.** Show the original query first, then every rewrite, each pretty-printed. pg_query 6.2 does this (`PgQuery.deparse(tree, opts: PgQuery::DeparseOpts.new(pretty_print: true, ...))`), and it's already a driver dependency.
+- **No internal labels or rule names.** `original:top:1: not_better` becomes words: the original query with the index on `submissions (assignment_id, user_id, cached_due_date)` read so many blocks on the slow values against so many for the original, which isn't more than 5% fewer. The same goes for `footprint_tie`, `same_plans`, `never_used`, and the rest.
+- **Sizes.** Use the unit that fits (kB, MB, GB) with thousands separators, right-aligned, so indexes compare at a glance. Show the existing indexes' sizes in the last two columns of the index table.
+- **Who proposed what.** Say where each idea came from and what became of it, by source: the LLM's rewrites, the operator's rewrites, the two mechanical index generators, and the LLM's index proposals. **Decided (the user, 2026-10-01):** a table with one row per source and one column per outcome. One table for rewrites (proposed, refused on arrival, same plan as the original, wrong results, not better, ranked) and one for indexes (proposed, already existed, planner ignored, built and measured, not better, ranked).
+- **Burndown and LLM calls in English.** "Index suggestions for the original query: 2 calls", not "LLM calls, 5a-5: 2". Stage names too.
+- **A negative result's index table isn't "Proposed indexes".** Nothing is being proposed. Call it what it is: indexes QUAACK built and measured.
+- **Layout.** A summary of the verdict at the top, then readable typography, tables with aligned numbers, and SQL in code blocks. Plain CSS in the file, no scripts, no animation, and nothing loaded from the network.
+- Update the README's "Reading the report" to match.
+
+- **Depends on:** 20261001-17. The accountability counts for rewrites refused on arrival, and the burndown rows, need 20261001-19 and -20.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** Step 15, 15a, 15b.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. **Not run on the branch:** the enclave suite and the Docker-backed root specs, `spec/pipeline_replay_spec.rb` with its three reworded assertions among them; Docker was denied to the agents, and the user chose to land without them (2026-10-03). RuboCop, the driver and protocol suites, and the boundary specs passed. The report is `driver/lib/quaack/driver/report/` with an `.erb` template the gem ships: the verdict first, the original query and every rewrite pretty-printed with its source and fate in words, candidates named by their indexes, sizes in kB, MB, or GB, the two who-proposed-what tables, and the burndown and LLM calls in English. **Decided (the user, 2026-10-03):** it says "not recorded" where the payload has no count, and the task stayed in the driver. The builder's choices, not yet confirmed by the user: a seventh rewrites column, "Stopped for another reason", for rewrites that failed, timed out, tied, fell below the top three, or didn't finish; and 6c rule names still shown, as DESIGN.md 15 asks. An index counts as not better only if every label that ran with it was. 20261001-19 and -20 fill most "not recorded" cells; 20261003-5 has the rest. The follow-ups went to 20261003-4.
+
 ### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command.
 
 The driver can call Anthropic, an OpenAI-compatible API, or Bedrock. Add a fourth provider, `"provider": "copilot_cli"`, that runs a local command, such as GitHub's `copilot` CLI, once per ask, through a new adapter behind the provider-neutral client, like the other three. The prompts can be hundreds of thousands of characters, too big for a command line. So the adapter writes each prompt to a file, runs a command that points the model at the file, and reads the reply from stdout. For example: `copilot --model claude-opus-5.5 -p 'Please follow my prompt in <file>'`.
@@ -3445,7 +3485,7 @@ Other details:
 - **Came from:** The user's first real `quaack start`, 2026-09-29.
 - **Design:** Step 1, Where QUAACK runs.
 - **Status:** done
-- **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-4.
+- **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-7.
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check.
 
@@ -3473,7 +3513,7 @@ Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the 
   - **The stamp:** `spec/full_replay_stamp_spec.rb` fails, telling you to run `rake full`, when the gems' versions don't match it.
   - **CLAUDE.md:** updated.
   - **The fix round:** it added dry-run selection specs that go red if the env var doesn't reach the replay spec.
-  - **Follow-ups:** minor findings and the enclave timing notes went to 20261003-5.
+  - **Follow-ups:** minor findings and the enclave timing notes went to 20261003-8.
 
 ### 20261002-17. 6c rule: `implied_predicate_removal`.
 
@@ -3504,7 +3544,7 @@ Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it f
   - **First review:** found the oracle had no mutation coverage.
   - **Second review:** found that two equal-valued equalities with different text proved each other, and both were dropped. The fix stops a dropped conjunct from proving anything. That review also asked for a positive `NOT IN` test.
   - **Third review:** clean.
-  - **Split out to 20261003-3:**
+  - **Split out to 20261003-6:**
     - subquery `WHERE`s and UNION arms, which this landing doesn't reach;
     - refusing casts on literals;
     - refusing volatile duplicates;
@@ -3536,7 +3576,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
   - **"Also consider":** both items are done. The probe reports where `gem` and `ruby` are, and names both when they differ. User gem dirs with spaces get the export line.
   - **Refactor:** the probe moved to `deploy_probe.rb`.
   - **Skipped:** the optional `run.limit.nil?` test, which would be a racy test of a redundant guard.
-  - **Follow-ups:** minor findings went to 20261003-6.
+  - **Follow-ups:** minor findings went to 20261003-9.
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
@@ -3570,4 +3610,4 @@ Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_post
   - **Review:** one round, clean.
     - The reviewer broke the production cancel handling, and the test went red.
     - A run with an INSERT that skips `pg_sleep` printed the thread's error trace on main. On the branch it gave the clear message in about 2.6s.
-  - **Follow-ups:** minor findings went to 20261003-7.
+  - **Follow-ups:** minor findings went to 20261003-10.

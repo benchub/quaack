@@ -45,11 +45,13 @@ RSpec.describe PipelineReplay do
 
           it "never reports the subtly wrong rewrite as a winning fix" do
             # Disproved at step 9 or 10: never marked for step 11, and so
-            # never measured, ranked, or listed as a candidate.
-            labels = outcome.report ? (outcome.report["top"] + outcome.report["candidates"]).map { it["label"] } : []
+            # never measured or ranked. The report sends it with that fate.
+            labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
+            fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
             outcome.wrong.each do |n|
               expect(outcome.entries["rewrite_step11_#{n}"]).to be(false)
               expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
+              expect(fates["rewrite_#{n}"]).to eq("step9_disproved").or eq("step10_disproved") if outcome.report
             end
           end
 
@@ -65,7 +67,8 @@ RSpec.describe PipelineReplay do
     # run's only one, since every LLM ask gets an empty answer.
     describe "a query the key_in_self_join rule fires on" do
       let(:outcome) { described_class.cached(TestPostgres.server, described_class::RULE_QUERY, described_class::EMPTY) }
-      let(:candidates) { outcome.report["candidates"].select { it["label"].start_with?("rewrite_1:") } }
+      let(:rewrite) { outcome.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
+      let(:ranked) { outcome.report["top"].map { it["label"] }.grep(/\Arewrite_1:/) }
 
       it "applies the rules before 6a, storing the rule's rewrite, and ends in a report" do
         expect(outcome.error).to be_nil
@@ -77,12 +80,25 @@ RSpec.describe PipelineReplay do
       end
 
       it "ranks the rule's rewrite in the report, with its source and its rule" do
-        expect(candidates).not_to be_empty
-        expect(candidates).to all(include("source" => "rule", "rules" => ["key_in_self_join"]))
-        expect(candidates.map { it["sql"] }.uniq)
-          .to eq(["SELECT o.id, o.total_cents FROM public.orders o WHERE (o.created_at >= $1 " \
-                  "AND o.created_at < $2) OR o.status = $3 ORDER BY o.id"])
-        expect(outcome.report["top"].map { it["label"] }).to include(*candidates.map { it["label"] })
+        expect(ranked).not_to be_empty
+        expect(outcome.report["rewrites"].size).to eq(1)
+        expect(rewrite).to include("source" => "rule", "rules" => ["key_in_self_join"], "fate" => "ranked")
+        expect(rewrite["sql"]).to eq("SELECT o.id, o.total_cents FROM public.orders o WHERE (o.created_at >= $1 " \
+                                     "AND o.created_at < $2) OR o.status = $3 ORDER BY o.id")
+      end
+
+      it "sends the original query, and every measured label with its blocks and its indexes" do
+        expect(outcome.report["original_sql"])
+          .to eq("SELECT o.id, o.total_cents FROM public.orders o WHERE o.id IN (SELECT o2.id FROM public.orders o2 " \
+                 "WHERE o2.created_at >= $1 AND o2.created_at < $2 UNION ALL SELECT o3.id FROM public.orders o3 " \
+                 "WHERE o3.status = $3) ORDER BY o.id")
+        labels = outcome.report["labels"]
+        expect(labels.map { it["label"] }).to include(*outcome.report["top"].map { it["label"] })
+        expect(labels.map { it["label"] }).to include("rewrite_1:none")
+        expect(labels.reject { it["timed_out"] }.map { it.dig("measurements", "slow", "total_blocks") })
+          .to all(be_a(Integer))
+        built = outcome.report["indexes"].keys
+        expect(labels.flat_map { it["indexes"] } - built).to be_empty
       end
 
       it "records the 6c burndown, and flags no rule bug, since no test disproved the rewrite" do
@@ -92,9 +108,10 @@ RSpec.describe PipelineReplay do
       end
 
       it "shows the source and the 6c row in the report file `quaack run` writes" do
-        expect(outcome.html).to include("Source: made by QUAACK&#39;s rule key_in_self_join.")
-        expect(outcome.html).to include("<tr><td>6c</td><td>0</td><td>key_in_self_join: 1</td>")
-        expect(outcome.html).not_to include("quaack-bugs")
+        expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
+        expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
+                                        '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
+        expect(outcome.html).not_to include('id="quaack-bugs"')
       end
 
       it "keeps the query's literals out of the report" do

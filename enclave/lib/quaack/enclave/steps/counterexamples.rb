@@ -23,6 +23,8 @@ module Quaack
       # Store entries, which the driver resumes by and step 11 reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
       #                          "untested_atoms" }, step 9's result
+      #   rewrite_round_<n>    { "round", "evidence", "rule" }, the last
+      #                        10b round run (see Round.finish)
       #   rewrite_survived_<n> { "survived" => Boolean }, written once
       #                        steps 9 and 10 are done with the rewrite:
       #                        false when step 8 discarded it, step 9
@@ -196,10 +198,15 @@ module Quaack
           end
 
           # rewrite_round_<n> also says whether any round so far, from round
-          # 1, compared the queries on loaded fixtures ("evidence").
+          # 1, compared the queries on loaded fixtures ("evidence"), and
+          # holds this round's "rule": nil for a match, the comparison's
+          # rule for a mismatch, or the arena runner's when a statement
+          # failed. RewriteFate reads it to tell a disproof from a
+          # candidate that failed to run.
           def finish(store, number, round, outcome)
             evidence = !outcome[:match].nil? || (round != "1" && store.read("rewrite_round_#{number}")["evidence"])
-            store.write("rewrite_round_#{number}", "round" => Integer(round), "evidence" => evidence)
+            store.write("rewrite_round_#{number}", "round" => Integer(round), "evidence" => evidence,
+                                                   "rule" => outcome[:rule])
             return Counterexamples.survived(store, number, false) if outcome[:match] == false
             return unless round == ROUNDS.last
 

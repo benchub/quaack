@@ -922,6 +922,33 @@ Keep the top three candidates by total blocks.
 
 The driver builds the report from the results the enclave script sent back. Everything it needs is shape-class data.
 
+The enclave sends the same things whether or not anything beat the original:
+
+- The original query, redacted, with the 3h clock functions put back.
+- Every measured label, ranked or not: its measurements, its per-literal verdicts, and the built indexes it ran with. A run that timed out is listed too.
+- Every stored rewrite, ranked or not: its SQL, where it came from, and one fate. A rewrite the enclave refused on arrival isn't stored, so only the burndown counts it.
+
+A rewrite has several measured labels but one fate. It's the first of these that holds:
+
+| Fate | Meaning | Sent with |
+| --- | --- | --- |
+| `ranked` | 14d ranked one of its labels. | |
+| `same_plans` | Step 8 found it can't run any differently from the original, so it was never tested. | |
+| `step9_disproved` | A step 9 scenario got different results. | Scenario, rule. |
+| `step9_failed` | A step 9 scenario ended without comparing results: the original's order can't be checked, or a statement failed or timed out in arena. | Scenario, rule. |
+| `step10_disproved` | A step 10 round got different results. | Round, rule. |
+| `step10_failed` | A step 10 round ended without comparing results. | Round, rule. |
+| `production_mismatch` | 14c got different results on production data. | Rule. |
+| `production_timed_out` | 14c dropped it for a timeout, and no literal's results differed. | |
+| `production_not_compared` | 14c dropped it without comparing its results. | Rule. |
+| `below_top_three` | It beat the original and fell outside 14d's top three. | |
+| `footprint_tie` | It beat the original and lost the footprint tiebreak. | |
+| `not_better` | It was measured, and minimax found it no better than the original. | |
+| `measurement_timed_out` | Every one of its step 14 runs timed out. | |
+| `unfinished` | The run took it no further. | The last stage it finished. |
+
+Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. Fates, rules, and scenarios are fixed words in the code, so they're shape.
+
 Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them. Say where each rewrite came from: the 6c rules that made it, the LLM, or the operator.
 
 If a test disproved a rule-made rewrite (6c), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
@@ -932,11 +959,27 @@ For each proposed index, include:
 - Whether an existing index already covers it as a prefix.
 - Whether it would make an existing index redundant.
 
+Each existing index named there comes with its size from the planner statistics.
+
 Explain why the winning candidate touches fewer blocks and what that means for cache pressure. Use only plans and selectivities in that explanation. Never use literal values.
+
+Write the report for a reader who hasn't read this document:
+
+- Open with the verdict: what won and by how much, or that nothing did.
+- Show the original query, then every stored rewrite, each pretty-printed by pg_query. SQL it can't parse is shown as sent.
+- Show no internal label, step number, or verdict name. A candidate is named by the query it ran and the indexes it ran with, not as `original:top:1`. A fate, a stage, and a drop reason are each said in words. For a label that wasn't ranked, give the blocks it read against the original's. A 6c rule's name is the exception, since a bug report needs it.
+- Give sizes in the unit that fits (kB, MB, GB).
+- Call an index proposed only if a ranked candidate ran with it. The rest are indexes QUAACK built and measured. When nothing is ranked, none is proposed.
+- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, refused on arrival, same plan as the original, wrong results, not better, ranked, and stopped for another reason. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored, built and measured, not better, and ranked. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and 14d excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in 14c, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones.
+- Where the payload doesn't carry a count, say "not recorded". Never show a zero for something that wasn't counted.
+
+The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network.
 
 ### 15a. Negative result.
 
-If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out.
+If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out. The rewrites' fates say the first and the last.
+
+List each declined or already existing index once, with the searches it came up in: the original's, or a rewrite's. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
 
 ### 15b. Burndown.
 

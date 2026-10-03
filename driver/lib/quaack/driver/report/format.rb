@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+require "erb"
+require "pg_query"
+
+module Quaack
+  module Driver
+    module Report
+      # How the report writes a number, a size, and a query.
+      module Format
+        UNITS = %w[kB MB GB].freeze
+        PRETTY = { pretty_print: true, indent_size: 2, max_line_length: 80, trailing_newline: false }.freeze
+
+        module_function
+
+        def h(value) = ERB::Util.html_escape(value.to_s)
+
+        # An Integer with thousands separators. Anything else as it is.
+        def number(value)
+          return value.to_s unless value.is_a?(Integer)
+
+          value.to_s.reverse.scan(/\d{1,3}/).join(",").reverse.prepend(value.negative? ? "-" : "")
+        end
+
+        # Bytes in the unit that fits: whole kB, or MB or GB to one decimal.
+        def size(bytes)
+          return Words::MISSING unless bytes.is_a?(Integer)
+
+          kilobytes = bytes / 1024.0
+          return "#{number(kilobytes.round)} kB" if kilobytes.round < 1024
+
+          megabytes = kilobytes / 1024
+          megabytes.round(1) < 1024 ? decimal(megabytes, "MB") : decimal(megabytes / 1024, "GB")
+        end
+
+        def decimal(value, unit)
+          whole, tenth = format("%.1f", value).split(".")
+          "#{number(whole.to_i)}.#{tenth} #{unit}"
+        end
+
+        # How many percent fewer ours is than theirs.
+        def fewer(ours, theirs) = ((theirs - ours) * 100.0 / theirs).round
+
+        # The query laid out over several lines by pg_query, which keeps $n
+        # placeholders and clock functions. SQL it can't lay out (it doesn't parse, say) is
+        # shown as it was sent.
+        def sql(text)
+          PgQuery.deparse(PgQuery.parse(text.to_s).tree, opts: PgQuery::DeparseOpts.new(**PRETTY))
+        rescue StandardError
+          text.to_s
+        end
+      end
+    end
+  end
+end
