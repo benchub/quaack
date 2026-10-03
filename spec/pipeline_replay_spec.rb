@@ -22,7 +22,7 @@ RSpec.describe PipelineReplay do
 
   replays do
     PromptPack::QUERIES.each do |query|
-      described_class.selected_variants(query.name, full: ENV["QUAACK_FULL_REPLAY"] == "1").each do |variant|
+      described_class.selected_variants(query.name, full: FullReplay.on?).each do |variant|
         context "#{query.name}, replaying #{variant}" do
           let(:outcome) { described_class.cached(TestPostgres.server, query, variant) }
 

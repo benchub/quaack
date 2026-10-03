@@ -28,6 +28,8 @@ RSpec.describe "the Rakefile" do
   def scratch_tree(suites, failing: nil)
     Dir.mktmpdir do |dir|
       FileUtils.cp(File.join(REPO_ROOT, "Rakefile"), dir)
+      FileUtils.mkdir_p(File.join(dir, "rakelib"))
+      FileUtils.cp(File.join(REPO_ROOT, "rakelib", "full_replay.rb"), File.join(dir, "rakelib"))
       write_versions(dir)
       suites.each { |suite| write_suite_spec(dir, suite, failing:) }
       yield dir
@@ -274,7 +276,7 @@ RSpec.describe "the Rakefile" do
   end
 
   describe "the full task" do
-    def run_full(spec_body: %(puts "spec full=\#{ENV.fetch("QUAACK_FULL_REPLAY", nil)}"))
+    def run_full(spec_body: %(puts "spec full=\#{ENV.fetch("#{FullReplay::ENV_VAR}", nil)}"))
       scratch_tree(%w[.]) do |dir|
         code = full_task_code(spec_body)
         out, status = Open3.capture2e(RbConfig.ruby, "-e", code, chdir: dir)

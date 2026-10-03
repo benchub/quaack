@@ -6,6 +6,8 @@ REPO_ROOT = File.expand_path("..", __dir__)
 # specs are running, so it refuses to call the real API.
 ENV["QUAACK_SPECS"] = "1"
 
+require_relative "../rakelib/full_replay"
+
 Dir[File.join(__dir__, "support", "*.rb")].each { |f| require f }
 
 RSpec.configure do |config|

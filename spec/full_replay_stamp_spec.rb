@@ -16,7 +16,7 @@ RSpec.describe "the full replay stamp" do
   end
 
   it "matches the versions that last passed rake full" do
-    skip "rake full refreshes the stamp after all suites pass" if ENV["QUAACK_FULL_REPLAY"] == "1"
+    skip "rake full refreshes the stamp after all suites pass" if FullReplay.on?
 
     current = FULL_REPLAY_VERSION_FILES.to_h { |name, path| [name, version(path)] }
     stamped = File.exist?(FULL_REPLAY_STAMP) ? JSON.parse(File.read(FULL_REPLAY_STAMP)) : {}

@@ -4,6 +4,7 @@ require "rubocop/rake_task"
 require "json"
 require "fileutils"
 require "shellwords"
+require_relative "rakelib/full_replay"
 
 RuboCop::RakeTask.new
 
@@ -72,13 +73,13 @@ end
 
 desc "Run RuboCop and every spec, with every recorded pipeline replay variant"
 task :full do
-  old = ENV.fetch("QUAACK_FULL_REPLAY", nil)
-  ENV["QUAACK_FULL_REPLAY"] = "1"
+  old = ENV.fetch(FullReplay::ENV_VAR, nil)
+  ENV[FullReplay::ENV_VAR] = "1"
   Rake::Task[:rubocop].invoke
   Rake::Task[:spec].invoke
   write_full_replay_stamp
 ensure
-  old ? ENV["QUAACK_FULL_REPLAY"] = old : ENV.delete("QUAACK_FULL_REPLAY")
+  old ? ENV[FullReplay::ENV_VAR] = old : ENV.delete(FullReplay::ENV_VAR)
 end
 
 task default: %i[rubocop spec]
