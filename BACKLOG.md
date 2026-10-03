@@ -1927,29 +1927,31 @@ The review of 20261001-12 found two minor items:
 - **Design:** The transport.
 - **Status:** todo
 
-### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command.
+### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command. Done, see BACKLOG-COMPLETE.md.
 
-The driver can call Anthropic, an OpenAI-compatible API, or Bedrock. Add a fourth provider, `"provider": "copilot_cli"`, that runs a local command, such as GitHub's `copilot` CLI, once per ask, through a new adapter behind the provider-neutral client, like the other three. The prompts can be hundreds of thousands of characters, too big for a command line. So the adapter writes each prompt to a file, runs a command that points the model at the file, and reads the reply from stdout. For example: `copilot --model claude-opus-5.5 -p 'Please follow my prompt in <file>'`.
+### 20261003-1. `copilot_cli`: pin the drain after the child exits.
 
-The user settled these on 2026-10-02:
+The third review of 20261002-12 found one surviving mutation. Returning before the adapter drains stdout and stderr after the child's exit status arrives still passes every spec. It also passed an ad hoc check with 120KB on each pipe, so it's no known bug. But nothing pins the ordering, and a reply still in the pipe when the child exits could be cut short. Add a spec where the fake writes a large reply (at least several pipe buffers) and exits at once, and assert the whole reply arrives. Confirm the mutation goes red.
 
-- **The command is a template in the llm block.** The operator gives it with placeholders for the prompt file and the model. Store it as an argv array, not a shell string, and run it without a shell, so a path or model never needs quoting. Give it a default that runs `copilot` from PATH with `--model` and `-p`. Check against `copilot --help` which flags make it non-interactive and print only the reply. A bad template, such as one missing the prompt-file placeholder, is a usage error naming the key.
-- **Copilot gets read-only access.** It may read the prompt file and nothing else: no shell, no file writes, no network tools. Find the flags that enforce that (`--deny-tool`, `--available-tools`, or whatever the CLI offers) and put them in the default template. Run the command from an empty private temp directory, so no repo instructions (AGENTS.md, CLAUDE.md, `.github/...`) load. The CLI also loads the operator's global instructions on every run, wherever it runs: `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/**`, and any directories in `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. These must not reach QUAACK's prompts, since they can push the reply away from bare JSON. Before building, find the flag (or setting) that turns custom instructions off, using `copilot --help` and GitHub's Copilot CLI docs, and put it in the default template. Also unset `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` in the child's environment. If no such flag exists, stop and report back rather than work around it. Pointing copilot's config dir at an empty folder may also hide its login, so the user decides.
-- **The prompt file is deleted after each ask.** Write it with mode 0600 in a private temp directory (`Dir.mktmpdir`), and remove the directory after the ask, whether or not the ask succeeded.
-- **The default model is `claude-opus-5.5`.** Note that it's spelled with a dot, unlike the Anthropic default `claude-opus-5-5`.
-- **Each ask has a timeout.** It's an optional `timeout_seconds` (a positive number) in the block, with a sensible default. A command that runs too long is killed, along with its process group, and the ask is `llm_unavailable`.
+- **Depends on:** 20261002-12.
+- **Came from:** The third review of 20261002-12, 2026-10-03.
+- **Design:** LLM client.
+- **Status:** todo
 
-Other details:
+### 20261003-2. Take the recorded replay runs out of the per-commit check.
 
-- **Schemas.** The CLI can't enforce a JSON schema, so the adapter says it doesn't. The client's existing check and its one re-ask cover the rest. Every command run counts in the burndown.
-- **The prompt file.** It holds the system prompt, the JSON-only instruction, and the schema, followed by the whole conversation as a plainly labeled transcript, so the multi-turn exchanges (5a-5's replacement round, 10a's rounds, the re-ask) still work.
-- **Errors.** A command that isn't found is `llm_unavailable` with a clear message, or a usage error when the client is built if it's checked then. Decide which and document it. A non-zero exit is `llm_unavailable`, with the exit status and a short tail of stderr as the detail. Empty stdout is `llm_bad_response`. Strip whatever framing the CLI adds around the reply, if any. Spot `copilot`'s not-logged-in message, if it's distinctive, and map it to `llm_auth`.
-- **Config.** `QUAACK_LLM_PROVIDER` takes `copilot_cli`. `base_url`, `api_key_env`, `aws_region`, and `aws_profile` don't apply to it, and giving any of them is a usage error naming the key. The new keys, the command template and `timeout_seconds`, apply to no other provider.
-- **Trust boundary.** The adapter runs on the laptop, in the driver, like every LLM call. The enclave never runs or depends on it. No new gem should be needed, since `Open3` or `Process.spawn` is in the standard library. Keep the boundary specs green.
-- **Tests.** Fake the CLI at the edge with a stub script on PATH or in the template. It should record its argv, its cwd, and the prompt file's contents and mode, and print a canned reply, exit non-zero, or hang. Assert that the file is gone afterward and that a hang is killed at the timeout. Don't call the real `copilot` in specs. A manual check through `script/llm_smoke.rb` is fine.
-- **Docs.** Add the provider to DESIGN.md's LLM client section and the llm block paragraph, and to README.md's provider table.
+The full check takes about 54 minutes. The root `spec/` suite takes 38½ of them, the enclave suite 13, and the driver suite 2 (measured while landing 20261002-12). Most of the root suite is probably `spec/pipeline_replay_spec.rb`. It runs the whole driver pipeline on real Postgres once per replay variant: 4 queries × 3 models × 3 recorded runs (36), plus 3 planted runs and the `key_in_self_join` rule run. First, time it to confirm. RSpec's `--profile` works, or time the suite with that file left out. Also note where the enclave's 13 minutes go, as a separate finding.
 
-- **Depends on:** 20260930-11.
-- **Came from:** The user, 2026-10-02.
-- **Design:** LLM client, driver.json.
+The user settled on 2026-10-03:
+
+- Plain `bundle exec rake`, the per-commit check, keeps the planted runs, the rule run, and one recorded run per query.
+- A separate command runs every recorded variant, such as `rake replay` or `rake full`, or an env switch on `rake`. Pick one and document it.
+- The full replay must run every time a version is bumped. Settle with the user which versions count (the gems' `version.rb` files, the enclave version, or all of them) and whether a spec or the Rakefile should enforce it, for example by refusing to pass when a version changed without the full replay recorded.
+- Update CLAUDE.md's development section, which today says one command is the whole check, and the "Land" step if it changes.
+
+Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
+- **Design:** none (development tooling).
 - **Status:** todo
