@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "deparse"
+require_relative "rewrite_rules/cte_hoist_dedupe"
 require_relative "rewrite_rules/distinct_join_to_exists"
 require_relative "rewrite_rules/implied_predicate_removal"
 require_relative "rewrite_rules/key_in_self_join"
@@ -64,7 +65,8 @@ module Quaack
         KeyInSelfJoin.new,
         OrToUnion.new,
         NotInToNotExists.new,
-        DistinctJoinToExists.new
+        DistinctJoinToExists.new,
+        CteHoistDedupe.new
       ].freeze
 
       DEPTH = 2
