@@ -1,5 +1,5 @@
 {
-  "protocol": "0.1.1",
-  "driver": "0.1.1",
-  "enclave": "0.1.1"
+  "protocol": "0.1.2",
+  "driver": "0.1.2",
+  "enclave": "0.1.2"
 }
