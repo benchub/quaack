@@ -251,5 +251,12 @@ RSpec.describe PipelineReplay do
           .to raise_error(/no recorded replay variants for query/)
       end
     end
+
+    it "fails instead of running the all-empty fallback for a query with no replies in the per-commit replay" do
+      Dir.mktmpdir do |root|
+        expect { described_class.selected_variants("query", roots: [root]) }
+          .to raise_error(/no recorded replay variants for query/)
+      end
+    end
   end
 end

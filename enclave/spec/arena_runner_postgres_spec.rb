@@ -223,8 +223,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    def canceler_name = "operator-canceler"
+
+    # The canceler reports no errors of its own, so one that outlived its
+    # example would die silently when the database is dropped. This runs
+    # before that drop and fails if cancel_once_sleeping didn't stop it.
+    after do
+      expect(Thread.list.select { |t| t.name == canceler_name }).to be_empty, "the canceler thread outlived its example"
+    end
+
     # Yields while a second session waits for conn to sit in pg_sleep, then
-    # cancels it. If the block fails before the cancel went out, says so. The
+    # cancels it. If the block fails, raises the canceler's own error if it
+    # died of one, and otherwise says so if the cancel never went out. The
     # canceler never outlives the example, so it can't die noisily later when
     # the after hook drops the database. Its connection opens here, not in the
     # thread, so a kill can't strand a half-open login that the drop waits on.
@@ -242,18 +252,33 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     def name_early_failure(canceler)
       yield
     rescue StandardError
-      raise "the INSERT never reached pg_sleep" unless canceler[:canceled]
+      died_of = thread_error(canceler)
+      raise died_of if died_of
+      raise "the INSERT never reached pg_sleep" unless canceler[:cancel_sent]
 
       raise
     end
 
+    # The error the thread died of, or nil if it's still running or ended
+    # cleanly.
+    def thread_error(thread)
+      thread.join(0)
+      nil
+    rescue StandardError => e
+      e
+    end
+
+    # cancel_sent is set before the cancel goes out, so a block that fails
+    # from the cancel always finds it set.
     def start_canceler(other, pid)
-      Thread.new do
+      thread = Thread.new do
         Thread.current.report_on_exception = false
         wait_for_sleep(other, pid)
+        Thread.current[:cancel_sent] = true
         other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
-        Thread.current[:canceled] = true
       end
+      thread.name = canceler_name
+      thread
     end
 
     def wait_for_sleep(other, pid)
