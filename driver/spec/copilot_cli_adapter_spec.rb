@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "timeout"
 require "tmpdir"
 require "quaack/driver/burndown"
 require "quaack/driver/llm"
@@ -80,6 +81,20 @@ RSpec.describe "the copilot_cli adapter" do
     process_alive?(pid)
   end
 
+  def record_cwd_script(path, body)
+    script(path, <<~RUBY)
+      File.write(ENV.fetch("QUAACK_FAKE_COPILOT_CWD"), Dir.pwd)
+      #{body}
+    RUBY
+  end
+
+  def recorded_cwd_path = File.join(@dir, "cwd")
+
+  def expect_recorded_cwd_removed
+    cwd = File.read(recorded_cwd_path)
+    expect(File.exist?(cwd)).to be(false)
+  end
+
   it "runs the command template with the model and a private 0600 prompt file, then removes it" do
     command = File.join(@dir, "fake-copilot")
     record_script(command)
@@ -113,8 +128,8 @@ RSpec.describe "the copilot_cli adapter" do
 
     argv = read_record.fetch("argv")
     expect(argv).to include("--disable-builtin-mcps", "--no-ask-user", "--no-custom-instructions",
-                            "--available-tools=view", "--deny-tool=shell", "--deny-tool=write", "--deny-tool=url",
-                            "-s", "--model=fake-model")
+                            "--disallow-temp-dir", "--available-tools=view", "--deny-tool=shell",
+                            "--deny-tool=write", "--deny-tool=url", "-s", "--model=fake-model")
     expect(argv).to include("-p")
     expect(argv[argv.index("-p") + 1]).to include("prompt.md")
   end
@@ -139,11 +154,14 @@ RSpec.describe "the copilot_cli adapter" do
   it "maps an absent command to llm_unavailable" do
     template = [File.join(@dir, "missing-copilot"), "{prompt_file}", "{model}"]
 
-    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
-      expect(e.rule).to eq("llm_unavailable")
-      expect(sans_sizes(e.message)).to include("the copilot_cli command couldn't be found")
-    }
+    with_env("TMPDIR" => @dir) do
+      expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+        expect(e.rule).to eq("llm_unavailable")
+        expect(sans_sizes(e.message)).to include("the copilot_cli command couldn't be found")
+      }
+    end
     expect(burndown.llm_calls).to eq("5a-5" => 1)
+    expect(Dir.children(@dir)).to be_empty
   end
 
   it "maps a login failure to llm_auth when stderr is distinctive" do
@@ -156,32 +174,93 @@ RSpec.describe "the copilot_cli adapter" do
 
   it "maps a non-zero status to llm_unavailable with a short stderr tail" do
     command = File.join(@dir, "fake-copilot")
-    script(command, '100.times { |i| warn "line " + i.to_s }; exit 7')
+    record_cwd_script(command, '100.times { |i| warn "line " + i.to_s }; exit 7')
     template = [command, "{prompt_file}", "{model}"]
 
-    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
-      expect(e.rule).to eq("llm_unavailable")
-      expect(sans_sizes(e.message)).to include("copilot_cli exited with status 7")
-      expect(sans_sizes(e.message)).to include("line 99")
-      expect(sans_sizes(e.message)).not_to include("line 0")
-    }
+    with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
+      expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+        expect(e.rule).to eq("llm_unavailable")
+        expect(sans_sizes(e.message)).to include("copilot_cli exited with status 7")
+        expect(sans_sizes(e.message)).to include("line 99")
+        expect(sans_sizes(e.message)).not_to include("line 0")
+      }
+    end
+    expect_recorded_cwd_removed
   end
 
   it "maps empty stdout to llm_bad_response" do
     command = File.join(@dir, "fake-copilot")
-    script(command, "exit 0")
+    record_cwd_script(command, "exit 0")
     template = [command, "{prompt_file}", "{model}"]
 
-    expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
-      expect(e.rule).to eq("llm_bad_response")
-    }
+    with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
+      expect { ask(template: template) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+        expect(e.rule).to eq("llm_bad_response")
+      }
+    end
+    expect_recorded_cwd_removed
+  end
+
+  it "does not hang after a successful command leaks stdout from a detached grandchild" do
+    command = File.join(@dir, "fake-copilot")
+    grandchild = File.join(@dir, "grandchild.pid")
+    begin
+      script(command, <<~RUBY)
+        require "rbconfig"
+        pid = spawn(RbConfig.ruby, "-e", "sleep 60", out: STDOUT, err: STDERR, pgroup: true)
+        Process.detach(pid)
+        File.write(#{grandchild.dump}, pid)
+        print '{"ddl":[]}'
+      RUBY
+      template = [command, "{prompt_file}", "{model}"]
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      result = Timeout.timeout(1.0) { ask(template: template, timeout: 5.0) }
+
+      expect(result).to eq("ddl" => [])
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1.0
+    ensure
+      grandchild_pid = Integer(File.read(grandchild)) if File.exist?(grandchild)
+      Process.kill("KILL", grandchild_pid) if grandchild_pid && process_alive?(grandchild_pid)
+    end
+  end
+
+  it "does not hang on timeout when a detached grandchild keeps stdout open" do
+    command = File.join(@dir, "fake-copilot")
+    grandchild = File.join(@dir, "grandchild.pid")
+    begin
+      record_cwd_script(command, <<~RUBY)
+        require "rbconfig"
+        pid = spawn(RbConfig.ruby, "-e", "sleep 60", out: STDOUT, err: STDERR, pgroup: true)
+        Process.detach(pid)
+        File.write(#{grandchild.dump}, pid)
+        sleep 60
+      RUBY
+      template = [command, "{prompt_file}", "{model}"]
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
+        expect do
+          Timeout.timeout(2.0) { ask(template: template, timeout: 1.0) }
+        end.to raise_error(Quaack::Driver::LLM::Error) { |e|
+          expect(e.rule).to eq("llm_unavailable")
+          expect(sans_sizes(e.message)).to include("timed out")
+        }
+      end
+
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 2.0
+      expect_recorded_cwd_removed
+    ensure
+      grandchild_pid = Integer(File.read(grandchild)) if File.exist?(grandchild)
+      Process.kill("KILL", grandchild_pid) if grandchild_pid && process_alive?(grandchild_pid)
+    end
   end
 
   it "kills the process group on timeout" do
     command = File.join(@dir, "fake-copilot")
     grandchild = File.join(@dir, "grandchild.pid")
     begin
-      script(command, <<~RUBY)
+      record_cwd_script(command, <<~RUBY)
         require "rbconfig"
         pid = spawn(RbConfig.ruby, "-e", "sleep 60", out: File::NULL, err: File::NULL)
         File.write(#{grandchild.dump}, pid)
@@ -189,13 +268,16 @@ RSpec.describe "the copilot_cli adapter" do
       RUBY
       template = [command, "{prompt_file}", "{model}"]
 
-      expect { ask(template: template, timeout: 1.0) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
-        expect(e.rule).to eq("llm_unavailable")
-        expect(sans_sizes(e.message)).to include("timed out")
-      }
+      with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
+        expect { ask(template: template, timeout: 1.0) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+          expect(e.rule).to eq("llm_unavailable")
+          expect(sans_sizes(e.message)).to include("timed out")
+        }
+      end
       expect(burndown.llm_calls).to eq("5a-5" => 1)
       grandchild_pid = Integer(File.read(grandchild))
       expect(process_alive_after_wait?(grandchild_pid)).to be(false)
+      expect_recorded_cwd_removed
     ensure
       Process.kill("KILL", grandchild_pid) if grandchild_pid && process_alive?(grandchild_pid)
     end

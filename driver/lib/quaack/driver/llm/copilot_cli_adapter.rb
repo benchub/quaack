@@ -19,12 +19,15 @@ module Quaack
         CUSTOM_INSTRUCTIONS_ENV = "COPILOT_CUSTOM_INSTRUCTIONS_DIRS"
         TASK_WAIT_ENV = "COPILOT_TASK_WAIT_TIMEOUT_SECONDS"
         STDERR_TAIL_LINES = 20
+        READ_CHUNK_BYTES = 16_384
+        READ_POLL_SECONDS = 0.01
 
         DEFAULT_TEMPLATE = [
           "copilot",
           "--disable-builtin-mcps",
           "--no-ask-user",
           "--no-custom-instructions",
+          "--disallow-temp-dir",
           "--available-tools=view",
           "--allow-tool=read({prompt_dir})",
           "--deny-tool=shell",
@@ -91,9 +94,9 @@ module Quaack
         def spawn_and_capture(argv, dir)
           with_pipes do |out_r, out_w, err_r, err_w|
             pid = spawn_process(argv, dir, out_w, err_w)
-            readers = readers(out_r, out_w, err_r, err_w)
-            status = wait(pid, @timeout)
-            result_for(status, readers)
+            out_w.close
+            err_w.close
+            capture(pid, out_r, err_r, @timeout)
           end
         rescue Errno::ENOENT
           Result.new(stdout: "", stderr: "", status: nil,
@@ -108,15 +111,33 @@ module Quaack
           [out_w, err_w, out_r, err_r].each { close_quietly(it) if it }
         end
 
-        def readers(out_r, out_w, err_r, err_w)
-          out_w.close
-          err_w.close
-          [Thread.new { out_r.read }, Thread.new { err_r.read }]
+        def capture(pid, out_r, err_r, timeout)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+          stdout, stderr, ios = capture_buffers(out_r, err_r)
+          loop do
+            status = poll_status(pid)
+            drain_ready(ios)
+            return result_for(status, stdout, stderr) if status
+
+            return timeout_result(pid, stdout, stderr) if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+            wait_for_output(ios, deadline)
+          end
         end
 
-        def result_for(status, readers)
-          stdout = readers.first.value
-          stderr = readers.last.value
+        def capture_buffers(out_r, err_r)
+          stdout = +""
+          stderr = +""
+          [stdout, stderr, { out_r => stdout, err_r => stderr }]
+        end
+
+        def timeout_result(pid, stdout, stderr)
+          kill_group(pid)
+          _, child_status = Process.waitpid2(pid)
+          result_for(TimeoutStatus.new(child_status), stdout, stderr)
+        end
+
+        def result_for(status, stdout, stderr)
           Result.new(stdout:, stderr:, status:, error: error_for(status, stderr))
         end
 
@@ -125,18 +146,38 @@ module Quaack
           Process.spawn(env, *argv, chdir: dir, in: File::NULL, out: out_w, err: err_w, pgroup: true)
         end
 
-        def wait(pid, timeout)
-          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-          loop do
-            waited, status = Process.waitpid2(pid, Process::WNOHANG)
-            return status if waited
-            break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        def poll_status(pid)
+          waited, status = Process.waitpid2(pid, Process::WNOHANG)
+          status if waited
+        end
 
-            sleep 0.01
+        def drain_ready(ios)
+          loop do
+            ready = IO.select(ios.keys, nil, nil, 0)&.first
+            return unless ready
+
+            ready.each { drain_io(it, ios) }
           end
-          kill_group(pid)
-          _, status = Process.waitpid2(pid)
-          TimeoutStatus.new(status)
+        end
+
+        def drain_io(io, ios)
+          loop { ios.fetch(io) << io.read_nonblock(READ_CHUNK_BYTES) }
+        rescue IO::WaitReadable
+          nil
+        rescue IOError
+          ios.delete(io)
+          close_quietly(io)
+        end
+
+        def wait_for_output(ios, deadline)
+          wait = [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), READ_POLL_SECONDS].min
+          return unless wait.positive?
+
+          if ios.empty?
+            sleep wait
+          else
+            IO.select(ios.keys, nil, nil, wait)
+          end
         end
 
         TimeoutStatus = Data.define(:status) do
