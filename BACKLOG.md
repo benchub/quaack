@@ -1927,25 +1927,7 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261003-2. Take the recorded replay runs out of the per-commit check.
-
-The full check takes about 54 minutes. The root `spec/` suite takes 38½ of them, the enclave suite 13, and the driver suite 2 (measured while landing 20261002-12). Most of the root suite is probably `spec/pipeline_replay_spec.rb`. It runs the whole driver pipeline on real Postgres once per replay variant: 4 queries × 3 models × 3 recorded runs (36), plus 3 planted runs and the `key_in_self_join` rule run. First, time it to confirm. RSpec's `--profile` works, or time the suite with that file left out. Also note where the enclave's 13 minutes go, as a separate finding.
-
-The user settled on 2026-10-03:
-
-- Plain `bundle exec rake`, the per-commit check, keeps the planted runs, the rule run, and one recorded run per query.
-- A separate command runs every recorded variant, such as `rake replay` or `rake full`, or an env switch on `rake`. Pick one and document it.
-- The full replay must run every time a version is bumped. Settle with the user which versions count (the gems' `version.rb` files, the enclave version, or all of them) and whether a spec or the Rakefile should enforce it, for example by refusing to pass when a version changed without the full replay recorded.
-- Update CLAUDE.md's development section, which today says one command is the whole check, and the "Land" step if it changes.
-
-Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
-
-- **Note (2026-10-03, answers):** The command is `rake full`. A bump of any gem's `VERSION` (protocol, driver, or enclave) needs the full replay. Enforce it with a stamp: `rake full` writes a committed stamp file of the versions it passed at, and a per-commit spec fails when the current versions don't match the stamp. Landing must run `rake full` only when the task bumps a version.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
-- **Design:** none (development tooling).
-- **Status:** todo
+### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-3. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
 
@@ -1985,4 +1967,21 @@ Minor findings from the first review of 20260929-5:
 - **Depends on:** 20260929-5.
 - **Came from:** The first review of 20260929-5, 2026-10-03.
 - **Design:** Step 1.
+- **Status:** todo
+
+### 20261003-5. `rake full`: harden the stamp and close test gaps.
+
+Minor findings from the first review of 20261003-2:
+
+- **`rake spec full` writes the stamp without the full replay.** So does `rake default full`. Rake runs a task only once per invocation, so `full`'s invoke of `:spec` does nothing after `spec` has already run. Make `full` run its suites itself, or refuse when `spec` already ran.
+- **The stamp spec doesn't read the real version constants.** `full_replay_stamp_spec.rb:15` parses the version files with a regex, using a copy of the Rakefile's path map. If the regex stops matching, the Rakefile stamps `null` and the spec compares nil with nil, so it passes. Compare against the loaded `Quaack::*::VERSION` constants, and refuse to stamp a nil.
+- **Exporting `QUAACK_FULL_REPLAY=1` makes plain `rake` skip the stamp check** (`full_replay_stamp_spec.rb:19`).
+- **No test covers RuboCop failing during `rake full`** (`Rakefile:79`). The stamp is skipped today, but nothing pins that.
+- **The `reject { it == EMPTY }` in `spec/support/pipeline_replay.rb` is untested.** Without it, a query with no replies at all would run the all-empty variant instead of failing.
+- **CLAUDE.md wording.** The Docker and pg_dump bullets still say "the full check", which now reads as `rake full`, though both apply to plain `rake` too.
+- **Where the enclave suite's time goes.** The builder's profile: about 9½ minutes, led by `standalone_require_spec` (39s), then `candidate_runs_step_postgres_spec` (26s), then the baseline, schema-dump, and step specs. Trim these if they're worth it.
+
+- **Depends on:** 20261003-2.
+- **Came from:** The first review of 20261003-2, 2026-10-03.
+- **Design:** none (development tooling).
 - **Status:** todo

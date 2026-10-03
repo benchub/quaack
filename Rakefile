@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
 require "rubocop/rake_task"
+require "json"
+require "fileutils"
 require "shellwords"
+require_relative "rakelib/full_replay"
 
 RuboCop::RakeTask.new
 
@@ -16,6 +19,25 @@ SPEC_SUITES = (Dir.glob("{,*/}spec/", base: __dir__).map { |d| File.dirname(d) }
 # no command-line flag, so an empty spec/ folder can't pass silently. RSpec
 # only defaults to spec/ when $0 is "rspec", so the path is passed explicitly.
 RSPEC = "RSpec.configure { |c| c.fail_if_no_examples = true }; RSpec::Core::Runner.invoke"
+
+VERSION_FILES = {
+  "protocol" => "protocol/lib/quaack/protocol/version.rb",
+  "driver" => "driver/lib/quaack/driver/version.rb",
+  "enclave" => "enclave/lib/quaack/enclave/version.rb"
+}.freeze
+FULL_REPLAY_STAMP = File.join(__dir__, "spec", "fixtures", "full_replay_versions.json")
+
+def gem_versions
+  VERSION_FILES.to_h do |name, path|
+    text = File.read(File.join(__dir__, path))
+    [name, text[/(?:^|\s)VERSION = "([^"]+)"/, 1]]
+  end
+end
+
+def write_full_replay_stamp
+  FileUtils.mkdir_p(File.dirname(FULL_REPLAY_STAMP))
+  File.write(FULL_REPLAY_STAMP, "#{JSON.pretty_generate(gem_versions)}\n")
+end
 
 # Every suite runs, even after one fails, so one run shows all the results.
 #
@@ -47,6 +69,17 @@ task :spec do
   end
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
   abort "Spec suites failed: #{failed.join(", ")}" unless failed.empty?
+end
+
+desc "Run RuboCop and every spec, with every recorded pipeline replay variant"
+task :full do
+  old = ENV.fetch(FullReplay::ENV_VAR, nil)
+  ENV[FullReplay::ENV_VAR] = "1"
+  Rake::Task[:rubocop].invoke
+  Rake::Task[:spec].invoke
+  write_full_replay_stamp
+ensure
+  old ? ENV[FullReplay::ENV_VAR] = old : ENV.delete(FullReplay::ENV_VAR)
 end
 
 task default: %i[rubocop spec]

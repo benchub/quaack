@@ -3446,3 +3446,31 @@ Other details:
 - **Design:** Step 1, Where QUAACK runs.
 - **Status:** done
 - **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-4.
+
+### 20261003-2. Take the recorded replay runs out of the per-commit check.
+
+The full check takes about 54 minutes. The root `spec/` suite takes 38½ of them, the enclave suite 13, and the driver suite 2 (measured while landing 20261002-12). Most of the root suite is probably `spec/pipeline_replay_spec.rb`. It runs the whole driver pipeline on real Postgres once per replay variant: 4 queries × 3 models × 3 recorded runs (36), plus 3 planted runs and the `key_in_self_join` rule run. First, time it to confirm. RSpec's `--profile` works, or time the suite with that file left out. Also note where the enclave's 13 minutes go, as a separate finding.
+
+The user settled on 2026-10-03:
+
+- Plain `bundle exec rake`, the per-commit check, keeps the planted runs, the rule run, and one recorded run per query.
+- A separate command runs every recorded variant, such as `rake replay` or `rake full`, or an env switch on `rake`. Pick one and document it.
+- The full replay must run every time a version is bumped. Settle with the user which versions count (the gems' `version.rb` files, the enclave version, or all of them) and whether a spec or the Rakefile should enforce it, for example by refusing to pass when a version changed without the full replay recorded.
+- Update CLAUDE.md's development section, which today says one command is the whole check, and the "Land" step if it changes.
+
+Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
+
+- **Note (2026-10-03, answers):** The command is `rake full`. A bump of any gem's `VERSION` (protocol, driver, or enclave) needs the full replay. Enforce it with a stamp: `rake full` writes a committed stamp file of the versions it passed at, and a per-commit spec fails when the current versions don't match the stamp. Landing must run `rake full` only when the task bumps a version.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
+- **Design:** none (development tooling).
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after two review rounds.
+  - **Timings:** the replay spec took about 90% of the root suite (1932s of 35:54). Plain `rake` now takes about 17 minutes. `rake full` takes about 38.
+  - **What plain `rake` runs:** the planted runs, the rule run, and the `claude-1` recorded variant of each query, the first in sorted order. It fails rather than run zero recorded variants.
+  - **`rake full`:** sets `QUAACK_FULL_REPLAY` (`rakelib/full_replay.rb`), runs every variant, and writes `spec/fixtures/full_replay_versions.json` only after RuboCop and every suite pass.
+  - **The stamp:** `spec/full_replay_stamp_spec.rb` fails, telling you to run `rake full`, when the gems' versions don't match it.
+  - **CLAUDE.md:** updated.
+  - **The fix round:** it added dry-run selection specs that go red if the env var doesn't reach the replay spec.
+  - **Follow-ups:** minor findings and the enclave timing notes went to 20261003-5.
