@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
@@ -27,14 +28,28 @@ RSpec.describe "the Rakefile" do
   def scratch_tree(suites, failing: nil)
     Dir.mktmpdir do |dir|
       FileUtils.cp(File.join(REPO_ROOT, "Rakefile"), dir)
-      suites.each do |suite|
-        name = suite == "." ? "root" : suite.tr("/", "_")
-        FileUtils.mkdir_p(File.join(dir, suite, "spec"))
-        File.write(File.join(dir, suite, "spec", "#{name}_spec.rb"), <<~RUBY)
-          RSpec.describe("#{name}") { it("runs") { puts "ran:#{name} pid:\#{Process.pid} pwd:\#{Dir.pwd}"; expect(#{suite != failing}).to eq(true) } }
-        RUBY
-      end
+      write_versions(dir)
+      suites.each { |suite| write_suite_spec(dir, suite, failing:) }
       yield dir
+    end
+  end
+
+  def write_suite_spec(dir, suite, failing:)
+    name = suite == "." ? "root" : suite.tr("/", "_")
+    FileUtils.mkdir_p(File.join(dir, suite, "spec"))
+    File.write(File.join(dir, suite, "spec", "#{name}_spec.rb"), <<~RUBY)
+      RSpec.describe("#{name}") { it("runs") { puts "ran:#{name} pid:\#{Process.pid} pwd:\#{Dir.pwd}"; expect(#{suite != failing}).to eq(true) } }
+    RUBY
+  end
+
+  def write_versions(dir, protocol: "1.2.3", driver: "2.3.4", enclave: "3.4.5")
+    {
+      "protocol/lib/quaack/protocol/version.rb" => protocol,
+      "driver/lib/quaack/driver/version.rb" => driver,
+      "enclave/lib/quaack/enclave/version.rb" => enclave
+    }.each do |path, version|
+      FileUtils.mkdir_p(File.dirname(File.join(dir, path)))
+      File.write(File.join(dir, path), %(VERSION = "#{version}"\n))
     end
   end
 
@@ -255,6 +270,44 @@ RSpec.describe "the Rakefile" do
 
       expect(status).to be_success, out
       expect(runs(out).keys).to contain_exactly("foo")
+    end
+  end
+
+  describe "the full task" do
+    def run_full(spec_body: %(puts "spec full=\#{ENV.fetch("QUAACK_FULL_REPLAY", nil)}"))
+      scratch_tree(%w[.]) do |dir|
+        code = full_task_code(spec_body)
+        out, status = Open3.capture2e(RbConfig.ruby, "-e", code, chdir: dir)
+        stamp = File.join(dir, "spec", "fixtures", "full_replay_versions.json")
+        [out, status, (JSON.parse(File.read(stamp)) if File.exist?(stamp))]
+      end
+    end
+
+    def full_task_code(spec_body)
+      <<~RUBY
+        require "rake"
+        load "Rakefile"
+        Rake::Task[:rubocop].clear
+        Rake::Task.define_task(:rubocop) { puts "rubocop" }
+        Rake::Task[:spec].clear
+        Rake::Task.define_task(:spec) { #{spec_body} }
+        Rake::Task[:full].invoke
+      RUBY
+    end
+
+    it "runs specs with full replay enabled and writes the versions stamp" do
+      out, status, stamp = run_full
+
+      expect(status).to be_success, out
+      expect(out).to include("rubocop", "spec full=1")
+      expect(stamp).to eq("protocol" => "1.2.3", "driver" => "2.3.4", "enclave" => "3.4.5")
+    end
+
+    it "does not write the versions stamp when the full replay fails" do
+      out, status, stamp = run_full(spec_body: 'raise "boom"')
+
+      expect(status).not_to be_success, out
+      expect(stamp).to be_nil
     end
   end
 end

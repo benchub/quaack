@@ -23,7 +23,7 @@ require_relative "../../e2e/run"
 # A variant is one (llm, k) pair: a run answers each ask with that ask's
 # reply-<llm>-<k>.md, sent as raw text through the real LLM client, and
 # falls back to E2ERun::CaseLLM's valid empty answer when there's none.
-module PipelineReplay
+module PipelineReplay # rubocop:disable Metrics/ModuleLength
   CORPUS = PromptPack::CORPUS
   PLANTED = File.join(__dir__, "..", "fixtures", "pipeline_replay")
   ROOTS = [CORPUS, PLANTED].freeze
@@ -74,6 +74,17 @@ module PipelineReplay
       Variant.new(llm: m[:llm], k: m[:k].to_i) if m
     end
     found.empty? ? [EMPTY] : found.uniq.sort_by(&:to_s)
+  end
+
+  def selected_variants(query, full: false, roots: ROOTS)
+    all = variants(query, roots:)
+    return all if full
+
+    planted, recorded = all.partition { it.llm == "planted" }
+    recorded = recorded.reject { it == EMPTY }
+    raise "pipeline replay: no recorded replay variants for #{query}" if recorded.empty?
+
+    [recorded.first, *planted]
   end
 
   # The directory the prompt pack gives each ask, in order: its step, with
