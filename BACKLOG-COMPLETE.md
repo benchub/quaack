@@ -3445,7 +3445,7 @@ Other details:
 - **Came from:** The user's first real `quaack start`, 2026-09-29.
 - **Design:** Step 1, Where QUAACK runs.
 - **Status:** done
-- **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-4.
+- **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-7.
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check.
 
@@ -3473,7 +3473,7 @@ Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the 
   - **The stamp:** `spec/full_replay_stamp_spec.rb` fails, telling you to run `rake full`, when the gems' versions don't match it.
   - **CLAUDE.md:** updated.
   - **The fix round:** it added dry-run selection specs that go red if the env var doesn't reach the replay spec.
-  - **Follow-ups:** minor findings and the enclave timing notes went to 20261003-5.
+  - **Follow-ups:** minor findings and the enclave timing notes went to 20261003-8.
 
 ### 20261002-17. 6c rule: `implied_predicate_removal`.
 
@@ -3504,7 +3504,7 @@ Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it f
   - **First review:** found the oracle had no mutation coverage.
   - **Second review:** found that two equal-valued equalities with different text proved each other, and both were dropped. The fix stops a dropped conjunct from proving anything. That review also asked for a positive `NOT IN` test.
   - **Third review:** clean.
-  - **Split out to 20261003-3:**
+  - **Split out to 20261003-6:**
     - subquery `WHERE`s and UNION arms, which this landing doesn't reach;
     - refusing casts on literals;
     - refusing volatile duplicates;
@@ -3536,7 +3536,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
   - **"Also consider":** both items are done. The probe reports where `gem` and `ruby` are, and names both when they differ. User gem dirs with spaces get the export line.
   - **Refactor:** the probe moved to `deploy_probe.rb`.
   - **Skipped:** the optional `run.limit.nil?` test, which would be a racy test of a redundant guard.
-  - **Follow-ups:** minor findings went to 20261003-6.
+  - **Follow-ups:** minor findings went to 20261003-9.
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
@@ -3570,4 +3570,4 @@ Minor findings from the review of 20260929-28, in enclave/spec/arena_runner_post
   - **Review:** one round, clean.
     - The reviewer broke the production cancel handling, and the test went red.
     - A run with an INSERT that skips `pg_sleep` printed the thread's error trace on main. On the branch it gave the clear message in about 2.6s.
-  - **Follow-ups:** minor findings went to 20261003-7.
+  - **Follow-ups:** minor findings went to 20261003-10.

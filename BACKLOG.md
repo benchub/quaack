@@ -1872,7 +1872,7 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-3. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
 
 Minor findings from the second review of 20261002-17:
 
@@ -1893,7 +1893,7 @@ Minor findings from the second review of 20261002-17:
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261003-4. Intake unreadable causes: minor findings.
+### 20261003-7. Intake unreadable causes: minor findings.
 
 Minor findings from the first review of 20260929-5:
 
@@ -1912,7 +1912,7 @@ Minor findings from the first review of 20260929-5:
 - **Design:** Step 1.
 - **Status:** todo
 
-### 20261003-5. `rake full`: harden the stamp and close test gaps.
+### 20261003-8. `rake full`: harden the stamp and close test gaps.
 
 Minor findings from the first review of 20261003-2:
 
@@ -1929,7 +1929,7 @@ Minor findings from the first review of 20261003-2:
 - **Design:** none (development tooling).
 - **Status:** todo
 
-### 20261003-6. `quaack deploy` diagnosis: minor findings, round two.
+### 20261003-9. `quaack deploy` diagnosis: minor findings, round two.
 
 Minor findings from the review of 20260929-6:
 
@@ -1943,7 +1943,7 @@ Minor findings from the review of 20260929-6:
 - **Design:** Deploy.
 - **Status:** todo
 
-### 20261003-7. Operator-cancel test: don't blame pg_sleep for other failures.
+### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures.
 
 Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postgres_spec.rb's `cancel_once_sleeping` (around line 245):
 
