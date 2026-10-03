@@ -3365,6 +3365,22 @@ With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round that fixed only the tests, checked by a third reviewer. `MAX` is 10 and `DEPTH` stays 2. DESIGN.md 6c and README's burndown text say ten. The cap specs, the unit spec and the `rewrite-rules` step spec, use eleven unique rule rewrites plus two duplicates. They assert that rule1 to rule10 are kept, that rule11 is over the cap, and the exact `over_cap` and `duplicate` counts. The mutations `last(MAX)`, MAX=9, MAX=11, counting duplicates as over the cap, and disabling duplicate detection all go red. The full check passed after merging the other machine's three rules.
 
+### 20260929-4. Say why driver.json is bad.
+
+`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
+- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
+- valid JSON but not an object;
+- no `jump_command`;
+- `jump_command` isn't one non-blank line.
+
+Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round the user allowed that fixed only the specs, checked by a third reviewer. Messages read `bad_driver_config: <path>: <problem>`. The problems are: not valid JSON (line and column only, never the parser's message); not an object; can't be read (permission denied); not a file; no `jump_command`; and `jump_command` isn't one non-blank line. `DriverConfig.read` validates `jump_command` whenever driver.json exists, so `quaack start` and `quaack run` share the checks. A missing driver.json still works for `quaack run`. Sentinel specs show that the file's contents never appear. README shows a complete driver.json. The answers: the message shape is rule, then path, then problem; the EACCES cause is included.
+
 ### 20261001-25. 6c rule: `not_in_to_not_exists`.
 
 - **Depends on:** 20261001-22.
