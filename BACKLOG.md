@@ -799,14 +799,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-9. Qualify the catalog names the run server check reads. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
-
-`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
-
-- **Depends on:** 20260929-24.
-- **Came from:** Review of 20260929-24, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
+### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock. Done, see BACKLOG-COMPLETE.md.
 

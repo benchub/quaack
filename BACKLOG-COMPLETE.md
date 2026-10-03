@@ -3537,3 +3537,16 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
   - **Refactor:** the probe moved to `deploy_probe.rb`.
   - **Skipped:** the optional `run.limit.nil?` test, which would be a racy test of a redundant guard.
   - **Follow-ups:** minor findings went to 20261003-6.
+
+### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
+
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
+
+- **Depends on:** 20260929-24.
+- **Came from:** Review of 20260929-24, round one.
+- **Design:** none. Test harness only.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20260930-10.
+  - **Change:** the plant stays. Its comment now says it's belt and braces, and that it would only matter if `isolated_env` ran outside `with_unbundled_env`.
+  - **Verified:** narrowing the scan to `/\ABUNDLER_/` still leaves the spec green, so the plant can't fail today.
+  - **Review:** one round, clean.
