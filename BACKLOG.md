@@ -1855,19 +1855,7 @@ Minor findings from the first review of 20260929-5:
 
 ### 20261003-8. `rake full`: harden the stamp and close test gaps. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-9. `quaack deploy` diagnosis: minor findings, round two.
-
-Minor findings from the review of 20260929-6:
-
-- **The escape filter on gem and ruby paths is untested.** `deploy_diagnosis.rb:110`'s `which_gem` filters those paths with `PLAIN_PATH`, but removing that check leaves every spec green. It's the only thing keeping a PATH entry that holds an escape sequence out of the advice. Add a test with a `gem` dir holding `$` or ESC, and expect the general sentence.
-- **The `pwd -P` on the gem/ruby comparison is untested** (`deploy_probe.rb:33`). Changing it to `pwd` stays green.
-- **The trailing `(?<! )` on `PLAIN_PATH` is untested,** and it seems unneeded, since `bin` always ends in `/bin`. Test it or drop it.
-- **The not-installed advice may not help.** It tells the user to run `quaack deploy` again, but deploy's `gem install` may well install to the same place again. The probe already reports `gem_dir`. Use it to say where the gem went and why this Ruby doesn't see it.
-
-- **Depends on:** 20260929-6.
-- **Came from:** The review of 20260929-6, 2026-10-03.
-- **Design:** Deploy.
-- **Status:** todo
+### 20261003-9. `quaack deploy` diagnosis: minor findings, round two. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-10. Operator-cancel test: don't blame pg_sleep for other failures. Done, see BACKLOG-COMPLETE.md.
 
@@ -1959,4 +1947,16 @@ Minor findings from the review of 20261003-8:
 - **Depends on:** 20261003-8.
 - **Came from:** The review of 20261003-8, 2026-10-03.
 - **Design:** none (development tooling).
+- **Status:** todo
+
+### 20261003-13. `quaack deploy` diagnosis: minor findings, round three.
+
+Minor findings from the review of 20261003-9:
+
+- **The ruby half of the `PLAIN_PATH` filter is untested** (`deploy_diagnosis.rb:126`, `other_gem`). Checking only the gem path keeps all specs green. Add a test with ESC in the ruby path, and expect the general sentence.
+- **The advice can leave quaacks uninstalled** (`deploy_diagnosis.rb:105-107`). If the first `ruby` on PATH is 3.4 but the first `gem` belongs to an older Ruby, putting 3.4's bin first doesn't install quaacks for 3.4. Add "then run `quaack deploy` again". The older `other_ruby` message has the same gap.
+
+- **Depends on:** 20261003-9.
+- **Came from:** The review of 20261003-9, 2026-10-03.
+- **Design:** Deploy.
 - **Status:** todo

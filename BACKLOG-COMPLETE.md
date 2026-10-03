@@ -3715,3 +3715,27 @@ Minor findings from the first review of 20261003-2:
     - Every mutation went red.
     - The parallel spec passed four runs, three of them at the same time.
   - **Follow-ups:** minor findings went to 20261003-12.
+
+### 20261003-9. `quaack deploy` diagnosis: minor findings, round two.
+
+Minor findings from the review of 20260929-6:
+
+- **The escape filter on gem and ruby paths is untested.** `deploy_diagnosis.rb:110`'s `which_gem` filters those paths with `PLAIN_PATH`, but removing that check leaves every spec green. It's the only thing keeping a PATH entry that holds an escape sequence out of the advice. Add a test with a `gem` dir holding `$` or ESC, and expect the general sentence.
+- **The `pwd -P` on the gem/ruby comparison is untested** (`deploy_probe.rb:33`). Changing it to `pwd` stays green.
+- **The trailing `(?<! )` on `PLAIN_PATH` is untested,** and it seems unneeded, since `bin` always ends in `/bin`. Test it or drop it.
+- **The not-installed advice may not help.** It tells the user to run `quaack deploy` again, but deploy's `gem install` may well install to the same place again. The probe already reports `gem_dir`. Use it to say where the gem went and why this Ruby doesn't see it.
+
+- **Depends on:** 20260929-6.
+- **Came from:** The review of 20260929-6, 2026-10-03.
+- **Design:** Deploy.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-9.
+  - **Escape filter:** it moved into a shared helper, `other_gem`. Tests now put `$` or ESC in the gem dir.
+  - **`pwd -P` was a real bug.** A plain `cd` resolves `link/..` as text, so the check compared the wrong directory.
+    - Both comparisons now use `cd -P "$x" && pwd`.
+    - Two `link/..` tests cover it.
+    - The reviewer confirmed this under dash, busybox ash, `bash --posix` and macOS `sh`.
+  - **`(?<! )`:** dropped as unreachable.
+  - **Not-installed advice:** when `gem` isn't beside `ruby`, the advice names both paths. It explains that quaacks went into the other Ruby's user gem directory, and says to put Ruby 3.4's bin first. Each path it prints is filtered first. DESIGN.md's Deploy paragraph is updated.
+  - **Review:** one round, clean.
+  - **Follow-ups:** minor findings went to 20261003-13.
