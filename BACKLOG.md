@@ -635,20 +635,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 
 ### 20260929-3. `quaack deploy`: show progress, and diagnose PATH. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-4. Say why driver.json is bad.
-
-`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
-- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
-- valid JSON but not an object;
-- no `jump_command`;
-- `jump_command` isn't one non-blank line.
-
-Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
-
-- **Depends on:** 20260928-3.
-- **Came from:** The user's first real `quaack start`, 2026-09-29.
-- **Design:** Where QUAACK runs.
-- **Status:** todo
+### 20260929-4. Say why driver.json is bad. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-5. Say why intake can't read the query or plan.
 
@@ -669,7 +656,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 
 - **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
 - **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
-- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH.
+- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH. **Decided (the user, 2026-10-03):** say quaacks isn't installed for this Ruby, tell the user to run `quaack deploy`, and mention the other quaacks on PATH.
 - **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
 - **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
 - **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
@@ -843,7 +830,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
-`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces.
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
 
 - **Depends on:** 20260929-24.
 - **Came from:** Review of 20260929-24, round one.
@@ -1047,6 +1034,225 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Depends on:** 20261001-23.
 - **Came from:** The build and both reviews of 20261001-23.
 - **Design:** 6c, step 9, step 10, 15, 15b.
+- **Status:** todo
+
+### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data.
+
+- **Note:** First filed as 20261002-3. Renumbered when merging another machine's work, which had already used -3.
+
+A hand-tuned Canvas query got much faster by repeating a predicate across a join. The original read:
+
+```sql
+FROM submissions JOIN assignments ON assignments.id = submissions.assignment_id ...
+WHERE assignments.context_type = 'Course' AND assignments.context_id = 2588916 AND submissions.user_id = 2418270 ...
+```
+
+The tuned version keeps every predicate and adds `submissions.course_id = 2588916`, which lets Postgres narrow `submissions` before the join. The planner doesn't do this itself, because the query never states `submissions.course_id = assignments.context_id`.
+
+The rule: when a query joins `s.<x>_id = a.id` and filters `a.<p>_type = '<Klass>'` and `a.<p>_id = <const>` (Rails's polymorphic convention), and `s` has a column named Rails's way for `<Klass>` (`Course` becomes `course_id`, and `Foo::Bar` becomes `foo_bar_id`), add `s.<klass>_id = <const>` and keep the original predicates. If a foreign key from that column exists, it must point at `<Klass>`'s table, and the rule doesn't fire otherwise.
+
+The rewrite only adds a predicate, so it can drop rows but never add them. It's sound only if every joined row has `s.<klass>_id = a.<p>_id` when `a.<p>_type = '<Klass>'`. The catalog can't prove that from naming alone, so this rule is a heuristic, unlike the sound rules 6c describes. It's checked against the data instead:
+
+- The rule states a new assumption kind, such as `denormalized_equal` (child column, parent column, type column, and type value).
+- 6b checks it with one query on the real database, in the enclave: `EXISTS` a joined row where `a.<p>_type = '<Klass>'` and `s.<klass>_id IS DISTINCT FROM a.<p>_id`. Only the boolean leaves the jump server. If any such row exists, the assumption is unmet and the rewrite is dropped.
+- The report marks the rewrite as resting on an empirical assumption, one the data holds today but the schema doesn't enforce, and names the columns.
+- Steps 9 and 10 test it like any other rewrite. If they disprove it, the report doesn't call that a rule bug, since the assumption was empirical.
+
+Open questions to settle before building: the cost of the `EXISTS` check on large tables (a statement timeout, and treat a timeout as unmet?), what to do when two candidate columns could match, and which Rails inflections to support (STI, namespaced classes, irregular plurals for the table check).
+
+DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic rules whose assumptions are checked against the data, and list the new assumption kind in 6b.
+
+- **Depends on:** 20261001-22, 20261001-23.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6b, 6c, 15.
+- **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
+- **Status:** todo
+
+### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
+
+- **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
+- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
+- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
+
+A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
+
+```sql
+SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
+FROM users JOIN enrollments ON users.id = enrollments.user_id
+WHERE enrollments.course_id = 341535 AND ...
+ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC
+LIMIT 20 OFFSET 0;
+```
+
+This is `distinct_join_to_exists`'s case, but the rule must handle three things 20261001-26's entry doesn't mention. Check what 20261001-26 landed, and add whichever of these it lacks:
+
+- `t.*` in the select list. It holds the kept table's key.
+- Select-list expressions that read only the kept table's columns, such as `col COLLATE ...`, a cast, or a function call. A volatile function stays refused.
+- `ORDER BY`, `LIMIT`, and `OFFSET`, carried over unchanged. Their expressions read only the kept table, as `DISTINCT` already requires them to appear in the select list.
+
+Test it with this query's shape. Also test that the rule refuses when the select list reads a column of a table it would remove.
+
+- **Depends on:** 20261001-26.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-17. 6c rule: `implied_predicate_removal`.
+
+- **Note:** First filed as 20261002-5. Renumbered when merging another machine's work, which had already used -5.
+
+The same query also had `enrollments.workflow_state <> 'deleted' AND enrollments.workflow_state = 'active'` and `enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment', ...) AND enrollments.type = 'TeacherEnrollment'`. Rails scopes stack predicates like this. Postgres doesn't remove the implied ones. It multiplies their selectivities, so it underestimates rows, and that can pick a bad plan.
+
+The rule: in a top-level `AND` (and in each `AND` of a subquery's `WHERE`), when one conjunct is `col = c`, drop any other conjunct on the same column that `col = c` implies. Treat the conjuncts of every inner join's `ON` at that level as part of the same `AND`, since for inner joins they filter the same rows. When the same conjunct is in both `ON` and `WHERE`, as in `JOIN assignments ON ... AND assignments.type = 'Assignment' ... WHERE assignments.type = 'Assignment'`, drop the one in `WHERE`. Never move a conjunct into or out of an outer join's `ON`, and never use one as proof. The conjuncts it drops:
+
+- `col <> d` with `c` and `d` different.
+- `col IN (..., c, ...)`.
+- `col NOT IN (d1, d2, ...)` with `c` in none of them.
+- A range such as `col > d`, `col >= d`, or `col BETWEEN d1 AND d2` that `c` satisfies.
+- An exact duplicate of another conjunct, such as `score IS NOT NULL` written twice. This one doesn't need `col = c`.
+
+NULLs are safe: `col = c` already drops the rows where `col` is NULL. It needs no catalog facts, so it states no assumptions. Refuse when the column has a nondeterministic collation, or when comparing the constants needs anything but the column type's default operators. Compare the constants in Postgres, in the enclave, with the column's type and collation, not in Ruby. Dropping a conjunct can leave a `WHERE` with one item, so deparse it without an empty `AND`.
+
+Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it first in the rules list, so later rules see the simpler query.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-02, answers):** Rules never see literal values. This task adds a `Literals` object, the first rule to need one,, passed to rules beside `Catalog`, that answers with booleans only: `same?(a, b)` (two placeholders have the same literal text and shape, a safe under-approximation of equal values) and `holds?(expr)` (evaluates a boolean expression over placeholders on the racetrack connection, with the real values bound as parameters, never spliced). Rule code never reads `placeholder_map`, and nothing a rule outputs carries a value. A merged copy keeps the first copy's placeholder.
+- **Status:** todo
+
+### 20261002-6. 6c rule: `shared_scan_cte`.
+
+A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
+
+The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
+
+The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
+
+- A copy is on the nullable side of an outer join.
+- A shared conjunct calls a volatile function.
+- The query already has a CTE of that name.
+- A copy is in a subquery or CTE rather than the top-level `FROM`.
+
+It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c, 8.
+- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
+- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
+- **Status:** todo
+
+### 20261002-7. 6c rule: `transitive_predicate_copy`.
+
+The query behind 20261002-6 has `enrollments.course_id = assessor_asset.course_id` in an inner join's `ON`, and `assessor_asset.course_id IN (2883, ...)` in `WHERE`. Together they imply `enrollments.course_id IN (2883, ...)`, so a rule can add that predicate. Postgres carries a constant equality across an equi-join (equivalence classes), but not an `IN` list, a range, `BETWEEN`, or `IS NOT NULL`, so it can't use that implied filter to narrow `enrollments` early.
+
+The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an inner join's `ON`, and each conjunct on `a.x` alone that's an `IN` list of constants, a comparison with a constant (`<`, `<=`, `>`, `>=`), or `BETWEEN` two constants, add the same conjunct on `b.y`, unless one is already there. Keep the original. Refuse when:
+
+- `x` and `y` have different types, or the equality isn't the type's default btree equality.
+- Either column has a nondeterministic collation.
+- Either side is on the nullable side of an outer join.
+
+It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
+
+20261002-15 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
+- **Status:** todo
+
+### 20261002-8. 6c rule: `cte_hoist_dedupe`.
+
+A hand-tuned Canvas user search got much faster by hoisting a CTE. The original is a `UNION` of five arms in a subquery in `FROM`. Each arm, and the outer `WHERE`, has `users.id IN (WITH users_in_account AS MATERIALIZED (SELECT user_id FROM user_account_associations WHERE account_id = 1) SELECT user_id FROM users_in_account)`. Postgres builds each of those six identical CTEs separately. The tuned version defines it once in a top-level `WITH`, and each `IN` reads from that.
+
+The rule: find every CTE, at any depth, whose body deparses to the same SQL as another's, and that has the same materialization option (`MATERIALIZED`, `NOT MATERIALIZED`, or none). Define one copy in the top-level `WITH`, and point every reference at it, renaming it if its name clashes there. Refuse a CTE that:
+
+- Is correlated, reading a column from outside its own body.
+- Is recursive or modifies data.
+- Calls a volatile function.
+- Would be hidden by a nearer CTE of the same name at some reference after hoisting.
+
+It's sound with no catalog facts, since every copy reads the same snapshot and gives the same rows, and it states no assumptions. Hoisting a single copy changes nothing, so fire only when at least two copies merge.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-03, answers):** Merge CTEs with any materialization option, as long as every copy has the same one, and keep it. Merged plain CTEs may become materialized, and steps 8 onward decide whether that helps. A hoisted CTE whose name clashes at the top level is renamed `quaack_cte_<n>`.
+- **Status:** todo
+
+### 20261002-9. 6c rule: `union_outer_filter_removal`.
+
+The query behind 20261002-8 filters the `UNION`'s result with `WHERE users.id IN (SELECT user_id FROM users_in_account) AND users.workflow_state <> 'deleted'`, when every arm already applies both conjuncts, in its own `WHERE`, to the column it outputs. The outer copy can't drop a row, but Postgres still runs it: here, as a semi-join over the union's result.
+
+The rule: for a query whose `FROM` is one subquery that's a `UNION` or `UNION ALL` (or such a subquery under inner joins), drop a top-level `WHERE` conjunct on that subquery's output columns when every arm has the same conjunct in its top-level `WHERE`, applied to the expression each arm outputs in those columns. Map output columns by position, expanding `t.*` from the catalog. Compare by deparsed form, with the column references replaced by placeholders. A conjunct with a subquery matches only when the subqueries deparse the same and read the same CTE (after 20261002-8, the same top-level one). Refuse when:
+
+- A conjunct calls a volatile function.
+- An arm outputs the column as an aggregate.
+- An arm has the conjunct only in `HAVING`.
+- The set operation is `INTERSECT` or `EXCEPT`.
+
+It's sound with no catalog facts: every row an arm outputs passed that arm's `WHERE`, and `GROUP BY` doesn't change a grouped row's value for a column it groups by or one that depends on it. It states no assumptions.
+
+Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees one shared CTE.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-02, answers):** Match conjuncts with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Status:** todo
+
+### 20261002-10. 6c rule: `existence_in_flip`.
+
+A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
+
+```sql
+SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
+WHERE enrollments.user_id = 6504 AND ...
+  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
+LIMIT 1;
+```
+
+The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
+
+The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
+
+- Every select-list item is a constant.
+- It has `LIMIT 1`.
+- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
+
+The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
+
+It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
+
+Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261002-11. 6c keeps up to ten rewrites. Done, see BACKLOG-COMPLETE.md.
+
+### 20261002-13. Two bedrock driver specs fail on `main`. Done, see BACKLOG-COMPLETE.md.
+
+### 20261002-14. The network guard specs read the real `~/.config/anthropic`.
+
+`spec/network_guard_spec.rb` and `driver/spec/network_guard_spec.rb` build a real `Anthropic::Client`. Its constructor (`warn_env_shadow`, then `Anthropic::Credentials.auto_discoverable_credentials?`) reads `~/.config/anthropic/active_config` from the developer's home. Under a sandbox that blocks that path, the specs fail with `Errno::EPERM` instead of testing the guard. Specs shouldn't touch the developer's real credential files at all. Point the SDK's config discovery at an empty temp directory for these specs (whatever env var or home override the SDK honors), and check that the suite never opens anything under the real `~/.config/anthropic`. Check the other specs that build SDK clients for the same leak.
+
+- **Depends on:** none.
+- **Came from:** The 20261002-13 build, 2026-10-02.
+- **Design:** Development (CLAUDE.md, the full check).
 - **Status:** todo
 
 ### 20261002-3. `not_in_to_not_exists`: minor findings.
@@ -1687,7 +1893,38 @@ The review of 20261001-12 found two minor items:
 - **Design:** The transport.
 - **Status:** todo
 
-### 20261003-1. Report payload: minor findings.
+### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command. Done, see BACKLOG-COMPLETE.md.
+
+### 20261003-1. `copilot_cli`: pin the drain after the child exits.
+
+The third review of 20261002-12 found one surviving mutation. Returning before the adapter drains stdout and stderr after the child's exit status arrives still passes every spec. It also passed an ad hoc check with 120KB on each pipe, so it's no known bug. But nothing pins the ordering, and a reply still in the pipe when the child exits could be cut short. Add a spec where the fake writes a large reply (at least several pipe buffers) and exits at once, and assert the whole reply arrives. Confirm the mutation goes red.
+
+- **Depends on:** 20261002-12.
+- **Came from:** The third review of 20261002-12, 2026-10-03.
+- **Design:** LLM client.
+- **Status:** todo
+
+### 20261003-2. Take the recorded replay runs out of the per-commit check.
+
+The full check takes about 54 minutes. The root `spec/` suite takes 38½ of them, the enclave suite 13, and the driver suite 2 (measured while landing 20261002-12). Most of the root suite is probably `spec/pipeline_replay_spec.rb`. It runs the whole driver pipeline on real Postgres once per replay variant: 4 queries × 3 models × 3 recorded runs (36), plus 3 planted runs and the `key_in_self_join` rule run. First, time it to confirm. RSpec's `--profile` works, or time the suite with that file left out. Also note where the enclave's 13 minutes go, as a separate finding.
+
+The user settled on 2026-10-03:
+
+- Plain `bundle exec rake`, the per-commit check, keeps the planted runs, the rule run, and one recorded run per query.
+- A separate command runs every recorded variant, such as `rake replay` or `rake full`, or an env switch on `rake`. Pick one and document it.
+- The full replay must run every time a version is bumped. Settle with the user which versions count (the gems' `version.rb` files, the enclave version, or all of them) and whether a spec or the Rakefile should enforce it, for example by refusing to pass when a version changed without the full replay recorded.
+- Update CLAUDE.md's development section, which today says one command is the whole check, and the "Land" step if it changes.
+
+Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the root suite must run.
+
+- **Note (2026-10-03, answers):** The command is `rake full`. A bump of any gem's `VERSION` (protocol, driver, or enclave) needs the full replay. Enforce it with a stamp: `rake full` writes a committed stamp file of the versions it passed at, and a per-commit spec fails when the current versions don't match the stamp. Landing must run `rake full` only when the task bumps a version.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
+- **Design:** none (development tooling).
+- **Status:** todo
+
+### 20261003-3. Report payload: minor findings.
 
 The build and review of 20261001-17 found these:
 
@@ -1706,7 +1943,7 @@ The build and review of 20261001-17 found these:
 - **Design:** Step 15, 15a.
 - **Status:** todo
 
-### 20261003-2. Readable report: minor findings.
+### 20261003-4. Readable report: minor findings.
 
 The build and both reviews of 20261001-18 found these:
 
@@ -1733,7 +1970,7 @@ The build and both reviews of 20261001-18 found these:
 - **Design:** Step 15, 15a, 15b.
 - **Status:** todo
 
-### 20261003-3. Report payload: what the index accountability table still lacks.
+### 20261003-5. Report payload: what the index accountability table still lacks.
 
 20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
 

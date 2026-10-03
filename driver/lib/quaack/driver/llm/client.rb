@@ -74,9 +74,8 @@ module Quaack
         # model, if given, overrides theirs. The other options go to the
         # adapter, such as api_key: or max_retries: for Anthropic.
         def initialize(burndown:, settings: LLM.settings, model: nil, transport: nil, **)
-          refuse_real_client_in_specs unless transport
-
           settings = settings.with(model:) if model
+          refuse_real_client_in_specs(settings) unless transport
           @burndown = burndown
           @adapter = LLM.adapter(settings.provider).new(settings:, transport:, **)
         end
@@ -144,7 +143,8 @@ module Quaack
 
         def reask(error) = format(REASK, error.message.delete_prefix("#{error.rule}: "))
 
-        def refuse_real_client_in_specs
+        def refuse_real_client_in_specs(settings)
+          return if settings.provider == "copilot_cli"
           return unless defined?(::RSpec) || ENV[SPECS_ENV] == "1"
           return if ENV[ALLOW_REAL_ENV] == "1"
 
