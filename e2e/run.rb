@@ -272,12 +272,13 @@ module E2ERun
     top ? "top #{top["label"]} #{top["slow_blocks"]} blocks" : "no fix selected (#{why_none(report)})"
   end
 
-  # Why the report has no fix, from its negative section (DESIGN.md 15a).
+  # Why the report has no fix, from its negative section (DESIGN.md 15a)
+  # and each rewrite's fate.
   def why_none(report)
     negative = report["negative"] || {}
     parts = { "declined" => Array(negative["declined"]).map { it["reason"] },
               "existing" => Array(negative["existing"]).map { "covered" },
-              "knocked out" => Array(negative["knocked_out"]).map { it["reason"] } }
+              "rewrites" => Array(report["rewrites"]).map { it["fate"] } }
     text = parts.reject { _2.empty? }.map { |k, v| "#{k}: #{v.tally.map { |r, n| "#{r} #{n}" }.join(" ")}" }
     text.empty? ? "no candidates" : text.join("; ")
   end

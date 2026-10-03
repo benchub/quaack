@@ -457,8 +457,9 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
   let(:dir) { Dir.mktmpdir("quaack-report") }
   let(:out) { File.join(dir, "report.html") }
   let(:report) do
-    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
-      "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "original_sql" => "SELECT 1",
+      "original_measurements" => {}, "labels" => [], "rewrites" => [], "indexes" => {}, "original_plan" => [],
+      "timed_out_count" => 0 }
   end
   let(:done) do
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
@@ -507,7 +508,7 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
 
     described_class.new(transport: t, client:, run_id: "RUN", out:).run
 
-    expect(File.read(out)).to include("<li>LLM calls, 5a-5: 2</li>")
+    expect(File.read(out)).to include("<li>Index suggestions for the original query: 2 calls</li>")
   end
 
   it "fails with no_report when the enclave sends no report" do

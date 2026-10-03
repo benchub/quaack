@@ -7,7 +7,10 @@ require_relative "../dedupe"
 require_relative "../index_candidate"
 require_relative "../planner_statistics"
 require_relative "../table_name"
+require_relative "existing_indexes"
+require_relative "measured_labels"
 require_relative "negative_result"
+require_relative "rewrite_fate"
 require_relative "rewrite_source"
 require_relative "rule_bugs"
 
@@ -18,31 +21,38 @@ module Quaack
       # shape-class data the driver renders the main report from, as one
       # report message. It reads the store only and connects to nothing.
       #
-      #   top, excluded, infinite_sets  the selection entry (14d)
-      #   verdicts         minimax's per-literal verdicts (14a, 14b)
-      #   measurements     { "original" | label => { set => { "total_blocks",
-      #                    "hit", "read", "stable", "timed_out" } } } for the
-      #                    original and each top candidate; hit and read are
-      #                    the run with the most blocks
-      #   candidates       one per top label: { "label", "sql", "indexes",
-      #                    "plan", "untested_atoms", "evidence" }, and for a
-      #                    rewrite its "source" (rule, llm, or operator) and
-      #                    "rules", the names of the rules that made it, or
-      #                    nil (RewriteSource)
-      #   indexes          { built index name => { "ddl", "size",
-      #                    "covered_by", "makes_redundant" } }
+      #   original_sql     the original query, always: the redacted query
+      #                    (literals as $n) with the 3h clock functions put
+      #                    back
       #   original_plan    the redacted step 1 plan's node shapes
+      #   original_measurements  { set => { "total_blocks", "hit", "read",
+      #                    "stable", "timed_out" } }, the bare original's
+      #                    baseline; hit and read are the run with the most
+      #                    blocks
+      #   top, excluded, infinite_sets  the selection entry (14d)
+      #   labels           one per measured label, ranked or not
+      #                    (MeasuredLabels): { "label", "search" (original
+      #                    or rewrite_<n>), "indexes" (built names),
+      #                    "measurements", "verdicts" (minimax's, per
+      #                    literal set), "timed_out" }
+      #   rewrites         one per stored rewrite, ranked or not: {
+      #                    "rewrite" (rewrite_<n>), "sql", "source" (rule,
+      #                    llm, or operator) and "rules" (RewriteSource),
+      #                    "fate" and its "scenario", "rule", "round", and
+      #                    "after" (RewriteFate), "plan" (its node shapes on
+      #                    the slow literal set, or nil), "untested_atoms"
+      #                    (step 9's, or nil if it wasn't tested), and
+      #                    "evidence" (whether a step 10 round compared it
+      #                    on loaded inserts; nil unless it survived) }
+      #   indexes          { built index name => { "ddl", "size",
+      #                    "covered_by" (nil or an existing index),
+      #                    "makes_redundant" (existing indexes) } }, each
+      #                    existing index as { "name", "size_bytes" }
+      #                    (ExistingIndexes)
       #   timed_out_count  candidate runs dropped for timing out
       #   negative         nil unless top is empty (DESIGN.md 15a); then
-      #                    { "disproved" => [{ "rewrite", "step" (step9 or
-      #                    step10), "rule", "scenario", "round" }],
-      #                    "declined" => [{ "search", "ddl", "reason"
-      #                    (unused or the 5a-4 refusal rule), "sqlstate" }],
-      #                    "existing" => [{ "search", "ddl", "covered_by"
-      #                    (the existing index's name) }],
-      #                    "knocked_out" => [{ "label", "reason" (the 14d
-      #                    excluded reason) }] }; each disproved or
-      #                    knocked_out rewrite with "source" and "rules" too
+      #                    NegativeResult's { "declined", "existing" }, each
+      #                    index once, with the searches it came up in
       #   rule_bugs        [{ "rewrite", "rules", "step" (step9, step10, or
       #                    14c) }]: each rule-made rewrite a test disproved
       #                    (never a 14c timeout, which compares nothing),
@@ -51,76 +61,63 @@ module Quaack
       #   burndown         { "stages", "totals" }, the 15b counts as
       #                    Burndown.read checks them: names and counts only
       #
-      # Trust boundary. sql is the anchored query with the 3h functions put
-      # back (the 3g redacted query, literals as $n) for an index-only
-      # candidate, or the stored rewrite's SQL, which holds only $n and what
-      # the LLM wrote. DDL goes through CandidateDdlRedaction. A plan node
+      # A rewrite the enclave refused on arrival isn't stored, so nothing is
+      # sent for it. The burndown counts those.
+      #
+      # Trust boundary. original_sql is the anchored query with the 3h
+      # functions put back (the 3g redacted query, literals as $n). A
+      # rewrite's sql is the stored rewrite's SQL, which holds only $n and
+      # what the LLM, a rule, or the operator wrote, as the inbound check
+      # accepted it. DDL goes through CandidateDdlRedaction. A plan node
       # sends only its type, relation, index name, and row counts, never a
       # Filter or Index Cond. Measurements are counts. Index names and
-      # relations are schema. A source and a rule name are QUAACK's own
-      # constants: RewriteSource sends no other.
+      # relations are schema. A source, a rule name, a fate, and a fate's
+      # details are QUAACK's own constants: RewriteSource and RewriteFate
+      # send no other. Untested atoms are step 9's redacted shapes.
       module ReportPayload
         module_function
 
         def call(store:, **)
           selection = store.read("selection")
-          labels = selection["top"].map { it["label"] }
+          stats = PlannerStatistics.load(store).statistics
           [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
-             verdicts: store.read("minimax")["verdicts"].slice(*labels),
-             measurements: measurements(store, labels), **shapes(store, labels),
-             timed_out_count: store.read("candidate_runs")["timed_out_count"], **findings(store, labels) }]
+             **original(store, stats), labels: MeasuredLabels.call(store), rewrites: rewrites(store, stats),
+             indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
+             **findings(store, selection["top"]) }]
         end
 
         # 15a, 6c, and 15b: what the report says beyond the candidates.
-        def findings(store, labels)
-          { negative: labels.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
+        def findings(store, top)
+          { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
             burndown: Burndown.read(store) }
         end
 
-        def shapes(store, labels)
-          stats = PlannerStatistics.load(store).statistics
-          build = store.read("index_build")
-          { candidates: labels.map { candidate(store, it, build, stats) }, indexes: indexes(store, build, stats),
-            original_plan: nodes(store.read("redacted_plan")["explain"], stats) }
+        def original(store, stats)
+          { original_sql: original_sql(store), original_plan: nodes(store.read("redacted_plan")["explain"], stats),
+            original_measurements: store.read("baseline")["sets"].transform_values { MeasuredLabels.summary(it) } }
         end
 
-        def measurements(store, labels)
-          runs = store.read("candidate_runs")["candidates"]
-          index = store.read("index_baseline")["combinations"]
-          out = labels.to_h { [it, runs.dig(it.split(":").first, it.end_with?(":none") ? "none" : it) || index[it]] }
-          { "original" => store.read("baseline")["sets"], **out }.transform_values do |sets|
-            sets.transform_values { summary(it) }
+        def rewrites(store, stats)
+          context = RewriteFate.context(store)
+          NegativeResult.rewrites(store).map do |name|
+            entry = store.read(name)
+            { "rewrite" => name, "sql" => entry["sql"], **RewriteSource.fields(entry),
+              **RewriteFate.call(store, name, context), "plan" => rewrite_plan(store, name, stats),
+              **checks(store, name.delete_prefix("rewrite_")) }
           end
         end
 
-        def summary(measurement)
-          return { "timed_out" => true } if measurement["timed_out"]
-
-          worst = measurement["runs"].max_by { it["total_blocks"] }
-          { "total_blocks" => measurement["total_blocks"], "hit" => worst["hit"], "read" => worst["read"],
-            "stable" => measurement["stable"], "timed_out" => false }
-        end
-
-        def candidate(store, label, build, stats)
-          search = label.split(":").first
-          out = { "label" => label, "indexes" => build["combinations"].fetch(label, []) }
-          return out.merge("sql" => original_sql(store), "plan" => nil) if search == "original"
-
-          rewrite = store.read(search)
-          out.merge("sql" => rewrite["sql"], "plan" => rewrite_plan(store, search, stats),
-                    **checks(store, search.delete_prefix("rewrite_")), **RewriteSource.fields(rewrite))
-        end
-
         def rewrite_plan(store, search, stats)
-          entry = "index_search_#{search}"
-          plan = store.read(entry).dig("baseline", "slow", "plan") if store.entry?(entry)
+          plan = NegativeResult.optional(store, "index_search_#{search}")&.dig("baseline", "slow", "plan")
           plan && nodes(plan, stats)
         end
 
-        # Step 9's untested atoms, and whether step 10 had evidence on them.
+        # Step 9's untested atoms, and whether step 10 had evidence on
+        # them, which only a rewrite that survived step 10 has.
         def checks(store, number)
-          { "untested_atoms" => store.read("rewrite_tested_#{number}")["untested_atoms"],
-            "evidence" => store.read("rewrite_survived_#{number}").fetch("evidence", true) }
+          survived = NegativeResult.optional(store, "rewrite_survived_#{number}")
+          { "untested_atoms" => NegativeResult.optional(store, "rewrite_tested_#{number}")&.fetch("untested_atoms"),
+            "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
         end
 
         def original_sql(store)
@@ -130,20 +127,30 @@ module Quaack
           ClockAnchoring.restore(store.read("anchored_query"), replacements, added)
         end
 
-        def indexes(store, build, stats)
+        def indexes(store, stats)
           redaction = CandidateDdlRedaction.new(store.read("classification")["outbound_statistics"])
-          build["indexes"].transform_values do |built|
+          sizes = ExistingIndexes.new(store)
+          store.read("index_build")["indexes"].transform_values do |built|
             proposed = IndexCandidate.from_ddl(built["ddl"], sources: [:llm])
-            { "ddl" => proposed && redaction.ddl(proposed), "size" => built["size"], **coverage(proposed, stats) }
+            { "ddl" => proposed && redaction.ddl(proposed), "size" => built["size"],
+              **coverage(proposed, stats, sizes) }
           end
         end
 
-        # The existing index (by name, from the catalog) that covers
-        # proposed as a prefix, and the existing ones proposed covers.
-        def coverage(proposed, stats)
-          existing = proposed && stats.table?(proposed.table) ? stats.table(proposed.table).indexes.compact : {}
-          { "covered_by" => existing.find { |_, e| Dedupe.covers?(e, proposed) }&.first,
-            "makes_redundant" => existing.select { |_, e| Dedupe.covers?(proposed, e) }.keys }
+        # The existing index (from the catalog) that covers proposed as a
+        # prefix, and the existing ones proposed covers.
+        def coverage(proposed, stats, sizes)
+          existing = existing(proposed, stats)
+          covering = existing.select { |_, e| Dedupe.covers?(e, proposed) }.keys.first(1)
+          redundant = existing.select { |_, e| Dedupe.covers?(proposed, e) }.keys
+          covering, redundant = [covering, redundant].map { |names| names.map { sizes.named(proposed.table, it) } }
+          { "covered_by" => covering.first, "makes_redundant" => redundant }
+        end
+
+        # The existing indexes on proposed's table that the catalog could
+        # read, by name.
+        def existing(proposed, stats)
+          proposed && stats.table?(proposed.table) ? stats.table(proposed.table).indexes.compact : {}
         end
 
         def nodes(explain, stats)
