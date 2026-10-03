@@ -411,7 +411,7 @@ quaack start --server prod-db-1 --query slow/events.sql --plan slow/events-plan.
 # 20260928T201702Z-3f9a1c2e
 ```
 
-The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. Don't write `~/slow/...`: your laptop's shell turns `~` into your laptop's home directory before `quaack` sees it. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it.
+The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. A quoted leading `~/`, as in `--query '~/slow/events.sql'`, is expanded by `quaacks` on the jump server; `~otheruser` is not special. If your laptop's shell expands `~` first and gives QUAACK a path under your laptop home, `quaack start` refuses before ssh and asks for a jump-server path. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it. If the jump server can't read the file, QUAACK says whether it was missing, a final symlink, not a regular file, or permission denied, without printing the path.
 
 QUAACK runs every candidate as if `now()` and `current_date` were the moment you ran `quaack start`. If your query uses them, start the run soon after you capture the plan. (`quaacks intake` takes a `--captured-at` time, but `quaack start` can't pass it through yet. That's backlog task 20260928-2.)
 

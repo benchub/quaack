@@ -56,8 +56,8 @@ RSpec.describe Quaack::Driver::Start do
     expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
-  def start(server: "prod-1", **)
-    described_class.new(home:, ssh:, **).call(server:, query: "/q q.sql", plan: "/p.json")
+  def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", **)
+    described_class.new(home:, ssh:, **).call(server:, query:, plan:)
   end
 
   it "runs intake on the host jump_command prints for the server, and records the run's jump host" do
@@ -79,6 +79,22 @@ RSpec.describe Quaack::Driver::Start do
     start(server: "a b; touch #{pwned}")
     expect(File.read(File.join(dir, "arg"))).to eq("a b; touch #{pwned}")
     expect(File.exist?(pwned)).to be(false)
+  end
+
+  it "refuses a query or plan path under this laptop's home before ssh" do
+    configure("echo jump-1")
+    remote_intake
+
+    message = "query looks like a path on this laptop; --query and --plan are paths on the jump server. " \
+              "Give a path relative to your home there, such as q/query.sql, or an absolute path there."
+    expect { start(query: File.join(home, "q", "query.sql")) }
+      .to raise_error(Quaack::Driver::Start::UsageError, message)
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
+
+    message = message.sub("query", "plan")
+    expect { start(plan: File.join(home, "q", "plan.json")) }
+      .to raise_error(Quaack::Driver::Start::UsageError, message)
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
   it "refuses output that isn't one ssh host, a failing command, and a missing config" do

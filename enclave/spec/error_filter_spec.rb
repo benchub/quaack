@@ -60,6 +60,17 @@ module FilterFakes
     end
   end
 
+  # An intake unreadable-file refusal, whose reason is an enclave constant.
+  class IntakeUnreadableError < StandardError
+    attr_reader :rule, :reason
+
+    def initialize(rule:, reason:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @reason = reason
+    end
+  end
+
   class ResultError < StandardError
     attr_reader :result
 
@@ -119,6 +130,30 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       error = FilterFakes::FunctionError.new(rule: "unique_email", function: "pg_catalog.random")
 
       expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "unique_email"))
+    end
+
+    it "sends an intake unreadable refusal's fixed reason" do
+      error = FilterFakes::IntakeUnreadableError.new(rule: "query_unreadable", reason: "permission_denied")
+
+      expect(filter.to_egress(error, step: "intake"))
+        .to eq(line(step: "intake", rule: "query_unreadable", reason: "permission_denied"))
+    end
+
+    it "sends no reason for any rule but intake unreadable refusals" do
+      error = FilterFakes::IntakeUnreadableError.new(rule: "bad_config", reason: "permission_denied")
+
+      expect(filter.to_egress(error, step: "inventory")).to eq(line(step: "inventory", rule: "bad_config"))
+    end
+
+    ["no such file #{ERROR_SENTINEL}", "missing\n#{ERROR_SENTINEL}", "enoent", :missing].each do |reason|
+      it "drops an intake unreadable reason that is not one fixed cause: #{reason.inspect}" do
+        error = FilterFakes::IntakeUnreadableError.new(rule: "query_unreadable", reason:)
+
+        out = filter.to_egress(error, step: "intake")
+
+        expect(out).to eq(line(step: "intake", rule: "query_unreadable"))
+        expect(out).not_to include("SENTINEL")
+      end
     end
 
     [
