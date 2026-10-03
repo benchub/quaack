@@ -160,6 +160,29 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
     expect(rewritten(sql)).to eq([])
   end
 
+  it "keeps one of two equalities that prove each other with different literal text" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = 5 AND enrollments.score = 5.0"
+
+    rewrites = rewritten(sql)
+    expect(rewrites.size).to eq(1)
+    expect(rewrites.first).to eq("SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = $2")
+    same_rows(sql, rewrites.first)
+  end
+
+  it "keeps one of two equal timestamp equalities written differently" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.events (id int PRIMARY KEY, created_at timestamp);
+      INSERT INTO public.events VALUES (1, '2020-01-01'), (2, '2020-01-02'), (3, NULL);
+    SQL
+    sql = "SELECT events.id FROM public.events WHERE " \
+          "events.created_at = '2020-01-01' AND events.created_at = '2020-01-01 00:00:00'"
+
+    rewrites = rewritten(sql)
+    expect(rewrites.size).to eq(1)
+    expect(rewrites.first).to eq("SELECT events.id FROM public.events WHERE events.created_at = $2")
+    same_rows(sql, rewrites.first)
+  end
+
   it "uses inner-join ON conjuncts as proofs and drops the duplicate from WHERE" do
     sql = "SELECT submissions.id FROM public.submissions JOIN public.assignments " \
           "ON assignments.id = submissions.assignment_id AND assignments.type = 'Assignment' " \

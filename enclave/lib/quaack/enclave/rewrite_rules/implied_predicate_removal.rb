@@ -82,8 +82,8 @@ module Quaack
 
         def equalities(terms, drop, select, catalog)
           terms.each_with_index.filter_map do |term, i|
-            equality(term.condition, select, catalog) unless drop.include?(i)
-          end
+            [i, equality(term.condition, select, catalog)] unless drop.include?(i)
+          end.select(&:last)
         end
 
         def equality(condition, select, catalog)
@@ -117,7 +117,8 @@ module Quaack
           terms.each_with_index do |term, i|
             next if drop.include?(i)
 
-            drop << i if equalities.any? { proves?(it, term.condition, literals) }
+            # A dropped conjunct can't prove another, or two equal equalities would remove each other.
+            drop << i if equalities.any? { |j, eq| !drop.include?(j) && proves?(eq, term.condition, literals) }
           end
         end
 
