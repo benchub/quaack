@@ -560,8 +560,11 @@ RSpec.describe "quaack run" do
           llm = block.merge("aws_region" => "us-west-2")
           write_config(JSON.generate("jump_command" => "echo jump-1", "llm" => llm))
           status = without_aws_credentials { run_with }
+          expected = "quaack run failed: llm_auth: no AWS credentials: set AWS_ACCESS_KEY_ID and " \
+                     "AWS_SECRET_ACCESS_KEY, name a profile in llm.aws_profile in ~/.quaack/driver.json " \
+                     "or AWS_PROFILE, or set AWS_BEARER_TOKEN_BEDROCK\n"
 
-          expect([status, stdout.string, stderr.string]).to eq([1, "", "quaack run failed: llm_auth\n"])
+          expect([status, stdout.string, stderr.string]).to eq([1, "", expected])
           expect([hosts, transport.calls]).to eq([[], []])
         end
 

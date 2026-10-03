@@ -3339,3 +3339,18 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6c, 15b.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, and a second review with no blocking findings. `quaack run` calls `rewrite-rules` before 6a, with no LLM call. A rerun of the step changes nothing. The 6c burndown record counts results by their last rule. `report-payload` sends each rewrite's `source` and `rules`, and `rule_bugs`: rule-made rewrites that step 9, step 10, or a real 14c mismatch disproved. A 14c timeout or `unsupported_order` isn't one. The replay spec runs a rule-made rewrite end to end. The follow-ups went to 20261002-2.
+
+### 20261002-13. Two bedrock driver specs fail on `main`.
+
+Two driver specs fail on `main`, every run, whatever the environment:
+
+- `driver/spec/bedrock_adapter_spec.rb:179` expects `e.message` to be `"llm_auth: AWS refused the credentials (403)"`, but it's `"... (403) [step 5a-5, max_tokens 1000, system 0 chars, messages: user 31]"`.
+- `driver/spec/cli_run_spec.rb:548` expects stderr `"quaack run failed: llm_auth\n"`, but it's `"quaack run failed: llm_auth: no AWS credentials: set AWS_ACCESS_KEY_ID ..."`.
+
+The bedrock provider (20260930-11, commit e23b414) was written before 20261001-1 (`quaack run` prints the LLM error's detail, merged 85e4332) and 20261001-2 (a failed LLM ask says its step and request sizes, merged 6f22fae) landed. Those two changed the messages on purpose, and the bedrock specs weren't updated. Check what DESIGN.md and those two tasks say the messages should be. If the code is right, fix the specs, and make sure the fixed assertions are still specific: they must still prove the adapter doesn't quote AWS's own message and doesn't retry. If the code is wrong, fix the code with a failing test first. Check the other bedrock and provider specs for the same staleness.
+
+- **Depends on:** 20260930-11, 20261001-1, 20261001-2.
+- **Came from:** The baseline full check before 20261002-11, 2026-10-02. (First filed as 20261002-12, which another session had already taken for the `copilot_cli` provider.)
+- **Design:** The driver's LLM client.
+- **Status:** done
+- **Note (landed 2026-10-02):** The code was right, and only the specs were stale. The two specs now expect the request-size suffix and the printed LLM detail. They still assert that AWS's message (a sentinel) never appears and that there's exactly one call. Mutation checks confirmed both go red. The first review was clean. The sandbox's block on `~/.config/anthropic` went to 20261002-14.
