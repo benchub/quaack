@@ -93,20 +93,35 @@ RSpec.describe Quaack::Driver::Start do
   end
 
   it "refuses a config without a one-line jump_command" do
+    path = File.join(home, ".quaack", "driver.json")
+
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate({}))
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config: #{path}: no jump_command")
+
     ["", "echo a\necho b", nil].each do |command|
       configure(command)
-      expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config"), command.inspect
+      expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                      "bad_driver_config: #{path}: jump_command isn't one non-blank line")
     end
   end
 
   it "refuses a config that isn't a JSON object" do
     path = File.join(home, ".quaack", "driver.json")
     FileUtils.mkdir_p(File.dirname(path))
-    aggregate_failures do
-      ["not json", "[1]", "null"].each do |text|
-        File.write(path, text)
-        expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
-      end
+    File.write(path, "{\n  \"jump_command\": \"ok\",\n    SENTINEL-VALUE\n}")
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: not valid JSON (line 3, column 5)")
+    begin
+      start
+    rescue Quaack::Driver::Start::Error => e
+      expect(e.message).not_to include("SENTINEL-VALUE")
+    end
+
+    ["[1]", "null"].each do |text|
+      File.write(path, text)
+      expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                      "bad_driver_config: #{path}: not a JSON object")
     end
   end
 
@@ -118,7 +133,8 @@ RSpec.describe Quaack::Driver::Start do
     File.chmod(0o000, path)
     skip "this user can read a file with mode 000" if File.readable?(path)
 
-    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: can't read it (permission denied)")
   end
 
   # A ~/.quaack that exists but can't be read is refused the same way,
@@ -129,14 +145,17 @@ RSpec.describe Quaack::Driver::Start do
     File.chmod(0o000, quaack)
     skip "this user can read a directory with mode 000" if File.readable?(File.join(quaack, "driver.json"))
 
-    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{File.join(quaack, "driver.json")}: " \
+                                    "can't read it (permission denied)")
   ensure
     File.chmod(0o700, quaack)
   end
 
   it "refuses a driver.json that isn't a file, not taking it for a missing one" do
-    FileUtils.mkdir_p(File.join(home, ".quaack", "driver.json"))
-    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config")
+    path = File.join(home, ".quaack", "driver.json")
+    FileUtils.mkdir_p(path)
+    expect { start }.to raise_error(Quaack::Driver::Start::Error, "bad_driver_config: #{path}: can't read it")
   end
 
   it "counts a ~/.quaack without a driver.json, or that isn't a directory, as no config" do

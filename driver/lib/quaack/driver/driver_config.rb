@@ -11,10 +11,10 @@ module Quaack
       # A config file that isn't a JSON object, or can't be read. The
       # message never quotes it.
       class Bad < StandardError
-        def initialize(message = "~/.quaack/driver.json must be a JSON object") = super
+        def initialize(path, problem) = super("bad_driver_config: #{path}: #{problem}")
       end
 
-      def self.path(home) = File.join(home, ".quaack", "driver.json")
+      def self.path(home) = File.expand_path(File.join(home, ".quaack", "driver.json"))
 
       # The config under home as a Hash, or nil when nothing is there. A
       # driver.json it can't reach, such as one in a directory it can't
@@ -24,7 +24,7 @@ module Quaack
         return unless there?(path)
 
         config = parse(path)
-        raise Bad unless config.is_a?(Hash)
+        raise Bad.new(path, "not a JSON object") unless config.is_a?(Hash)
 
         config
       end
@@ -32,23 +32,37 @@ module Quaack
       # Whether something is at path. Unlike File.exist?, it raises Bad
       # when it can't tell, or when what's there isn't a file.
       def self.there?(path)
-        File.stat(path).file? or raise Bad, "can't read ~/.quaack/driver.json"
+        File.stat(path).file? or raise Bad.new(path, "can't read it")
       rescue Errno::ENOENT, Errno::ENOTDIR
         false
+      rescue Errno::EACCES
+        raise Bad.new(path, "can't read it (permission denied)")
       rescue SystemCallError
-        raise Bad, "can't read ~/.quaack/driver.json"
+        raise Bad.new(path, "can't read it")
       end
       private_class_method :there?
 
-      # The file's JSON, or nil if it isn't JSON.
+      # The file's JSON, or Bad if it isn't JSON.
       def self.parse(path)
-        JSON.parse(File.read(path))
-      rescue JSON::ParserError
-        nil
+        text = File.read(path)
+        JSON.parse(text)
+      rescue JSON::ParserError => e
+        line, column = json_error_location(e)
+        raise Bad.new(path, "not valid JSON (line #{line}, column #{column})")
+      rescue Errno::EACCES
+        raise Bad.new(path, "can't read it (permission denied)")
       rescue SystemCallError
-        raise Bad, "can't read ~/.quaack/driver.json"
+        raise Bad.new(path, "can't read it")
       end
       private_class_method :parse
+
+      def self.json_error_location(error)
+        match = error.message.match(/ at line (?<line>\d+) column (?<column>\d+)\z/)
+        return [match[:line].to_i, match[:column].to_i] if match
+
+        [1, 1]
+      end
+      private_class_method :json_error_location
     end
   end
 end
