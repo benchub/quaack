@@ -709,6 +709,37 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.message).to include("function pg_catalog.random")
     end
 
+    {
+      "missing" => "no such file on the jump server",
+      "symlink" => "path is a symlink on the jump server",
+      "not_regular_file" => "not a regular file on the jump server",
+      "permission_denied" => "permission denied on the jump server"
+    }.each do |reason, text|
+      %w[query_unreadable plan_unreadable].each do |rule|
+        it "tells the operator #{rule} with reason #{reason} as #{text.inspect}" do
+          error = refusal(%({"type":"error","step":"intake","rule":"#{rule}","reason":"#{reason}"}))
+
+          expect(error.reason).to eq(reason)
+          expect(error.rule_with_note).to eq("#{rule}: #{text}")
+          expect(error.message).to eq("quaacks probe failed: #{rule} (step intake, reason #{text}, exit 0)")
+        end
+      end
+    end
+
+    it "drops an intake unreadable reason that is not one fixed cause" do
+      error = refusal(%({"type":"error","rule":"query_unreadable","reason":"missing SENTINEL"}))
+
+      expect(error.reason).to be_nil
+      expect(error.message).to eq("quaacks probe failed: query_unreadable (exit 0)")
+      expect(error.full_message(highlight: false)).not_to include("SENTINEL")
+    end
+
+    it "drops a reason on any rule but intake unreadable refusals" do
+      error = refusal(%({"type":"error","rule":"bad_config","reason":"missing"}))
+
+      expect(error.reason).to be_nil
+    end
+
     it "drops a function field that isn't one plain qualified name" do
       error = refusal(%({"type":"error","rule":"volatile_function","function":"pg_catalog.random #{sentinel}"}))
 

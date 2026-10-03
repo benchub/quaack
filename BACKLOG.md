@@ -637,18 +637,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 
 ### 20260929-4. Say why driver.json is bad. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-5. Say why intake can't read the query or plan.
-
-`quaack start --query ~/q/query.sql ...` failed with only `query_unreadable`. The laptop's shell had expanded `~` to the laptop's home (`/Users/...`), but `--query` and `--plan` are paths on the jump server, so the file wasn't there. Both sides should help:
-
-- **The driver, before any ssh.** If `--query` or `--plan` is an absolute path under the laptop's own home directory (`Dir.home`), refuse with a usage error: that looks like a path on this laptop, and these are paths on the jump server, so give one relative to your home there, such as `q/query.sql`, or an absolute path there. Decide whether a literal leading `~/` (quoted, so the laptop's shell leaves it) should be expanded on the jump server. If it is, do it in `quaacks`, never with a remote shell.
-- **The enclave.** `query_unreadable` and `plan_unreadable` have several causes that look the same today: missing, a symlink as the last part (refused by `NOFOLLOW`), not a regular file, and no permission. Keep the rule, and add which cause it was, such as `query_unreadable: no such file on the jump server`. Never include the path or the OS's own message, which quotes it. Check the whitelist and the egress rules for what an error line may carry.
-- Update README.md's `quaack start` section and DESIGN.md step 1 to say plainly that the paths are on the jump server, relative to your home there.
-
-- **Depends on:** none.
-- **Came from:** The user's first real `quaack start`, 2026-09-29.
-- **Design:** Step 1, Where QUAACK runs.
-- **Status:** todo
+### 20260929-5. Say why intake can't read the query or plan. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording.
 
@@ -1955,5 +1944,62 @@ Keep the Rakefile's guarantees: every suite runs, an empty suite fails, and the 
 
 - **Depends on:** nothing open.
 - **Came from:** The user, 2026-10-03, after the 20261002-12 landing check took 54 minutes.
+- **Design:** none (development tooling).
+- **Status:** todo
+
+### 20261003-3. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+
+Minor findings from the second review of 20261002-17:
+
+- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
+- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
+- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
+- **Mutations that survive:**
+  - dropping the column's `COLLATE` in `typed`;
+  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
+- **Missing tests:**
+  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
+  - a positive `NOT IN` case;
+  - an ON clause that dropping empties.
+- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
+
+- **Depends on:** 20261002-17.
+- **Came from:** The second review of 20261002-17, 2026-10-03.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261003-4. Intake unreadable causes: minor findings.
+
+Minor findings from the first review of 20260929-5:
+
+- `start.rb:72`: changing `start_with?("#{home_path}/")` to `start_with?(home_path.to_s)` stays green. Add a test where home is `/Users/bench` and the path is `/Users/benchX/q.sql`.
+- `operator_file.rb:54`: removing `ENOTDIR` (a parent that's a regular file) stays green. That case would then be `not_regular_file` instead of `missing`. Pin it.
+- `error_filter.rb:11`: the comment still says "for two rules" and has a stray indent. Restore the `FUNCTION` comment that was deleted from `reply.rb:55`.
+- The driver repeats the list of four reasons in `reply.rb` and `enclave_error.rb`. Share one constant from the protocol gem.
+- From the second review:
+  - `start.rb:72`: removing `path == home_path` or either `cleanpath` call stays green. Test `--query /Users/bench` and `/Users/bench/../x.sql`.
+  - `operator_file.rb` `reason`: `EIO`, `ENAMETOOLONG`, and `IOError` all become `not_regular_file`, which is misleading. Give them their own reason, or a generic one.
+  - No driver spec checks that `--query '~/q.sql'` reaches the remote `quaacks` as a literal `~/q.sql`.
+  - `error_filter.rb:153`: the `instance_of?(String)` check is an equivalent mutant. Keep it with a comment, or drop it.
+
+- **Depends on:** 20260929-5.
+- **Came from:** The first review of 20260929-5, 2026-10-03.
+- **Design:** Step 1.
+- **Status:** todo
+
+### 20261003-5. `rake full`: harden the stamp and close test gaps.
+
+Minor findings from the first review of 20261003-2:
+
+- **`rake spec full` writes the stamp without the full replay.** So does `rake default full`. Rake runs a task only once per invocation, so `full`'s invoke of `:spec` does nothing after `spec` has already run. Make `full` run its suites itself, or refuse when `spec` already ran.
+- **The stamp spec doesn't read the real version constants.** `full_replay_stamp_spec.rb:15` parses the version files with a regex, using a copy of the Rakefile's path map. If the regex stops matching, the Rakefile stamps `null` and the spec compares nil with nil, so it passes. Compare against the loaded `Quaack::*::VERSION` constants, and refuse to stamp a nil.
+- **Exporting `QUAACK_FULL_REPLAY=1` makes plain `rake` skip the stamp check** (`full_replay_stamp_spec.rb:19`).
+- **No test covers RuboCop failing during `rake full`** (`Rakefile:79`). The stamp is skipped today, but nothing pins that.
+- **The `reject { it == EMPTY }` in `spec/support/pipeline_replay.rb` is untested.** Without it, a query with no replies at all would run the all-empty variant instead of failing.
+- **CLAUDE.md wording.** The Docker and pg_dump bullets still say "the full check", which now reads as `rake full`, though both apply to plain `rake` too.
+- **Where the enclave suite's time goes.** The builder's profile: about 9½ minutes, led by `standalone_require_spec` (39s), then `candidate_runs_step_postgres_spec` (26s), then the baseline, schema-dump, and step specs. Trim these if they're worth it.
+
+- **Depends on:** 20261003-2.
+- **Came from:** The first review of 20261003-2, 2026-10-03.
 - **Design:** none (development tooling).
 - **Status:** todo

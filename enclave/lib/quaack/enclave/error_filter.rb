@@ -8,7 +8,7 @@ module Quaack
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
     # SQLSTATE if there was one, plus, for two rules, the shape-class detail
-    # below (function and clients).
+    #   below (reason, function, and clients).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "9b")
     #   # => '{"type":"error","step":"9b","rule":"internal_error","sqlstate":"23505"}'
@@ -32,6 +32,9 @@ module Quaack
     #   only when the rule is volatile_function (DESIGN.md 3d). It must be one
     #   plain, unquoted, schema-qualified name, such as pg_catalog.random.
     #   Otherwise it's left out, so a quoted name is never sent.
+    # - The reason comes from the error's reason method, and is sent only
+    #   when the rule is query_unreadable or plan_unreadable. It must be one
+    #   of the fixed intake causes, never a path or OS message.
     # - The clients come from the error's clients method, and are sent only
     #   when the rule is run_server_other_clients (DESIGN.md, step 4). They must
     #   be a non-empty Array of at most MAX_CLIENTS Hashes, each with exactly
@@ -50,6 +53,8 @@ module Quaack
       SQLSTATE = /\A[0-9A-Z]{5}\z/
       FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
       FUNCTION_RULE = "volatile_function"
+      UNREADABLE_RULES = %w[query_unreadable plan_unreadable].freeze
+      UNREADABLE_REASONS = %w[missing symlink not_regular_file permission_denied].freeze
       BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
       CLIENTS_RULE = "run_server_other_clients"
       CLIENT_KEYS = %w[pid backend_start].freeze
@@ -69,15 +74,19 @@ module Quaack
       # never raises: anything that goes wrong gives FALLBACK.
       def to_egress(exception, step:)
         rule = name(ask(exception, :rule), RULE) || INTERNAL_ERROR
-        message = { type: :error, step: name(step, STEP), rule:, sqlstate: sqlstate(exception),
-                    function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
-                    clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE) }
-        line = Egress.serialize(message.compact)
+        line = Egress.serialize(error_message(exception, step, rule))
         line.is_a?(String) ? line : FALLBACK
       rescue SignalException
         raise
       rescue Exception # rubocop:disable Lint/RescueException
         FALLBACK
+      end
+
+      def error_message(exception, step, rule)
+        { type: :error, step: name(step, STEP), rule:, sqlstate: sqlstate(exception),
+          reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
+          function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
+          clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE) }.compact
       end
 
       # Runs the block and returns its value. If it raises anything, even a
@@ -140,6 +149,8 @@ module Quaack
       def shaped?(value, pattern) = value.instance_of?(String) && value.ascii_only? && value.match?(pattern)
 
       def shaped_or_nil(value, pattern) = (value if shaped?(value, pattern))
+
+      def reason(value) = (value if value.instance_of?(String) && UNREADABLE_REASONS.include?(value))
 
       # clients if it's an Array of 1 to MAX_CLIENTS clients, each a Hash
       # with exactly CLIENT_KEYS, and nil otherwise.

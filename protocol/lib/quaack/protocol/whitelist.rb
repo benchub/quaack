@@ -20,7 +20,10 @@ module Quaack
       column_stats: %i[table column n_distinct null_frac correlation mcv_freqs low_card_values].freeze,
       # A failed step: which step, which rule it broke, and the Postgres
       # SQLSTATE if there was one. Never the error's message text, which can
-      # hold a real value. function is only on a volatile_function refusal
+      # hold a real value. reason is only on a query_unreadable or
+      # plan_unreadable refusal from intake: one of the enclave's fixed cause
+      # names, such as missing or permission_denied. It never comes from the
+      # path or the OS message. function is only on a volatile_function refusal
       # (DESIGN.md 3d): the volatile function's schema-qualified name, which
       # is schema and so shape. The enclave's ErrorFilter sends it only if
       # it's one plain schema.name identifier pair. clients is only on a
@@ -31,7 +34,7 @@ module Quaack
       # number and a clock time, neither configuration nor free text. No
       # other pg_stat_activity column goes out. The enclave's ErrorFilter
       # sends clients only if every entry has exactly that shape.
-      error: %i[step rule sqlstate function clients].freeze,
+      error: %i[step rule sqlstate reason function clients].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
