@@ -65,11 +65,56 @@ module Quaack
           WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attname = $3 AND a.attnum > 0
         SQL
 
+        # The column type's default btree operator family: the type's own
+        # default btree opclass, or failing that the one opclass of a
+        # preferred type it coerces to without a function, as varchar does to
+        # text, which is how Postgres picks varchar's =. A domain, an enum, or
+        # an array has neither, so it has none.
+        BTREE_FAMILY = <<~SQL.freeze
+          WITH col AS (
+            SELECT a.atttypid AS type FROM pg_catalog.pg_attribute a
+            WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attname = $3 AND a.attnum > 0
+          ), opclasses AS (
+            SELECT c.opcfamily, c.opcintype, c.opcintype = col.type AS exact, t.typispreferred AS preferred
+            FROM col
+            JOIN pg_catalog.pg_opclass c ON c.opcdefault
+            JOIN pg_catalog.pg_am am ON am.oid = c.opcmethod AND am.amname = 'btree'
+            JOIN pg_catalog.pg_type t ON t.oid = c.opcintype
+            WHERE c.opcintype = col.type
+               OR EXISTS (SELECT 1 FROM pg_catalog.pg_cast k
+                          WHERE k.castsource = col.type AND k.casttarget = c.opcintype AND k.castmethod = 'b')
+          )
+          SELECT o.opcfamily, col.type FROM opclasses o, col
+          WHERE o.exact OR (o.preferred AND NOT EXISTS (SELECT 1 FROM opclasses e WHERE e.exact))
+        SQL
+
+        # How many operators named =, <, <=, >, or >= between two of the
+        # column's type ($2) aren't in the family ($1) under that name.
+        # Postgres picks an operator taking exactly the column's type over
+        # any other.
+        BTREE_OPERATORS = <<~SQL
+          WITH strategies (strategy, name) AS (VALUES (1, '<'), (2, '<='), (3, '='), (4, '>='), (5, '>'))
+          SELECT count(*) FROM strategies s
+          JOIN pg_catalog.pg_operator op ON op.oprname = s.name AND op.oprleft = $2 AND op.oprright = $2
+          WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_amop o
+                            WHERE o.amopfamily = $1 AND o.amopopr = op.oid AND o.amopstrategy = s.strategy)
+        SQL
+
         def initialize(connection)
           @connection = connection
           @met = {}
           @columns = {}
           @column_info = {}
+          @default_btree = {}
+        end
+
+        # Whether =, <, <=, >, and >= between two values of the column's type
+        # are the operators of its default btree family, so values that = calls
+        # equal compare alike under all five.
+        def default_btree?(schema, table, column)
+          @default_btree.fetch([schema, table, column]) do
+            @default_btree[[schema, table, column]] = default_btree_family?(schema, table, column)
+          end
         end
 
         def columns(schema, table)
@@ -92,6 +137,15 @@ module Quaack
             @met[assumption] = RewriteAssumptions.assumption?(assumption) &&
                                AssumptionCheck.met?(assumption, @connection)
           end
+        end
+
+        private
+
+        def default_btree_family?(schema, table, column)
+          families = @connection.exec_params(BTREE_FAMILY, [schema, table, column]).values
+          return false unless families.size == 1
+
+          @connection.exec_params(BTREE_OPERATORS, families.first).getvalue(0, 0) == "0"
         end
       end
     end
