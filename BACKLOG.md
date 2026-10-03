@@ -2034,6 +2034,7 @@ Update DESIGN.md's "Unsupported in v1" note for step 9. Test it against real Pos
 - **Depends on:** none.
 - **Came from:** A failed `quaack run` the user hit, 2026-10-03.
 - **Design:** Step 9.
+- **Note (2026-10-03, answers):** When an LLM row from 10a-10c sets a value in an ignored foreign-key column, load the row with NULL there, then set the column to the LLM's value with an UPDATE once every table is loaded. That keeps the row as the LLM wrote it.
 - **Status:** todo
 
 ### 20261003-18. A scenario refusal shouldn't end the run.
