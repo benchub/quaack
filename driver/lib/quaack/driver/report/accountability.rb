@@ -63,11 +63,26 @@ module Quaack
 
         # What the payload carries for every source together: the declined
         # and existing indexes of a negative result, each counted once, and
-        # the built indexes, by whether a ranked candidate ran with one
-        # (Indexes#proposed).
+        # the built indexes. One is ranked if a ranked candidate ran with it
+        # (Indexes#proposed). The not better and ranked columns needn't add
+        # up to the built ones: see not_better_indexes.
         def index_totals
           [negative && negative["existing"].size, negative && negative["declined"].size, indexes.size,
-           unproposed.size, proposed.size]
+           not_better_indexes.size, proposed.size]
+        end
+
+        # The built indexes that were not better: at least one measured
+        # label ran with it, and 14d excluded every one of them as
+        # not_better. One label that did anything else keeps the index out,
+        # so an index with mixed labels (one not better, one that beat the
+        # original and tied) isn't counted here. Neither is one whose label
+        # tied, fell below the top three, was dropped in 14c, or timed out,
+        # nor one no label ran with. Those count only as built.
+        def not_better_indexes
+          indexes.keys.select do |name|
+            ran = labels.select { it["indexes"].include?(name) }
+            !ran.empty? && ran.all? { excluded[it["label"]] == "not_better" }
+          end
         end
 
         # Every search's record of each stage.

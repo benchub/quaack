@@ -708,6 +708,53 @@ RSpec.describe Quaack::Driver::Report do
           .to eq(["not recorded", "not recorded", "not recorded", "2", "1", "1"])
       end
 
+      describe "the not better column" do
+        # Built, not better, ranked, for all sources. quaack_a is ranked.
+        # quaack_b ran only in rewrite_1:top:1, and in other if it's given.
+        def built(reason, other = nil)
+          second = payload["labels"][2].merge("label" => "original:top:2", "search" => "original")
+          changed = payload.merge("excluded" => { "rewrite_1:top:1" => reason, "original:top:2" => other }.compact,
+                                  "labels" => payload["labels"] + (other ? [second] : []))
+          rows(render(changed), "indexes")["All sources together"].last(3)
+        end
+
+        it "counts an index whose every label was not better" do
+          expect(built("not_better")).to eq(%w[2 1 1])
+          expect(built("not_better", "not_better")).to eq(%w[2 1 1])
+        end
+
+        it "doesn't count an index whose only label beat the query and tied on index size" do
+          expect(built("footprint_tie")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index whose only label beat the query and fell below the top three" do
+          expect(built("below_top_three")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index whose only label timed out and was never judged" do
+          payload["labels"][2].merge!("timed_out" => true, "measurements" => nil, "verdicts" => nil)
+          expect(built(nil)).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index with mixed labels: one not better, one that beat the query" do
+          expect(built("not_better", "footprint_tie")).to eq(%w[2 0 1])
+          expect(built("below_top_three", "not_better")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count a built index that no measured label ran with" do
+          payload["indexes"]["quaack_c"] = payload["indexes"]["quaack_b"]
+          expect(built("not_better")).to eq(%w[3 1 1])
+        end
+
+        it "says under the table why the last two columns needn't add up to the built ones" do
+          expect(section(html, "accountability")).to include(
+            "An index counts as not better only if no candidate that ran with it beat your query. A built index " \
+            "whose candidate beat your query and still wasn't ranked (it tied with a smaller one, or three others " \
+            "did better), or whose candidate timed out, is counted only under built and measured."
+          )
+        end
+      end
+
       it "counts the declined and existing indexes of a negative result" do
         expect(rows(render(negative_payload), "indexes")["All sources together"])
           .to eq(["not recorded", "1", "3", "2", "2", "0"])
@@ -864,7 +911,96 @@ RSpec.describe Quaack::Driver::Report do
   end
 
   describe "escaping" do
-    it "escapes every value the payload carries" do
+    # A sentinel with the characters that would break out of text and out
+    # of an attribute. It goes in every field of the payload that can hold
+    # a String, and in the counts too, since a cell prints whatever it's
+    # given.
+    let(:z) { %(<zz&"zz>) }
+    let(:escaped) { "&lt;zz&amp;&quot;zz&gt;" }
+
+    let(:counts) { { "total_blocks" => z, "hit" => z, "read" => z, "stable" => false, "timed_out" => false } }
+    let(:node) do
+      { "node" => z, "relation" => z, "index" => z, "est_rows" => z, "actual_rows" => z, "selectivity" => nil }
+    end
+    let(:record) do
+      { "in" => z, "added" => { z => 1 }, "dropped" => { z => 1 }, "set_aside" => z, "out" => z,
+        "extra" => { z => 1 } }
+    end
+
+    let(:sentinels) do
+      { "type" => "report",
+        "top" => [{ "label" => "#{z}:top:1", "slow_blocks" => z, "total_blocks_sum" => z, "footprint" => 8192 }],
+        "excluded" => { "#{z}:none" => "not_better", "#{z}:top:2" => z }, "infinite_sets" => [z],
+        "original_sql" => "SELECT #{z}", "original_measurements" => { z => counts, "slow" => { "timed_out" => true } },
+        "labels" => [{ "label" => "#{z}:top:1", "search" => z, "indexes" => ["quaack_z", z], "timed_out" => false,
+                       "measurements" => { z => counts }, "verdicts" => { z => z } },
+                     { "label" => "#{z}:top:3", "search" => z, "indexes" => [z], "timed_out" => true,
+                       "measurements" => nil, "verdicts" => nil }],
+        "rewrites" => [{ "rewrite" => z, "sql" => "SELECT #{z}", "source" => "rule", "rules" => [z, z],
+                         "fate" => "step9_disproved", "scenario" => z, "rule" => z, "round" => z, "after" => z,
+                         "plan" => [node], "untested_atoms" => [{ "shape" => z }, z], "evidence" => false }],
+        "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
+                                       "covered_by" => { "name" => z, "size_bytes" => 1 },
+                                       "makes_redundant" => [{ "name" => z, "size_bytes" => nil }] },
+                       z => { "ddl" => nil, "size" => z, "covered_by" => nil, "makes_redundant" => [] } },
+        "original_plan" => [node], "timed_out_count" => 1,
+        "rule_bugs" => [{ "rewrite" => z, "rules" => [z], "step" => z }],
+        "burndown" => { "stages" => { "5a-3" => { "original" => record, z => record },
+                                      "6c" => { "rewrites" => record } },
+                        "totals" => { z => 1 } } }
+    end
+
+    let(:negative_sentinels) do
+      sentinels.merge(
+        "top" => [],
+        "negative" => { "declined" => [{ "ddl" => z, "reason" => "hypopg_refused", "sqlstate" => z,
+                                         "searches" => [z, "rewrite_#{z}"] },
+                                       { "ddl" => nil, "reason" => z, "sqlstate" => z, "searches" => [z] }],
+                        "existing" => [{ "ddl" => z, "covered_by" => { "name" => z, "size_bytes" => z },
+                                         "searches" => [z] }] }
+      )
+    end
+
+    def rendered(payload) = described_class.render(payload, run_id: z, llm_calls: { z => 1 })
+
+    # Each place a value is printed, by the markup just before it.
+    def expect_escaped(out, *places)
+      places.each { expect(out).to include("#{it}#{escaped}") }
+    end
+
+    it "lets no markup from a winning payload through, in text or in an attribute" do
+      out = rendered(sentinels)
+      expect(out).not_to include("<zz")
+      expect(out).not_to include('"zz')
+      expect(out.scan(escaped).size).to be > 60
+    end
+
+    it "lets no markup from a negative payload through, in text or in an attribute" do
+      out = rendered(negative_sentinels)
+      expect(out).not_to include("<zz")
+      expect(out).not_to include('"zz')
+      expect(out.scan(escaped).size).to be > 40
+    end
+
+    it "prints, escaped, every value a winning report shows" do
+      expect_escaped(rendered(sentinels),
+                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
+                     %(<article class="rewrite" id="#{escaped}"><h3>), "QUAACK found something better than your " \
+                                                                       "query as it is: ",
+                     "<code>SELECT ", "rewrite rules ", "<li><code>", '<tr class="rank"><td class="num">1</td><td>',
+                     '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
+                     "</td><td>",
+                     %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
+                     "<ul><li>", " on ", " using ", "<td>", "<td>by the rule ")
+    end
+
+    it "prints, escaped, every value a negative report shows" do
+      expect_escaped(rendered(negative_sentinels),
+                     '<ul id="negative-rewrites"><li>', "<tr><td><code>", "</code></td><td>", ", rewrite_",
+                     "(Postgres error code ", %(#{escaped}</td><td>), '<ul id="not-ranked"><li>')
+    end
+
+    it "escapes what the payload carries in the first report too" do
       payload["original_sql"] = "SELECT <b>orig</b>"
       payload["rewrites"].first.merge!("sql" => "SELECT <b>rw</b>", "untested_atoms" => ["<b>atom</b>"])
       payload["indexes"]["quaack_a"].merge!("ddl" => "CREATE INDEX ON <b>t</b>",
