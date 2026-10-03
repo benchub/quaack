@@ -656,7 +656,7 @@ The round-one review of 20260929-3 left these minor findings. The code is in `dr
 
 - **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
 - **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
-- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH.
+- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH. **Decided (the user, 2026-10-03):** say quaacks isn't installed for this Ruby, tell the user to run `quaack deploy`, and mention the other quaacks on PATH.
 - **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
 - **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
 - **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
@@ -830,7 +830,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
 
-`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces.
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
 
 - **Depends on:** 20260929-24.
 - **Came from:** Review of 20260929-24, round one.
@@ -1106,6 +1106,7 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 
 - **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
 - **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
+- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
 
 A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
 
@@ -1175,6 +1176,7 @@ Add it to 6c's table in DESIGN.md.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c, 8.
 - **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
+- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
 - **Status:** todo
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`.
@@ -1194,6 +1196,7 @@ It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
+- **Note (2026-10-03, answers):** Don't copy `IS NOT NULL`. Put the copy in the same place as the source conjunct: the top-level `WHERE`, or that inner join's `ON`. The copy reuses the source's placeholders, and the "already there" check uses `Literals#same?`.
 - **Status:** todo
 
 ### 20261002-8. 6c rule: `cte_hoist_dedupe`.
@@ -1215,6 +1218,7 @@ Add it to 6c's table in DESIGN.md.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
 - **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-03, answers):** Merge CTEs with any materialization option, as long as every copy has the same one, and keep it. Merged plain CTEs may become materialized, and steps 8 onward decide whether that helps. A hoisted CTE whose name clashes at the top level is renamed `quaack_cte_<n>`.
 - **Status:** todo
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`.
@@ -1262,6 +1266,8 @@ The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHE
 It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
 
 Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
 
 Add it to 6c's table in DESIGN.md.
 
