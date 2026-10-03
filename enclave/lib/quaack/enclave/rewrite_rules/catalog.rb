@@ -2,6 +2,7 @@
 
 require_relative "../assumption_check"
 require_relative "../rewrite_assumptions"
+require_relative "catalog/standalone"
 
 module Quaack
   module Enclave
@@ -33,7 +34,15 @@ module Quaack
       # facts, and no rewrite's rows depend on it: a UNION over a type with
       # no equality, such as json, is an error, not other rows. A table
       # that doesn't exist has no columns.
+      #
+      # For a rule that moves a subquery, it says whether one SELECT stands
+      # on its own and whether it might call a volatile function:
+      #
+      #   catalog.self_contained?("SELECT o.id FROM public.orders o WHERE o.total > $1")   # => true
+      #   catalog.calls_volatile?("SELECT random()")                                       # => true
       class Catalog
+        include Standalone
+
         Column = Data.define(:name, :comparable)
         Info = Data.define(:type, :collation, :deterministic)
 
