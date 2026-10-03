@@ -751,14 +751,7 @@ In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-5
 - **Design:** Steps 9 and 10.
 - **Status:** todo
 
-### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps.
-
-Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through the oid map SingleCandidateTest builds. Step 8's cross-session plan match (ThreeConfigurationPruning), and 5a-7's IndexRanking, depend on it. Passing an empty or nil map from SCT fails SCT's own specs, but no pruning or ranking spec. Add a pruning test that would break if the same index got a different oid in each session and the map were missing.
-
-- **Depends on:** 20260924-1.
-- **Came from:** Review of 20260924-1, round one.
-- **Design:** 5a-7, step 8.
-- **Status:** todo
+### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-1. Teardown: capture the run's error exactly. Done, see BACKLOG-COMPLETE.md.
 

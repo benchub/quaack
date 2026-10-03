@@ -3643,3 +3643,22 @@ It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` 
   - **Tests:** 22 examples on real Postgres, with mutation checks on every branch.
   - **Review:** one round, clean. The reviewer ran 20 Rails-style queries on data with NULLs and duplicates, and every rewrite returned the same rows.
   - **Follow-ups:** minor findings and the build's out-of-scope gaps went to 20261003-11. Nested SELECTs for `implied_predicate_removal` are already in 20261003-6.
+
+### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps.
+
+Since 20260924-1, CanonicalPlan tells hypothetical indexes apart only through the oid map SingleCandidateTest builds. Step 8's cross-session plan match (ThreeConfigurationPruning), and 5a-7's IndexRanking, depend on it. Passing an empty or nil map from SCT fails SCT's own specs, but no pruning or ranking spec. Add a pruning test that would break if the same index got a different oid in each session and the map were missing.
+
+- **Depends on:** 20260924-1.
+- **Came from:** Review of 20260924-1, round one.
+- **Design:** 5a-7, step 8.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20260929-30. Tests only.
+  - **Why the old specs missed it:** HypoPG reuses the same fake oids after each reset, so they stayed green with an empty map.
+  - **Change:** the new pruning test and the new ranking test both set `hypopg.use_real_oids`, so each session gives its indexes new oids, and both first check that the oids really differ.
+    - **Pruning:** a rewrite whose plans match the original's must still be discarded.
+    - **Ranking:** the canonical plans must match the same indexes planned in a later session.
+  - **Mutations:** an empty map from SingleCandidateTest turns both tests red, and so does CanonicalPlan ignoring the map.
+  - **Review:** one round, clean.
+    - The `SET` is per session, and each example gets its own database, so the setting can't leak into other examples.
+    - Both tests passed across several seeds.
+    - Nothing reads `Entry#canonical_plans` yet, so the ranking test pins it for later users.
