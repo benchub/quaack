@@ -1009,26 +1009,11 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-23. 6c: run the rules from `quaack run`, and count them. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-24. 6c rule: `or_to_union`.
+### 20261001-24. 6c rule: `or_to_union`. Done, see BACKLOG-COMPLETE.md.
 
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-25. 6c rule: `not_in_to_not_exists`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-25. 6c rule: `not_in_to_not_exists`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
-
-### 20261001-26. 6c rule: `distinct_join_to_exists`.
-
-- **Depends on:** 20261001-22.
-- **Came from:** 20261001-21.
-- **Design:** 6c.
-- **Status:** todo
+### 20261001-26. 6c rule: `distinct_join_to_exists`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-27. 6c rule: `unused_join_removal`.
 
@@ -1098,7 +1083,9 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Design:** 6c, step 9, step 10, 15, 15b.
 - **Status:** todo
 
-### 20261002-3. 6c rule: `polymorphic_key_copy`, checked against the data.
+### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data.
+
+- **Note:** First filed as 20261002-3. Renumbered when merging another machine's work, which had already used -3.
 
 A hand-tuned Canvas query got much faster by repeating a predicate across a join. The original read:
 
@@ -1128,9 +1115,10 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 - **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
 - **Status:** todo
 
-### 20261002-4. `distinct_join_to_exists`: handle what Rails sends.
+### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
 
-- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands.
+- **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
+- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
 
 A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
 
@@ -1155,7 +1143,9 @@ Test it with this query's shape. Also test that the rule refuses when the select
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261002-5. 6c rule: `implied_predicate_removal`.
+### 20261002-17. 6c rule: `implied_predicate_removal`.
+
+- **Note:** First filed as 20261002-5. Renumbered when merging another machine's work, which had already used -5.
 
 The same query also had `enrollments.workflow_state <> 'deleted' AND enrollments.workflow_state = 'active'` and `enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment', ...) AND enrollments.type = 'TeacherEnrollment'`. Rails scopes stack predicates like this. Postgres doesn't remove the implied ones. It multiplies their selectivities, so it underestimates rows, and that can pick a bad plan.
 
@@ -1197,7 +1187,7 @@ Add it to 6c's table in DESIGN.md.
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c, 8.
-- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-5's `Literals#same?`, never by reading values.
+- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
 - **Status:** todo
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`.
@@ -1212,7 +1202,7 @@ The rule: for each equality `a.x = b.y` in a top-level `AND` of `WHERE` or of an
 
 It's sound with no catalog facts: any row that passes has `a.x = b.y`, so `b.y` passes whatever `a.x` passes. It states no assumptions. Apply it to a fixed point within one rule call, so chains such as `a.x = b.y = c.z` carry across in one step.
 
-20261002-3 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
+20261002-15 also copies a predicate, but its proof comes from the data. This rule's proof comes from the query, so it stays a sound rule. Add it to 6c's table in DESIGN.md.
 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
@@ -1237,7 +1227,7 @@ Add it to 6c's table in DESIGN.md.
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
-- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-5's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-02, answers):** Match CTE bodies with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
 - **Status:** todo
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`.
@@ -1258,7 +1248,7 @@ Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees 
 - **Depends on:** 20261001-22.
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6c.
-- **Note (2026-10-02, answers):** Match conjuncts with 20261002-5's `Literals#same?` for their placeholders, never by reading values.
+- **Note (2026-10-02, answers):** Match conjuncts with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
 - **Status:** todo
 
 ### 20261002-10. 6c rule: `existence_in_flip`.
@@ -1311,6 +1301,54 @@ With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules
 - **Depends on:** none.
 - **Came from:** The 20261002-13 build, 2026-10-02.
 - **Design:** Development (CLAUDE.md, the full check).
+- **Status:** todo
+
+### 20261002-3. `not_in_to_not_exists`: minor findings.
+
+Minor findings from both reviews of 20261001-25:
+
+- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and step 8 drops it. Collect FROM names too.
+- Untested lines: the fresh alias avoiding a taken name (`not_in_to_not_exists.rb:178`); `assumptions.uniq` (`:83`); `realias!` keeping column aliases (`:187`).
+- A column whose type is a domain with a NOT NULL constraint doesn't count as not null, since `AssumptionCheck` reads only `pg_constraint`'s `n` and `p`. Conservative: a missed rewrite, not a wrong one.
+- The rule assumes `=` gives true or false for two non-NULL values. A user-defined `=` that returns NULL breaks that. Noted in the rule's header.
+- Extensions for later: row-valued NOT IN, set-operation subqueries arm by arm, NOT IN outside the top-level WHERE, `<> ALL`.
+
+- **Depends on:** 20261001-25.
+- **Came from:** The build and both reviews of 20261001-25.
+- **Design:** 6b, 6c.
+- **Status:** todo
+
+### 20261002-4. `distinct_join_to_exists`: minor findings.
+
+Minor findings from the build and both reviews of 20261001-26:
+
+- No committed spec runs this rule through `quaacks rewrite-rules`; only `key_in_self_join` is covered that way. A review probe showed the path works. Add one.
+- One guard in `Tree.tables?` (a FROM item with no table) is killed only by a pg_query segfault, not an assertion. Have the rule refuse a nil table explicitly.
+- Composite keys are refused. Supporting them needs not-null stated per key column.
+- A unique index in a different collation or operator class from its column could make DISTINCT's equality differ from the index's. An `AssumptionCheck` matter, shared with the other rules.
+- Select-list expressions beside the key, and subqueries in conditions on the kept table alone, are refused though some are sound.
+- `Catalog#columns` on a star with no single-column key costs a catalog query per column. One query for the table's keys would be cheaper.
+- `spec/support/test_postgres.rb:245` raises when two spec processes remove the same stale container at once, which gives spurious red runs while agents run in parallel. Treat "already in progress" as success.
+
+- **Depends on:** 20261001-26.
+- **Came from:** The build and both reviews of 20261001-26.
+- **Design:** 6b, 6c.
+- **Status:** todo
+
+### 20261002-5. `or_to_union`: minor findings.
+
+Minor findings from both reviews of 20261001-24:
+
+- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. Steps 9, 10 or 14c could then report a sound rewrite as a rule bug. Fix in 3h: type a placeholder when every occurrence feeds a column of the same date type.
+- **Guarding arms can raise.** Split arms are all evaluated, so `i.qty = 0 OR i.total / i.qty > 10 OR o.vip` raises division by zero where the original returns rows. Never wrong rows. Refuse, or note it in DESIGN.md.
+- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm steps 9 and 10 don't report that as a rule bug.
+- Test gaps: the `@columns` cache key's schema part (`catalog.rb`); column names of 62 or 63 characters, which the `_1` suffix pushes past Postgres's limit (no rewrite results, but untested).
+- DESIGN.md's row leaves out several refusals: a subquery in the select list or ORDER BY; unqualified columns, a bare `*`, or ORDER BY an output name; an unnamed cast, COALESCE or CASE over a column; NATURAL or USING joins; ONLY; column aliases.
+- Extensions for later: composite keys, GROUP BY, outer joins, a bare `*`.
+
+- **Depends on:** 20261001-24.
+- **Came from:** Both reviews of 20261001-24.
+- **Design:** 3h, 6c.
 - **Status:** todo
 
 ## After version 1.

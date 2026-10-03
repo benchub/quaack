@@ -42,36 +42,21 @@ module Quaack
           # operation or a UNION with clauses of its own.
           def self.selects(select)
             return [select] if select.op == :SETOP_NONE
-            return unless select.op == :SETOP_UNION && unlimited?(select) && select.with_clause.nil?
+            return unless select.op == :SETOP_UNION && Tree.unlimited?(select) && select.with_clause.nil?
 
             left = selects(select.larg)
             right = selects(select.rarg)
             left + right if left && right
           end
 
-          def self.unlimited?(select)
-            select.sort_clause.empty? && select.limit_count.nil? && select.limit_offset.nil? &&
-              select.locking_clause.empty?
-          end
-
-          def self.plain?(select)
-            unlimited?(select) && select.with_clause.nil? && select.group_clause.empty? &&
-              select.having_clause.nil? && select.window_clause.empty? && select.distinct_clause.all? { it.node.nil? }
-          end
-
           def self.read(select, table, key)
             items = Tree.from_items(select.from_clause)
             conditions = Tree.inner_conditions(select.from_clause)
-            return unless plain?(select) && conditions && tables?(items)
+            return unless Tree.plain_select?(select) && conditions && Tree.tables?(items)
 
             arm = new(inner: key_table(select, key), others: items, predicates: Tree.conjuncts(select.where_clause) +
                                                                                 conditions)
             arm.without_inner(table)
-          end
-
-          # Whether every FROM item is a plain table under a name of its own.
-          def self.tables?(items)
-            items.all? { it.table && Tree.plain_table?(it.table) } && items.map(&:name).uniq.size == items.size
           end
 
           # The qualifier of the select list's one column, if that's key.
