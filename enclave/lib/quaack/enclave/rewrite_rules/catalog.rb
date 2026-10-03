@@ -35,6 +35,7 @@ module Quaack
       # that doesn't exist has no columns.
       class Catalog
         Column = Data.define(:name, :comparable)
+        Info = Data.define(:type, :collation, :deterministic)
 
         COMPARABLE = %w[bool int2 int4 int8 oid float4 float8 numeric text varchar bpchar name uuid date time timetz
                         timestamp timestamptz interval bytea].freeze
@@ -52,10 +53,23 @@ module Quaack
           ORDER BY a.attnum
         SQL
 
+        COLUMN_INFO = <<~SQL.freeze
+          SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+                 CASE WHEN a.attcollation = 0 THEN NULL
+                      ELSE pg_catalog.format('%I.%I', cn.nspname, co.collname)
+                 END AS collation,
+                 a.attcollation = 0 OR co.collisdeterministic AS deterministic
+          FROM pg_catalog.pg_attribute a
+          LEFT JOIN pg_catalog.pg_collation co ON co.oid = a.attcollation
+          LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace
+          WHERE a.attrelid = #{AssumptionCheck::RELATION} AND a.attname = $3 AND a.attnum > 0
+        SQL
+
         def initialize(connection)
           @connection = connection
           @met = {}
           @columns = {}
+          @column_info = {}
         end
 
         def columns(schema, table)
@@ -65,6 +79,13 @@ module Quaack
         end
 
         def column_names(schema, table) = columns(schema, table).map(&:name)
+
+        def column_info(schema, table, column)
+          @column_info[[schema, table, column]] ||= begin
+            row = @connection.exec_params(COLUMN_INFO, [schema, table, column]).first
+            Info.new(type: row["type"], collation: row["collation"], deterministic: row["deterministic"] == "t") if row
+          end
+        end
 
         def met?(assumption)
           @met.fetch(assumption) do
