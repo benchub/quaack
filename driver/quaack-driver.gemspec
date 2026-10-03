@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.4"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.files = Dir.glob(["lib/**/*.rb", "exe/*"], base: __dir__)
+  spec.files = Dir.glob(["lib/**/*.rb", "lib/**/*.erb", "exe/*"], base: __dir__)
   spec.bindir = "exe"
   spec.executables = ["quaack"]
   spec.require_paths = ["lib"]

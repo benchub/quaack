@@ -508,7 +508,7 @@ RSpec.describe Quaack::Driver::Pipeline, "report stage" do
 
     described_class.new(transport: t, client:, run_id: "RUN", out:).run
 
-    expect(File.read(out)).to include("<li>LLM calls, 5a-5: 2</li>")
+    expect(File.read(out)).to include("<li>Index suggestions for the original query: 2 calls</li>")
   end
 
   it "fails with no_report when the enclave sends no report" do

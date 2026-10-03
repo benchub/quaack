@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>QUAACK report <%= h run_id %></title>
+<style>
+  body { font: 16px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c2430; background: #fff;
+         max-width: 62rem; margin: 2rem auto; padding: 0 1.5rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 2px solid #d5dbe3; }
+  h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+  p, ul { margin: 0.5rem 0; }
+  #summary { background: #eef4fb; border-left: 5px solid #2f6fb3; padding: 0.75rem 1.25rem; }
+  #summary h2 { border: 0; margin-top: 0; }
+  #summary p:first-of-type { font-size: 1.1rem; font-weight: 600; }
+  #quaack-bugs { background: #fdecec; border-left: 5px solid #c0392b; padding: 0.75rem 1.25rem; margin-bottom: 2rem; }
+  #quaack-bugs h2 { border: 0; margin-top: 0; }
+  table { border-collapse: collapse; margin: 0.75rem 0; }
+  th, td { border: 1px solid #d5dbe3; padding: 0.3rem 0.65rem; text-align: left; vertical-align: top; }
+  thead th { background: #f3f5f8; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.missing { color: #6d7785; font-style: italic; }
+  code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+  pre.sql { background: #f3f5f8; border: 1px solid #d5dbe3; border-radius: 4px; padding: 0.75rem 1rem;
+            overflow-x: auto; line-height: 1.4; }
+  article { margin: 1rem 0 1.75rem; }
+  .note { color: #515b69; font-size: 0.92rem; }
+</style>
+</head><body>
+<h1>QUAACK report <%= h run_id %></h1>
+<% unless rule_bugs.empty? %>
+<section id="quaack-bugs"><h2>QUAACK bug: a rule made a wrong rewrite</h2>
+<p>QUAACK's own rewrite rules are meant to be sound: a rewrite one makes should return the same rows as your query on any data. A test proved each rewrite below wrong, so a rule has a bug. QUAACK dropped these rewrites, and the rest of this report still holds. Please report this, with the names of the rules.</p>
+<ul><% rule_bugs.each do |b| %><li><%= h bug(b) %></li><% end %></ul>
+</section>
+<% end %>
+<section id="summary"><h2>The verdict</h2>
+<% summary.each do |paragraph| %>
+<p><%= h paragraph %></p>
+<% end %>
+</section>
+<section id="queries"><h2>The queries</h2>
+<p class="note">Each <code>$1</code>, <code>$2</code>, and so on stands for a value from your query. The values themselves never leave your jump server.</p>
+<h3>Your query</h3>
+<%= sql(original_sql) %>
+<% rewrites.each do |r| %>
+<article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><h3><%= h Words.rewrite(r["rewrite"]) %></h3>
+<p class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</p>
+<p class="fate">What became of it: <%= h fate(r) %></p>
+<%= sql(r["sql"]) %>
+<% unless atoms(r).empty? %>
+<p>The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. <%= h atoms_note(r) %></p>
+<ul><% atoms(r).each do |a| %><li><%= code(a) %></li><% end %></ul>
+<% end %>
+</article>
+<% end %>
+</section>
+<section id="ranking"><h2>Ranking</h2>
+<% if winner %>
+<p>A candidate is your query, or a rewrite of it, run with a set of new indexes. To be ranked, it must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins.</p>
+<table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indexes</th></tr></thead>
+<tbody>
+<% top.each_with_index do |t, i| %>
+<tr class="rank"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
+<% end %>
+</tbody></table>
+<% else %>
+<p>Nothing beat your query as it is, so there is no ranking. To be ranked, a candidate must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values.</p>
+<% end %>
+<% unless unranked.empty? %>
+<h3>Measured, and not ranked</h3>
+<ul id="not-ranked"><% unranked.each do |sentence| %><li><%= h sentence %></li><% end %></ul>
+<% end %>
+<% top.each_with_index do |t, i| %>
+<article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>
+<% if (r = rewrite_of(t["label"])) %>
+<p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(Words.rewrite(r["rewrite"])) %></a>, above.</p>
+<% end %>
+<% unless (measured(t["label"]) || {}).fetch("indexes", []).empty? %>
+<p>Its new indexes:</p>
+<ul><% measured(t["label"])["indexes"].each do |name| %><li><%= code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
+<% end %>
+<table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">Your query as it is</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against your query</th><th scope="col">Note</th></tr></thead>
+<tbody>
+<% measurement_rows(t["label"]).each do |set, *counts, verdict, note| %>
+<tr><td><%= h set %></td><%= counts.map { num(it) }.join %><td><%= h verdict %></td><td><%= h note %></td></tr>
+<% end %>
+</tbody></table>
+</article>
+<% end %>
+</section>
+<% if winner %>
+<section id="explanation"><h2>Why the winner reads fewer blocks</h2>
+<p><%= h describe(winner["label"]) %> <%= h compared %> <%= h CACHE %></p>
+<p>How Postgres runs your query now:</p>
+<ul><% original_plan.each do |n| %><li><%= h node(n) %></li><% end %></ul>
+<% if (r = rewrite_of(winner["label"])) && r["plan"] %>
+<p>How it runs <%= h Words.lower(Words.rewrite(r["rewrite"])) %> with no new indexes:</p>
+<ul><% r["plan"].each do |n| %><li><%= h node(n) %></li><% end %></ul>
+<% end %>
+<% unless (measured(winner["label"]) || {}).fetch("indexes", []).empty? %>
+<p>The plan with the new indexes: <%= h Words::MISSING %>.</p>
+<% end %>
+</section>
+<% end %>
+<% if negative %>
+<section id="negative-result"><h2>Why nothing beat your query</h2>
+<h3>The rewrites</h3>
+<% if rewrites.empty? %>
+<p>QUAACK kept no rewrite to test.</p>
+<% else %>
+<ul id="negative-rewrites"><% rewrites.each do |r| %><li><%= h fate_line(r) %></li><% end %></ul>
+<% end %>
+<h3>Indexes the planner wouldn't use</h3>
+<% if negative["declined"].empty? %>
+<p>The planner would have used every index QUAACK thought of.</p>
+<% else %>
+<p>QUAACK asked the planner about each of these before building anything. An index is listed once, with every query it was tried for.</p>
+<table id="declined-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Why not</th></tr></thead>
+<tbody>
+<% negative["declined"].each do |d| %>
+<tr><td><%= d["ddl"] ? code(d["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(d) %></td><td><%= h declined(d) %></td></tr>
+<% end %>
+</tbody></table>
+<% end %>
+<h3>Indexes QUAACK thought of that you already have</h3>
+<% if negative["existing"].empty? %>
+<p>None of the indexes QUAACK thought of already existed.</p>
+<% else %>
+<p>If QUAACK's best idea is an index you already have, the query isn't slow for lack of an index.</p>
+<table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
+<tbody>
+<% negative["existing"].each do |e| %>
+<tr><td><%= e["ddl"] ? code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(e) %></td><td><%= h e.dig("covered_by", "name") %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
+<% end %>
+</tbody></table>
+<% end %>
+</section>
+<% end %>
+<section id="indexes"><h2><%= winner ? "Proposed indexes" : "Indexes QUAACK built and measured" %></h2>
+<% [[proposed, winner ? "None of the ranked candidates needs a new index." : nil], [unproposed, nil]].each_with_index do |(names, none), i| %>
+<% if i == 1 && winner && !names.empty? %>
+<h3>Other indexes QUAACK built and measured</h3>
+<p>QUAACK built these too, and no ranked candidate uses them.</p>
+<% end %>
+<% if names.empty? %>
+<% if none %><p><%= h none %></p><% end %>
+<% if i == 1 && indexes.empty? %><p>QUAACK built no indexes.</p><% end %>
+<% else %>
+<table><thead><tr><th scope="col">Index</th><th scope="col" class="num">Built size</th><th scope="col">Your index that already covers it</th><th scope="col">Your indexes it would make redundant</th></tr></thead>
+<tbody>
+<% names.each do |name| %>
+<%= built_row(name) %>
+<% end %>
+</tbody></table>
+<% end %>
+<% end %>
+<p class="note">Each size is real: QUAACK built the index on a copy of your data. Sizes of your own indexes come from Postgres's statistics.</p>
+</section>
+<section id="accountability"><h2>Who proposed what</h2>
+<h3>Rewrites</h3>
+<table id="accountability-rewrites"><thead><tr><th scope="col">Source</th><% Accountability::REWRITE_COLUMNS.each do |c| %><th scope="col" class="num"><%= h c %></th><% end %></tr></thead>
+<tbody>
+<% rewrite_account.each do |name, *counts| %>
+<tr><th scope="row"><%= h name %></th><%= counts.map { count_cell(it) }.join %></tr>
+<% end %>
+</tbody></table>
+<p class="note">A rewrite refused on arrival is one QUAACK didn't keep: it failed the checks on what goes in, didn't plan, returned different columns, or, for one of QUAACK's own, repeated another or went over the limit of five. What became of each rewrite it kept is under the queries, above.</p>
+<h3>Indexes</h3>
+<table id="accountability-indexes"><thead><tr><th scope="col">Source</th><% Accountability::INDEX_COLUMNS.each do |c| %><th scope="col" class="num"><%= h c %></th><% end %></tr></thead>
+<tbody>
+<% index_account.each do |name, *counts| %>
+<tr><th scope="row"><%= h name %></th><%= counts.map { count_cell(it) }.join %></tr>
+<% end %>
+</tbody></table>
+<% if unrecorded? %>
+<p class="note">&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.</p>
+<% end %>
+</section>
+<section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
+<% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows]].each do |id, title, rows| %>
+<h3><%= h title %></h3>
+<table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col" class="num">Came in</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
+<tbody>
+<% rows.each do |name, record, stage| %>
+<tr><th scope="row"><%= h name %></th><%= stage_cells(record, stage) %></tr>
+<% end %>
+</tbody></table>
+<% end %>
+<h3>LLM calls</h3>
+<ul id="llm-calls"><% llm_lines.each do |line| %><li><%= h line %></li><% end %></ul>
+<h3>Other work</h3>
+<ul id="burndown-totals"><% total_lines.each do |line| %><li><%= h line %></li><% end %></ul>
+</section>
+</body></html>
