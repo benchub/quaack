@@ -170,7 +170,13 @@ Run `quaack` from the checkout with `bundle exec`. The rest of this README just 
 Create `~/.quaack/driver.json`:
 
 ```json
-{ "jump_command": "echo jump1.prod.example.com" }
+{
+  "jump_command": "echo jump1.prod.example.com",
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-opus-5-5"
+  }
+}
 ```
 
 `jump_command` is a shell command that prints the ssh host of the jump server for a production server. `{server}` in the command becomes the server name you pass to `quaack start`. With one jump server, a plain `echo` is enough. With several, map the server to a host:
@@ -213,6 +219,8 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 | `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
 
 Never put a key itself in the file. These environment variables override the file for one run: `QUAACK_MODEL` for `model`, `QUAACK_LLM_PROVIDER` for `provider`, and `QUAACK_LLM_BASE_URL` for `base_url`. An empty one counts as unset. A bad value, in the file or a variable, makes `quaack run` exit with 64 and a message that names the offending key or variable.
+
+If `driver.json` itself is bad, `quaack start` and `quaack run` say which file and why, such as `bad_driver_config: /Users/me/.quaack/driver.json: no jump_command` or `bad_driver_config: /Users/me/.quaack/driver.json: not valid JSON (line 3, column 5)`.
 
 #### OpenAI-compatible providers.
 

@@ -395,7 +395,8 @@ RSpec.describe "quaack run" do
     end
 
     it "fails with a usage error naming the key, not the value, before touching the jump server" do
-      write_config(JSON.generate("llm" => { "provider" => "SENTINEL-VALUE" }))
+      write_config(JSON.generate("jump_command" => "echo jump-1",
+                                 "llm" => { "provider" => "SENTINEL-VALUE" }))
 
       expect([run_with, stdout.string, errors])
         .to eq([64, "", "quaack run: llm.provider in ~/.quaack/driver.json must be anthropic, openai_compatible, " \
@@ -410,13 +411,38 @@ RSpec.describe "quaack run" do
     end
 
     it "fails with a usage error for a driver.json that isn't a JSON object" do
-      ["SENTINEL-VALUE {", "[1]"].each do |text|
+      path = File.join(home, ".quaack", "driver.json")
+
+      write_config("{\n  \"jump_command\": \"ok\",\n    SENTINEL-VALUE\n}")
+      expect([run_with, errors])
+        .to eq([64, "quaack run: bad_driver_config: #{path}: not valid JSON (line 3, column 5)\n"])
+      expect(errors).not_to include("SENTINEL-VALUE")
+      expect(hosts).to eq([])
+
+      ["[1]", "null"].each do |text|
         write_config(text)
         stderr.truncate(0)
         stderr.rewind
 
-        expect([run_with, errors]).to eq([64, "quaack run: ~/.quaack/driver.json must be a JSON object\n"])
+        expect([run_with, errors]).to eq([64, "quaack run: bad_driver_config: #{path}: not a JSON object\n"])
       end
+      expect(hosts).to eq([])
+    end
+
+    it "fails with a usage error for a driver.json without a valid jump_command" do
+      path = File.join(home, ".quaack", "driver.json")
+
+      write_config(JSON.generate("llm" => {}))
+      expect([run_with, errors]).to eq([64, "quaack run: bad_driver_config: #{path}: no jump_command\n"])
+      expect(hosts).to eq([])
+
+      write_config(JSON.generate("jump_command" => "echo SENTINEL-JUMP\necho jump-1", "llm" => {}))
+      stderr.truncate(0)
+      stderr.rewind
+
+      expect([run_with, errors])
+        .to eq([64, "quaack run: bad_driver_config: #{path}: jump_command isn't one non-blank line\n"])
+      expect(errors).not_to include("SENTINEL-JUMP")
       expect(hosts).to eq([])
     end
 
@@ -428,7 +454,8 @@ RSpec.describe "quaack run" do
       File.chmod(0o000, path)
       skip "this user can read a file with mode 000" if File.readable?(path)
 
-      expect([run_with, stdout.string, errors]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      expect([run_with, stdout.string, errors])
+        .to eq([64, "", "quaack run: bad_driver_config: #{path}: can't read it (permission denied)\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     end
 
@@ -443,7 +470,9 @@ RSpec.describe "quaack run" do
       File.chmod(0o000, locked)
       skip "this user can read a directory with mode 000" if File.readable?(File.join(locked, "driver.json"))
 
-      expect([run_with, stdout.string, stderr.string]).to eq([64, "", "quaack run: can't read ~/.quaack/driver.json\n"])
+      config_path = File.join(home, ".quaack", "driver.json")
+      expect([run_with, stdout.string, stderr.string])
+        .to eq([64, "", "quaack run: bad_driver_config: #{config_path}: can't read it (permission denied)\n"])
       expect([hosts, transport.calls, seen]).to eq([[], [], []])
     ensure
       File.chmod(0o700, locked)
@@ -504,7 +533,8 @@ RSpec.describe "quaack run" do
       end
 
       it "builds the client from the block's settings" do
-        write_config(JSON.generate("llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
+        write_config(JSON.generate("jump_command" => "echo jump-1",
+                                   "llm" => { "api_key_env" => "QUAACK_SPEC_UNSET_KEY" }))
         env = { "QUAACK_ALLOW_REAL_LLM" => "1", "QUAACK_SPEC_UNSET_KEY" => nil,
                 "ANTHROPIC_API_KEY" => "SENTINEL-KEY", "ANTHROPIC_BASE_URL" => "http://127.0.0.1:9" }
         status = without_anthropic_credentials(env) { NoNetwork.always_refuse { run_with } }
