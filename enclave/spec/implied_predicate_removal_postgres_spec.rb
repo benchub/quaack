@@ -160,6 +160,16 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
     expect(rewritten(sql)).to eq([])
   end
 
+  it "removes a NOT IN list that excludes the equality's value" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE " \
+          "enrollments.type NOT IN ('StudentEnrollment', 'TaEnrollment') AND " \
+          "enrollments.type = 'TeacherEnrollment'"
+
+    rewrites = rewritten(sql)
+    expect(rewrites).to eq(["SELECT enrollments.id FROM public.enrollments WHERE enrollments.type = $3"])
+    same_rows(sql, rewrites.first)
+  end
+
   it "keeps one of two equalities that prove each other with different literal text" do
     sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = 5 AND enrollments.score = 5.0"
 
