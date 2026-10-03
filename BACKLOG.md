@@ -2008,15 +2008,15 @@ The rule:
 - The clock goes on the last line printed, whether that's the step's own line or a note under it. It updates about once a second by redrawing that line with `\r` and clearing to the end of the line.
 - When a new line prints, the previous line keeps its final clock reading and stops updating.
 - The heartbeat thread and `say` already share a lock. Redraws must take it too, so a note never prints in the middle of a redraw.
-- When stderr isn't a terminal, such as when it's piped to a log file, nothing gets redrawn. Keep today's "Still working" lines there, so the log still shows the run is alive.
+- When stderr isn't a terminal, such as when it's piped to a log file, nothing gets redrawn and no "Still working" lines print. Only the closing line gives the time the step took.
 - The clock carries only a duration, so nothing new crosses the trust boundary.
 
-Specs use a fake clock and a fake terminal `io`. They check the exact bytes for the terminal case, and that the non-terminal case is unchanged.
+Specs use a fake clock and a fake terminal `io`. They check the exact bytes in both cases.
 
 20261003-15 changes the closing line. Whichever lands second fits in with the other.
 
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-03.
 - **Design:** Progress lines for `quaack run`.
-- **Note (2026-10-03, open question):** whether the clock should go on the step's line or the latest note, and whether non-terminal output should keep the "Still working" lines. Both are the filer's guesses. Ask the user before building.
+- **Note (2026-10-03, answers):** The clock goes on the latest line printed, including notes. When the output isn't a terminal, there are no live updates and no "Still working" lines. The closing line gives the final time.
 - **Status:** todo
