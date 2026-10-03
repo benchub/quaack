@@ -1953,3 +1953,32 @@ Out-of-scope findings from the build of 20261002-8:
 - **Came from:** The build of 20261002-8, 2026-10-03.
 - **Design:** 6c.
 - **Status:** todo
+
+### 20261003-15. `quaack run`: say what each step did when it finishes.
+
+Today every finished step in `quaack run` prints the same line, such as `quaack: [1/18] Done in 15s (index-search)`. That says how long the step took but not what it found. A step that found 12 indexes looks just like one that found none. Instead, the closing line should give a short count of the step's output, such as:
+
+```
+quaack: [1/18] Checking the query plan and searching for indexes (index-search)
+quaack: [1/18] Found 12 possible index definitions mechanically in 15s (index-search)
+```
+
+The rule: `Progress#step` (`driver/lib/quaack/driver/progress.rb`) lets a step give a summary for its closing line, built from its result. When it gives one, the line says `<summary> in <duration>`. When it doesn't, or when the step was skipped or failed, the line stays as it is now. Give every step in `Pipeline::SAY` a summary that says what it produced, for example:
+
+- index-search: how many index definitions were found mechanically.
+- 5a-5 and 5a-6: how many index ideas the LLM gave, and how many were new.
+- 5a-7 and index-rank: how many ideas were kept, out of how many.
+- 6c: which rules fired, or "No rule applied".
+- 6a: how many rewrites the LLM gave.
+- rewrite-prune: whether the rewrite was kept or dropped.
+- steps 9-10 and 14b-14d: how many rewrites or choices are left.
+- 12a: how many indexes were built.
+- 13, 13a and 14: how many measurements were taken.
+- 15: where the report was written.
+
+Summaries carry only counts, step names, and rule names, which the progress lines already allow. They never carry data, SQL, or literal values from the enclave. A test plants a sentinel in a step's result and checks that it never shows up in the progress output.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
