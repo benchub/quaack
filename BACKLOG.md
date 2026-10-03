@@ -936,25 +936,7 @@ Minor findings from the review of 20260930-11:
 - **Design:** LLM client.
 - **Status:** todo
 
-### 20261001-17. Report payload: send what a legible report needs.
-
-The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
-
-- **The original query, always.** The redacted query with the clock put back, as `original_sql` gives it today for an index-only winner.
-- **Every stored rewrite,** not only the ranked ones: its SQL, its source (the LLM in 6a, or the operator in step 7, from `inferred`), and one fate. The fates: step 8 found its plans the same as the original's; step 9 disproved it, with the scenario and rule; step 10 disproved it, with the round; 14c found different results on production data; it was measured and wasn't better; it was ranked.
-- **A step 8 prune is not a step 9 disproof.** `rewrite-test` stores a pruned rewrite as `passed` false with rule `discarded`, and NegativeResult sends that as a step 9 disproof. The report then says "rewrite_1: disproved in step 9 by scenario  (rule discarded)" for a rewrite that was never tested for correctness. Send the step 8 fate instead.
-- **Every measured label,** not only `top`: its measurements, its per-literal verdicts, and the indexes it ran with (their built names), so the report can say what `original:top:1` was and how many blocks it read against the original.
-- **Existing index sizes.** For `covered_by` and `makes_redundant`, send each existing index's `size_bytes` from the planner statistics with its name.
-- **No repeats in 15a's lists.** In the real run the same DDL was listed twice under one search (`user_id, cached_due_date`), a partial index appeared once with `'deleted'::text` and once with `'deleted'`, and the rewrite's search repeated nearly all of the original's lines. Send each declined or existing index once, with the searches it came up in.
-
-Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
-
-Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-19 counts them by reason.
-
-- **Depends on:** 20260922-62, -63.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** Step 15, 15a.
-- **Status:** todo
+### 20261001-17. Report payload: send what a legible report needs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-18. Report: readable HTML.
 
@@ -1719,4 +1701,23 @@ The review of 20261001-12 found two minor items:
 - **Depends on:** 20261001-12.
 - **Came from:** The review of 20261001-12, 2026-10-01.
 - **Design:** The transport.
+- **Status:** todo
+
+### 20261003-1. Report payload: minor findings.
+
+The build and review of 20261001-17 found these:
+
+- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends 14d's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
+- **Selection calls every 14c discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a 14c timeout.
+- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A step 9 or 10 failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
+- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles 14d saying `result_mismatch` when 14c's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
+- **15a still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
+- **Rewrite numbering gaps.** `CandidateRuns.candidates` and `IndexBuild.searches` stop at the first gap in rewrite numbers, while the report lists rewrites across gaps. A rewrite after a gap would never be measured and would read `unfinished`. Find out whether a real run can leave a gap, and make the two agree.
+- **`NegativeResult.disproved` is a shim** kept only for `RuleBugs`. 20261002-5 moves `RuleBugs` onto an allowlist; have it use `RewriteFate` and `ResultComparator::MISMATCHES`, then delete the shim and `RuleBugs`' own copy of `MISMATCHES`.
+- **`e2e/run.rb`'s `why_none`** now tallies rewrite fates, and nobody has run it since.
+- **`spec/pipeline_replay_spec.rb` takes about 24 minutes** on its own. See whether it can share setup or run less.
+
+- **Depends on:** 20261001-17.
+- **Came from:** The build and review of 20261001-17, 2026-10-03.
+- **Design:** Step 15, 15a.
 - **Status:** todo

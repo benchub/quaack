@@ -3363,3 +3363,24 @@ The driver calls `rewrite-rules` before 6a unless `rewrite_rules_applied` is sto
 - **Design:** 6c.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. A top-level OR whose arms read different tables or subqueries becomes a UNION of one arm each, every arm selecting the columns the query uses plus a unique not-null key of each FROM table; the select list, aggregates, DISTINCT, ORDER BY, LIMIT and OFFSET read that UNION as a derived table, so duplicate join rows survive and `count(*)` stays right. It refuses GROUP BY, outer joins, composite keys, same-table ORs, and columns UNION can't compare. At landing its `Catalog#columns` merged with 20261001-26's (now `columns` and `column_names`) and the shared helper is `Tree.tables?`. The follow-ups went to 20261002-5.
+
+### 20261001-17. Report payload: send what a legible report needs.
+
+The first report from a real query (run 20261001T210856Z-3b7041a3, nothing beat the original) showed no query at all, and its lists couldn't be read. Most of what's missing never leaves the enclave. `quaacks report-payload` sends SQL, measurements, verdicts, and index lists only for the `top` labels, so a negative result gets none. Send, as shape-class data:
+
+- **The original query, always.** The redacted query with the clock put back, as `original_sql` gives it today for an index-only winner.
+- **Every stored rewrite,** not only the ranked ones: its SQL, its source (the LLM in 6a, or the operator in step 7, from `inferred`), and one fate. The fates: step 8 found its plans the same as the original's; step 9 disproved it, with the scenario and rule; step 10 disproved it, with the round; 14c found different results on production data; it was measured and wasn't better; it was ranked.
+- **A step 8 prune is not a step 9 disproof.** `rewrite-test` stores a pruned rewrite as `passed` false with rule `discarded`, and NegativeResult sends that as a step 9 disproof. The report then says "rewrite_1: disproved in step 9 by scenario  (rule discarded)" for a rewrite that was never tested for correctness. Send the step 8 fate instead.
+- **Every measured label,** not only `top`: its measurements, its per-literal verdicts, and the indexes it ran with (their built names), so the report can say what `original:top:1` was and how many blocks it read against the original.
+- **Existing index sizes.** For `covered_by` and `makes_redundant`, send each existing index's `size_bytes` from the planner statistics with its name.
+- **No repeats in 15a's lists.** In the real run the same DDL was listed twice under one search (`user_id, cached_due_date`), a partial index appeared once with `'deleted'::text` and once with `'deleted'`, and the rewrite's search repeated nearly all of the original's lines. Send each declined or existing index once, with the searches it came up in.
+
+Trust boundary: SQL is the redacted query or a stored rewrite's SQL, DDL goes through CandidateDdlRedaction, and the rest is counts, names from the schema, and names from QUAACK's own constants. Test with sentinel literals, and update the whitelist in the protocol gem.
+
+Rewrites the enclave refused on arrival aren't stored, so this task sends nothing for them. 20261001-19 counts them by reason.
+
+- **Depends on:** 20260922-62, -63.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** Step 15, 15a.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after one review with no blocking findings. The report message now carries `original_sql` always, `original_measurements`, `labels` (one entry per measured label: its search, built index names, measurements, and verdicts), and `rewrites` (every stored rewrite: SQL, source, rules, one fate with its scenario, rule, round, or `after`, and its plan, untested atoms, and evidence). `candidates`, `verdicts`, `measurements`, `negative.disproved`, and `negative.knocked_out` are gone. **Decided (the user, 2026-10-03):** states outside the task's six fates get their own, so there are fourteen (`RewriteFate`), all from closed lists; a step 8 prune is `same_plans`. `covered_by` and `makes_redundant` send `{ name, size_bytes }`. 15a's `declined` and `existing` list each index once with its `searches`, counting two as one when they differ only by casts (`CastlessIndex`). `counterexample-round` stores each round's rule. The driver renders what it did before and nothing new; 20261001-18 renders the rest. The follow-ups went to 20261003-1.
