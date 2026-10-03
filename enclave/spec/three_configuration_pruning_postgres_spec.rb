@@ -60,6 +60,30 @@ RSpec.describe Quaack::Enclave::ThreeConfigurationPruning do
     expect(discard?(rewrite, original_top: [index(["ghost"])], rewrite_top: covering)).to be(false)
   end
 
+  # By default HypoPG hands out the same fake oids again after each
+  # hypopg_reset, so the same index gets the same "<oid>" name in each
+  # session. With hypopg.use_real_oids on, it takes a new real oid every
+  # time, so only SingleCandidateTest's oid map lets the original's plan and
+  # the rewrite's match (20260924-1, 20260929-30).
+  context "when HypoPG gives the same index a new oid in each session" do
+    before { conn.exec("SET hypopg.use_real_oids = on") }
+
+    def index_names(query)
+      described_class.plans(conn, query, literal_sets, [covering, covering]).map do |measurement|
+        measurement.plans.fetch(:slow).raw_plan.first["Plan"]["Index Name"]
+      end
+    end
+
+    it "still discards a rewrite whose plans match the original's" do
+      rewrite = "SELECT t.a FROM public.t AS t WHERE t.b = $1"
+      names = index_names(original) + index_names(rewrite)
+
+      expect(names).to all(match(/\A<\d+>/))
+      expect(names.uniq.size).to eq(4)
+      expect(discard?(rewrite, original_top: covering, rewrite_top: covering)).to be(true)
+    end
+  end
+
   it "leaves no hypothetical index, prepared statement, or open transaction" do
     discard?("SELECT b FROM public.t WHERE b = $1", original_top: covering, rewrite_top: [index(["b"])])
     expect(conn.exec("SELECT count(*) FROM hypopg_list_indexes").getvalue(0, 0)).to eq("0")

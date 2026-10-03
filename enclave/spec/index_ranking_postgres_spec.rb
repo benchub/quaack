@@ -400,6 +400,32 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(ranking.combination.worst_reduction).to be > ranking.top.first.worst_reduction
   end
 
+  # With hypopg.use_real_oids on, HypoPG gives an index a new oid each
+  # time, so the "<oid>" in an entry's plan differs from the one a later
+  # session gives the same index. Step 8 compares plans across sessions
+  # like that, so the entry's canonical plans have to tell the index by
+  # what it is, through SingleCandidateTest's oid map (20260929-30).
+  it "keeps canonical plans that match the same indexes planned in a later session" do
+    conn.exec("SET hypopg.use_real_oids = on")
+    ranking = ranked(join, join_sets, [on_x, on_y])
+    entries = [ranking.top.first, ranking.combination]
+    later = entries.map do |entry|
+      Quaack::Enclave::SingleCandidateTest.session(conn, query: join, literal_sets: join_sets) do |session|
+        session.measure(entry.candidates).plans
+      end
+    end
+    index_names = lambda do |plans|
+      walk = ->(node) { [node["Index Name"], *node.fetch("Plans", []).flat_map(&walk)] }
+      plans.values.flat_map { |p| walk.call(p.raw_plan.first["Plan"]) }.compact
+    end
+
+    entries.zip(later).each do |entry, plans|
+      expect(index_names.call(entry.plans)).not_to be_empty
+      expect(index_names.call(entry.plans) & index_names.call(plans)).to be_empty
+      expect(entry.canonical_plans).to all(satisfy { |set, plan| plan.matches?(plans.fetch(set).canonical_plan) })
+    end
+  end
+
   it "freezes what it returns" do
     ranking = ranked(join, join_sets, [on_x, on_y])
     entries = [*ranking.top, ranking.combination]
