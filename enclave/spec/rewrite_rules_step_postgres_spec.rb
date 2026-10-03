@@ -267,6 +267,13 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       outcomes = call_step(eleven)
 
       expect(outcomes.map { it[:rewrite] }).to eq((1..10).map { "rewrite_#{it}" })
+      expect(stored.read("rewrite_1").slice("sql", "transformation", "rules")).to eq(
+        "sql" => "#{select} AND 1 = 1", "transformation" => "the fake rule rule1", "rules" => ["rule1"]
+      )
+      expect(stored.read("rewrite_10").slice("sql", "transformation", "rules")).to eq(
+        "sql" => "#{select} AND 10 = 10", "transformation" => "the fake rule rule10", "rules" => ["rule10"]
+      )
+      expect(stored.entry?("rewrite_11")).to be(false)
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 1)
       expect(burndown("6c")).to eq(six_c((1..11).to_h { ["rule#{it}", 1] }, 10, over_cap: 1))
     end

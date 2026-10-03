@@ -26,6 +26,7 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   end
 
   def appending(name, assumption = nil) = rule(name, assumption) { "#{it}, '#{name}'" }
+  def one_shot(name) = rule(name) { |sql| sql == "SELECT 1" ? "#{sql}, '#{name}'" : [] }
   def generate(*rules) = described_class.generate(original, catalog, rules:)
   def sqls(generated) = generated.rewrites.map(&:sql)
   def names(generated) = generated.rewrites.map { |rewrite| rewrite.rules.map(&:name) }
@@ -51,9 +52,12 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   end
 
   it "keeps at most ten, and counts the rest as over the cap" do
-    generated = generate(appending("a"), appending("b"), appending("c"), appending("d"))
+    generated = generate(*(1..11).map { one_shot("rule#{it}") })
 
-    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([10, 10, 0])
+    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([10, 1, 0])
+    expect(names(generated)).to eq((1..10).map { ["rule#{it}"] })
+    expect([sqls(generated).first, sqls(generated).last]).to eq(["SELECT 1, 'rule1'", "SELECT 1, 'rule10'"])
+    expect(generated.made).to include("rule11" => 1)
   end
 
   it "goes at most two rules deep" do
