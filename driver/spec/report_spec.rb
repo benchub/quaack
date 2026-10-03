@@ -858,6 +858,11 @@ RSpec.describe Quaack::Driver::Report do
                                            "the same as another idea: 1", 0, 1, "none"))
     end
 
+    it "says how many rule rewrites were over the limit of ten" do
+      burndown["stages"]["6c"]["rewrites"]["dropped"]["over_cap"] = 2
+      expect(rewrite_table).to include("the same as another idea: 1; over the limit of ten: 2")
+    end
+
     it "totals the rewrites' own index searches per stage" do
       expect(rewrite_table).to include(
         row("Index ideas for the rewrites: removing duplicates and indexes you already have", 5, "none",

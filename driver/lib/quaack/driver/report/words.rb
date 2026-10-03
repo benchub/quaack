@@ -53,7 +53,7 @@ module Quaack
                    "covered_by_existing" => "already covered by an index you have",
                    "partial_not_low_cardinality" => "partial indexes on a column with too many values",
                    "never_used" => "never used by the planner", "hypopg_refused" => "HypoPG couldn't create",
-                   "over_cap" => "over the limit of five", "failed_checks" => "failed QUAACK's checks",
+                   "over_cap" => "over the limit of ten", "failed_checks" => "failed QUAACK's checks",
                    "inbound_check" => "failed the checks on what goes in",
                    "failed_to_plan" => "didn't plan", "output_mismatch" => "returned different columns",
                    "same_plans" => "planned the same as your query",
