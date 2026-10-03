@@ -3365,6 +3365,22 @@ With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round that fixed only the tests, checked by a third reviewer. `MAX` is 10 and `DEPTH` stays 2. DESIGN.md 6c and README's burndown text say ten. The cap specs, the unit spec and the `rewrite-rules` step spec, use eleven unique rule rewrites plus two duplicates. They assert that rule1 to rule10 are kept, that rule11 is over the cap, and the exact `over_cap` and `duplicate` counts. The mutations `last(MAX)`, MAX=9, MAX=11, counting duplicates as over the cap, and disabling duplicate detection all go red. The full check passed after merging the other machine's three rules.
 
+### 20260929-4. Say why driver.json is bad.
+
+`quaack start` answers `bad_driver_config` for four different problems and doesn't say which, so the user can't tell what to fix. It happened on the user's first real `quaack start`, right after adding an `llm` block. Name the file and the problem, without quoting its contents:
+- not valid JSON, with the line and column from the parser, never the parser's message, since it can quote the file;
+- valid JSON but not an object;
+- no `jump_command`;
+- `jump_command` isn't one non-blank line.
+
+Keep the rule `bad_driver_config` in each message, so scripts still match it. `quaack run` reads the same file for its `llm` block (`DriverConfig`), so give its errors the same detail. Show a complete driver.json example, with both `jump_command` and `llm`, in README.md. 20260928-6 already covers an unreadable file (EACCES). Do it here too if it fits naturally.
+
+- **Depends on:** 20260928-3.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-10-02):** Landed on `main` after a review, a fix round, a second review, and a round the user allowed that fixed only the specs, checked by a third reviewer. Messages read `bad_driver_config: <path>: <problem>`. The problems are: not valid JSON (line and column only, never the parser's message); not an object; can't be read (permission denied); not a file; no `jump_command`; and `jump_command` isn't one non-blank line. `DriverConfig.read` validates `jump_command` whenever driver.json exists, so `quaack start` and `quaack run` share the checks. A missing driver.json still works for `quaack run`. Sentinel specs show that the file's contents never appear. README shows a complete driver.json. The answers: the message shape is rule, then path, then problem; the EACCES cause is included.
+
 ### 20261001-25. 6c rule: `not_in_to_not_exists`.
 
 - **Depends on:** 20261001-22.
@@ -3388,3 +3404,31 @@ With a dozen rules, a cap of five crowds out useful results. Raise `RewriteRules
 - **Design:** 6c.
 - **Status:** done
 - **Note (landed 2026-10-02):** Landed on `main` after two reviews with no blocking findings. A top-level OR whose arms read different tables or subqueries becomes a UNION of one arm each, every arm selecting the columns the query uses plus a unique not-null key of each FROM table; the select list, aggregates, DISTINCT, ORDER BY, LIMIT and OFFSET read that UNION as a derived table, so duplicate join rows survive and `count(*)` stays right. It refuses GROUP BY, outer joins, composite keys, same-table ORs, and columns UNION can't compare. At landing its `Catalog#columns` merged with 20261001-26's (now `columns` and `column_names`) and the shared helper is `Tree.tables?`. The follow-ups went to 20261002-5.
+
+### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command.
+
+The driver can call Anthropic, an OpenAI-compatible API, or Bedrock. Add a fourth provider, `"provider": "copilot_cli"`, that runs a local command, such as GitHub's `copilot` CLI, once per ask, through a new adapter behind the provider-neutral client, like the other three. The prompts can be hundreds of thousands of characters, too big for a command line. So the adapter writes each prompt to a file, runs a command that points the model at the file, and reads the reply from stdout. For example: `copilot --model claude-opus-5.5 -p 'Please follow my prompt in <file>'`.
+
+The user settled these on 2026-10-02:
+
+- **The command is a template in the llm block.** The operator gives it with placeholders for the prompt file and the model. Store it as an argv array, not a shell string, and run it without a shell, so a path or model never needs quoting. Give it a default that runs `copilot` from PATH with `--model` and `-p`. Check against `copilot --help` which flags make it non-interactive and print only the reply. A bad template, such as one missing the prompt-file placeholder, is a usage error naming the key.
+- **Copilot gets read-only access.** It may read the prompt file and nothing else: no shell, no file writes, no network tools. Find the flags that enforce that (`--deny-tool`, `--available-tools`, or whatever the CLI offers) and put them in the default template. Run the command from an empty private temp directory, so no repo instructions (AGENTS.md, CLAUDE.md, `.github/...`) load. The CLI also loads the operator's global instructions on every run, wherever it runs: `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/**`, and any directories in `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`. These must not reach QUAACK's prompts, since they can push the reply away from bare JSON. Before building, find the flag (or setting) that turns custom instructions off, using `copilot --help` and GitHub's Copilot CLI docs, and put it in the default template. Also unset `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` in the child's environment. If no such flag exists, stop and report back rather than work around it. Pointing copilot's config dir at an empty folder may also hide its login, so the user decides.
+- **The prompt file is deleted after each ask.** Write it with mode 0600 in a private temp directory (`Dir.mktmpdir`), and remove the directory after the ask, whether or not the ask succeeded.
+- **The default model is `claude-opus-5.5`.** Note that it's spelled with a dot, unlike the Anthropic default `claude-opus-5-5`.
+- **Each ask has a timeout.** It's an optional `timeout_seconds` (a positive number) in the block, with a sensible default. A command that runs too long is killed, along with its process group, and the ask is `llm_unavailable`.
+
+Other details:
+
+- **Schemas.** The CLI can't enforce a JSON schema, so the adapter says it doesn't. The client's existing check and its one re-ask cover the rest. Every command run counts in the burndown.
+- **The prompt file.** It holds the system prompt, the JSON-only instruction, and the schema, followed by the whole conversation as a plainly labeled transcript, so the multi-turn exchanges (5a-5's replacement round, 10a's rounds, the re-ask) still work.
+- **Errors.** A command that isn't found is `llm_unavailable` with a clear message, or a usage error when the client is built if it's checked then. Decide which and document it. A non-zero exit is `llm_unavailable`, with the exit status and a short tail of stderr as the detail. Empty stdout is `llm_bad_response`. Strip whatever framing the CLI adds around the reply, if any. Spot `copilot`'s not-logged-in message, if it's distinctive, and map it to `llm_auth`.
+- **Config.** `QUAACK_LLM_PROVIDER` takes `copilot_cli`. `base_url`, `api_key_env`, `aws_region`, and `aws_profile` don't apply to it, and giving any of them is a usage error naming the key. The new keys, the command template and `timeout_seconds`, apply to no other provider.
+- **Trust boundary.** The adapter runs on the laptop, in the driver, like every LLM call. The enclave never runs or depends on it. No new gem should be needed, since `Open3` or `Process.spawn` is in the standard library. Keep the boundary specs green.
+- **Tests.** Fake the CLI at the edge with a stub script on PATH or in the template. It should record its argv, its cwd, and the prompt file's contents and mode, and print a canned reply, exit non-zero, or hang. Assert that the file is gone afterward and that a hang is killed at the timeout. Don't call the real `copilot` in specs. A manual check through `script/llm_smoke.rb` is fine.
+- **Docs.** Add the provider to DESIGN.md's LLM client section and the llm block paragraph, and to README.md's provider table.
+
+- **Depends on:** 20260930-11.
+- **Came from:** The user, 2026-10-02.
+- **Design:** LLM client, driver.json.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after three reviews. The user granted an extra fix round after the second. `CopilotCliAdapter` writes the prompt (system prompt, JSON-only instruction, schema, labeled transcript) to a 0600 file in a private temp dir. That dir is also the cwd. It runs the argv template without a shell and with `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` unset. It reads stdout and stderr against a deadline, so a detached grandchild holding a pipe can't hang it. On timeout it kills the process group (`llm_unavailable`). It removes the dir after every ask. The default template passes `--no-custom-instructions --disable-builtin-mcps --no-ask-user --available-tools=view --allow-tool=read({prompt_dir}) --disallow-temp-dir`, denies shell, write, and url, and uses `-s -p`. The docs don't say whether `--no-custom-instructions` covers `~/.copilot`'s user-level instructions. README.md warns about that, as the user chose. Settings are checked after the env overrides, so `QUAACK_LLM_BASE_URL` is refused for `copilot_cli`. The follow-up went to 20261003-1.
