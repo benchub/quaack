@@ -88,9 +88,11 @@ module Quaack
 
           # The first selected column the catalog proves unique and not
           # null, or nil. With a LIMIT or OFFSET, it must be sorted by too.
+          # The kept table's column names, which its star stands for.
+          def star(catalog) = catalog.column_names(kept.table.schemaname, kept.table.relname)
+
           def key(catalog)
-            table = kept.table
-            columns = selected.flat_map { it == :star ? catalog.column_names(table.schemaname, table.relname) : [it] }.uniq
+            columns = selected.flat_map { it == :star ? star(catalog) : [it] }.uniq
             columns &= sorted if limited
             columns.find { |column| assumptions(column).all? { catalog.met?(it) } }
           end
