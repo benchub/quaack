@@ -170,6 +170,9 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                                          "refused" => [{ "index" => 1, "rule" => "insert_select" }],
                                          "load_failed" => false)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
+      # The round's rule is stored, so the report can tell a mismatch from
+      # a candidate that failed to run (20261001-17).
+      expect(stored.read("rewrite_round_1")).to eq("round" => 1, "evidence" => true, "rule" => "row_count")
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -179,6 +182,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
+      expect(stored.read("rewrite_round_1")).to eq("round" => 1, "evidence" => true, "rule" => nil)
       round(2, dup_rows)
       round(3, dup_rows)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => true)

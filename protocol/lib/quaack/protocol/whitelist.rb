@@ -129,27 +129,37 @@ module Quaack
       # exercised; refused [{ index, rule }], each refused insert's 0-based
       # index and rule constant; load_failed true or false.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
-      # The DESIGN.md step 15 report, from `quaacks report-payload`: the 14d
-      # selection (top, excluded, infinite_sets), minimax verdicts, block
-      # counts with hit/read and stability, each top candidate's $n SQL
-      # with the 3h functions put back, its untested atoms and step 10
-      # evidence, each built index's DDL through CandidateDdlRedaction with
-      # its size and catalog coverage, and plan node shapes (type,
-      # relation, index, rows, selectivity; never a condition). Its values
-      # are nested and go out unchecked, so the enclave's ReportPayload
-      # step is where this is reviewed. negative is the 15a negative
-      # result: rule, scenario, and round names, redacted DDL, SQLSTATEs,
-      # and existing index names. burndown is the 15b burndown's stages and
-      # totals, as the burndown message carries them. Each rewrite among
-      # candidates and in negative also carries its source (rule, llm, or
-      # operator) and, if a 6c rule made it, the rule names. rule_bugs is
-      # the rule-made rewrites a test disproved (DESIGN.md 6c): each one's
-      # entry name, rule names, and the step that disproved it (step9,
-      # step10, or 14c). Sources, rule names, and steps are the enclave's
-      # own constants: its RewriteSource sends a source or a rule name only
-      # if it's on its own list, never what a store entry holds as it is.
-      report: %i[top excluded infinite_sets verdicts measurements candidates indexes original_plan
-                 timed_out_count negative rule_bugs burndown].freeze,
+      # The DESIGN.md step 15 report, from `quaacks report-payload`.
+      # original_sql is the original query, always sent: its $n SQL with
+      # the 3h functions put back. original_plan is its plan's node shapes
+      # (type, relation, index, rows, selectivity; never a condition), and
+      # original_measurements its block counts with hit/read and stability
+      # per literal set. top, excluded, and infinite_sets are the 14d
+      # selection. labels is every measured label, ranked or not: its
+      # search, the built names of the indexes it ran with, its block
+      # counts, minimax's per-literal verdicts, and whether it timed out.
+      # rewrites is every stored rewrite, ranked or not: its entry name,
+      # its $n SQL, its source (rule, llm, or operator) and, if a 6c rule
+      # made it, the rule names, its fate with the scenario, rule, round,
+      # or last stage that goes with it, its plan's node shapes, its
+      # untested atoms (step 9's redacted shapes), and its step 10
+      # evidence. indexes is each built index's DDL through
+      # CandidateDdlRedaction with its size and catalog coverage, each
+      # existing index as its name and size in bytes. negative is the 15a
+      # negative result: each declined or already existing index once, as
+      # redacted DDL, with a reason, a SQLSTATE, the existing index's name
+      # and size, and the searches it came up in. burndown is the 15b
+      # burndown's stages and totals, as the burndown message carries
+      # them. rule_bugs is the rule-made rewrites a test disproved
+      # (DESIGN.md 6c): each one's entry name, rule names, and the step that
+      # disproved it (step9, step10, or 14c). Its values are nested and go
+      # out unchecked, so the enclave's ReportPayload step is where this is
+      # reviewed. Sources, rule names, fates, scenarios, and steps are the
+      # enclave's own constants: its RewriteSource and RewriteFate send
+      # one only if it's on their own lists, never what a store entry holds
+      # as it is.
+      report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
+                 indexes timed_out_count negative rule_bugs burndown].freeze,
       # One line of 12a's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's

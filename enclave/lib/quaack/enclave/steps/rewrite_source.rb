@@ -5,7 +5,7 @@ require_relative "../rewrite_rules"
 module Quaack
   module Enclave
     module Steps
-      # Where a stored rewrite came from, for ReportPayload, NegativeResult,
+      # Where a stored rewrite came from, for ReportPayload
       # and RuleBugs (DESIGN.md 6c and step 15).
       #
       #   RewriteSource.fields(store.read("rewrite_1"))

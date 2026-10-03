@@ -26,8 +26,9 @@ RSpec.describe "quaack run" do
       "selection" => true }
   end
   let(:report) do
-    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "verdicts" => {},
-      "measurements" => {}, "candidates" => [], "indexes" => {}, "original_plan" => [], "timed_out_count" => 0 }
+    { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "original_sql" => "SELECT 1",
+      "original_measurements" => {}, "labels" => [], "rewrites" => [], "indexes" => {}, "original_plan" => [],
+      "timed_out_count" => 0 }
   end
   let(:out) { File.join(home, "r.html") }
   let(:replies) do
