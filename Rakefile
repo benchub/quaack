@@ -29,8 +29,10 @@ FULL_REPLAY_STAMP = File.join(__dir__, "spec", "fixtures", "full_replay_versions
 
 def gem_versions
   VERSION_FILES.to_h do |name, path|
-    text = File.read(File.join(__dir__, path))
-    [name, text[/(?:^|\s)VERSION = "([^"]+)"/, 1]]
+    version = File.read(File.join(__dir__, path))[/(?:^|\s)VERSION = "([^"]+)"/, 1]
+    abort "Can't read the #{name} version from #{path}, so rake full won't stamp it." unless version
+
+    [name, version]
   end
 end
 
@@ -53,15 +55,20 @@ end
 # ~/.rspec, and SPEC_OPTS) must not filter specs out, such as the boundary
 # specs. `--options .rspec` makes RSpec read only the suite's own .rspec, and
 # SPEC_OPTS is removed from the suite's environment.
+#
+# The suites see QUAACK_FULL_REPLAY only while `rake full` runs them. A value
+# exported in the shell is removed, so it can't make plain rake skip the
+# stamp check in spec/full_replay_stamp_spec.rb.
 desc "Run every gem's specs, plus the cross-gem specs in spec/"
 task :spec do
   ran = []
   failed = []
+  env = { "SPEC_OPTS" => nil, FullReplay::ENV_VAR => (Rake::Task[:full].already_invoked ? "1" : nil) }
   SPEC_SUITES.each do |dir|
     cmd = [Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "--options", ".rspec", "spec"]
     path = File.join(__dir__, dir)
     puts "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}"
-    sh({ "SPEC_OPTS" => nil }, *cmd, chdir: path, verbose: false) do |ok, status|
+    sh(env, *cmd, chdir: path, verbose: false) do |ok, status|
       # sh gives nil, not false, when the command couldn't start.
       ran << dir unless ok.nil?
       failed << "#{File.join(dir, "spec")} (#{ok.nil? ? "couldn't start" : "exit #{status.exitstatus}"})" unless ok
@@ -74,6 +81,13 @@ end
 desc "Run RuboCop and every spec, with every recorded pipeline replay variant"
 task :full do
   old = ENV.fetch(FullReplay::ENV_VAR, nil)
+  # Rake runs a task once per invocation, so after `rake spec full` or `rake
+  # default full` the invoke below would do nothing, and the stamp would be
+  # written without the full replay.
+  if Rake::Task[:spec].already_invoked
+    abort "The specs already ran in this rake, and rake full must run the specs itself. Run `rake full` on its own."
+  end
+
   ENV[FullReplay::ENV_VAR] = "1"
   Rake::Task[:rubocop].invoke
   Rake::Task[:spec].invoke

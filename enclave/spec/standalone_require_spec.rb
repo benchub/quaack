@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "etc"
+
 # Each file under lib/ must work when it's the only one a caller requires, so
 # a missing require can't hide behind whatever another file or spec happened
 # to load first. Each check runs in a fresh Ruby process.
@@ -41,10 +43,29 @@ RSpec.describe "requiring one enclave file on its own" do
     expect(features).to include(*uses.keys)
   end
 
-  it "loads each file, and each listed file works, with nothing else required first" do
-    features.each do |feature|
-      out, err, status = run_ruby("-I", lib, "-e", "require #{feature.inspect}; #{uses.fetch(feature, "")}")
+  # The checks run a few at a time, each in its own process, since one at a
+  # time takes about half a minute.
+  def standalone_runs
+    queue = Queue.new
+    features.each { queue << it }
+    queue.close
+    sources = features.to_h { [it, "require #{it.inspect}; #{uses.fetch(it, "")}"] }
+    Array.new(Etc.nprocessors) { Thread.new { drain(queue, sources) } }.flat_map(&:value).sort_by(&:first)
+  end
 
+  def drain(queue, sources)
+    runs = []
+    while (feature = queue.pop)
+      runs << [feature, *run_ruby("-I", lib, "-e", sources.fetch(feature))]
+    end
+    runs
+  end
+
+  it "loads each file, and each listed file works, with nothing else required first" do
+    runs = standalone_runs
+    expect(runs.map(&:first)).to eq(features)
+
+    runs.each do |feature, out, err, status|
       expect(status).to be_success, "#{feature} failed on its own:\n#{err}"
       expect(out).not_to be_empty, "#{feature} printed nothing" if uses.key?(feature)
     end
