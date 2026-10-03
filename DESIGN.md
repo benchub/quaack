@@ -649,7 +649,7 @@ The rules in version 1, each one something Postgres's planner doesn't do for its
 | `distinct_join_to_exists` | `SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others. | The select list holds a unique, not-null key of the kept table. |
 | `unused_join_removal` | An inner join to a table that's read nowhere else is removed. | A foreign key from the joining columns to the joined table's key, and the joining columns not null. |
 
-Rules chain. A rule runs on the original and on every rule's output, its own included, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most five rewrites.
+Rules chain. A rule runs on the original and on every rule's output, its own included, breadth first, in the order the rules are listed, shallowest first, at most two rules deep. A result whose deparsed SQL was already produced is dropped. Keep at most ten rewrites.
 
 A rule is one object with a name, and one method that takes a parse tree and the catalog facts and returns zero or more rewritten trees, each with its assumptions. The generator knows nothing about any one rule: it holds a list. Adding a rule means adding one file and one line in that list. A rule's name and its description are QUAACK's own constants, so they're shape-class data and the report can show them.
 
@@ -952,7 +952,7 @@ For each stage, show how many items came in, how many the stage added, how many 
 
 | Stage | Adds | Drops, by reason |
 | --- | --- | --- |
-| 6c | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of five, or failed the checks. |
+| 6c | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of ten, or failed the checks. |
 | 6a and step 7 | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
 | 6b | None. | Unmet assumption. Also count the step 7 warnings, which don't drop anything. |
 | Step 8 | None. | Failed to plan, output columns didn't match, or couldn't run any differently from the original. |

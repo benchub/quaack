@@ -46,14 +46,14 @@ RSpec.describe Quaack::Enclave::RewriteRules do
   it "chains breadth first: every one-rule result comes before any two-rule result, each in list order" do
     generated = described_class.generate(original, catalog, rules: [appending("a"), appending("b")])
 
-    expect(names(generated)).to eq([%w[a], %w[b], %w[a a], %w[a b], %w[b a]])
-    expect(sqls(generated).last).to eq("SELECT 1, 'b', 'a'")
+    expect(names(generated)).to eq([%w[a], %w[b], %w[a a], %w[a b], %w[b a], %w[b b]])
+    expect(sqls(generated).last).to eq("SELECT 1, 'b', 'b'")
   end
 
-  it "keeps at most five, and counts the rest as over the cap" do
-    generated = generate(appending("a"), appending("b"))
+  it "keeps at most ten, and counts the rest as over the cap" do
+    generated = generate(appending("a"), appending("b"), appending("c"), appending("d"))
 
-    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([5, 1, 0])
+    expect([generated.rewrites.size, generated.over_cap, generated.duplicates]).to eq([10, 10, 0])
   end
 
   it "goes at most two rules deep" do

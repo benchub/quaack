@@ -262,13 +262,13 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     it "counts the rewrites over the cap in the marker and the 6c burndown" do
       prepare
       select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
-      six = (1..6).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
+      eleven = (1..11).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
 
-      outcomes = call_step(six)
+      outcomes = call_step(eleven)
 
-      expect(outcomes.map { it[:rewrite] }).to eq((1..5).map { "rewrite_#{it}" })
+      expect(outcomes.map { it[:rewrite] }).to eq((1..10).map { "rewrite_#{it}" })
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 1)
-      expect(burndown("6c")).to eq(six_c((1..6).to_h { ["rule#{it}", 1] }, 5, over_cap: 1))
+      expect(burndown("6c")).to eq(six_c((1..11).to_h { ["rule#{it}", 1] }, 10, over_cap: 1))
     end
   end
 

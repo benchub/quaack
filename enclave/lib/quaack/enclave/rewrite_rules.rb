@@ -57,7 +57,7 @@ module Quaack
       ].freeze
 
       DEPTH = 2
-      MAX = 5
+      MAX = 10
 
       module_function
 
