@@ -1853,22 +1853,7 @@ Minor findings from the first review of 20260929-5:
 - **Design:** Step 1.
 - **Status:** todo
 
-### 20261003-8. `rake full`: harden the stamp and close test gaps.
-
-Minor findings from the first review of 20261003-2:
-
-- **`rake spec full` writes the stamp without the full replay.** So does `rake default full`. Rake runs a task only once per invocation, so `full`'s invoke of `:spec` does nothing after `spec` has already run. Make `full` run its suites itself, or refuse when `spec` already ran.
-- **The stamp spec doesn't read the real version constants.** `full_replay_stamp_spec.rb:15` parses the version files with a regex, using a copy of the Rakefile's path map. If the regex stops matching, the Rakefile stamps `null` and the spec compares nil with nil, so it passes. Compare against the loaded `Quaack::*::VERSION` constants, and refuse to stamp a nil.
-- **Exporting `QUAACK_FULL_REPLAY=1` makes plain `rake` skip the stamp check** (`full_replay_stamp_spec.rb:19`).
-- **No test covers RuboCop failing during `rake full`** (`Rakefile:79`). The stamp is skipped today, but nothing pins that.
-- **The `reject { it == EMPTY }` in `spec/support/pipeline_replay.rb` is untested.** Without it, a query with no replies at all would run the all-empty variant instead of failing.
-- **CLAUDE.md wording.** The Docker and pg_dump bullets still say "the full check", which now reads as `rake full`, though both apply to plain `rake` too.
-- **Where the enclave suite's time goes.** The builder's profile: about 9½ minutes, led by `standalone_require_spec` (39s), then `candidate_runs_step_postgres_spec` (26s), then the baseline, schema-dump, and step specs. Trim these if they're worth it.
-
-- **Depends on:** 20261003-2.
-- **Came from:** The first review of 20261003-2, 2026-10-03.
-- **Design:** none (development tooling).
-- **Status:** todo
+### 20261003-8. `rake full`: harden the stamp and close test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-9. `quaack deploy` diagnosis: minor findings, round two.
 
@@ -1961,4 +1946,17 @@ Findings from the build and review of 20261002-7:
 - **Depends on:** 20261002-7.
 - **Came from:** The build and review of 20261002-7, 2026-10-03.
 - **Design:** 6c.
+- **Status:** todo
+
+### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment.
+
+Minor findings from the review of 20261003-8:
+
+- **The nil-version check runs last.** It sits in `write_full_replay_stamp` (Rakefile ~33), so an unreadable version file is caught only after the whole 38-minute run. Call `gem_versions` at the start of `full` to fail fast.
+- **`spec/full_replay_selection_spec.rb` overstates its coverage.** Its comment says it covers the run "as `rake full` runs it", but it swaps in its own spec task. Only the new `spec/rakefile_spec.rb` test checks that the variable reaches the child suites. Fix the comment.
+- **Suite time still left:** `candidate_runs_step_postgres_spec` and the baseline, schema-dump and step specs spend their time in real Postgres. Trimming them wasn't cheap or clearly safe in 20261003-8. Look again only if the per-commit check gets slow.
+
+- **Depends on:** 20261003-8.
+- **Came from:** The review of 20261003-8, 2026-10-03.
+- **Design:** none (development tooling).
 - **Status:** todo

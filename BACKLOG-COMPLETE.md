@@ -3686,3 +3686,32 @@ Minor findings from the review of 20260930-5, in enclave/spec/arena_runner_postg
     - Plants for a polling error, a dropped `stop`, and a failed `pg_cancel_backend` each gave the right error.
     - Breaking ArenaRunner's 57014 handling still turns the happy path red.
   - **Not filed:** the reviewer's one minor note. The hook catches a dropped `stop` only because it runs within about 50ms, before the closed connection kills the thread. It caught it 3 of 3 times. The comment also says the thread dies when the database is dropped, when really it dies when `other` is closed. Too small for a task.
+
+### 20261003-8. `rake full`: harden the stamp and close test gaps.
+
+Minor findings from the first review of 20261003-2:
+
+- **`rake spec full` writes the stamp without the full replay.** So does `rake default full`. Rake runs a task only once per invocation, so `full`'s invoke of `:spec` does nothing after `spec` has already run. Make `full` run its suites itself, or refuse when `spec` already ran.
+- **The stamp spec doesn't read the real version constants.** `full_replay_stamp_spec.rb:15` parses the version files with a regex, using a copy of the Rakefile's path map. If the regex stops matching, the Rakefile stamps `null` and the spec compares nil with nil, so it passes. Compare against the loaded `Quaack::*::VERSION` constants, and refuse to stamp a nil.
+- **Exporting `QUAACK_FULL_REPLAY=1` makes plain `rake` skip the stamp check** (`full_replay_stamp_spec.rb:19`).
+- **No test covers RuboCop failing during `rake full`** (`Rakefile:79`). The stamp is skipped today, but nothing pins that.
+- **The `reject { it == EMPTY }` in `spec/support/pipeline_replay.rb` is untested.** Without it, a query with no replies at all would run the all-empty variant instead of failing.
+- **CLAUDE.md wording.** The Docker and pg_dump bullets still say "the full check", which now reads as `rake full`, though both apply to plain `rake` too.
+- **Where the enclave suite's time goes.** The builder's profile: about 9½ minutes, led by `standalone_require_spec` (39s), then `candidate_runs_step_postgres_spec` (26s), then the baseline, schema-dump, and step specs. Trim these if they're worth it.
+
+- **Depends on:** 20261003-2.
+- **Came from:** The first review of 20261003-2, 2026-10-03.
+- **Design:** none (development tooling).
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-8.
+  - **Refusal:** `full` refuses, writing no stamp, when `spec` or `default` already ran in the same command. Re-running the suites would cost about 17 more minutes without saying so.
+  - **The variable:** `QUAACK_FULL_REPLAY` reaches the suites only while `rake full` runs. Otherwise the `spec` task removes it, so an exported value can't make plain `rake` skip the stamp check.
+  - **The stamp:** the Rakefile refuses to stamp a nil version and names the file. The stamp spec compares against the loaded `Quaack::*::VERSION` constants.
+  - **New tests:** one for RuboCop failing during `rake full`, and one for the `reject { it == EMPTY }` case.
+  - **CLAUDE.md:** the Docker and pg_dump bullets now cover both commands.
+  - **Suite time:** `standalone_require_spec` runs its child processes in parallel, cutting it from 31s to about 6s. The other slow specs were left alone.
+  - **Review:** one round, clean.
+    - Under plain `rake` the variable doesn't reach the child suites. Under `rake full` it does.
+    - Every mutation went red.
+    - The parallel spec passed four runs, three of them at the same time.
+  - **Follow-ups:** minor findings went to 20261003-12.
