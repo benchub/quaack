@@ -71,7 +71,7 @@ module Quaack
             "them, becomes that table alone with an EXISTS on the other tables, and no DISTINCT."
         end
 
-        def rewrites(parse, catalog)
+        def rewrites(parse, catalog, _literals = nil)
           tree = Deparse.copy(parse.tree)
           select = Tree.select(tree)
           query = Query.read(select) if select && distinct?(select)

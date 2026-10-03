@@ -74,7 +74,7 @@ module Quaack
             "rest of the query reads in place of its tables."
         end
 
-        def rewrites(parse, catalog)
+        def rewrites(parse, catalog, _literals = nil)
           select = Tree.select(parse.tree)
           reads = Reads.of(select, catalog) if select && plain?(select) && movable?(select)
           return [] unless reads
