@@ -639,25 +639,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 
 ### 20260929-5. Say why intake can't read the query or plan. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording.
-
-The round-one review of 20260929-3 left these minor findings. The code is in `driver/lib/quaack/driver/deploy_diagnosis.rb`.
-
-- **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
-- **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
-- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH. **Decided (the user, 2026-10-03):** say quaacks isn't installed for this Ruby, tell the user to run `quaack deploy`, and mention the other quaacks on PATH.
-- **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
-- **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
-- **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
-- **Optional tests.** The `\A` anchor on `LINE` and the `run.limit.nil?` guard both survive removal. The guard is effectively redundant.
-- **Also consider:**
-  - a `gem` and `ruby` mismatch on the jump server (the install went into one Ruby's user dir, and the probe asks another);
-  - a user gem dir with a space in its path, which falls back to the general advice today.
-
-- **Depends on:** 20260929-3.
-- **Came from:** Reviews of 20260929-3, rounds one and two.
-- **Design:** Deploying the enclave.
-- **Status:** todo
+### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-7. Say which clients `run_server_other_clients` saw. Done, see BACKLOG-COMPLETE.md.
 
@@ -817,14 +799,7 @@ Minor findings from the review of 20260929-12:
 
 ### 20260930-9. Qualify the catalog names the run server check reads. Done, see BACKLOG-COMPLETE.md.
 
-### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
-
-`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
-
-- **Depends on:** 20260929-24.
-- **Came from:** Review of 20260929-24, round one.
-- **Design:** none. Test harness only.
-- **Status:** todo
+### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260930-11. A `bedrock` LLM provider: Anthropic models on AWS Bedrock. Done, see BACKLOG-COMPLETE.md.
 
@@ -1962,4 +1937,18 @@ Minor findings from the first review of 20261003-2:
 - **Depends on:** 20261003-2.
 - **Came from:** The first review of 20261003-2, 2026-10-03.
 - **Design:** none (development tooling).
+- **Status:** todo
+
+### 20261003-6. `quaack deploy` diagnosis: minor findings, round two.
+
+Minor findings from the review of 20260929-6:
+
+- **The escape filter on gem and ruby paths is untested.** `deploy_diagnosis.rb:110`'s `which_gem` filters those paths with `PLAIN_PATH`, but removing that check leaves every spec green. It's the only thing keeping a PATH entry that holds an escape sequence out of the advice. Add a test with a `gem` dir holding `$` or ESC, and expect the general sentence.
+- **The `pwd -P` on the gem/ruby comparison is untested** (`deploy_probe.rb:33`). Changing it to `pwd` stays green.
+- **The trailing `(?<! )` on `PLAIN_PATH` is untested,** and it seems unneeded, since `bin` always ends in `/bin`. Test it or drop it.
+- **The not-installed advice may not help.** It tells the user to run `quaack deploy` again, but deploy's `gem install` may well install to the same place again. The probe already reports `gem_dir`. Use it to say where the gem went and why this Ruby doesn't see it.
+
+- **Depends on:** 20260929-6.
+- **Came from:** The review of 20260929-6, 2026-10-03.
+- **Design:** Deploy.
 - **Status:** todo

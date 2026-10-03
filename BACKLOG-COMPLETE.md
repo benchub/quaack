@@ -3509,3 +3509,44 @@ Add it to 6c's table in DESIGN.md, as something the planner doesn't do. Put it f
     - refusing casts on literals;
     - refusing volatile duplicates;
     - the remaining test gaps and `Literals#inspect`.
+
+### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording.
+
+The round-one review of 20260929-3 left these minor findings. The code is in `driver/lib/quaack/driver/deploy_diagnosis.rb`.
+
+- **The shell-name filter is untested.** `SHELL_NAME` can become `/.*/`, and its guard can be dropped, with every spec still green. Without the filter, a passwd shell field holding an escape sequence goes into the advice as-is. Add a test where getent answers a shell with an escape sequence, a space, or uppercase, and assert no shell-specific advice.
+- **Only the PATH side of the physical-path comparison is tested.** The probe's `pwd -P` on the bin dir can become `pwd`. Add a test where HOME is a symlink and PATH holds the physical bin dir. Without `-P`, that case wrongly advises "another quaacks comes first".
+- **Parts of the decision order are untested.** Swapping unsupported-shell with missing-ruby, or other-quaacks with other-ruby, stays green. Add a fish-without-ruby example, and one with another quaacks on PATH and `installed=no`. Decide the right message for the second: today it tells the user to put a bin dir that has no quaacks on PATH. **Decided (the user, 2026-10-03):** say quaacks isn't installed for this Ruby, tell the user to run `quaack deploy`, and mention the other quaacks on PATH.
+- **The advice for other shells overclaims.** It says POSIX sh reads no startup file because `$ENV` is only for interactive shells, but ksh88 reads `$ENV` non-interactively. Soften it to "it may read none; see its manual", and keep "bash or zsh may be easier". The comment claiming sshd sets `$SHELL` from passwd is unsourced; cite a source or soften it.
+- **DESIGN.md's decision order leaves out the last case.** That case is quaacks on PATH that didn't answer. Mention it there. Its message says "didn't answer" even when quaacks answered with the wrong version; word it as "didn't answer with version X".
+- **The installed check is weakly tested.** The probe's `[ -x "$d/bin/quaacks" ]` can become `[ -d "$d/bin" ]` with every spec green, because the "other Ruby" example never creates the bin dir. In that example, create `bin` holding some other executable (not quaacks) and keep the "other Ruby" message expected. (From round two.)
+- **Optional tests.** The `\A` anchor on `LINE` and the `run.limit.nil?` guard both survive removal. The guard is effectively redundant.
+- **Also consider:**
+  - a `gem` and `ruby` mismatch on the jump server (the install went into one Ruby's user dir, and the probe asks another);
+  - a user gem dir with a space in its path, which falls back to the general advice today.
+
+- **Depends on:** 20260929-3.
+- **Came from:** Reviews of 20260929-3, rounds one and two.
+- **Design:** Deploying the enclave.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after one clean review.
+  - **Required items:** all done, with a test per gap. Each named mutation goes red.
+  - **The user's answer:** another quaacks on PATH with `installed=no` gets "quaacks isn't installed for this Ruby; run `quaack deploy`", and names the other quaacks.
+  - **Wording:** the wrong-version message says "didn't answer with version X". Other shells "may read none". The sshd comment cites OpenSSH's `session.c`.
+  - **"Also consider":** both items are done. The probe reports where `gem` and `ruby` are, and names both when they differ. User gem dirs with spaces get the export line.
+  - **Refactor:** the probe moved to `deploy_probe.rb`.
+  - **Skipped:** the optional `run.limit.nil?` test, which would be a racy test of a redundant guard.
+  - **Follow-ups:** minor findings went to 20261003-6.
+
+### 20260930-10. Drop or explain the `BUNDLE_SOMETHING` plant in isolated_install_spec.
+
+`Bundler.with_unbundled_env` already strips every `BUNDLE_*` key before `IsolatedInstall#isolated_env` scans `ENV`. So the `BUNDLE_SOMETHING` plant in spec/isolated_install_spec.rb proves nothing, and narrowing the scan to `/\ABUNDLER_/` leaves every spec green. It's an equivalent mutant, and no variable can get through. Cut the plant, or say in the comment that it's belt and braces. **Decided (the user, 2026-10-03):** keep it, with a belt-and-braces comment.
+
+- **Depends on:** 20260929-24.
+- **Came from:** Review of 20260929-24, round one.
+- **Design:** none. Test harness only.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20260930-10.
+  - **Change:** the plant stays. Its comment now says it's belt and braces, and that it would only matter if `isolated_env` ran outside `with_unbundled_env`.
+  - **Verified:** narrowing the scan to `/\ABUNDLER_/` still leaves the spec green, so the plant can't fail today.
+  - **Review:** one round, clean.

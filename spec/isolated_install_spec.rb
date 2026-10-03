@@ -61,7 +61,9 @@ RSpec.describe IsolatedInstall do
   # leftover BUNDLER_ORIG_* in a developer's shell. Bundler puts its own
   # BUNDLER_ORIG_PATH in this process's ENV too, so BUNDLER_QUAACK_LEFTOVER,
   # which only the parent's environment holds, shows the child's environment
-  # is what gets scrubbed.
+  # is what gets scrubbed. with_unbundled_env already drops every BUNDLE_*
+  # key before isolated_env scans ENV, so BUNDLE_SOMETHING can't fail today.
+  # It's belt and braces, in case that order changes.
   it "ignores every BUNDLE* variable in the parent's environment" do
     leak = { "BUNDLER_ORIG_PATH" => "/leak/bin", "BUNDLE_SOMETHING" => "leak", "BUNDLER_QUAACK_LEFTOVER" => "leak" }
 

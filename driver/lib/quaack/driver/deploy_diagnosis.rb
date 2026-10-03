@@ -1,50 +1,25 @@
 # frozen_string_literal: true
 
+require_relative "deploy_probe"
 require_relative "transport/child"
 require_relative "transport/ssh"
+require_relative "version"
 
 module Quaack
   module Driver
     # Works out why `quaack deploy` installed quaacks but can't run it over
     # ssh, and what the engineer should change (DESIGN.md, "Deploying the
-    # enclave"). It only reads: one ssh call runs PROBE, and nothing on the
-    # jump server changes. The engineer makes the edit.
+    # enclave"). It only reads: one ssh call runs DeployProbe::SCRIPT, and
+    # nothing on the jump server changes. The engineer makes the edit.
     #
-    # The remote command is just `sh -s`, with PROBE on stdin, so even a
+    # The remote command is just `sh -s`, with the script on stdin, so even a
     # login shell that can't parse POSIX sh, such as fish or csh, runs it.
     # sh inherits the PATH that the login shell's startup files set for a
     # non-interactive ssh command, the PATH a bare `quaacks` gets.
     class DeployDiagnosis
-      # Each answer is one line, "quaack-probe:<key>=<value>", so whatever
-      # the login shell's startup files print around it is ignored.
-      #
-      # The login shell comes from getent, which asks NSS, so it covers
-      # accounts in LDAP or SSSD too and isn't fooled by a startup file
-      # that exports SHELL. Where getent can't answer, $SHELL, which sshd
-      # sets from the same passwd entry, stands in. Whether the user gem bin
-      # dir is on PATH shows in where `command -v quaacks` finds it: nowhere,
-      # there (`same`), or somewhere else first. `same` compares directories
-      # by their physical paths, so a symlinked PATH entry still counts.
-      PROBE = <<~SH
-        p=$(getent passwd "$(id -un)" 2>/dev/null); s=${p##*:}; [ -n "$s" ] || s=$SHELL
-        echo "quaack-probe:shell=$s"
-        if command -v ruby >/dev/null 2>&1; then
-          d=$(ruby -e 'puts Gem.user_dir' 2>/dev/null)
-          echo "quaack-probe:user_dir=$d"
-          if [ -x "$d/bin/quaacks" ]; then echo "quaack-probe:installed=yes"; else echo "quaack-probe:installed=no"; fi
-        else
-          echo "quaack-probe:ruby=missing"
-        fi
-        if q=$(command -v quaacks 2>/dev/null); then
-          echo "quaack-probe:quaacks=$q"
-          a=$(cd "${q%/*}" 2>/dev/null && pwd -P); b=$(cd "$d/bin" 2>/dev/null && pwd -P)
-          if [ -n "$a" ] && [ "$a" = "$b" ]; then echo "quaack-probe:same=yes"; fi
-        fi
-      SH
-      KEYS = %w[shell user_dir installed ruby quaacks same].freeze
-      LINE = /\Aquaack-probe:(#{KEYS.join("|")})=(.*)\z/
-      # A path it shows: absolute, and nothing a shell would expand.
-      PLAIN_PATH = %r{\A/[A-Za-z0-9._/+-]{0,255}\z}
+      # A path it shows: absolute, and nothing a shell would expand inside
+      # double quotes. Spaces are fine there, but not at the end.
+      PLAIN_PATH = %r{\A/[A-Za-z0-9._/+ -]{0,255}(?<! )\z}
       SHELL_NAME = /\A[a-z0-9]{1,16}\z/
       UNSUPPORTED = %w[fish csh tcsh].freeze
       EARLY_RETURN = "above any line that returns early for non-interactive shells"
@@ -67,14 +42,10 @@ module Quaack
 
       def probe
         argv = [@ssh, *Transport::Ssh::DEFAULT_OPTIONS, "--", @host, "sh -s"]
-        run = Transport::Child.run(argv, stdin: PROBE, timeout: TIMEOUT, max_output_bytes: 64 * 1024)
-        parse(run.stdout) if run.limit.nil? && run.status.success?
+        run = Transport::Child.run(argv, stdin: DeployProbe::SCRIPT, timeout: TIMEOUT, max_output_bytes: 64 * 1024)
+        DeployProbe.parse(run.stdout) if run.limit.nil? && run.status.success?
       rescue Transport::Child::NotStarted
         nil
-      end
-
-      def parse(stdout)
-        stdout.lines(chomp: true).filter_map { LINE.match(it)&.captures }.to_h
       end
 
       def advise(facts)
@@ -91,13 +62,17 @@ module Quaack
 
       def installed_advice(facts, shell, bin)
         found = facts["quaacks"]
-        return if found && !PLAIN_PATH.match?(found)
-        return other_quaacks(shell, found, bin) if found && facts["same"] != "yes"
-        return other_ruby(shell, bin) if facts["installed"] != "yes"
-        return not_on_path(shell, bin) unless found
+        return not_found(facts, shell, bin) unless found
+        return unless PLAIN_PATH.match?(found)
+        return not_installed(found, bin) if facts["installed"] != "yes"
+        return other_quaacks(shell, found, bin) if facts["same"] != "yes"
 
-        "quaacks is on PATH for non-interactive ssh on #{@host}, at #{found}, but it didn't answer " \
-          "`quaacks version`. Run it by hand to see why."
+        "quaacks is on PATH for non-interactive ssh on #{@host}, at #{found}, but `quaacks version` didn't answer " \
+          "with version #{ENCLAVE_VERSION}. Run it by hand to see why."
+      end
+
+      def not_found(facts, shell, bin)
+        facts["installed"] == "yes" ? not_on_path(shell, bin) : other_ruby(facts, shell, bin)
       end
 
       def unsupported(shell)
@@ -117,11 +92,26 @@ module Quaack
           "#{file(shell)}:\n#{line(bin)}"
       end
 
-      def other_ruby(shell, bin)
+      def not_installed(found, bin)
+        "quaacks isn't installed for the ruby on PATH for non-interactive ssh on #{@host}: it isn't in #{bin}, " \
+          "that Ruby's user gem bin directory. Run `quaack deploy` to install it there. The quaacks on PATH there, " \
+          "#{found}, is another one, which may belong to another Ruby or gem directory."
+      end
+
+      def other_ruby(facts, shell, bin)
         "The ruby on PATH for non-interactive ssh on #{@host} uses the user gem directory " \
-          "#{bin.delete_suffix("/bin")}, but quaacks isn't in #{bin}. " \
-          "The gem that installed it may belong to another Ruby. " \
+          "#{bin.delete_suffix("/bin")}, but quaacks isn't in #{bin}. #{which_gem(facts)} " \
           "Put Ruby 3.4's bin directory first on PATH in #{file(shell)}."
+      end
+
+      def which_gem(facts)
+        gem, ruby = facts.values_at("gem", "ruby_path")
+        if facts["gem_dir"] != "same" && [gem, ruby].all? { PLAIN_PATH.match?(it.to_s) }
+          return "The gem on PATH there, #{gem}, isn't beside that ruby, #{ruby}, " \
+                 "so gem install may have used another Ruby."
+        end
+
+        "The gem that installed it may belong to another Ruby."
       end
 
       def not_on_path(shell, bin)
@@ -142,7 +132,7 @@ module Quaack
       def other_posix(shell)
         return "" if %w[bash zsh].include?(shell)
 
-        ". POSIX sh reads none, since $ENV is only for interactive shells, so bash or zsh may be easier"
+        ". It may read none, so bash or zsh may be easier"
       end
 
       def line(bin) = %(  export PATH="#{bin}:$PATH")
