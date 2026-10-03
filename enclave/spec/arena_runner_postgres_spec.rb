@@ -223,25 +223,60 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
-    it "reports an operator's cancel from another session as statement_canceled, whatever the step" do
-      pid = conn.backend_pid
-      canceler = Thread.new do
-        other = arena.connect
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
-        until other.exec_params(
-          "SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid]
-        ).getvalue(0, 0) == "1"
-          raise "the INSERT never reached pg_sleep" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-
-          sleep 0.05
-        end
-        other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
-      ensure
-        other&.close
-      end
-
-      error = run_error(runner, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+    # Yields while a second session waits for conn to sit in pg_sleep, then
+    # cancels it. If the block fails before the cancel went out, says so. The
+    # canceler never outlives the example, so it can't die noisily later when
+    # the after hook drops the database. Its connection opens here, not in the
+    # thread, so a kill can't strand a half-open login that the drop waits on.
+    def cancel_once_sleeping(&)
+      other = arena.connect
+      canceler = start_canceler(other, conn.backend_pid)
+      result = name_early_failure(canceler, &)
       canceler.join
+      result
+    ensure
+      stop(canceler) if canceler
+      other&.close
+    end
+
+    def name_early_failure(canceler)
+      yield
+    rescue StandardError
+      raise "the INSERT never reached pg_sleep" unless canceler[:canceled]
+
+      raise
+    end
+
+    def start_canceler(other, pid)
+      Thread.new do
+        Thread.current.report_on_exception = false
+        wait_for_sleep(other, pid)
+        other.exec_params("SELECT pg_cancel_backend($1::int)", [pid])
+        Thread.current[:canceled] = true
+      end
+    end
+
+    def wait_for_sleep(other, pid)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+      until other.exec_params(
+        "SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid]
+      ).getvalue(0, 0) == "1"
+        raise "the INSERT never reached pg_sleep" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+        sleep 0.05
+      end
+    end
+
+    def stop(thread)
+      thread.kill.join
+    rescue StandardError
+      nil # Already raised by the join above, or superseded by the block's failure.
+    end
+
+    it "reports an operator's cancel from another session as statement_canceled, whatever the step" do
+      error = cancel_once_sleeping do
+        run_error(runner, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+      end
 
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :insert, 0])
       expect_nothing_persisted
