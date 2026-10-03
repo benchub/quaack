@@ -52,4 +52,36 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
   it "gives no columns for a table that doesn't exist" do
     expect(columns("missing")).to eq({})
   end
+
+  it "says whether a query analyzes on its own, with placeholders Postgres types or makes text", :aggregate_failures do
+    {
+      "SELECT t.id FROM public.t WHERE t.id = $2" => true,
+      "SELECT $1 AS label, t.id FROM public.t" => true,
+      "SELECT t.id FROM public.t WHERE t.id = outer_t.id" => false,
+      "SELECT id FROM public.t WHERE missing = $1" => false,
+      "SELECT t.id FROM nowhere t" => false
+    }.each do |sql, analyzes|
+      expect(catalog.self_contained?(sql)).to be(analyzes), sql
+    end
+    expect(conn.exec("SELECT count(*) FROM pg_catalog.pg_prepared_statements").getvalue(0, 0)).to eq("0")
+  end
+
+  it "says whether a query analyzes on its own inside a transaction, which a failure doesn't end" do
+    conn.transaction do
+      expect(catalog.self_contained?("SELECT t.id FROM public.t WHERE t.id = outer_t.id")).to be(false)
+      expect(catalog.self_contained?("SELECT t.id FROM public.t WHERE t.id = $1")).to be(true)
+      expect(conn.exec("SELECT 1").getvalue(0, 0)).to eq("1")
+    end
+  end
+
+  it "says whether a query calls a volatile function, refusing what it can't check", :aggregate_failures do
+    {
+      "SELECT t.id FROM public.t WHERE t.id < random()" => true,
+      "SELECT t.id FROM public.t WHERE t.id < pg_catalog.random()" => true,
+      "SELECT t.id FROM public.t WHERE lower(t.name) = $1 AND t.born < now()" => false,
+      "SELECT t.id FROM public.t FOR UPDATE" => true
+    }.each do |sql, volatile|
+      expect(catalog.calls_volatile?(sql)).to be(volatile), sql
+    end
+  end
 end
