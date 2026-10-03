@@ -428,6 +428,23 @@ RSpec.describe "quaack run" do
       expect(hosts).to eq([])
     end
 
+    it "fails with a usage error for a driver.json without a valid jump_command" do
+      path = File.join(home, ".quaack", "driver.json")
+
+      write_config(JSON.generate("llm" => {}))
+      expect([run_with, errors]).to eq([64, "quaack run: bad_driver_config: #{path}: no jump_command\n"])
+      expect(hosts).to eq([])
+
+      write_config(JSON.generate("jump_command" => "echo SENTINEL-JUMP\necho jump-1", "llm" => {}))
+      stderr.truncate(0)
+      stderr.rewind
+
+      expect([run_with, errors])
+        .to eq([64, "quaack run: bad_driver_config: #{path}: jump_command isn't one non-blank line\n"])
+      expect(errors).not_to include("SENTINEL-JUMP")
+      expect(hosts).to eq([])
+    end
+
     # chmod 000 can't stop root reading the file, so the example is
     # skipped where the file stays readable.
     it "fails with a usage error for a driver.json it can't read" do

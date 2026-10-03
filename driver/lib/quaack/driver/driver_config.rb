@@ -26,6 +26,7 @@ module Quaack
         config = parse(path)
         raise Bad.new(path, "not a JSON object") unless config.is_a?(Hash)
 
+        validate_jump_command(config, path)
         config
       end
 
@@ -55,6 +56,16 @@ module Quaack
         raise Bad.new(path, "can't read it")
       end
       private_class_method :parse
+
+      def self.validate_jump_command(config, path)
+        raise Bad.new(path, "no jump_command") unless config.key?("jump_command")
+
+        command = config["jump_command"]
+        return if command.is_a?(String) && command.match?(/\A[^\n\r]*\S[^\n\r]*\z/)
+
+        raise Bad.new(path, "jump_command isn't one non-blank line")
+      end
+      private_class_method :validate_jump_command
 
       def self.json_error_location(error)
         match = error.message.match(/ at line (?<line>\d+) column (?<column>\d+)\z/)
