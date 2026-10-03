@@ -637,18 +637,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 
 ### 20260929-4. Say why driver.json is bad. Done, see BACKLOG-COMPLETE.md.
 
-### 20260929-5. Say why intake can't read the query or plan.
-
-`quaack start --query ~/q/query.sql ...` failed with only `query_unreadable`. The laptop's shell had expanded `~` to the laptop's home (`/Users/...`), but `--query` and `--plan` are paths on the jump server, so the file wasn't there. Both sides should help:
-
-- **The driver, before any ssh.** If `--query` or `--plan` is an absolute path under the laptop's own home directory (`Dir.home`), refuse with a usage error: that looks like a path on this laptop, and these are paths on the jump server, so give one relative to your home there, such as `q/query.sql`, or an absolute path there. Decide whether a literal leading `~/` (quoted, so the laptop's shell leaves it) should be expanded on the jump server. If it is, do it in `quaacks`, never with a remote shell.
-- **The enclave.** `query_unreadable` and `plan_unreadable` have several causes that look the same today: missing, a symlink as the last part (refused by `NOFOLLOW`), not a regular file, and no permission. Keep the rule, and add which cause it was, such as `query_unreadable: no such file on the jump server`. Never include the path or the OS's own message, which quotes it. Check the whitelist and the egress rules for what an error line may carry.
-- Update README.md's `quaack start` section and DESIGN.md step 1 to say plainly that the paths are on the jump server, relative to your home there.
-
-- **Depends on:** none.
-- **Came from:** The user's first real `quaack start`, 2026-09-29.
-- **Design:** Step 1, Where QUAACK runs.
-- **Status:** todo
+### 20260929-5. Say why intake can't read the query or plan. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260929-6. `quaack deploy` diagnosis: close test gaps and fix wording.
 
@@ -1987,6 +1976,11 @@ Minor findings from the first review of 20260929-5:
 - `operator_file.rb:54`: removing `ENOTDIR` (a parent that's a regular file) stays green. That case would then be `not_regular_file` instead of `missing`. Pin it.
 - `error_filter.rb:11`: the comment still says "for two rules" and has a stray indent. Restore the `FUNCTION` comment that was deleted from `reply.rb:55`.
 - The driver repeats the list of four reasons in `reply.rb` and `enclave_error.rb`. Share one constant from the protocol gem.
+- From the second review:
+  - `start.rb:72`: removing `path == home_path` or either `cleanpath` call stays green. Test `--query /Users/bench` and `/Users/bench/../x.sql`.
+  - `operator_file.rb` `reason`: `EIO`, `ENAMETOOLONG`, and `IOError` all become `not_regular_file`, which is misleading. Give them their own reason, or a generic one.
+  - No driver spec checks that `--query '~/q.sql'` reaches the remote `quaacks` as a literal `~/q.sql`.
+  - `error_filter.rb:153`: the `instance_of?(String)` check is an equivalent mutant. Keep it with a comment, or drop it.
 
 - **Depends on:** 20260929-5.
 - **Came from:** The first review of 20260929-5, 2026-10-03.

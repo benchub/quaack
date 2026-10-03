@@ -3432,3 +3432,17 @@ Other details:
 - **Design:** LLM client, driver.json.
 - **Status:** done
 - **Note (landed 2026-10-03):** Landed on `main` after three reviews. The user granted an extra fix round after the second. `CopilotCliAdapter` writes the prompt (system prompt, JSON-only instruction, schema, labeled transcript) to a 0600 file in a private temp dir. That dir is also the cwd. It runs the argv template without a shell and with `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` unset. It reads stdout and stderr against a deadline, so a detached grandchild holding a pipe can't hang it. On timeout it kills the process group (`llm_unavailable`). It removes the dir after every ask. The default template passes `--no-custom-instructions --disable-builtin-mcps --no-ask-user --available-tools=view --allow-tool=read({prompt_dir}) --disallow-temp-dir`, denies shell, write, and url, and uses `-s -p`. The docs don't say whether `--no-custom-instructions` covers `~/.copilot`'s user-level instructions. README.md warns about that, as the user chose. Settings are checked after the env overrides, so `QUAACK_LLM_BASE_URL` is refused for `copilot_cli`. The follow-up went to 20261003-1.
+
+### 20260929-5. Say why intake can't read the query or plan.
+
+`quaack start --query ~/q/query.sql ...` failed with only `query_unreadable`. The laptop's shell had expanded `~` to the laptop's home (`/Users/...`), but `--query` and `--plan` are paths on the jump server, so the file wasn't there. Both sides should help:
+
+- **The driver, before any ssh.** If `--query` or `--plan` is an absolute path under the laptop's own home directory (`Dir.home`), refuse with a usage error: that looks like a path on this laptop, and these are paths on the jump server, so give one relative to your home there, such as `q/query.sql`, or an absolute path there. Decide whether a literal leading `~/` (quoted, so the laptop's shell leaves it) should be expanded on the jump server. If it is, do it in `quaacks`, never with a remote shell.
+- **The enclave.** `query_unreadable` and `plan_unreadable` have several causes that look the same today: missing, a symlink as the last part (refused by `NOFOLLOW`), not a regular file, and no permission. Keep the rule, and add which cause it was, such as `query_unreadable: no such file on the jump server`. Never include the path or the OS's own message, which quotes it. Check the whitelist and the egress rules for what an error line may carry.
+- Update README.md's `quaack start` section and DESIGN.md step 1 to say plainly that the paths are on the jump server, relative to your home there.
+
+- **Depends on:** none.
+- **Came from:** The user's first real `quaack start`, 2026-09-29.
+- **Design:** Step 1, Where QUAACK runs.
+- **Status:** done
+- **Note (landed 2026-10-03):** Landed on `main` after two review rounds. The user's answer: a quoted leading `~/` works, and `quaacks` expands it, and a bare `~`, with the jump server's `Dir.home`, in Ruby. `~otheruser` is taken literally. The driver refuses an absolute `--query` or `--plan` under the laptop's home with a usage error (exit 64) before any ssh. The enclave keeps the rules and adds a whitelisted `reason`: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. Neither the path nor the OS's message goes out, and sentinel specs check that. The driver gives each reason a fixed message, and specs pin all four for both rules. The fix round added those specs. Minor findings went to 20261003-4.
