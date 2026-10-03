@@ -275,24 +275,62 @@ RSpec.describe "the Rakefile" do
     end
   end
 
-  describe "the full task" do
-    def run_full(spec_body: %(puts "spec full=\#{ENV.fetch("#{FullReplay::ENV_VAR}", nil)}"))
+  # The spec task's suites see QUAACK_FULL_REPLAY only when `rake full` runs
+  # them, so a value exported in the shell can't make plain rake skip the
+  # stamp check.
+  describe "the full replay switch" do
+    def write_env_spec(dir)
+      File.write(File.join(dir, "spec", "env_spec.rb"), <<~RUBY)
+        RSpec.describe("env") { it("prints") { puts "suite full=\#{ENV.fetch("#{FullReplay::ENV_VAR}", "unset")}" } }
+      RUBY
+    end
+
+    def run_rake(*tasks, env: {})
       scratch_tree(%w[.]) do |dir|
-        code = full_task_code(spec_body)
+        write_env_spec(dir)
+        invokes = tasks.map { "Rake::Task[:#{it}].invoke" }.join("; ")
+        code = "require 'rake'; load 'Rakefile'; Rake::Task[:rubocop].clear; " \
+               "Rake::Task.define_task(:rubocop); #{invokes}"
+        Open3.capture2e(env, RbConfig.ruby, "-e", code, chdir: dir)
+      end
+    end
+
+    it "isn't passed to the suites by plain rake, even when exported" do
+      out, status = run_rake(:spec, env: { FullReplay::ENV_VAR => "1" })
+
+      expect(status).to be_success, out
+      expect(out).to include("suite full=unset")
+    end
+
+    it "is passed to the suites by rake full" do
+      out, status = run_rake(:full, env: { FullReplay::ENV_VAR => nil })
+
+      expect(status).to be_success, out
+      expect(out).to include("suite full=1")
+    end
+  end
+
+  describe "the full task" do
+    def run_full(spec_body: %(puts "spec full=\#{ENV.fetch("#{FullReplay::ENV_VAR}", nil)}"),
+                 rubocop_body: 'puts "rubocop"', before: [], versions: {})
+      scratch_tree(%w[.]) do |dir|
+        write_versions(dir, **versions)
+        code = full_task_code(spec_body, rubocop_body, before)
         out, status = Open3.capture2e(RbConfig.ruby, "-e", code, chdir: dir)
         stamp = File.join(dir, "spec", "fixtures", "full_replay_versions.json")
         [out, status, (JSON.parse(File.read(stamp)) if File.exist?(stamp))]
       end
     end
 
-    def full_task_code(spec_body)
+    def full_task_code(spec_body, rubocop_body, before)
       <<~RUBY
         require "rake"
         load "Rakefile"
         Rake::Task[:rubocop].clear
-        Rake::Task.define_task(:rubocop) { puts "rubocop" }
+        Rake::Task.define_task(:rubocop) { #{rubocop_body} }
         Rake::Task[:spec].clear
         Rake::Task.define_task(:spec) { #{spec_body} }
+        #{before.map { "Rake::Task[:#{it}].invoke" }.join("\n")}
         Rake::Task[:full].invoke
       RUBY
     end
@@ -309,6 +347,36 @@ RSpec.describe "the Rakefile" do
       out, status, stamp = run_full(spec_body: 'raise "boom"')
 
       expect(status).not_to be_success, out
+      expect(stamp).to be_nil
+    end
+
+    it "does not run the specs or write the versions stamp when RuboCop fails" do
+      out, status, stamp = run_full(rubocop_body: 'raise "rubocop offenses"')
+
+      expect(status).not_to be_success, out
+      expect(out).to include("rubocop offenses")
+      expect(out).not_to include("spec full=")
+      expect(stamp).to be_nil
+    end
+
+    # Rake runs a task once per invocation, so after `rake spec` or `rake
+    # default`, full's own run of the specs would do nothing.
+    %i[spec default].each do |task|
+      it "refuses, writing no stamp, when #{task} already ran in the same rake" do
+        out, status, stamp = run_full(before: [task])
+
+        expect(status).not_to be_success, out
+        expect(out).to include("rake full must run the specs itself")
+        expect(out.scan("spec full=").size).to eq(1)
+        expect(stamp).to be_nil
+      end
+    end
+
+    it "refuses to stamp a version it can't read" do
+      out, status, stamp = run_full(versions: { driver: "" })
+
+      expect(status).not_to be_success, out
+      expect(out).to include("Can't read the driver version from driver/lib/quaack/driver/version.rb")
       expect(stamp).to be_nil
     end
   end
