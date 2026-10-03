@@ -30,16 +30,17 @@ module Quaack
       EX_USAGE = 64
       EX_SOFTWARE = 70
 
-      attr_reader :subcommand, :rule, :step, :sqlstate, :function, :clients, :exit_status, :signal
+      attr_reader :subcommand, :rule, :step, :sqlstate, :reason, :function, :clients, :exit_status, :signal
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
-      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, function: nil, clients: nil, # rubocop:disable Metrics/ParameterLists
+      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, clients: nil, # rubocop:disable Metrics/ParameterLists
                      exit_status: nil, signal: nil)
         @subcommand = subcommand
         @rule = rule
         @step = step
         @sqlstate = sqlstate
+        @reason = reason
         @function = function
         @clients = clients
         @exit_status = exit_status
@@ -60,6 +61,8 @@ module Quaack
       # grammar, which is older than production's Postgres. The enclave's
       # error line holds only the rule, so the driver adds the note.
       def rule_with_note
+        return "#{rule}: #{reason_message(reason)}" if %w[query_unreadable plan_unreadable].include?(rule) && reason
+
         return rule unless rule == "query_unparsable"
 
         require "pg_query"
@@ -78,12 +81,22 @@ module Quaack
       # What the error line said beyond its rule.
       def line_details
         [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
+         ("reason #{reason_message(reason)}" if reason),
          ("function #{function}" if function), ("clients #{described_clients}" if clients)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
       def described_clients = clients.map { "pid #{it["pid"]} started #{it["backend_start"]}" }.join(", ")
+
+      def reason_message(reason)
+        {
+          "missing" => "no such file on the jump server",
+          "symlink" => "path is a symlink on the jump server",
+          "not_regular_file" => "not a regular file on the jump server",
+          "permission_denied" => "permission denied on the jump server"
+        }.fetch(reason)
+      end
     end
   end
 end

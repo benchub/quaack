@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "pathname"
 require "shellwords"
 require_relative "driver_config"
 require_relative "enclave_version"
@@ -26,6 +27,7 @@ module Quaack
       # A failure, whose message is its rule. The command's output is never
       # in one.
       class Error < StandardError; end
+      class UsageError < Error; end
 
       # Seconds, as for the enclave's memory_command.
       JUMP_TIMEOUT = 30
@@ -39,6 +41,8 @@ module Quaack
       end
 
       def call(server:, query:, plan:)
+        check_remote_path!("query", query)
+        check_remote_path!("plan", plan)
         host = jump_host(jump_command, server)
         transport = Transport::Ssh.new(host:, ssh: @ssh)
         EnclaveVersion.check!(transport, host)
@@ -51,6 +55,22 @@ module Quaack
       end
 
       private
+
+      def check_remote_path!(option, path)
+        return unless laptop_home_path?(path)
+
+        raise UsageError, "#{option} looks like a path on this laptop; --query and --plan are paths on the " \
+                          "jump server. Give a path relative to your home there, such as q/query.sql, or an " \
+                          "absolute path there."
+      end
+
+      def laptop_home_path?(path)
+        return false unless Pathname.new(path).absolute?
+
+        home_path = Pathname.new(@home).cleanpath
+        path = Pathname.new(path).cleanpath
+        path == home_path || path.to_s.start_with?("#{home_path}/")
+      end
 
       def jump_command
         config = DriverConfig.read(@home) or raise Error, "no_driver_config"
