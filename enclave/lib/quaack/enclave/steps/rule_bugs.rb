@@ -17,6 +17,11 @@ module Quaack
       # pruned for planning as the original does was never tested: its
       # rewrite_tested_<n> says rule discarded, and it isn't a bug.
       #
+      # A rewrite resting on a denormalized_equal assumption isn't sound by
+      # design: 6b found the data holds it, and steps 9 and 10 make up their
+      # own data, which needn't. So their disproof of it isn't a bug. 14c's
+      # is, since 14c runs on the racetrack's data, which 6b checked.
+      #
       # 14c disproves a rewrite only when one of its failing verdicts in
       # result_comparison is a result mismatch, a rule in MISMATCHES. 14c
       # drops a candidate for any failing verdict, but two of its rules
@@ -39,16 +44,18 @@ module Quaack
         def call(store)
           verdicts = NegativeResult.optional(store, "result_comparison")&.fetch("verdicts") || {}
           NegativeResult.rewrites(store).filter_map do |rewrite|
-            made = RewriteSource.fields(store.read(rewrite))
-            step = disproved_by(store, rewrite, verdicts) if made["source"] == "rule"
+            entry = store.read(rewrite)
+            made = RewriteSource.fields(entry)
+            step = disproved_by(store, rewrite, verdicts, EmpiricalAssumptions.any?(entry)) if made["source"] == "rule"
             { "rewrite" => rewrite, "rules" => made["rules"], "step" => step } if step
           end
         end
 
-        # The step that disproved rewrite, or nil.
-        def disproved_by(store, rewrite, verdicts)
+        # The step that disproved rewrite, or nil. Steps 9 and 10 don't count
+        # for a rewrite resting on what the data holds.
+        def disproved_by(store, rewrite, verdicts, empirical)
           disproof = NegativeResult.disproved(store, rewrite)
-          return disproof["step"] if disproof && disproof["rule"] != "discarded"
+          return disproof["step"] if disproof && disproof["rule"] != "discarded" && !empirical
 
           "14c" if verdicts.fetch(rewrite, {}).each_value.any? { mismatch?(it) }
         end

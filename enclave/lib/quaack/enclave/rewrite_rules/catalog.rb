@@ -24,10 +24,12 @@ module Quaack
       #
       # It also lists a table's columns, in the table's order, for a rule
       # that writes a UNION, and just their names, which is what a star in a
-      # select list stands for:
+      # select list stands for, and the tables a column's foreign keys
+      # point at:
       #
       #   catalog.columns("public", "orders")        # => [Column(name: "id", comparable: true), ...]
       #   catalog.column_names("public", "orders")   # => ["id", "customer_id", "total"]
+      #   catalog.referenced_tables("public", "orders", "customer_id")   # => ["customers"]
       #
       # comparable says UNION can tell two of the column's values apart as
       # the column's own equality does: its type is an enum or one of
@@ -122,6 +124,16 @@ module Quaack
                             WHERE o.amopfamily = $1 AND o.amopopr = op.oid AND o.amopstrategy = s.strategy)
         SQL
 
+        # The tables any foreign key from the column points at, NOT VALID
+        # ones included.
+        REFERENCED = <<~SQL.freeze
+          SELECT DISTINCT r.relname FROM pg_catalog.pg_constraint c
+          JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+          JOIN pg_catalog.pg_class r ON r.oid = c.confrelid
+          WHERE c.conrelid = #{AssumptionCheck::RELATION} AND c.contype = 'f' AND a.attname = $3
+          ORDER BY 1
+        SQL
+
         def initialize(connection)
           @connection = connection
           @met = {}
@@ -146,6 +158,11 @@ module Quaack
         end
 
         def column_names(schema, table) = columns(schema, table).map(&:name)
+
+        # The names of the tables a foreign key from the column points at.
+        def referenced_tables(schema, table, column)
+          @connection.exec_params(REFERENCED, [schema, table, column]).column_values(0)
+        end
 
         def column_info(schema, table, column)
           @column_info[[schema, table, column]] ||= begin

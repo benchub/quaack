@@ -152,10 +152,12 @@ module Quaack
       # counts, minimax's per-literal verdicts, and whether it timed out.
       # rewrites is every stored rewrite, ranked or not: its entry name,
       # its $n SQL, its source (rule, llm, or operator) and, if a 6c rule
-      # made it, the rule names, its fate with the scenario, rule, round,
-      # or last stage that goes with it (and, for an fk_cycle refusal, the
-      # cycle's table names, each a relation of the run's schema subset),
-      # its plan's node shapes, its
+      # made it, the rule names and the tables and columns of the
+      # denormalized_equal assumptions it rests on (only names its SQL
+      # already holds, never the type value), its fate with the scenario,
+      # rule, round, or last stage that goes with it (and, for an fk_cycle
+      # refusal, the cycle's table names, each a relation of the run's
+      # schema subset), its plan's node shapes, its
       # untested atoms (step 9's redacted shapes), and its step 10
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each

@@ -10,6 +10,7 @@ require_relative "rewrite_rules/key_in_self_join"
 require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
+require_relative "rewrite_rules/polymorphic_key_copy"
 require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
@@ -32,9 +33,11 @@ module Quaack
     # catalog the catalog facts (see Catalog). Each Rewrite's tree is the
     # rewritten query's PgQuery::ParseResult, and its assumptions are the
     # catalog facts it relies on, in 6b's vocabulary (see
-    # RewriteAssumptions). A rule fires only when the catalog proves them. A
-    # rule's name and description are QUAACK's own constants, never anything
-    # read from the query, so they're shape-class data.
+    # RewriteAssumptions). A rule fires only when the catalog proves them,
+    # except a heuristic rule's denormalized_equal, which no catalog can
+    # prove and 6b checks against the data instead. A rule's name and
+    # description are QUAACK's own constants, never anything read from the
+    # query, so they're shape-class data.
     #
     # The generator knows nothing about any one rule: it holds RULES. To add
     # a rule, add its file under rewrite_rules/, require it above, and add
@@ -72,7 +75,8 @@ module Quaack
         ExistenceInFlip.new,
         DistinctJoinToExists.new,
         CteHoistDedupe.new,
-        UnionOuterFilterRemoval.new
+        UnionOuterFilterRemoval.new,
+        PolymorphicKeyCopy.new
       ].freeze
 
       DEPTH = 2

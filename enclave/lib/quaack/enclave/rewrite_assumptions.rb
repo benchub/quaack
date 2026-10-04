@@ -3,13 +3,22 @@
 module Quaack
   module Enclave
     # The structured assumptions a rewrite states (DESIGN.md 6a), and their
-    # vocabulary, which is exactly these four kinds:
+    # vocabulary, which is exactly these five kinds:
     #
     #   { "kind" => "not_null", "table" => "public.orders", "column" => "id" }
     #   { "kind" => "unique", "table" => "public.orders", "columns" => ["id"] }
     #   { "kind" => "foreign_key", "table" => "public.orders", "columns" => ["customer_id"],
     #     "references_table" => "public.customers", "references_columns" => ["id"] }
     #   { "kind" => "check", "table" => "public.orders", "expression" => "total >= 0" }
+    #   { "kind" => "denormalized_equal", "table" => "public.submissions", "column" => "course_id",
+    #     "join_column" => "assignment_id", "references_table" => "public.assignments",
+    #     "references_column" => "id", "type_column" => "context_type", "type_value" => "Course",
+    #     "id_column" => "context_id" }
+    #
+    # denormalized_equal is 6c's polymorphic_key_copy's: every table row
+    # joined to a references_table row on join_column = references_column,
+    # where that row's type_column is type_value, has column equal to its
+    # id_column. Only the data can say so, so 6b checks it there.
     #
     # A table is always "schema.name". An assumption that isn't exactly one
     # of these, with nothing missing or extra, makes RewriteAssumptions.valid?
@@ -20,7 +29,10 @@ module Quaack
         "unique" => { "table" => :name, "columns" => :strings },
         "foreign_key" => { "table" => :name, "columns" => :strings, "references_table" => :name,
                            "references_columns" => :strings },
-        "check" => { "table" => :name, "expression" => :string }
+        "check" => { "table" => :name, "expression" => :string },
+        "denormalized_equal" => { "table" => :name, "column" => :string, "join_column" => :string,
+                                  "references_table" => :name, "references_column" => :string,
+                                  "type_column" => :string, "type_value" => :string, "id_column" => :string }
       }.freeze
 
       TABLE_NAME = /\A[^.\s]+\.[^.\s]+\z/
