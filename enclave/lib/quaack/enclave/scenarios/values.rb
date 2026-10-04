@@ -60,6 +60,14 @@ module Quaack
           candidates.find { |v| readable?(col, v) } || raise(refusal(col, table, candidates))
         end
 
+        # The nth value of the first of columns ([table, Column] pairs, such
+        # as a key slot's) that every one of them reads, so a smallint and
+        # an integer joined take a value both hold.
+        def shared_nth(columns, number)
+          values = columns.map { |table, col| nth(col, number, table:) }
+          values.find { |v| columns.all? { |_, col| readable?(col, v) } } || values.first
+        end
+
         # The error for a column of table whose type reads none of
         # candidates: domain_check for a domain whose base type reads one,
         # so the domain's CHECK rejected them, and unsupported_type
@@ -96,14 +104,15 @@ module Quaack
           end
         end
 
-        private
-
+        # Whether the type has an nth value it reads.
         def distinct?(col)
           nth(col, 1)
           true
         rescue Error
           false
         end
+
+        private
 
         def typicals(col)
           return [Literals.bits(underlying(col).type, 0)] if category(col) == "V"

@@ -10,6 +10,7 @@ require_relative "scenarios/checks"
 require_relative "scenarios/free_values"
 require_relative "scenarios/picker"
 require_relative "scenarios/plan"
+require_relative "scenarios/reads"
 require_relative "scenarios/row_set"
 require_relative "scenarios/ties"
 require_relative "scenarios/topology"
@@ -229,7 +230,8 @@ module Quaack
         def free_value(table, col, mode) = free_values.value(table, col, mode)
 
         def free_values
-          @free_values ||= FreeValues.new(@schema, @topology, @checks, @values) { slot_atoms(it).any? }
+          @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,
+                                          Reads.new(@parse, @schema.column_names)) { slot_atoms(it).any? }
         end
 
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
@@ -247,14 +249,10 @@ module Quaack
 
         def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
 
-        # The key's value from the first of the slot's columns whose value
-        # every column of the slot reads, so a smallint and an integer
-        # joined take a value both hold.
+        # The key's value, one every column of the slot reads.
         def key_value(slot, group, table)
           key = group.split == table ? group.key + 100_000 : group.key
-          columns = slot_columns(slot)
-          values = columns.map { |t, col| @values.nth(col, key, table: t) }
-          values.find { |v| columns.all? { |_, col| @values.readable?(col, v) } } || values.first
+          @values.shared_nth(slot_columns(slot), key)
         end
 
         # Unique columns get a value per distinct row: rows alike in every

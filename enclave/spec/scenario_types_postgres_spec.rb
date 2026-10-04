@@ -196,6 +196,26 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(error.message).to eq("unsupported_type: fx.t.lsn (pg_lsn)")
     end
 
+    it "leaves a nullable one NULL when the query doesn't read it, unique or not" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn, ulsn pg_lsn UNIQUE)")
+      scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x'", "fx.t")
+      expect(values(scenarios[:s3], "t", "lsn") + values(scenarios[:s3], "t", "ulsn")).to all(be_nil)
+    end
+
+    it "still refuses a nullable one the query reads, by name, with a star, or as a whole row" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn)")
+      ["SELECT id, lsn FROM fx.t WHERE v = 'x'", "SELECT * FROM fx.t WHERE v = 'x'",
+       "SELECT t.* FROM fx.t t WHERE v = 'x'", "SELECT t FROM fx.t t WHERE v = 'x'",
+       "SELECT id FROM fx.t WHERE v = 'x' ORDER BY lsn"].each do |sql|
+        expect(refusal(sql).column).to eq(detail("fx.t", "lsn", "pg_lsn")), sql
+      end
+    end
+
+    it "still refuses a nullable unique one whose NULLs collide" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn UNIQUE NULLS NOT DISTINCT)")
+      expect(refusal("SELECT id FROM fx.t WHERE v = 'x'").column).to eq(detail("fx.t", "lsn", "pg_lsn"))
+    end
+
     it "refuses a unique one" do
       conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn NOT NULL UNIQUE)")
       error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
