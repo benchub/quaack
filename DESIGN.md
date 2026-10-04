@@ -759,6 +759,8 @@ Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused w
 
 A domain's `CHECK` counts as a `CHECK` on each column of that domain, with the same rule for what's simple.
 
+A refusal (`fk_cycle`, `complex_check`, `unsatisfiable_check`, `expression_unique_index`, `unsupported_type`, or `domain_check`) doesn't end the run. Step 9 can't build scenarios for the query, so it tests no rewrite. Each rewrite is stored as untested, with the refusal's rule and nothing else: not the column an `unsupported_type` or `domain_check` error names. An untested rewrite goes to neither step 10 nor step 11, and it's never measured or recommended. The run goes on to the index steps (12a, 13, 13a, 14) and the report, which says why, by the rule (step 15's `step9_untested`). A resumed run reads the stored refusal and doesn't test the rewrite again.
+
 Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark an atom untested, but they never make a fixture break a constraint:
 
 - Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
@@ -830,7 +832,7 @@ Roll back the transaction.
 
 ## 10. Adversarial fixtures.
 
-Run up to three rounds of 10a through 10c for each surviving candidate.
+Run up to three rounds of 10a through 10c for each surviving candidate. A rewrite step 9 refused to test (step 9's refusals) never survived it, so it never gets here.
 
 ### 10a. Generate counterexamples.
 
@@ -947,6 +949,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `ranked` | 14d ranked one of its labels. | |
 | `same_plans` | Step 8 found it can't run any differently from the original, so it was never tested. | |
 | `step9_disproved` | A step 9 scenario got different results. | Scenario, rule. |
+| `step9_untested` | Step 9 couldn't build scenarios for the query, so it never tested the rewrite. It's never recommended. | The refusal's rule. |
 | `step9_failed` | A step 9 scenario ended without comparing results: the original's order can't be checked, or a statement failed or timed out in arena. | Scenario, rule. |
 | `step10_disproved` | A step 10 round got different results. | Round, rule. |
 | `step10_failed` | A step 10 round ended without comparing results. | Round, rule. |
@@ -959,7 +962,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `measurement_timed_out` | Every one of its step 14 runs timed out. | |
 | `unfinished` | The run took it no further. | The last stage it finished. |
 
-Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. Fates, rules, and scenarios are fixed words in the code, so they're shape.
+Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `step9_untested` rewrite isn't wrong either, and it's no 6c bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words. Fates, rules, and scenarios are fixed words in the code, so they're shape.
 
 Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them. Say where each rewrite came from: the 6c rules that made it, the LLM, or the operator.
 
