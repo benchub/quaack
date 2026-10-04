@@ -3951,3 +3951,35 @@ Add it to 6c's table in DESIGN.md.
   - **Tests:** 16 examples on real Postgres with NULLs and duplicates; every refusal has a twin that fires. The builder ran 25 mutations and the reviewer 23; the one survivor in each is equivalent.
   - **Review:** one round, clean. The reviewer compared 26 Rails-style existence checks on real Postgres. One minor, a whole-row reference captured by a column of S, went to 20261003-29.
   - **Follow-ups:** the builder's widenings went to 20261003-29.
+
+### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types.
+
+A user's `quaack run` failed at steps 9-10 with `unsupported_type`, and nothing says which column caused it. `Scenarios::Values` (`scenarios/values.rb`) picks a value for each fixture column by trying a short list of strings and keeping the first one Postgres can cast to the column's type. When none of them casts, it raises `unsupported_type`. Types that likely miss today:
+
+- **Range types** (category `R`): none of the strings reads. `'empty'` would.
+- **Geometric types** (category `G`): `'(0,0)'`, and its nth forms.
+- **`bit(n)`**: `'0'` only fits `bit(1)`. Pad to the length in the typmod.
+- **Arrays when a distinct value is needed** (`nth`, for keys and unique columns): `'{}'` covers only the typical value. Use `'{<nth of the element type>}'`. **Seen in the user's run:** Canvas's `users.root_account_ids bigint[]` is in a unique index, so it's treated as unique and needs `nth`.
+- **A multi-column unique index needs only one column to vary.** Today every column of a unique index gets an `nth` value. Instead, vary one column that can take distinct values, such as an integer or text one, and give the others their typical value. That sidesteps types with no `nth` at all.
+- **Small numeric types when a distinct value is needed.** `key_value` adds 100,000 to the key for a split group, which overflows `smallint` and narrow `numeric(p,s)`. Wrap the number within the type's range, or pick a smaller offset when the type is narrow.
+- **A domain whose CHECK rejects every candidate.** That's a real refusal, but say so.
+
+The rule:
+
+- Add candidates for each type above, with real-Postgres tests that build a fixture holding a column of each type, both as a plain column and as a unique one.
+- Make the error name the type and column, such as `unsupported_type: courses.tags (int4range)`, as 20261003-19 does for `fk_cycle`. Type, table and column names are schema, not data. Add a sentinel test showing no row value appears in the error.
+- DESIGN.md lists the types that still refuse.
+
+Until then, the user can find the column with a catalog query over the query's tables and their foreign-key closure, listing columns whose type category isn't N, S, B, D, T or E, or that are domains.
+
+- **Depends on:** none. Fits with 20261003-18, which stops this refusal from ending the run, and 20261003-19, which names tables in `fk_cycle`.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-27.
+  - **Error detail:** `unsupported_type` and the new `domain_check` carry a `column` field, `{table, column, type}`, such as `unsupported_type: public.courses.tags (int4range)`. It holds schema names only. The enclave's error filter, the protocol whitelist, and the driver each check its exact shape and drop the whole field if any part fails. `quaack run` prints it.
+  - **Values:** new candidates for ranges (`'empty'`, `[v,v]`), geometric types, `bit(n)` padded to its length, arrays (`{<element's distinct value>}`), and narrow numerics, which wrap negative instead of overflowing on the +100,000 offset. A domain whose CHECK rejects every candidate refuses as `domain_check`.
+  - **Unique keys:** `Constraints#varying` varies one column per unique key, narrower keys first, so a wider key reuses a column already varied. It picks the best-ranked column, never a join key, and types with no readable distinct value rank last. A single-column unique key still varies. Expression unique indexes still vary every column they read. ParentRows follows the same rule.
+  - **Tests:** `scenario_types_postgres_spec.rb` on real Postgres, including the Canvas case (a `bigint[]` in a multi-column unique key), plus sentinel tests on both sides of the boundary.
+  - **Review:** three rounds. Round 1: the varying logic's `needed?` and sort order were untested; fixed, along with the rank of unreadable types. Round 2: the join-key exclusion and the FEW tier were untested; the builder's tests-only round added them. Round 3 checked those two tests, and both went red under two mutations each.
+  - **Follow-ups:** 20261003-33.
