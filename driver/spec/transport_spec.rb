@@ -803,7 +803,7 @@ RSpec.describe Quaack::Driver::Transport do
     [
       ["a sentinel table", %w[public.a SENTINEL public.a]],
       ["a sentinel after a table", ["public.a SENTINEL", "public.b", "public.a SENTINEL"]],
-      ["an end that isn't its start", %w[public.a public.b SENTINEL.c]],
+      ["an end that isn't its start", %w[public.a public.b public.c]],
       ["no second table", %w[public.a public.a]],
       ["more than 64 tables", [*Array.new(64) { "public.t#{it}" }, "public.t0"]],
       ["a table that isn't a String", [1, "public.b", 1]],

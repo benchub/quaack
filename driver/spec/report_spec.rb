@@ -294,6 +294,8 @@ RSpec.describe Quaack::Driver::Report do
           .not_to include("public.a")
         expect(fate("step9_untested", rule: "fk_cycle", cycle: "public.a"))
           .to include(esc("load, so it never")).and(satisfy { !it.include?("public.a") })
+        expect(fate("step9_untested", rule: "fk_cycle", cycle: []))
+          .to include(esc("QUAACK can't load, so it never"))
       end
 
       it "says what the real data showed" do
