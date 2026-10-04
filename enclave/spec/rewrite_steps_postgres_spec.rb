@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/enclave/assumption_check"
 require "quaack/enclave/steps/index_payload"
 require_relative "support/index_search_run"
 
@@ -150,6 +151,70 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect_no_leaks(sentinels, outcome)
       expect(stored.read("rewrite_1").slice("inferred", "warnings", "source"))
         .to eq("inferred" => true, "warnings" => warning, "source" => "operator")
+    end
+
+    # denormalized_equal is checked against the data (6b), which only a 6c
+    # rule may ask for: the LLM or the operator could otherwise make the
+    # enclave probe any table it names.
+    context "with a denormalized_equal assumption, which only a 6c rule may state" do
+      let(:denormalized) do
+        { "kind" => "denormalized_equal", "table" => "public.probe_children", "column" => "parent_copy",
+          "join_column" => "parent_id", "references_table" => "public.probe_parents", "references_column" => "id",
+          "type_column" => "kind", "type_value" => "K", "id_column" => "copy" }
+      end
+
+      # The data holds the assumption, so a probe would find it met.
+      def make_probe_tables
+        production.connect.tap do |conn|
+          conn.exec(<<~SQL)
+            CREATE TABLE public.probe_parents (id int PRIMARY KEY, kind text, copy int);
+            CREATE TABLE public.probe_children (id int PRIMARY KEY, parent_id int, parent_copy int);
+            INSERT INTO public.probe_parents SELECT i, 'K', i * 10 FROM generate_series(1, 20) i;
+            INSERT INTO public.probe_children SELECT i, i, i * 10 FROM generate_series(1, 20) i;
+          SQL
+        ensure
+          conn.close
+        end
+      end
+
+      # Every scan of the probe tables Postgres has counted. A backend
+      # flushes its counts when it exits, so this waits for them to settle.
+      def probe_scans
+        conn = production.connect
+        counts = Array.new(3) do
+          sleep 0.5
+          conn.exec("SELECT coalesce(sum(seq_scan + coalesce(idx_scan, 0)), 0) FROM pg_stat_user_tables " \
+                    "WHERE relname IN ('probe_children', 'probe_parents')").getvalue(0, 0).to_i
+        end
+        counts.last
+      ensure
+        conn&.close
+      end
+
+      it "refuses it from the LLM or an operator as a bad assumption, and never probes the data" do
+        ready
+        make_probe_tables
+        before = probe_scans
+
+        llm = rewrite_check(rewrites(rewrite(same, [denormalized])))
+        operator = rewrite_check(rewrites(rewrite(same, [denormalized]), inferred: true))
+
+        expect(lines(llm).first).to eq(outcome_line(1, "rejected", "bad_assumption"))
+        expect(lines(operator).first).to eq(outcome_line(1, "rejected", "bad_assumption"))
+        expect(probe_scans).to eq(before)
+        expect(stored.entry?("rewrite_1")).to be(false)
+      end
+
+      it "would see a probe in the scan counts, so the check above can fail" do
+        ready
+        make_probe_tables
+        before = probe_scans
+        conn = production.connect
+
+        expect(Quaack::Enclave::AssumptionCheck.met?(denormalized, conn)).to be(true)
+        conn.close
+        expect(probe_scans).to be > before
+      end
     end
 
     it "checks an operator's rewrite by the same inbound check" do
