@@ -1,5 +1,7 @@
 # QUAACK completed backlog.
 
+Old step IDs here, such as `5a-7` or `steps 9-10`, are mapped to their slugs in DESIGN.md's "Old step IDs" table.
+
 Finished tasks move here from BACKLOG.md with their full entries. Don't reopen them. If one needs more work, add a new task to BACKLOG.md that points back to it.
 
 ## Foundations.

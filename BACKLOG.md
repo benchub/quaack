@@ -12,6 +12,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 - **Open questions** are things I already know I'll need to ask about. Every task will get more questions when we pick it up.
 - Each task is built test first. CLAUDE.md has the rules.
 - Finished tasks move to BACKLOG-COMPLETE.md, and a one-line stub stays here. Never reopen a finished task. Add a new one instead.
+- Tasks name DESIGN.md's steps by slug, such as `index-rank`. A stub keeps its task's old title, which may use an old step ID such as `5a-7`; DESIGN.md's "Old step IDs" table maps those to slugs.
 
 ## Foundations.
 
@@ -41,7 +42,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 ### 20260922-12. Inbound check for step 10 inserts. Done, see BACKLOG-COMPLETE.md.
 
-## Step 1: Input.
+## Input.
 
 ### 20260922-13. Input intake. Done, see BACKLOG-COMPLETE.md.
 
@@ -49,11 +50,11 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 ### 20260922-15. Canonical plan form. Done, see BACKLOG-COMPLETE.md.
 
-## Step 2: Production inventory.
+## Production inventory.
 
 ### 20260922-16. Production inventory. Done, see BACKLOG-COMPLETE.md.
 
-## Step 3: Schema, statistics, and classification.
+## Schema, statistics, and classification.
 
 ### 20260922-17. 3a relations. Done, see BACKLOG-COMPLETE.md.
 
@@ -71,7 +72,7 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 ### 20260922-24. 3h clock anchoring. Done, see BACKLOG-COMPLETE.md.
 
-## Step 4: Run server.
+## Run server.
 
 ### 20260922-25. Run server checks. Done, see BACKLOG-COMPLETE.md.
 
@@ -191,17 +192,17 @@ This is the working backlog for QUAACK. It breaks DESIGN.md into tasks we can pi
 
 ### 20260923-20. Finish 5a-1 generator one. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-21. 5a-1 loose ends.
+### 20260923-21. index-from-query loose ends.
 
 Still open from the reviews of 20260922-30 and 20260923-20:
-- **Join reduction.** 5a-1 decides nullability from syntax alone. Once a strict WHERE conjunct on a table rejects its nulls, Postgres reduces the outer join. Then it pushes down that table's `IS NULL` and the ON conjuncts `Join#keeps?` drops, but 5a-1 still skips them. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)`. `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`.
+- **Join reduction.** index-from-query decides nullability from syntax alone. Once a strict WHERE conjunct on a table rejects its nulls, Postgres reduces the outer join. Then it pushes down that table's `IS NULL` and the ON conjuncts `Join#keeps?` drops, but index-from-query still skips them. HypoPG examples: `c LEFT JOIN o ... WHERE o.region = 3 AND o.note IS NULL` misses `orders(note, region)`. `c LEFT JOIN o ON o.customer_id = c.id AND c.region = 5 WHERE o.status = 1` uses `customers(region)`.
 - **Tests:** nullability at depth for RIGHT and FULL joins (two mutants survive), "USING always counts" for outer joins, and the error sentinel test checking `full_message` and the cause.
 - **Comment:** "a join to one still counts for the table on the other side" isn't true for an outer join to a derived table.
 - **Smaller gaps:** an ORDER BY on a nullable-side table's columns becomes a wasted key; `FOR UPDATE OF o` is falsely refused; `(o).*` isn't recognized as a star; `AS o(a, b)` alias lists aren't modeled; INCLUDE covers only the select list and GROUP BY; a prefix LIKE needs `text_pattern_ops` unless the collation is C; incremental sort isn't handled.
 
 - **Depends on:** 20260923-20.
 - **Came from:** Both reviews of 20260922-30, both reviews of 20260923-20, and the 20260922-30 builder's notes.
-- **Design:** 5a-1.
+- **Design:** index-from-query.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -209,7 +210,7 @@ Still open from the reviews of 20260922-30 and 20260923-20:
 
 ### 20260923-23. Dedupe repeated ORDER BY columns in 5a-1. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-24. 5a-2 loose ends.
+### 20260923-24. index-from-plan loose ends.
 
 Still open from the reviews of 20260922-31:
 - **Needs a decision:** common values spelled differently get a wasted partial. For example, `n = 1.5` on a numeric that pg_stats prints as `1.50` looks rare. Either skip the partial when the column side is cast, or treat a non-MCV literal as unknown when MCVs plus nulls cover about 1.
@@ -222,7 +223,7 @@ Still open from the reviews of 20260922-31:
 
 - **Depends on:** 20260922-31.
 - **Came from:** Both reviews of 20260922-31.
-- **Design:** 5a-2.
+- **Design:** index-from-plan.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -243,7 +244,7 @@ Still open from the reviews of 20260922-43:
 
 - **Depends on:** 20260923-29.
 - **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
-- **Design:** Step 9 and 9c.
+- **Design:** rewrite-test and vacuity-guard.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -257,17 +258,17 @@ Still open from the reviews of 20260922-43:
 
 ### 20260923-35. Volatility check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260923-36. 5a-3 loose ends.
+### 20260923-36. index-dedupe loose ends.
 
 Still open from the reviews of 20260922-32 and 20260923-31:
-- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for `ON ONLY` indexes on a partitioned parent, for any `WITH (...)` index, and for `NULLS NOT DISTINCT` unique indexes. A candidate identical to one is tested as new, and 15a won't report it as a duplicate.
+- **Some existing indexes never count as covering.** `IndexCandidate.from_ddl` returns nil for `ON ONLY` indexes on a partitioned parent, for any `WITH (...)` index, and for `NULLS NOT DISTINCT` unique indexes. A candidate identical to one is tested as new, and negative-result won't report it as a duplicate.
 - `IndexSql.normalize_predicate` should re-parse its output. `'x'::mytype(lower('bob'))` is stored as `'x'::mytype()`.
 - The doc comment should say array bounds on a cast (`status::text[12345]`) aren't checked, like integer typmods.
 - Dead code: `left = unwrap(node.lexpr)` in `column_comparison?`, and the unreachable `A_Const` check in `plain_type?`.
 
 - **Depends on:** 20260923-31.
 - **Came from:** The reviews of 20260922-32 and 20260923-31, and the builder's notes.
-- **Design:** 5a-3.
+- **Design:** index-dedupe.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -321,7 +322,7 @@ Still open from the reviews of 20260922-13:
 
 - **Depends on:** 20260922-13.
 - **Came from:** Both reviews of 20260922-13.
-- **Design:** Step 1.
+- **Design:** input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -329,16 +330,16 @@ Still open from the reviews of 20260922-13:
 
 ### 20260924-5. Rerun 9d comparisons with the fixture loaded in reverse. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-6. Narrow the 9d fail-closed rule for top-N queries.
+### 20260924-6. Narrow the fixture-compare fail-closed rule for top-N queries.
 
 Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker (json, jsonb, xml, citext, hstore, PostGIS, interval, numeric[], and composites of those) is refused, even when the sort key is unique. That refuses every candidate for common top-N queries over such tables, and those are prime rewrite targets. Options: rerun both queries without their LIMIT and OFFSET, and refuse only on a real hidden tie. Or add `::text` sort keys for left-out columns.
 
 - **Depends on:** 20260922-47.
 - **Came from:** Second review of 20260923-54.
-- **Design:** 9d.
+- **Design:** fixture-compare.
 - **Status:** todo
 
-### 20260924-7. 9d comparator loose ends.
+### 20260924-7. fixture-compare comparator loose ends.
 
 **Needs a decision,** from the reviews of 20260922-47 and 20260923-54:
 - A precise check for ties at a cut: the rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
@@ -346,7 +347,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 - **Depends on:** 20260922-47.
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
-- **Design:** 9d.
+- **Design:** fixture-compare.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -355,11 +356,11 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 **Needs a decision,** from the second review of 20260922-61:
 - Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`. Consider deriving `since` from the stored burndown for each search.
 - Tie `record_single_candidate_test`'s report to the Dedupe's proposals.
-- 5a-4's `unrenderable` refusal is counted as `hypopg_refused`.
+- index-test's `unrenderable` refusal is counted as `hypopg_refused`.
 
 - **Depends on:** 20260922-61.
 - **Came from:** Both reviews of 20260922-61.
-- **Design:** 15b.
+- **Design:** burndown.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -371,18 +372,18 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 
 - **Depends on:** 20260924-5.
 - **Came from:** Both reviews of 20260924-5.
-- **Design:** 9d.
+- **Design:** fixture-compare.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-10. 5a-7 loose ends.
+### 20260924-10. index-rank loose ends.
 
 **Needs a decision,** from the reviews of 20260922-35:
 - `rank` checks the literal-set names against the baseline, but not the values. Checking the values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
 
 - **Depends on:** 20260922-35.
 - **Came from:** The reviews of 20260922-35.
-- **Design:** 5a-7.
+- **Design:** index-rank.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -425,11 +426,11 @@ Still open from the build and reviews of 20260922-16:
 
 - **Depends on:** 20260922-16.
 - **Came from:** The build and reviews of 20260922-16.
-- **Design:** Step 2.
+- **Design:** inventory.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-25. 3g redaction loose ends.
+### 20260924-25. redact redaction loose ends.
 
 Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - **Decided, not built:** a plan more than about 48 levels deep can't go out through egress. Refuse it with a clear rule, and list it as unsupported in v1.
@@ -438,53 +439,53 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - Date and timestamp normalization for row annotations, through the racetrack.
 - Masks on planner-made TRUE and FALSE inflate the masked count.
 - The 42P18 retry depends on English `lc_messages`, and preparing in a failed transaction gives 3B001, not 25P02.
-- PredicateAtoms should use 3g's numbering. SingleCandidateTest and ArenaRunner should adopt Binding, so types get declared through PREPARE.
+- PredicateAtoms should use redact's numbering. SingleCandidateTest and ArenaRunner should adopt Binding, so types get declared through PREPARE.
 
 - **Depends on:** 20260924-16.
 - **Came from:** The reviews of 20260922-23, 20260924-11, and 20260924-16.
-- **Design:** 3g.
+- **Design:** redact.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-26. 3c statistics loose ends.
+### 20260924-26. statistics statistics loose ends.
 
 Still open from the build and reviews of 20260922-19:
 - pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
 - Values and names aren't converted to UTF-8, unlike SchemaDump. A non-UTF-8 database with non-ASCII values may be refused at the store write.
 - The pg_stats inherited-filter mutant is killed only by luck, since row order decides which duplicate wins.
-- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort 3c. List it as unsupported in v1, or skip it.
+- A column type whose array delimiter isn't a comma, such as `box`, makes PgArray raise and abort statistics. List it as unsupported in v1, or skip it.
 
 - **Depends on:** 20260922-19.
 - **Came from:** The build and reviews of 20260922-19.
-- **Design:** 3c.
+- **Design:** statistics.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-28. 3e literal set loose ends.
+### 20260924-28. literals literal set loose ends.
 
 Still open from the build and reviews of 20260922-21:
-- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which 3g turns into cast placeholders, and 3e always falls back on those. Handle a cast placeholder whose cast matches the column's type.
+- Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
 - The boolean `t`/`f` check at `literal_set.rb:326` survives mutation. Pin it with a planted bad value, or drop it.
 
 - **Depends on:** 20260922-21.
 - **Came from:** The build and reviews of 20260922-21.
-- **Design:** 3e.
+- **Design:** literals.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
 ### 20260924-29. Run server check loose ends.
 
 Still open from the build and reviews of 20260922-25:
-- Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked. Record production's tablespace spcoptions in step 2, then compare them.
+- Per-tablespace `random_page_cost` and `seq_page_cost` aren't checked. Record production's tablespace spcoptions in inventory, then compare them.
 - `shared_preload_libraries` that change plans, such as pg_hint_plan, aren't compared.
 - PGTZ and PGDATESTYLE in the operator's environment change both sessions' TimeZone and DateStyle, so the check compares session values, not server values.
 - The debug_parallel_query test goes through the recorded-value path, not the boot_val path its name suggests.
 
 - **Depends on:** 20260922-25.
 - **Came from:** The build and reviews of 20260922-25.
-- **Design:** Steps 2 and 4.
+- **Design:** inventory and run-server.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -544,7 +545,7 @@ Still open from the first review of 20260925-8:
 
 - **Depends on:** 20260925-8.
 - **Came from:** The first review of 20260925-8.
-- **Design:** Step 1, 3a.
+- **Design:** input, qualify.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -566,24 +567,24 @@ Still open from the first review of 20260925-8:
 
 ### 20260926-3. Generator three follow-ups.
 
-- Record the 5a-5 burndown: LLM candidates, plus any replacements asked for dropped ones, with the 5a-3 and 5a-4 reasons (DESIGN.md step 15b table).
+- Record the llm-index-ideas burndown: LLM candidates, plus any replacements asked for dropped ones, with the index-dedupe and index-test reasons (DESIGN.md's burndown table).
 - `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
 
 - **Depends on:** 20260925-4.
 - **Came from:** The build and second review of 20260925-4.
-- **Design:** 5a-5, 15b.
-- **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the 5a-5 burndown record.
+- **Design:** llm-index-ideas, burndown.
+- **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the llm-index-ideas burndown record.
 - **Status:** todo
 
 ### 20260928-1. `quaack setup`: one command for steps 2 through 4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-2. `quaack start --captured-at`.
 
-`quaacks intake` takes `--captured-at <time>` (DESIGN.md step 1, 3h), but `quaack start` accepts exactly `--server`, `--query`, and `--plan`, so an operator starting from the laptop can't pass it. The clock is then anchored at intake time, which is wrong for a plan captured earlier. Accept an optional `--captured-at` and pass it through.
+`quaacks intake` takes `--captured-at <time>` (DESIGN.md's input, clock-anchor), but `quaack start` accepts exactly `--server`, `--query`, and `--plan`, so an operator starting from the laptop can't pass it. The clock is then anchored at intake time, which is wrong for a plan captured earlier. Accept an optional `--captured-at` and pass it through.
 
 - **Depends on:** None.
 - **Came from:** Writing the user-facing README (2026-09-28).
-- **Design:** Step 1, 3h.
+- **Design:** input, clock-anchor.
 - **Status:** todo
 
 ### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key. Done, see BACKLOG-COMPLETE.md.
@@ -664,12 +665,12 @@ Minor findings from the first review of 20260929-9.
 
 Minor findings from the review of 20260929-8.
 
-- DESIGN.md step 4 says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
+- DESIGN.md's run-server says a pooler must hold no idle server backends when the check runs, but not how the operator gets there. After an earlier run, or a psql session through the pooler, PgBouncer can hold several idle backends. Every one but the one QUAACK reuses then fails `run_server_other_clients`. Say how to clear them: PgBouncer's `RECONNECT` or `KILL`, waiting out `server_idle_timeout`, or `pg_terminate_backend` on the named pids. Also put this in the README's troubleshooting.
 - `TestPostgres::Server#pgbouncer_port`: if PgBouncer's startup fails partway, such as on the readiness timeout, the next call starts `pgbouncer -d` again, and probably fails with a confusing error because one is already running.
 
 - **Depends on:** 20260929-8.
 - **Came from:** Review of 20260929-8, round one.
-- **Design:** Step 4.
+- **Design:** run-server.
 - **Status:** todo
 
 ### 20260929-17. Test the prompt-pack template's recovery from a failed build. Done, see BACKLOG-COMPLETE.md.
@@ -678,9 +679,9 @@ Minor findings from the review of 20260929-8.
 
 A hand run of `script/prompt_pack/run.rb orm_join group_having` finished, then `check_leaks` aborted. It found the `min_quantity_since` sentinel date, `2024-02-08`, in these three committed replies:
 
-- `spec/fixtures/llm_corpus/group_having/10a-4/reply-claude-3.md`
-- `spec/fixtures/llm_corpus/group_having/10a-5/reply-gemini-3.md`
-- `spec/fixtures/llm_corpus/group_having/10a-9/reply-claude-3.md`
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-4/reply-claude-3.md`
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-5/reply-gemini-3.md`
+- `spec/fixtures/llm_corpus/group_having/llm-counterexamples-9/reply-claude-3.md`
 
 It's a false positive. No prompt in the corpus holds that date. The models generated runs of consecutive dates, such as 2024-02-01 to 2024-02-13, that happen to cross it. Still, the script can't finish on main today. Pick a fix: move the sentinel dates somewhere a model won't wander into, such as a far-off year, or scan only the prompts, since replies can't leak what the prompts never held.
 
@@ -695,13 +696,13 @@ It's a false positive. No prompt in the corpus holds that date. The models gener
 
 ### 20260929-22. The subset dump takes a query table in a system schema.
 
-With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in 3a. List it as unsupported in v1.
+With a `pg_toast` table as a query relation, the subset's `--table` dump fails with `pg_dump_failed`. With `pg_catalog.pg_namespace`, the subset probably gets catalog DDL. `Relations.check` may let catalog tables through, since they're relkind `r`. A query on a system catalog isn't something QUAACK can tune, so refuse it cleanly, with a rule such as `system_relation`, early in qualify. List it as unsupported in v1.
 
 - Also from the 20260929-19 review: suppose no `public` schema exists, and every query relation and extension is in a system schema. Then the full dump gets no `--schema` flags, and pg_dump dumps every schema. Refusing system relations fixes this too.
 
 - **Depends on:** 20260929-19.
 - **Came from:** The build and review of 20260929-19.
-- **Design:** 3a, 3b.
+- **Design:** qualify, schema-dump.
 - **Status:** todo
 
 ### 20260929-23. Pin the underscore in `SchemaDump.system_schema?`. Done, see BACKLOG-COMPLETE.md.
@@ -725,7 +726,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 - **Depends on:** 20260929-21.
 - **Came from:** The build of 20260929-21.
-- **Design:** 3b, 4a.
+- **Design:** schema-dump, racetrack-setup.
 - **Status:** todo
 
 ### 20260929-27. LLM seam: minor findings. Done, see BACKLOG-COMPLETE.md.
@@ -734,11 +735,11 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite.
 
-In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-54`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in step 9 ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
+In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-54`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in rewrite-test ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
 
 - **Depends on:** 20260923-37.
 - **Came from:** Review of 20260923-37, round one.
-- **Design:** Steps 9 and 10.
+- **Design:** rewrite-test and counterexamples.
 - **Status:** todo
 
 ### 20260929-30. Step 8 pruning doesn't test its reliance on HypoPG oid maps. Done, see BACKLOG-COMPLETE.md.
@@ -763,7 +764,7 @@ Minor findings from the review of 20260929-12:
 
 - **Depends on:** 20260929-12.
 - **Came from:** Review of 20260929-12, round one.
-- **Design:** Step 4.
+- **Design:** run-server.
 - **Status:** todo
 
 ### 20260930-7. The OpenAI-compatible adapter says "isn't set" for an empty key variable. Done, see BACKLOG-COMPLETE.md.
@@ -793,16 +794,16 @@ Minor findings from the review of 20260930-8:
 Minor findings from the review of 20260930-9:
 
 - In `RunServerCheck::PLANNER_SQL`, the second `pg_catalog.pg_settings_get_flags(name)`, the one in the WHERE clause, has no test that fails when it's unqualified. Under `search_path = public, pg_catalog`, a `public.pg_settings_get_flags` returning `'{}'` drops every EXPLAIN-flagged setting outside Query Tuning. A run server with `SET effective_io_concurrency = 7` then passes when it should fail with `run_server_guc_mismatch`. Add that example to the "a search_path whose public schema shadows the catalog" group. The reviewer confirmed it goes red with the qualifier removed.
-- Operators (`=`, `<>`, `LIKE`, `= ANY`) in the check's SQL aren't qualified. Exploiting that needs a deliberately built operator in `public`, and a blunt one breaks the planner check first. List it as unsupported in v1 in DESIGN.md step 4, or qualify with `OPERATOR(pg_catalog.=)`.
+- Operators (`=`, `<>`, `LIKE`, `= ANY`) in the check's SQL aren't qualified. Exploiting that needs a deliberately built operator in `public`, and a blunt one breaks the planner check first. List it as unsupported in v1 in DESIGN.md's run-server, or qualify with `OPERATOR(pg_catalog.=)`.
 
 - **Depends on:** 20260930-9.
 - **Came from:** Review of 20260930-9, round one.
-- **Design:** Step 4.
+- **Design:** run-server.
 - **Status:** todo
 
 ### 20260930-14. Unqualified catalog names elsewhere in the enclave.
 
-The 20260930-9 builder listed catalog relations and functions the enclave still reads without `pg_catalog.`, outside step 4. Each can be shadowed by the same search_path setup. Qualify them, or decide per step which are safe, such as ones on the arena, which QUAACK builds itself.
+The 20260930-9 builder listed catalog relations and functions the enclave still reads without `pg_catalog.`, outside run-server. Each can be shadowed by the same search_path setup. Qualify them, or decide per step which are safe, such as ones on the arena, which QUAACK builds itself.
 
 - arena_runner/sequences.rb: `pg_sequence`, `pg_get_serial_sequence()`.
 - arena_schema.rb, arena_schema/domain_checks.rb, arena_schema/unique_indexes.rb: `format_type()`, `pg_get_expr()`, `pg_attribute`, `pg_attrdef`, `unnest()`, `pg_get_constraintdef()`, `pg_constraint`, `pg_class`, `pg_namespace`, `to_regclass()`, `pg_type`, `pg_get_indexdef()`, `generate_series()`, `pg_depend`, `pg_proc`, `pg_index`.
@@ -866,31 +867,31 @@ Minor findings from the review of 20260930-11:
 
 ### 20261001-19. Record the rewrite stages in the burndown.
 
-In a real run the rewrite burndown has one row, step 8, and it's wrong. `Burndown.record` has two production callers, both step 8: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records 6a, 6b, step 7, step 9, step 10, step 11, or step 14.
+In a real run the rewrite burndown has one row, plan-pruning, and it's wrong. `Burndown.record` has two production callers, both plan-pruning: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records llm-rewrites, assumption-check, operator-rewrites, rewrite-test, counterexamples, rewrite-index-ideas, or measurement.
 
-- Record every stage in DESIGN.md 15b's rewrite table. 6a and step 7: the rewrites the LLM gave and the operator gave, counted separately, and those refused on arrival, by rule. 6b: unmet assumptions, and step 7's warnings. Step 9: disproved by scenario, untested atoms, 9c retries. Step 10: disproved by round. Step 14: by minimax and 14c reason.
-- Make step 8 one record per rewrite that adds up across its two halves, so "in" is the rewrites that reached step 8 and "out" is those that went on.
+- Record every stage in DESIGN.md's burndown's rewrite table. llm-rewrites and operator-rewrites: the rewrites the LLM gave and the operator gave, counted separately, and those refused on arrival, by rule. assumption-check: unmet assumptions, and operator-rewrites' warnings. rewrite-test: disproved by scenario, untested atoms, vacuity-guard retries. counterexamples: disproved by round. measurement: by minimax and result-comparison reason.
+- Make plan-pruning one record per rewrite that adds up across its two halves, so "in" is the rewrites that reached plan-pruning and "out" is those that went on.
 - Record the work totals: indexes built, measurement runs, fixture loads.
 - A step that's skipped on a resumed run mustn't be counted twice, and one that's rerun mustn't either.
 
 - **Depends on:** 20260922-61, -64.
 - **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** 15b.
+- **Design:** burndown.
 - **Status:** todo
 
 ### 20261001-20. Record the index stages in the burndown.
 
-In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records 5a-1, 5a-2, or 5a-7. Wire them in, for the original's search and for each rewrite's (steps 8 and 11):
+In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records index-from-query, index-from-plan, or index-rank. Wire them in, for the original's search and for each rewrite's (plan-pruning and rewrite-index-ideas):
 
-- `index-search`: 5a-1 and 5a-2 (candidates per generator), 5a-3, and 5a-4 with its set-asides.
-- `index-test`: 5a-5 and 5a-6, one record per round, saying whether the refinement round ran.
-- `index-rank`: 5a-7, combinations tested and what didn't make the cut.
+- `index-search`: index-from-query and index-from-plan (candidates per generator), index-dedupe, and index-test with its set-asides.
+- `index-test`: llm-index-ideas and llm-index-refine, one record per round, saying whether the refinement round ran.
+- `index-rank`: index-rank, combinations tested and what didn't make the cut.
 
-This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiring bullet of 20260927-19. Settle 20260924-8's `since` question on the way, since `index-test` runs in a different process from `index-search`.
+This takes over the llm-index-ideas burndown bullet of 20260926-3 and the `set_aside:` wiring bullet of 20260927-19. Settle 20260924-8's `since` question on the way, since `index-test` runs in a different process from `index-search`.
 
 - **Depends on:** 20260922-61, -64.
 - **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** 15b.
+- **Design:** burndown.
 - **Status:** todo
 
 ### 20261001-21. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
@@ -905,20 +906,20 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 
 ### 20261001-26. 6c rule: `distinct_join_to_exists`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-27. 6c rule: `unused_join_removal`.
+### 20261001-27. rewrite-rules rule: `unused_join_removal`.
 
 - **Depends on:** 20261001-22.
 - **Came from:** 20261001-21.
-- **Design:** 6c.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261001-28. Tell the LLM what the rules already made.
 
-6a's payload carries the rule-made rewrites' SQL, and the prompt says not to repeat them, as 5a-5 does with `mechanical_results`.
+llm-rewrites' payload carries the rule-made rewrites' SQL, and the prompt says not to repeat them, as llm-index-ideas does with `mechanical_results`.
 
 - **Depends on:** 20261001-23.
 - **Came from:** 20261001-21.
-- **Design:** 6a, 6c.
+- **Design:** llm-rewrites, rewrite-rules.
 - **Status:** todo
 
 ### 20261001-29. Renumber step 6 in running order, and give the rules table examples. Dropped, see BACKLOG-COMPLETE.md.
@@ -937,27 +938,27 @@ Minor findings from both reviews of 20261001-22:
 
 - **Depends on:** 20261001-22.
 - **Came from:** The build and both reviews of 20261001-22.
-- **Design:** 6b, 6c.
+- **Design:** assumption-check, rewrite-rules.
 - **Status:** todo
 
 ### 20261002-2. Running the rules: minor findings.
 
 Minor findings from the build and both reviews of 20261001-23:
 
-- **False rule bugs from steps 9 and 10.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. StepNine also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as 14c's `MISMATCHES` does. Step 10 can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
-- **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and step 8 prunes it. DESIGN.md 6c's table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
-- `rewrite-check` has the double-store window that 6c closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
-- A rule-made rewrite that fails the checks counts in 6c's `failed_checks` and in step 8's drops, so 6c's out isn't step 8's in. Settle it with 20261001-19.
-- A store where 6a ran before 6c existed gets its rule rewrites numbered after 6a's. DESIGN.md 6c says "before 6a's" without the exception.
+- **False rule bugs from rewrite-test and counterexamples.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. StepNine also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as result-comparison's `MISMATCHES` does. counterexamples can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
+- **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and plan-pruning prunes it. DESIGN.md's rewrite-rules' table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
+- `rewrite-check` has the double-store window that rewrite-rules closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
+- A rule-made rewrite that fails the checks counts in rewrite-rules' `failed_checks` and in plan-pruning's drops, so rewrite-rules' out isn't plan-pruning's in. Settle it with 20261001-19.
+- A store where llm-rewrites ran before rewrite-rules existed gets its rule rewrites numbered after llm-rewrites'. DESIGN.md's rewrite-rules says "before llm-rewrites'" without the exception.
 - `CounterexampleStage` asks `status` again right after `RewriteStage` did.
-- Test gaps where a wrong change stays green: `rule_bugs` when nothing beat the original (`report_payload.rb:74`); "shows the 6c row first" only checks against step 9 (`report_spec.rb:188`); a rerun with two or more stored rule rewrites, or after a call that stored only some; the 6c and step 8 records going in one write; the step 9 disproof line's source label (`report.rb:171`).
-- The spec helper `compared` builds 14c's entry by hand. Call `ResultComparison.entry`.
+- Test gaps where a wrong change stays green: `rule_bugs` when nothing beat the original (`report_payload.rb:74`); "shows the rewrite-rules row first" only checks against rewrite-test (`report_spec.rb:188`); a rerun with two or more stored rule rewrites, or after a call that stored only some; the rewrite-rules and plan-pruning records going in one write; the rewrite-test disproof line's source label (`report.rb:171`).
+- The spec helper `compared` builds result-comparison's entry by hand. Call `ResultComparison.entry`.
 - An empty `rules` renders "made by QUAACK's rules " with nothing after it (`report.rb:113`).
-- In a negative result, a rule-made rewrite that step 8 pruned now reads "(made by QUAACK's rule ...): disproved in step 9 ... (rule discarded)". 20261001-17 fixes the root cause.
+- In a negative result, a rule-made rewrite that plan-pruning pruned now reads "(made by QUAACK's rule ...): disproved in rewrite-test ... (rule discarded)". 20261001-17 fixes the root cause.
 
 - **Depends on:** 20261001-23.
 - **Came from:** The build and both reviews of 20261001-23.
-- **Design:** 6c, step 9, step 10, 15, 15b.
+- **Design:** rewrite-rules, rewrite-test, counterexamples, report, burndown.
 - **Status:** todo
 
 ### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data. Done, see BACKLOG-COMPLETE.md.
@@ -993,7 +994,7 @@ Minor findings from the build and both reviews of 20261001-23:
 
 Minor findings from both reviews of 20261001-25:
 
-- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and step 8 drops it. Collect FROM names too.
+- The fresh alias can collide with a table name or alias that no column mentions: `Tree::Names` collects only names in column references. The rewrite then fails to plan and plan-pruning drops it. Collect FROM names too.
 - Untested lines: the fresh alias avoiding a taken name (`not_in_to_not_exists.rb:178`); `assumptions.uniq` (`:83`); `realias!` keeping column aliases (`:187`).
 - A column whose type is a domain with a NOT NULL constraint doesn't count as not null, since `AssumptionCheck` reads only `pg_constraint`'s `n` and `p`. Conservative: a missed rewrite, not a wrong one.
 - The rule assumes `=` gives true or false for two non-NULL values. A user-defined `=` that returns NULL breaks that. Noted in the rule's header.
@@ -1001,7 +1002,7 @@ Minor findings from both reviews of 20261001-25:
 
 - **Depends on:** 20261001-25.
 - **Came from:** The build and both reviews of 20261001-25.
-- **Design:** 6b, 6c.
+- **Design:** assumption-check, rewrite-rules.
 - **Status:** todo
 
 ### 20261002-4. `distinct_join_to_exists`: minor findings.
@@ -1018,23 +1019,23 @@ Minor findings from the build and both reviews of 20261001-26:
 
 - **Depends on:** 20261001-26.
 - **Came from:** The build and both reviews of 20261001-26.
-- **Design:** 6b, 6c.
+- **Design:** assumption-check, rewrite-rules.
 - **Status:** todo
 
 ### 20261002-5. `or_to_union`: minor findings.
 
 Minor findings from both reviews of 20261001-24:
 
-- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. Steps 9, 10 or 14c could then report a sound rewrite as a rule bug. Fix in 3h: type a placeholder when every occurrence feeds a column of the same date type.
+- **A clock literal outside the OR isn't anchored.** In `WHERE c.due >= 'today' AND (o.note = 'x' OR c.archived)`, the conjunct is copied into each arm, so its `$n` appears twice. `LiteralSet::Feeds` (`literal_set.rb:186`) then marks it `:shared_placeholder`, `ClockLiterals.implicit_types` finds no type, and the rewrite reads the real clock while the original reads the anchor. rewrite-test, counterexamples or result-comparison could then report a sound rewrite as a rule bug. Fix in clock-anchor: type a placeholder when every occurrence feeds a column of the same date type.
 - **Guarding arms can raise.** Split arms are all evaluated, so `i.qty = 0 OR i.total / i.qty > 10 OR o.vip` raises division by zero where the original returns rows. Never wrong rows. Refuse, or note it in DESIGN.md.
-- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm steps 9 and 10 don't report that as a rule bug.
+- With LIMIT and no ORDER BY, the rewrite returns a different but valid set of rows. Confirm rewrite-test and counterexamples don't report that as a rule bug.
 - Test gaps: the `@columns` cache key's schema part (`catalog.rb`); column names of 62 or 63 characters, which the `_1` suffix pushes past Postgres's limit (no rewrite results, but untested).
 - DESIGN.md's row leaves out several refusals: a subquery in the select list or ORDER BY; unqualified columns, a bare `*`, or ORDER BY an output name; an unnamed cast, COALESCE or CASE over a column; NATURAL or USING joins; ONLY; column aliases.
 - Extensions for later: composite keys, GROUP BY, outer joins, a bare `*`.
 
 - **Depends on:** 20261001-24.
 - **Came from:** Both reviews of 20261001-24.
-- **Design:** 3h, 6c.
+- **Design:** clock-anchor, rewrite-rules.
 - **Status:** todo
 
 ## After version 1.
@@ -1051,11 +1052,11 @@ These tasks are worth doing, but they don't block version 1. Pick them up after 
 
 ### 20260923-41. Support DML statements.
 
-INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow production query can be DML, but steps 9 and 14 compare result rows, so this needs a design for comparing effects rather than rows. RelationQualifier's DML-target handling was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
+INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow production query can be DML, but rewrite-test and candidate-runs compare result rows, so this needs a design for comparing effects rather than rows. RelationQualifier's DML-target handling was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-42. Support SELECT INTO and locking clauses.
@@ -1064,7 +1065,7 @@ INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow prod
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-43. Support TABLESAMPLE.
@@ -1073,7 +1074,7 @@ The `system` and `bernoulli` methods are volatile, so results aren't repeatable.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-44. Support richer functions in FROM.
@@ -1082,7 +1083,7 @@ The `system` and `bernoulli` methods are volatile, so results aren't repeatable.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-45. Support JSON_TABLE and SQL/JSON.
@@ -1091,7 +1092,7 @@ JSON_TABLE (`JsonTable`) and the SQL/JSON constructors and functions: JSON_OBJEC
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-46. Support XMLTABLE and XML functions.
@@ -1100,7 +1101,7 @@ XMLTABLE (`RangeTableFunc`), XmlExpr (including IS DOCUMENT and XMLROOT), and Xm
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-47. Support CTE CYCLE and SEARCH.
@@ -1109,7 +1110,7 @@ The CYCLE mark redaction in PredicateAtoms, including typed marks, was last pres
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-48. Support rows outside row comparisons.
@@ -1120,7 +1121,7 @@ Gaps in the supported comparisons are tracked elsewhere: pools for `=`/`<>` and 
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-49. Support GROUPING SETS, ROLLUP, and CUBE.
@@ -1129,7 +1130,7 @@ GroupingSet, `GROUP BY ()`, and GROUPING(). The allowlist (20260923-33) refuses 
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-50. Support SIMILAR TO.
@@ -1138,7 +1139,7 @@ The SIMILAR TO reader in PredicateAtoms was last present in 6507105. The allowli
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-51. Support field selection.
@@ -1147,7 +1148,7 @@ The SIMILAR TO reader in PredicateAtoms was last present in 6507105. The allowli
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260923-52. Support other SQL-syntax functions.
@@ -1156,7 +1157,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
-- **Design:** What goes into the enclave, and step 1.
+- **Design:** What goes into the enclave, and input.
 - **Status:** todo
 
 ### 20260926-4. Wire run discipline into steps 13 and 14. Done, see BACKLOG-COMPLETE.md.
@@ -1212,11 +1213,11 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-29. Remaining test-infrastructure unknowns.
 
 - The 1216-failure run is still unexplained. Two guesses, neither confirmed: spec processes in different PID namespaces or sandboxes on the same hostname, where `kill(0)` returns ESRCH; or containers dying outside our code, such as a Docker Desktop restart or OOM. Watch for a repeat.
-- A resumed run still restarts step 10 at round 1 (from 20260926-25).
+- A resumed run still restarts counterexamples at round 1 (from 20260926-25).
 
 - **Depends on:** 20260926-21, 20260926-25.
 - **Came from:** Build of 20260926-21 and -25.
-- **Design:** Step 10; CLAUDE.md Development.
+- **Design:** counterexamples; CLAUDE.md Development.
 - **Status:** todo
 
 ### 20260926-30. Result comparison loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -1230,7 +1231,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-27, 20260926-31.
 - **Came from:** Their build.
-- **Design:** Step 13.
+- **Design:** baseline.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1255,13 +1256,13 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260926-42. Report loose ends, part three.
 
 - The StepNine dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
-- "Whether step 10 covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
+- "Whether counterexamples covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
 - A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
 - LLM call counts on a resumed run include only calls from the current process.
 
 - **Depends on:** 20260926-34, -38.
 - **Came from:** Their build and review.
-- **Design:** Step 15.
+- **Design:** report.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1297,7 +1298,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260924-15, -22, -23.
 - **Came from:** Build and review of those tasks.
-- **Design:** 3b, 3h, step 1.
+- **Design:** schema-dump, clock-anchor, input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1314,7 +1315,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-52.
 - **Came from:** 20260926-52 build and review.
-- **Design:** 3h.
+- **Design:** clock-anchor.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1343,7 +1344,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260926-40, -44.
 - **Came from:** Their build and review.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1356,7 +1357,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 - **Depends on:** 20260923-27, -28, -35, -38.
 - **Came from:** Their build and reviews.
-- **Design:** 3a, 3d, step 1.
+- **Design:** qualify, volatility, input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
@@ -1408,22 +1409,22 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 ### 20260927-17. Covering-check and volatility-list gaps.
 
 - `ColumnRefs.in` skips subqueries, so an outer-table column read only inside a correlated subquery isn't counted in `read_columns`, and an INCLUDE can look covering when it isn't. This costs performance only.
-- `VOLATILE_FUNCTIONS` in `value?` is a fixed name list matched on the last name only. It misses user-defined volatile functions and wrongly flags a user function with a built-in's name. It's a backstop behind step 3d.
+- `VOLATILE_FUNCTIONS` in `value?` is a fixed name list matched on the last name only. It misses user-defined volatile functions and wrongly flags a user function with a built-in's name. It's a backstop behind volatility.
 
 - **Depends on:** 20260927-13, -15.
 - **Came from:** Review of 20260927-13 to -16.
-- **Design:** 5a-1.
+- **Design:** index-from-query.
 - **Status:** todo
 
-### 20260927-18. Make step 9 scenarios load instead of skipping them.
+### 20260927-18. Make rewrite-test scenarios load instead of skipping them.
 
-20260926-60 skips a step 9 scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
+20260926-60 skips a rewrite-test scenario whose fixture won't load and marks its atoms untested. That's acceptable for now, but a scenario that won't load means those atoms go untested. Find out why such scenarios fail (constraints or triggers the scenario builder doesn't model: exclusion constraints, triggers on the arena tables, complex CHECKs, and so on), and make the builder produce rows that load. Or refuse the query up front with a clear rule, so atoms aren't silently left untested.
 
-Also: 9d still disproves every candidate when a scenario won't load (`:fixture_load_failed`). That fails safe for v1, but it rejects correct rewrites; once scenarios load, it stops mattering. And add a guard-level spec that a `:query`-step `ArenaRunner::Error` isn't swallowed by `VacuityGuard.loaded_exercised_atoms` (today, removing the step check stays green).
+Also: fixture-compare still disproves every candidate when a scenario won't load (`:fixture_load_failed`). That fails safe for v1, but it rejects correct rewrites; once scenarios load, it stops mattering. And add a guard-level spec that a `:query`-step `ArenaRunner::Error` isn't swallowed by `VacuityGuard.loaded_exercised_atoms` (today, removing the step check stays green).
 
 - **Depends on:** 20260926-60.
 - **Came from:** User direction, 2026-09-27.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20260927-19. Set-aside loose ends.
@@ -1431,11 +1432,11 @@ Also: 9d still disproves every candidate when a scenario won't load (`:fixture_l
 These are minor findings from the review of 20260927-11:
 - There's no cap on set-asides. The worst realistic case is about 2 extra real builds per low-cardinality table, per search (about 18 for a 3-table join with 2 rewrites). Add a per-search cap, or limit set-asides to the moved key-only variant.
 - `Burndown.record_single_candidate_test(set_aside:)` has no production caller, so set-aside counts don't show up in real runs. Wire it in.
-- There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and 3f's configurable one used by `UnusedSetAside`. Unify them.
+- There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and classify's configurable one used by `UnusedSetAside`. Unify them.
 
 - **Depends on:** 20260927-11.
 - **Came from:** Review of 20260927-11.
-- **Design:** 5a-1, 5a-4, 12a.
+- **Design:** index-from-query, index-test, index-build.
 - **Status:** todo
 
 ### 20260927-20. Regenerate the prompt pack: JSON-only instruction and a subtly wrong fake rewrite. Done, see BACKLOG-COMPLETE.md.
@@ -1467,7 +1468,7 @@ These are minor findings from the review of 20260927-21:
 ### 20260927-27. Replay wrong-rewrite spec gaps.
 
 These are minor findings from the review of 20260927-24:
-- The per-query spec "finds the wrong rewrite whenever the 6a reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
+- The per-query spec "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" runs no expectation for queries whose reply lacks the condition.
 - `PipelineReplay.wrong` matching the whole rewrite hash (`to_s`) instead of its `"sql"` field survives mutation.
 - From the review of 20260927-26: `spec/prompt_pack_chat_spec.rb` doesn't check that "You were asked:" labels the first ask and "Your reply:" labels the planted reply. Swapping them stays green.
 
@@ -1503,22 +1504,22 @@ These are minor findings from the review of 20260927-24:
 
 Let one run use more than one LLM provider, for two reasons. Different models propose different rewrites, indexes, and counterexamples, which is more of the chaos QUAACK wants. And spreading asks across providers stretches free tiers further, since each has its own rate and daily limits.
 
-Each ask is stateless: it sends its whole conversation, and no provider holds a session. So asks can move between providers freely, with one exception. A multi-turn exchange must stay on one provider: 5a-5's replacement round, 10a's counterexample rounds, and the re-ask from 20260928-4. Otherwise a model is shown another model's reply as if it were its own.
+Each ask is stateless: it sends its whole conversation, and no provider holds a session. So asks can move between providers freely, with one exception. A multi-turn exchange must stay on one provider: llm-index-ideas' replacement round, llm-counterexamples' counterexample rounds, and the re-ask from 20260928-4. Otherwise a model is shown another model's reply as if it were its own.
 
 Ideas to settle before building:
 - **Configuration.** An `llms` list in driver.json, each entry shaped like today's `llm` block, with a name.
 - **Routing policy.** Options:
   - round-robin per ask;
   - pinning steps to providers;
-  - fan-out, where 6a and 5a-5 ask every provider and take the union, deduplicated by the usual checks;
+  - fan-out, where llm-rewrites and llm-index-ideas ask every provider and take the union, deduplicated by the usual checks;
   - failover, moving on to the next provider after `llm_rate_limited` or `llm_unavailable`, and remembering that for the rest of the run.
-- **Adversarial pairing.** Have 10a use a different model from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work.
-- **Burndown.** Count calls per provider as well as per step (15b), so the report shows where the calls went.
+- **Adversarial pairing.** Have llm-counterexamples use a different model from the one that wrote the rewrite, so the model hunting for counterexamples isn't grading its own work.
+- **Burndown.** Count calls per provider as well as per step (burndown), so the report shows where the calls went.
 - **Cost.** Fan-out multiplies calls, so make it opt-in per step.
 
 - **Depends on:** 20260928-4.
 - **Came from:** The user, 2026-09-29.
-- **Design:** Where QUAACK runs, 5a-5, 6a, 10a, 15b.
+- **Design:** Where QUAACK runs, llm-index-ideas, llm-rewrites, llm-counterexamples, burndown.
 - **Status:** todo
 
 ### 20260929-20. `quaack deploy` removes old enclave versions.
@@ -1553,7 +1554,7 @@ The review of 20261001-3 found three minor items:
 
 - **Depends on:** 20261001-3.
 - **Came from:** The second review of 20261001-3, 2026-10-01.
-- **Design:** 5a-5.
+- **Design:** llm-index-ideas.
 - **Status:** todo
 
 ### 20261001-5. An LLM error reads the reason out of a JSON array body.
@@ -1576,11 +1577,11 @@ The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, wi
 
 ### 20261001-7. Send stats only for the columns the query references.
 
-The 5a-5 payload's `stats` covers every column of each table the query uses. On wide tables that came to 52k characters for one query. Send stats only for the columns the query references anywhere (select list, WHERE, JOIN, GROUP BY, ORDER BY), found with pg_query from the qualified query. Keep the stored statistics whole. Update DESIGN.md (5a-5) to match. Settle against DESIGN.md first whether 6a or any other LLM step sends stats too.
+The llm-index-ideas payload's `stats` covers every column of each table the query uses. On wide tables that came to 52k characters for one query. Send stats only for the columns the query references anywhere (select list, WHERE, JOIN, GROUP BY, ORDER BY), found with pg_query from the qualified query. Keep the stored statistics whole. Update DESIGN.md (llm-index-ideas) to match. Settle against DESIGN.md first whether llm-rewrites or any other LLM step sends stats too.
 
 - **Depends on:** 20261001-3.
 - **Came from:** The user, 2026-10-01.
-- **Design:** 3f, 5a-5.
+- **Design:** classify, llm-index-ideas.
 - **Status:** todo
 
 ### 20261001-8. `quaack run` shows its progress. Done, see BACKLOG-COMPLETE.md.
@@ -1597,14 +1598,14 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 
 - **Depends on:** 20261001-9.
 - **Came from:** The user, 2026-10-01.
-- **Design:** 3b, 4b.
+- **Design:** schema-dump, arena-setup.
 - **Status:** todo
 
 ### 20261001-11. Progress output: minor findings.
 
 The review of 20261001-8 found two minor items:
 
-1. Nothing tests the skip line that step 7 prints on a resumed run with `--rewrites`. If that line broke, every later `[n/18]` number would be off by one, and no spec would catch it. Nothing tests the steps 9-10 skip note for each rewrite either. Add a cli_run progress spec that resumes with `rewrites_generated` and `operator_rewrites_checked` set and passes `--rewrites`. It should assert `[6/18] step 7: already done, skipping`, and cover the steps 9-10 note too.
+1. Nothing tests the skip line that operator-rewrites prints on a resumed run with `--rewrites`. If that line broke, every later `[n/18]` number would be off by one, and no spec would catch it. Nothing tests the rewrite-correctness skip note for each rewrite either. Add a cli_run progress spec that resumes with `rewrites_generated` and `operator_rewrites_checked` set and passes `--rewrites`. It should assert `[6/18] operator-rewrites: already done, skipping`, and cover the rewrite-correctness note too.
 2. In `Progress#step`, if the first `say` raises, such as EPIPE on stderr, `start` is still nil. The rescue's `since(nil)` then raises a TypeError that hides the real error. Set `start` before the first `say`.
 
 - **Depends on:** 20261001-8.
@@ -1619,7 +1620,7 @@ The review of 20261001-8 found two minor items:
 
 The review of 20261001-12 found two minor items:
 
-1. Progress lines count toward the transport's output cap. A 12a run that builds a very large number of indexes could hit `output_too_large` from the progress lines alone. That fails safe, but consider leaving room for one line per index, or not counting progress lines toward the cap.
+1. Progress lines count toward the transport's output cap. An index-build run that builds a very large number of indexes could hit `output_too_large` from the progress lines alone. That fails safe, but consider leaving room for one line per index, or not counting progress lines toward the cap.
 2. The driver's progress block runs inside the transport's read loop. If the block raises or runs slowly, it holds up reading, and that can push the run past its timeout. Consider rescuing the block's errors and logging them.
 
 - **Depends on:** 20261001-12.
@@ -1658,7 +1659,7 @@ Minor findings from the first review of 20260929-5:
 
 - **Depends on:** 20260929-5.
 - **Came from:** The first review of 20260929-5, 2026-10-03.
-- **Design:** Step 1.
+- **Design:** input.
 - **Status:** todo
 
 ### 20261003-8. `rake full`: harden the stamp and close test gaps. Done, see BACKLOG-COMPLETE.md.
@@ -1671,11 +1672,11 @@ Minor findings from the first review of 20260929-5:
 
 The build and review of 20261001-17 found these:
 
-- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends 14d's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
-- **Selection calls every 14c discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a 14c timeout.
-- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A step 9 or 10 failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
-- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles 14d saying `result_mismatch` when 14c's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
-- **15a still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
+- **`excluded` goes out as stored.** The report message's top-level `excluded` map sends selection's reason strings straight from the selection entry. Send them through a closed list, as `RewriteFate` does.
+- **Selection calls every result-comparison discard `result_mismatch`,** a timeout included. The rewrite's fate is right, but the per-label `excluded` reason still says `result_mismatch` for a result-comparison timeout.
+- **`RewriteFate::FAILURES` is a hand copy** and misses `transaction_closed`, which `ArenaFixture::Error::RULES` has. A rewrite-test or counterexamples failure with that rule goes out with a nil rule. Build the list from `RULES.keys` plus `unsupported_order`.
+- **Two branches no test needs.** `NegativeResult`'s `once` sends an index declined for two different reasons once for each, and grouping by the index alone stays green. `RewriteFate`'s `production` handles selection saying `result_mismatch` when result-comparison's entry has no failing verdict, which `Selection` can't produce, and dropping that stays green. Test each or drop it.
+- **negative-result still repeats other spellings of one predicate:** `amount > 10` and `amount > '10'::numeric`; `status IN ('a', 'b')` and `status = ANY (ARRAY['a'::text, 'b'::text])`; the varchar form `(status)::text = ANY ((ARRAY[...])::text[])`.
 - **Rewrite numbering gaps.** `CandidateRuns.candidates` and `IndexBuild.searches` stop at the first gap in rewrite numbers, while the report lists rewrites across gaps. A rewrite after a gap would never be measured and would read `unfinished`. Find out whether a real run can leave a gap, and make the two agree.
 - **`NegativeResult.disproved` is a shim** kept only for `RuleBugs`. 20261002-5 moves `RuleBugs` onto an allowlist; have it use `RewriteFate` and `ResultComparator::MISMATCHES`, then delete the shim and `RuleBugs`' own copy of `MISMATCHES`.
 - **`e2e/run.rb`'s `why_none`** now tallies rewrite fates, and nobody has run it since.
@@ -1683,7 +1684,7 @@ The build and review of 20261001-17 found these:
 
 - **Depends on:** 20261001-17.
 - **Came from:** The build and review of 20261001-17, 2026-10-03.
-- **Design:** Step 15, 15a.
+- **Design:** report, negative-result.
 - **Status:** todo
 
 ### 20261003-4. Readable report: minor findings.
@@ -1697,20 +1698,20 @@ The build and both reviews of 20261001-18 found these:
   - The "It built and measured" paragraph being left out when there's a winner.
   - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
   - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
-  - The outcome column for five of the fates under "Stopped for another reason"; only `step9_failed`, `footprint_tie`, and `unfinished` are pinned.
-  - An index whose label 14c dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
-  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `step10_disproved` rewrite.
+  - The outcome column for five of the fates under "Stopped for another reason"; only `rewrite_test_failed`, `footprint_tie`, and `unfinished` are pinned.
+  - An index whose label result-comparison dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
+  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `counterexamples_disproved` rewrite.
 - **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
-- **The "refused on arrival" note leaves out a reason.** For rule rewrites, 6c's `failed_checks` also covers a 6b assumption failure and clock anchoring. The README has the same gap.
+- **The "refused on arrival" note leaves out a reason.** For rule rewrites, rewrite-rules' `failed_checks` also covers an assumption-check assumption failure and clock anchoring. The README has the same gap.
 - **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
 - **`Format.fewer` raises `FloatDomainError`** if the original read 0 blocks on the slow values.
-- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no step 7 warnings, so no report has ever shown one. Send them, or change the README.
+- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no operator-rewrites warnings, so no report has ever shown one. Send them, or change the README.
 - **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
-- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing 6c rule names.
+- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing rewrite-rules rule names.
 
 - **Depends on:** 20261001-18.
 - **Came from:** The build and both reviews of 20261001-18, 2026-10-03.
-- **Design:** Step 15, 15a, 15b.
+- **Design:** report, negative-result, burndown.
 - **Status:** todo
 
 ### 20261003-5. Report payload: what the index accountability table still lacks.
@@ -1718,7 +1719,7 @@ The build and both reviews of 20261001-18 found these:
 20261001-18 stayed in the driver (the user, 2026-10-03), so these cells of the report say "not recorded", and 20261001-19 and -20 won't fill them:
 
 - **Built and measured, not better, and ranked, per source.** `indexes` in the report message carries no source. The store has it (`IndexCandidate` sources). Send it through a closed list of QUAACK's constants.
-- **Already existed and planner ignored, for the two generators.** The 5a-3 and 5a-4 drops aren't recorded by source.
+- **Already existed and planner ignored, for the two generators.** The index-dedupe and index-test drops aren't recorded by source.
 - **Already existed and planner ignored, in a winning report.** `negative` goes out only when nothing is ranked. Send the declined and existing lists every time.
 - **The plan with the new indexes.** The payload has a plan only for rewrites, and that plan is the rewrite with no new indexes, even when the winning label ran with some. Send the winning label's plan, for an index-only winner too.
 
@@ -1726,7 +1727,7 @@ Then have the report render them. Trust boundary: sources are constants, DDL goe
 
 - **Depends on:** 20261001-18, -20.
 - **Came from:** The build of 20261001-18, 2026-10-03.
-- **Design:** Step 15, 15a.
+- **Design:** report, negative-result.
 - **Status:** todo
 
 ### 20261003-11. `transitive_predicate_copy`: close test gaps, accept typmods, reach more columns.
@@ -1741,7 +1742,7 @@ Findings from the build and review of 20261002-7:
 
 - **Depends on:** 20261002-7.
 - **Came from:** The build and review of 20261002-7, 2026-10-03.
-- **Design:** 6c.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261003-12. `rake full`: fail fast on an unreadable version, and fix a comment.
@@ -1779,7 +1780,7 @@ Out-of-scope findings from the build of 20261002-8:
 
 - **Depends on:** 20261002-8.
 - **Came from:** The build of 20261002-8, 2026-10-03.
-- **Design:** 6c.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261003-15. `quaack run`: say what each step did when it finishes. Done, see BACKLOG-COMPLETE.md.
@@ -1808,7 +1809,7 @@ Tests check that both lists have 200 words, no duplicates, and the syllable coun
 
 - **Depends on:** none. 20261003-15 and -16 also change the progress lines. Whichever lands later fits in with the others.
 - **Came from:** The user, 2026-10-03.
-- **Design:** Progress lines for `quaack run`, step 15.
+- **Design:** Progress lines for `quaack run`, report.
 - **Status:** todo
 
 ### 20261003-21. Give the design's steps descriptive names, and number them in order.
@@ -1849,12 +1850,12 @@ Minor findings from the build and review of 20261003-17:
 
 - **One code path has no test.** No test has a nullable foreign key from a table in a cycle to a table outside it. If "this edge is in a cycle" is changed to "this table is in any cycle", every test stays green (`topology.rb:73`). Add that case.
 - **A DEFAULT in a cut column stays DEFAULT.** If the default references a row that isn't loaded yet, the load fails. Load NULL there instead, or say in DESIGN.md that this case is unsupported.
-- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. Step 9c's vacuity guard keeps this safe, but check whether it ever refuses a query it shouldn't.
+- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. vacuity-guard's vacuity guard keeps this safe, but check whether it ever refuses a query it shouldn't.
 - **Partitioned tables with foreign keys may not load through the counterexample path.** The builder's attempt failed with `fixture_load_failed`. Reproduce it, and fix it or list it as unsupported.
 
 - **Depends on:** 20261003-17.
 - **Came from:** The build and review of 20261003-17, 2026-10-03.
-- **Design:** Step 9, 10a.
+- **Design:** rewrite-test, llm-counterexamples.
 - **Status:** todo
 
 ### 20261003-26. `union_outer_filter_removal`: widenings, and duplicate candidates.
@@ -1871,7 +1872,7 @@ From the build of 20261002-9:
 
 - **Depends on:** 20261002-9.
 - **Came from:** The build of 20261002-9, 2026-10-03.
-- **Design:** 6c.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types. Done, see BACKLOG-COMPLETE.md.
@@ -1880,14 +1881,14 @@ From the build of 20261002-9:
 
 Minor findings from the build and review of 20260928-1:
 
-- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README Step 4 that the flags or the config are required.
+- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README run-server that the flags or the config are required.
 - **Flags given after run-server has passed are silently ignored.** If the database given was wrong but passed the check, the only fix is a new run. Warn when flags are given and run-server is skipped.
 - **A setup failure under `quaack run` tears the run down, but under `quaack setup` it's kept.** Pick one behavior, probably keep, since nothing expensive has run yet and the operator may just need different flags.
 - **The driver's unit specs don't cover skipping a late step.** Only `spec/setup_postgres_spec.rb` catches a broken skip of `racetrack-setup`. Add a unit case.
 
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
-- **Design:** Steps 2 through 4.
+- **Design:** inventory through run-server.
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
@@ -1902,7 +1903,7 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 
 - **Depends on:** 20261002-6.
 - **Came from:** The build of 20261002-6, 2026-10-03.
-- **Design:** 6c.
+- **Design:** rewrite-rules.
 - **Status:** todo
 
 ### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
@@ -1911,7 +1912,7 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 
 ### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-32. Step 9: loads that fail on `IS NULL` and skipped groups.
+### 20261003-32. rewrite-test: loads that fail on `IS NULL` and skipped groups.
 
 These were found in the second review of 20261003-23, and they fail safe (the load fails, so the rewrite is refused):
 
@@ -1921,7 +1922,7 @@ These were found in the second review of 20261003-23, and they fail safe (the lo
 
 - **Depends on:** 20261003-30.
 - **Came from:** The second review of 20261003-23, 2026-10-03.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261003-33. Step 9 values: loose ends from 20261003-27. Done, see BACKLOG-COMPLETE.md.
@@ -1941,12 +1942,12 @@ These are minor findings from building and reviewing 20261002-16:
 
 - **Depends on:** 20261002-16.
 - **Came from:** The build and review of 20261002-16, 2026-10-03.
-- **Design:** 6c, `distinct_join_to_exists`.
+- **Design:** rewrite-rules, `distinct_join_to_exists`.
 - **Status:** todo
 
 ### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-37. Step 9 values: loose ends from 20261003-34.
+### 20261003-37. rewrite-test values: loose ends from 20261003-34.
 
 These are minor findings from building and reviewing 20261003-34:
 
@@ -1959,12 +1960,12 @@ These are minor findings from building and reviewing 20261003-34:
 
 - **Depends on:** 20261003-34.
 - **Came from:** The build and review of 20261003-34, 2026-10-03.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-39. Step 9: more variety in self-references and repeated parents.
+### 20261003-39. rewrite-test: more variety in self-references and repeated parents.
 
 These are false passes found in the reviews of 20261003-31. They also happen on main. All are realistic:
 
@@ -1976,31 +1977,31 @@ Each needs a wrong rewrite that's disproved and a correct twin that passes, on r
 
 - **Depends on:** 20261003-31.
 - **Came from:** The reviews of 20261003-31, 2026-10-03.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-41. Step 9 refusals and results: loose ends from 20261003-18.
+### 20261003-41. rewrite-test refusals and results: loose ends from 20261003-18.
 
 These are minor findings from building and reviewing 20261003-18:
 
-- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to 10a, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail step 9 too. Store both results together, or have resume rebuild `survived` from `tested`.
+- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to llm-counterexamples, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail rewrite-test too. Store both results together, or have resume rebuild `survived` from `tested`.
 - **Scenarios are rebuilt for every rewrite.** A refusal comes from the query, not the rewrite, so every rewrite is refused the same way. Record the refusal once per run, and reuse it.
-- **The rule-bug check counts `step9_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
+- **The rule-bug check counts `rewrite_test_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
 
 - **Depends on:** 20261003-18.
 - **Came from:** The build and review of 20261003-18, 2026-10-03.
-- **Design:** Steps 9-10.
+- **Design:** rewrite-correctness.
 - **Status:** todo
 
-### 20261003-42. Step 9 further fixtures: loose ends from 20261003-40.
+### 20261003-42. rewrite-test further fixtures: loose ends from 20261003-40.
 
 These are minor findings from building and reviewing 20261003-40:
 
 - **A self-join regression, from a refusal to an untested pass.** Take `messages m JOIN users s ON s.id = m.sender_id JOIN users r ON r.id = m.recipient_id WHERE s.email = 'a@b' AND r.email = 'c@d'`. The rewrite with the emails swapped now passes with every atom marked untested; main refused it. DESIGN's self-join limit covers it, but it should be disproved.
 - **Two FKs into one table, with a non-unique filter column** (also on main). The rewrite that filters on `recipient_id` instead of `sender_id` passes with no untested atoms, because the S3 cross users all share the hit's email. This overlaps 20261003-39's "two FKs into the same parent".
-- **The untested-atom check (9c) looks only at S1's first fixture.** An S1 near miss that moved to a further fixture is marked untested, which is cautious. Have it look at further fixtures too.
+- **The untested-atom check (vacuity-guard) looks only at S1's first fixture.** An S1 near miss that moved to a further fixture is marked untested, which is cautious. Have it look at further fixtures too.
 - **Further fixtures copy the parents but not the hit's sibling rows** that create fan-out. Also, no step-9-level test needs `parents_of` to recurse; only a unit test guards that.
 - **The picker can repeat candidates on a retry,** and a retry shifts every pooled column, not just the one that collided.
 - **S6 has less variety under a single-value unique filter.**
@@ -2008,7 +2009,7 @@ These are minor findings from building and reviewing 20261003-40:
 
 - **Depends on:** 20261003-40.
 - **Came from:** The build and reviews of 20261003-40, 2026-10-03.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19.
@@ -2018,11 +2019,11 @@ These are minor findings from building and reviewing 20261003-19:
 - **Quoted names are dropped.** The driver's name-shape check drops a cycle that has mixed-case or quoted table names, so the report falls back to the bare refusal. Allow any name that came from `schema_subset`, quoted the way the catalog quotes it.
 - **A dot inside a name can match the wrong table.** `CycleTables` matches by joining `schema.table` with a dot. The output is still a `schema_subset` string, so this isn't a leak. Match on the schema and the table separately.
 - **No end-to-end test.** Nothing runs a whole pipeline on an `fk_cycle` schema and checks the report sentence.
-- **Step 10's re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
+- **counterexamples' re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
 
 - **Depends on:** 20261003-19.
 - **Came from:** The build and reviews of 20261003-19, 2026-10-03.
-- **Design:** Step 9, step 15.
+- **Design:** rewrite-test, report.
 - **Status:** todo
 
 ### 20261003-44. `existence_in_flip`: loose ends from 20261003-29.
@@ -2040,12 +2041,12 @@ These are findings from building and reviewing 20261003-29:
 
 - **Depends on:** 20261003-29.
 - **Came from:** The build and review of 20261003-29, 2026-10-03.
-- **Design:** 6c, `existence_in_flip`.
+- **Design:** rewrite-rules, `existence_in_flip`.
 - **Status:** todo
 
 ### 20261004-1. `quaack run` step summaries: counts and rule names from the enclave.
 
-20261003-15 gives each finished step a summary, but some steps can only say what they did, not how much. The enclave sends the driver nothing but `done` for index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison and selection. And rewrite-rules (6c) doesn't say which rules fired. So the lines read "Searched for indexes", not "Found 12 possible index definitions mechanically", and 6c gives counts only.
+20261003-15 gives each finished step a summary, but some steps can only say what they did, not how much. The enclave sends the driver nothing but `done` for index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison and selection. And rewrite-rules doesn't say which rules fired. So the lines read "Searched for indexes", not "Found 12 possible index definitions mechanically", and rewrite-rules gives counts only.
 
 The rule:
 
@@ -2071,7 +2072,7 @@ The review of 20261003-38 found four minor issues:
 
 - **Depends on:** 20261003-38.
 - **Came from:** The review of 20261003-38.
-- **Design:** Step 9, ErrorFilter.
+- **Design:** rewrite-test, ErrorFilter.
 - **Status:** todo
 
 ### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
@@ -2086,7 +2087,7 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 
 - **Depends on:** 20261004-2.
 - **Came from:** The build of 20261004-2.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261004-5. Build the original query's scenarios once, not once per rewrite.
@@ -2095,16 +2096,16 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 
 - **Depends on:** 20261004-2.
 - **Came from:** The build of 20261004-2.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-6. Pin the type part of step 9's probe cache key.
+### 20261004-6. Pin the type part of rewrite-test's probe cache key.
 
 `ValuePools::Probe#key` is `[sql, oid, format_type]` (`value_pools.rb:200`). If it drops the type, entries are shared wrongly across types and fixtures change, yet every committed spec still passes. Add a spec where the same CHECK sits on columns of different types, for example `integer` and `numeric`, or `varchar(8)` and `varchar(255)`. Assert each fixture's value, and confirm the spec goes red when the key drops `oid` and the type.
 
 - **Depends on:** 20261004-2.
 - **Came from:** The review of 20261004-2.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
 ### 20261004-7. Harden the live clock's timer thread.
@@ -2119,13 +2120,13 @@ The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo
 
-### 20261004-8. Step 9 gaps found by the FK-cycle review.
+### 20261004-8. rewrite-test gaps found by the FK-cycle review.
 
 The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts` ↔ `courses` schema:
 - `IS [NOT] NULL` on the cut column of an FK cycle fails to load with `fixture_load_failed` for every candidate, including the correct ones. It fails safe, but no rewrite of such a query can pass. Check whether 20261003-32 covers this first.
 - `Topology#roots` uses `load_parents`, and no spec pins that. Switching it back to `parents` stays green.
 - The S3 cross row for a cut FK (`crossings` in `topology.rb`) has no spec that fails without it. Since copies kept their parent, a copy already supplies the same row. Add a spec only the cross row can satisfy, or drop the cross row.
-- These wrong rewrites pass on acyclic schemas too, so they're general step 9 variety gaps:
+- These wrong rewrites pass on acyclic schemas too, so they're general rewrite-test variety gaps:
   - "own template" rewritten as "has template and has courses";
   - a `<>` foreign template;
   - its mirror, "has template and own courses" rewritten as "own template";
@@ -2136,23 +2137,23 @@ The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts
 
 - **Depends on:** 20261003-23, 20261003-30.
 - **Came from:** The review of 20261003-23 and -30.
-- **Design:** Step 9.
+- **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-9. Report `polymorphic_key_copy` disproofs in steps 9 and 10 as rule bugs.
+### 20261004-9. Report `polymorphic_key_copy` disproofs in rewrite-test and counterexamples as rule bugs.
 
-`rule_bugs.rb:58` still skips every step 9 or 10 disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
+`rule_bugs.rb:58` still skips every rewrite-test or counterexamples disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
 
-Also, a twin that drops the type filter is caught only if step 10's LLM writes a row of another class with the copy set. Consider making step 9's fixtures add such a row themselves.
+Also, a twin that drops the type filter is caught only if counterexamples' LLM writes a row of another class with the copy set. Consider making rewrite-test's fixtures add such a row themselves.
 
 - **Depends on:** 20261002-15.
 - **Came from:** The second review of 20261002-15.
-- **Design:** Steps 9, 10 and 15.
+- **Design:** rewrite-test, counterexamples and report.
 - **Status:** todo
 
 ### 20261004-10. Make the enclave call timeout configurable.
 
-The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, 12a (index-build) failed after exactly 1h00m00s.
+The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, index-build failed after exactly 1h00m00s.
 
 Add a driver config setting for this timeout, with a `quaack run` flag to override it, and pass it to every `Transport::Ssh.new` that runs pipeline steps. Validate it as a positive number. Say in the failure message which setting to raise when a call hits the limit, for example: "the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds`". Document it in the README.
 
@@ -2163,24 +2164,24 @@ Add a driver config setting for this timeout, with a `quaack run` flag to overri
 
 ### 20261004-11. Build each candidate index in its own enclave call.
 
-Step 12a builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
+index-build builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
 
 Check how a resumed run treats indexes that already exist on the racetrack. They should be skipped, not built again, and not counted as failures.
 
 - **Depends on:** 20261004-10.
 - **Came from:** The user's Canvas run, 2026-10-04.
-- **Design:** Step 12a.
+- **Design:** index-build.
 - **Status:** todo
 
-### 20261004-12. Build step 12a's indexes in table order.
+### 20261004-12. Build index-build's indexes in table order.
 
-Step 12a builds the candidate indexes on the run server in whatever order they arrive. That can build one on a large table, then one on another large table, then go back to the first, so the first table's pages have already left the cache. Group the builds by table, so every index on one table is built before moving to the next, while that table is still in cache. Within a table, keep the current order.
+index-build builds the candidate indexes on the run server in whatever order they arrive. That can build one on a large table, then one on another large table, then go back to the first, so the first table's pages have already left the cache. Group the builds by table, so every index on one table is built before moving to the next, while that table is still in cache. Within a table, keep the current order.
 
 Test that the build order is grouped by table, and that every index still gets built and reported. If 20261004-11 has landed by then, keep its one-call-per-index structure and order those calls by table.
 
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-04.
-- **Design:** Step 12a.
+- **Design:** index-build.
 - **Status:** todo
 
 ### 20261004-13. Two live-clock edge cases.
@@ -2196,7 +2197,7 @@ The second review of 20261003-16 found these minors in `driver/lib/quaack/driver
 
 ### 20261004-14. Give each mechanical rewrite rule its own doc page, with examples, and link to it from the report.
 
-The mechanical rules (step 6c) are listed in a table in DESIGN.md. Move each one to its own page, `docs/transforms/<rule_name>.md`, named exactly as the rule appears in the enclave's `RULES` (for example `docs/transforms/implied_predicate_removal.md`). Each page has:
+The mechanical rules (rewrite-rules) are listed in a table in DESIGN.md. Move each one to its own page, `docs/transforms/<rule_name>.md`, named exactly as the rule appears in the enclave's `RULES` (for example `docs/transforms/implied_predicate_removal.md`). Each page has:
 - what the rule does, and when it applies and refuses (from the DESIGN.md table and the rule's code comments);
 - any assumption it rests on, such as `denormalized_equal`;
 - at least one example: the SQL before the rule and the SQL after, written as an ordinary Rails-style query. These come from 20261001-29, which no longer has them.
@@ -2215,5 +2216,5 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-04.
-- **Design:** Step 6c, step 15 (report).
+- **Design:** rewrite-rules, report.
 - **Status:** todo
