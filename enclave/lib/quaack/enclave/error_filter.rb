@@ -50,6 +50,14 @@ module Quaack
     #   the function; column, one plain name; and type, as format_type
     #   prints it, unquoted, such as numeric(5,2) or bigint[]. Otherwise the
     #   whole field is left out.
+    # - The cycle comes from the error's cycle method, and is sent only
+    #   when the rule is fk_cycle (DESIGN.md, step 9): the tables of a
+    #   foreign key cycle, in the order their foreign keys point, which are
+    #   schema, never a row value. It must be an Array of 3 to 64 plain
+    #   schema.name Strings, like the function, whose last is its first.
+    #   Otherwise the whole field is left out. This file can't see the
+    #   run's schema, so whoever raises the error checks that each is one
+    #   of the run's relations (Steps::CycleTables).
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -69,6 +77,10 @@ module Quaack
       MAX_CLIENTS = 20
       COLUMN_RULES = %w[unsupported_type domain_check].freeze
       COLUMN_KEYS = %w[table column type].freeze
+      CYCLE_RULE = "fk_cycle"
+      # A cycle names at least two tables and its first again, and at most
+      # 64 in all.
+      CYCLE_SIZES = (3..64)
       IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
       # A type as format_type prints it, unquoted: a name, maybe schema
       # qualified, with a typmod, words such as "with time zone", and [].
@@ -101,7 +113,8 @@ module Quaack
           reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
           clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
-          column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)) }.compact
+          column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
+          cycle: (cycle(ask(exception, :cycle)) if rule == CYCLE_RULE) }.compact
       end
 
       # Runs the block and returns its value. If it raises anything, even a
@@ -195,6 +208,14 @@ module Quaack
       # Whether hash is a Hash whose keys are exactly keys, each a String.
       def exact_keys?(hash, keys)
         hash.instance_of?(Hash) && hash.keys == keys && hash.keys.map(&:class) == [String] * keys.size
+      end
+
+      # cycle if it's an Array of CYCLE_SIZES plain schema.name Strings
+      # whose last is its first, and nil otherwise.
+      def cycle(cycle)
+        return unless cycle.instance_of?(Array) && CYCLE_SIZES.cover?(cycle.size) && cycle.first == cycle.last
+
+        cycle if cycle.all? { shaped?(it, FUNCTION) }
       end
 
       def sqlstate(exception)

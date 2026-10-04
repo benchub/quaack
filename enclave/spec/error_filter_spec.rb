@@ -71,6 +71,17 @@ module FilterFakes
     end
   end
 
+  # An fk_cycle refusal, which names the cycle's tables.
+  class CycleError < StandardError
+    attr_reader :rule, :cycle
+
+    def initialize(rule:, cycle:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @cycle = cycle
+    end
+  end
+
   # An intake unreadable-file refusal, whose reason is an enclave constant.
   class IntakeUnreadableError < StandardError
     attr_reader :rule, :reason
@@ -316,6 +327,44 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
           out = column_line(bad)
 
           expect(out).to eq(line(step: "9", rule: "unsupported_type"))
+          expect(out).not_to include("SENTINEL")
+        end
+      end
+    end
+
+    describe "an fk_cycle refusal's tables" do
+      let(:cycle) { %w[public.accounts billing.courses public.accounts] }
+
+      def cycle_line(cycle, rule: "fk_cycle")
+        filter.to_egress(FilterFakes::CycleError.new(rule:, cycle:), step: "counterexample-round")
+      end
+
+      it "sends the cycle's tables, in order, for an fk_cycle refusal" do
+        expect(cycle_line(cycle)).to eq(line(step: "counterexample-round", rule: "fk_cycle", cycle:))
+      end
+
+      it "sends no tables for any other rule" do
+        expect(cycle_line(cycle, rule: "complex_check")).to eq(line(step: "counterexample-round", rule: "complex_check"))
+      end
+
+      sneaky = Class.new(Array) { def to_json(*) = ERROR_SENTINEL.to_json }
+      [
+        ["a sentinel table", ["public.accounts", ERROR_SENTINEL, "public.accounts"]],
+        ["an unqualified table", %w[accounts public.courses accounts]],
+        ["a quoted table", ['"Sales"."Accounts"', "public.courses", '"Sales"."Accounts"']],
+        ["a table that's a String subclass", [Class.new(String).new("public.a"), "public.b", "public.a"]],
+        ["a table that isn't a String", [%w[public a], "public.b", %w[public a]]],
+        ["no second table", %w[public.a public.a]],
+        ["an end that isn't its start", %w[public.a public.b public.c]],
+        ["more than 64 tables", [*Array.new(64) { "public.t#{it}" }, "public.t0"]],
+        ["an Array subclass", sneaky.new(%w[public.a public.b public.a])],
+        ["a String", ERROR_SENTINEL],
+        ["nil", nil]
+      ].each do |label, bad|
+        it "drops a cycle with #{label}, and still sends the rule" do
+          out = cycle_line(bad)
+
+          expect(out).to eq(line(step: "counterexample-round", rule: "fk_cycle"))
           expect(out).not_to include("SENTINEL")
         end
       end
