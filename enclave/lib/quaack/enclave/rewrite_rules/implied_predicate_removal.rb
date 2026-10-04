@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "../deparse"
 require_relative "implied_predicate_removal/columns"
 require_relative "implied_predicate_removal/containers"
+require_relative "implied_predicate_removal/duplicates"
 require_relative "implied_predicate_removal/expressions"
 require_relative "tree"
 
@@ -18,6 +19,7 @@ module Quaack
       class ImpliedPredicateRemoval
         include Expressions
         include Columns
+        include Duplicates
 
         Comparison = Data.define(:condition, :column, :value, :info)
 
@@ -32,11 +34,23 @@ module Quaack
           return [] unless literals
 
           tree = Deparse.copy(parse.tree)
-          changed = Tree.find(tree, PgQuery::SelectStmt).any? { simplified?(it, catalog, literals) }
+          changed = false
+          each_select(tree) { changed = simplified?(it, catalog, literals) || changed }
           changed ? [Rewrite.new(tree:, assumptions: [])] : []
         end
 
         private
+
+        # Each SELECT in node, the top level's first, after which its own
+        # nested SELECTs: subqueries, CTEs, and set-operation arms. Each is
+        # simplified on its own, so an equality only proves what's at its
+        # level, and a SELECT inside a dropped conjunct is never reached.
+        def each_select(node, &)
+          Tree.find(node, PgQuery::SelectStmt).each do |select|
+            yield select
+            select.class.descriptor.each { each_select(it.get(select), &) }
+          end
+        end
 
         def simplified?(select, catalog, literals)
           terms = terms(select)
@@ -63,23 +77,6 @@ module Quaack
           joins.select { !it.quals.nil? && !it.is_natural && it.using_clause.empty? }.map { OnContainer.new(it) }
         end
 
-        def duplicates(terms, catalog, literals, select)
-          terms.each_with_index.with_object([]) do |(term, i), drop|
-            first = terms[0...i].find do |other|
-              same_expression?(other.condition, term.condition, literals) &&
-                deterministic_columns?(term.condition, catalog, select)
-            end
-            drop << i if first
-          end
-        end
-
-        def deterministic_columns?(condition, catalog, select)
-          columns(condition).all? do |column|
-            info = column_info(column, select, catalog)
-            info&.deterministic
-          end
-        end
-
         def equalities(terms, drop, select, catalog)
           terms.each_with_index.filter_map do |term, i|
             [i, equality(term.condition, select, catalog)] unless drop.include?(i)
@@ -90,9 +87,11 @@ module Quaack
           expr = condition.a_expr if condition.node == :a_expr
           return unless equality_operator?(expr)
 
-          column, value = comparison_parts(expr)
+          column, value, cast = comparison_parts(expr)
           info = column_info(column, select, catalog) if column
-          Comparison.new(condition:, column:, value:, info:) if info&.deterministic
+          return unless info&.deterministic && own_type?(cast, info, catalog)
+
+          Comparison.new(condition:, column:, value:, info:)
         end
 
         def equality_operator?(expr) = expr&.kind == :AEXPR_OP && operator(expr) == "="
