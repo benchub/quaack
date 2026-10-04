@@ -93,6 +93,22 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(values(scenarios[:s1], "t", "plain")).to all(eq("{}"))
   end
 
+  it "fills unique arrays of a domain over a domain, and domains over a domain over an array" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN fx.small AS smallint; CREATE DOMAIN fx.tiny AS fx.small CHECK (VALUE >= 0);
+      CREATE DOMAIN fx.codes AS varchar(3)[]; CREATE DOMAIN fx.labels AS fx.codes;
+      CREATE TABLE fx.t (id integer PRIMARY KEY, v text, ts fx.tiny[] NOT NULL UNIQUE,
+        ls fx.labels NOT NULL UNIQUE, plain fx.labels NOT NULL);
+    SQL
+    scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x'", "fx.t")
+    %w[ts ls].each do |name|
+      got = values(scenarios[:s3], "t", name)
+      expect(got.uniq.size).to eq(got.size)
+      expect(got).to all(match(/\A\{[^,]+\}\z/))
+    end
+    expect(values(scenarios[:s1], "t", "plain")).to all(eq("{}"))
+  end
+
   it "fills unique jsonb, uuid, and plain json columns" do
     conn.exec(<<~SQL)
       CREATE TABLE fx.t (id integer PRIMARY KEY, v text, j jsonb NOT NULL UNIQUE, js json NOT NULL,
@@ -271,11 +287,13 @@ RSpec.describe Quaack::Enclave::Scenarios do
 
     it "wraps a unique domain over a narrow numeric" do
       conn.exec(<<~SQL)
-        CREATE DOMAIN fx.points AS numeric(5,2);
-        CREATE TABLE fx.t (p fx.points);
+        CREATE DOMAIN fx.points AS numeric(5,2); CREATE DOMAIN fx.score AS fx.points;
+        CREATE TABLE fx.t (p fx.points, s fx.score);
       SQL
-      nth = described_class::Values.new(conn).nth(column("t", "p"), 100_005)
-      expect(conn.exec_params("SELECT $1::fx.points", [nth]).getvalue(0, 0)).to eq(nth)
+      %w[p s].each do |name|
+        nth = described_class::Values.new(conn).nth(column("t", name), 100_005)
+        expect(conn.exec_params("SELECT $1::fx.points", [nth]).getvalue(0, 0)).to eq(nth)
+      end
     end
   end
 
