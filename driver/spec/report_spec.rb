@@ -211,6 +211,43 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
+    describe "what a rule-made rewrite assumes of the data (6b)" do
+      def empirical(*assumptions)
+        payload["rewrites"].first.merge!("rules" => ["polymorphic_key_copy"], "empirical" => assumptions)
+        section(render(payload), "queries")[%r{<p class="empirical">.*?</p>}m]
+      end
+
+      def copy(**fields)
+        { "table" => "public.submissions", "column" => "course_id", "references_table" => "public.assignments",
+          "type_column" => "context_type", "id_column" => "context_id" }.merge(fields.transform_keys(&:to_s))
+      end
+
+      it "says the rewrite rests on what the data holds today, not on the schema, naming the columns" do
+        expect(empirical(copy)).to eq(esc(
+                                        '<p class="empirical">It rests on something your data holds today but ' \
+                                        "your schema doesn't enforce: public.submissions.course_id equals " \
+                                        "public.assignments.context_id wherever public.assignments.context_type " \
+                                        "names the type in your query. QUAACK checked it on the real data.</p>"
+                                      ))
+      end
+
+      it "names each assumption when there are several" do
+        expect(empirical(copy, copy(column: "account_id"))).to include(esc("public.submissions.course_id equals"))
+          .and include(esc("; public.submissions.account_id equals"))
+      end
+
+      it "says nothing when the rewrite rests on none" do
+        expect(empirical).to be_nil
+        payload["rewrites"].first.delete("empirical")
+        expect(section(render(payload), "queries")).not_to include("empirical")
+      end
+
+      it "escapes a name" do
+        expect(empirical(copy(column: "<b>"))).to include("public.submissions.&lt;b&gt; equals")
+          .and(satisfy { !it.include?("<b>") })
+      end
+    end
+
     describe "what became of a rewrite" do
       def fate(name, **details)
         payload["rewrites"] = [fated(2, name, **details)]
