@@ -103,6 +103,15 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(run(scenarios[:s1], canvas_sql).size).to be >= 1
       end
 
+      it "holds S6's account with no courses with its cut column NULL, the rest their parent's key" do
+        s6 = build(canvas_sql)[:s6]
+        templates = values(s6, "accounts", "course_template_id")
+        expect(templates.count(nil)).to eq(1)
+        expect(templates.compact).not_to be_empty
+        expect(templates.compact - values(s6, "courses", "id")).to eq([])
+        expect(loaded_templates(s6)).to eq([expected_templates(s6)] * 2)
+      end
+
       it "builds when a filter atom reads the cut column, giving it the atom's value" do
         s1 = build("SELECT a.id FROM fx.accounts a WHERE a.course_template_id = 5")[:s1]
         expect(values(s1, "accounts", "course_template_id")).to include("5")
@@ -133,14 +142,17 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       it "holds an account with no courses in S6, its cut column NULL, loading both ways round" do
         s6 = build(anti_sql)[:s6]
         lonely = rows_of(s6, "accounts").map { |r| r.values[0] } - values(s6, "courses", "account_id")
-        expect(lonely.size).to eq(1)
-        lonely_row = rows_of(s6, "accounts").find { |r| r.values[0] == lonely.first }
-        expect(lonely_row.values[lonely_row.columns.index("course_template_id")]).to be_nil
-        others = values(s6, "accounts", "course_template_id").compact
-        expect(others.size).to eq(rows_of(s6, "accounts").size - 1)
-        expect(others - values(s6, "courses", "id")).to eq([])
+        expect(lonely).not_to be_empty
         expect(loaded_templates(s6)).to eq([expected_templates(s6)] * 2)
-        expect(run(s6, anti_sql)).to eq([lonely])
+        expect(run(s6, anti_sql)).to eq(lonely.sort_by(&:to_i).map { |id| [id] })
+      end
+
+      # c.id IS NULL has no value, so courses.id's key class never builds;
+      # the cut column stays out of it, NULL, and accounts rows still build.
+      it "keeps the cut column out of a key class with no value, NULL in every scenario" do
+        scenarios = build(anti_sql)
+        expect(scenarios.values.flat_map { |rows| values(rows, "accounts", "course_template_id") }.uniq).to eq([nil])
+        expect(rows_of(scenarios[:s3], "accounts")).not_to be_empty
       end
 
       it "passes NOT EXISTS and disproves an inner join" do
@@ -153,6 +165,17 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
         # The same as without the cycle's other edge.
         expect(report.untested).to eq(["c.account_id = a.id"])
+      end
+
+      # c.title IS NULL has no value, so courses rows never build, though
+      # courses.id's key class has a value; the cut column is NULL anyway.
+      it "keeps the cut column NULL when another of its parent's columns has no value" do
+        title_sql = "SELECT a.id, a.course_template_id FROM fx.accounts a LEFT JOIN fx.courses c " \
+                    "ON c.account_id = a.id WHERE c.title IS NULL ORDER BY a.id"
+        scenarios = build(title_sql)
+        expect(scenarios.values.flat_map { |rows| values(rows, "accounts", "course_template_id") }.uniq).to eq([nil])
+        scenarios.each_value { |rows| expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2) }
+        expect(run(scenarios[:s3], title_sql)).not_to be_empty
       end
     end
 
@@ -203,6 +226,52 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       expect(cuts("SELECT c.id FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id"))
         .to eq([["course_template_id"], []])
       expect(cuts("SELECT a.id FROM fx.accounts a")).to eq([["course_template_id"], []])
+    end
+  end
+
+  describe "with a third table under accounts, and self-references" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA fx;
+        CREATE TABLE fx.accounts (id bigint PRIMARY KEY, name text NOT NULL,
+          root_account_id bigint REFERENCES fx.accounts, parent_account_id bigint REFERENCES fx.accounts,
+          course_template_id bigint, workflow_state text NOT NULL DEFAULT 'active');
+        CREATE TABLE fx.enrollment_terms (id bigint PRIMARY KEY,
+          root_account_id bigint NOT NULL REFERENCES fx.accounts, name text);
+        CREATE TABLE fx.courses (id bigint PRIMARY KEY, name text NOT NULL,
+          account_id bigint NOT NULL REFERENCES fx.accounts, root_account_id bigint NOT NULL REFERENCES fx.accounts,
+          enrollment_term_id bigint NOT NULL REFERENCES fx.enrollment_terms, workflow_state text NOT NULL);
+        ALTER TABLE fx.accounts ADD FOREIGN KEY (course_template_id) REFERENCES fx.courses;
+      SQL
+    end
+
+    let(:anti_sql) do
+      "SELECT a.id FROM fx.accounts a LEFT JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"
+    end
+
+    # c.id IS NULL can't hold for a primary key, so the cut column's key
+    # class has no value. The cut column is NULL instead, so the accounts
+    # rows the other tables' copies reference still load.
+    it "loads every scenario of an anti join on the kept edge" do
+      scenarios = build(anti_sql)
+      expect(rows_of(scenarios[:s3], "accounts")).not_to be_empty
+      scenarios.each do |name, rows|
+        dangling = values(rows, "enrollment_terms", "root_account_id") - values(rows, "accounts", "id")
+        expect(dangling).to eq([]), name.to_s
+        expect { run(rows, anti_sql) }.not_to raise_error, name.to_s
+      end
+    end
+
+    it "passes NOT EXISTS and disproves the wrong rewrites" do
+      report = Quaack::Enclave::StepNine.run(
+        conn, anti_sql,
+        ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
+         "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id"]
+      )
+      expect(report.results.map(&:passed)).to eq([true, false, false])
+      expect(report.results.map(&:rule)).not_to include(:fixture_load_failed)
     end
   end
 

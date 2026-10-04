@@ -75,6 +75,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
     expect([error.rule, error.step, error.index]).to eq([:fixture_load_failed, :load, 0])
   end
 
+  it "fails the load when a row with deferred columns doesn't come back from its INSERT" do
+    conn.exec(<<~SQL)
+      CREATE FUNCTION fx.skip() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$;
+      CREATE TRIGGER skip BEFORE INSERT ON fx.accounts FOR EACH ROW EXECUTE FUNCTION fx.skip();
+    SQL
+
+    error = load_error([account(1, sentinel)])
+
+    expect([error.rule, error.step, error.index, error.cause]).to eq([:fixture_load_failed, :load, 0, nil])
+    expect([error.message, error.inspect]).to all(satisfy { |text| !text.include?(sentinel) })
+  end
+
   it "refuses deferred columns that aren't among the row's columns, without naming a value" do
     [nil, ["note"], [:id], "id"].each do |deferred|
       expect do

@@ -41,7 +41,8 @@ module Quaack
     #   still satisfy the atoms and CHECKs.
     # - empty: only the tables that reference no other fixture table
     #   through a foreign key the load order keeps. A cut column there is
-    #   NULL, since its parent's table has no row in the group.
+    #   NULL, since its parent's table has no row in the group, as in a
+    #   copy of one table's row.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
     # S3: S1 and a copy of each table's hit row; S4: S1 and orphans; S5: S1
@@ -74,10 +75,12 @@ module Quaack
     # nullable are cut from the load order (see Topology), preferring ones
     # no atom reads. A cut column still gets its value, as without the
     # cycle, but its rows defer it (ArenaRunner::FixtureRow#deferred): it
-    # loads as NULL and is set once every row has loaded. A cycle with no
-    # nullable foreign key raises Error(:fk_cycle). Rows come table by
-    # table, parents first, each table's rows together, as 9d's reverse
-    # load needs.
+    # loads as NULL and is set once every row has loaded. It's NULL when its
+    # parent's rows never build, because an atom no value satisfies (c.id
+    # IS NULL on a NOT NULL key) reads a column in the key class of one of
+    # its parent's columns. A cycle with no nullable foreign key raises
+    # Error(:fk_cycle). Rows come table by table, parents first, each
+    # table's rows together, as 9d's reverse load needs.
     #
     # Trust boundary: the rows hold real values and stay in the enclave.
     # Errors name a rule, and for unsupported_type and domain_check the
@@ -141,7 +144,7 @@ module Quaack
 
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
           @pools = ValuePools.build(conn, parse, @atoms, @schema)
-          @topology = Topology.new(@schema, @atoms)
+          @topology = Topology.new(@schema, @atoms, @pools)
           @checks = Checks.new(conn, @schema)
           @values = Values.new(conn)
         end
@@ -221,7 +224,7 @@ module Quaack
           # An identity column a key class ties to another takes the key's
           # value (the runner overrides the identity), or else its own.
           return :omit if generated?(col, keyed)
-          return nil if @topology.dangling?(table, col.name, group)
+          return nil if @topology.null_cut?(table, col.name, group)
 
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)

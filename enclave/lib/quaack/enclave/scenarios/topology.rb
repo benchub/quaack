@@ -14,8 +14,10 @@ module Quaack
       # the rest. A cut foreign key's columns still join its key class and
       # get their scenario values, but fixture rows defer them
       # (ArenaRunner::FixtureRow#deferred): they load as NULL and are set
-      # once every row has loaded. A cycle with no nullable foreign key
-      # left raises Error(:fk_cycle).
+      # once every row has loaded. Where the key class has no value, as
+      # when an atom no value satisfies reads it, a cut foreign key's
+      # columns are NULL. A cycle with no nullable foreign key left raises
+      # Error(:fk_cycle).
       class Topology
         attr_reader :order
 
@@ -24,12 +26,14 @@ module Quaack
             atom.columns.all?(&:table)
         end
 
-        def initialize(schema, atoms)
+        # pools are the atoms' ValuePools, by atom index.
+        def initialize(schema, atoms, pools = {})
           @schema = schema
           @atoms = atoms
           @cut = cut_foreign_keys
           @order = load_order
           @classes = key_classes
+          @detached = detached_foreign_keys(pools)
         end
 
         # The table's columns that belong to a cut foreign key, which
@@ -43,13 +47,14 @@ module Quaack
         # key the load order keeps.
         def roots = @order.select { |t| load_parents(t).empty? }
 
-        # Whether the column belongs to a cut foreign key whose parent's
-        # table the group leaves out, as the empty group does, so it must be
-        # NULL. A copy (Group#copy) shares its keys with a group that holds
-        # the parent, so it keeps its value.
-        def dangling?(table, name, group)
-          group.copy.zero? &&
-            @cut.fetch(table, []).any? { |fk| fk.columns.include?(name) && !group.tables.include?(fk.parent) }
+        # Whether the column belongs to a cut foreign key that must be NULL:
+        # one detached (detached_foreign_keys), or one whose parent's table
+        # the group leaves out, as the empty group and the copies of one
+        # table do.
+        def null_cut?(table, name, group)
+          @cut.fetch(table, []).any? do |fk|
+            fk.columns.include?(name) && (@detached.include?([table, fk]) || !group.tables.include?(fk.parent))
+          end
         end
 
         # The table and every table it references, however far up, in load
@@ -143,6 +148,23 @@ module Quaack
 
         def join_edges
           @atoms.select { |a| Topology.equality_join?(a) }.map { |a| a.columns.map { |c| [c.table, c.name] } }
+        end
+
+        # The [table, cut foreign key] pairs whose parent's table has a
+        # column whose key class holds a column an atom reads that no value
+        # satisfies. The parent's rows then don't build, so a cut column
+        # that took their key would leave its own row unbuilt (in the
+        # parent's key class) or referencing nothing. A detached foreign
+        # key's columns are NULL instead.
+        def detached_foreign_keys(pools)
+          empty = pools.values.filter_map { |p| [p.column.table, p.column.name] if p.satisfying.empty? }
+          @cut.flat_map { |table, fks| fks.select { |fk| unbuildable?(fk.parent, empty) }.map { |fk| [table, fk] } }
+        end
+
+        # Whether a column of the table is in a key class with one of the
+        # empty columns.
+        def unbuildable?(table, empty)
+          @schema.columns(table).any? { |c| members(slot(table, c.name)).intersect?(empty) }
         end
 
         def fk_edges
