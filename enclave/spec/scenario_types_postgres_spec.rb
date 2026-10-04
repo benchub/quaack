@@ -227,6 +227,33 @@ RSpec.describe Quaack::Enclave::Scenarios do
       end
     end
 
+    it "still refuses a nullable one the query reads only through a USING or NATURAL join" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (uid integer PRIMARY KEY, w text, lsn pg_lsn);
+      SQL
+      ["SELECT t.id FROM fx.t t JOIN fx.u u USING (lsn) WHERE t.v = 'x'",
+       "SELECT t.id FROM fx.t t LEFT JOIN fx.u u USING (lsn) WHERE t.v = 'x'",
+       "SELECT t.id FROM fx.t t NATURAL JOIN fx.u u WHERE t.v = 'x'"].each do |sql|
+        expect(refusal(sql).rule).to eq(:unsupported_type), sql
+      end
+    end
+
+    it "still refuses a nullable one whose CHECK or domain rejects NULL" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN fx.lsn AS pg_lsn NOT NULL;
+        CREATE DOMAIN fx.lsn2 AS fx.lsn;
+        CREATE TABLE fx.c (id integer PRIMARY KEY, v text, lsn pg_lsn CHECK (lsn IS NOT NULL));
+        CREATE TABLE fx.d (id integer PRIMARY KEY, v text, lsn fx.lsn);
+        CREATE TABLE fx.e (id integer PRIMARY KEY, v text, lsn fx.lsn2);
+        CREATE TABLE fx.f (id integer PRIMARY KEY, v text, lsn fx.lsn UNIQUE);
+      SQL
+      { "c" => "pg_lsn", "d" => "fx.lsn", "e" => "fx.lsn2", "f" => "fx.lsn" }.each do |table, type|
+        error = refusal("SELECT id FROM fx.#{table} WHERE v = 'x'")
+        expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.#{table}", "lsn", type)])
+      end
+    end
+
     it "still refuses a nullable unique one whose NULLs collide" do
       conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn UNIQUE NULLS NOT DISTINCT)")
       expect(refusal("SELECT id FROM fx.t WHERE v = 'x'").column).to eq(detail("fx.t", "lsn", "pg_lsn"))

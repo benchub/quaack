@@ -9,15 +9,16 @@ module Quaack
       class Types
         INFO_SQL = <<~SQL
           SELECT t.typcategory, NULLIF(t.typelem, 0)::int, r.rngsubtype::int, format_type(r.rngsubtype, NULL),
-                 NULLIF(t.typbasetype, 0)::int, format_type(NULLIF(t.typbasetype, 0), t.typtypmod)
+                 NULLIF(t.typbasetype, 0)::int, format_type(NULLIF(t.typbasetype, 0), t.typtypmod), t.typnotnull
           FROM pg_type t LEFT JOIN pg_range r ON r.rngtypid = t.oid
           WHERE t.oid = $1
         SQL
 
         # A type's category, its element type (an array's) or subtype (a
-        # range's) as a Column, if any, and the type a domain is built on,
-        # as a Column, or nil for any other type.
-        Info = Data.define(:category, :inner, :base)
+        # range's) as a Column, if any, the type a domain is built on, as
+        # a Column, or nil for any other type, and whether it or any domain
+        # under it is NOT NULL.
+        Info = Data.define(:category, :inner, :base, :not_null)
 
         def initialize(conn)
           @conn = conn
@@ -31,13 +32,7 @@ module Quaack
 
         # A domain's element type or subtype is its base type's.
         def info(col)
-          @infos[[col.oid, col.type]] ||= begin
-            category, element, subtype, subtype_name, base, base_name =
-              @conn.exec_params(INFO_SQL, [col.oid]).values.first
-            base &&= col.with(type: base_name, oid: Integer(base))
-            inner = base ? info(base).inner : inner(col, category, element, subtype, subtype_name)
-            Info.new(category:, base:, inner:)
-          end
+          @infos[[col.oid, col.type]] ||= build(col, @conn.exec_params(INFO_SQL, [col.oid]).values.first)
         end
 
         def labels(col)
@@ -46,6 +41,13 @@ module Quaack
         end
 
         private
+
+        def build(col, row)
+          category, element, subtype, subtype_name, base, base_name, not_null = row
+          base &&= col.with(type: base_name, oid: Integer(base))
+          inner = base ? info(base).inner : inner(col, category, element, subtype, subtype_name)
+          Info.new(category:, base:, inner:, not_null: not_null == "t" || (base ? info(base).not_null : false))
+        end
 
         # An array's element type, with the column's typmod, or a range's
         # subtype.

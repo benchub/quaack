@@ -13,7 +13,8 @@ module Quaack
       # value, for a boundary group, or the type's typical value,
       # whichever the column's CHECKs allow. A nullable column whose type
       # has no such value is left NULL when the query doesn't read it (see
-      # Reads) and no NULLS NOT DISTINCT key holds it.
+      # Reads), no NULLS NOT DISTINCT key holds it, and neither its CHECKs
+      # nor a NOT NULL domain reject NULL.
       class FreeValues
         UNIQUE = Object.new.freeze
 
@@ -51,10 +52,14 @@ module Quaack
         end
 
         def null?(table, col)
+          col.nullable && !@reads.read?(col.name) && @values.nullable_type?(col) &&
+            @checks.allows?(table, col, nil) && !nulls_collide?(table, col)
+        end
+
+        def nulls_collide?(table, col)
           constraints = @schema.constraints(table)
-          col.nullable && !@reads.read?(col.name) &&
-            constraints.nulls_not_distinct.none? { it.include?(col.name) } &&
-            constraints.expressions.none? { it.nulls_not_distinct && it.columns.include?(col.name) }
+          constraints.nulls_not_distinct.any? { it.include?(col.name) } ||
+            constraints.expressions.any? { it.nulls_not_distinct && it.columns.include?(col.name) }
         end
 
         def varying(table)

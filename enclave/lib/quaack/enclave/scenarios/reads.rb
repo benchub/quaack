@@ -10,7 +10,8 @@ module Quaack
       # it names, which errs toward yes. A star, or a reference whose last
       # name is no column of a fixture table (a whole row, such as t in
       # SELECT t FROM x t, or an output name), counts as reading every
-      # column.
+      # column. A JOIN ... USING reads the columns it names, and a NATURAL
+      # join reads every column.
       class Reads
         def initialize(parse, column_names)
           @names = []
@@ -25,7 +26,13 @@ module Quaack
 
         def walk(node, &)
           yield node.fields.to_a if node.is_a?(PgQuery::ColumnRef)
+          join(node) if node.is_a?(PgQuery::JoinExpr)
           ValuePools::Sides.children(node).each { walk(it, &) }
+        end
+
+        def join(node)
+          @all = true if node.is_natural
+          @names.concat(node.using_clause.map { it.string.sval })
         end
 
         def note(fields, known)
