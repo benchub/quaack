@@ -1064,26 +1064,7 @@ Add it to 6c's table in DESIGN.md.
 
 ### 20261002-8. 6c rule: `cte_hoist_dedupe`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-9. 6c rule: `union_outer_filter_removal`.
-
-The query behind 20261002-8 filters the `UNION`'s result with `WHERE users.id IN (SELECT user_id FROM users_in_account) AND users.workflow_state <> 'deleted'`, when every arm already applies both conjuncts, in its own `WHERE`, to the column it outputs. The outer copy can't drop a row, but Postgres still runs it: here, as a semi-join over the union's result.
-
-The rule: for a query whose `FROM` is one subquery that's a `UNION` or `UNION ALL` (or such a subquery under inner joins), drop a top-level `WHERE` conjunct on that subquery's output columns when every arm has the same conjunct in its top-level `WHERE`, applied to the expression each arm outputs in those columns. Map output columns by position, expanding `t.*` from the catalog. Compare by deparsed form, with the column references replaced by placeholders. A conjunct with a subquery matches only when the subqueries deparse the same and read the same CTE (after 20261002-8, the same top-level one). Refuse when:
-
-- A conjunct calls a volatile function.
-- An arm outputs the column as an aggregate.
-- An arm has the conjunct only in `HAVING`.
-- The set operation is `INTERSECT` or `EXCEPT`.
-
-It's sound with no catalog facts: every row an arm outputs passed that arm's `WHERE`, and `GROUP BY` doesn't change a grouped row's value for a column it groups by or one that depends on it. It states no assumptions.
-
-Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees one shared CTE.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Note (2026-10-02, answers):** Match conjuncts with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
-- **Status:** todo
+### 20261002-9. 6c rule: `union_outer_filter_removal`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-10. 6c rule: `existence_in_flip`.
 
@@ -2099,6 +2080,7 @@ Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a que
 - **Depends on:** 20261003-17.
 - **Came from:** The build and review of 20261003-17, 2026-10-03.
 - **Design:** Step 9.
+- **Note (2026-10-03, answers):** The user chose this as the next side task. Prefer the second option, loading NULL and then UPDATEing to the parent's key, since it covers more cycles and also tests the cut column's value.
 - **Status:** todo
 
 ### 20261003-24. ParentRows can leak a value in a Postgres error.
@@ -2124,6 +2106,23 @@ Minor findings from the build and review of 20261003-17:
 - **Depends on:** 20261003-17.
 - **Came from:** The build and review of 20261003-17, 2026-10-03.
 - **Design:** Step 9, 10a.
+- **Status:** todo
+
+### 20261003-26. `union_outer_filter_removal`: widenings, and duplicate candidates.
+
+From the build of 20261002-9:
+
+- **Widen the rule where it's sound.** It now refuses:
+  - arms whose output columns come from a CTE or subquery, since the catalog gives no types for them;
+  - arms whose column types differ harmlessly, such as `int` and `bigint`;
+  - unqualified columns, column aliases, and correlated subqueries in conjuncts.
+  
+  Widen each only with a soundness argument and a real-Postgres test.
+- **The same rewrite can come out twice.** The rule can fire both before and after `cte_hoist_dedupe`, so the candidate list may hold the same SQL reached by different rule orders. Drop candidates whose SQL matches one already listed.
+
+- **Depends on:** 20261002-9.
+- **Came from:** The build of 20261002-9, 2026-10-03.
+- **Design:** 6c.
 - **Status:** todo
 
 ### 20261003-22. `quaack setup`: loose ends.

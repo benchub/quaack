@@ -3839,3 +3839,42 @@ Update DESIGN.md's "Unsupported in v1" note for step 9. Test it against real Pos
     - 20261003-23: joining on the nullable edge still refuses, and a cut column's value isn't tested in step 9.
     - 20261003-24: an older value leak in ParentRows.
     - 20261003-25: loose ends.
+
+### 20261002-9. 6c rule: `union_outer_filter_removal`.
+
+The query behind 20261002-8 filters the `UNION`'s result with `WHERE users.id IN (SELECT user_id FROM users_in_account) AND users.workflow_state <> 'deleted'`, when every arm already applies both conjuncts, in its own `WHERE`, to the column it outputs. The outer copy can't drop a row, but Postgres still runs it: here, as a semi-join over the union's result.
+
+The rule: for a query whose `FROM` is one subquery that's a `UNION` or `UNION ALL` (or such a subquery under inner joins), drop a top-level `WHERE` conjunct on that subquery's output columns when every arm has the same conjunct in its top-level `WHERE`, applied to the expression each arm outputs in those columns. Map output columns by position, expanding `t.*` from the catalog. Compare by deparsed form, with the column references replaced by placeholders. A conjunct with a subquery matches only when the subqueries deparse the same and read the same CTE (after 20261002-8, the same top-level one). Refuse when:
+
+- A conjunct calls a volatile function.
+- An arm outputs the column as an aggregate.
+- An arm has the conjunct only in `HAVING`.
+- The set operation is `INTERSECT` or `EXCEPT`.
+
+It's sound with no catalog facts: every row an arm outputs passed that arm's `WHERE`, and `GROUP BY` doesn't change a grouped row's value for a column it groups by or one that depends on it. It states no assumptions.
+
+Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees one shared CTE.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Note (2026-10-02, answers):** Match conjuncts with 20261002-17's `Literals#same?` for their placeholders, never by reading values.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-9.
+  - **Change:** the new rule `rewrite_rules/union_outer_filter_removal.rb` (with `union.rb` and `conjuncts.rb`) comes after `cte_hoist_dedupe` in RULES. DESIGN.md's 6c table has its row.
+    - It drops an outer top-level `WHERE` conjunct that reads only one `UNION` or `UNION ALL` subquery's output columns, when every arm's top-level `WHERE` has the same conjunct on what that arm outputs at the same positions.
+    - Placeholders are compared only with `Literals#same?`.
+    - It also refuses:
+      - `LATERAL`, and column aliases;
+      - a union on an outer join's nullable side;
+      - `INTERSECT` or `EXCEPT` anywhere, and grouping sets;
+      - arm columns read from CTEs or subqueries, unqualified columns, and stars it can't expand;
+      - arm column types or collations that differ;
+      - a subquery whose CTE a nearer `WITH` hides.
+  - **Tests:** 25 examples on real Postgres.
+    - They check the exact SQL, and that rows match on data with NULLs and duplicates, for both `UNION` and `UNION ALL`.
+    - The Canvas five-arm query runs through `cte_hoist_dedupe` first.
+    - Each refusal test has a twin that fires.
+    - The builder ran 34 mutations and the reviewer 14; every one went red.
+  - **Review:** one round, clean. Probes covered `NOT IN` with NULLs, swapped columns, a varchar arm against a text one, and a Rails `users.*` query. The one minor, an untested name guard, can't be reached, since Postgres rejects an ambiguous name first.
+  - **Follow-ups:** the builder's widenings, and duplicate candidates reached by different rule orders, went to 20261003-26.
