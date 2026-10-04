@@ -306,10 +306,10 @@ RSpec.describe "quaacks report-payload" do
         measured(store, 23, "none" => "not_better")
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
         # Step 9 couldn't build scenarios for the query, so it refused.
-        stored(store, 24, tested: tested(false, nil, "complex_check").merge("refused" => true), survived: false)
-        stored(store, 25, tested: tested(false, nil, "fk_cycle").merge("refused" => true), survived: false)
-        stored(store, 26, tested: tested(false, nil, REPORT_WORD_SENTINEL).merge("refused" => true),
-                          survived: false)
+        { 24 => "complex_check", 25 => "fk_cycle", 26 => REPORT_WORD_SENTINEL, 27 => "unsatisfiable_check",
+          28 => "expression_unique_index", 29 => "unsupported_type", 30 => "domain_check" }.each do |number, rule|
+          stored(store, number, tested: tested(false, nil, rule).merge("refused" => true), survived: false)
+        end
       end
     end
 
@@ -339,7 +339,11 @@ RSpec.describe "quaacks report-payload" do
       23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" },
       24 => { "fate" => "step9_untested", "rule" => "complex_check" },
       25 => { "fate" => "step9_untested", "rule" => "fk_cycle" },
-      26 => { "fate" => "step9_untested" }
+      26 => { "fate" => "step9_untested" },
+      27 => { "fate" => "step9_untested", "rule" => "unsatisfiable_check" },
+      28 => { "fate" => "step9_untested", "rule" => "expression_unique_index" },
+      29 => { "fate" => "step9_untested", "rule" => "unsupported_type" },
+      30 => { "fate" => "step9_untested", "rule" => "domain_check" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
