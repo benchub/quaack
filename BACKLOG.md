@@ -2242,3 +2242,25 @@ Also, a twin that drops the type filter is caught only if step 10's LLM writes a
 - **Came from:** The second review of 20261002-15.
 - **Design:** Steps 9, 10 and 15.
 - **Status:** todo
+
+### 20261004-10. Make the enclave call timeout configurable.
+
+The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, 12a (index-build) failed after exactly 1h00m00s.
+
+Add a driver config setting for this timeout, with a `quaack run` flag to override it, and pass it to every `Transport::Ssh.new` that runs pipeline steps. Validate it as a positive number. Say in the failure message which setting to raise when a call hits the limit, for example: "the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds`". Document it in the README.
+
+- **Depends on:** none.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Transport, config.
+- **Status:** todo
+
+### 20261004-11. Build each candidate index in its own enclave call.
+
+Step 12a builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
+
+Check how a resumed run treats indexes that already exist on the racetrack. They should be skipped, not built again, and not counted as failures.
+
+- **Depends on:** 20261004-10.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Step 12a.
+- **Status:** todo
