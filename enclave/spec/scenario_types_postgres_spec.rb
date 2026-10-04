@@ -298,6 +298,16 @@ RSpec.describe Quaack::Enclave::Scenarios do
   end
 
   describe "a multi-column unique index" do
+    it "varies a range over a boolean, which has too few values" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, active boolean NOT NULL, span int4range NOT NULL,
+          UNIQUE (active, span));
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(s3.size).to be > 2
+      expect(values(s3, "users", "span").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "active").uniq.size).to eq(1)
+    end
     it "varies one column that takes distinct values, and gives the rest their typical value" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, root_account_ids bigint[] NOT NULL,
