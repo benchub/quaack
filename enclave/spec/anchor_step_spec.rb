@@ -26,7 +26,7 @@ RSpec.describe "quaacks anchor" do
   after { quaacks.remove }
 
   def no_libpq_env = ENV.keys.grep(/\APG/).to_h { [it, nil] }
-  def anchor = quaacks.run("anchor", "--run", store.run_id, env: no_libpq_env)
+  def anchor = quaacks.run("clock-anchor", "--run", store.run_id, env: no_libpq_env)
   def stored = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base)
 
   it "stores the anchored query and what it replaced, printing only DONE" do
@@ -83,7 +83,7 @@ RSpec.describe "quaacks anchor" do
       outcome = anchor
 
       expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
-        .to eq([%({"type":"error","step":"anchor","rule":"clock_function_search_path"}\n), "", 70])
+        .to eq([%({"type":"error","step":"clock-anchor","rule":"clock_function_search_path"}\n), "", 70])
       expect([stored.entry?("anchored_query"), stored.entry?("clock_replacements")]).to eq([false, false])
     end
   end

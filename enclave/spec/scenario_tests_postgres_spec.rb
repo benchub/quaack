@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 
 # Step 9 end to end: build the scenarios, run the 9c guard, and run every
 # scenario through the 9d comparison for each candidate.
-RSpec.describe Quaack::Enclave::StepNine do
+RSpec.describe Quaack::Enclave::ScenarioTests do
   let(:conn) { racetrack_and_arena.arena.connection }
 
   before do

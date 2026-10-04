@@ -20,20 +20,20 @@ module Quaack
     # step's output is the entry it stores last, so one that's there means
     # the step finished. An EnclaveError stops it where it is.
     module Setup
-      Step = Data.define(:subcommand, :id, :output, :say)
+      Step = Data.define(:subcommand, :output, :say)
 
       STEPS = [
-        Step.new("inventory", "2", "inventory", "Reading production's version, settings, and extensions"),
-        Step.new("run-server", "4", "run_server", "Checking the run server"),
-        Step.new("qualify", "3a", "qualified_query", "Finding the tables the query reads"),
-        Step.new("schema-dump", "3b", "schema_subset", "Dumping the schema of those tables"),
-        Step.new("statistics", "3c", "statistics", "Reading the planner statistics for those tables"),
-        Step.new("volatility", "3d", "volatility", "Checking the query calls no volatile functions"),
-        Step.new("classify", "3f", "classification", "Finding the columns that may hold personal data"),
-        Step.new("redact", "3g", "redacted_plan", "Replacing the query's literals with placeholders"),
-        Step.new("literals", "3e", "literal_sets", "Choosing the literal sets to measure with"),
-        Step.new("anchor", "3h", "clock_replacements", "Pinning the query's clock to when the plan was captured"),
-        Step.new("racetrack-setup", "4a", "racetrack_setup",
+        Step.new("inventory", "inventory", "Reading production's version, settings, and extensions"),
+        Step.new("run-server", "run_server", "Checking the run server"),
+        Step.new("qualify", "qualified_query", "Finding the tables the query reads"),
+        Step.new("schema-dump", "schema_subset", "Dumping the schema of those tables"),
+        Step.new("statistics", "statistics", "Reading the planner statistics for those tables"),
+        Step.new("volatility", "volatility", "Checking the query calls no volatile functions"),
+        Step.new("classify", "classification", "Finding the columns that may hold personal data"),
+        Step.new("redact", "redacted_plan", "Replacing the query's literals with placeholders"),
+        Step.new("literals", "literal_sets", "Choosing the literal sets to measure with"),
+        Step.new("clock-anchor", "clock_replacements", "Pinning the query's clock to when the plan was captured"),
+        Step.new("racetrack-setup", "racetrack_setup",
                  "Setting up the racetrack, a copy of production's schema and statistics")
       ].freeze
       # The run-server flags, by option name.
@@ -46,11 +46,11 @@ module Quaack
 
       def run(transport:, run_id:, entries:, server: {}, progress: Progress::NULL)
         STEPS.each do |step|
-          next progress.skip(step.id, step.say) if entries[step.output]
+          next progress.skip(step.subcommand, step.say) if entries[step.output]
 
           args = { run: run_id }
           args.merge!(server.slice(*SERVER_OPTIONS).compact) if step.subcommand == "run-server"
-          progress.step(step.id, step.say) { transport.call(step.subcommand, args:) }
+          progress.step(step.subcommand, step.say) { transport.call(step.subcommand, args:) }
         end
       end
     end

@@ -19,7 +19,7 @@ module Quaack
     # enclave's rewrite_outcome messages, one per rewrite. It's called even
     # with none, so the enclave records that 6a ran.
     class RewriteGeneration
-      STEP = "6a"
+      STEP = "llm-rewrites"
       MAX_TOKENS = 8000
       MAX = 5
 

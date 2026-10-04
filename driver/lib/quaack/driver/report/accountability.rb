@@ -28,15 +28,15 @@ module Quaack
 
         # Each source of rewrites: its row's name, and the stage that
         # counts what it proposed.
-        REWRITE_SOURCES = { "rule" => ["QUAACK's own rules", "6c"], "llm" => ["The LLM", "6a"],
-                            "operator" => %w[You step7] }.freeze
+        REWRITE_SOURCES = { "rule" => ["QUAACK's own rules", "rewrite-rules"], "llm" => ["The LLM", "llm-rewrites"],
+                            "operator" => %w[You operator-rewrites] }.freeze
 
         # The outcome column a fate counts in. Any other fate is the last.
-        OUTCOMES = { "same_plans" => 0, "step9_disproved" => 1, "step10_disproved" => 1,
+        OUTCOMES = { "same_plans" => 0, "rewrite_test_disproved" => 1, "counterexamples_disproved" => 1,
                      "production_mismatch" => 1, "not_better" => 2, "ranked" => 3 }.freeze
         OTHER = 4
 
-        LLM_ROUNDS = %w[5a-5 5a-6].freeze
+        LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
         def rewrite_account
           rows = REWRITE_SOURCES.map do |source, (name, stage)|
@@ -53,7 +53,7 @@ module Quaack
         end
 
         def index_account
-          proposals = [added("5a-1"), added("5a-2"), added(*LLM_ROUNDS)]
+          proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]
           [["Generator one, from the query's text", proposals[0], *[nil] * 5],
            ["Generator two, from the query's plan", proposals[1], *[nil] * 5],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),

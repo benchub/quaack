@@ -93,7 +93,7 @@ RSpec.describe Quaack::Enclave::StructuralDiscard do
       result = check(["SELECT id, name FROM public.t WHERE name = $1", "SELECT id FROM public.t WHERE name = $1",
                       "SELECT nope"])
       described_class.record(store, result, inbound_rejected: 3)
-      expect(Quaack::Enclave::Burndown.read(store)["stages"]["step8"]["rewrites"]).to eq(
+      expect(Quaack::Enclave::Burndown.read(store)["stages"]["plan-pruning"]["rewrites"]).to eq(
         "in" => 6, "added" => {}, "set_aside" => 0, "out" => 1, "extra" => {},
         "dropped" => { "inbound_check" => 3, "failed_to_plan" => 1, "output_mismatch" => 1 }
       )

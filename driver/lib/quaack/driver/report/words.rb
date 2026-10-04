@@ -35,25 +35,30 @@ module Quaack
                      "domain_check" => "a column's domain rejects every value QUAACK tried" }.freeze
 
         # Where a rule_bugs entry's rewrite was proved wrong.
-        BUG_STEPS = { "step9" => "on made-up test data", "step10" => "on test data the LLM wrote to break it",
-                      "14c" => "on the real data" }.freeze
+        BUG_STEPS = { "rewrite-test" => "on made-up test data",
+                      "counterexamples" => "on test data the LLM wrote to break it",
+                      "result-comparison" => "on the real data" }.freeze
 
         # DESIGN.md 15b's stages: the original query's index search.
-        INDEX_STAGES = { "5a-1" => "Ideas from the query's text", "5a-2" => "Ideas from the query's plan",
-                         "5a-3" => "Removing duplicates and indexes you already have",
-                         "5a-4" => "Asking the planner whether it would use each one",
-                         "5a-5" => "Ideas from the LLM", "5a-6" => "The LLM's second round of ideas",
-                         "5a-7" => "Trying indexes together" }.freeze
+        INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
+                         "index-from-plan" => "Ideas from the query's plan",
+                         "index-dedupe" => "Removing duplicates and indexes you already have",
+                         "index-test" => "Asking the planner whether it would use each one",
+                         "llm-index-ideas" => "Ideas from the LLM",
+                         "llm-index-refine" => "The LLM's second round of ideas",
+                         "index-rank" => "Trying indexes together" }.freeze
 
         # The rewrite stages that come before the rewrites' index searches,
         # and the ones that come after.
-        REWRITE_STAGES = { "6c" => "Rewrites from QUAACK's own rules", "6a" => "Rewrites from the LLM",
-                           "step7" => "Your own rewrites", "6b" => "Checking what each rewrite assumes",
-                           "step8" => "Checking each rewrite can run differently from your query",
-                           "step9" => "Testing on made-up edge-case data",
-                           "step10" => "Testing on data the LLM wrote to break them" }.freeze
-        LATE_STAGES = { "step11" => "Choosing indexes for each rewrite",
-                        "step14" => "Measuring on the real data and choosing" }.freeze
+        REWRITE_STAGES = { "rewrite-rules" => "Rewrites from QUAACK's own rules",
+                           "llm-rewrites" => "Rewrites from the LLM",
+                           "operator-rewrites" => "Your own rewrites",
+                           "assumption-check" => "Checking what each rewrite assumes",
+                           "plan-pruning" => "Checking each rewrite can run differently from your query",
+                           "rewrite-test" => "Testing on made-up edge-case data",
+                           "counterexamples" => "Testing on data the LLM wrote to break them" }.freeze
+        LATE_STAGES = { "rewrite-index-ideas" => "Choosing indexes for each rewrite",
+                        "measurement" => "Measuring on the real data and choosing" }.freeze
 
         # A stage record's added, dropped, and extra names.
         COUNTS = { "generator_one" => "from the query's text", "generator_two" => "from the query's plan",
@@ -70,10 +75,10 @@ module Quaack
                    **SCENARIOS.transform_values { "wrong on #{it}" } }.freeze
 
         # What each of the driver's LLM calls was for.
-        LLM_STEPS = { "5a-5" => "Index suggestions for the original query",
-                      "5a-6" => "Revised index suggestions for the original query",
-                      "6a" => "Rewrite suggestions", "step7" => "Reading your own rewrites",
-                      "10a" => "Test data written to break the rewrites",
+        LLM_STEPS = { "llm-index-ideas" => "Index suggestions for the original query",
+                      "llm-index-refine" => "Revised index suggestions for the original query",
+                      "llm-rewrites" => "Rewrite suggestions", "operator-rewrites" => "Reading your own rewrites",
+                      "llm-counterexamples" => "Test data written to break the rewrites",
                       "rewrite-llm-index-ideas" => "Index suggestions for the rewrites",
                       "rewrite-llm-index-refine" => "Revised index suggestions for the rewrites" }.freeze
 

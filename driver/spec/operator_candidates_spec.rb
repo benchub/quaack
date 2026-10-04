@@ -42,12 +42,12 @@ RSpec.describe Quaack::Driver::OperatorCandidates do
   end
 
   it "asks the LLM to infer each rewrite's transformation and assumptions, then checks them as inferred" do
-    fake.reply("step7", { "rewrites" => inferred })
+    fake.reply("operator-rewrites", { "rewrites" => inferred })
 
     result = described_class.new(client:, rewrite_check:).run(payload, [first, second])
 
     ask = fake.asks.first
-    expect(ask.step).to eq("step7")
+    expect(ask.step).to eq("operator-rewrites")
     body = JSON.parse(ask.body[:messages].first[:content][/```json\n(.*)\n```/m, 1])
     expect(body).to eq("payload" => payload, "rewrites" => [first, second])
     expect(ask.body[:output_config]).to eq(format: { type: :json_schema, schema: described_class::SCHEMA })
@@ -56,7 +56,7 @@ RSpec.describe Quaack::Driver::OperatorCandidates do
   end
 
   it "refuses an LLM answer that doesn't cover each rewrite once, without calling the enclave" do
-    fake.reply("step7", { "rewrites" => inferred.first(1) })
+    fake.reply("operator-rewrites", { "rewrites" => inferred.first(1) })
 
     expect { described_class.new(client:, rewrite_check:).run(payload, [first, second]) }
       .to raise_error(described_class::Error, /2/)

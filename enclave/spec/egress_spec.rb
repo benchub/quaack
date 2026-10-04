@@ -30,7 +30,7 @@ RSpec.describe Quaack::Enclave::Egress do
 
   describe "the sentinel check itself" do
     it "sees the sentinel when it's in an allowed field" do
-      out = egress.serialize(type: :error, step: "3f", rule: EGRESS_SENTINEL)
+      out = egress.serialize(type: :error, step: "classify", rule: EGRESS_SENTINEL)
 
       expect(out).to include(EGRESS_SENTINEL)
     end
@@ -38,11 +38,11 @@ RSpec.describe Quaack::Enclave::Egress do
 
   describe "a message of a whitelisted type" do
     it "keeps an error's allowed fields and drops the rest" do
-      out = egress.serialize(type: :error, step: "3f", rule: "unique_violation", sqlstate: "23505",
+      out = egress.serialize(type: :error, step: "classify", rule: "unique_violation", sqlstate: "23505",
                              message: "Key (email)=(#{EGRESS_SENTINEL}) already exists.",
                              detail: EGRESS_SENTINEL, backtrace: [EGRESS_SENTINEL])
 
-      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f", "rule" => "unique_violation",
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "classify", "rule" => "unique_violation",
                                     "sqlstate" => "23505")
       expect(out).not_to include(EGRESS_SENTINEL)
     end
@@ -85,32 +85,32 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "leaves out an allowed field the message doesn't have, rather than sending null" do
-      expect(parsed(type: :error, step: "3f")).to eq("type" => "error", "step" => "3f")
+      expect(parsed(type: :error, step: "classify")).to eq("type" => "error", "step" => "classify")
     end
 
     it "sends an allowed field that's present but nil as null" do
-      expect(parsed(type: :error, step: "3f", sqlstate: nil))
-        .to eq("type" => "error", "step" => "3f", "sqlstate" => nil)
+      expect(parsed(type: :error, step: "classify", sqlstate: nil))
+        .to eq("type" => "error", "step" => "classify", "sqlstate" => nil)
     end
 
     it "treats String keys and a String type the same as Symbols" do
-      symbols = egress.serialize(type: :error, step: "3f", rule: "r", sqlstate: "23505", detail: EGRESS_SENTINEL)
-      strings = egress.serialize("type" => "error", "step" => "3f", "rule" => "r", "sqlstate" => "23505",
+      symbols = egress.serialize(type: :error, step: "classify", rule: "r", sqlstate: "23505", detail: EGRESS_SENTINEL)
+      strings = egress.serialize("type" => "error", "step" => "classify", "rule" => "r", "sqlstate" => "23505",
                                  "detail" => EGRESS_SENTINEL)
-      mixed = egress.serialize(:type => "error", "step" => "3f", :rule => "r", "sqlstate" => "23505",
+      mixed = egress.serialize(:type => "error", "step" => "classify", :rule => "r", "sqlstate" => "23505",
                                "detail" => EGRESS_SENTINEL, :message => EGRESS_SENTINEL)
 
       expect(strings).to eq(symbols)
       expect(mixed).to eq(symbols)
-      expect(JSON.parse(strings)).to eq("type" => "error", "step" => "3f", "rule" => "r", "sqlstate" => "23505")
+      expect(JSON.parse(strings)).to eq("type" => "error", "step" => "classify", "rule" => "r", "sqlstate" => "23505")
     end
 
     it "drops keys that are neither Symbols nor Strings, even one whose to_s is a field name" do
       rule = Object.new
       def rule.to_s = "rule"
-      out = egress.serialize(type: :error, step: "3f", 1 => EGRESS_SENTINEL, rule => EGRESS_SENTINEL)
+      out = egress.serialize(type: :error, step: "classify", 1 => EGRESS_SENTINEL, rule => EGRESS_SENTINEL)
 
-      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f")
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "classify")
     end
   end
 
@@ -119,7 +119,7 @@ RSpec.describe Quaack::Enclave::Egress do
       ["an unknown type", { type: :result_rows, rows: [[EGRESS_SENTINEL]] }],
       ["an unknown String type", { "type" => "fixture", "contents" => EGRESS_SENTINEL }],
       ["a type that differs only in case", { type: "Error", step: EGRESS_SENTINEL }],
-      ["no type", { step: "3f", rule: EGRESS_SENTINEL }],
+      ["no type", { step: "classify", rule: EGRESS_SENTINEL }],
       ["no type, but a nil key holding a type's name", { nil => :error, step: EGRESS_SENTINEL }],
       ["a nil type", { type: nil, step: EGRESS_SENTINEL }],
       ["a type that's neither a Symbol nor a String", { type: [:error], step: EGRESS_SENTINEL }],
@@ -141,13 +141,14 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "sends nothing when an allowed field is named twice" do
-      expect(egress.serialize(:type => :error, :step => "3f", "step" => EGRESS_SENTINEL)).to be_nil
+      expect(egress.serialize(:type => :error, :step => "classify", "step" => EGRESS_SENTINEL)).to be_nil
     end
 
     it "still sends the message when only a dropped field is named twice" do
-      out = egress.serialize(:type => :error, :step => "3f", :detail => EGRESS_SENTINEL, "detail" => EGRESS_SENTINEL)
+      out = egress.serialize(:type => :error, :step => "classify", :detail => EGRESS_SENTINEL,
+                             "detail" => EGRESS_SENTINEL)
 
-      expect(JSON.parse(out)).to eq("type" => "error", "step" => "3f")
+      expect(JSON.parse(out)).to eq("type" => "error", "step" => "classify")
     end
   end
 
@@ -155,7 +156,7 @@ RSpec.describe Quaack::Enclave::Egress do
     it "goes out as the whitelist's own name, not the caller's object" do
       type = Class.new(String) { def to_json(*) = %("#{EGRESS_SENTINEL}") }.new("error")
 
-      expect(egress.serialize(type: type, step: "3f")).to eq('{"type":"error","step":"3f"}')
+      expect(egress.serialize(type: type, step: "classify")).to eq('{"type":"error","step":"classify"}')
     end
 
     it "isn't found through to_s, so an object whose to_s is a type's name sends nothing" do
@@ -172,25 +173,25 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "sends stages and totals that are a burndown as they are" do
-      stages = { "5a-3" => { "original" => record } }
+      stages = { "index-dedupe" => { "original" => record } }
       out = egress.serialize(type: :burndown, stages:, totals: { "fixture_loads" => 3 }, rows: EGRESS_SENTINEL)
 
       expect(JSON.parse(out)).to eq("type" => "burndown", "stages" => stages, "totals" => { "fixture_loads" => 3 })
     end
 
     it "the sentinel check itself: an error field carries the same nested value out" do
-      out = egress.serialize(type: :error, rule: { "5a-3" => { "orders_email" => EGRESS_SENTINEL } })
+      out = egress.serialize(type: :error, rule: { "index-dedupe" => { "orders_email" => EGRESS_SENTINEL } })
 
       expect(out).to include(EGRESS_SENTINEL)
     end
 
     [
-      ["a value in place of a count", { "5a-3" => { "original" => { "in" => EGRESS_SENTINEL } } }, {}],
-      ["a value as a search", { "5a-3" => { EGRESS_SENTINEL => { "in" => 0 } } }, {}],
+      ["a value in place of a count", { "index-dedupe" => { "original" => { "in" => EGRESS_SENTINEL } } }, {}],
+      ["a value as a search", { "index-dedupe" => { EGRESS_SENTINEL => { "in" => 0 } } }, {}],
       ["a value as a stage", { EGRESS_SENTINEL => {} }, {}],
       ["a value as a total", {}, { "fixture_loads" => EGRESS_SENTINEL }],
       ["a value as a total's name", {}, { EGRESS_SENTINEL => 1 }],
-      ["an extra field in a record", { "5a-3" => { "original" => { "rows" => [EGRESS_SENTINEL] } } }, {}]
+      ["an extra field in a record", { "index-dedupe" => { "original" => { "rows" => [EGRESS_SENTINEL] } } }, {}]
     ].each do |what, stages, totals|
       it "refuses one with #{what}, built by hand, without quoting it" do
         expect { egress.serialize(type: :burndown, stages:, totals:) }
@@ -210,9 +211,9 @@ RSpec.describe Quaack::Enclave::Egress do
   it "sends plain data nested in an allowed field as is, with Symbols as their names" do
     value = { "a" => [1, 2.5, nil, true, false, { b: "x" }], c: :d }
 
-    expect(parsed(type: :error, step: :"3f", rule: value))
-      .to eq("type" => "error", "step" => "3f", "rule" => { "a" => [1, 2.5, nil, true, false, { "b" => "x" }],
-                                                            "c" => "d" })
+    expect(parsed(type: :error, step: :classify, rule: value))
+      .to eq("type" => "error", "step" => "classify", "rule" => { "a" => [1, 2.5, nil, true, false, { "b" => "x" }],
+                                                                  "c" => "d" })
   end
 
   describe "an allowed field whose value isn't plain JSON data" do
@@ -251,7 +252,7 @@ RSpec.describe Quaack::Enclave::Egress do
           # A value that contains itself would loop forever without the
           # depth cap in PlainData. The timeout makes that a failure.
           Timeout.timeout(30) do
-            egress.serialize(type: :error, step: "3f", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
+            egress.serialize(type: :error, step: "classify", rule: instance_exec(&value), detail: EGRESS_SENTINEL)
           end
         rescue StandardError => e
           error = e
@@ -273,14 +274,14 @@ RSpec.describe Quaack::Enclave::Egress do
 
     [
       ["in the first field", ->(bad) { { step: bad, rule: "ok", sqlstate: "23505" } }],
-      ["in a middle field", ->(bad) { { step: "3f", rule: bad, sqlstate: "23505" } }],
-      ["in the last field", ->(bad) { { step: "3f", rule: "ok", sqlstate: bad } }],
-      ["first in an Array", ->(bad) { { step: "3f", rule: [bad, 1, 2] } }],
-      ["in the middle of an Array", ->(bad) { { step: "3f", rule: [1, bad, 2] } }],
-      ["last in an Array", ->(bad) { { step: "3f", rule: [1, 2, bad] } }],
-      ["first in a Hash", ->(bad) { { step: "3f", rule: { "a" => bad, "b" => 1, "c" => 2 } } }],
-      ["in the middle of a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => bad, "c" => 2 } } }],
-      ["last in a Hash", ->(bad) { { step: "3f", rule: { "a" => 1, "b" => 2, "c" => bad } } }]
+      ["in a middle field", ->(bad) { { step: "classify", rule: bad, sqlstate: "23505" } }],
+      ["in the last field", ->(bad) { { step: "classify", rule: "ok", sqlstate: bad } }],
+      ["first in an Array", ->(bad) { { step: "classify", rule: [bad, 1, 2] } }],
+      ["in the middle of an Array", ->(bad) { { step: "classify", rule: [1, bad, 2] } }],
+      ["last in an Array", ->(bad) { { step: "classify", rule: [1, 2, bad] } }],
+      ["first in a Hash", ->(bad) { { step: "classify", rule: { "a" => bad, "b" => 1, "c" => 2 } } }],
+      ["in the middle of a Hash", ->(bad) { { step: "classify", rule: { "a" => 1, "b" => bad, "c" => 2 } } }],
+      ["last in a Hash", ->(bad) { { step: "classify", rule: { "a" => 1, "b" => 2, "c" => bad } } }]
     ].each do |name, fields|
       it "raises Egress::Error for one #{name}" do
         expect { egress.serialize(type: :error, **fields.call(bad)) }

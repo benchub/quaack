@@ -78,7 +78,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
 
     rewrite_rules
 
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["rewrites"])
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
       .to include("in" => 1, "out" => 1, "dropped" => { "inbound_check" => 0, "failed_to_plan" => 0,
                                                         "output_mismatch" => 0 })
   end
@@ -95,7 +95,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
 
     rewrite_rules
 
-    expect(burndown("6c")).to eq(six_c({ "key_in_self_join" => 1 }, 1))
+    expect(burndown("rewrite-rules")).to eq(six_c({ "key_in_self_join" => 1 }, 1))
   end
 
   # A crash between storing the rewrites and writing the marker leaves a run
@@ -129,7 +129,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(stored.entry?("burndown")).to be(false)
       rewrite_rules
       first = Quaack::Enclave::Burndown.read(stored)
-      expect(first["stages"].keys).to eq(%w[step8 6c])
+      expect(first["stages"].keys).to eq(%w[plan-pruning rewrite-rules])
       remove("rewrite_rules_applied")
       remove("burndown")
 
@@ -184,7 +184,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect([lines(outcome), outcome.status.exitstatus]).to eq([[{ "type" => "done" }], 0])
       expect(stored.entry?("rewrite_1")).to be(false)
       expect(stored.entry?("rewrite_rules_applied")).to be(true)
-      expect(burndown("6c")).to eq(six_c({}, 0))
+      expect(burndown("rewrite-rules")).to eq(six_c({}, 0))
     end
   end
 
@@ -227,10 +227,10 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "sql" => "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1",
         "transformation" => "the fake rule sound", "source" => "rule", "rules" => ["sound"]
       )
-      expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["rewrites"])
+      expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
         .to include("in" => 3, "out" => 1, "dropped" => { "inbound_check" => 1, "failed_to_plan" => 0,
                                                           "output_mismatch" => 1 })
-      expect(burndown("6c")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
+      expect(burndown("rewrite-rules")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
     end
 
     it "stores a chained rewrite with every rule's name and description, in order, and counts what it dropped" do
@@ -256,7 +256,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "transformation" => "the fake rule first the fake rule second", "rules" => %w[first second]
       )
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 1, "over_cap" => 0)
-      expect(burndown("6c")).to eq(six_c({ "first" => 2, "second" => 1 }, 2, duplicate: 1))
+      expect(burndown("rewrite-rules")).to eq(six_c({ "first" => 2, "second" => 1 }, 2, duplicate: 1))
     end
 
     it "counts the rewrites over the cap in the marker and the 6c burndown" do
@@ -277,7 +277,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       )
       expect(stored.entry?("rewrite_11")).to be(false)
       expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 2, "over_cap" => 1)
-      expect(burndown("6c"))
+      expect(burndown("rewrite-rules"))
         .to eq(six_c((1..11).to_h { ["rule#{it}", 1] }.merge("duplicate_rule2" => 1, "duplicate_rule7" => 1),
                      10, duplicate: 2, over_cap: 1))
     end

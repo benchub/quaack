@@ -36,8 +36,8 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           discarded = discard?(store, connection, search)
           store.write("rewrite_pruned_#{search.delete_prefix("rewrite_")}", "discarded" => discarded)
-          Burndown.record(store, "step8", :pruning, in: 1, dropped: { same_plans: discarded ? 1 : 0 },
-                                                    out: discarded ? 0 : 1)
+          Burndown.record(store, "plan-pruning", :pruning, in: 1, dropped: { same_plans: discarded ? 1 : 0 },
+                                                           out: discarded ? 0 : 1)
           []
         ensure
           connection&.close

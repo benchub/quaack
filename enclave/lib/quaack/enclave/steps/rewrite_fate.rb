@@ -13,7 +13,7 @@ module Quaack
       #
       #   context = RewriteFate.context(store)
       #   RewriteFate.call(store, "rewrite_2", context)
-      #   # => { "fate" => "step9_disproved", "scenario" => "s3", "rule" => "multiset",
+      #   # => { "fate" => "rewrite_test_disproved", "scenario" => "s3", "rule" => "multiset",
       #   #      "round" => nil, "after" => nil }
       #
       # A rewrite has several measured labels and one fate. The first of
@@ -22,20 +22,20 @@ module Quaack
       #   ranked                   14d ranked one of its labels
       #   same_plans               step 8 found it plans as the original
       #                            does, so it was never tested
-      #   step9_disproved          a step 9 scenario got different results;
+      #   rewrite_test_disproved          a step 9 scenario got different results;
       #                            with the scenario and the rule
-      #   step9_untested           step 9 couldn't build scenarios for the
+      #   rewrite_test_untested           step 9 couldn't build scenarios for the
       #                            query (rewrite_tested_<n> says refused),
       #                            so the rewrite was never tested; with the
       #                            refusal's rule, and for fk_cycle the
       #                            cycle's tables
-      #   step9_failed             a step 9 scenario ended without comparing
+      #   rewrite_test_failed             a step 9 scenario ended without comparing
       #                            results (the original's order can't be
       #                            checked, or a statement failed in arena);
       #                            with the scenario and the rule
-      #   step10_disproved         a 10b round got different results; with
+      #   counterexamples_disproved         a 10b round got different results; with
       #                            the round and the rule
-      #   step10_failed            a 10b round ended without comparing
+      #   counterexamples_failed            a 10b round ended without comparing
       #                            results; with the round and the rule
       #   production_mismatch      14c got different results on production
       #                            data; with the first rule of MISMATCHES
@@ -73,9 +73,10 @@ module Quaack
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans step9_disproved step9_untested step9_failed step10_disproved step10_failed
-                   production_mismatch production_timed_out production_not_compared below_top_three
-                   footprint_tie not_better measurement_timed_out unfinished].freeze
+        FATES = %w[ranked same_plans rewrite_test_disproved rewrite_test_untested rewrite_test_failed
+                   counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
+                   production_not_compared below_top_three footprint_tie not_better measurement_timed_out
+                   unfinished].freeze
 
         # The rules that say two results differed, in steps 9, 10, and 14c.
         MISMATCHES = ResultComparator::MISMATCHES.map(&:to_s).freeze
@@ -97,7 +98,7 @@ module Quaack
 
         SCENARIOS = Scenarios::NAMES.map(&:to_s).freeze
         ROUNDS = [1, 2, 3].freeze
-        AFTER = %w[step9 step10 measurement].freeze
+        AFTER = %w[rewrite-test counterexamples measurement].freeze
 
         # 14d's reasons for a label that 14c didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
@@ -150,38 +151,38 @@ module Quaack
           tested = steps["tested"]
           return fate("same_plans") if steps.dig("pruned", "discarded") == true
           return unless tested
-          return step9(tested, context) unless tested["passed"]
+          return rewrite_test(tested, context) unless tested["passed"]
 
-          step10(steps["round"] || {}) if steps.dig("survived", "survived") == false
+          counterexamples(steps["round"] || {}) if steps.dig("survived", "survived") == false
         end
 
-        def step9(tested, context)
+        def rewrite_test(tested, context)
           return untested(tested, context) if tested["refused"] == true
 
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
-          return fate("step9_disproved", scenario:, rule: mismatch) if mismatch
+          return fate("rewrite_test_disproved", scenario:, rule: mismatch) if mismatch
 
-          fate("step9_failed", scenario:, rule: known(FAILURES, tested["rule"]))
+          fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))
         end
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])
           cycle = CycleTables.check(tested["cycle"], context.tables) if rule == "fk_cycle"
-          fate("step9_untested", rule:, cycle:)
+          fate("rewrite_test_untested", rule:, cycle:)
         end
 
         # A round entry with no rule was written before rounds kept theirs
         # (or isn't there at all): then, survived false only ever followed a
         # round that didn't match, so it reads as a disproof.
-        def step10(round)
+        def counterexamples(round)
           number = known(ROUNDS, round["round"])
-          return fate("step10_disproved", round: number) if round["rule"].nil?
+          return fate("counterexamples_disproved", round: number) if round["rule"].nil?
 
           mismatch = known(MISMATCHES, round["rule"])
-          return fate("step10_disproved", round: number, rule: mismatch) if mismatch
+          return fate("counterexamples_disproved", round: number, rule: mismatch) if mismatch
 
-          fate("step10_failed", round: number, rule: known(FAILURES, round["rule"]))
+          fate("counterexamples_failed", round: number, rule: known(FAILURES, round["rule"]))
         end
 
         # 14c's fates, from the rewrite's failing verdicts.
@@ -214,8 +215,8 @@ module Quaack
 
         def unfinished(rewrite, steps, context)
           after = if context.measured.include?(rewrite) then "measurement"
-                  elsif steps.dig("survived", "survived") == true then "step10"
-                  elsif steps.dig("tested", "passed") == true then "step9"
+                  elsif steps.dig("survived", "survived") == true then "counterexamples"
+                  elsif steps.dig("tested", "passed") == true then "rewrite-test"
                   end
           fate("unfinished", after: known(AFTER, after))
         end

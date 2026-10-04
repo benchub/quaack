@@ -16,7 +16,7 @@ RSpec.describe "requiring one enclave file on its own" do
                 "predicate: 'a > 0', unique: true, sources: [:parse])"
     {
       "quaack/enclave/table_name" => "puts #{table}",
-      "quaack/enclave/egress" => 'print Quaack::Enclave::Egress.serialize(type: :error, step: "3f")',
+      "quaack/enclave/egress" => 'print Quaack::Enclave::Egress.serialize(type: :error, step: "classify")',
       "quaack/enclave/store" =>
         'base = File.join(ENV.fetch("TMPDIR", "/tmp"), "quaack-standalone-" + Process.pid.to_s); ' \
         "s = Quaack::Enclave::Store.create(base:); s.write(:inputs, [1]); print s.read(:inputs); " \

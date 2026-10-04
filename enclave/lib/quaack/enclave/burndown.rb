@@ -69,6 +69,8 @@ module Quaack
       class Error < StandardError; end
 
       ENTRY = "burndown"
+      # The LLM rounds record_llm_round records.
+      ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
       FIELDS = Protocol::Burndown::FIELDS
       BREAKDOWNS = Protocol::Burndown::BREAKDOWNS
@@ -94,7 +96,7 @@ module Quaack
       # round that follows (see record_llm_round).
       def record_dedupe(store, dedupe, search:)
         counts = Adapters.dedupe_counts(dedupe)
-        add(store, [["5a-3", search, counts]], {})
+        add(store, [["index-dedupe", search, counts]], {})
         counts
       end
 
@@ -107,7 +109,7 @@ module Quaack
       # for 12a to build for real (IndexSearch's "set_aside"), which count
       # as set aside rather than never_used.
       def record_single_candidate_test(store, report, search:, set_aside: [])
-        add(store, [["5a-4", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
+        add(store, [["index-test", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
       end
 
       # Records one LLM round, 5a-5 or 5a-6, as one record. A round filters
@@ -127,7 +129,7 @@ module Quaack
       # kept, or the record won't add up and it's refused. It returns the
       # search's counts, for the since of the next round.
       def record_llm_round(store, stage:, search:, dedupe:, since:, report:) # rubocop:disable Metrics/ParameterLists
-        raise Error, "an LLM round's stage must be 5a-5 or 5a-6" unless %w[5a-5 5a-6].include?(stage)
+        raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
         add(store, [[stage, search, Adapters.round_counts(counts, Adapters.since(since), report)]],
@@ -229,7 +231,7 @@ module Quaack
           index = Protocol::Burndown::STAGES.index(stage)
           return Protocol::Burndown::STAGES[index] if index
 
-          raise Error, "the stage must be one of the DESIGN.md 15b stages"
+          raise Error, "the stage must be one of the DESIGN.md burndown stages"
         end
 
         def name(name, what)
@@ -255,7 +257,7 @@ module Quaack
           end
           return record if Protocol::Burndown.adds_up?(record)
 
-          raise Error, "a #{stage} record's in + added - dropped - set_aside must equal out"
+          raise Error, "the #{stage} record's in + added - dropped - set_aside must equal out"
         end
 
         def check_fields(stage, counts)

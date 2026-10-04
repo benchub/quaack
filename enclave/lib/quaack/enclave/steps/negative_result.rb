@@ -103,10 +103,10 @@ module Quaack
           number = search.delete_prefix("rewrite_")
           tested = optional(store, "rewrite_tested_#{number}") or return
           return if tested["refused"] == true
-          return { "step" => "step9", "rule" => tested["rule"] } unless tested["passed"]
+          return { "step" => "rewrite-test", "rule" => tested["rule"] } unless tested["passed"]
 
           survived = optional(store, "rewrite_survived_#{number}")
-          { "step" => "step10", "rule" => nil } if survived && survived["survived"] == false
+          { "step" => "counterexamples", "rule" => nil } if survived && survived["survived"] == false
         end
       end
     end

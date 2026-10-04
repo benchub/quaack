@@ -73,7 +73,7 @@ RSpec.describe "the pipeline replay variants each check runs" do
     expect(pairs(runs)).to eq(expected { it.llm == "planted" || (it.llm == "claude" && it.k == 1) })
     expect(PromptPack::QUERIES.map(&:name) - pairs(runs).select { it[1] == "claude-1" }.map(&:first)).to be_empty
     expect(runs.grep(/a query the key_in_self_join rule fires on/)).not_to be_empty
-    expect(runs.grep(/the planted replies read a prose-wrapped 6a reply/)).not_to be_empty
+    expect(runs.grep(/the planted replies read a prose-wrapped llm-rewrites reply/)).not_to be_empty
   end
 
   it "runs every recorded variant under rake full" do

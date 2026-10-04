@@ -429,7 +429,7 @@ RSpec.describe Quaack::Enclave::Relations do
     def refusal(sql, rule, settings = nil)
       error = nil
       expect { check(sql, settings) }.to(rejected(rule) { |raised| error = raised })
-      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "3a")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "qualify")
       expect(line).to include(%("rule":"#{rule}"))
       [error.message, line]
     end

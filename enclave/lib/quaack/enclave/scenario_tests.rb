@@ -11,7 +11,7 @@ module Quaack
   module Enclave
     # Step 9, end to end, for one query and its candidates.
     #
-    #   report = StepNine.run(arena_connection, original_sql, [candidate_sql, ...])
+    #   report = ScenarioTests.run(arena_connection, original_sql, [candidate_sql, ...])
     #   report.results  # => [Result(passed: true, scenario: nil, ...), Result(passed: false, scenario: :s2, ...)]
     #   report.untested # => 9c's untested atoms, by redacted shape
     #
@@ -42,7 +42,7 @@ module Quaack
     # redacted shapes. The fixtures, with the real literals, stay here. A
     # refusal keeps only its rule, never the column it names, and for
     # fk_cycle the cycle's table names, which are schema.
-    module StepNine
+    module ScenarioTests
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped).
       Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle)

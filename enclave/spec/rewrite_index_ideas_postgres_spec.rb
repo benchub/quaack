@@ -57,7 +57,7 @@ RSpec.describe "quaacks step 11, against a real server" do
         .to eq(error_line("index-test", "index_test_unknown_search"))
       expect(run("index-feedback", "--search", "rewrite_1").stdout)
         .to eq(error_line("index-feedback", "index_feedback_unknown_search"))
-      expect(status["rewrite_step11_1"]).to be(false)
+      expect(status["rewrite_index_ideas_1"]).to be(false)
     end
   end
 
@@ -70,7 +70,7 @@ RSpec.describe "quaacks step 11, against a real server" do
     expect([feedback.stderr, feedback.status.exitstatus]).to eq(["", 0])
     expect(done?(run("index-rank", "--search", "rewrite_1"))).to be(true)
 
-    names = %w[rewrite_step11_1 index_generated_rewrite_1 index_llm_ranked_rewrite_1]
+    names = %w[rewrite_index_ideas_1 index_generated_rewrite_1 index_llm_ranked_rewrite_1]
     expect(before.slice(*names)).to eq(names.zip([true, false, false]).to_h)
     expect(status.slice(*names)).to eq(names.zip([true, true, true]).to_h)
   end

@@ -29,7 +29,7 @@ module Quaack
     # Trust boundary. The prompts carry only the payload, which is shape
     # data, the LLM's own DDL, and the enclave's shape-only outcomes.
     class GeneratorThree
-      STEP = "5a-5"
+      STEP = "llm-index-ideas"
       # The step its asks count under when it searches for a rewrite.
       REWRITE_STEP = "rewrite-llm-index-ideas"
       MAX_TOKENS = 4000

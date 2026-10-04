@@ -8,7 +8,7 @@ require_relative "../denormalized_fixture"
 require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../scenarios"
-require_relative "../step_nine"
+require_relative "../scenario_tests"
 require_relative "../table_name"
 require_relative "index_payload"
 require_relative "index_search"
@@ -104,7 +104,7 @@ module Quaack
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            outcome(StepNine.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
+            outcome(ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
           ensure
             connection&.close
           end

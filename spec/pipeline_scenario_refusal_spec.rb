@@ -88,11 +88,11 @@ RSpec.describe ScenarioRefusalRun do
 
     it "records the refusal in the store, so the rewrite is never measured" do
       expect(runs.entries).to include("rewrite_1" => true, "rewrite_tested_1" => true,
-                                      "rewrite_survived_1" => true, "rewrite_step11_1" => false)
+                                      "rewrite_survived_1" => true, "rewrite_index_ideas_1" => false)
     end
 
     it "sends the rewrite as untested, by the refusal's rule, and never ranks it" do
-      expect(rewrite).to include("fate" => "step9_untested", "rule" => "complex_check")
+      expect(rewrite).to include("fate" => "rewrite_test_untested", "rule" => "complex_check")
       labels = (runs.report["top"] + runs.report["labels"]).map { it["label"] }
       expect(labels.grep(/\Arewrite_1:/)).to be_empty
       expect(runs.report["rule_bugs"]).to eq([])
@@ -111,7 +111,7 @@ RSpec.describe ScenarioRefusalRun do
 
     it "skips the refused rewrite on resume instead of testing it again" do
       expect(runs.stderr).to include("Rewrite 1: Already done, skipping: Testing the rewrite for wrong results " \
-                                     "(steps 9-10)")
+                                     "(rewrite-correctness)")
       expect(runs.stderr).not_to include("(rewrite-test)")
     end
   end

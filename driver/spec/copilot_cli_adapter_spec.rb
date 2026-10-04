@@ -58,7 +58,7 @@ RSpec.describe "the copilot_cli adapter" do
   end
 
   def ask(**)
-    client(**).ask(step: "5a-5", system: "You propose indexes.", messages:, max_tokens: 1000, schema:)
+    client(**).ask(step: "llm-index-ideas", system: "You propose indexes.", messages:, max_tokens: 1000, schema:)
   end
 
   def script(path, body)
@@ -154,7 +154,7 @@ RSpec.describe "the copilot_cli adapter" do
     with_env("QUAACK_FAKE_COPILOT_COUNT" => File.join(@dir, "count")) do
       expect(ask(template: template)).to eq("ddl" => [])
     end
-    expect(burndown.llm_calls).to eq("5a-5" => 2)
+    expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
   end
 
   it "maps an absent command to llm_unavailable" do
@@ -166,7 +166,7 @@ RSpec.describe "the copilot_cli adapter" do
         expect(sans_sizes(e.message)).to include("the copilot_cli command couldn't be found")
       }
     end
-    expect(burndown.llm_calls).to eq("5a-5" => 1)
+    expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
     expect(Dir.children(@dir)).to be_empty
   end
 
@@ -280,7 +280,7 @@ RSpec.describe "the copilot_cli adapter" do
           expect(sans_sizes(e.message)).to include("timed out")
         }
       end
-      expect(burndown.llm_calls).to eq("5a-5" => 1)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
       grandchild_pid = Integer(File.read(grandchild))
       expect(process_alive_after_wait?(grandchild_pid)).to be(false)
       expect_recorded_cwd_removed

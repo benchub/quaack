@@ -42,7 +42,7 @@ RSpec.describe "quaacks step 8, against a real server" do
           "SELECT o.note FROM public.orders o WHERE o.note = $1", bad_assumption)
     check("SELECT o.note, o.status FROM public.orders o WHERE o.nosuch = $1")
 
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["rewrites"])
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
       .to include("in" => 4, "out" => 1,
                   "dropped" => { "inbound_check" => 1, "failed_to_plan" => 1, "output_mismatch" => 1 })
   end
@@ -94,7 +94,7 @@ RSpec.describe "quaacks step 8, against a real server" do
       expect(ranked).not_to be_empty
       expect(Quaack::Enclave::Steps::RewritePrune.top(stored, search).map(&:to_ddl)).to eq(ranked)
     end
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["step8"]["pruning"])
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["pruning"])
       .to include("in" => 2, "out" => 1, "dropped" => { "same_plans" => 1 })
   end
 

@@ -57,7 +57,7 @@ module Quaack
           disproof = NegativeResult.disproved(store, rewrite)
           return disproof["step"] if disproof && disproof["rule"] != "discarded" && !empirical
 
-          "14c" if verdicts.fetch(rewrite, {}).each_value.any? { mismatch?(it) }
+          "result-comparison" if verdicts.fetch(rewrite, {}).each_value.any? { mismatch?(it) }
         end
 
         # Whether a 14c verdict says the results differed. Only a failing

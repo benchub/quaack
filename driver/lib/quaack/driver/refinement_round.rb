@@ -24,7 +24,7 @@ module Quaack
     # Trust boundary. The prompt carries only the payload and the feedback,
     # both shape data the enclave built for leaving.
     class RefinementRound
-      STEP = "5a-6"
+      STEP = "llm-index-refine"
       # The step its ask counts under when it searches for a rewrite.
       REWRITE_STEP = "rewrite-llm-index-refine"
       MAX_TOKENS = GeneratorThree::MAX_TOKENS

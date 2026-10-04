@@ -27,7 +27,7 @@ module Quaack
 
         def call(store:, **)
           entries = (ENTRIES + rewrite_entries(store)).to_h { [it, store.entry?(it)] }
-          [{ type: :status, entries: entries.merge(step11_entries(store)) }]
+          [{ type: :status, entries: entries.merge(index_ideas_entries(store)) }]
         end
 
         # For each stored rewrite_<n>, counting up from 1: its name and the
@@ -42,10 +42,10 @@ module Quaack
         # DESIGN.md step 11, for each stored rewrite_<n>: rewrite_step11_<n>,
         # whether IndexSearch.llm_search? takes it, and whether its 5a-5 ran
         # (index_generated_) and its 5a-7 ran after that (index_llm_ranked_).
-        def step11_entries(store)
+        def index_ideas_entries(store)
           (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.flat_map do |n|
             names = ["index_generated_rewrite_#{n}", "index_llm_ranked_rewrite_#{n}"]
-            [["rewrite_step11_#{n}", IndexSearch.llm_search?(store, "rewrite_#{n}")]] +
+            [["rewrite_index_ideas_#{n}", IndexSearch.llm_search?(store, "rewrite_#{n}")]] +
               names.map { [it, store.entry?(it)] }
           end.to_h
         end

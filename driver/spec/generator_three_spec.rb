@@ -40,7 +40,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
 
   describe "the first ask" do
     before do
-      fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.customers (email text_pattern_ops)"] })
+      fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.customers (email text_pattern_ops)"] })
       answers << [accepted(1)]
     end
 
@@ -48,7 +48,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       run
       ask = fake.asks.first
 
-      expect(ask.step).to eq("5a-5")
+      expect(ask.step).to eq("llm-index-ideas")
       expect(JSON.parse(user_texts(ask).first[/```json\n(.*)\n```/m, 1])).to eq(payload)
       expect(ask.body[:output_config]).to eq(format: { type: :json_schema, schema: described_class::SCHEMA })
       expect(ask.body[:system]).to include("up to five")
@@ -86,8 +86,8 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     end
 
     before do
-      fake.reply("5a-5", { "indexes" => first })
-      fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.customers (lower(email))"] })
+      fake.reply("llm-index-ideas", { "indexes" => first })
+      fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.customers (lower(email))"] })
       answers << [dropped(1, "unqualified_table"), accepted(2),
                   dropped(3, "covered_by_existing", covered_by: "orders_status_created_at_idx")]
       answers << [accepted(1)]
@@ -111,8 +111,8 @@ RSpec.describe Quaack::Driver::GeneratorThree do
       client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
       run
 
-      expect(notes).to eq(["Asking the LLM for index ideas (5a-5)",
-                           "Asking the LLM again, for replacements for the dropped ideas (5a-5)"])
+      expect(notes).to eq(["Asking the LLM for index ideas (llm-index-ideas)",
+                           "Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas)"])
     end
 
     it "tests the replacements, and asks only once even if more are dropped" do
@@ -126,7 +126,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
   end
 
   it "doesn't ask for replacements when every candidate was accepted or set aside" do
-    fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.customers USING gin (email gin_trgm_ops)"] })
+    fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.customers USING gin (email gin_trgm_ops)"] })
     answers << [accepted(1).merge("outcome" => "set_aside")]
 
     expect(run.rounds.size).to eq(1)
@@ -135,8 +135,8 @@ RSpec.describe Quaack::Driver::GeneratorThree do
 
   it "leaves too_many drops out of the replacement ask, and skips it when they're the only drops" do
     ddls = (1..7).map { "CREATE INDEX ON public.customers (c#{it})" }
-    fake.reply("5a-5", { "indexes" => ddls })
-    fake.reply("5a-5", { "indexes" => [] })
+    fake.reply("llm-index-ideas", { "indexes" => ddls })
+    fake.reply("llm-index-ideas", { "indexes" => [] })
     answers << [dropped(1, "duplicate"), *(2..5).map { accepted(it) }, dropped(6, "too_many"), dropped(7, "too_many")]
     run
     text = user_texts(fake.asks.last).last
@@ -144,7 +144,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
     expect(text).to include("up to 1 replacements")
     expect(text).not_to include("(c6)")
 
-    fake.reply("5a-5", { "indexes" => ddls })
+    fake.reply("llm-index-ideas", { "indexes" => ddls })
     answers << [*(1..5).map { accepted(it) }, dropped(6, "too_many"), dropped(7, "too_many")]
     expect { run }.to change { fake.asks.size }.by(1)
   end
@@ -179,7 +179,7 @@ RSpec.describe Quaack::Driver::GeneratorThree do
   end
 
   it "skips the enclave when the LLM proposes nothing" do
-    fake.reply("5a-5", { "indexes" => [] })
+    fake.reply("llm-index-ideas", { "indexes" => [] })
 
     expect(run.rounds).to eq([])
     expect(rounds).to eq([])

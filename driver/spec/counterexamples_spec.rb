@@ -21,7 +21,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
   def user_texts(ask) = ask.body[:messages].select { it[:role] == :user }.map { it[:content] }
 
   it "sends the payload and returns the LLM's inserts" do
-    fake.reply("10a", { "inserts" => [insert] })
+    fake.reply("llm-counterexamples", { "inserts" => [insert] })
     expect(described_class.new(client:).ask(payload)).to eq([insert])
     ask = fake.asks.first
     expect(JSON.parse(user_texts(ask).first[/```json\n(.*)\n```/m, 1])).to eq(payload)
@@ -29,14 +29,14 @@ RSpec.describe Quaack::Driver::Counterexamples do
   end
 
   it "tells the LLM to use $n for the query's literals, to aim at untested atoms, and to satisfy every constraint" do
-    fake.reply("10a", { "inserts" => [] })
+    fake.reply("llm-counterexamples", { "inserts" => [] })
     described_class.new(client:).ask(payload)
     system = fake.asks.first.body[:system]
     expect(system).to include("$1", "untested_atoms", "every constraint", "schema-qualif")
   end
 
   it "tells the LLM it may set an identity key with OVERRIDING SYSTEM VALUE (task 20260927-24)" do
-    fake.reply("10a", { "inserts" => [] })
+    fake.reply("llm-counterexamples", { "inserts" => [] })
     described_class.new(client:).ask(payload)
     system = fake.asks.first.body[:system]
     expect(system).to include("OVERRIDING SYSTEM VALUE")
@@ -58,7 +58,7 @@ RSpec.describe Quaack::Driver::Counterexamples do
     def run = described_class.new(client:).run(payload, compare:)
 
     it "runs all three rounds when none finds a mismatch, telling the LLM how each went" do
-      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
       outcomes.push(clean(refused: [{ "index" => 0, "rule" => "insert_select" }]),
                     clean(covered: ["o.status = $1"]), clean)
       result = run
@@ -74,24 +74,24 @@ RSpec.describe Quaack::Driver::Counterexamples do
     it "tells progress what each round's ask is for" do
       notes = []
       client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
-      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
       outcomes.push(clean, clean, clean)
       run
 
-      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (10a)",
-                           "Asking the LLM again, for different rows (10a)",
-                           "Asking the LLM again, for different rows (10a)"])
+      expect(notes).to eq(["Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
+                           "Asking the LLM again, for different rows (llm-counterexamples)",
+                           "Asking the LLM again, for different rows (llm-counterexamples)"])
     end
 
     it "stops once a round disproves the candidate" do
-      2.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      2.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
       outcomes.push(clean, { "match" => false, "rule" => "multiset", "covered" => [], "refused" => [] })
       result = run
       expect(result.rounds.size).to eq(2)
       expect(result.disproved).to be(true)
     end
     it "keeps going after a round whose inserts failed to load, without calling it disproved" do
-      3.times { |i| fake.reply("10a", { "inserts" => ["INSERT #{i}"] }) }
+      3.times { |i| fake.reply("llm-counterexamples", { "inserts" => ["INSERT #{i}"] }) }
       failed = { "match" => nil, "load_failed" => true, "rule" => "insert_failed", "covered" => [], "refused" => [] }
       outcomes.push(failed, clean, clean)
       result = run

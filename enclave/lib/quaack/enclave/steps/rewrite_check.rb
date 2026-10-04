@@ -107,7 +107,7 @@ module Quaack
           context = context(store, connection, source).merge(stored: stored.dup)
           outcomes = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           more = also.call(outcomes)
-          Burndown.record_all(store, [Step8.record(outcomes), *more]) if more
+          Burndown.record_all(store, [PlanPruning.record(outcomes), *more]) if more
           outcomes
         ensure
           connection&.close
@@ -200,7 +200,7 @@ module Quaack
         # The step 8 burndown record for a call: the rewrites the inbound
         # check rejected, those StructuralDiscard dropped, and the survivors.
         # Rejections by this step's own rules (6a and 6b) aren't step 8's.
-        module Step8
+        module PlanPruning
           module_function
 
           def record(outcomes)

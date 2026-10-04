@@ -3,7 +3,7 @@
 require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 
 # Step 9 on a schema whose foreign keys form a cycle. Enough foreign keys
 # in the cycle whose child columns are all nullable are cut from the load
@@ -82,7 +82,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     it "runs step 9 end to end, passing an equivalent candidate and disproving another" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn, join_sql,
         ["SELECT c.id, a.name FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.title = 'x'",
          "SELECT c.id, a.name FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id"]
@@ -125,7 +125,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       end
 
       it "passes a correct rewrite, and disproves one that adds IS NULL on the cut column or drops it as a sort key" do
-        report = Quaack::Enclave::StepNine.run(
+        report = Quaack::Enclave::ScenarioTests.run(
           conn, canvas_sql,
           ["SELECT a.id, a.name, c.title FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id " \
            "WHERE a.name = 'x' ORDER BY a.course_template_id DESC, a.id",
@@ -169,7 +169,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       end
 
       it "passes NOT EXISTS and disproves an inner join" do
-        report = Quaack::Enclave::StepNine.run(
+        report = Quaack::Enclave::ScenarioTests.run(
           conn, anti_sql,
           ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
            "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
@@ -279,7 +279,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     it "passes NOT EXISTS and disproves the wrong rewrites" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn, anti_sql,
         ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
          "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
@@ -318,7 +318,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     it "disproves where.missing(:course_template) rewritten as accounts with no courses" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn,
         "SELECT a.id, a.name FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
         "WHERE c.id IS NULL ORDER BY a.id",
@@ -330,7 +330,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     it "disproves looking a template up by account_id" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn,
         "SELECT c.id, a.id FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id ORDER BY c.id, a.id",
         ["SELECT c.id, a.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id ORDER BY c.id, a.id",
@@ -342,7 +342,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     # A copy of an account keeps its template, so accounts tie on it.
     it "disproves dropping or reversing the sort key's tie-break on the cut column, under LIMIT" do
       order_sql = "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id ORDER BY "
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn, "#{order_sql}a.course_template_id DESC, a.id LIMIT 1",
         ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
          "ORDER BY a.course_template_id DESC, a.id LIMIT 1",
@@ -354,7 +354,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
 
     # Two accounts that share a template join its course twice.
     it "disproves an inner join on the cut edge rewritten as EXISTS" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn,
         "SELECT c.id FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id ORDER BY c.id",
         ["SELECT c.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id ORDER BY c.id",
@@ -366,7 +366,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
 
     # A near miss builds a course, so an account there points at it.
     it "disproves dropping an anti join on the cut edge itself (Rails where.missing)" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn,
         "SELECT a.id, a.name FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
         "WHERE c.id IS NULL ORDER BY a.id",
@@ -378,7 +378,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     it "disproves dropping the anti join from accounts with a template but no courses" do
-      report = Quaack::Enclave::StepNine.run(
+      report = Quaack::Enclave::ScenarioTests.run(
         conn,
         "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id " \
         "LEFT JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id",

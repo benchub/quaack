@@ -40,7 +40,7 @@ module Quaack
 
       Result = Data.define(:kept, :dropped)
 
-      STATEMENT = "quaack_step8"
+      STATEMENT = "quaack_structural_discard"
 
       module_function
 
@@ -66,7 +66,7 @@ module Quaack
       # Burndown.record_all, for a caller that stores it with other stages'.
       def stage_record(result, inbound_rejected:)
         dropped = { inbound_check: inbound_rejected, **result.dropped }
-        ["step8", :rewrites, { in: result.kept.size + dropped.values.sum, dropped:, out: result.kept.size }]
+        ["plan-pruning", :rewrites, { in: result.kept.size + dropped.values.sum, dropped:, out: result.kept.size }]
       end
 
       def reason(connection, sql, literals, expected, param_types: [])

@@ -74,8 +74,8 @@ RSpec.describe "error filtering against real Postgres" do
     end
     expect(error.message).to include("pg_catalog.random")
 
-    expect(filter.to_egress(error, step: "3d"))
-      .to eq(line(step: "3d", rule: "volatile_function", function: "pg_catalog.random"))
+    expect(filter.to_egress(error, step: "volatility"))
+      .to eq(line(step: "volatility", rule: "volatile_function", function: "pg_catalog.random"))
   end
 
   describe ".drop_notices" do

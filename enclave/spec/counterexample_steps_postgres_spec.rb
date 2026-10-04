@@ -156,7 +156,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                 { "rewrite_tested_1" => true, "rewrite_survived_1" => true }])
     end
 
-    it "refuses to test, or run a round, before the arena is set up (4b)" do
+    it "refuses to test, or run a round, before the arena is set up (arena-setup)" do
       ready(same, setup: false)
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
 
@@ -195,7 +195,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
   end
 
-  describe "counterexample-payload (10a)" do
+  describe "counterexample-payload (llm-counterexamples)" do
     it "sends the redacted original, the candidate's SQL, placeholders, schema, and untested atoms" do
       ready(same)
       step("rewrite-test", "--search", "rewrite_1")

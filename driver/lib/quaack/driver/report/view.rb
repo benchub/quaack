@@ -115,7 +115,7 @@ module Quaack
         def stage_cells(record, stage)
           return %(<td colspan="6" class="missing">#{Words::MISSING}</td>) unless record
 
-          [num(record["in"]), "<td>#{h breakdown(record["added"], rules: stage == "6c")}</td>",
+          [num(record["in"]), "<td>#{h breakdown(record["added"], rules: stage == "rewrite-rules")}</td>",
            "<td>#{h breakdown(record["dropped"])}</td>", num(record["set_aside"]), num(record["out"]),
            "<td>#{h breakdown(record["extra"])}</td>"].join
         end

@@ -339,7 +339,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     def refusal(sql, rule)
       error = nil
       expect { check(sql) }.to(rejected(rule) { |raised| error = raised })
-      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "6a")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "llm-rewrites")
       expect(line).to include(%("rule":"#{rule}"))
       [error.message, line]
     end

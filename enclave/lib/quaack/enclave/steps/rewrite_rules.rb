@@ -51,7 +51,7 @@ module Quaack
       #
       # rules is there for specs, to give the step fake rules.
       module RewriteRules
-        STAGE = "6c"
+        STAGE = "rewrite-rules"
 
         module_function
 

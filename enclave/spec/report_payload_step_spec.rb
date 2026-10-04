@@ -93,7 +93,7 @@ RSpec.describe "quaacks report-payload" do
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
                   "Plan" => node("Index Scan", 5, relation: "orders", index: "orders_created_at_id_idx")
                 }] } })
-    Quaack::Enclave::Burndown.record(store, "5a-3", :original, in: 4, dropped: { duplicate: 1 }, out: 3)
+    Quaack::Enclave::Burndown.record(store, "index-dedupe", :original, in: 4, dropped: { duplicate: 1 }, out: 3)
     Quaack::Enclave::Burndown.add_totals(store, hypothetical_explains: 12)
   end
 
@@ -316,11 +316,11 @@ RSpec.describe "quaacks report-payload" do
     {
       1 => { "fate" => "ranked" },
       2 => { "fate" => "same_plans" },
-      3 => { "fate" => "step9_disproved", "scenario" => "s3", "rule" => "multiset" },
-      4 => { "fate" => "step9_failed", "scenario" => "s0", "rule" => "unsupported_order" },
-      5 => { "fate" => "step9_failed", "scenario" => "s2", "rule" => "query_failed" },
-      6 => { "fate" => "step10_disproved", "round" => 2, "rule" => "row_count" },
-      7 => { "fate" => "step10_failed", "round" => 1, "rule" => "statement_timeout" },
+      3 => { "fate" => "rewrite_test_disproved", "scenario" => "s3", "rule" => "multiset" },
+      4 => { "fate" => "rewrite_test_failed", "scenario" => "s0", "rule" => "unsupported_order" },
+      5 => { "fate" => "rewrite_test_failed", "scenario" => "s2", "rule" => "query_failed" },
+      6 => { "fate" => "counterexamples_disproved", "round" => 2, "rule" => "row_count" },
+      7 => { "fate" => "counterexamples_failed", "round" => 1, "rule" => "statement_timeout" },
       8 => { "fate" => "production_mismatch", "rule" => "multiset" },
       9 => { "fate" => "production_timed_out" },
       10 => { "fate" => "production_not_compared", "rule" => "unsupported_order" },
@@ -329,21 +329,21 @@ RSpec.describe "quaacks report-payload" do
       13 => { "fate" => "below_top_three" },
       14 => { "fate" => "measurement_timed_out" },
       15 => { "fate" => "unfinished" },
-      16 => { "fate" => "unfinished", "after" => "step9" },
-      17 => { "fate" => "unfinished", "after" => "step10" },
+      16 => { "fate" => "unfinished", "after" => "rewrite-test" },
+      17 => { "fate" => "unfinished", "after" => "counterexamples" },
       18 => { "fate" => "unfinished", "after" => "measurement" },
-      19 => { "fate" => "step10_disproved", "round" => 3 },
-      20 => { "fate" => "step10_disproved" },
+      19 => { "fate" => "counterexamples_disproved", "round" => 3 },
+      20 => { "fate" => "counterexamples_disproved" },
       21 => { "fate" => "same_plans" },
       22 => { "fate" => "ranked" },
-      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" },
-      24 => { "fate" => "step9_untested", "rule" => "complex_check" },
-      25 => { "fate" => "step9_untested", "rule" => "fk_cycle" },
-      26 => { "fate" => "step9_untested" },
-      27 => { "fate" => "step9_untested", "rule" => "unsatisfiable_check" },
-      28 => { "fate" => "step9_untested", "rule" => "expression_unique_index" },
-      29 => { "fate" => "step9_untested", "rule" => "unsupported_type" },
-      30 => { "fate" => "step9_untested", "rule" => "domain_check" }
+      23 => { "fate" => "rewrite_test_disproved", "scenario" => "s1", "rule" => "value" },
+      24 => { "fate" => "rewrite_test_untested", "rule" => "complex_check" },
+      25 => { "fate" => "rewrite_test_untested", "rule" => "fk_cycle" },
+      26 => { "fate" => "rewrite_test_untested" },
+      27 => { "fate" => "rewrite_test_untested", "rule" => "unsatisfiable_check" },
+      28 => { "fate" => "rewrite_test_untested", "rule" => "expression_unique_index" },
+      29 => { "fate" => "rewrite_test_untested", "rule" => "unsupported_type" },
+      30 => { "fate" => "rewrite_test_untested", "rule" => "domain_check" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
@@ -377,8 +377,8 @@ RSpec.describe "quaacks report-payload" do
 
       it "sends a fate that claims no disproof, and none of the values" do
         expect([2, 3, 4, 5, 6].map { fate(it) }).to eq(
-          [{ "fate" => "step9_failed" }, { "fate" => "step10_failed" },
-           { "fate" => "step10_disproved", "rule" => "multiset" }, { "fate" => "production_not_compared" },
+          [{ "fate" => "rewrite_test_failed" }, { "fate" => "counterexamples_failed" },
+           { "fate" => "counterexamples_disproved", "rule" => "multiset" }, { "fate" => "production_not_compared" },
            { "fate" => "not_better" }]
         )
         expect_no_leaks(sentinels, outcome)
@@ -408,7 +408,7 @@ RSpec.describe "quaacks report-payload" do
       end
 
       it "sends them schema-qualified, in the order their foreign keys point" do
-        expect(rewrite(2)).to include("fate" => "step9_untested", "rule" => "fk_cycle",
+        expect(rewrite(2)).to include("fate" => "rewrite_test_untested", "rule" => "fk_cycle",
                                       "cycle" => %w[public.orders billing.accounts public.orders])
       end
 
@@ -423,7 +423,7 @@ RSpec.describe "quaacks report-payload" do
     end
   end
 
-  describe "where each rewrite came from (6c)" do
+  describe "where each rewrite came from (rewrite-rules)" do
     def rewrite_candidate = rewrite(1)
 
     # Runs report-payload on the populated store with rewrite_1 changed.
@@ -577,9 +577,9 @@ RSpec.describe "quaacks report-payload" do
           expect(report["top"]).not_to be_empty
           both = %w[key_in_self_join key_in_self_join]
           expect(report["rule_bugs"]).to eq(
-            [{ "rewrite" => "rewrite_2", "rules" => both, "step" => "step9" },
-             { "rewrite" => "rewrite_3", "rules" => both, "step" => "step10" },
-             { "rewrite" => "rewrite_4", "rules" => both, "step" => "14c" }]
+            [{ "rewrite" => "rewrite_2", "rules" => both, "step" => "rewrite-test" },
+             { "rewrite" => "rewrite_3", "rules" => both, "step" => "counterexamples" },
+             { "rewrite" => "rewrite_4", "rules" => both, "step" => "result-comparison" }]
           )
         end
       end
@@ -611,7 +611,7 @@ RSpec.describe "quaacks report-payload" do
           end
 
           it "is a bug, though 14c timed out on another set" do
-            expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "14c",
+            expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "result-comparison",
                                                  "rules" => %w[key_in_self_join key_in_self_join] }])
           end
         end
@@ -627,7 +627,7 @@ RSpec.describe "quaacks report-payload" do
 
         it "names only QUAACK's own rules in rule_bugs, and leaks neither" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"],
-                                               "step" => "step9" }])
+                                               "step" => "rewrite-test" }])
           expect_no_leaks(sentinels, outcome)
         end
       end
@@ -647,7 +647,7 @@ RSpec.describe "quaacks report-payload" do
 
         it "calls only the 14c disproof a bug" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
-                                               "step" => "14c" }])
+                                               "step" => "result-comparison" }])
         end
       end
 
@@ -716,8 +716,8 @@ RSpec.describe "quaacks report-payload" do
 
   it "sends the recorded burndown counts (15b)" do
     expect(report["burndown"]).to eq(
-      "stages" => { "5a-3" => { "original" => { "in" => 4, "added" => {}, "dropped" => { "duplicate" => 1 },
-                                                "set_aside" => 0, "out" => 3, "extra" => {} } } },
+      "stages" => { "index-dedupe" => { "original" => { "in" => 4, "added" => {}, "dropped" => { "duplicate" => 1 },
+                                                        "set_aside" => 0, "out" => 3, "extra" => {} } } },
       "totals" => { "hypothetical_explains" => 12 }
     )
   end

@@ -23,7 +23,7 @@ module Quaack
     class OperatorCandidates
       class Error < StandardError; end
 
-      STEP = "step7"
+      STEP = "operator-rewrites"
       MAX_TOKENS = 8000
 
       INFERRED = {

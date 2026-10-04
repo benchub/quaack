@@ -176,7 +176,7 @@ RSpec.describe Quaack::Driver::Report do
       expect(queries).not_to include("never exercised")
     end
 
-    describe "where a rewrite came from (6c)" do
+    describe "where a rewrite came from (rewrite-rules)" do
       def source(**fields)
         payload["rewrites"].first.merge!(fields.transform_keys(&:to_s))
         section(render(payload), "queries")[%r{<p class="source">.*?</p>}m]
@@ -211,7 +211,7 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
-    describe "what a rule-made rewrite assumes of the data (6b)" do
+    describe "what a rule-made rewrite assumes of the data (assumption-check)" do
       def empirical(*assumptions)
         payload["rewrites"].first.merge!("rules" => ["polymorphic_key_copy"], "empirical" => assumptions)
         section(render(payload), "queries")[%r{<p class="empirical">.*?</p>}m]
@@ -264,42 +264,44 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "says which made-up data proved a rewrite wrong" do
-        expect(fate("step9_disproved", scenario: "s2", rule: "multiset"))
+        expect(fate("rewrite_test_disproved", scenario: "s2", rule: "multiset"))
           .to eq(esc("It returned different results from your query on made-up test data (NULLs), so it's wrong."))
-        expect(fate("step9_disproved", scenario: "s3", rule: "row_count")).to include("(duplicate join keys)")
+        expect(fate("rewrite_test_disproved", scenario: "s3", rule: "row_count")).to include("(duplicate join keys)")
       end
 
       it "says which round of LLM-written data proved a rewrite wrong" do
-        expect(fate("step10_disproved", round: 2, rule: "row_count"))
+        expect(fate("counterexamples_disproved", round: 2, rule: "row_count"))
           .to eq(esc("It returned different results from your query on test data the LLM wrote to break it " \
                      "(round 2), so it's wrong."))
       end
 
       it "leaves out a scenario or round the payload doesn't have, with no stray brackets" do
-        expect(fate("step9_disproved")).to eq(esc("It returned different results from your query on made-up test " \
-                                                  "data, so it's wrong."))
-        expect(fate("step10_disproved")).to eq(esc("It returned different results from your query on test data " \
-                                                   "the LLM wrote to break it, so it's wrong."))
-        expect(fate("step9_failed")).to eq(esc("A test on made-up data ended without comparing results, so " \
-                                               "QUAACK dropped it. That says nothing about whether it's right."))
-        expect(fate("step10_failed")).to eq(esc("A test on data the LLM wrote to break it ended without comparing " \
-                                                "results, so QUAACK dropped it. That says nothing about whether " \
-                                                "it's right."))
+        expect(fate("rewrite_test_disproved"))
+          .to eq(esc("It returned different results from your query on made-up test data, so it's wrong."))
+        expect(fate("counterexamples_disproved"))
+          .to eq(esc("It returned different results from your query on test data the LLM wrote to break it, so " \
+                     "it's wrong."))
+        expect(fate("rewrite_test_failed"))
+          .to eq(esc("A test on made-up data ended without comparing results, so QUAACK dropped it. That says " \
+                     "nothing about whether it's right."))
+        expect(fate("counterexamples_failed"))
+          .to eq(esc("A test on data the LLM wrote to break it ended without comparing results, so QUAACK dropped " \
+                     "it. That says nothing about whether it's right."))
       end
 
       it "says why a test compared nothing" do
-        expect(fate("step9_failed", scenario: "s0", rule: "unsupported_order"))
+        expect(fate("rewrite_test_failed", scenario: "s0", rule: "unsupported_order"))
           .to eq(esc("A test on made-up data (empty tables) ended without comparing results, because the order " \
                      "of your query's rows can't be checked, so QUAACK dropped it. That says nothing about " \
                      "whether it's right."))
-        expect(fate("step10_failed", round: 1, rule: "statement_timeout"))
+        expect(fate("counterexamples_failed", round: 1, rule: "statement_timeout"))
           .to include("(round 1) ended without comparing results, because a statement timed out, so")
-        expect(fate("step9_failed", scenario: "s1", rule: "query_failed"))
+        expect(fate("rewrite_test_failed", scenario: "s1", rule: "query_failed"))
           .to include("ended without comparing results, because a statement failed on the test database, so")
       end
 
       it "says a rewrite was never tested when step 9 couldn't build test data, and why, by rule" do
-        expect(fate("step9_untested", rule: "complex_check"))
+        expect(fate("rewrite_test_untested", rule: "complex_check"))
           .to eq(esc("QUAACK couldn't make up test data for your query, because a CHECK constraint on its tables " \
                      "is too complex for QUAACK to satisfy, so it never tested this rewrite and won't recommend " \
                      "it. That says nothing about whether it's right."))
@@ -310,28 +312,29 @@ RSpec.describe Quaack::Driver::Report do
           "unsatisfiable_check" => "no value QUAACK tried passes a CHECK constraint on its tables",
           "domain_check" => "a column's domain rejects every value QUAACK tried"
         }.each do |rule, words|
-          expect(fate("step9_untested", rule:)).to include(esc("for your query, because #{words}, so it never"))
+          expect(fate("rewrite_test_untested", rule:)).to include(esc("for your query, because #{words}, so it never"))
         end
-        expect(fate("step9_untested")).to eq(esc("QUAACK couldn't make up test data for your query, so it never " \
-                                                 "tested this rewrite and won't recommend it. That says nothing " \
-                                                 "about whether it's right."))
+        expect(fate("rewrite_test_untested"))
+          .to eq(esc("QUAACK couldn't make up test data for your query, so it never tested this rewrite and won't " \
+                     "recommend it. That says nothing about whether it's right."))
       end
 
       it "names the tables of an fk_cycle refusal, in the order their foreign keys point" do
-        expect(fate("step9_untested", rule: "fk_cycle", cycle: %w[public.accounts public.courses public.accounts]))
+        expect(fate("rewrite_test_untested", rule: "fk_cycle",
+                                             cycle: %w[public.accounts public.courses public.accounts]))
           .to eq(esc("QUAACK couldn't make up test data for your query, because its tables' foreign keys form a " \
                      "cycle QUAACK can't load (public.accounts -&gt; public.courses -&gt; public.accounts), so it " \
                      "never tested this rewrite and won't recommend it. That says nothing about whether it's right."))
-        expect(fate("step9_untested", rule: "fk_cycle", cycle: %w[public.<b> public.a public.<b>]))
+        expect(fate("rewrite_test_untested", rule: "fk_cycle", cycle: %w[public.<b> public.a public.<b>]))
           .to include("(public.&lt;b&gt; -&gt; public.a -&gt; public.&lt;b&gt;)")
       end
 
       it "names no tables for another rule, or a cycle that isn't a list of names" do
-        expect(fate("step9_untested", rule: "complex_check", cycle: %w[public.a public.b public.a]))
+        expect(fate("rewrite_test_untested", rule: "complex_check", cycle: %w[public.a public.b public.a]))
           .not_to include("public.a")
-        expect(fate("step9_untested", rule: "fk_cycle", cycle: "public.a"))
+        expect(fate("rewrite_test_untested", rule: "fk_cycle", cycle: "public.a"))
           .to include(esc("load, so it never")).and(satisfy { !it.include?("public.a") })
-        expect(fate("step9_untested", rule: "fk_cycle", cycle: []))
+        expect(fate("rewrite_test_untested", rule: "fk_cycle", cycle: []))
           .to include(esc("QUAACK can't load, so it never"))
       end
 
@@ -355,16 +358,18 @@ RSpec.describe Quaack::Driver::Report do
 
       it "says how far an unfinished rewrite got" do
         expect(fate("unfinished")).to eq("QUAACK kept it, but the run ended before testing it.")
-        expect(fate("unfinished", after: "step9")).to include("passed the tests on made-up data, and the run ended")
-        expect(fate("unfinished", after: "step10")).to include("passed every test, and the run ended before")
+        expect(fate("unfinished",
+                    after: "rewrite-test")).to include("passed the tests on made-up data, and the run ended")
+        expect(fate("unfinished", after: "counterexamples")).to include("passed every test, and the run ended before")
         expect(fate("unfinished", after: "measurement")).to include("was measured, and the run ended before")
       end
 
       it "never calls a failed, timed-out, or unfinished rewrite wrong" do
-        [["step9_failed", { scenario: "s0", rule: "unsupported_order" }], ["step10_failed", { round: 1 }],
-         ["step9_untested", { rule: "complex_check" }],
+        [["rewrite_test_failed", { scenario: "s0", rule: "unsupported_order" }],
+         ["counterexamples_failed", { round: 1 }],
+         ["rewrite_test_untested", { rule: "complex_check" }],
          ["production_timed_out", {}], ["production_not_compared", {}], ["measurement_timed_out", {}],
-         ["unfinished", {}], ["unfinished", { after: "step9" }], ["same_plans", {}], ["not_better", {}],
+         ["unfinished", {}], ["unfinished", { after: "rewrite-test" }], ["same_plans", {}], ["not_better", {}],
          ["footprint_tie", {}], ["below_top_three", {}]].each do |name, details|
           expect(fate(name, **details)).not_to match(/wrong|different results|disproved/)
         end
@@ -591,11 +596,11 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
-  describe "a rule-made rewrite that a test disproved (6c)" do
+  describe "a rule-made rewrite that a test disproved (rewrite-rules)" do
     let(:bugs) do
-      [{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"], "step" => "step9" },
-       { "rewrite" => "rewrite_3", "rules" => %w[or_to_union key_in_self_join], "step" => "step10" },
-       { "rewrite" => "rewrite_4", "rules" => ["<b>"], "step" => "14c" }]
+      [{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"], "step" => "rewrite-test" },
+       { "rewrite" => "rewrite_3", "rules" => %w[or_to_union key_in_self_join], "step" => "counterexamples" },
+       { "rewrite" => "rewrite_4", "rules" => ["<b>"], "step" => "result-comparison" }]
     end
     let(:bug_html) { render(payload.merge("rule_bugs" => bugs)) }
     let(:bug_section) { section(bug_html, "quaack-bugs") }
@@ -625,11 +630,11 @@ RSpec.describe Quaack::Driver::Report do
 
   describe "when nothing beat the original (15a)" do
     let(:rewrites) do
-      [fated(2, "step9_disproved", scenario: "s3", rule: "multiset"),
-       fated(3, "step10_disproved", round: 2, rule: "row_count", source: "llm"),
+      [fated(2, "rewrite_test_disproved", scenario: "s3", rule: "multiset"),
+       fated(3, "counterexamples_disproved", round: 2, rule: "row_count", source: "llm"),
        fated(5, "not_better", source: "rule", rules: ["key_in_self_join"]),
        fated(7, "same_plans", source: "operator"),
-       fated(8, "step9_failed", scenario: "s0", rule: "unsupported_order")]
+       fated(8, "rewrite_test_failed", scenario: "s0", rule: "unsupported_order")]
     end
 
     let(:negative_html) { render(negative_payload.merge("rewrites" => rewrites)) }
@@ -709,16 +714,17 @@ RSpec.describe Quaack::Driver::Report do
 
     let(:rewrites) do
       [fated(1, "ranked", source: "rule", rules: ["key_in_self_join"]),
-       fated(2, "same_plans", source: "llm"), fated(3, "step9_disproved", source: "llm"),
-       fated(4, "step10_disproved", source: "llm"), fated(5, "production_mismatch", source: "llm"),
-       fated(6, "not_better", source: "llm"), fated(7, "step9_failed", source: "llm"),
+       fated(2, "same_plans", source: "llm"), fated(3, "rewrite_test_disproved", source: "llm"),
+       fated(4, "counterexamples_disproved", source: "llm"), fated(5, "production_mismatch", source: "llm"),
+       fated(6, "not_better", source: "llm"), fated(7, "rewrite_test_failed", source: "llm"),
        fated(8, "footprint_tie", source: "operator"), fated(9, "unfinished", source: "operator")]
     end
 
     let(:stages) do
-      { "6c" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 3 },
-                                          dropped: { "duplicate" => 1, "over_cap" => 0, "failed_checks" => 1 }) },
-        "6a" => { "rewrites" => rec(0, 6, added: { "llm" => 8 }, dropped: { "inbound_check" => 2 }) } }
+      { "rewrite-rules" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 3 },
+                                                     dropped: { "duplicate" => 1, "over_cap" => 0,
+                                                                "failed_checks" => 1 }) },
+        "llm-rewrites" => { "rewrites" => rec(0, 6, added: { "llm" => 8 }, dropped: { "inbound_check" => 2 }) } }
     end
 
     let(:accountable) do
@@ -751,7 +757,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "says not recorded when the recorded proposals are fewer than the rewrites kept" do
-      stages["6a"]["rewrites"] = rec(0, 1, added: { "llm" => 1 })
+      stages["llm-rewrites"]["rewrites"] = rec(0, 1, added: { "llm" => 1 })
       expect(rows(accountable, "rewrites")["The LLM"].first(2)).to eq(["1", "not recorded"])
     end
 
@@ -837,13 +843,13 @@ RSpec.describe Quaack::Driver::Report do
 
       it "fills in each source's proposals, and the LLM's drops, once the burndown records them" do
         stages.merge!(
-          "5a-1" => { "original" => rec(0, 3, added: { "generator_one" => 3 }),
-                      "rewrite_1" => rec(0, 2, added: { "generator_one" => 2 }) },
-          "5a-2" => { "original" => rec(0, 4, added: { "generator_two" => 4 }) },
-          "5a-5" => { "original" => rec(0, 1, added: { "llm" => 5 },
-                                              dropped: { "covered_by_existing" => 1, "duplicate" => 1,
-                                                         "never_used" => 1, "hypopg_refused" => 1 }) },
-          "5a-6" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
+          "index-from-query" => { "original" => rec(0, 3, added: { "generator_one" => 3 }),
+                                  "rewrite_1" => rec(0, 2, added: { "generator_one" => 2 }) },
+          "index-from-plan" => { "original" => rec(0, 4, added: { "generator_two" => 4 }) },
+          "llm-index-ideas" => { "original" => rec(0, 1, added: { "llm" => 5 },
+                                                         dropped: { "covered_by_existing" => 1, "duplicate" => 1,
+                                                                    "never_used" => 1, "hypopg_refused" => 1 }) },
+          "llm-index-refine" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
         )
         counted = rows(accountable, "indexes")
         expect(counted["Generator one, from the query&#39;s text"]).to eq(["5"] + (["not recorded"] * 5))
@@ -868,22 +874,23 @@ RSpec.describe Quaack::Driver::Report do
 
     let(:burndown) do
       { "stages" => {
-          "5a-1" => { "original" => rec(0, 3, added: { "generator_one" => 3 }) },
-          "5a-3" => { "original" => rec(4, 3, dropped: { "duplicate" => 1 }),
-                      "rewrite_1" => rec(2, 1, dropped: { "covered_by_existing" => 1 }),
-                      "rewrite_2" => rec(3, 1, dropped: { "covered_by_existing" => 1 }, set_aside: 1) },
-          "step8" => { "rewrites" => rec(2, 1, dropped: { "inbound_check" => 0, "failed_to_plan" => 0,
-                                                          "output_mismatch" => 0, "same_plans" => 1 }) },
-          "step9" => { "rewrites" => rec(2, 1, dropped: { "s3" => 1 }, extra: { "untested_atoms" => 2 }) },
-          "6c" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 2 },
-                                            dropped: { "duplicate" => 1, "over_cap" => 0, "failed_checks" => 0 }) }
+          "index-from-query" => { "original" => rec(0, 3, added: { "generator_one" => 3 }) },
+          "index-dedupe" => { "original" => rec(4, 3, dropped: { "duplicate" => 1 }),
+                              "rewrite_1" => rec(2, 1, dropped: { "covered_by_existing" => 1 }),
+                              "rewrite_2" => rec(3, 1, dropped: { "covered_by_existing" => 1 }, set_aside: 1) },
+          "plan-pruning" => { "rewrites" => rec(2, 1, dropped: { "inbound_check" => 0, "failed_to_plan" => 0,
+                                                                 "output_mismatch" => 0, "same_plans" => 1 }) },
+          "rewrite-test" => { "rewrites" => rec(2, 1, dropped: { "s3" => 1 }, extra: { "untested_atoms" => 2 }) },
+          "rewrite-rules" => { "rewrites" => rec(0, 1, added: { "key_in_self_join" => 2 },
+                                                       dropped: { "duplicate" => 1, "over_cap" => 0,
+                                                                  "failed_checks" => 0 }) }
         },
         "totals" => { "hypothetical_explains" => 1234, "fixture_loads" => 3 } }
     end
 
     let(:llm_calls) do
-      { "5a-5" => 2, "5a-6" => 1, "6a" => 1, "step7" => 1, "10a" => 3, "rewrite-llm-index-ideas" => 4,
-        "rewrite-llm-index-refine" => 2 }
+      { "llm-index-ideas" => 2, "llm-index-refine" => 1, "llm-rewrites" => 1, "operator-rewrites" => 1,
+        "llm-counterexamples" => 3, "rewrite-llm-index-ideas" => 4, "rewrite-llm-index-refine" => 2 }
     end
     let(:burndown_section) { section(render(payload.merge("burndown" => burndown), llm_calls:), "burndown") }
     let(:index_table) { burndown_section[%r{<table id="burndown-index">.*?</table>}m] }
@@ -937,7 +944,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "says how many rule rewrites were over the limit of ten" do
-      burndown["stages"]["6c"]["rewrites"]["dropped"]["over_cap"] = 2
+      burndown["stages"]["rewrite-rules"]["rewrites"]["dropped"]["over_cap"] = 2
       expect(rewrite_table).to include("the same as another idea: 1; over the limit of ten: 2")
     end
 
@@ -949,7 +956,7 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     it "says the rewrites' index searches weren't recorded when none was" do
-      burndown["stages"].delete("5a-3")
+      burndown["stages"].delete("index-dedupe")
       expect(rewrite_table).to include('<tr><th scope="row">Index ideas for the rewrites</th>' \
                                        '<td colspan="6" class="missing">not recorded</td></tr>')
     end
@@ -978,13 +985,13 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows a total, a reason, or a source it has no words for, by its name" do
       burndown["totals"]["wild_guesses"] = 7
-      burndown["stages"]["5a-3"]["original"]["dropped"] = { "odd_reason" => 1 }
+      burndown["stages"]["index-dedupe"]["original"]["dropped"] = { "odd_reason" => 1 }
       expect(burndown_section).to include("<li>Wild guesses: 7</li>")
       expect(index_table).to include("<td>odd reason: 1</td>")
     end
 
     it "escapes the names it shows" do
-      burndown["stages"]["5a-3"]["original"]["dropped"] = { "<b>" => 1 }
+      burndown["stages"]["index-dedupe"]["original"]["dropped"] = { "<b>" => 1 }
       expect(burndown_section).to include("&lt;b&gt;: 1")
       expect(burndown_section).not_to include("<b>")
     end
@@ -1021,7 +1028,7 @@ RSpec.describe Quaack::Driver::Report do
                      { "label" => "#{z}:top:3", "search" => z, "indexes" => [z], "timed_out" => true,
                        "measurements" => nil, "verdicts" => nil }],
         "rewrites" => [{ "rewrite" => z, "sql" => "SELECT #{z}", "source" => "rule", "rules" => [z, z],
-                         "fate" => "step9_disproved", "scenario" => z, "rule" => z, "round" => z, "after" => z,
+                         "fate" => "rewrite_test_disproved", "scenario" => z, "rule" => z, "round" => z, "after" => z,
                          "plan" => [node], "untested_atoms" => [{ "shape" => z }, z], "evidence" => false }],
         "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
                                        "covered_by" => { "name" => z, "size_bytes" => 1 },
@@ -1029,8 +1036,8 @@ RSpec.describe Quaack::Driver::Report do
                        z => { "ddl" => nil, "size" => z, "covered_by" => nil, "makes_redundant" => [] } },
         "original_plan" => [node], "timed_out_count" => 1,
         "rule_bugs" => [{ "rewrite" => z, "rules" => [z], "step" => z }],
-        "burndown" => { "stages" => { "5a-3" => { "original" => record, z => record },
-                                      "6c" => { "rewrites" => record } },
+        "burndown" => { "stages" => { "index-dedupe" => { "original" => record, z => record },
+                                      "rewrite-rules" => { "rewrites" => record } },
                         "totals" => { z => 1 } } }
     end
 

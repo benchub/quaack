@@ -23,12 +23,12 @@ RSpec.describe "the OpenAI-compatible adapter" do
   end
   let(:json_only) { Quaack::Driver::LLM::Client::JSON_ONLY }
 
-  def ask(step = "5a-5", **)
+  def ask(step = "llm-index-ideas", **)
     client.ask(step: step, messages: messages, max_tokens: 1000, **)
   end
 
   # The LLM::Error an ask raises. Fails the spec if it raises nothing.
-  def ask_error(step = "5a-5", **)
+  def ask_error(step = "llm-index-ideas", **)
     ask(step, **)
     raise "expected an LLM::Error for step #{step}, but the ask succeeded"
   rescue Quaack::Driver::LLM::Error => e
@@ -41,48 +41,48 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
   describe "the request" do
     it "sends the model, the system prompt as the first message, the messages, and the token limit" do
-      fake.reply("6a", "ok")
-      client.ask(step: "6a", system: "You rewrite SQL.", messages: messages, max_tokens: 321)
+      fake.reply("llm-rewrites", "ok")
+      client.ask(step: "llm-rewrites", system: "You rewrite SQL.", messages: messages, max_tokens: 321)
 
       expect(fake.asks.map(&:body)).to eq([{ model: "fake-model", max_completion_tokens: 321,
                                              messages: [{ role: "system", content: "You rewrite SQL." }, *messages] }])
     end
 
     it "sends no system message when there's no system prompt" do
-      fake.reply("6a", "ok")
-      ask("6a")
+      fake.reply("llm-rewrites", "ok")
+      ask("llm-rewrites")
 
       expect(fake.asks.first.body[:messages]).to eq(messages)
     end
 
     it "keeps the conversation's turns, in order" do
       turns = [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }]
-      fake.reply("6a", "ok")
-      client.ask(step: "6a", messages: turns, max_tokens: 10)
+      fake.reply("llm-rewrites", "ok")
+      client.ask(step: "llm-rewrites", messages: turns, max_tokens: 10)
 
       expect(fake.asks.first.body[:messages]).to eq(turns)
     end
 
     it "goes to the settings' base URL" do
-      fake.reply("6a", "ok")
-      ask("6a")
+      fake.reply("llm-rewrites", "ok")
+      ask("llm-rewrites")
 
       expect(fake.asks.map(&:url)).to eq(["https://llm.example.com/v1/chat/completions"])
     end
 
     it "goes to Groq's OpenAI-compatible endpoint when that's the base URL" do
       settings = FakeOpenAI.settings("base_url" => "https://api.groq.com/openai/v1")
-      fake.reply("6a", "ok")
-      fake.client(burndown:, settings:).ask(step: "6a", messages: messages, max_tokens: 10)
+      fake.reply("llm-rewrites", "ok")
+      fake.client(burndown:, settings:).ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
 
       expect(fake.asks.map(&:url)).to eq(["https://api.groq.com/openai/v1/chat/completions"])
     end
 
     it "sends the settings' model" do
       settings = FakeOpenAI.settings(model: "llama-3.3-70b-versatile")
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       Quaack::Driver::LLM::Client.new(settings:, api_key: "k", burndown:, transport: fake)
-                                 .ask(step: "6a", messages: messages, max_tokens: 10)
+                                 .ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
 
       expect(fake.asks.first.body[:model]).to eq("llama-3.3-70b-versatile")
     end
@@ -90,7 +90,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
 
   describe "a schema" do
     it "asks for json_schema output, and puts the schema in the system prompt too" do
-      fake.reply("5a-5", { "ddl" => ["CREATE INDEX ON t (a)"] })
+      fake.reply("llm-index-ideas", { "ddl" => ["CREATE INDEX ON t (a)"] })
 
       expect(ask(system: "You propose indexes.", schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
       expect(fake.asks.first.body[:response_format]).to eq(response_format)
@@ -98,8 +98,8 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "sends no response_format without a schema, even for JSON" do
-      fake.reply("6a", [])
-      ask("6a", json: true)
+      fake.reply("llm-rewrites", [])
+      ask("llm-rewrites", json: true)
 
       expect(fake.asks.first.body).not_to have_key(:response_format)
     end
@@ -109,33 +109,36 @@ RSpec.describe "the OpenAI-compatible adapter" do
     # checked, so the ask goes again without response_format.
     [400, 422].each do |status|
       it "asks again without response_format when the API rejects it with #{status}" do
-        fake.error("5a-5", status: status, param: "response_format").reply("5a-5", { "ddl" => [] })
+        fake.error("llm-index-ideas", status: status, param: "response_format").reply("llm-index-ideas",
+                                                                                      { "ddl" => [] })
 
         expect(ask(schema: schema)).to eq("ddl" => [])
         expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false])
         expect(fake.system_prompt(fake.asks.last)).to eq("#{json_only}\n\n#{schema_line}")
-        expect(burndown.llm_calls).to eq("5a-5" => 2)
+        expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
       end
     end
 
     it "stops sending response_format once the API has rejected it and the ask without it worked" do
-      fake.error("5a-5", status: 400).reply("5a-5", { "ddl" => [] }).reply("5a-5", { "ddl" => [] })
+      fake.error("llm-index-ideas", status: 400).reply("llm-index-ideas", { "ddl" => [] }).reply("llm-index-ideas",
+                                                                                                 { "ddl" => [] })
       ask(schema: schema)
       ask(schema: schema)
 
       expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false, false])
-      expect(burndown.llm_calls).to eq("5a-5" => 3)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 3)
     end
 
     it "fails with llm_bad_request when the ask without response_format is rejected too" do
-      fake.error("5a-5", status: 400).error("5a-5", status: 400)
+      fake.error("llm-index-ideas", status: 400).error("llm-index-ideas", status: 400)
 
       expect { ask(schema: schema) }.to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_bad_request") }
-      expect(burndown.llm_calls).to eq("5a-5" => 2)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
     end
 
     it "keeps sending response_format when the ask without it failed too" do
-      fake.error("5a-5", status: 400).error("5a-5", status: 400).reply("5a-5", { "ddl" => [] })
+      fake.error("llm-index-ideas", status: 400).error("llm-index-ideas", status: 400).reply("llm-index-ideas",
+                                                                                             { "ddl" => [] })
       ask_error(schema: schema)
       ask(schema: schema)
 
@@ -143,35 +146,35 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "puts the provider's error message in a rejected request's detail" do
-      fake.error_body("5a-5", status: 400,
-                              body: { error: { message: "sentinel reason", type: "invalid_request_error" } })
+      fake.error_body("llm-index-ideas", status: 400,
+                                         body: { error: { message: "sentinel reason", type: "invalid_request_error" } })
 
       expect(sans_sizes(ask_error.message)).to match(/\Allm_bad_request: .*sentinel reason\z/)
     end
 
     it "puts the whole JSON body in the detail when its error has no message" do
-      fake.error_body("5a-5", status: 400, body: { error: { type: "sentinel_type" } })
+      fake.error_body("llm-index-ideas", status: 400, body: { error: { type: "sentinel_type" } })
 
       expect(sans_sizes(ask_error.message)).to end_with(JSON.generate("error" => { "type" => "sentinel_type" }))
     end
 
     it "puts a text body in the detail as it is" do
-      fake.error_body("5a-5", status: 400, body: "sentinel text body")
+      fake.error_body("llm-index-ideas", status: 400, body: "sentinel text body")
 
       expect(sans_sizes(ask_error.message)).to end_with("sentinel text body")
     end
 
     it "keeps an llm_auth detail to the status, without the body" do
-      fake.error_body("5a-5", status: 401, body: { error: { message: "sentinel key sk-123" } })
+      fake.error_body("llm-index-ideas", status: 401, body: { error: { message: "sentinel key sk-123" } })
 
       expect(sans_sizes(ask_error.message)).to eq("llm_auth: the API refused the key (401)")
     end
 
     it "doesn't ask again on a rejected request that had no schema" do
-      fake.error("5a-5", status: 400)
+      fake.error("llm-index-ideas", status: 400)
 
       expect(ask_error.rule).to eq("llm_bad_request")
-      expect(burndown.llm_calls).to eq("5a-5" => 1)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
     end
   end
 
@@ -185,17 +188,18 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "is asked for once more, with the reply and what was wrong with it" do
-      fake.reply("5a-5", { "indexes" => [] }).reply("5a-5", { "ddl" => ["CREATE INDEX ON t (a)"] })
+      fake.reply("llm-index-ideas", { "indexes" => [] }).reply("llm-index-ideas",
+                                                               { "ddl" => ["CREATE INDEX ON t (a)"] })
 
       expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
       expect(fake.asks.last.body[:messages].drop(1))
         .to eq([*messages, { role: "assistant", content: '{"indexes":[]}' }, { role: "user", content: reask }])
       expect(fake.system_prompt(fake.asks.last)).to eq(fake.system_prompt(fake.asks.first))
-      expect(burndown.llm_calls).to eq("5a-5" => 2)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
     end
 
     it "is asked for once more when it isn't JSON at all" do
-      fake.reply("5a-5", "no JSON here").reply("5a-5", { "ddl" => [] })
+      fake.reply("llm-index-ideas", "no JSON here").reply("llm-index-ideas", { "ddl" => [] })
 
       expect(ask(schema: schema)).to eq("ddl" => [])
       expect(fake.asks.last.body[:messages].last[:content])
@@ -204,20 +208,20 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "fails with llm_bad_response when the second reply doesn't match either, asking no third time" do
-      fake.reply("5a-5", { "indexes" => [] }).reply("5a-5", { "ddl" => "one" })
+      fake.reply("llm-index-ideas", { "indexes" => [] }).reply("llm-index-ideas", { "ddl" => "one" })
 
       e = ask_error(schema: schema)
 
       expect(e.rule).to eq("llm_bad_response")
       expect(sans_sizes(e.message)).to eq(no_match)
-      expect(burndown.llm_calls).to eq("5a-5" => 2)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
     end
 
     it "isn't asked for again when no schema was given" do
-      fake.reply("6a", "not json")
+      fake.reply("llm-rewrites", "not json")
 
-      expect(ask_error("6a", json: true).rule).to eq("llm_bad_response")
-      expect(burndown.llm_calls).to eq("6a" => 1)
+      expect(ask_error("llm-rewrites", json: true).rule).to eq("llm_bad_response")
+      expect(burndown.llm_calls).to eq("llm-rewrites" => 1)
     end
   end
 
@@ -227,20 +231,20 @@ RSpec.describe "the OpenAI-compatible adapter" do
     # Only a reply that finished on its own, or at a stop sequence, is whole.
     %w[length content_filter tool_calls function_call brand_new_reason].each do |reason|
       it "fails with llm_bad_response on finish reason #{reason}" do
-        fake.reply("5a-5", "CREATE INDEX ON t (a)", finish_reason: reason)
+        fake.reply("llm-index-ideas", "CREATE INDEX ON t (a)", finish_reason: reason)
 
         expect(sans_sizes(ask_error.message)).to eq(stopped_for(reason))
       end
     end
 
     it "fails with llm_bad_response on a reply with no content" do
-      fake.reply_message("5a-5", { role: "assistant", content: nil })
+      fake.reply_message("llm-index-ideas", { role: "assistant", content: nil })
 
       expect(sans_sizes(ask_error.message)).to eq("llm_bad_response: the reply had no text")
     end
 
     it "fails with llm_bad_response on a refusal, without quoting it" do
-      fake.reply_message("5a-5", { role: "assistant", content: nil, refusal: "SENTINEL-REFUSAL" })
+      fake.reply_message("llm-index-ideas", { role: "assistant", content: nil, refusal: "SENTINEL-REFUSAL" })
 
       e = ask_error
 
@@ -248,7 +252,8 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "fails with llm_bad_response on a completion with no choices" do
-      fake.raw("5a-5", JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m", choices: []))
+      fake.raw("llm-index-ideas",
+               JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m", choices: []))
 
       expect(sans_sizes(ask_error.message)).to eq("llm_bad_response: the reply had no choices")
     end
@@ -256,20 +261,21 @@ RSpec.describe "the OpenAI-compatible adapter" do
     # Some proxies, such as OpenRouter for an upstream failure, answer 200
     # with an error object in place of a completion.
     it "fails with llm_bad_response on a 200 whose body is an error, not a completion, without quoting it" do
-      fake.raw("6a", JSON.generate(error: { message: "SENTINEL-UPSTREAM", code: 502 }))
+      fake.raw("llm-rewrites", JSON.generate(error: { message: "SENTINEL-UPSTREAM", code: 502 }))
 
-      e = ask_error("6a")
+      e = ask_error("llm-rewrites")
 
       expect(e.rule).to eq("llm_bad_response")
       expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply had no choices")
       expect(e.message).not_to include("SENTINEL")
       expect(e.cause).to be_nil
-      expect(burndown.llm_calls).to eq("6a" => 1)
+      expect(burndown.llm_calls).to eq("llm-rewrites" => 1)
     end
 
     it "fails with llm_bad_response on a reply the gem can't read as a completion" do
-      fake.raw("5a-5", JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m",
-                                     choices: [{ index: 0, message: "SENTINEL-MESSAGE", finish_reason: "stop" }]))
+      fake.raw("llm-index-ideas",
+               JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m",
+                             choices: [{ index: 0, message: "SENTINEL-MESSAGE", finish_reason: "stop" }]))
 
       e = ask_error
 
@@ -301,7 +307,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
       Quaack::Driver::LLM::Client.new(settings:, burndown:, transport: key_transport, **)
     end
 
-    def ask_with(client) = client.ask(step: "6a", messages: messages, max_tokens: 10)
+    def ask_with(client) = client.ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
     def groq_settings = FakeOpenAI.settings("api_key_env" => "QUAACK_SPEC_GROQ_KEY")
 
     it "sends OPENAI_API_KEY as a bearer token when the settings name no variable" do
@@ -349,7 +355,7 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "fails with llm_auth on a refused key without quoting the API's message, which can echo the key" do
-      fake.error("5a-5", status: 401)
+      fake.error("llm-index-ideas", status: 401)
 
       expect(sans_sizes(ask_error.message)).to eq("llm_auth: the API refused the key (401)")
     end

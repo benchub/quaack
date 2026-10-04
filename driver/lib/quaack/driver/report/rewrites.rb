@@ -23,12 +23,13 @@ module Quaack
           "ranked" => "It beat your query and is ranked below.",
           "same_plans" => "Postgres plans it exactly as it plans your query, so it can't run any differently. " \
                           "QUAACK didn't test it further.",
-          "step9_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
-          "step10_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
-          "step9_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
-          "step10_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
-          "step9_untested" => "QUAACK couldn't make up test data for your query%<refusal>s, so it never tested " \
-                              "this rewrite and won't recommend it. That says nothing about whether it's right.",
+          "rewrite_test_disproved" => "#{DIFFERENT} made-up test data%<scenario>s, so it's wrong.",
+          "counterexamples_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
+          "rewrite_test_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
+          "counterexamples_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
+          "rewrite_test_untested" => "QUAACK couldn't make up test data for your query%<refusal>s, so it never " \
+                                     "tested this rewrite and won't recommend it. That says nothing about " \
+                                     "whether it's right.",
           "production_mismatch" => "#{PASSED} returned different results from your query on the real data, so " \
                                    "it's wrong.",
           "production_timed_out" => "#{PASSED} timed out when QUAACK compared its results with your query's on " \
@@ -46,8 +47,8 @@ module Quaack
 
         # An unfinished rewrite, by the last stage it finished.
         UNFINISHED = { nil => "QUAACK kept it, but the run ended before testing it.",
-                       "step9" => "It passed the tests on made-up data, and the run ended before going further.",
-                       "step10" => "It passed every test, and the run ended before measuring it.",
+                       "rewrite-test" => "It passed the tests on made-up data, and the run ended before going further.",
+                       "counterexamples" => "It passed every test, and the run ended before measuring it.",
                        "measurement" => "It was measured, and the run ended before QUAACK judged it." }.freeze
 
         # Where a rewrite came from, or nil if the payload doesn't say.

@@ -34,13 +34,13 @@ burndown = Quaack::Driver::Burndown.new
 client = llm::Client.new(burndown:, settings:)
 puts "provider #{settings.provider}, model #{settings.model}, base_url #{settings.base_url || "(default)"}"
 
-text = client.ask(step: "5a-5", system: "Answer in one short line.",
+text = client.ask(step: "llm-index-ideas", system: "Answer in one short line.",
                   messages: [{ role: "user", content: "Name one PostgreSQL index type." }], max_tokens: 200)
 puts "text: #{text}"
 
 schema = { type: "object", properties: { indexes: { type: "array", items: { type: "string" } } },
            required: ["indexes"], additionalProperties: false }
-json = client.ask(step: "5a-5", system: "You propose PostgreSQL indexes.", schema:, max_tokens: 500,
+json = client.ask(step: "llm-index-ideas", system: "You propose PostgreSQL indexes.", schema:, max_tokens: 500,
                   messages: [{ role: "user", content: "Propose one index for: SELECT * FROM t WHERE a = $1" }])
 puts "json: #{json}"
 puts "calls: #{burndown.llm_calls}"

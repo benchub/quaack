@@ -183,7 +183,7 @@ RSpec.describe Quaack::Enclave::CLI do
     it "refuses a run an older version started as run_from_older_version, before the step runs" do
       old = Quaack::Enclave::Store.create(base:)
       FileUtils.rm_f(File.join(old.path, "store_format.json"))
-      old.write("burndown", { "stages" => { "5a-3" => {} }, "totals" => {} })
+      old.write("burndown", { "stages" => { "index-dedupe" => {} }, "totals" => {} })
       other = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 1 }) }
 
       [old, other].each do |store|

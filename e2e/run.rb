@@ -68,13 +68,14 @@ module E2ERun
 
     def empty(step, body)
       case step
-      when "5a-5", "5a-6", "rewrite-llm-index-ideas", "rewrite-llm-index-refine" then { "indexes" => [] }
-      when "6a" then { "rewrites" => [] }
-      when "step7"
+      when "llm-index-ideas", "llm-index-refine", "rewrite-llm-index-ideas", "rewrite-llm-index-refine"
+        { "indexes" => [] }
+      when "llm-rewrites" then { "rewrites" => [] }
+      when "operator-rewrites"
         content = body[:messages].first[:content]
         n = JSON.parse(content[/```json\n(.*)\n```/m, 1])["rewrites"].size
         { "rewrites" => Array.new(n) { { "transformation" => "none", "assumptions" => [] } } }
-      when "10a" then { "inserts" => [] }
+      when "llm-counterexamples" then { "inserts" => [] }
       else raise "no empty answer for step #{step}"
       end
     end
@@ -259,7 +260,7 @@ module E2ERun
     return ["PASS", "#{shown} <= bound #{kase.bound}"] if top && top["slow_blocks"] <= kase.bound
 
     miss = top ? "#{shown} > bound #{kase.bound}" : "#{shown}, bound #{kase.bound}"
-    kase.llm_index? ? ["LLM", "#{miss}; the case's index comes from the LLM (5a-5)"] : ["FAIL", miss]
+    kase.llm_index? ? ["LLM", "#{miss}; the case's index comes from the LLM (llm-index-ideas)"] : ["FAIL", miss]
   end
 
   def shown(top, report)

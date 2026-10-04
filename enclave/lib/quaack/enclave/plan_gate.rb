@@ -65,7 +65,7 @@ module Quaack
       module_function
 
       def check(store:, connection:, sql:)
-        production = step1_plan(store)
+        production = intake_plan(store)
         map = Redaction.placeholder_map(store)
         types = Redaction.binding(sql, map).types
         racetrack = racetrack_plan(connection, sql, map, types)
@@ -76,7 +76,7 @@ module Quaack
         nil
       end
 
-      def step1_plan(store)
+      def intake_plan(store)
         CanonicalPlan.new(store.read("plan"))
       rescue ArgumentError
         raise Error, "plan_gate_bad_plan", cause: nil

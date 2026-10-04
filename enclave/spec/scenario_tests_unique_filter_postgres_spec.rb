@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 
 # Step 9 on a filter that pins a unique parent column (email = 'a@b') with
 # a join to a child. Only one row can take the value, so the parent row
 # with no child that tells the join from its absence can't sit beside the
 # hit. It goes in another fixture of the same scenario, and a rewrite that
 # drops the join is disproved, not passed. Task 20261003-40.
-RSpec.describe Quaack::Enclave::StepNine do
+RSpec.describe Quaack::Enclave::ScenarioTests do
   let(:conn) { racetrack_and_arena.arena.connection }
 
   before do

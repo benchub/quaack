@@ -4,8 +4,8 @@ require_relative "../script/prompt_pack/run"
 
 RSpec.describe "PromptPack.chat" do
   def ask(messages)
-    Struct.new(:step, :body).new("5a-5", { system: "SYS-TEXT", messages:,
-                                           output_config: { format: { schema: { "type" => "object" } } } })
+    Struct.new(:step, :body).new("llm-index-ideas", { system: "SYS-TEXT", messages:,
+                                                      output_config: { format: { schema: { "type" => "object" } } } })
   end
 
   it "folds a multi-turn transcript into the system text and one quoting message" do

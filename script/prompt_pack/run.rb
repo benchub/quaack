@@ -145,11 +145,11 @@ module PromptPack
       messages = body[:messages]
       first = messages.first[:content]
       case step
-      when "5a-5", "rewrite-llm-index-ideas" then { "indexes" => messages.size == 1 ? query.indexes : [] }
-      when "5a-6", "rewrite-llm-index-refine" then { "indexes" => [] }
-      when "6a" then { "rewrites" => [wrapped(first, query), buggy(first, query)] }
-      when "step7" then { "rewrites" => Array.new(json_in(first)["rewrites"].size) { inferred } }
-      when "10a" then { "inserts" => [] }
+      when "llm-index-ideas", "rewrite-llm-index-ideas" then { "indexes" => messages.size == 1 ? query.indexes : [] }
+      when "llm-index-refine", "rewrite-llm-index-refine" then { "indexes" => [] }
+      when "llm-rewrites" then { "rewrites" => [wrapped(first, query), buggy(first, query)] }
+      when "operator-rewrites" then { "rewrites" => Array.new(json_in(first)["rewrites"].size) { inferred } }
+      when "llm-counterexamples" then { "inserts" => [] }
       else raise "no placeholder for step #{step}"
       end
     end

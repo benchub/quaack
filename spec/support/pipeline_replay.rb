@@ -103,7 +103,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     end
 
     def next(step, body)
-      return counterexample(body) if step == "10a"
+      return counterexample(body) if step == "llm-counterexamples"
 
       "#{step}-#{@counts[step] += 1}"
     end
@@ -112,7 +112,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     def counterexample(body)
       round = body[:messages].count { it[:role].to_s == "user" }
       @rewrite += 1 if round == 1
-      "10a-#{((@rewrite - 1) * ROUNDS) + round}"
+      "llm-counterexamples-#{((@rewrite - 1) * ROUNDS) + round}"
     end
   end
 
@@ -136,7 +136,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
       @log << "#{dir}: #{path ? "replayed" : "empty answer (no reply)"}"
       check_prompt(dir, body, File.dirname(path)) if path
       text = path && File.read(path)
-      @rewrites_text = text if step == "6a" && text
+      @rewrites_text = text if step == "llm-rewrites" && text
       text
     end
 

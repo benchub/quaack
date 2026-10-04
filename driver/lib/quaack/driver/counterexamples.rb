@@ -20,7 +20,7 @@ module Quaack
     # Trust boundary. The prompt carries only the payload, which is shape
     # data, and the LLM's own inserts.
     class Counterexamples
-      STEP = "10a"
+      STEP = "llm-counterexamples"
       MAX_TOKENS = 4000
       # What progress hears each round's ask is for.
       FIRST = "Asking the LLM for rows that could break the rewrite"

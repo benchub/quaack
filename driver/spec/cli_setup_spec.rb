@@ -17,7 +17,8 @@ RSpec.describe "quaack setup" do
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
   let(:order) do
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor racetrack-setup]
+    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+       racetrack-setup]
   end
   let(:entries) { {} }
   let(:failing) { {} }
@@ -67,7 +68,7 @@ RSpec.describe "quaack setup" do
     cli.run(["setup", "--run", run_id])
 
     expect(progress.grep_v(/Done in/).map { it[%r{\[\d+/\d+\]}] }).to eq((1..11).map { "[#{it}/11]" })
-    expect(progress.first).to eq("quaack: [1/11] Reading production's version, settings, and extensions (2)\n")
+    expect(progress.first).to eq("quaack: [1/11] Reading production's version, settings, and extensions (inventory)\n")
     expect(progress.grep(/Done in/).size).to eq(11)
   end
 
@@ -93,7 +94,7 @@ RSpec.describe "quaack setup" do
 
     expect(subcommands).to eq(%w[version status] + order.drop(2))
     expect(progress.first).to eq("quaack: [1/11] Already done, skipping: " \
-                                 "Reading production's version, settings, and extensions (2)\n")
+                                 "Reading production's version, settings, and extensions (inventory)\n")
   end
 
   it "stops at a failing step, prints only its rule, and keeps the run" do

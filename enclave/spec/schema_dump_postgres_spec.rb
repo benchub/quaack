@@ -698,7 +698,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
         .to include(sentinels.word)
       nothing_stored
       expect(error).to be_a(described_class::Error)
-      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "schema-dump"),
+                                 objects: { error: })
     end
 
     # pg_dump takes an ACCESS SHARE lock on each table it dumps. Rather
@@ -739,7 +740,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(pg_dump_stderr("--schema-only", "--strict-names", missing, "--dbname=dbname=#{db.name} user=postgres"))
         .to include(sentinels.word)
       expect(error).to be_a(described_class::Error)
-      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "schema-dump"),
+                                 objects: { error: })
     end
   end
 end
