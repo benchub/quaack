@@ -2027,7 +2027,8 @@ Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a que
 - **Came from:** The build and review of 20261003-17, 2026-10-03.
 - **Design:** Step 9.
 - **Note (2026-10-03, answers):** The user chose this as the next side task. Prefer the second option, loading NULL and then UPDATEing to the parent's key, since it covers more cycles and also tests the cut column's value.
-- **Status:** todo
+- **Note (2026-10-03, not landed):** Built on `task/20261003-23` (kept, with its worktree). The first review's blocker (S6 empty on a cycle) was fixed. The second review found a regression that works on main: on a Canvas-like schema with a third table under `accounts`, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL` fails every candidate with `fixture_load_failed`. It fails safe, but it can't land. The rest moved to 20261003-30, which finishes this on the same branch.
+- **Status:** todo (continues as 20261003-30)
 
 ### 20261003-24. ParentRows can leak a value in a Postgres error.
 
@@ -2138,4 +2139,48 @@ From the build and review of 20261002-10.
 - **Depends on:** 20261002-10.
 - **Came from:** The build and review of 20261002-10, 2026-10-03.
 - **Design:** 6c.
+- **Status:** todo
+
+### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class.
+
+20261003-23 is built on `task/20261003-23` (worktree `.claude/worktrees/20261003-23`) and passed one review. Its second review found a regression that main doesn't have. Fix it on that branch, then land 20261003-23 and this task together.
+
+- **The regression.** The schema is Canvas-like: `accounts` has self-references `root_account_id` and `parent_account_id`, plus a nullable `course_template_id` that points at `courses`. `courses` has `account_id` and `root_account_id` (NOT NULL) and `enrollment_term_id`. `enrollment_terms` has `root_account_id` (NOT NULL). On this schema, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id` fails every candidate with `fixture_load_failed` at S3, and at S6 too. On main, the correct NOT EXISTS rewrite passes and the wrong ones are disproved.
+- **Why.** `fk_edges` in `topology.rb` follows every foreign key, so the cut column `accounts.course_template_id` joins `courses.id`'s key class. The pool for `c.id IS NULL` is empty, because `courses.id` is a NOT NULL primary key, so the slot becomes `:skip`. That drops the hit's `accounts` row and the copy groups' `accounts` rows. But the `enrollment_terms` copy is still built with `root_account_id=1`, which now points at nothing.
+- **Fix, either way:**
+  - Keep a cut column out of a key class whose atom pool is empty.
+  - When a group skips, also drop the copy and "many" rows that depend on it.
+- **Test** with a third table under `accounts`. Reviewer reproducer, in the review scratch dir: `canvas_spec.rb`, case 7.
+- **Also:** in `arena_runner/deferred.rb` (`load_rows`/`update_rows`), a row that RETURNING doesn't give back raises a bare `ArgumentError`. That happens, for example, with a BEFORE INSERT trigger that returns NULL. Raise `fixture_load_failed` instead, as DESIGN.md says.
+
+- **Depends on:** 20261003-23 (its branch).
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-31. Step 9: two false passes on ordinary joins.
+
+The second review of 20261003-23 found two cases where step 9 passes a wrong rewrite. Both are on main and both are realistic, so this goes ahead of widenings.
+
+- **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
+- **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
+
+Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-32. Step 9: loads that fail on `IS NULL` and skipped groups.
+
+These were found in the second review of 20261003-23, and they fail safe (the load fails, so the rewrite is refused):
+
+- **`IS NULL` on a nullable FK column fails the load.** The NULL goes into the parent primary key's class. Seen on an acyclic schema.
+- **A group that skips leaves orphaned copies.** This is 20261003-30's mechanism in an acyclic schema: `courses JOIN accounts LEFT JOIN templates t … WHERE t.id IS NULL`. 20261003-30 may fix it in general. If so, add a test here and close this task.
+- **An anti-join on a cut edge itself** fails the load for every candidate. Recheck it after 20261003-30.
+
+- **Depends on:** 20261003-30.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo
