@@ -107,10 +107,12 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(run(scenarios[:s1], canvas_sql).size).to be >= 1
       end
 
-      it "holds S6's account with no courses with its cut column NULL, the rest their parent's key" do
+      # S6's empty group and its single-table copies of accounts leave
+      # courses out.
+      it "holds S6's accounts with no courses with their cut column NULL, the rest their parent's key" do
         s6 = build(canvas_sql)[:s6]
         templates = values(s6, "accounts", "course_template_id")
-        expect(templates.count(nil)).to eq(1)
+        expect(templates.count(nil)).to be >= 1
         expect(templates.compact).not_to be_empty
         expect(templates.compact - values(s6, "courses", "id")).to eq([])
         expect(loaded_templates(s6)).to eq([expected_templates(s6)] * 2)
@@ -281,10 +283,72 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         conn, anti_sql,
         ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
          "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
-         "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"]
+         "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id"]
+      )
+      expect(report.results.map(&:passed)).to eq([true, false, false])
+      expect(report.results.map(&:rule)).not_to include(:fixture_load_failed)
+    end
+
+    let(:template_sql) do
+      "SELECT a.id, t.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id ORDER BY a.id"
+    end
+
+    def pairs(rows, sql) = run(rows, sql).map { |id, template| [id.to_i, template.to_i] }
+
+    # Each account with a template, and the account its template's course
+    # belongs to.
+    def template_owners(rows)
+      pairs(rows, "SELECT a.id, t.account_id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id")
+    end
+
+    it "holds an account whose template is another account's course" do
+      scenarios = build(template_sql)
+      expect(scenarios.values.flat_map { |rows| template_owners(rows) }.reject { |a, owner| a == owner })
+        .not_to be_empty
+    end
+
+    it "holds an account with courses and no template" do
+      scenarios = build(template_sql)
+      found = scenarios.values.flat_map do |rows|
+        run(rows, "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL " \
+                  "AND EXISTS (SELECT 1 FROM fx.courses c WHERE c.account_id = a.id)")
+      end
+      expect(found).not_to be_empty
+    end
+
+    it "disproves where.missing(:course_template) rewritten as accounts with no courses" do
+      report = Quaack::Enclave::StepNine.run(
+        conn,
+        "SELECT a.id, a.name FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
+        "WHERE c.id IS NULL ORDER BY a.id",
+        ["SELECT a.id, a.name FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id",
+         "SELECT a.id, a.name FROM fx.accounts a WHERE NOT EXISTS " \
+         "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id"]
       )
       expect(report.results.map(&:passed)).to eq([true, false])
-      expect(report.results.map(&:rule)).not_to include(:fixture_load_failed)
+    end
+
+    it "disproves looking a template up by account_id" do
+      report = Quaack::Enclave::StepNine.run(
+        conn,
+        "SELECT c.id, a.id FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id ORDER BY c.id, a.id",
+        ["SELECT c.id, a.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id ORDER BY c.id, a.id",
+         "SELECT c.id, a.id FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id ORDER BY c.id, a.id"]
+      )
+      expect(report.results.map(&:passed)).to eq([true, false])
+    end
+
+    # Two accounts that share a template join its course twice.
+    it "disproves an inner join on the cut edge rewritten as EXISTS" do
+      report = Quaack::Enclave::StepNine.run(
+        conn,
+        "SELECT c.id FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id ORDER BY c.id",
+        ["SELECT c.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id ORDER BY c.id",
+         "SELECT c.id FROM fx.courses c WHERE EXISTS " \
+         "(SELECT 1 FROM fx.accounts a WHERE a.course_template_id = c.id) ORDER BY c.id"]
+      )
+      expect(report.results.map(&:passed)).to eq([true, false])
     end
 
     # A near miss builds a course, so an account there points at it.

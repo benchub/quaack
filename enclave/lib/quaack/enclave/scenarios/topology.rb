@@ -47,11 +47,14 @@ module Quaack
 
         # Whether the column belongs to a cut foreign key whose parent's
         # table the group leaves out, as the empty group and a copy of one
-        # table's row do, so it must be NULL. A copy's parent row may not
+        # table's row do, so it must be NULL, unless the group's cross
+        # points it at the hit's parent. A copy's parent row may not
         # exist: when the parent's table has a column no value fits (c.id IS
         # NULL), its copy and the hit never build, but other tables' copies
         # still reference this table's copy.
         def null_cut?(table, name, group)
+          return false if group.cross&.points?(table, name)
+
           @cut.fetch(table, []).any? { |fk| fk.columns.include?(name) && !group.tables.include?(fk.parent) }
         end
 
@@ -82,11 +85,13 @@ module Quaack
         def keyed?(table, name) = @classes.key?([table, name])
 
         # Each [table, foreign key] whose row can point at another group's
-        # parent: a foreign key to another table, not cut, that shares no
-        # column with another of the table's foreign keys.
+        # parent: a foreign key to another table, cut or not, that shares
+        # no column with another of the table's foreign keys. A cut one
+        # gives two rows that share a parent, though the hit's row points
+        # at its own group's.
         def crossings
           @order.flat_map do |t|
-            fks = foreign_keys(t).reject { |fk| fk.parent == t }
+            fks = all_foreign_keys(t).reject { |fk| fk.parent == t }
             fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
           end
         end
