@@ -9,6 +9,7 @@ require_relative "rewrite_rules/key_in_self_join"
 require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
+require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
 
@@ -63,6 +64,7 @@ module Quaack
       RULES = [
         ImpliedPredicateRemoval.new,
         TransitivePredicateCopy.new,
+        SharedScanCte.new,
         KeyInSelfJoin.new,
         OrToUnion.new,
         NotInToNotExists.new,

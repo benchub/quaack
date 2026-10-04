@@ -48,6 +48,24 @@ RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
     expect(entry["dedupe"]["proposals"].size).to eq(candidates.size)
   end
 
+  it "searches the base table a shared_scan_cte rewrite's MATERIALIZED CTE reads, not the CTE" do
+    prepare
+    entry = rewrite_entry(
+      "WITH quaack_scan_of_orders AS MATERIALIZED (SELECT * FROM public.orders WHERE orders.status = $2) " \
+      "SELECT o.note, o.status FROM quaack_scan_of_orders o JOIN quaack_scan_of_orders o2 ON o2.id = o.id " \
+      "WHERE o.note = $1"
+    )
+    candidates = entry["results"].map { Quaack::Enclave::IndexStore.candidate(it["candidate"]) }
+    # The CTE's own scan reads public.orders, filtered on status: that's
+    # the index that helps, and 5a-1 finds it in the CTE's body. Each copy
+    # reads the CTE, which no index can serve, so note, which only the
+    # copies filter on, keys nothing.
+    expect(candidates.map(&:table).uniq).to eq([orders])
+    status = candidates.select { it.key.map(&:name) == %w[status] }
+    expect(status.flat_map { it.sources.to_a }).to include(:parse)
+    expect(candidates.flat_map { it.key.map(&:name) }).not_to include("note")
+  end
+
   it "stores each plan redacted, with no sentinel literal" do
     prepare
     entry = rewrite_entry
