@@ -89,6 +89,14 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(customer_of_order(prepared)).to eq([%w[7 7]])
   end
 
+  it "points a parent's NOT NULL self-referencing foreign key at the parent itself when the key it references " \
+     "isn't set" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN code integer NOT NULL UNIQUE,
+                 ADD COLUMN root_code integer NOT NULL REFERENCES fx.customers (code)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(load(prepared, "SELECT id, code = root_code FROM fx.customers")).to eq([%w[7 t]])
+  end
+
   it "varies a parent's unique-key column that has no CHECK over one whose CHECK allows few values" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN kind integer NOT NULL CHECK (kind IN (1, 2)),
                  ADD COLUMN login text NOT NULL;

@@ -88,38 +88,44 @@ module Quaack
           @rows << ArenaRunner::FixtureRow.new(table:, columns: pairs.keys, values: pairs.values)
         end
 
-        # Values for the row's foreign keys that fixed doesn't set.
+        # Values for the row's foreign keys that fixed doesn't set, and for
+        # the columns of its own table a self-reference points at.
         def foreign_keys(table, fixed)
           @schema.constraints(table).foreign_keys.each_with_object({}) do |fk, pairs|
             next if fk.columns.any? { |c| fixed.key?(c) }
 
-            pairs.merge!(fk.columns.zip(foreign_key(table, fk, fixed)).to_h)
+            pairs.merge!(foreign_key(table, fk, fixed.merge(pairs)))
           end
         end
 
         # NULLs when a column is nullable, the row's own key for a NOT NULL
         # foreign key to its own table, or else a new parent row's key.
         def foreign_key(table, foreign, fixed)
-          return foreign.columns.map { nil } if foreign.columns.any? { |c| @schema.column(table, c).nullable }
+          return foreign.columns.to_h { [it, nil] } if foreign.columns.any? { |c| @schema.column(table, c).nullable }
+          return own_key(foreign, fixed) if foreign.parent == table
 
-          own = own_key(table, foreign, fixed)
-          return own if own
+          new_parent(foreign)
+        end
 
-          parent_key(foreign).tap { need(foreign.parent, foreign.parent_columns.zip(it).to_h) }
+        # A new parent row, and the foreign key's values that point at it.
+        def new_parent(foreign)
+          key = parent_key(foreign)
+          need(foreign.parent, foreign.parent_columns.zip(key).to_h)
+          foreign.columns.zip(key).to_h
         end
 
         # The row's own values of the columns a foreign key to its own table
-        # references, when the row sets them all.
-        def own_key(table, foreign, fixed)
-          own = fixed.values_at(*foreign.parent_columns)
-          own if foreign.parent == table && own.none?(&:nil?)
+        # references, with a distinct value for each one the row doesn't set.
+        def own_key(foreign, fixed)
+          key = foreign.parent_columns.map { |c| fixed[c] || distinct(foreign, c) }
+          foreign.parent_columns.zip(key).to_h.merge(foreign.columns.zip(key).to_h)
         end
 
         # A new parent row's key, a distinct value in each column.
-        def parent_key(foreign)
-          foreign.parent_columns.map do |c|
-            @values.nth(@schema.column(foreign.parent, c), @counter += 1, table: foreign.parent)
-          end
+        def parent_key(foreign) = foreign.parent_columns.map { distinct(foreign, it) }
+
+        def distinct(foreign, column)
+          @values.nth(@schema.column(foreign.parent, column), @counter += 1, table: foreign.parent)
         end
 
         # A unique column with a default still needs a distinct value, but a
