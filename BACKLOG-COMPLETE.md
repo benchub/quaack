@@ -4327,3 +4327,18 @@ Summaries carry only counts, step names, and rule names, which the progress line
     - Round 1 was blocking: on resumed runs, steps 8 and 11 counted rewrites that had already been done. The fix round corrected it and four minors.
     - Round 2 was clean, with 12 of 12 mutations caught.
   - **Minor, not filed:** steps 9–10 don't say how many rewrites were already done, unlike steps 8 and 11. 20261003-16 and -21 will rework these lines.
+
+### 20261003-38. `bad_value`: loose ends from 20261003-24.
+
+These are minor findings from the review of 20261003-24:
+
+- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
+- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
+
+- **Depends on:** 20261003-24.
+- **Came from:** The review of 20261003-24, 2026-10-03.
+- **Design:** 10a.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-38.
+  - **Change:** `counterexamples/evaluated.rb` reports `bad_value` only for SQLSTATE classes 22, 23 and 42. Any other PG error is re-raised as `internal_error`, carrying only the sqlstate.
+  - **Review:** one round, clean. The minors went to 20261004-3.

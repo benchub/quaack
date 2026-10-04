@@ -2091,17 +2091,7 @@ These are minor findings from building and reviewing 20261003-34:
 - **Design:** Step 9.
 - **Status:** todo
 
-### 20261003-38. `bad_value`: loose ends from 20261003-24.
-
-These are minor findings from the review of 20261003-24:
-
-- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
-- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
-
-- **Depends on:** 20261003-24.
-- **Came from:** The review of 20261003-24, 2026-10-03.
-- **Design:** 10a.
-- **Status:** todo
+### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-39. Step 9: more variety in self-references and repeated parents.
 
@@ -2218,4 +2208,17 @@ Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK
 - **Depends on:** none.
 - **Came from:** The user's Canvas run, 2026-10-04.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
+
+The review of 20261003-38 found four minor issues:
+- Class 42 includes 42501, a permission error. It isn't caused by the value, so it probably shouldn't count as `bad_value`.
+- A value can cause a P0001 (raised by a trigger or function) or 54000 (program limit) error. These now fail the whole step as `internal_error`, when they should count as `bad_value`.
+- The re-raised PG::Error still carries the value in its message. Only ErrorFilter keeps it from leaving the enclave. Wrap it with `cause: nil` and a message that carries only the sqlstate.
+- The timeout and termination tests check weakly that the value is absent. Make them use a sentinel value and assert that it never appears in the output.
+
+- **Depends on:** 20261003-38.
+- **Came from:** The review of 20261003-38.
+- **Design:** Step 9, ErrorFilter.
 - **Status:** todo
