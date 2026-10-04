@@ -463,7 +463,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       data, = Open3.capture3(*everything)
       expect(data).to include(sentinels.text, sentinels.word, sentinels.number.to_s)
       stored = Dir.children(store.path).sort
-      expect(stored).to eq(%w[schema_dump.json schema_subset.json])
+      expect(stored).to eq(%w[schema_dump.json schema_subset.json store_format.json])
       files = stored.map { File.read(File.join(store.path, it)) }.join("\n")
       expect_no_leaks(sentinels, stdout: files, objects: { result: })
     end
@@ -627,7 +627,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     end
   end
 
-  def nothing_stored = expect(Dir.children(store.path)).to eq([])
+  def nothing_stored = expect(Dir.children(store.path)).to eq(["store_format.json"])
 
   describe "pg_dump itself" do
     it "must be at least the server's major version, since pg_dump refuses an older one" do

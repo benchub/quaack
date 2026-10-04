@@ -259,6 +259,17 @@ RSpec.describe "quaack run" do
     expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
+  it "says to start a new run when an older version of QUAACK started this one" do
+    failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version")
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, stdout.string, errors]).to eq(
+      [1, "", "#{torn}quaack run failed: run_from_older_version: an older version of QUAACK started this run, " \
+              "and this version can't resume it. Start a new run with quaack start.\n"]
+    )
+  end
+
   it "names the table, column, and type when step 9 can't fill a column" do
     column = { "table" => "public.courses", "column" => "tags", "type" => "int4range" }
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "unsupported_type",

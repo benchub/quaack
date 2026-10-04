@@ -106,6 +106,16 @@ RSpec.describe "quaack setup" do
     expect([stdout.string, errors]).to eq(["", "quaack setup failed: unknown_relation\n"])
   end
 
+  it "says to start a new run when an older version of QUAACK started this one" do
+    failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version",
+                                                         exit_status: 64)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+
+    expect(errors).to eq("quaack setup failed: run_from_older_version: an older version of QUAACK started this run, " \
+                         "and this version can't resume it. Start a new run with quaack start.\n")
+  end
+
   context "with another quaacks version on the jump server" do
     let(:enclave_version) { "0.0.9" }
 

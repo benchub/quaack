@@ -178,6 +178,31 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(calls).to eq([])
     end
 
+    # A run an older quaacks started has no store_format entry, and its
+    # burndown names stages by the old step IDs, such as 5a-3.
+    it "refuses a run an older version started as run_from_older_version, before the step runs" do
+      old = Quaack::Enclave::Store.create(base:)
+      FileUtils.rm_f(File.join(old.path, "store_format.json"))
+      old.write("burndown", { "stages" => { "5a-3" => {} }, "totals" => {} })
+      other = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 1 }) }
+
+      [old, other].each do |store|
+        out.truncate(0) && out.rewind
+        expect(cli(steps).run(["echo", "--run", store.run_id])).to eq(64)
+        expect(out.string).to eq(error_line("echo", "run_from_older_version"))
+      end
+      expect(calls).to eq([])
+    end
+
+    it "still names an older version's run to a step that only names it, such as teardown" do
+      old = Quaack::Enclave::Store.create(base:)
+      FileUtils.rm_f(File.join(old.path, "store_format.json"))
+      named = { "named" => step_class.new(handler: recorder, run_id: true) }
+
+      expect(cli(named).run(["named", "--run", old.run_id])).to eq(0)
+      expect(calls.map { it[:run_id] }).to eq([old.run_id])
+    end
+
     it "fails as bad_store_base when the store's base is a file, can't be searched, or is a symlink" do
       store = Quaack::Enclave::Store.create(base:)
       file = File.join(base, "file").tap { File.write(it, "") }

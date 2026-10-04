@@ -5,6 +5,7 @@ require "json"
 require "securerandom"
 require_relative "plain_data"
 require_relative "private_files"
+require_relative "store_format"
 
 module Quaack
   module Enclave
@@ -86,7 +87,7 @@ module Quaack
         run_id = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}"
         path = File.join(base, run_id)
         in_base(base, "couldn't make a run directory in the store's base") { PrivateFiles.make_directory(path) }
-        new(run_id, path)
+        new(run_id, path).tap { StoreFormat.mark(it) }
       end
 
       # Opens a run an earlier call started. The run directory must be a

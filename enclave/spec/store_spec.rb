@@ -49,6 +49,14 @@ RSpec.describe Quaack::Enclave::Store do
   end
 
   describe ".create" do
+    it "marks the new run with this version's store format, so a later version can tell" do
+      store = described_class.create(base: @tmp)
+
+      expect(store.entry_names).to eq(["store_format"])
+      expect(store.read("store_format")).to eq({ "format" => 2 })
+      expect(Quaack::Enclave::StoreFormat::FORMAT).to eq(2)
+    end
+
     # Each base is named for the sentinel, so a message that named the base
     # would show it.
     it "raises Store::Error, naming no path, when the base is a file" do
@@ -209,7 +217,7 @@ RSpec.describe Quaack::Enclave::Store do
       store.write("inputs", { "v" => 2 })
 
       expect(store.read("inputs")).to eq("v" => 2)
-      expect(Dir.children(store.path)).to eq(["inputs.json"])
+      expect(Dir.children(store.path) - ["store_format.json"]).to eq(["inputs.json"])
     end
 
     it "keeps results nested far deeper than JSON's default limit" do
@@ -224,7 +232,7 @@ RSpec.describe Quaack::Enclave::Store do
         expect_store_error(/entry name/) { store.write(name, 1) }
         expect_store_error(/entry name/) { store.read(name) }
       end
-      expect(Dir.children(store.path)).to be_empty
+      expect(Dir.children(store.path) - ["store_format.json"]).to be_empty
       expect(Dir.children(@tmp)).to eq(["runs"])
     end
 
@@ -235,7 +243,7 @@ RSpec.describe Quaack::Enclave::Store do
         expect_store_error(/entry name/) { store.write(name, 1) }
         expect_store_error(/entry name/) { store.read(name) }
       end
-      expect(Dir.children(store.path)).to be_empty
+      expect(Dir.children(store.path) - ["store_format.json"]).to be_empty
     end
 
     it "keeps Arrays nested PlainData::MAX_DEPTH deep" do
@@ -345,7 +353,7 @@ RSpec.describe Quaack::Enclave::Store do
           expect_store_error(/plan.*#{store.run_id}/) { store.write("plan", bad) }
         end
       end
-      expect(Dir.children(store.path)).to be_empty
+      expect(Dir.children(store.path) - ["store_format.json"]).to be_empty
     end
 
     it "raises, rather than crash or recurse without end, reading a file nested deeper than MAX_DEPTH" do
@@ -377,7 +385,7 @@ RSpec.describe Quaack::Enclave::Store do
     ].each do |name, value|
       it "raises, writing nothing and carrying nothing from the data, for #{name}" do
         expect_store_error(/literals.*#{store.run_id}/) { store.write("literals", [instance_exec(&value)]) }
-        expect(Dir.children(store.path)).to be_empty
+        expect(Dir.children(store.path) - ["store_format.json"]).to be_empty
       end
     end
 
@@ -400,7 +408,7 @@ RSpec.describe Quaack::Enclave::Store do
       [[Float::NAN], ["#{STORE_SENTINEL}\xFF"]].each do |bad|
         expect_store_error(/literals.*#{store.run_id}/) { store.write("literals", bad) }
       end
-      expect(Dir.children(store.path)).to be_empty
+      expect(Dir.children(store.path) - ["store_format.json"]).to be_empty
     end
 
     describe "when something is already at the temp file's name" do
@@ -424,7 +432,7 @@ RSpec.describe Quaack::Enclave::Store do
 
         expect_store_error(/inputs.*#{store.run_id}/) { store.write("inputs", [1]) }
         expect(File.read(temp)).to eq(STORE_SENTINEL)
-        expect(Dir.children(store.path)).to eq([File.basename(temp)])
+        expect(Dir.children(store.path) - ["store_format.json"]).to eq([File.basename(temp)])
       end
 
       it "won't write through a symlink that's there, and leaves its target alone" do
@@ -435,7 +443,7 @@ RSpec.describe Quaack::Enclave::Store do
         expect_store_error(/inputs.*#{store.run_id}/) { store.write("inputs", [1]) }
         expect(File.read(outside)).to eq(STORE_SENTINEL)
         expect(File.symlink?(temp)).to be(true)
-        expect(Dir.children(store.path)).to eq([File.basename(temp)])
+        expect(Dir.children(store.path) - ["store_format.json"]).to eq([File.basename(temp)])
       end
     end
 
@@ -443,7 +451,7 @@ RSpec.describe Quaack::Enclave::Store do
       Dir.mkdir(File.join(store.path, "inputs.json"))
 
       expect_store_error(/inputs.*#{store.run_id}/) { store.write("inputs", [STORE_SENTINEL]) }
-      expect(Dir.children(store.path)).to eq(["inputs.json"])
+      expect(Dir.children(store.path) - ["store_format.json"]).to eq(["inputs.json"])
     end
 
     it "raises, naming the entry and run, for an entry that isn't there" do
