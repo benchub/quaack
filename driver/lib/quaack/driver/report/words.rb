@@ -25,6 +25,15 @@ module Quaack
                      "statement_canceled" => "a statement was canceled" }.freeze
         FAILED = "a statement failed on the test database"
 
+        # Why step 9 couldn't make up test data for the query, by its rule.
+        REFUSALS = { "fk_cycle" => "its tables' foreign keys form a cycle QUAACK can't load",
+                     "complex_check" => "a CHECK constraint on its tables is too complex for QUAACK to satisfy",
+                     "unsatisfiable_check" => "no value QUAACK tried passes a CHECK constraint on its tables",
+                     "expression_unique_index" => "a unique index on an expression calls a function QUAACK " \
+                                                  "can't trust",
+                     "unsupported_type" => "a column has a type QUAACK can't fill",
+                     "domain_check" => "a column's domain rejects every value QUAACK tried" }.freeze
+
         # Where a rule_bugs entry's rewrite was proved wrong.
         BUG_STEPS = { "step9" => "on made-up test data", "step10" => "on test data the LLM wrote to break it",
                       "14c" => "on the real data" }.freeze

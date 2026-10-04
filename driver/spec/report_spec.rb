@@ -261,6 +261,25 @@ RSpec.describe Quaack::Driver::Report do
           .to include("ended without comparing results, because a statement failed on the test database, so")
       end
 
+      it "says a rewrite was never tested when step 9 couldn't build test data, and why, by rule" do
+        expect(fate("step9_untested", rule: "complex_check"))
+          .to eq(esc("QUAACK couldn't make up test data for your query, because a CHECK constraint on its tables " \
+                     "is too complex for QUAACK to satisfy, so it never tested this rewrite and won't recommend " \
+                     "it. That says nothing about whether it's right."))
+        {
+          "fk_cycle" => "its tables' foreign keys form a cycle QUAACK can't load",
+          "unsupported_type" => "a column has a type QUAACK can't fill",
+          "expression_unique_index" => "a unique index on an expression calls a function QUAACK can't trust",
+          "unsatisfiable_check" => "no value QUAACK tried passes a CHECK constraint on its tables",
+          "domain_check" => "a column's domain rejects every value QUAACK tried"
+        }.each do |rule, words|
+          expect(fate("step9_untested", rule:)).to include(esc("for your query, because #{words}, so it never"))
+        end
+        expect(fate("step9_untested")).to eq(esc("QUAACK couldn't make up test data for your query, so it never " \
+                                                 "tested this rewrite and won't recommend it. That says nothing " \
+                                                 "about whether it's right."))
+      end
+
       it "says what the real data showed" do
         expect(fate("production_mismatch", rule: "multiset"))
           .to eq(esc("It passed the tests on made-up data, but returned different results from your query on the " \
@@ -288,6 +307,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "never calls a failed, timed-out, or unfinished rewrite wrong" do
         [["step9_failed", { scenario: "s0", rule: "unsupported_order" }], ["step10_failed", { round: 1 }],
+         ["step9_untested", { rule: "complex_check" }],
          ["production_timed_out", {}], ["production_not_compared", {}], ["measurement_timed_out", {}],
          ["unfinished", {}], ["unfinished", { after: "step9" }], ["same_plans", {}], ["not_better", {}],
          ["footprint_tie", {}], ["below_top_three", {}]].each do |name, details|

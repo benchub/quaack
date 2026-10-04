@@ -22,7 +22,11 @@ module Quaack
       #
       # Store entries, which the driver resumes by and step 11 reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
-      #                          "untested_atoms" }, step 9's result
+      #                          "untested_atoms" }, step 9's result, plus
+      #                          "refused" true when step 9 couldn't build
+      #                          scenarios for the query: then the rule is
+      #                          the refusal's, and the rewrite is untested
+      #                          and never recommended
       #   rewrite_round_<n>    { "round", "evidence", "rule" }, the last
       #                        10b round run (see Round.finish)
       #   rewrite_survived_<n> { "survived" => Boolean }, written once
@@ -94,6 +98,7 @@ module Quaack
             report = StepNine.run(connection, original, [candidate])
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
+              **({ "refused" => true } if report.refused),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms }
           ensure
             connection&.close
