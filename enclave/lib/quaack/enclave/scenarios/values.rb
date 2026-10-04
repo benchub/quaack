@@ -81,13 +81,16 @@ module Quaack
           FEW.include?(category(col)) ? 2 : 1
         end
 
-        # Whether the column's type reads value. Keyed by the type as
+        # Whether the column's type reads value as an insert of it does:
+        # the type's input function with its typmod, so a varchar(n) value
+        # that's too long fails rather than being cut short, as a CAST
+        # would. A domain's CHECKs apply too. Keyed by the type as
         # format_type prints it, typmod and all: bit(4) and bit(8) share an
         # oid but not their values.
         def readable?(col, value)
           @readable.fetch([col.type, value]) do
-            @conn.exec_params("SELECT CAST($1 AS #{col.type})", [value])
-            @readable[[col.type, value]] = true
+            @readable[[col.type, value]] =
+              @conn.exec_params("SELECT pg_input_is_valid($1, $2)", [value, col.type]).getvalue(0, 0) == "t"
           rescue PG::Error
             @readable[[col.type, value]] = false
           end

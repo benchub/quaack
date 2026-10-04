@@ -123,7 +123,7 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(joined).to be < values(s1, "a", "k").size
   end
 
-  describe "Values#nth for narrow numerics" do
+  describe "Values#nth and #readable?" do
     let(:values_for) { described_class::Values.new(conn) }
 
     before do
@@ -148,6 +148,17 @@ RSpec.describe Quaack::Enclave::Scenarios do
       conn.exec("ALTER TABLE fx.t ADD wide numeric(20,2)")
       expect(values_for.readable?(column("t", "wide"), "99999999")).to be(true)
       expect(values_for.readable?(column("t", "sc"), "99999999")).to be(false)
+    end
+
+    it "reads a value as an insert does, so a varchar(n) or char(n) never truncates distinct values" do
+      conn.exec("CREATE TABLE fx.s (vc varchar(2) UNIQUE, ch char(2) UNIQUE)")
+      %w[vc ch].each do |name|
+        col = column("s", name)
+        expect(values_for.readable?(col, "k10")).to be(false)
+        nths = (1..12).map { values_for.nth(col, it) }
+        expect(nths.uniq.size).to eq(12), "#{name}: #{nths}"
+        nths.each { conn.exec_params("INSERT INTO fx.s (#{name}) VALUES ($1)", [it]) }
+      end
     end
   end
 
