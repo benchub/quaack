@@ -575,18 +575,7 @@ Still open from the first review of 20260925-8:
 - **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the 5a-5 burndown record.
 - **Status:** todo
 
-### 20260928-1. `quaack setup`: one command for steps 2 through 4.
-
-`quaack start` runs only intake (step 1), and `quaack run` starts at step 5. Nothing in the driver runs the steps between them, so today the operator types eleven `quaacks` commands on the jump server by hand: `inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `anchor`, and `racetrack-setup`, in that order. `e2e/run.rb` runs the same list itself, which is why the e2e run never noticed. DESIGN.md sections 2 through 4 already say "the driver runs" each of these.
-
-Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --arena-db <name>]`. It runs those steps over ssh in order, passing any run-server flags through to `quaacks run-server` (which falls back to `run_server_command` for missing ones). It resumes like `quaack run`: a step whose output the store already holds is skipped, which may mean adding the setup entries to the enclave's `Status::ENTRIES`. A failure stops it and prints only the step's rule, as `start` and `run` do.
-
-- **Depends on:** None.
-- **Came from:** Writing the user-facing README (2026-09-28).
-- **Design:** Steps 2 through 4, "Where QUAACK runs."
-- **Status:** todo
-- **Open questions:** Should `quaack run` call setup itself when the run hasn't had it, so `start` then `run` is all an operator types? Should `quaack start` take the run-server flags and do setup too?
-- **Note (2026-10-03, answers):** Yes, `quaack run` runs setup first when the run hasn't had it, so it accepts the same run-server flags as `quaack setup` and passes them through. No, `quaack start` stays as it is and does no setup.
+### 20260928-1. `quaack setup`: one command for steps 2 through 4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-2. `quaack start --captured-at`.
 
@@ -2106,4 +2095,18 @@ This touches nearly every file, so build it when no other task is in flight, or 
 - **Came from:** The user, 2026-10-03.
 - **Design:** All of it.
 - **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
+- **Status:** todo
+
+### 20261003-22. `quaack setup`: loose ends.
+
+Minor findings from the build and review of 20260928-1:
+
+- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README Step 4 that the flags or the config are required.
+- **Flags given after run-server has passed are silently ignored.** If the database given was wrong but passed the check, the only fix is a new run. Warn when flags are given and run-server is skipped.
+- **A setup failure under `quaack run` tears the run down, but under `quaack setup` it's kept.** Pick one behavior, probably keep, since nothing expensive has run yet and the operator may just need different flags.
+- **The driver's unit specs don't cover skipping a late step.** Only `spec/setup_postgres_spec.rb` catches a broken skip of `racetrack-setup`. Add a unit case.
+
+- **Depends on:** 20260928-1.
+- **Came from:** The build and review of 20260928-1, 2026-10-03.
+- **Design:** Steps 2 through 4.
 - **Status:** todo
