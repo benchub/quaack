@@ -96,9 +96,14 @@ module Quaack
         def foreign_key(table, foreign)
           return foreign.columns.map { nil } if foreign.columns.any? { |c| @schema.column(table, c).nullable }
 
-          key = foreign.parent_columns.map { |c| @values.nth(@schema.column(foreign.parent, c), @counter += 1) }
-          need(foreign.parent, foreign.parent_columns.zip(key).to_h)
-          key
+          parent_key(foreign).tap { need(foreign.parent, foreign.parent_columns.zip(it).to_h) }
+        end
+
+        # A new parent row's key, a distinct value in each column.
+        def parent_key(foreign)
+          foreign.parent_columns.map do |c|
+            @values.nth(@schema.column(foreign.parent, c), @counter += 1, table: foreign.parent)
+          end
         end
 
         # A unique column with a default still needs a distinct value, but a
@@ -116,9 +121,10 @@ module Quaack
         end
 
         def free_value(table, col, varying)
-          return @values.nth(col, @counter += 1) if unique?(varying, col)
+          return @values.nth(col, @counter += 1, table:) if unique?(varying, col)
 
-          @checks.satisfying(table, col, [@values.typical(col, strict: false)])
+          typical = @values.typical(col)
+          @checks.satisfying(table, col, [typical], (@values.refusal(col, table) unless typical))
         end
       end
     end

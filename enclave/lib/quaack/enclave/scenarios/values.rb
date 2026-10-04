@@ -3,6 +3,7 @@
 require "date"
 require "pg"
 require_relative "literals"
+require_relative "types"
 
 module Quaack
   module Enclave
@@ -15,9 +16,11 @@ module Quaack
       # The nth value of a range is the range holding just the subtype's
       # nth value, and of an array the array holding just the element
       # type's. A bit(n) is padded to its length. A smallint, an integer,
-      # or a numeric with a precision keeps its nth value in range: past
-      # the largest it fits, the number wraps to a negative one, so a split
-      # group's key (Builder#key_value) still differs from the others.
+      # or a numeric with a precision, or a domain over one, keeps its nth
+      # value in range: past the largest it fits, the number wraps to a
+      # negative one, so a split group's key (Builder#key_value) still
+      # differs from the others. A column whose type reads no candidate is
+      # refused (see refusal).
       class Values
         EPOCH = Date.new(1970, 1, 1)
 
@@ -32,38 +35,39 @@ module Quaack
         MANY = %w[N S D T U I].freeze
         FEW = %w[B E V].freeze
 
-        INFO_SQL = <<~SQL
-          SELECT t.typcategory, NULLIF(t.typelem, 0)::int, r.rngsubtype::int, format_type(r.rngsubtype, NULL)
-          FROM pg_type t LEFT JOIN pg_range r ON r.rngtypid = t.oid
-          WHERE t.oid = $1
-        SQL
-
-        # What the catalog says about a type: its category, its element type
-        # (an array's) or subtype (a range's) as a Column, if any.
-        TypeInfo = Data.define(:category, :inner)
-
         def initialize(conn)
           @conn = conn
-          @types = {}
+          @types = Types.new(conn)
           @readable = {}
         end
 
-        # With strict: false, nil when the type reads none of them, as for
-        # a domain whose CHECK the caller satisfies some other way.
-        def typical(col, strict: true)
+        # nil when the type reads none of them, as for a domain whose CHECK
+        # the caller satisfies some other way.
+        def typical(col)
           return labels(col).first if category(col) == "E"
 
-          candidates = typicals(col) + FALLBACK
-          strict ? first_readable(col, candidates) : candidates.find { |v| readable?(col, v) }
+          (typicals(col) + FALLBACK).find { |v| readable?(col, v) }
         end
 
-        def nth(col, number)
+        # table is the column's table, which a refusal names.
+        def nth(col, number, table: nil)
           if category(col) == "E"
             labels = labels(col)
             return labels[number % labels.size] unless labels.empty?
           end
 
-          first_readable(col, nths(col, number))
+          candidates = nths(col, number)
+          candidates.find { |v| readable?(col, v) } || raise(refusal(col, table, candidates))
+        end
+
+        # The error for a column of table whose type reads none of
+        # candidates: domain_check for a domain whose base type reads one,
+        # so the domain's CHECK rejected them, and unsupported_type
+        # otherwise. It names the table, column, and type, which are schema.
+        def refusal(col, table, candidates = typicals(col) + FALLBACK)
+          base = info(col).base
+          rule = base && candidates.any? { readable?(base, it) } ? :domain_check : :unsupported_type
+          Error.new(rule, column: { "table" => table.to_s, "column" => col.name, "type" => col.type })
         end
 
         # How well the type takes distinct values, lowest best: numbers,
@@ -90,14 +94,14 @@ module Quaack
         private
 
         def typicals(col)
-          return [Literals.bits(col.type, 0)] if category(col) == "V"
+          return [Literals.bits(underlying(col).type, 0)] if category(col) == "V"
 
           TYPICAL.fetch(category(col), [])
         end
 
         def nths(col, number)
           case category(col)
-          when "N" then [Literals.numeric(col.type, number)]
+          when "N" then [Literals.numeric(underlying(col).type, number)]
           when "S" then ["k#{number}", number.to_s]
           when "D" then [(EPOCH + number).to_s, format("00:00:%<s>02d", s: number % 60)]
           when "B" then [number.odd? ? "t" : "f"]
@@ -111,7 +115,7 @@ module Quaack
           when "A" then wrapped(col, number) { |v| "{#{v}}" }
           when "R" then wrapped(col, number) { |v| "[#{v},#{v}]" }
           when "G" then Literals.geometric(number)
-          when "V" then [Literals.bits(col.type, number)]
+          when "V" then [Literals.bits(underlying(col).type, number)]
           else Literals.others(number)
           end
         end
@@ -128,33 +132,10 @@ module Quaack
           []
         end
 
-        def first_readable(col, candidates)
-          candidates.find { |v| readable?(col, v) } || raise(Error, :unsupported_type)
-        end
-
-        def category(col) = info(col).category
-
-        def info(col)
-          @types[[col.oid, col.type]] ||= begin
-            category, element, subtype, subtype_name = @conn.exec_params(INFO_SQL, [col.oid]).values.first
-            TypeInfo.new(category:, inner: inner(col, category, element, subtype, subtype_name))
-          end
-        end
-
-        # An array's element type, with the column's typmod, or a range's
-        # subtype.
-        def inner(col, category, element, subtype, subtype_name)
-          if category == "A" && element && col.type.end_with?("[]")
-            col.with(type: col.type.sub(/(\[\])+\z/, ""), oid: Integer(element))
-          elsif category == "R" && subtype
-            col.with(type: subtype_name, oid: Integer(subtype))
-          end
-        end
-
-        def labels(col)
-          @conn.exec_params("SELECT enumlabel FROM pg_enum WHERE enumtypid = $1 ORDER BY enumsortorder",
-                            [col.oid]).column_values(0)
-        end
+        def category(col) = @types.category(col)
+        def underlying(col) = @types.underlying(col)
+        def info(col) = @types.info(col)
+        def labels(col) = @types.labels(col)
       end
     end
   end

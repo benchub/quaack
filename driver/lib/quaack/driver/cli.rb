@@ -122,7 +122,7 @@ module Quaack
         EnclaveVersion.check!(transport, host)
         drive(transport, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{e.respond_to?(:rule) && !e.is_a?(LLM::Error) ? e.rule : e.message}\n"
+        @stderr.print "quaack run failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
       end
 

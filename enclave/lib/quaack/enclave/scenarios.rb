@@ -75,14 +75,18 @@ module Quaack
     # table's rows together, as 9d's reverse load needs.
     #
     # Trust boundary: the rows hold real values and stay in the enclave.
-    # Errors name only a rule.
+    # Errors name a rule, and for unsupported_type and domain_check the
+    # table, column, and type step 9 can't fill, which are schema, never a
+    # row value.
     module Scenarios
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :column
 
-        def initialize(rule)
+        # column is { "table", "column", "type" }, as ErrorFilter sends it.
+        def initialize(rule, column: nil)
           @rule = rule
-          super(rule.to_s)
+          @column = column
+          super(column ? "#{rule}: #{column["table"]}.#{column["column"]} (#{column["type"]})" : rule.to_s)
         end
       end
 
@@ -245,7 +249,8 @@ module Quaack
 
         def key_value(slot, group, table)
           key = group.split == table ? group.key + 100_000 : group.key
-          @values.nth(slot_columns(slot).first.last, key)
+          table_name, col = slot_columns(slot).first
+          @values.nth(col, key, table: table_name)
         end
 
         # Unique columns get a value per distinct row: rows alike in every
@@ -253,7 +258,9 @@ module Quaack
         def identify(table, group, pairs)
           identity = [table, pairs.reject { |_, v| v.equal?(UNIQUE) }, group.copy]
           n = (@identities[identity] ||= @identities.size + 1)
-          pairs.map { |name, v| v.equal?(UNIQUE) ? [name, @values.nth(@schema.column(table, name), n)] : [name, v] }
+          pairs.map do |name, v|
+            v.equal?(UNIQUE) ? [name, @values.nth(@schema.column(table, name), n, table:)] : [name, v]
+          end
         end
       end
     end

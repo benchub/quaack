@@ -33,8 +33,13 @@ module Quaack
       # start time a UTC YYYY-MM-DDTHH:MM:SSZ, so both are shape: a process
       # number and a clock time, neither configuration nor free text. No
       # other pg_stat_activity column goes out. The enclave's ErrorFilter
-      # sends clients only if every entry has exactly that shape.
-      error: %i[step rule sqlstate reason function clients].freeze,
+      # sends clients only if every entry has exactly that shape. column is
+      # only on an unsupported_type or domain_check refusal from step 9: the
+      # { "table", "column", "type" } of the column step 9 can't fill, which
+      # are schema names, a schema.name pair, a name, and a type as
+      # format_type prints it, never a row value. The enclave's ErrorFilter
+      # sends it only if each is a plain unquoted name of that shape.
+      error: %i[step rule sqlstate reason function clients column].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,

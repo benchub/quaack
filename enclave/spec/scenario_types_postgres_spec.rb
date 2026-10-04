@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require "bigdecimal"
+require "json"
 require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/arena_schema"
+require "quaack/enclave/error_filter"
 require "quaack/enclave/scenarios"
 
 # Step 9's values for the types beyond numbers, text, and dates (20261003-27):
@@ -146,6 +148,86 @@ RSpec.describe Quaack::Enclave::Scenarios do
       conn.exec("ALTER TABLE fx.t ADD wide numeric(20,2)")
       expect(values_for.readable?(column("t", "wide"), "99999999")).to be(true)
       expect(values_for.readable?(column("t", "sc"), "99999999")).to be(false)
+    end
+  end
+
+  describe "a column step 9 can't fill" do
+    def refusal(sql)
+      builder(sql).build
+      raise "no refusal"
+    rescue described_class::Error => e
+      e
+    end
+
+    def detail(table, column, type) = { "table" => table, "column" => column, "type" => type }
+
+    it "refuses a plain one, naming its table, column, and type" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn NOT NULL)")
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.t", "lsn", "pg_lsn")])
+      expect(error.message).to eq("unsupported_type: fx.t.lsn (pg_lsn)")
+    end
+
+    it "refuses a unique one" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn NOT NULL UNIQUE)")
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.t", "lsn", "pg_lsn")])
+    end
+
+    it "refuses a join key, naming a column of its key class" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.a (id integer PRIMARY KEY, l pg_lsn NOT NULL, v text);
+        CREATE TABLE fx.b (id integer PRIMARY KEY, l pg_lsn NOT NULL);
+      SQL
+      error = refusal("SELECT a.id FROM fx.a a JOIN fx.b b ON a.l = b.l WHERE a.v = 'x'")
+      expect(error.rule).to eq(:unsupported_type)
+      expect([detail("fx.a", "l", "pg_lsn"), detail("fx.b", "l", "pg_lsn")]).to include(error.column)
+    end
+
+    it "refuses a unique domain column whose CHECK rejects every distinct value, as domain_check" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN fx.big AS integer CHECK (VALUE > 1000000);
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, code fx.big NOT NULL UNIQUE);
+      SQL
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect([error.rule, error.column]).to eq([:domain_check, detail("fx.t", "code", "fx.big")])
+      expect(error.message).to eq("domain_check: fx.t.code (fx.big)")
+    end
+
+    it "refuses a domain over a type it can't fill as unsupported_type" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN fx.lsn AS pg_lsn;
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, l fx.lsn NOT NULL UNIQUE, p fx.lsn NOT NULL);
+      SQL
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect(error.rule).to eq(:unsupported_type)
+      expect([detail("fx.t", "l", "fx.lsn"), detail("fx.t", "p", "fx.lsn")]).to include(error.column)
+    end
+
+    it "names schema only, never a value from the query, a default, or a CHECK" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, lsn pg_lsn NOT NULL,
+          v text NOT NULL DEFAULT 'SENTINEL_27_DEFAULT' CHECK (v <> 'SENTINEL_27_CHECK'));
+      SQL
+      error = refusal("SELECT id FROM fx.t WHERE v = 'SENTINEL_27_QUERY'")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "9")
+      expect(JSON.parse(line)["column"]).to eq(detail("fx.t", "lsn", "pg_lsn"))
+      [error.message, error.column.to_s, line].each { expect(it).not_to include("SENTINEL") }
+    end
+
+    it "does send a column named like a sentinel, so the check above can see one" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, sentinel_27_name pg_lsn NOT NULL)")
+      line = Quaack::Enclave::ErrorFilter.to_egress(refusal("SELECT id FROM fx.t WHERE v = 'x'"), step: "9")
+      expect(line).to include("sentinel_27_name")
+    end
+
+    it "wraps a unique domain over a narrow numeric" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN fx.points AS numeric(5,2);
+        CREATE TABLE fx.t (p fx.points);
+      SQL
+      nth = described_class::Values.new(conn).nth(column("t", "p"), 100_005)
+      expect(conn.exec_params("SELECT $1::fx.points", [nth]).getvalue(0, 0)).to eq(nth)
     end
   end
 

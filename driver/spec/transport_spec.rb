@@ -562,9 +562,10 @@ RSpec.describe Quaack::Driver::Transport do
     # the enclave's source text, and at their edges.
     it "checks the error line's fields with the enclave ErrorFilter's own patterns" do
       source = File.read(File.join(REPO_ROOT, "enclave", "lib", "quaack", "enclave", "error_filter.rb"))
-      reply = Quaack::Driver::Transport::Reply
-      { "RULE" => reply::RULE, "STEP" => reply::STEP, "SQLSTATE" => reply::SQLSTATE,
-        "FUNCTION" => reply::FUNCTION }.each do |name, pattern|
+      fields = Quaack::Driver::Transport::ErrorFields
+      { "RULE" => fields::RULE, "STEP" => fields::STEP, "SQLSTATE" => fields::SQLSTATE,
+        "FUNCTION" => fields::FUNCTION, "IDENTIFIER" => fields::IDENTIFIER, "TYPE" => fields::TYPE,
+        "BACKEND_START" => fields::BACKEND_START }.each do |name, pattern|
         enclave = source[%r{^\s*#{name} = /(.+)/$}, 1]
 
         expect(pattern.source).to eq(enclave), "#{name} differs from the enclave's #{enclave.inspect}"
@@ -745,6 +746,47 @@ RSpec.describe Quaack::Driver::Transport do
 
       expect(error.function).to be_nil
       expect(error.full_message(highlight: false)).not_to include(sentinel)
+    end
+
+    %w[unsupported_type domain_check].each do |rule|
+      it "shows the table, column, and type a #{rule} refusal names" do
+        column = { "table" => "public.courses", "column" => "tags", "type" => "character varying(255)[]" }
+        error = refusal(%({"type":"error","step":"scenarios","rule":"#{rule}","column":#{JSON.generate(column)}}))
+
+        expect(error.column).to eq(column)
+        expect(error.rule_with_note).to eq("#{rule}: public.courses.tags (character varying(255)[])")
+        expect(error.message).to eq("quaacks probe failed: #{rule} (step scenarios, " \
+                                    "column public.courses.tags (character varying(255)[]), exit 0)")
+      end
+    end
+
+    column_good = { "table" => "public.t", "column" => "c", "type" => "int4range" }
+    [
+      ["a sentinel for a table", column_good.merge("table" => "SENTINEL")],
+      ["a sentinel after a table", column_good.merge("table" => "public.t SENTINEL")],
+      ["a sentinel for a column", column_good.merge("column" => "c SENTINEL")],
+      ["a sentinel for a type", column_good.merge("type" => "int4range'SENTINEL'")],
+      ["a sentinel on a line after a type", column_good.merge("type" => "int4range\nSENTINEL")],
+      ["a value beside the type", column_good.merge("value" => "SENTINEL")],
+      ["a missing type", column_good.except("type")],
+      ["its keys in another order", column_good.slice("column", "table", "type")],
+      ["an Integer type", column_good.merge("type" => 1)],
+      ["a String", "SENTINEL"]
+    ].each do |label, column|
+      it "drops a column with #{label}" do
+        error = refusal(%({"type":"error","rule":"unsupported_type","column":#{JSON.generate(column)}}))
+
+        expect(error.column).to be_nil
+        expect(error.rule_with_note).to eq("unsupported_type")
+        expect(error.message).to eq("quaacks probe failed: unsupported_type (exit 0)")
+        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
+      end
+    end
+
+    it "drops a column on any rule but unsupported_type and domain_check" do
+      error = refusal(%({"type":"error","rule":"unsatisfiable_check","column":#{JSON.generate(column_good)}}))
+
+      expect(error.column).to be_nil
     end
 
     it "shows the pids and start times of the other clients a run_server_other_clients failure names" do

@@ -60,6 +60,17 @@ module FilterFakes
     end
   end
 
+  # A step 9 refusal, which names the column it can't fill.
+  class ColumnError < StandardError
+    attr_reader :rule, :column
+
+    def initialize(rule:, column:)
+      super(ERROR_SENTINEL)
+      @rule = rule
+      @column = column
+    end
+  end
+
   # An intake unreadable-file refusal, whose reason is an enclave constant.
   class IntakeUnreadableError < StandardError
     attr_reader :rule, :reason
@@ -241,6 +252,70 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
           out = clients_line(clients)
 
           expect(out).to eq(line(step: "run-server", rule: "run_server_other_clients"))
+          expect(out).not_to include("SENTINEL")
+        end
+      end
+    end
+
+    describe "a step 9 refusal's column" do
+      let(:column) { { "table" => "fx.users", "column" => "root_account_ids", "type" => "bigint[]" } }
+
+      def column_line(column, rule: "unsupported_type")
+        filter.to_egress(FilterFakes::ColumnError.new(rule:, column:), step: "9")
+      end
+
+      it "sends the table, column, and type an unsupported_type or domain_check refusal names" do
+        expect(column_line(column)).to eq(line(step: "9", rule: "unsupported_type", column:))
+        expect(column_line(column, rule: "domain_check")).to eq(line(step: "9", rule: "domain_check", column:))
+      end
+
+      it "sends the types format_type prints, with typmods and schemas" do
+        ["numeric(5,2)", "character varying(255)[]", "timestamp(3) with time zone", "bit varying(6)",
+         "fx.big_code", "int4range"].each do |type|
+          expect(JSON.parse(column_line(column.merge("type" => type)))["column"]["type"]).to eq(type)
+        end
+      end
+
+      it "sends no column for any other rule" do
+        expect(column_line(column, rule: "unsatisfiable_check")).to eq(line(step: "9", rule: "unsatisfiable_check"))
+      end
+
+      sneaky = Class.new(Hash) { def to_json(*) = ERROR_SENTINEL.to_json }
+      [
+        ["a sentinel in the type", { "type" => "pg_lsn #{ERROR_SENTINEL}" }],
+        ["a quoted type", { "type" => '"Order Status"' }],
+        ["a type on two lines", { "type" => "pg_lsn\n" }],
+        ["a type that's a String subclass", { "type" => Class.new(String).new("pg_lsn") }],
+        ["an unqualified table", { "table" => "users" }],
+        ["a quoted table", { "table" => '"Sales"."Users"' }],
+        ["a sentinel for the column", { "column" => ERROR_SENTINEL }],
+        ["a qualified column", { "column" => "users.ids" }],
+        ["a Symbol column", { "column" => :ids }],
+        ["a value beside the type", { "value" => ERROR_SENTINEL }]
+      ].each do |label, change|
+        it "drops a column with #{label}, and still sends the rule" do
+          out = column_line(column.merge(change))
+
+          expect(out).to eq(line(step: "9", rule: "unsupported_type"))
+          expect(out).not_to include("SENTINEL")
+        end
+      end
+
+      [
+        ["Symbol keys", { table: "fx.users", column: "ids", type: "pg_lsn" }],
+        ["its keys in another order", { "column" => "ids", "table" => "fx.users", "type" => "pg_lsn" }],
+        ["a missing type", { "table" => "fx.users", "column" => "ids" }],
+        ["a Hash subclass", sneaky.new.merge!("table" => "fx.users", "column" => "ids", "type" => "pg_lsn")],
+        ["a key that's a String subclass",
+         { Class.new(String) { def to_s = ERROR_SENTINEL }.new("table") => "fx.users", "column" => "ids",
+           "type" => "pg_lsn" }],
+        ["a String", ERROR_SENTINEL],
+        ["nil", nil]
+      ].each do |label, bad|
+        it "drops a column that's #{label}" do
+          out = column_line(bad)
+
+          expect(out).to eq(line(step: "9", rule: "unsupported_type"))
           expect(out).not_to include("SENTINEL")
         end
       end

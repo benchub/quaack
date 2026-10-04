@@ -28,7 +28,9 @@ module Quaack
           return :omit if col.default
 
           boundaries = Scenarios.boundaries(col.type, mode).select { @values.readable?(col, it) }
-          @checks.satisfying(table, col, boundaries + [@values.typical(col, strict: false)])
+          typical = @values.typical(col)
+          # A type with no typical value is refused if no CHECK gives one.
+          @checks.satisfying(table, col, boundaries + [typical], (@values.refusal(col, table) unless typical))
         end
 
         private
