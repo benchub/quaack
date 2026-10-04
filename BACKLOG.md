@@ -2166,22 +2166,26 @@ These were found in the second review of 20261003-23, and they fail safe (the lo
 - **Design:** Step 9.
 - **Status:** todo
 
-### 20261003-33. Step 9 values: loose ends from 20261003-27.
+### 20261003-33. Step 9 values: loose ends from 20261003-27. Done, see BACKLOG-COMPLETE.md.
 
-Minor findings from building and reviewing 20261003-27. Do the false-collision and load-failure items first.
+### 20261003-34. Step 9 values: loose ends from 20261003-33.
 
-- **`readable?` tests a value with an explicit CAST, which is laxer than inserting it.** CAST quietly truncates `varchar(n)` and `char(n)`, so distinct values can collide after truncation or fail on insert. Check readability with an assignment coercion, as an INSERT does, rather than an explicit CAST.
-- **ParentRows gives a nullable self-FK the value 0.** For example, `accounts.root_account_id`; the parent row then fails to load. This reproduces on main.
-- **The varying pick ignores CHECKs.** With `kind int CHECK (kind IN (1,2))` and `UNIQUE (kind, login)`, it varies `kind`, so the third row fails to load. Prefer a column with no CHECK.
-- **A split group's key takes the type of the slot's first column** (`scenarios.rb`, around lines 251-253). A smallint FK and an integer parent in the same slot can still overflow on the smallint side.
-- **`bit varying` with no length gets only 2 distinct values**, since `Literals.bits` falls back to length 1. `bit(n)` also repeats values when it needs more than 2^n.
-- **A nullable column of an unsupported type could take NULL** instead of refusing, when the query doesn't read it.
-- **Expression unique indexes still vary every column they read.**
-- **ValuePools' boundary regex may match array types** such as `bigint[]`.
-- **Arrays over a domain over a domain** may not find their element type.
-- **No test checks that FEW ranks below the middle tier** in `Values#rank`.
+These are minor findings from building and reviewing 20261003-33. Do the first two first.
 
-- **Depends on:** 20261003-27.
-- **Came from:** The build and reviews of 20261003-27, 2026-10-03.
+- **`Reads` misses `USING` and `NATURAL` joins** (`scenarios/reads.rb`). It only collects `ColumnRef`s, so a column read only through `JOIN ... USING (lsn)` looks unread and gets NULL.
+  - Every scenario then returns 0 rows, and a wrong rewrite passes step 9. 9c does list `USING (lsn)` as untested, so this isn't silent.
+  - Fix: count `using_clause` names as reads, and treat `is_natural` as reading every column.
+- **A NOT NULL CHECK or NOT NULL domain now fails the load instead of refusing.** Examples: `lsn pg_lsn CHECK (lsn IS NOT NULL)`, or a domain `AS pg_lsn NOT NULL`.
+  - `null?` in `free_values.rb` should check `@checks.allows?(table, col, nil)` and the domain's not-null flag before choosing NULL, as main's clean `unsupported_type` did.
+- **The NULL is chosen from the original query only.** A rewrite that adds `AND lsn IS NULL` passes. That's the same weakness every unmentioned column's constant has, so give it one line in DESIGN.md.
+- **`bit(n)` still repeats values past 2^n.**
+- **ParentRows still refuses a nullable column of an unsupported type.** Use `Reads` there too.
+- **`Reads` matches columns by name only**, so it sometimes refuses a column the query doesn't really read.
+- **`null?` ignores a domain's NOT NULL.** Overlaps with the second bullet.
+- **A NOT NULL self-FK whose referenced columns the row doesn't set** still gets a new parent row.
+- **`Literals.bits` dropped its `match&.` guard**, so a custom base type of category `V` would crash instead of refusing.
+
+- **Depends on:** 20261003-33.
+- **Came from:** The build and review of 20261003-33, 2026-10-03.
 - **Design:** Step 9.
 - **Status:** todo
