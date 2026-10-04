@@ -18,12 +18,19 @@ RSpec.describe "quaack run" do
   let(:stdout) { StringIO.new }
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
+  # Steps 2 to 4a's outputs, all stored: the run has had setup.
+  let(:setup_done) do
+    %w[inventory run_server qualified_query schema_subset statistics volatility classification redacted_plan
+       literal_sets clock_replacements racetrack_setup].to_h { [it, true] }
+  end
   let(:entries) do
-    { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
+    setup_done.merge(
+      "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
       "rewrite_rules_applied" => true, "rewrites_generated" => true, "arena_setup" => true, "index_build" => true,
       "baseline" => true,
       "index_baseline" => true, "candidate_runs" => true, "minimax" => true, "result_comparison" => true,
-      "selection" => true }
+      "selection" => true
+    )
   end
   let(:report) do
     { "type" => "report", "top" => [], "excluded" => {}, "infinite_sets" => [], "original_sql" => "SELECT 1",
@@ -82,7 +89,8 @@ RSpec.describe "quaack run" do
   after { FileUtils.rm_rf(home) }
 
   it "runs the pipeline over ssh to the run's jump host, from arena-setup through the report" do
-    entries.transform_values! { false }.merge!("index_search_original" => true, "index_generated_original" => true,
+    entries.transform_values! { false }.merge!(setup_done, "index_search_original" => true,
+                                               "index_generated_original" => true,
                                                "index_ranking_original" => true, "rewrite_rules_applied" => true,
                                                "rewrites_generated" => true)
     status = cli.run(["run", "--run", run_id, "--out", out])
@@ -117,7 +125,8 @@ RSpec.describe "quaack run" do
 
   describe "progress on stderr" do
     it "says in plain English what each step does as it starts and ends, numbered, and each skip" do
-      entries.transform_values! { false }.merge!("index_search_original" => true, "index_generated_original" => true,
+      entries.transform_values! { false }.merge!(setup_done, "index_search_original" => true,
+                                                 "index_generated_original" => true,
                                                  "index_ranking_original" => true, "rewrites_generated" => true)
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
@@ -245,6 +254,67 @@ RSpec.describe "quaack run" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
     cli.run(["run", "--run", run_id, "--out", out])
     expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
+  end
+
+  describe "setup, steps 2 to 4a" do
+    let(:setup) do
+      %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor
+         racetrack-setup]
+    end
+
+    it "runs setup first when the run hasn't had it, passing the run-server flags, then the pipeline" do
+      entries.merge!(setup_done.transform_values { false }, "inventory" => true)
+
+      status = cli.run(["run", "--run", run_id, "--port", "6432", "--out", out, "--host", "rs-1",
+                        "--racetrack-db", "rt", "--arena-db", "ar"])
+
+      expect([status, errors]).to eq([0, torn])
+      expect(transport.calls.map(&:first).take(12)).to eq(%w[version status] + setup.drop(1))
+      expect(transport.calls.map(&:first)[12]).to eq("index-feedback")
+      expect(transport.calls.to_h["run-server"][:args])
+        .to eq(run: run_id, "host" => "rs-1", "port" => "6432", "racetrack-db" => "rt", "arena-db" => "ar")
+    end
+
+    it "counts setup's eleven steps in the run's total, before the pipeline's" do
+      entries["racetrack_setup"] = false
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      expect(progress.first).to eq("quaack: [1/29] Already done, skipping: " \
+                                   "Reading production's version, settings, and extensions (2)\n")
+      expect(progress).to include("quaack: [11/29] Setting up the racetrack, a copy of production's schema and " \
+                                  "statistics (4a)\n",
+                                  "quaack: [12/29] Already done, skipping: " \
+                                  "Checking the query plan and searching for indexes (index-search)\n",
+                                  "quaack: [29/29] Writing the report (15)\n")
+    end
+
+    it "skips setup, without counting it, when the store says the run has had it" do
+      expect(cli.run(["run", "--run", run_id, "--host", "rs-1", "--out", out])).to eq(0)
+
+      expect(transport.calls.map(&:first) & setup).to eq([])
+      expect(progress.first).to eq("quaack: [1/18] Already done, skipping: " \
+                                   "Checking the query plan and searching for indexes (index-search)\n")
+    end
+
+    it "stops at a setup step that fails, prints only its rule, and tears the run down" do
+      entries["qualified_query"] = false
+      failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "unknown_relation",
+                                                            sqlstate: "42P01", exit_status: 70)
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: unknown_relation\n"])
+      expect(transport.calls.map(&:first)).to eq(%w[version status qualify teardown])
+    end
+
+    it "rejects a repeated run-server flag or one without a value" do
+      [["run", "--run", run_id, "--host", "a", "--host", "b"], ["run", "--run", run_id, "--arena-db"]].each do |argv|
+        expect(cli.run(argv)).to eq(64)
+      end
+      expect(errors).to include("quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--host <host>]")
+      expect(transport.calls).to eq([])
+    end
   end
 
   it "fails with exit 1 and the teardown rule when teardown fails after a good run" do

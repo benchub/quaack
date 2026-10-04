@@ -110,6 +110,20 @@ RSpec.describe "quaack executable" do
       expect([out, status.exitstatus]).to eq(["", 64])
       expect(err).to include("quaack start --server")
     end
+
+    # Setup is quaack setup's, or quaack run's, not start's.
+    it "does no setup: it calls quaacks only for version and intake, and takes no run-server flags" do
+      e = env
+      script = File.join(dir, "bin", "ssh")
+      File.write(script, File.read(script).sub("#!/bin/sh\n", "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '#{dir}/log'\n"))
+      out, = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q", "--plan", "/p")
+      _, _, flagged = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                     "--plan", "/p", "--host", "rs-1")
+
+      expect(out).to eq("20260926T010203Z-0123abcd\n")
+      expect(File.readlines(File.join(dir, "log")).map { it[/quaacks (\S+)/, 1] }).to eq(%w[version intake])
+      expect(flagged.exitstatus).to eq(64)
+    end
   end
 
   describe "deploy" do

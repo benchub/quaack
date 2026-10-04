@@ -8,16 +8,20 @@ require_relative "progress"
 require_relative "refinement_round"
 require_relative "report"
 require_relative "rewrite_generation"
+require_relative "setup"
 
 module Quaack
   module Driver
     # What `quaack run --run ID` drives: every remaining step of a run, in
     # order, over the transport to the run's jump server.
     #
-    #   Pipeline.new(transport:, client:, run_id:, rewrites: nil, out: nil).run
+    #   Pipeline.new(transport:, client:, run_id:, rewrites: nil, out: nil, setup: nil).run
     #   # => the report's path, or nil if none was written (ReportStage)
     #
     # rewrites are the operator's own (DESIGN.md step 7), from `--rewrites`.
+    # setup, the run-server flags as a Hash, has it do steps 2 to 4a first
+    # (Setup), unless the store says the run has had them; nil leaves them
+    # to the caller.
     # With stderr, a Progress there shows each step as it runs or is skipped,
     # and the client is given it too, so each LLM ask and retry shows under it.
     #
@@ -297,10 +301,13 @@ module Quaack
       STAGES = [IndexStage, RewriteStage, ArenaStage, CounterexampleStage, RewriteIndexStage].freeze
 
       # The number of steps a run counts in its progress: 17, plus step 7
-      # with rewrites, plus the report with out. Sub-steps for each rewrite
-      # print under their step, uncounted, since how many there are isn't
-      # known until the run gets there.
-      def self.total(rewrites:, out:) = 17 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0)
+      # with rewrites, plus the report with out, plus Setup's eleven when
+      # the run does setup first. Sub-steps for each rewrite print under
+      # their step, uncounted, since how many there are isn't known until
+      # the run gets there.
+      def self.total(rewrites:, out:, setup: false)
+        17 + (rewrites.nil? ? 0 : 1) + (out ? 1 : 0) + (setup ? Setup::STEPS.size : 0)
+      end
 
       # Skips the step, printing so, if done, or runs the block as a step.
       def self.run_step(progress, done, name, &)
@@ -355,24 +362,43 @@ module Quaack
         entries["rewrites_generated"] && (rewrites.nil? || rewrites.empty? || entries["operator_rewrites_checked"])
       end
 
-      def initialize(transport:, client:, run_id:, rewrites: nil, out: nil, stderr: nil) # rubocop:disable Metrics/ParameterLists
-        @progress = stderr ? Progress.new(io: stderr, total: self.class.total(rewrites:, out:)) : Progress::NULL
-        client&.progress = @progress
+      # setup is nil, or the run-server flags for Setup (an empty Hash for
+      # none). Given setup, the run first does steps 2 to 4a, unless the
+      # store says it has had them.
+      def initialize(transport:, client:, run_id:, rewrites: nil, out: nil, stderr: nil, setup: nil) # rubocop:disable Metrics/ParameterLists
+        @stderr = stderr
         @out = out
         @transport = transport
         @client = client
         @run_id = run_id
         @rewrites = rewrites
+        @setup = setup
       end
 
       def run
         entries = self.class.status(@transport, @run_id)
+        setup = @setup && !Setup.done?(entries)
+        @progress = progress(setup)
+        Setup.run(transport: @transport, run_id: @run_id, entries:, server: @setup, progress: @progress) if setup
         STAGES.each do |stage|
           stage.run(transport: @transport, client: @client, run_id: @run_id, entries:, rewrites: @rewrites,
                     progress: @progress)
         end
         MeasurementStage.run(transport: @transport, run_id: @run_id, entries:, progress: @progress)
         ReportStage.run(transport: @transport, client: @client, run_id: @run_id, out: @out, progress: @progress)
+      end
+
+      private
+
+      # With stderr, a Progress there, which the client is given too.
+      def progress(setup)
+        progress = if @stderr
+                     Progress.new(io: @stderr, total: self.class.total(rewrites: @rewrites, out: @out, setup:))
+                   else
+                     Progress::NULL
+                   end
+        @client&.progress = progress
+        progress
       end
     end
   end

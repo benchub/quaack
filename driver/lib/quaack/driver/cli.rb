@@ -6,16 +6,20 @@ module Quaack
   module Driver
     # The quaack command line, run by an engineer on their laptop.
     class CLI
+      SERVER_USAGE = "[--host <host>] [--port <port>] [--racetrack-db <name>] [--arena-db <name>]"
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file>\n       " \
               "quaack deploy --host <jump server>\n       " \
-              "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep]\n"
+              "quaack setup --run <ID> #{SERVER_USAGE}\n       " \
+              "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] #{SERVER_USAGE}\n".freeze
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
-      RUN_OPTIONAL = %w[--rewrites --out].freeze
-      # What run loads, only once it runs.
-      RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline runs
-                     teardown transport/ssh].freeze
+      # The run-server flags setup and run pass to `quaacks run-server`.
+      SERVER_OPTIONS = %w[--host --port --racetrack-db --arena-db].freeze
+      RUN_OPTIONAL = (%w[--rewrites --out] + SERVER_OPTIONS).freeze
+      # What setup and run load, only once they run.
+      RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress runs
+                     setup teardown transport/ssh].freeze
 
       # transport builds the transport to a jump host, and client the LLM
       # client from its LLM::Settings. Specs pass fakes for both, since
@@ -45,10 +49,11 @@ module Quaack
 
       private
 
-      # The exit status of a well-formed start, run, or deploy, or nil.
+      # The exit status of a well-formed start, setup, run, or deploy, or nil.
       def subcommand(argv)
         case argv.first
         when "start" then (options = start_options(argv.drop(1))) && start(options)
+        when "setup" then (options = setup_options(argv.drop(1))) && setup_command(**options)
         when "run" then (options = run_options(argv.drop(1))) && run_command(**options)
         when "deploy" then deploy(argv.drop(1))
         end
@@ -83,41 +88,73 @@ module Quaack
         Deploy.main(argv, stdout: @stdout, stderr: @stderr)
       end
 
-      # { run:, rewrites:, out:, keep: } from `--run ID [--rewrites <file>]
-      # [--out <path>] [--keep]`, the optional ones in any order, or nil. out
-      # defaults to ./quaack-<run>.html.
+      # { run:, rewrites:, out:, keep:, server: } from `--run ID [--rewrites
+      # <file>] [--out <path>] [--keep]` and the run-server flags, the
+      # optional ones in any order, or nil. out defaults to
+      # ./quaack-<run>.html. server holds the run-server flags given, by
+      # option name without its dashes.
       def run_options(argv)
         keep = argv.count("--keep")
         argv -= ["--keep"]
         return unless keep <= 1 && argv.size.even? && argv[0] == "--run"
 
-        options = optional(argv.drop(2)) or return
+        options = optional(argv.drop(2), RUN_OPTIONAL) or return
         { run: argv[1], rewrites: options["--rewrites"], out: options["--out"] || "./quaack-#{argv[1]}.html",
-          keep: keep == 1 }
+          keep: keep == 1, server: server(options) }
       end
 
-      # The optional run options as a Hash, or nil if one repeats or is unknown.
-      def optional(argv)
+      # { run:, server: } from `--run ID` and the run-server flags, in any
+      # order after it, or nil.
+      def setup_options(argv)
+        return unless argv.size.even? && argv[0] == "--run"
+
+        options = optional(argv.drop(2), SERVER_OPTIONS) or return
+        { run: argv[1], server: server(options) }
+      end
+
+      def server(options) = options.slice(*SERVER_OPTIONS).transform_keys { it.delete_prefix("--") }
+
+      # The optional options as a Hash, or nil if one repeats or isn't
+      # allowed.
+      def optional(argv, allowed)
         pairs = argv.each_slice(2).to_a
-        pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { RUN_OPTIONAL.include?(it.first) }
+        pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { allowed.include?(it.first) }
       end
 
-      # DESIGN.md step 5 onward, with step 7 after 6a if there's a rewrites
-      # file, then prints the run ID and done. The file is read and the LLM
-      # client built first, from the llm block of ~/.quaack/driver.json, so a
-      # bad file, a bad block, or missing credentials fail before the jump
-      # server is touched. A bad block is a usage error naming the key. An
-      # LLM failure prints its whole message, rule and detail, since the
-      # detail is the provider's own error text. Any other failure prints
-      # only its rule, as for start.
-      def run_command(run:, rewrites:, out:, keep:)
+      # Steps 2 to 4a (Setup), each skipped when the store says it's done,
+      # then prints the run ID and "set up". A failure prints only its rule,
+      # as for start, and keeps the run, so setup can be run again.
+      def setup_command(run:, server:)
+        require_run
+        host = Runs.new(@home).host(run) or return usage_error("unknown run ID", command: "setup")
+        transport = @transport.call(host)
+        EnclaveVersion.check!(transport, host)
+        Setup.run(transport:, run_id: run, entries: Pipeline.status(transport, run), server:,
+                  progress: Progress.new(io: @stderr, total: Setup::STEPS.size))
+        @stdout.print "#{run} set up\n"
+        0
+      rescue EnclaveError, EnclaveVersion::Mismatch => e
+        @stderr.print "quaack setup failed: #{e.is_a?(EnclaveError) ? e.rule : e.message}\n"
+        1
+      end
+
+      # DESIGN.md steps 2 to 4a first, as Setup, unless the store says the
+      # run has had them, then step 5 onward, with step 7 after 6a if
+      # there's a rewrites file, then prints the run ID and done. The file
+      # is read and the LLM client built first, from the llm block of
+      # ~/.quaack/driver.json, so a bad file, a bad block, or missing
+      # credentials fail before the jump server is touched. A bad block is
+      # a usage error naming the key. An LLM failure prints its whole
+      # message, rule and detail, since the detail is the provider's own
+      # error text. Any other failure prints only its rule, as for start.
+      def run_command(run:, rewrites:, out:, keep:, server:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
         sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
         transport = @transport.call(host)
         EnclaveVersion.check!(transport, host)
-        drive(transport, client, run, sqls, { out:, keep: })
+        drive(transport, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
         @stderr.print "quaack run failed: #{e.respond_to?(:rule) && !e.is_a?(LLM::Error) ? e.rule : e.message}\n"
         1
@@ -139,7 +176,8 @@ module Quaack
       # run is torn down when the pipeline ends, however it ends, unless keep.
       def drive(transport, client, run_id, sqls, options)
         path = Teardown.around(transport:, run_id:, stderr: @stderr, keep: options[:keep]) do
-          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out], stderr: @stderr).run
+          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out], stderr: @stderr,
+                       setup: options[:server]).run
         end
         @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"
@@ -155,7 +193,7 @@ module Quaack
         nil
       end
 
-      def usage_error(message) = @stderr.print("quaack run: #{message}\n") || EX_USAGE
+      def usage_error(message, command: "run") = @stderr.print("quaack #{command}: #{message}\n") || EX_USAGE
     end
   end
 end
