@@ -457,7 +457,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. A step that runs past 30 seconds prints `Still working` with its time every 30 seconds. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
