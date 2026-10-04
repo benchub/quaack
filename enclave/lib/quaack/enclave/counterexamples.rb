@@ -34,7 +34,8 @@ module Quaack
     # an accepted insert is then evaluated in arena (see Evaluated); one
     # Postgres can't evaluate, such as a bad cast, refuses the insert with
     # bad_value, and Postgres's message, which can quote the value, is
-    # dropped. tables are the 3b subset schema's tables. The connection is
+    # dropped. Any other error there, such as a statement timeout, goes up.
+    # tables are the 3b subset schema's tables. The connection is
     # arena's: the check reads its catalog, which matches production's
     # schema.
     #
