@@ -1797,43 +1797,7 @@ Out-of-scope findings from the build of 20261002-8:
 
 ### 20261003-15. `quaack run`: say what each step did when it finishes. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-16. `quaack run`: a live clock instead of "Still working" lines.
-
-Today a long step in `quaack run` prints a new line every 30 seconds:
-
-```
-quaack: [6/18] Asking the LLM for rewrites of the query (6a)
-quaack: [6/18] Asking the LLM (6a)
-quaack: [6/18] Still working, 30s so far (6a)
-quaack: [6/18] Still working, 1m00s so far (6a)
-quaack: [6/18] Done in 1m10s (6a)
-```
-
-Instead, the line the step is on should carry a clock that counts up in place, and no "Still working" lines should print. The run above would end up as:
-
-```
-quaack: [6/18] Asking the LLM for rewrites of the query (6a)
-quaack: [6/18] Asking the LLM (6a) 1m10s
-quaack: [6/18] Done in 1m10s (6a)
-```
-
-The rule:
-
-- The clock goes on the last line printed, whether that's the step's own line or a note under it. It updates about once a second by redrawing that line with `\r` and clearing to the end of the line.
-- When a new line prints, the previous line keeps its final clock reading and stops updating.
-- The heartbeat thread and `say` already share a lock. Redraws must take it too, so a note never prints in the middle of a redraw.
-- When stderr isn't a terminal, such as when it's piped to a log file, nothing gets redrawn and no "Still working" lines print. Only the closing line gives the time the step took.
-- The clock carries only a duration, so nothing new crosses the trust boundary.
-
-Specs use a fake clock and a fake terminal `io`. They check the exact bytes in both cases.
-
-20261003-15 changes the closing line. Whichever lands second fits in with the other.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-03.
-- **Design:** Progress lines for `quaack run`.
-- **Note (2026-10-03, answers):** The clock goes on the latest line printed, including notes. When the output isn't a terminal, there are no live updates and no "Still working" lines. The closing line gives the final time.
-- **Status:** todo
+### 20261003-16. `quaack run`: a live clock instead of "Still working" lines. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-17. Step 9: break foreign-key cycles through nullable columns. Done, see BACKLOG-COMPLETE.md.
 

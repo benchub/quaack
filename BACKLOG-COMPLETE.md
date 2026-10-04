@@ -4474,3 +4474,46 @@ Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a que
     - Copies and crosses keep their parent on a cut FK. The empty group's is NULL.
     - Work is in `scenarios/topology.rb`, `arena_runner/deferred.rb` and `spec/fk_cycle_postgres_spec.rb`.
   - **Review:** round 1 had one blocking finding: a dropped sort key on the cut column still passed under LIMIT, because copies NULLed the cut column. The fix round fixed it, and round 2 was clean. The minors went to 20261004-8.
+
+### 20261003-16. `quaack run`: a live clock instead of "Still working" lines.
+
+Today a long step in `quaack run` prints a new line every 30 seconds:
+
+```
+quaack: [6/18] Asking the LLM for rewrites of the query (6a)
+quaack: [6/18] Asking the LLM (6a)
+quaack: [6/18] Still working, 30s so far (6a)
+quaack: [6/18] Still working, 1m00s so far (6a)
+quaack: [6/18] Done in 1m10s (6a)
+```
+
+Instead, the line the step is on should carry a clock that counts up in place, and no "Still working" lines should print. The run above would end up as:
+
+```
+quaack: [6/18] Asking the LLM for rewrites of the query (6a)
+quaack: [6/18] Asking the LLM (6a) 1m10s
+quaack: [6/18] Done in 1m10s (6a)
+```
+
+The rule:
+
+- The clock goes on the last line printed, whether that's the step's own line or a note under it. It updates about once a second by redrawing that line with `\r` and clearing to the end of the line.
+- When a new line prints, the previous line keeps its final clock reading and stops updating.
+- The heartbeat thread and `say` already share a lock. Redraws must take it too, so a note never prints in the middle of a redraw.
+- When stderr isn't a terminal, such as when it's piped to a log file, nothing gets redrawn and no "Still working" lines print. Only the closing line gives the time the step took.
+- The clock carries only a duration, so nothing new crosses the trust boundary.
+
+Specs use a fake clock and a fake terminal `io`. They check the exact bytes in both cases.
+
+20261003-15 changes the closing line. Whichever lands second fits in with the other.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`.
+- **Note (2026-10-03, answers):** The clock goes on the latest line printed, including notes. When the output isn't a terminal, there are no live updates and no "Still working" lines. The closing line gives the final time.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-16.
+  - **Change:** in `driver/lib/quaack/driver/progress.rb`, the "Still working" lines are gone.
+    - **On a terminal:** the open line carries a live clock, redrawn about once a second under the shared lock. The line plus its clock is cut to fit `IO#winsize`, and a cut line is reprinted whole before its newline. The timer thread is joined before the closing line.
+    - **On a pipe:** no thread and no redraws.
+  - **Review:** round 1 had one blocking finding: long lines wrapped on narrow terminals and stacked up copies. The fix round fixed it, and round 2 was clean. The minors went to 20261004-7 and -13.
