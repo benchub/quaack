@@ -160,6 +160,13 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(values_for.readable?(column("t", "sc"), "99999999")).to be(false)
     end
 
+    it "gives a bit varying with no length as many distinct values as it needs" do
+      conn.exec("CREATE TABLE fx.b (vb bit varying UNIQUE)")
+      nths = (1..10).map { values_for.nth(column("b", "vb"), it) }
+      expect(nths.uniq.size).to eq(10), nths.to_s
+      nths.each { conn.exec_params("INSERT INTO fx.b (vb) VALUES ($1)", [it]) }
+    end
+
     it "reads a value as an insert does, so a varchar(n) or char(n) never truncates distinct values" do
       conn.exec("CREATE TABLE fx.s (vc varchar(2) UNIQUE, ch char(2) UNIQUE)")
       %w[vc ch].each do |name|

@@ -39,9 +39,11 @@ module Quaack
         end
 
         # number in binary, the last bits of it that fit the length, padded
-        # to it for a bit(n).
+        # to it for a bit(n). A bit varying with no length takes it whole.
         def bits(type, number)
           match = BIT.match(type)
+          return number.to_s(2) if match && match[:varying] && !match[:length]
+
           length = Integer(match&.[](:length) || 1)
           value = (number % (2**length)).to_s(2)
           match && !match[:varying] ? value.rjust(length, "0") : value
