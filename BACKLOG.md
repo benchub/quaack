@@ -2137,7 +2137,15 @@ From the build and review of 20261002-10.
 - **Depends on:** 20261003-23 (its branch).
 - **Came from:** The second review of 20261003-23, 2026-10-03.
 - **Design:** Step 9.
-- **Status:** todo
+- **Note (2026-10-03, set aside for a question):** Two review rounds ran on `task/20261003-23` (worktree kept).
+  - **Round 1:** NULLing the cut column in every scenario let Rails's `where.missing(:course_template)` pass a wrong rewrite.
+  - **Fix round:** the cut column is now NULL only where the group has no parent row.
+  - **Round 2:** still blocking. Each group holds one account and one course, so "has a template" always means "has a course", and "the template" always means "the account's own course". The results:
+    - For the anti-join `accounts LEFT JOIN courses ON account_id … c.id IS NULL`, the wrong rewrite `WHERE a.course_template_id IS NULL` passes, which main disproves.
+    - In two cases main refuses with `fk_cycle`, and the branch passes a wrong rewrite: `where.missing(:course_template)` against "no courses", and a template lookup by `account_id`.
+  - **A real fix** needs more varied scenarios: an account with courses and a NULL template, and a template pointing at another account's course.
+  - **Question for the user:** keep pushing on that, or drop 20261003-23 and keep main's `fk_cycle` refusal for a query that joins on the cycle's nullable edge? Dropping it would make 20261003-18 (a refusal doesn't end the run) the way to keep such runs going.
+- **Status:** todo (set aside, waiting on an answer)
 
 ### 20261003-31. Step 9: two false passes on ordinary joins.
 
@@ -2145,6 +2153,7 @@ The second review of 20261003-23 found two cases where step 9 passes a wrong rew
 
 - **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
 - **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
+- **A nullable FK always points at the group's own parent.** On the Canvas `accounts.course_template_id` cycle, "courses that are some account's template" passes as equal to "courses whose account has a template", on main too (review of 20261003-30, case C6). Some group must hold a row whose nullable FK points at a parent from another group. Note: on a cycle this interacts with 20261003-23/-30, which are set aside. Do the acyclic form here, and leave the cyclic form for them.
 
 Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
 
