@@ -3910,3 +3910,44 @@ Add it to 6c's table in DESIGN.md.
     - The builder ran 19 mutations and the reviewer 15; every one went red.
   - **Review:** one round, clean. The reviewer ran 21 Rails-style self-join queries (DISTINCT ON, aggregates, windows, LIMIT/OFFSET, `USING`, `SELECT *`, an inherited table) and every rewrite returned the same rows.
   - **Follow-ups:** the builder's widenings went to 20261003-28.
+
+### 20261002-10. 6c rule: `existence_in_flip`.
+
+A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
+
+```sql
+SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
+WHERE enrollments.user_id = 6504 AND ...
+  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
+LIMIT 1;
+```
+
+The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
+
+The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
+
+- Every select-list item is a constant.
+- It has `LIMIT 1`.
+- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
+
+The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
+
+It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
+
+Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-10.
+  - **Change:** the new rule `rewrite_rules/existence_in_flip.rb` comes right after `not_in_to_not_exists` in RULES, and after `key_in_self_join`, so when both match the same IN the self-join removal comes first under the cap of ten. DESIGN.md's 6c table has its row.
+    - It fires only on an existence check (constant select list, `LIMIT 1` read through the literal oracle, no DISTINCT, GROUP BY, HAVING, WINDOW, ORDER BY or OFFSET, no volatile function) with a top-level `x IN (SELECT y FROM S WHERE P)`.
+    - The original FROM goes whole into the EXISTS, outer joins included; the original's CTEs stay on top. A bare y is qualified, and S's table is renamed when its name clashes. A correlated subquery is refused, since Postgres can't prepare the rewrite.
+  - **Tests:** 16 examples on real Postgres with NULLs and duplicates; every refusal has a twin that fires. The builder ran 25 mutations and the reviewer 23; the one survivor in each is equivalent.
+  - **Review:** one round, clean. The reviewer compared 26 Rails-style existence checks on real Postgres. One minor, a whole-row reference captured by a column of S, went to 20261003-29.
+  - **Follow-ups:** the builder's widenings went to 20261003-29.

@@ -1044,39 +1044,7 @@ Test it with this query's shape. Also test that the rule refuses when the select
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-10. 6c rule: `existence_in_flip`.
-
-A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
-
-```sql
-SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
-WHERE enrollments.user_id = 6504 AND ...
-  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
-LIMIT 1;
-```
-
-The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
-
-The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
-
-- Every select-list item is a constant.
-- It has `LIMIT 1`.
-- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
-
-The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
-
-It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
-
-Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
-
-When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
-
-Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Status:** todo
+### 20261002-10. 6c rule: `existence_in_flip`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-11. 6c keeps up to ten rewrites. Done, see BACKLOG-COMPLETE.md.
 
@@ -2154,5 +2122,20 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 
 - **Depends on:** 20261002-6.
 - **Came from:** The build of 20261002-6, 2026-10-03.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
+
+From the build and review of 20261002-10.
+
+- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
+- **Widenings:**
+  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
+  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
+  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
+
+- **Depends on:** 20261002-10.
+- **Came from:** The build and review of 20261002-10, 2026-10-03.
 - **Design:** 6c.
 - **Status:** todo
