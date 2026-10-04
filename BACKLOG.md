@@ -2246,3 +2246,43 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 - **Came from:** The build of 20261004-2.
 - **Design:** Step 9.
 - **Status:** todo
+
+### 20261004-6. Pin the type part of step 9's probe cache key.
+
+`ValuePools::Probe#key` is `[sql, oid, format_type]` (`value_pools.rb:200`). If it drops the type, entries are shared wrongly across types and fixtures change, yet every committed spec still passes. Add a spec where the same CHECK sits on columns of different types, for example `integer` and `numeric`, or `varchar(8)` and `varchar(255)`. Assert each fixture's value, and confirm the spec goes red when the key drops `oid` and the type.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The review of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-7. Harden the live clock's timer thread.
+
+The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/progress.rb`:
+- No spec pins `timer&.join`, so removing it keeps every spec green. An old timer that wakes as a step closes could draw a stale time on the next step's line. Test this with a redraw held mid-draw by a slow io.
+- A Ctrl-C during `timer.join` skips the rest of the cleanup, so `@start` stays set.
+- A write error such as EPIPE inside the timer thread is raised again from `join` and replaces the step's own result.
+
+- **Depends on:** 20261003-16.
+- **Came from:** The review of 20261003-16.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-8. Step 9 gaps found by the FK-cycle review.
+
+The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts` ↔ `courses` schema:
+- `IS [NOT] NULL` on the cut column of an FK cycle fails to load with `fixture_load_failed` for every candidate, including the correct ones. It fails safe, but no rewrite of such a query can pass. Check whether 20261003-32 covers this first.
+- `Topology#roots` uses `load_parents`, and no spec pins that. Switching it back to `parents` stays green.
+- These wrong rewrites pass on acyclic schemas too, so they're general step 9 variety gaps:
+  - "own template" rewritten as "has template and has courses";
+  - a `<>` foreign template;
+  - its mirror, "has template and own courses" rewritten as "own template";
+  - a dropped plain ascending `ORDER BY course_template_id`;
+  - a dropped `ORDER BY t.name`.
+
+  No scenario has an account that has courses plus a template from another account.
+
+- **Depends on:** 20261003-23, 20261003-30.
+- **Came from:** The review of 20261003-23 and -30.
+- **Design:** Step 9.
+- **Status:** todo
