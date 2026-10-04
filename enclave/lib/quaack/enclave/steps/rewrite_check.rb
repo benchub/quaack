@@ -14,8 +14,7 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-check --run <run ID>` (DESIGN.md's llm-rewrites, assumption-check, and plan-pruning's
-      # structural discards): checks rewrites and stores the survivors.
+      # `quaacks rewrite-check --run <run ID>` (DESIGN.md's rewrite-check): checks rewrites and stores the survivors.
       #
       # stdin is one JSON object, {"rewrites": [{"sql", "transformation",
       # "assumptions"}, ...], "inferred": true|false}, "inferred" optional
@@ -30,7 +29,7 @@ module Quaack
       #
       # On one racetrack connection, each rewrite goes through, in order: its assumptions' vocabulary (bad_assumption,
       # which a denormalized_equal from anything but a rewrite-rules rule is too), RewriteCandidateCheck (its rules),
-      # assumption-check's AssumptionCheck (unmet_assumption), and plan-pruning's StructuralDiscard, with the slow
+      # assumption-check's AssumptionCheck (unmet_assumption), and structural-discard's StructuralDiscard, with the slow
       # literals (failed_to_plan, output_mismatch).
       #
       # The store format, which later steps read. Each survivor is saved as

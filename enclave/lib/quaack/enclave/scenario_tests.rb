@@ -15,7 +15,7 @@ module Quaack
     #   report.results  # => [Result(passed: true, scenario: nil, ...), Result(passed: false, scenario: :s2, ...)]
     #   report.untested # => vacuity-guard's untested atoms, by redacted shape
     #
-    # It builds the scenarios (Scenarios), runs the vacuity-guard guard on S1
+    # It builds the scenarios (Scenarios), runs vacuity-guard on S1
     # (VacuityGuard), and then, for each candidate in order, runs S0
     # through S6 through fixture-compare's comparison (ResultComparison.
     # compare_in_both_orders), each in its own arena transactions that roll

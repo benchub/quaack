@@ -5,7 +5,7 @@ require_relative "redaction"
 
 module Quaack
   module Enclave
-    # DESIGN.md's plan-pruning's structural discards: drop the rewrite candidates that
+    # DESIGN.md's structural-discard: drop the rewrite candidates that
     # fail to plan on the racetrack, or whose output column count or types
     # differ from the original's.
     #

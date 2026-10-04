@@ -5,7 +5,7 @@ require "quaack/enclave/steps/index_payload"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-payload` and `quaacks rewrite-check` (DESIGN.md's llm-rewrites and assumption-check,
-# with plan-pruning's structural discards), the way the jump server runs them.
+# with structural-discard), the way the jump server runs them.
 RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server" do
   include_context "an index search run"
 
@@ -110,7 +110,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(rewrite_check(rewrites(rewrite(same)))).first).to eq(outcome_line(1, "accepted", nil, "rewrite_2"))
     end
 
-    it "rejects by the inbound check's rule, an unknown assumption kind, and plan-pruning's structural discards" do
+    it "rejects by the inbound check's rule, an unknown assumption kind, and structural-discard" do
       ready
       outcome = rewrite_check(rewrites(
                                 rewrite("SELECT o.note, o.status FROM public.orders o WHERE o.note = $3"),

@@ -4,7 +4,7 @@ require "tmpdir"
 require "quaack/enclave/structural_discard"
 require "quaack/enclave/burndown"
 
-# DESIGN.md's plan-pruning's structural discards, against real Postgres.
+# DESIGN.md's structural-discard, against real Postgres.
 RSpec.describe Quaack::Enclave::StructuralDiscard do
   let(:conn) { test_database.connection }
   let(:sentinel) { "SENTINEL-step8-9d1e" }

@@ -62,36 +62,174 @@ Each run works through the steps below. Orange steps run in the production data 
 ```mermaid
 %%{init: {"flowchart": {"curve": "step"}}}%%
 flowchart TD
-    s1["1. Intake:<br/>the query, its EXPLAIN ANALYZE, and a production server name"] --> s2["2. Gather production inventory"]
-    s2 --> s3["3. Schema, statistics, literals,<br/>PII classification, redaction"]
-    s3 --> s4["4. Build run server<br/>racetrack + arena"]
-    s4 --> s5{"5. Does the racetrack plan match production's plan?"}
-    s5 -- no --> abort(["Abort: statistics don't match"])
-    s5 -- yes --> s5a["5a. Index candidates<br/>parse, plan, and LLM generators, tested with HypoPG"]
-    s5 -- yes --> s6c["6c. Mechanical rewrite rules"]
-    s6c --> s6a["6a. LLM rewrites<br/>7. Operator rewrites"]
-    s6a --> s6b["6b. Assumption check<br/>against constraints and indexes"]
-    s5a --> s8
-    s6b --> s8["8. Plan-based pruning<br/>drop rewrites whose plan never changes"]
-    s8 --> s9["9. Predicate-aware fixtures<br/>in arena, compare results"]
-    s9 --> s10["10. Adversarial fixtures<br/>LLM counterexamples, up to 3 rounds"]
-    s10 --> s11["11. Per-rewrite index ranking"]
-    s11 --> s12["12–13. Build hidden indexes,<br/>baseline total blocks"]
-    s12 --> s14["14. Candidate runs<br/>minimax on total blocks, result check, top 3"]
-    s14 --> s15["15. Report and burndown"]
-    s6b -. unmet assumption .-> out(["Discarded"])
-    s8 -. same plan .-> out
-    s9 -. different results .-> out
-    s10 -. different results .-> out
-    s14 -. no win or different results .-> out
+    input["input:<br/>the query, its EXPLAIN ANALYZE, and a production server name"] --> inventory["inventory"]
+    inventory --> runserver["run-server<br/>racetrack + arena"]
+    runserver --> schema["Schema steps: qualify, schema-dump, statistics,<br/>volatility, classify, redact, literals, clock-anchor"]
+    schema --> racetrack["racetrack-setup"]
+    racetrack --> gate{"index-search's plan gate:<br/>does the racetrack plan match production's plan?"}
+    gate -- no --> abort(["Abort: statistics don't match"])
+    gate -- yes --> search["index-search<br/>parse, plan, and LLM generators, tested with HypoPG"]
+    search --> rules["rewrite-rules<br/>mechanical rewrite rules"]
+    rules --> llm["llm-rewrites<br/>then operator-rewrites"]
+    rules --> check["rewrite-check on each rewrite<br/>inbound-check, assumption-check, structural-discard"]
+    llm --> check
+    check --> prune["plan-pruning<br/>drop rewrites whose plan never changes"]
+    prune --> arena["arena-setup"]
+    arena --> test["rewrite-test<br/>predicate-aware fixtures in arena, compare results"]
+    test --> cx["counterexamples<br/>LLM counterexamples, up to 3 rounds"]
+    cx --> ideas["rewrite-index-ideas<br/>per-rewrite index ranking"]
+    ideas --> build["index-build, baseline, index-baseline<br/>hidden indexes, baseline total blocks"]
+    build --> runs["candidate-runs, minimax, result-comparison, selection<br/>minimax on total blocks, result check, top 3"]
+    runs --> report["report and burndown"]
+    check -. failed checks .-> out(["Discarded"])
+    prune -. same plan .-> out
+    test -. different results .-> out
+    cx -. different results .-> out
+    runs -. no win or different results .-> out
 
     classDef enclave fill:#ffe0b8,stroke:#b36b12,color:#000
     classDef driver fill:#cfe3ff,stroke:#3b6db3,color:#000
     classDef both fill:#d6f0d0,stroke:#4a8a3c,color:#000
-    class s1,s2,s3,s4,s5,s6c,s6b,s8,s9,s12,s14 enclave
-    class s6a,s15 driver
-    class s5a,s10,s11 both
+    class input,inventory,runserver,schema,racetrack,gate,rules,check,prune,arena,test,build,runs enclave
+    class llm,report driver
+    class search,cx,ideas both
 ```
+
+## Run order.
+
+Each step has a name, a short slug such as `index-search`. The code, the store, the progress lines, and the report all name steps by slug, never by number. This outline is the only place steps are numbered, and the numbers show the order they run in and which steps repeat. The sections below follow the same order.
+
+1. input (`quaack start`)
+2. inventory (`quaack setup` starts here)
+3. run-server
+4. The schema steps:
+   - 4.1 qualify
+   - 4.2 schema-dump
+   - 4.3 statistics
+   - 4.4 volatility
+   - 4.5 classify
+   - 4.6 redact
+   - 4.7 literals
+   - 4.8 clock-anchor
+5. racetrack-setup (the end of `quaack setup`)
+6. Index search for the original query (`quaack run` starts here):
+   - 6.1 index-search: the plan gate, then
+     - 6.1.1 index-from-query
+     - 6.1.2 index-from-plan
+     - 6.1.3 index-dedupe
+     - 6.1.4 index-test
+   - 6.2 llm-index-ideas, then index-dedupe and index-test on its ideas
+   - 6.3 llm-index-refine, if any idea fell short, then index-dedupe and index-test again
+   - 6.4 index-rank
+7. rewrite-rules:
+   - 7.1 apply the rules
+   - 7.2 rewrite-check on each rewrite:
+     - 7.2.1 inbound-check
+     - 7.2.2 assumption-check
+     - 7.2.3 structural-discard
+8. llm-rewrites:
+   - 8.1 ask the LLM
+   - 8.2 rewrite-check on each rewrite, as in 7.2
+9. operator-rewrites, if the operator gave any:
+   - 9.1 infer each one's transformation and assumptions
+   - 9.2 rewrite-check on each rewrite, as in 7.2
+10. plan-pruning. For each rewrite:
+    - 10.1 rewrite-index-search
+    - 10.2 rewrite-index-rank
+    - 10.3 rewrite-prune
+11. arena-setup
+12. rewrite-correctness. For each rewrite still standing:
+    - 12.1 rewrite-test:
+      - 12.1.1 fixture-scenarios
+      - 12.1.2 vacuity-guard, on S1
+      - 12.1.3 fixture-open
+      - 12.1.4 fixture-load
+      - 12.1.5 fixture-compare
+      - 12.1.6 fixture-rollback
+      - Repeat 12.1.3 through 12.1.6 for each scenario, in both load orders, until one gets different results.
+    - 12.2 counterexamples:
+      - 12.2.1 llm-counterexamples
+      - 12.2.2 counterexample-compare
+      - 12.2.3 counterexample-rollback
+      - Repeat 12.2.1 through 12.2.3 until a round disproves the rewrite, or for three rounds.
+13. rewrite-index-ideas. For each rewrite that survived 12:
+    - 13.1 rewrite-llm-index-ideas
+    - 13.2 rewrite-llm-index-refine
+    - 13.3 rewrite-index-rerank
+14. index-build (measurement-setup; run-discipline governs 14 through 17)
+15. baseline
+16. index-baseline
+17. candidate-runs
+18. minimax (blocks-metric)
+19. result-comparison
+20. selection
+21. report, with its negative-result and burndown parts
+
+`quaack setup` runs 2 through 5, and `quaack run` runs any of them the store says haven't run, then 6 through 21. Some steps run as more than one enclave call, and some calls run more than one step. The sections below say which.
+
+### Old step IDs.
+
+Earlier versions of this document numbered the steps, and BACKLOG-COMPLETE.md still does. This table maps each old ID to its slug.
+
+| Old ID | Slug |
+| --- | --- |
+| 1 | input |
+| 2 | inventory |
+| 3 | the schema steps |
+| 3a | qualify |
+| 3b | schema-dump |
+| 3c | statistics |
+| 3d | volatility |
+| 3e | literals |
+| 3f | classify |
+| 3g | redact |
+| 3h | clock-anchor |
+| 4 | run-server |
+| 4a | racetrack-setup |
+| 4b | arena-setup |
+| 5 | index-search's plan gate |
+| 5a | index-search, as a whole |
+| 5a-1 | index-from-query |
+| 5a-2 | index-from-plan |
+| 5a-3 | index-dedupe |
+| 5a-4 | index-test |
+| 5a-5 | llm-index-ideas |
+| 5a-6 | llm-index-refine |
+| 5a-7 | index-rank |
+| 6 | rewrite generation: rewrite-rules, llm-rewrites, and operator-rewrites |
+| 6a | llm-rewrites |
+| 6b | assumption-check |
+| 6c | rewrite-rules |
+| 7 | operator-rewrites |
+| 8 | plan-pruning |
+| Steps 9 and 10 | rewrite-correctness |
+| 9 | rewrite-test |
+| 9a | fixture-open |
+| 9b | fixture-load |
+| 9c | vacuity-guard |
+| 9d | fixture-compare |
+| 9e | fixture-rollback |
+| 10 | counterexamples |
+| 10a | llm-counterexamples |
+| 10b | counterexample-compare |
+| 10c | counterexample-rollback |
+| 11 | rewrite-index-ideas |
+| 12 | measurement-setup |
+| 12a | index-build |
+| 12b | run-discipline |
+| 13 | baseline |
+| 13a | index-baseline |
+| 14 | candidate-runs |
+| 14a | blocks-metric |
+| 14b | minimax |
+| 14c | result-comparison |
+| 14d | selection |
+| 15 | report |
+| 15a | negative-result |
+| 15b | burndown |
+| `step14` (a burndown stage) | measurement |
+
+The fates `step9_disproved`, `step9_untested`, `step9_failed`, `step10_disproved`, and `step10_failed` are now `rewrite_test_disproved`, `rewrite_test_untested`, `rewrite_test_failed`, `counterexamples_disproved`, and `counterexamples_failed`.
 
 ## Trust boundary.
 
@@ -111,9 +249,9 @@ QUAACK splits data into two classes. The code enforces the line between them. It
 - Constraint and index definitions.
 - Plan structure, with literals stripped out.
 - Derived scalars: `n_distinct`, `null_frac`, `correlation`, and MCV frequencies (without the values they belong to).
-- MCV values for low-cardinality columns only, as defined in 3f. These are the one exception to "values never leave," and they exist so the LLM can write partial index predicates.
+- MCV values for low-cardinality columns only, as defined in classify. These are the one exception to "values never leave," and they exist so the LLM can write partial index predicates.
 
-For version 1, we assume the schema dump and partial index predicates contain no PII, and we treat them as shape data. A schema-only dump can still hold literals in `CHECK` constraints, column defaults, comments, and function bodies. Revisit this assumption before using QUAACK on a schema where that isn't true. Partial index predicates are safer, because QUAACK only allows them on low-cardinality columns (see 5a-3).
+For version 1, we assume the schema dump and partial index predicates contain no PII, and we treat them as shape data. A schema-only dump can still hold literals in `CHECK` constraints, column defaults, comments, and function bodies. Revisit this assumption before using QUAACK on a schema where that isn't true. Partial index predicates are safer, because QUAACK only allows them on low-cardinality columns (see index-dedupe).
 
 Everything that leaves the enclave goes through one egress function, and that function only accepts fields on a whitelist. If a field isn't on the whitelist, it isn't sent at all. We don't scrub it and send it anyway. Adding a field to the whitelist is the single place where this policy gets reviewed.
 
@@ -128,11 +266,11 @@ QUAACK has two parts:
 
 The driver calls the enclave script over ssh, passing a subcommand for the step to run plus its arguments. The script reads what it needs from the governed store, does the work, writes any new state back to the store, and prints its result. Nothing stays in memory between calls.
 
-The driver finds the jump server with `jump_command` in its config file on the laptop, `~/.quaack/driver.json`. It's a one-line shell command in which every `{server}` becomes the production server name, as one shell word. `/bin/sh` runs it with no stdin, its stderr thrown away, and a 30-second timeout, and it must print one ssh host name and nothing else. If the file is unreadable, not JSON, not a JSON object, missing `jump_command`, or has a `jump_command` that isn't one non-blank line, `quaack start` and `quaack run` refuse with `bad_driver_config: <path>: <problem>`. A JSON syntax error names only the line and column, never the parser's message or file contents. `quaack start` runs it, then runs `quaacks intake` on that host (step 1), and records which jump server holds the run in `~/.quaack/runs/<run ID>.json`, so later commands, such as `quaack run --run <ID>`, take only the run ID.
+The driver finds the jump server with `jump_command` in its config file on the laptop, `~/.quaack/driver.json`. It's a one-line shell command in which every `{server}` becomes the production server name, as one shell word. `/bin/sh` runs it with no stdin, its stderr thrown away, and a 30-second timeout, and it must print one ssh host name and nothing else. If the file is unreadable, not JSON, not a JSON object, missing `jump_command`, or has a `jump_command` that isn't one non-blank line, `quaack start` and `quaack run` refuse with `bad_driver_config: <path>: <problem>`. A JSON syntax error names only the line and column, never the parser's message or file contents. `quaack start` runs it, then runs `quaacks intake` on that host (input), and records which jump server holds the run in `~/.quaack/runs/<run ID>.json`, so later commands, such as `quaack run --run <ID>`, take only the run ID.
 
-`quaack setup --run <ID>` then runs steps 2 to 4a: `quaacks inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `anchor`, and `racetrack-setup`, in that order, each over ssh. It takes `--host`, `--port`, `--racetrack-db`, and `--arena-db`, and passes only those given to `quaacks run-server`, which takes the rest from `run_server_command` (step 4). It resumes the way `quaack run` does: `quaacks status` says which of these steps' outputs the store holds, each step's last-written entry, and those steps are skipped, run-server's flags with it. It prints the same numbered progress lines as `quaack run`, one per step with a plain-English description, and then `<run ID> set up`. A step that fails stops it with only its rule, as `quaack setup failed: <rule>`, and keeps the run, so the operator can fix the problem and run it again. `quaack run` takes the same four flags, and when the store says the run hasn't had all of steps 2 to 4a, it runs them first, the same way, counting their eleven steps before its own in its progress. There, a failing setup step fails the run, which is torn down unless `--keep`, as for any step of `quaack run`. `quaack start` does no setup.
+`quaack setup --run <ID>` then runs setup: `quaacks inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `clock-anchor`, and `racetrack-setup`, in that order, each over ssh. It takes `--host`, `--port`, `--racetrack-db`, and `--arena-db`, and passes only those given to `quaacks run-server`, which takes the rest from `run_server_command` (run-server). It resumes the way `quaack run` does: `quaacks status` says which of these steps' outputs the store holds, each step's last-written entry, and those steps are skipped, run-server's flags with it. It prints the same numbered progress lines as `quaack run`, each ending with the step's slug in parentheses, one per step with a plain-English description, and then `<run ID> set up`. A step that fails stops it with only its rule, as `quaack setup failed: <rule>`, and keeps the run, so the operator can fix the problem and run it again. `quaack run` takes the same four flags, and when the store says the run hasn't had all of setup, it runs them first, the same way, counting their eleven steps before its own in its progress. There, a failing setup step fails the run, which is torn down unless `--keep`, as for any step of `quaack run`. `quaack start` does no setup.
 
-The driver talks to the LLM through one provider-neutral client. It owns what's the same for every provider: the burndown count for every attempt (15b), the JSON-only instruction and the parsing and checking of JSON replies, and the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`). Behind it, one adapter per provider holds everything provider-specific: the request's shape, structured output, stop reasons, the SDK's retries, credentials, and which SDK error is which rule. There are three adapters:
+The driver talks to the LLM through one provider-neutral client. It owns what's the same for every provider: the burndown count for every attempt (burndown), the JSON-only instruction and the parsing and checking of JSON replies, and the error rules (`llm_auth`, `llm_rate_limited`, `llm_unavailable`, `llm_bad_request`, `llm_bad_response`). Behind it, one adapter per provider holds everything provider-specific: the request's shape, structured output, stop reasons, the SDK's retries, credentials, and which SDK error is which rule. There are three adapters:
 
 - **Anthropic**, the Messages API through the anthropic gem. Its structured output holds every reply to the schema.
 - **OpenAI-compatible**, the Chat Completions API through the openai gem, at the block's `base_url`. One adapter serves OpenAI, Groq, Gemini's OpenAI-compatible endpoint, OpenRouter, and local servers such as Ollama. Not all of them hold a reply to a schema, and some take `response_format` and still don't, so this adapter says it doesn't enforce schemas. It puts the schema in the system prompt, and also sends it as a `response_format` of type `json_schema`. When the API rejects a request that carried `response_format` (a 400 or 422), the adapter asks again without it, and if that works it stops sending it for the rest of the run. Its key comes from the variable `api_key_env` names, or `OPENAI_API_KEY`, and a missing or empty one is `llm_auth` before any attempt.
@@ -168,47 +306,49 @@ Everything the enclave script prints goes through the egress function, including
 - Requests to run a step.
 - Rewrite candidates, written with placeholders instead of literals.
 - Index DDL.
-- The LLM-generated inserts from step 10.
+- The LLM-generated inserts from counterexamples.
 
 All of this came from an LLM or a laptop, so the enclave script treats it as untrusted. Before running any of it, the script parses it with pg_query and rejects anything that isn't what it claims to be:
 
-- **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see step 1) is refused too. Also run the volatility check from step 3d on the candidate, so it can't call a function with side effects.
-- **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses, named with its schema. Reject `CONCURRENTLY`, `UNIQUE`, `NULLS NOT DISTINCT`, `TABLESPACE`, `ON ONLY`, `WITH (...)` storage options, and an unqualified table. Reject a key expression or predicate that uses a `$n` parameter, a subquery, an aggregate or window call, a construct outside the supported SQL list, or a volatile function, operator, or cast (the 3d check). The index name is dropped. A STABLE function is left to Postgres and HypoPG, which refuse it when they build the index.
-- **Step 10 inserts** must be plain `INSERT` statements into tables in the subset schema from step 3b. Reject `WITH`, `ON CONFLICT`, and `RETURNING`. `OVERRIDING SYSTEM VALUE` (and `OVERRIDING USER VALUE`) is allowed, so an insert can set a `GENERATED ALWAYS` identity key, as step 9's fixture rows do: the inserts load only into the throwaway arena, and an id that collides with another row just fails that round's load. Each value must be a constant, a cast, an array, or a call to an `IMMUTABLE` function. Two things aren't checked in v1. An uncast literal is still converted by its column type's input function, and a domain's `CHECK` still runs, at insert time. Those functions come from the production schema, not the LLM. And values aren't pinned to be deterministic: a `timestamptz` literal depends on the session's `TimeZone`, and the special inputs `'now'`, `'today'`, and the like are accepted.
+- **Rewrite candidates** must be exactly one `SELECT` statement. Reject data-modifying CTEs (`WITH ... DELETE`), `SELECT INTO`, and locking clauses like `FOR UPDATE`. A candidate that uses a construct outside the supported SQL list (see input) is refused too. Also run the volatility check from volatility on the candidate, so it can't call a function with side effects.
+- **Index DDL** must be exactly one `CREATE INDEX` statement on a table the query uses, named with its schema. Reject `CONCURRENTLY`, `UNIQUE`, `NULLS NOT DISTINCT`, `TABLESPACE`, `ON ONLY`, `WITH (...)` storage options, and an unqualified table. Reject a key expression or predicate that uses a `$n` parameter, a subquery, an aggregate or window call, a construct outside the supported SQL list, or a volatile function, operator, or cast (the volatility check). The index name is dropped. A STABLE function is left to Postgres and HypoPG, which refuse it when they build the index.
+- **counterexamples inserts** must be plain `INSERT` statements into tables in the subset schema from schema-dump. Reject `WITH`, `ON CONFLICT`, and `RETURNING`. `OVERRIDING SYSTEM VALUE` (and `OVERRIDING USER VALUE`) is allowed, so an insert can set a `GENERATED ALWAYS` identity key, as rewrite-test's fixture rows do: the inserts load only into the throwaway arena, and an id that collides with another row just fails that round's load. Each value must be a constant, a cast, an array, or a call to an `IMMUTABLE` function. Two things aren't checked in v1. An uncast literal is still converted by its column type's input function, and a domain's `CHECK` still runs, at insert time. Those functions come from the production schema, not the LLM. And values aren't pinned to be deterministic: a `timestamptz` literal depends on the session's `TimeZone`, and the special inputs `'now'`, `'today'`, and the like are accepted.
 
 A rejected input fails with a message that says which rule it broke. The script then runs the accepted input only in the ways the steps below describe.
 
 **What comes out**, from the enclave script to the driver, is shape-class data only:
 
-- The redacted query and redacted plans from step 3g.
-- The subset schema from step 3b and the existing index definitions from step 3c.
-- The derived scalars and low-cardinality MCV values from step 3f.
+- The redacted query and redacted plans from redact.
+- The subset schema from schema-dump and the existing index definitions from statistics.
+- The derived scalars and low-cardinality MCV values from classify.
 - Costs, estimated and built index sizes, block counts, and whether the planner used each index.
 - Pass or fail results, with the scenario or predicate atom behind each failure.
-- Which predicate atoms step 9c couldn't exercise, identified by their redacted shape.
-- Counts of what each stage added and dropped, for the 15b burndown.
-- Production's major version, and whether step 2 found its instance memory.
+- Which predicate atoms vacuity-guard couldn't exercise, identified by their redacted shape.
+- Counts of what each stage added and dropped, for the burndown.
+- Production's major version, and whether inventory found its instance memory.
 
 Result rows, fixture contents, and literals never come out.
 
 **Which part runs each step:**
 
-- **The enclave script** runs steps 1 through 4, step 5, 5a-1 through 5a-4, 5a-7, 6b, 6c, step 8, step 9, 10b, 10c, the re-ranking in step 11, and steps 12 through 14.
-- **The driver** runs 5a-5, 5a-6, 6a, step 7, 10a, generator three in step 11, and step 15. These are the steps that talk to an LLM or an operator, plus the report.
+- **The enclave script** runs input through racetrack-setup, index-search (the plan gate and index-from-query through index-test), the filtering and testing of the LLM's index ideas, index-rank, rewrite-rules, rewrite-check (inbound-check, assumption-check, and structural-discard), plan-pruning, arena-setup, rewrite-test, counterexample-compare, counterexample-rollback, the filtering, testing, and re-ranking in rewrite-index-ideas, and index-build through selection.
+- **The driver** runs the LLM asks of llm-index-ideas, llm-index-refine, llm-rewrites, operator-rewrites, llm-counterexamples, rewrite-llm-index-ideas, and rewrite-llm-index-refine, and report. These are the steps that talk to an LLM or an operator, plus the report.
 
 Inside the enclave, the enclave script keeps its data in three places:
 
 | Part | What it holds | Where it lives | Used in |
 | --- | --- | --- | --- |
-| Governed store | The step 1 inputs, the set of literals from step 3e, the placeholder map from 3g, the raw statistics from 3c, and every intermediate result between calls. | A directory on the jump server in the operator's home directory. | Every step. |
-| Racetrack | A full restore of production, with everything production has. | The run server. | Steps 5, 5a, 8, and 11 for hypothetical-index planning. Steps 12 through 14 for measurement. |
-| Arena | An empty copy of the schema in an independant db, loaded with generated fixtures inside transactions that get rolled back. | The run server. | Steps 9 and 10. |
+| Governed store | The input step's inputs, the set of literals the literals step chose, the placeholder map from redact, the raw statistics the statistics step read, and every intermediate result between calls. | A directory on the jump server in the operator's home directory. | Every step. |
+| Racetrack | A full restore of production, with everything production has. | The run server. | index-search, plan-pruning, and rewrite-index-ideas for hypothetical-index planning. index-build through selection for measurement. |
+| Arena | An empty copy of the schema in an independant db, loaded with generated fixtures inside transactions that get rolled back. | The run server. | rewrite-test and counterexamples. |
 
 All three hold production values, so treat them like production: same access controls, same encryption at rest, same auditing, and same retention limit.
 
-When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory. If the quaacks config sets `destroy_command`, a one-line shell command given `{server}` and `{run}` like `run_server_command` (step 4), teardown first runs it to destroy the run server, ignores what it prints, and reports `next_step` `none`. If it fails, teardown fails with `destroy_command_failed` or `destroy_command_timed_out` and keeps the store, so it can run again. So `destroy_command` must be idempotent: running it for a run server that's already gone, or half gone, must succeed. Without `destroy_command`, or for a run that's already gone, it prints a reminder to destroy the run server by hand. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
+When the run ends, destroy the run server and delete the run's governed store directory. Nothing in either is worth keeping as a cache. `quaacks teardown --run <run ID>` deletes the store directory. If the quaacks config sets `destroy_command`, a one-line shell command given `{server}` and `{run}` like `run_server_command` (run-server), teardown first runs it to destroy the run server, ignores what it prints, and reports `next_step` `none`. If it fails, teardown fails with `destroy_command_failed` or `destroy_command_timed_out` and keeps the store, so it can run again. So `destroy_command` must be idempotent: running it for a run server that's already gone, or half gone, must succeed. Without `destroy_command`, or for a run that's already gone, it prints a reminder to destroy the run server by hand. Running it on a run that's already gone succeeds. It won't delete a run path that's a symlink or isn't a private run directory (a real directory, mode 0700, owned by the current user). If `~/.quaack` or `~/.quaack/runs` is a symlink, every `quaacks` step that uses the store refuses it with the rule `bad_store_base`, and nothing is made or deleted through it.
 
-## 1. Input.
+Each run's store records its format, as the entry `store_format`, `{"format": 2}`, written when intake starts the run. The format changes when entry names, or what an entry holds, change in a way an older run would be misread by. Format 2 is the first that names steps by slug, in store entries and burndown stages alike. A run with another format, or none, was started by an older version: every `quaacks` step that opens the run's store refuses it with the rule `run_from_older_version`, before it reads anything else, and the driver says, in place of the rule, that an older version of QUAACK started the run, that this version can't resume it, and to start a new run with `quaack start`. `teardown` only names the run, without opening its store, so it still cleans such a run up.
+
+## input. Input.
 
 QUAACK takes three inputs:
 
@@ -216,23 +356,23 @@ QUAACK takes three inputs:
 - The full output of `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` for that query.
 - The production server name the explain plan came from.
 
-The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from 3g.
+The operator finds the slow query and puts these inputs in the governed store on the jump server. They never pass through the laptop, because the query text and the plan both contain real literals. The driver only ever sees the redacted versions from redact.
 
-To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for 3h. It must be no earlier than 1970 and no more than one day after intake, or intake refuses it as `bad_captured_at`. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
+To do that, the operator saves the query and the plan as files on the jump server and runs `quaacks intake --query <file> --plan <file> --server <name>`. It checks that each input is well formed, starts a run in the governed store that holds them, and prints only the run's ID for the driver to use. An optional `--captured-at <time>` gives the time the production plan ran, as an ISO-8601 time with a zone, for clock-anchor. It must be no earlier than 1970 and no more than one day after intake, or intake refuses it as `bad_captured_at`. Without it, the run anchors the clock at the time of intake. A refused input leaves no run behind, and its error names only the rule it broke.
 
 The operator usually starts this from the laptop instead, with `quaack start --server <name> --query <file> --plan <file>`, where the files are paths on the jump server. A relative path starts from the ssh user's home directory there. A leading `~/` is expanded by `quaacks` on the jump server, never by a shell; `~otheruser` is not special. Before it opens ssh, the driver refuses an absolute `--query` or `--plan` path under the laptop user's home, since that is usually an accidentally expanded laptop path. The driver finds the jump server with `jump_command` (see "Where QUAACK runs"), runs `quaacks intake` there over ssh, and prints the run ID. The files stay on the jump server.
 
 If `quaacks intake` can't read the query or plan, it still refuses as `query_unreadable` or `plan_unreadable`, but the error line may add one fixed reason: `missing`, `symlink`, `not_regular_file`, or `permission_denied`. The reason never includes the path or the operating system's message.
 
-The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. A query with `$1`-style parameters is refused as `query_has_parameters`, since the plan must come from the query with its literals. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, `IS NULL`, and the row comparisons of keyset pagination, such as `(created_at, id) < ($1, $2)`, with `<`, `<=`, `>`, `>=`, `=`, or `<>` between two rows of the same length. A row anywhere else, such as `ROW(a, b)` in the select list, `(a, b) IN (SELECT ...)`, or a nested row, is refused. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in 3d, generator one in 5a-1, and the predicate atoms in step 9. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
+The query can only use the SQL constructs QUAACK supports. A query that uses anything else is refused, with the rule `unsupported_construct`. For v1, the operator sees only that rule. The error line doesn't say which construct it was. A query with `$1`-style parameters is refused as `query_has_parameters`, since the plan must come from the query with its literals. The list lives in `SupportedSql` (`enclave/lib/quaack/enclave/supported_sql.rb`). It covers `SELECT` with joins, subqueries, CTEs (but not `CYCLE` or `SEARCH`), set operations, `CASE`, aggregates, window functions, the usual operators, casts, `IN`, `ANY`, `LIKE`, `BETWEEN`, `IS NULL`, and the row comparisons of keyset pagination, such as `(created_at, id) < ($1, $2)`, with `<`, `<=`, `>`, `>=`, `=`, or `<>` between two rows of the same length. A row anywhere else, such as `ROW(a, b)` in the select list, `(a, b) IN (SELECT ...)`, or a nested row, is refused. Every enclave step that walks the query's parse checks it against the list first, so each one only has to be right for what's on it. Today those are relation qualification in this step, the volatility check in volatility, generator one in index-from-query, and the predicate atoms in rewrite-test. The plan's expressions and index predicates aren't the query, so they aren't checked against the list.
 
 Fully qualify every relation in the query so `search_path` never matters.
 
 This step also defines the **canonical plan form** that every later step uses to compare plans. A canonical plan keeps each node's type, relation, index, join type, strategy, quals, and sort keys. It strips costs, row counts, buffers, and aliases.
 
-## 2. Production inventory.
+## inventory. Production inventory.
 
-Validate the connection to step 1's production server. Then record the following from it:
+Validate the connection to input's production server. Then record the following from it:
 
 - Major version.
 - Installed extensions.
@@ -264,76 +404,73 @@ Failing to connect is `production_connection_failed`. A Postgres error while rea
 
 The inventory stays in the governed store. The step prints only its shape: production's major version and whether the memory is known.
 
-## 3. Schema, statistics, and classification.
+## run-server. Run server.
 
-### 3a. Relations.
+The operator builds one server for each run of QUAACK. It must meet all of these requirements:
+
+- Running the same major version and extensions as production, plus HypoPG.
+- Using the same planner GUCs and locale settings recorded in inventory.
+- Superuser access.
+- No clients other than QUAACK.
+- No background jobs, and autovacuum turned off. A background `ANALYZE` would change the statistics partway through the run.
+
+Verify every requirement. If any check fails, abort and name the check that failed.
+
+The checks compare the run server with inventory's inventory. A planner setting is any setting `EXPLAIN`'s `SETTINGS` would list, any Query Tuning setting, and `TimeZone`, `DateStyle`, and `IntervalStyle`. Production's value of one is the value inventory recorded, if it recorded one. Otherwise it's the built-in default, since `SETTINGS` lists every setting that differs from it. The database's name can differ from production's. For quiet, `pg_stat_activity` must show no client other than QUAACK, and if pg_cron is loaded, it must run its jobs from this database and have none active. Schedulers outside Postgres, such as a cron job on another host that connects later, are the operator's to turn off. The error names only the check, such as `run_server_guc_mismatch`. The one exception is `run_server_other_clients`, whose error line also names the other clients so the operator can find and stop them: `clients`, one `{ "pid", "backend_start" }` per other client backend, oldest first, at most 20. The pid is a positive integer and the start time is UTC, as `YYYY-MM-DDTHH:MM:SSZ`. Nothing else about a client goes out: not its user, application name, address, database, state, or query, which are production configuration or free text. A pid and a start time are neither, so they're shape. The check still fails with more than 20 other clients, and a client whose start time isn't known is left off the list. If any entry isn't exactly that shape, the whole field is left out and the error names only the check.
+
+A pooler such as PgBouncer can sit in front of the run server in session mode. There, each client keeps one server backend for its whole session, so later steps that rely on one session still work. QUAACK learns which backends are its own by running `SELECT pg_backend_pid()` on each of its connections. It doesn't use the pid libpq reports, which is the one sent at connect time, and behind a pooler that's a pid the pooler made up. A server backend the pooler holds idle in its pool, such as one a closed client left behind, is a client backend in `pg_stat_activity`, so it counts as another client. The pooler must hold none when the check runs. Unsupported in v1: transaction and statement pooling, where one client's queries can run on different server backends. QUAACK doesn't detect them.
+
+Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since inventory doesn't record them.
+
+The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`, as `quaack setup` or `quaack run` passes on those of the four flags the operator gave it. It connects to the racetrack database with the operator's own libpq setup, as inventory does for production: the user comes from `PGUSER` or a service in `~/.pg_service.conf`, and the password from `~/.pgpass`. QUAACK stores no credentials. It runs the checks there and nowhere else. Arena doesn't exist yet, since arena-setup makes it, and the quiet checks already see every database on the server. If every check passes, it records the host, the port, and both database names in the run, and later steps connect with them. It prints nothing but its done line.
+
+The operator can set `run_server_command` in the quaacks config (`~/.quaack/config.json`) instead of passing the flags. It's a one-line shell command in which every `{server}` becomes the run's production server name and every `{run}` the run ID, each as one shell word. `/bin/sh` runs it on the jump server with no stdin, its stderr thrown away, and a one-hour timeout. It builds or finds the run server from production and prints one JSON object with exactly the keys `host`, `port`, `racetrack_db`, and `arena_db`. `quaacks run-server --run <run ID>` with any flag missing calls it, and each flag given overrides its value. The values are checked as the flags are. A failure is `run_server_command_failed`, `run_server_command_timed_out`, or `run_server_command_bad_output`, and nothing the command prints goes out.
+
+It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no inventory inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
+
+## The schema steps.
+
+Setup runs these eight steps in order, after run-server: qualify, schema-dump, statistics, volatility, classify, redact, literals, and clock-anchor. Each reads production's schema or statistics, or works on the query, and keeps what it finds in the governed store.
+
+### qualify. Relations.
 
 Use pg_query to list the relations the query uses, and check the `relkind` of each one. For now, only plain tables (`relkind` `r`) are allowed. Abort if the query uses anything else, such as a view, a materialized view, a partitioned table, or a foreign table. The error's rule names the kind, such as `view_relation`. Don't handle partitioning until we need it.
 
 A function in `FROM` could read a view or foreign table this check never sees, so each one, anywhere in the query, must be `pg_catalog`'s, such as `generate_series` or `unnest`. An unqualified name resolves to the first schema in the `search_path` with a function of that name. Unsupported in v1: any other function in `FROM`, including a user-defined one that shadows a `pg_catalog` name earlier in the path, is refused with `user_function_in_from`. Functions in the select list or `WHERE` aren't affected.
 
-The driver runs `quaacks qualify --run <run ID>`, which does step 1's qualification and this check together. It connects to the run's production server the way step 2 does, with the operator's own libpq setup, and reads only the catalog. It resolves each unqualified name through the `search_path` in the input plan's `SETTINGS`, or the default `"$user", public` without one. `"$user"` resolves to the operator's role, the one qualify connects as, not the role of the application that ran the plan. If the application's role has a schema of its own name, give the plan's `search_path` explicitly. That's a known gap in v1. It stores the qualified query as the run's `qualified_query` entry, and the relations, each once and in the order the query first names them, as `relations`, a list of `{"schema", "name"}` objects. Later steps of 3 read both from there. It prints nothing but its done line, since the driver sees the schema only as 3b's subset. A refusal names only its rule, such as `view_relation`, `unknown_relation`, `unsupported_construct`, or `production_connection_failed`, and stores nothing.
+The driver runs `quaacks qualify --run <run ID>`, which does input's qualification and this check together. It connects to the run's production server the way inventory does, with the operator's own libpq setup, and reads only the catalog. It resolves each unqualified name through the `search_path` in the input plan's `SETTINGS`, or the default `"$user", public` without one. `"$user"` resolves to the operator's role, the one qualify connects as, not the role of the application that ran the plan. If the application's role has a schema of its own name, give the plan's `search_path` explicitly. That's a known gap in v1. It stores the qualified query as the run's `qualified_query` entry, and the relations, each once and in the order the query first names them, as `relations`, a list of `{"schema", "name"}` objects. Later steps of 3 read both from there. It prints nothing but its done line, since the driver sees the schema only as schema-dump's subset. A refusal names only its rule, such as `view_relation`, `unknown_relation`, `unsupported_construct`, or `production_connection_failed`, and stores nothing.
 
-### 3b. Schema dump.
+### schema-dump. Schema dump.
 
 Run `pg_dump --schema-only --no-owner --no-privileges` on every namespace the query touches, and on every namespace that one of its tables' FK ancestors lives in, at any depth, the same tables the subset below holds. Without an FK parent's namespace, arena can't create the FK, and the load fails. Always include `public` in the list of namespaces, even if the query doesn't reference it. Also always include `dba`, but only when production has a schema of that name, since functions in the dumped namespaces can reference it, and arena can't load them without it. A database without `dba` dumps as before. Only this full dump gains `dba`, not the subset below. 20261001-10 replaces this hard-coded name with a general fix. `pg_dump --schema` emits no `CREATE EXTENSION`, so also pass `--extension=<name>` for every extension in production's `pg_extension` except `plpgsql`, and add each one's schema to the namespaces, so the dump holds `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA ...` and loads into arena. It carries no version, so arena gets the run server's default version of each. Never pass `--schema` for a system schema (`pg_catalog`, `information_schema`, or any other `pg_*` schema, such as `pg_toast`), whether it came from the query or from an extension such as `plperl`, which lives in `pg_catalog`. With one, `pg_dump` dumps the system catalog itself: a read-only role can't lock `pg_authid`, so the dump fails, and a superuser's dump holds DDL for the catalog's own objects, which won't load into arena. `--extension=<name>` alone still brings that extension's `CREATE EXTENSION IF NOT EXISTS ... WITH SCHEMA pg_catalog`. The stored namespaces leave the system schemas out too.
 
 Separately, build a smaller subset: the query's tables plus their FK parent tables. This subset is the only schema that the LLM and the fixture generator ever see.
 
-The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way step 2 does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for 4a, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in 5a-5's payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing. `pg_dump` runs with `--no-password`, so it never prompts.
+The driver runs `quaacks schema-dump --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries. It connects to the production server the way inventory does and reads the catalog inside one read-only transaction. It runs the jump server's `pg_dump` from `PATH`, given only the run's host, so the port, user, database, and password come from the operator's own libpq setup. That `pg_dump` must be at least the server's major version. It stores the full dump as `schema_dump`, `{"namespaces", "ddl"}`, for racetrack-setup, and the subset as `schema_subset`, `{"tables", "ddl"}`, where `tables` lists each `[schema, name]`. It prints nothing but its done line: the subset reaches the LLM only in llm-index-ideas' payload, which reads it from the store. A refusal names only its rule, such as `unknown_relation`, `pg_dump_missing`, `pg_dump_too_old`, `pg_dump_failed`, `production_connection_failed`, or `production_read_failed`, and stores nothing. `pg_dump` runs with `--no-password`, so it never prompts.
 
 Unsupported in v1: a `SQL_ASCII` database is refused with `sql_ascii_database`, since its names have no known encoding.
 
-### 3c. Statistics.
+### statistics. Statistics.
 
 Pull planner statistics for the query's tables and their indexes, including extended statistics. Also pull current index definitions and sizes, which the report uses for its redundancy check.
 
 These statistics include real values in `most_common_vals` and `histogram_bounds`. That makes them value-class data under the trust boundary, so they stay in the governed store.
 
-Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so step 5a-3 doesn't count one as covering. This step also records which columns have a text-like type, for step 3f's heuristic, and which have a date, timestamp, or timestamptz type, for 3h's clock literals.
+Leave out invalid indexes (`indisvalid` false), such as one left by a failed `CREATE INDEX CONCURRENTLY`, so index-dedupe doesn't count one as covering. This step also records which columns have a text-like type, for classify's heuristic, and which have a date, timestamp, or timestamptz type, for clock-anchor's clock literals.
 
-This step captures each table's `reltuples` and `relpages`, not `relallvisible`, which the planner uses to price index-only scans. v1 assumes production is vacuumed normally, so its visibility map is current, and that the racetrack is fully vacuumed and analyzed after restore (4a). QUAACK doesn't capture or restore `relallvisible`.
+This step captures each table's `reltuples` and `relpages`, not `relallvisible`, which the planner uses to price index-only scans. v1 assumes production is vacuumed normally, so its visibility map is current, and that the racetrack is fully vacuumed and analyzed after restore (racetrack-setup). QUAACK doesn't capture or restore `relallvisible`.
 
-The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not 3b's FK parents. It connects to the production server the way step 2 does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and 3f read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
+The driver runs `quaacks statistics --run <run ID>` after `quaacks qualify`. It reads the run's `server` and `relations` entries, so it covers the query's own tables, not schema-dump's FK parents. It connects to the production server the way inventory does and reads the catalog and `pg_stats` inside one read-only transaction. It stores the result as the run's `statistics` entry, `{"tables"}`, one object per table in `relations` order with its row count, columns, text-like columns, `pg_stats` rows, valid indexes with their definitions and sizes, and extended statistics. Generators one and two, Dedupe, and classify read it from there. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `unknown_relation`, `inheritance_parent`, `production_connection_failed`, or `production_read_failed`, and stores nothing.
 
 Unsupported in v1: a table with inheritance children is refused with `inheritance_parent`, because `pg_stats` keeps two rows for each of its columns and QUAACK doesn't choose between them. The element and range statistics in `pg_stats` and the statistics on expressions in `pg_stats_ext_exprs` aren't read.
 
-### 3d. Function volatility.
+### volatility. Function volatility.
 
 Check `provolatile` for every function anywhere in the query, including the select list. If any function is volatile, abort and say which function caused it. A volatile function breaks both rewriting and result comparison.
 
-The driver runs `quaacks volatility --run <run ID>` after `quaacks qualify`. It reads the run's `server`, `plan`, and `qualified_query` entries. It connects to the production server the way step 2 does and reads only the catalog, inside one read-only transaction, resolving unqualified function names through the `search_path` in the input plan's `SETTINGS`, or the default without one. This step is a gate, so all it stores is that the query passed: the run's `volatility` entry, `{"passed": true}`, which later steps can require before they run the query. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `volatile_function`, `unsupported_construct`, `production_connection_failed`, or `production_read_failed`, and stores nothing. A `volatile_function` refusal's error line also names the volatile function, schema-qualified, such as `pg_catalog.random`, and never its arguments. Function names are schema, so they're shape. A name that needs quoting is left out.
+The driver runs `quaacks volatility --run <run ID>` after `quaacks qualify`. It reads the run's `server`, `plan`, and `qualified_query` entries. It connects to the production server the way inventory does and reads only the catalog, inside one read-only transaction, resolving unqualified function names through the `search_path` in the input plan's `SETTINGS`, or the default without one. This step is a gate, so all it stores is that the query passed: the run's `volatility` entry, `{"passed": true}`, which later steps can require before they run the query. It stores nothing until the transaction has closed, and prints nothing but its done line. A refusal names only its rule, such as `volatile_function`, `unsupported_construct`, `production_connection_failed`, or `production_read_failed`, and stores nothing. A `volatile_function` refusal's error line also names the volatile function, schema-qualified, such as `pg_catalog.random`, and never its arguments. Function names are schema, so they're shape. A name that needs quoting is left out.
 
-### 3e. Literals.
-
-Build the literal set that later steps test against. It has three literals:
-
-- The **slow** literal(s), which is the set of literals in the input query itself.
-- A **worst-case** literal, taken from the top MCV of each equality column.
-- A **typical** literal, taken from a histogram bound.
-
-This literal set is value-class data, so it stays in the governed store. QUAACK runs these values on the racetrack and in arena. No LLM ever sees them.
-
-Each set is keyed by the 3g placeholder numbers, in the same form as the placeholder map, so any set binds the same way the slow values do. Values come from the step 3c statistics for the column each placeholder is compared with, picked by operator:
-
-- **Equality (`=`):** the worst case is the top MCV, and the typical value is the middle histogram bound.
-- **Ranges (`<`, `<=`, `>`, `>=`):** the worst case is the histogram bound that selects the most rows: the last bound for `<` and `<=`, and the first for `>` and `>=`. The typical value is the middle bound. For `BETWEEN`, the worst case is the first and last bounds, and the typical value is the middle bucket: the middle bound and the one after it. A lower bound (`>` or `>=`) and an upper bound (`<` or `<=`) on one column in the same `AND`, such as `created_at >= $1 AND created_at < $2`, are treated like `BETWEEN`, whichever side the column is written on. A range on its own keeps the single-bound rule.
-- **`IN` lists and `= ANY`:** the list keeps its length. In the worst case, each element takes the next most common value. In the typical set, the elements take consecutive bounds around the middle.
-- **`LIKE` and any other operator,** including `<>`, `NOT IN`, and `NOT BETWEEN`: the slow literal in all three sets.
-
-A picked value keeps the placeholder's declared type. A number placeholder widens to `bigint` or `numeric` when the value needs it, such as `20` against a numeric column.
-
-When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
-
-- A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
-- A cast placeholder, such as `DATE '2026-01-01'`, which 3g keeps as `$1::date`.
-- A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
-- A placeholder that 3g shares between expressions, since it can feed more than one place.
-- A clock-reading literal, such as `'today'`, compared with a date or timestamp column, since 3h anchors it.
-
-The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by 3g's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that 3d passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
-
-### 3f. PII classification.
+### classify. PII classification.
 
 Classify each column as PII or not PII. Use a configured list plus a heuristic that flags high-cardinality text columns.
 
@@ -346,15 +483,15 @@ This classification doesn't decide whether values get sent, because no values ar
 - For a PII column, also withhold the MCV frequencies. A frequency vector plus a column name can be enough to re-identify values in a small domain.
 - For every column, PII or not, still send `n_distinct`, `null_frac`, and `correlation`. A single number that summarizes a whole column reveals nothing about any one row.
 
-This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as step 5a-1: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
+This step also marks each column as **low-cardinality** or not. A column is low-cardinality when it has fewer than 50 distinct values, isn't classified as PII, and its `n_distinct` in `pg_stats` is positive. Count distinct values the same way as index-from-query: if `n_distinct` is negative, take its absolute value times `reltuples`. ANALYZE stores a positive `n_distinct` only when the distinct values are at most about a tenth of the rows, so each value repeats. A negative, zero, or unknown `n_distinct` means the column isn't low-cardinality, even with few distinct values. A 40-row table of emails has fewer than 50 distinct values, but they don't repeat, so they aren't categories. For a low-cardinality column, also send its MCV values. A column with that few values, like a status or type column, holds categories, not facts about individual people. Columns with more distinct values are where PII starts to show up, so their values never go out. Histogram bounds never go out for any column.
 
 Expression-index and extended-statistics MCVs follow the rules of their base columns, the columns their definition names. One that names any PII column counts as PII, so none of its MCV data goes out. Otherwise its MCV frequencies go out, and its MCV values go out only when every base column is low-cardinality. An index's expressions are classified together. text[], json, and jsonb columns aren't text-like for the heuristic, so their MCV frequencies may go out, but their values never do.
 
-The driver runs `quaacks classify --run <run ID>` after `quaacks statistics`. It reads the `quaacks` config and the run's `statistics` entry, and doesn't connect to production. It stores the run's `classification` entry, `{"columns", "outbound_statistics"}`: each column's schema, table, name, and whether it's PII and low-cardinality, plus the statistics that may go out. For each column, `outbound_statistics` holds `n_distinct`, `null_frac`, and `correlation`, plus the MCV frequencies (null for a PII column) and the MCV values (null unless the column is low-cardinality). Dedupe (5a-3) reads the low-cardinality columns from there. The step sends none of it and prints nothing but its done line. The 5a-5 payload step sends `outbound_statistics` as part of the payload, so the data leaves only when the LLM needs it. A missing `statistics` entry or a bad config fails, and stores nothing.
+The driver runs `quaacks classify --run <run ID>` after `quaacks statistics`. It reads the `quaacks` config and the run's `statistics` entry, and doesn't connect to production. It stores the run's `classification` entry, `{"columns", "outbound_statistics"}`: each column's schema, table, name, and whether it's PII and low-cardinality, plus the statistics that may go out. For each column, `outbound_statistics` holds `n_distinct`, `null_frac`, and `correlation`, plus the MCV frequencies (null for a PII column) and the MCV values (null unless the column is low-cardinality). Dedupe (index-dedupe) reads the low-cardinality columns from there. The step sends none of it and prints nothing but its done line. The llm-index-ideas payload step sends `outbound_statistics` as part of the payload, so the data leaves only when the LLM needs it. A missing `statistics` entry or a bad config fails, and stores nothing.
 
-This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. The 5a-5 payload step does.
+This step stores the classification and the statistics that may go out in the governed store. It doesn't send them. The llm-index-ideas payload step does.
 
-### 3g. Redaction.
+### redact. Redaction.
 
 Produce a redacted query and a redacted production plan. These redacted versions are what the driver gets, and what every LLM call uses.
 
@@ -368,16 +505,45 @@ Produce a redacted query and a redacted production plan. These redacted versions
   A GROUP BY, DISTINCT ON, or ORDER BY key written by position or by alias, such as `GROUP BY 1`, stands for its select-list entry. A key that's a whole subquery shares the subquery's literals too. The search for the key's copies covers everything in the other clause, including aggregate arguments and FILTER. That can share a few more literals than Postgres needs, but they always hold equal values, so the query means the same. A key written differently from its copy, such as `status` against `o.status`, isn't found, and the query fails to prepare.
 
   A shared placeholder gets its row counts the same way as any other. When the quals of more than one node hold it, its row counts are marked ambiguous.
-- Annotate each placeholder with two row counts from the step 1 plan, taken at the node that consumes it: the planner's estimated rows and the actual rows.
+- Annotate each placeholder with two row counts from the input plan, taken at the node that consumes it: the planner's estimated rows and the actual rows.
 - Strip literal values out of the plan's quals the same way.
 
 Keep a one-to-one placeholder map in the governed store. The map is value-class data too, so it never leaves. Any plan that leaves the enclave later, including plans from the racetrack, goes through this same redaction first.
 
 Rewrite candidates arrive from the driver with placeholders. When the enclave script needs to turn one into a runnable query, use `PREPARE` and bind the real literals as parameters. Never splice strings.
 
-The driver runs `quaacks redact --run <run ID>` after `quaacks classify`. It reads the run's `qualified_query` and `plan` entries, and doesn't connect to production. It stores four entries: `placeholder_map`, which holds the literals and never leaves; `placeholder_shapes`, each placeholder's shape and row counts; `redacted_query`, the qualified query with a placeholder in place of each literal; and `redacted_plan`, `{"explain", "masked", "dropped"}`, the step 1 plan with its literals stripped. The step sends none of them and prints nothing but its done line. The 5a-5 payload step sends the redacted query, plan, and shapes. It computes everything before it writes, so a missing entry or a query it can't redact, such as one with `$n` parameters of its own, fails with only its rule and stores nothing.
+The driver runs `quaacks redact --run <run ID>` after `quaacks classify`. It reads the run's `qualified_query` and `plan` entries, and doesn't connect to production. It stores four entries: `placeholder_map`, which holds the literals and never leaves; `placeholder_shapes`, each placeholder's shape and row counts; `redacted_query`, the qualified query with a placeholder in place of each literal; and `redacted_plan`, `{"explain", "masked", "dropped"}`, the input plan with its literals stripped. The step sends none of them and prints nothing but its done line. The llm-index-ideas payload step sends the redacted query, plan, and shapes. It computes everything before it writes, so a missing entry or a query it can't redact, such as one with `$n` parameters of its own, fails with only its rule and stores nothing.
 
-### 3h. Clock anchoring.
+### literals. Literals.
+
+Build the literal set that later steps test against. It has three literals:
+
+- The **slow** literal(s), which is the set of literals in the input query itself.
+- A **worst-case** literal, taken from the top MCV of each equality column.
+- A **typical** literal, taken from a histogram bound.
+
+This literal set is value-class data, so it stays in the governed store. QUAACK runs these values on the racetrack and in arena. No LLM ever sees them.
+
+Each set is keyed by the redact placeholder numbers, in the same form as the placeholder map, so any set binds the same way the slow values do. Values come from the statistics step's statistics for the column each placeholder is compared with, picked by operator:
+
+- **Equality (`=`):** the worst case is the top MCV, and the typical value is the middle histogram bound.
+- **Ranges (`<`, `<=`, `>`, `>=`):** the worst case is the histogram bound that selects the most rows: the last bound for `<` and `<=`, and the first for `>` and `>=`. The typical value is the middle bound. For `BETWEEN`, the worst case is the first and last bounds, and the typical value is the middle bucket: the middle bound and the one after it. A lower bound (`>` or `>=`) and an upper bound (`<` or `<=`) on one column in the same `AND`, such as `created_at >= $1 AND created_at < $2`, are treated like `BETWEEN`, whichever side the column is written on. A range on its own keeps the single-bound rule.
+- **`IN` lists and `= ANY`:** the list keeps its length. In the worst case, each element takes the next most common value. In the typical set, the elements take consecutive bounds around the middle.
+- **`LIKE` and any other operator,** including `<>`, `NOT IN`, and `NOT BETWEEN`: the slow literal in all three sets.
+
+A picked value keeps the placeholder's declared type. A number placeholder widens to `bigint` or `numeric` when the value needs it, such as `20` against a numeric column.
+
+When a set can't get a value, the placeholder keeps its slow literal there, and the store records why. That happens when the column has no statistics, or lacks the MCV list or histogram the pick needs, or when a value doesn't read as the placeholder's type. Unsupported in v1, these also keep the slow literal in all three sets:
+
+- A placeholder that isn't compared directly with a plain table column, such as one compared with an expression or function on the column (`lower(email) = $1`), a column of a subquery or CTE, or a join column reached through a subquery. A placeholder outside any predicate, such as a `LIMIT`, also falls in this group.
+- A cast placeholder, such as `DATE '2026-01-01'`, which redact keeps as `$1::date`.
+- A placeholder in a keyset row comparison, such as each of `(created_at, id) < ($1, $2)`.
+- A placeholder that redact shares between expressions, since it can feed more than one place.
+- A clock-reading literal, such as `'today'`, compared with a date or timestamp column, since clock-anchor anchors it.
+
+The driver runs `quaacks literals --run <run ID>` after `quaacks redact`, since the sets are keyed by redact's placeholders. It refuses with the rule `volatility_not_passed` unless the run's `volatility` entry shows that volatility passed. It reads the run's `placeholder_map`, `redacted_query`, and `statistics` entries, and doesn't connect to production. It stores one entry, `literal_sets`: the three sets and the fallbacks. It sends none of it and prints nothing but its done line. A missing entry fails with only its rule and stores nothing.
+
+### clock-anchor. Clock anchoring.
 
 In the AST, replace each of these with a schema-qualified call to `quaack.clock_anchor()`:
 
@@ -391,93 +557,57 @@ In the AST, replace each of these with a schema-qualified call to `quaack.clock_
 
 Leave all other stable functions alone.
 
-The string literals `'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` read the clock too, where Postgres reads them as a date or timestamp, so they're anchored the same way. Case and surrounding whitespace don't matter, as in Postgres. By 3h each literal is a 3g placeholder, so the word comes from the placeholder map, and the placeholder is replaced when it's cast to `date`, `timestamp`, or `timestamptz` (such as `'today'::date` or `timestamp 'now'`, which 3g keeps as `$1::date`), or compared with a column whose type, from 3c, is one of those. `'now'` is `quaack.clock_anchor()`, `'today'` is its date, and `'yesterday'` and `'tomorrow'` are that date minus or plus one day, each cast to the target type, so `'today'` as a timestamp is midnight in the session's time zone. `'now'` cast to `time` or `timetz` is anchored too. A real date, such as `'2024-01-01'`, or a longer string such as `'today 12:00'`, is left alone.
+The string literals `'now'`, `'today'`, `'yesterday'`, and `'tomorrow'` read the clock too, where Postgres reads them as a date or timestamp, so they're anchored the same way. Case and surrounding whitespace don't matter, as in Postgres. By clock-anchor each literal is a redact placeholder, so the word comes from the placeholder map, and the placeholder is replaced when it's cast to `date`, `timestamp`, or `timestamptz` (such as `'today'::date` or `timestamp 'now'`, which redact keeps as `$1::date`), or compared with a column whose type, from statistics, is one of those. `'now'` is `quaack.clock_anchor()`, `'today'` is its date, and `'yesterday'` and `'tomorrow'` are that date minus or plus one day, each cast to the target type, so `'today'` as a timestamp is midnight in the session's time zone. `'now'` cast to `time` or `timetz` is anchored too. A real date, such as `'2024-01-01'`, or a longer string such as `'today 12:00'`, is left alone.
 
-The step 15 report shows the query with the original functions, and the placeholders the clock literals were, put back.
+The report shows the query with the original functions, and the placeholders the clock literals were, put back.
 
-The driver runs `quaacks anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry, the `search_path` in its `plan` entry's settings, and its `placeholder_map` and `statistics` entries for the clock literals, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in step 4 and 5a-4; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the step 15 report uses to put the originals back. The placeholder map doesn't change: a clock literal's placeholder stays in it, and a rewrite that still uses it binds the word. Its replacement records only the placeholder. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
+The driver runs `quaacks clock-anchor --run <run ID>` after `quaacks redact`. It reads the run's `redacted_query` entry, the `search_path` in its `plan` entry's settings, and its `placeholder_map` and `statistics` entries for the clock literals, and doesn't connect to production. It stores two entries: `anchored_query`, the redacted query with its clock anchored, which the run server runs in run-server and index-test; and `clock_replacements`, `{"replacements", "added_names"}`, each replaced function and each column name anchoring added, which the report uses to put the originals back. The placeholder map doesn't change: a clock literal's placeholder stays in it, and a rewrite that still uses it binds the word. Its replacement records only the placeholder. The step sends none of it and prints nothing but its done line. It computes everything before it writes, so a missing entry or a query it can't anchor fails with only its rule and stores nothing.
 
 Unsupported in v1: a clock literal typed any other way, such as an argument to a function that takes a date, or compared with an expression on a column or with a column of a domain over a domain, is left alone and reads the clock. A clock function named with its database, such as `mydb.pg_catalog.now()`, is refused with `database_qualified_function`.
 
-## 4. Run server.
-
-The operator builds one server for each run of QUAACK. It must meet all of these requirements:
-
-- Running the same major version and extensions as production, plus HypoPG.
-- Using the same planner GUCs and locale settings recorded in step 2.
-- Superuser access.
-- No clients other than QUAACK.
-- No background jobs, and autovacuum turned off. A background `ANALYZE` would change the statistics partway through the run.
-
-Verify every requirement. If any check fails, abort and name the check that failed.
-
-The checks compare the run server with step 2's inventory. A planner setting is any setting `EXPLAIN`'s `SETTINGS` would list, any Query Tuning setting, and `TimeZone`, `DateStyle`, and `IntervalStyle`. Production's value of one is the value step 2 recorded, if it recorded one. Otherwise it's the built-in default, since `SETTINGS` lists every setting that differs from it. The database's name can differ from production's. For quiet, `pg_stat_activity` must show no client other than QUAACK, and if pg_cron is loaded, it must run its jobs from this database and have none active. Schedulers outside Postgres, such as a cron job on another host that connects later, are the operator's to turn off. The error names only the check, such as `run_server_guc_mismatch`. The one exception is `run_server_other_clients`, whose error line also names the other clients so the operator can find and stop them: `clients`, one `{ "pid", "backend_start" }` per other client backend, oldest first, at most 20. The pid is a positive integer and the start time is UTC, as `YYYY-MM-DDTHH:MM:SSZ`. Nothing else about a client goes out: not its user, application name, address, database, state, or query, which are production configuration or free text. A pid and a start time are neither, so they're shape. The check still fails with more than 20 other clients, and a client whose start time isn't known is left off the list. If any entry isn't exactly that shape, the whole field is left out and the error names only the check.
-
-A pooler such as PgBouncer can sit in front of the run server in session mode. There, each client keeps one server backend for its whole session, so later steps that rely on one session still work. QUAACK learns which backends are its own by running `SELECT pg_backend_pid()` on each of its connections. It doesn't use the pid libpq reports, which is the one sent at connect time, and behind a pooler that's a pid the pooler made up. A server backend the pooler holds idle in its pool, such as one a closed client left behind, is a client backend in `pg_stat_activity`, so it counts as another client. The pooler must hold none when the check runs. Unsupported in v1: transaction and statement pooling, where one client's queries can run on different server backends. QUAACK doesn't detect them.
-
-Unsupported in v1: per-tablespace `random_page_cost` and `seq_page_cost` aren't compared, since step 2 doesn't record them.
-
-The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> --racetrack-db <name> --arena-db <name>`, as `quaack setup` or `quaack run` passes on those of the four flags the operator gave it. It connects to the racetrack database with the operator's own libpq setup, as step 2 does for production: the user comes from `PGUSER` or a service in `~/.pg_service.conf`, and the password from `~/.pgpass`. QUAACK stores no credentials. It runs the checks there and nowhere else. Arena doesn't exist yet, since 4b makes it, and the quiet checks already see every database on the server. If every check passes, it records the host, the port, and both database names in the run, and later steps connect with them. It prints nothing but its done line.
-
-The operator can set `run_server_command` in the quaacks config (`~/.quaack/config.json`) instead of passing the flags. It's a one-line shell command in which every `{server}` becomes the run's production server name and every `{run}` the run ID, each as one shell word. `/bin/sh` runs it on the jump server with no stdin, its stderr thrown away, and a one-hour timeout. It builds or finds the run server from production and prints one JSON object with exactly the keys `host`, `port`, `racetrack_db`, and `arena_db`. `quaacks run-server --run <run ID>` with any flag missing calls it, and each flag given overrides its value. The values are checked as the flags are. A failure is `run_server_command_failed`, `run_server_command_timed_out`, or `run_server_command_bad_output`, and nothing the command prints goes out.
-
-It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no step 2 inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
-
-### 4a. Racetrack.
+## racetrack-setup. Racetrack.
 
 The racetrack is a clone of production, restored from a production backup at full size. QUAACK never generates its data. Synthetic data can't reproduce production's physical layout: row width, page density, index depth, and how closely heap order matches index order. That layout decides how many blocks a plan touches. Matching production byte for byte is the whole point of the racetrack.
 
 The restore also brings production's statistics with it. That's why the racetrack can do the hypothetical-index planning too. No separate statistics-only database is needed.
 
-v1 assumes the racetrack is fully vacuumed and analyzed after the restore, so its visibility map, and with it `relallvisible` and the price of index-only scans, is current, as production's is assumed to be. QUAACK doesn't capture or restore `relallvisible` (3c).
+v1 assumes the racetrack is fully vacuumed and analyzed after the restore, so its visibility map, and with it `relallvisible` and the price of index-only scans, is current, as production's is assumed to be. QUAACK doesn't capture or restore `relallvisible` (statistics).
 
 In the racetrack database:
 
 1. Create the `hypopg` extension.
-2. Create a schema named `quaack` and a function `clock_anchor()`. The function returns `timestamptz`, is marked `STABLE`, and returns the capture time from 3h.
+2. Create a schema named `quaack` and a function `clock_anchor()`. The function returns `timestamptz`, is marked `STABLE`, and returns the capture time from clock-anchor.
 
-The driver runs `quaacks racetrack-setup --run <run ID>` after `quaacks run-server`, the last of `quaack setup`'s steps. It refuses a run with no recorded run server, then connects to the recorded racetrack database and does both steps above, with the run's `clock_anchor` entry. A `quaack` schema that already holds anything else fails the step and changes nothing. Only when setup succeeds does it store `racetrack_setup`, a marker that later racetrack steps require. It prints nothing but its done line, and a failure names only its rule.
+The driver runs `quaacks racetrack-setup --run <run ID>` after `quaacks clock-anchor`, as the last of `quaack setup`'s steps. It refuses a run with no recorded run server, then connects to the recorded racetrack database and does both steps above, with the run's `clock_anchor` entry. A `quaack` schema that already holds anything else fails the step and changes nothing. Only when setup succeeds does it store `racetrack_setup`, a marker that later racetrack steps require. It prints nothing but its done line, and a failure names only its rule.
 
-The racetrack holds real production data, including PII. Nothing read from it ever leaves the enclave without going through 3g redaction first.
+The racetrack holds real production data, including PII. Nothing read from it ever leaves the enclave without going through redact first.
 
-### 4b. Arena.
+## index-search. Index search.
 
-Arena is a second database on the same server. Set it up like this:
+### Plan gate.
 
-1. Create it from `template0`. Set `LOCALE_PROVIDER`, `LC_COLLATE`, `LC_CTYPE`, and `ICU_LOCALE` to match step 2. Do this before you load the schema dump.
-2. Load the full schema and the extensions from 3b.
-3. Create the `quaack` schema and `clock_anchor()` function, the same way as in the racetrack.
-4. Keep all `VALID` constraints.
-5. Disable user triggers only, so FK triggers still fire.
+`EXPLAIN` the original query on the racetrack with the slow literal(s). Compare its canonical form with the input plan. If they differ, abort.
 
-Arena's job is to disprove rewrites, not to measure them. Step 9 generates its fixtures from the query's predicate structure. Every fixture load happens inside a transaction that gets rolled back, so arena stays empty between tests.
-
-Arena shares the server with the racetrack, and its activity can change what's in the cache. That only affects the hit-versus-read split, which is a secondary measure. Total blocks don't depend on the cache.
-
-## 5. Plan gate.
-
-`EXPLAIN` the original query on the racetrack with the slow literal(s). Compare its canonical form with the step 1 plan. If they differ, abort.
-
-A mismatch usually means the racetrack's statistics don't match production's. For example, the backup might be older than the statistics from 3c. The abort message should name that as the likely cause.
+A mismatch usually means the racetrack's statistics don't match production's. For example, the backup might be older than the statistics the statistics step read. The abort message should name that as the likely cause.
 
 This gate stops QUAACK from confidently optimizing against a racetrack that doesn't behave like production.
 
-### 5a. Index candidates.
+### Index candidates.
 
-This step uses HypoPG to find index candidates for the original query on the racetrack. Everything here is based on estimates, because HypoPG only works during plain `EXPLAIN`, not `EXPLAIN ANALYZE`. Every literal used here comes from the set of literals defined in step 3e.
+This step uses HypoPG to find index candidates for the original query on the racetrack. Everything here is based on estimates, because HypoPG only works during plain `EXPLAIN`, not `EXPLAIN ANALYZE`. Every literal used here comes from the set of literals the literals step chose.
 
 Three different generators propose candidate index definitions. The steps run in this order:
 
-1. The two mechanical generators, 5a-1 and 5a-2, propose candidates.
-2. The 5a-3 filter removes duplicates and anything already covered.
-3. 5a-4 tests each surviving mechanical candidate on its own.
-4. The LLM generator, 5a-5, sees those test results and proposes candidates that the mechanical generators missed. Its candidates go through the same filter and the same testing.
-5. If any LLM candidate fell short, 5a-6 gives the LLM one chance to revise.
-6. 5a-7 combines and ranks every candidate that survived, whichever generator it came from.
+1. The two mechanical generators, index-from-query and index-from-plan, propose candidates.
+2. The index-dedupe filter removes duplicates and anything already covered.
+3. index-test tests each surviving mechanical candidate on its own.
+4. The LLM generator, llm-index-ideas, sees those test results and proposes candidates that the mechanical generators missed. Its candidates go through the same filter and the same testing.
+5. If any LLM candidate fell short, llm-index-refine gives the LLM one chance to revise.
+6. index-rank combines and ranks every candidate that survived, whichever generator it came from.
 
-`quaack run --run <run ID>` drives this order through the enclave script: `quaacks index-search` (the plan gate and 5a-1 through 5a-4), `index-payload` and `index-test` (5a-5), `index-feedback` and `index-test --round refinement` (5a-6), then `index-rank` (5a-7), which tests the used candidates again, ranks and combines them, and stores the result. It can resume: `quaacks status --run <run ID>` says which of these steps' outputs the store already holds, and those steps are skipped. After step 8 it runs `quaacks arena-setup` (4b), since steps 9 and 10 need the arena. After step 11 it runs `index-build` (12a), `baseline` (13), `index-baseline` (13a), `candidate-runs` (14), `minimax` (14a and 14b), `result-comparison` (14c), and `selection` (14d), in that order, then writes the step 15 report. The same resume rule skips each of these whose output is stored, and a step that fails stops the run with its rule. It prints its progress to stderr: a numbered line as each step starts, and another as it ends that says what the step did and how long it took, such as `Built 2 indexes in 15s (12a)`, `Got 3 rewrites from the LLM, 2 kept in 1m10s (6a)`, or `No rule applied in 1s (6c)`. It also prints a line for each step it skips and a line for each LLM ask and retry. When stderr is a terminal, the latest line printed while a step runs, the step's own or a note under it, carries a clock with the step's time so far, such as `quaack: [6/18] Asking the LLM (6a) 1m10s`. It counts up in place: about once a second, the line is redrawn with `\r` and cleared to its end with `\e[K`. The redraw takes the same lock as every other progress line, so a note never lands in the middle of one. A new line leaves the one before at its final reading, and the step's closing line gives the final time. On a terminal too narrow for the line and its clock, the line is cut short with `…` to fit in one row, since `\r` only goes back to the start of a row; the terminal's width is read at each redraw. When the line ends, it's printed whole, so a finished line is never cut. A line that ends within the step's first second gets no clock. When stderr isn't a terminal, such as a log file, nothing is redrawn, and only the closing line gives the time. The clock is only a duration, so it carries nothing new across the trust boundary. A step with no summary ends with `Done`, and a skipped or failed step keeps its usual line. Each summary is built from counts and QUAACK's own words, never from text in the step's result, so those lines carry only step names, counts, and timings. The enclave sends back nothing the driver can count from index-search, 5a-7, 4b, or 13 through 14d, so their summaries just say what the step did. 6c gives counts only, since rewrite-rules doesn't send the names of the rules that fired and the driver has no list of them. On a resumed run, steps 8 and 11 count only the rewrites they did work for, and say how many were already done. Sub-steps, such as each rewrite's index-search, index-rank, and rewrite-prune in step 8, print no closing line, so what they did isn't shown, including whether rewrite-prune kept or dropped the rewrite.
+`quaack run --run <run ID>` drives this order through the enclave script: `quaacks index-search` (the plan gate and index-from-query through index-test), `index-payload` and `index-test` (llm-index-ideas), `index-feedback` and `index-test --round refinement` (llm-index-refine), then `index-rank`, which tests the used candidates again, ranks and combines them, and stores the result. It can resume: `quaacks status --run <run ID>` says which of these steps' outputs the store already holds, and those steps are skipped. After plan-pruning it runs `quaacks arena-setup`, since rewrite-test and counterexamples need the arena. After rewrite-index-ideas it runs `index-build`, `baseline`, `index-baseline`, `candidate-runs`, `minimax` (blocks-metric and minimax), `result-comparison`, and `selection`, in that order, then writes the report. The same resume rule skips each of these whose output is stored, and a step that fails stops the run with its rule. It prints its progress to stderr: a numbered line as each step starts, ending with the step's slug in parentheses, and another as it ends that says what the step did and how long it took, such as `Built 2 indexes in 15s (index-build)`, `Got 3 rewrites from the LLM, 2 kept in 1m10s (llm-rewrites)`, or `No rule applied in 1s (rewrite-rules)`. It also prints a line for each step it skips and a line for each LLM ask and retry. When stderr is a terminal, the latest line printed while a step runs, the step's own or a note under it, carries a clock with the step's time so far, such as `quaack: [6/18] Asking the LLM (llm-rewrites) 1m10s`. It counts up in place: about once a second, the line is redrawn with `\r` and cleared to its end with `\e[K`. The redraw takes the same lock as every other progress line, so a note never lands in the middle of one. A new line leaves the one before at its final reading, and the step's closing line gives the final time. On a terminal too narrow for the line and its clock, the line is cut short with `…` to fit in one row, since `\r` only goes back to the start of a row; the terminal's width is read at each redraw. When the line ends, it's printed whole, so a finished line is never cut. A line that ends within the step's first second gets no clock. When stderr isn't a terminal, such as a log file, nothing is redrawn, and only the closing line gives the time. The clock is only a duration, so it carries nothing new across the trust boundary. A step with no summary ends with `Done`, and a skipped or failed step keeps its usual line. Each summary is built from counts and QUAACK's own words, never from text in the step's result, so those lines carry only step names, counts, and timings. The enclave sends back nothing the driver can count from index-search, index-rank, arena-setup, or baseline through selection, so their summaries just say what the step did. rewrite-rules gives counts only, since rewrite-rules doesn't send the names of the rules that fired and the driver has no list of them. On a resumed run, plan-pruning and rewrite-index-ideas count only the rewrites they did work for, and say how many were already done. Sub-steps, such as each rewrite's rewrite-index-search, rewrite-index-rank, and rewrite-prune in plan-pruning, print no closing line, so what they did isn't shown, including whether rewrite-prune kept or dropped the rewrite.
 
-#### 5a-1. Generator one: from the parse.
+### index-from-query. Generator one: from the parse.
 
 For each table in the query, including the tables of every subquery and CTE body, each read as a query of its own, where a correlation such as `o.customer_id = c.id` counts as an equality on the inner table's column:
 
@@ -493,9 +623,9 @@ For each table in the query, including the tables of every subquery and CTE body
 6. Also emit every leading prefix of the key as a separate candidate.
 7. If the range column's `pg_stats` correlation is close to 1 or -1 and the table is large, also emit a BRIN candidate on that column.
 
-#### 5a-2. Generator two: from the plan.
+### index-from-plan. Generator two: from the plan.
 
-Use the production plan from step 1, not a plain `EXPLAIN` from the racetrack. The production plan has actual row counts and rows removed. A plain `EXPLAIN` only has estimates.
+Use the production plan from input, not a plain `EXPLAIN` from the racetrack. The production plan has actual row counts and rows removed. A plain `EXPLAIN` only has estimates.
 
 Each problem pattern in the plan points to a potentially-helpful index:
 
@@ -508,31 +638,31 @@ Each problem pattern in the plan points to a potentially-helpful index:
 - **Sort or Hash feeding an aggregate:** an index on the `GROUP BY` keys.
 - **Heap Fetches on an Index Only Scan:** this isn't an index problem, so skip it.
 
-#### 5a-3. Dedupe and filter.
+### index-dedupe. Dedupe and filter.
 
 This filter runs on each generator's output as soon as the generator produces it, not once at the end.
 
 Normalize every definition. Drop any candidate whose key columns and `INCLUDE` columns are a leading prefix of an existing index. Also drop any candidate that matches one an earlier generator already proposed, but add the later generator to its list of sources.
 
-A dropped duplicate isn't lost work. If generator one's ideal key already exists, the query isn't slow for lack of that index, and that's worth knowing. Record every duplicate and the index that covers it, so step 15a can report it.
+A dropped duplicate isn't lost work. If generator one's ideal key already exists, the query isn't slow for lack of that index, and that's worth knowing. Record every duplicate and the index that covers it, so negative-result can report it.
 
-Drop any partial index candidate whose predicate uses a column that isn't low-cardinality, as defined in 3f. This applies to every generator, including generator two's partial indexes. A predicate on a column with 50 or more distinct values risks putting PII into the DDL. The one exception is a predicate with no literal at all, made only of bare columns tested with `IS NULL`, `IS NOT NULL`, or as a boolean (`archived`, `NOT archived`), joined by `AND`, such as `WHERE deleted_at IS NULL`. It holds no values, only column names, so it's allowed on any column.
+Drop any partial index candidate whose predicate uses a column that isn't low-cardinality, as defined in classify. This applies to every generator, including generator two's partial indexes. A predicate on a column with 50 or more distinct values risks putting PII into the DDL. The one exception is a predicate with no literal at all, made only of bare columns tested with `IS NULL`, `IS NOT NULL`, or as a boolean (`archived`, `NOT archived`), joined by `AND`, such as `WHERE deleted_at IS NULL`. It holds no values, only column names, so it's allowed on any column.
 
-HypoPG can't model every index method (GIN, GiST, and SP-GiST among them), so set aside any candidate using a method HypoPG can't model that survive this filter. Carry them forward to step 12 untested, and note that they weren't tested.
+HypoPG can't model every index method (GIN, GiST, and SP-GiST among them), so set aside any candidate using a method HypoPG can't model that survive this filter. Carry them forward to measurement-setup untested, and note that they weren't tested.
 
-#### 5a-4. Single-candidate testing.
+### index-test. Single-candidate testing.
 
 Test each candidate on its own in the racetrack:
 
 1. Run `hypopg_reset`, then `hypopg_create_index`.
-2. For each literal in the set of literals from step 3e, run `EXPLAIN (format json)` of the original query.
+2. For each literal in the set of literals the literals step chose, run `EXPLAIN (format json)` of the original query.
 3. Record whether the plan uses the hypothetical index, the total cost, the canonical plan, and `hypopg_relation_size`.
 
 Discard any candidate the planner never uses, but keep its results. The LLM learns from what the planner ignored as much as from what it used.
 
-This step runs twice: once on the mechanical candidates before 5a-5, and again on the LLM's candidates after it.
+This step runs twice: once on the mechanical candidates before llm-index-ideas, and again on the LLM's candidates after it.
 
-#### 5a-5. Generator three: the LLM.
+### llm-index-ideas. Generator three: the LLM.
 
 The LLM has no database connection. The driver builds a payload from what the enclave script has sent it, and the LLM returns index DDL as text. The driver then sends that DDL to the enclave script, which tests it on the racetrack. Everything the LLM needs is shape-class data:
 
@@ -546,9 +676,9 @@ The LLM has no database connection. The driver builds a payload from what the en
     "$2": {"type": "timestamptz", "shape": "range_lower",      "est_rows": 12000,  "actual_rows": 340},
     "$3": {"type": "text",        "shape": "trailing_wildcard","est_rows": 10000,  "actual_rows": 3}
   },
-  "plan": "<step 1 plan, quals carrying placeholder ids instead of literals>",
-  "schema": "<step 3b subset, trimmed to the query's own tables, with their indexes and constraints>",
-  "mechanical_results": "<5a-4 results for every generator one and two candidate: DDL, whether the planner used it, cost per literal, estimated size, and any refusal; canonical plans redacted through 3g only for the baseline and the best candidate>",
+  "plan": "<input plan, quals carrying placeholder ids instead of literals>",
+  "schema": "<schema-dump subset, trimmed to the query's own tables, with their indexes and constraints>",
+  "mechanical_results": "<index-test results for every generator one and two candidate: DDL, whether the planner used it, cost per literal, estimated size, and any refusal; canonical plans redacted through redact only for the baseline and the best candidate>",
   "stats": {
     "orders.status":     {"n_distinct": 6,     "null_frac": 0.00, "correlation": 0.21,
                           "mcv_freqs": [0.71, 0.12, 0.09, 0.04, 0.03, 0.01],
@@ -579,39 +709,39 @@ Ask for up to five candidates. Tell the LLM that the existing indexes and the ca
 
 The `mechanical_results` field shows the LLM where to aim. It can see which mechanical indexes the planner used, how much each one helped for each literal, and what's still expensive in the best plan. It doesn't have to guess at those.
 
-The enclave script runs the LLM's output through 5a-3 right away. If any candidates get dropped, the driver tells the LLM which ones and why, such as "already covered by `orders_status_created_at_idx`," and asks for replacements. Do this once. After that, go ahead with whatever survived, if anything.
+The enclave script runs the LLM's output through index-dedupe right away. If any candidates get dropped, the driver tells the LLM which ones and why, such as "already covered by `orders_status_created_at_idx`," and asks for replacements. Do this once. After that, go ahead with whatever survived, if anything.
 
 Only ask for partial indexes whose predicates use low-cardinality columns. Tag every partial index candidate with a note: it only works if the predicate's literal is a constant in the application's SQL. A generic plan for a bind parameter can't use a partial index. That tag stays with the candidate all the way into the report.
 
-Then run 5a-4 on the LLM's surviving candidates.
+Then run index-test on the LLM's surviving candidates.
 
-The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from 3g, the schema subset from 3b, the outbound statistics from 3f, and the 5a-4 results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. To fit a 131k-token context window, the payload is trimmed. The schema holds only the query's own tables (the run's `relations`), not their FK parents, plus the indexes and constraints on them and every type, enum, and domain. pg_query splits the DDL into statements, and pg_dump's noise is left out: `SET` and `set_config` lines, comments, `COMMENT ON`, ownership, grants, and sequence statements. A statement it can't classify is kept. The stored `schema_subset` stays whole, since fixtures and arena need the FK parents. Each candidate in `mechanical_results` keeps its DDL, sources, size, refusal, and, per literal, whether the planner used it and its total cost. Only the baseline and the best candidate keep their plans: the best is the used candidate with the lowest total cost summed over the literals. The stats already cover only the query's own tables (3c). It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved 5a-3 filter and runs 5a-4 on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
+The driver gets the payload from `quaacks index-payload --run <run ID> [--search original]`, which sends it as one `index_payload` message. It reads it from the store: the redacted query, plan, and placeholder shapes from redact, the schema subset from schema-dump, the outbound statistics from classify, and the index-test results that `quaacks index-search` saved. Generator two reads the unredacted plan, so a stored candidate's predicate or key expression can hold a real literal. Every constant in a candidate's DDL is sent as `?`, unless it's in the predicate, compared directly with a low-cardinality column, and one of that column's MCV values, which the stats already carry. The plan goes without its `Settings`. To fit a 131k-token context window, the payload is trimmed. The schema holds only the query's own tables (the run's `relations`), not their FK parents, plus the indexes and constraints on them and every type, enum, and domain. pg_query splits the DDL into statements, and pg_dump's noise is left out: `SET` and `set_config` lines, comments, `COMMENT ON`, ownership, grants, and sequence statements. A statement it can't classify is kept. The stored `schema_subset` stays whole, since fixtures and arena need the FK parents. Each candidate in `mechanical_results` keeps its DDL, sources, size, refusal, and, per literal, whether the planner used it and its total cost. Only the baseline and the best candidate keep their plans: the best is the used candidate with the lowest total cost summed over the literals. The stats already cover only the query's own tables (statistics). It then sends the LLM's DDL to `quaacks index-test --run <run ID> [--search original]`, with `{"ddls": ["CREATE INDEX ...", ...]}` on stdin. Anything else on stdin is refused with `index_test_bad_ddls`. That step runs the DDL through the search's saved index-dedupe filter and runs index-test on what's accepted. It adds the results to the search's store entry, next to the mechanical ones, and sends one `index_outcome` per DDL. The replacement round calls it again. Every stored result carries the partial index tag.
 
-#### 5a-6. Refinement round.
+### llm-index-refine. Refinement round.
 
-The results from 5a-4 up front make the LLM's first pass much better. But they can't teach it about its own kinds of candidates. Partial, expression, and operator-class indexes fail in ways btree results don't reveal. A partial index predicate might not match the query closely enough for the planner to use it. An operator class might not fit the column's collation. An expression index might not match the query's expression exactly.
+The results from index-test up front make the LLM's first pass much better. But they can't teach it about its own kinds of candidates. Partial, expression, and operator-class indexes fail in ways btree results don't reveal. A partial index predicate might not match the query closely enough for the planner to use it. An operator class might not fit the column's collation. An expression index might not match the query's expression exactly.
 
-Run this round only if at least one LLM candidate fell short in 5a-4:
+Run this round only if at least one LLM candidate fell short in index-test:
 
 - The planner never used it.
 - It helped less than a simpler mechanical candidate did.
 
 If every LLM candidate was used and helped, skip this round.
 
-Otherwise, send the LLM the 5a-4 results for its own candidates:
+Otherwise, send the LLM the index-test results for its own candidates:
 
 - Whether the planner used each one.
 - Cost before and after, per literal.
 - Estimated size.
-- The resulting canonical plan, redacted through 3g like every other plan.
+- The resulting canonical plan, redacted through redact like every other plan.
 
 Then ask it to revise. A model that sees the planner ignored its partial index, or that its four-column key lost to a two-column prefix, can usually fix the problem on a second try.
 
-This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run 5a-3 and 5a-4 on whatever comes back. Do only one round.
+This is the feedback loop people want when they talk about giving an LLM database access. It doesn't need a connection. The enclave script runs `EXPLAIN` and hands the driver the redacted result. Run index-dedupe and index-test on whatever comes back. Do only one round.
 
-An LLM candidate fell short if the planner didn't use it, or if a simpler mechanical candidate did at least as well. Simpler means fewer key and `INCLUDE` columns, with ties broken by smaller estimated size. At least as well means its worst-case cost across the set of literals is no higher. The driver gets the feedback from `quaacks index-feedback --run <run ID> [--search original]`, which sends one `index_feedback` message: whether to revise, whether the round already ran, the baseline cost per literal set, and each of the LLM's 5a-5 candidates with its DDL redacted as in 5a-5, its 5a-4 results, its shortfall, and the simpler mechanical candidate that beat it, if any. The LLM's revisions go to `quaacks index-test` with `--round refinement`, which tags their results and records that the round ran.
+An LLM candidate fell short if the planner didn't use it, or if a simpler mechanical candidate did at least as well. Simpler means fewer key and `INCLUDE` columns, with ties broken by smaller estimated size. At least as well means its worst-case cost across the set of literals is no higher. The driver gets the feedback from `quaacks index-feedback --run <run ID> [--search original]`, which sends one `index_feedback` message: whether to revise, whether the round already ran, the baseline cost per literal set, and each of the LLM's llm-index-ideas candidates with its DDL redacted as in llm-index-ideas, its index-test results, its shortfall, and the simpler mechanical candidate that beat it, if any. The LLM's revisions go to `quaacks index-test` with `--round refinement`, which tags their results and records that the round ran.
 
-#### 5a-7. Combination and ranking.
+### index-rank. Combination and ranking.
 
 Combine candidates from all three generators greedily. Start with the best single candidate. Test it paired with each remaining candidate. Keep adding candidates as long as each addition lowers the cost further, up to three indexes total.
 
@@ -625,30 +755,17 @@ Keep the top three by that ranking. Also keep the best combination if it beats t
 - Its canonical plan.
 - Its partial-index tag, if it has one.
 
-## 6. Rewrite generation.
+## Rewrite generation.
 
-### 6a. Candidate generation.
+Three sources make rewrites, in this order: rewrite-rules, then llm-rewrites, then operator-rewrites if the operator gave any. Each source's rewrites go through rewrite-check as they arrive, and only its survivors are stored.
 
-Give the LLM the redacted query and annotated plan from step 3g, plus the schema subset from step 3b, trimmed the way 5a-5 trims it, to the query's own tables without pg_dump's noise. `quaacks rewrite-payload` sends these with the placeholders and stats, as 5a-5's payload does, less `mechanical_results`. Require each rewrite candidate to state two things:
+### rewrite-rules. Mechanical rules.
 
-- The transformation it applied.
-- Every assumption it relies on, such as a column being `NOT NULL` or a key being unique.
+This runs first, before llm-rewrites, as index-from-query and index-from-plan run before llm-index-ideas. It needs no LLM, so a run with a weak model still gets rewrites.
 
-Attach these statements to each candidate. Later steps use them to guide adversarial testing.
+The enclave script walks the redacted query's pg_query parse and applies a list of rules. Each rule is a sound transformation: given the catalog facts it names, its output returns the same rows as its input for every data set the schema allows. A rule only fires when the catalog proves those facts, and it states them as assumptions in assumption-check's vocabulary (`not_null`, `unique`, `foreign_key`, `check`), so assumption-check checks them again like anyone else's.
 
-### 6b. Assumption check.
-
-Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. The inbound check plans the candidate first, then this check runs. Reject any candidate with an unmet assumption before anything executes it.
-
-One kind, `denormalized_equal`, states what the data holds and the schema can't: a child row's `column` equals its parent's `id_column` wherever the parent's `type_column` is `type_value`, the child joining the parent on `join_column = references_column`. A polymorphic association copied into a column, such as Canvas's `submissions.course_id` and `assignments.context_id` where `context_type = 'Course'`, is one. 6b checks it against the data: on the racetrack, read only, with a 300000 ms statement timeout, it asks whether any child row of a parent with that type has a different value, with `IS DISTINCT FROM` so a `NULL` counts as different. The type value is bound as a parameter. Only a boolean comes back. It's met only if the answer is no; a timeout or an error makes it unmet, so the rewrite is dropped. The data can change after the check, so a rewrite resting on it is only as good as the data was then. Only a 6c rule may state it. `rewrite-check` refuses an LLM's or an operator's rewrite that carries one as `bad_assumption`, before anything is checked, so neither can make the enclave probe the tables it names. Steps 9 and 10 honour a checked one in the fixtures they test its rewrite on (step 9).
-
-### 6c. Mechanical rules.
-
-This runs first, before 6a, as 5a-1 and 5a-2 run before 5a-5. It needs no LLM, so a run with a weak model still gets rewrites.
-
-The enclave script walks the redacted query's pg_query parse and applies a list of rules. Each rule is a sound transformation: given the catalog facts it names, its output returns the same rows as its input for every data set the schema allows. A rule only fires when the catalog proves those facts, and it states them as assumptions in 6b's vocabulary (`not_null`, `unique`, `foreign_key`, `check`), so 6b checks them again like anyone else's.
-
-A heuristic rule is allowed too, if what it rests on is a `denormalized_equal` assumption, which 6b checks against the data. It's sound only for the data as 6b found it, not for every data set the schema allows. The report says so, naming the columns. Steps 9 and 10 test such a rewrite on fixtures that keep the copy, on the class's rows only (step 9).
+A heuristic rule is allowed too, if what it rests on is a `denormalized_equal` assumption, which assumption-check checks against the data. It's sound only for the data as assumption-check found it, not for every data set the schema allows. The report says so, naming the columns. rewrite-test and counterexamples test such a rewrite on fixtures that keep the copy, on the class's rows only (see rewrite-test).
 
 The rules in version 1, each one something Postgres's planner doesn't do for itself and ORMs often write:
 
@@ -656,13 +773,13 @@ The rules in version 1, each one something Postgres's planner doesn't do for its
 | --- | --- | --- |
 | `implied_predicate_removal` | Within each `SELECT` on its own (the top level, and each subquery, CTE, and set-operation arm), `col = c` in the top-level `AND` of its `WHERE` or an inner join's `ON` drops another such conjunct on the same column that it proves: `col <> d`, `col IN (...)`, `col NOT IN (...)`, ranges, `BETWEEN`, and duplicate conjuncts. An equality proves only what's in its own `SELECT`, and its column must belong to one of that `SELECT`'s own tables. A duplicate in both an inner join's `ON` and the `WHERE` is dropped from the `WHERE`, and an `ON` left empty makes a cross join. Outer-join `ON` conjuncts are never moved and never used as proof. It refuses a column with a nondeterministic collation, an equality whose constant is cast to any type but the column's own, modifiers included, and a duplicate that might call a volatile function (`Catalog#calls_volatile?`). Literal comparison stays inside Postgres, with placeholders bound as parameters and cast to the column type and collation. | None. |
 | `transitive_predicate_copy` | For each column equality `a.x = b.y` in a top-level `AND` of a `WHERE` or an inner join's `ON`, a filter on `a.x` is copied to `b.y`. Postgres already carries `a.x = c` across the join, but not these. The filters copied are an `IN` list of constants, a `<`, `<=`, `>`, or `>=` comparison with a constant, and a `BETWEEN` of two constants. `IS NOT NULL` isn't copied. The copy goes in the same place as its source, the `WHERE` or that `ON`, and reuses the source's placeholders, so it adds no literal values. A copy isn't added when the same conjunct is already in the `WHERE` or an inner join's `ON`, which the literal oracle decides. Copies chain along `a.x = b.y = c.z`. It refuses a constant with a cast or a `COLLATE`, and a filter that calls a function. It refuses an equality whose columns differ in type or collation, a column with a nondeterministic collation, and a type whose `=`, `<`, `<=`, `>`, and `>=` aren't its default btree operators. It never uses or copies to a column on an outer join's nullable side. | None. |
-| `shared_scan_cte` | A table read more than once in the top-level `FROM`, each copy with the same filter, is read once: `WITH quaack_scan_of_<table> AS MATERIALIZED (SELECT * FROM <schema>.<table> WHERE <shared conjuncts>)`, and each copy reads that CTE under its old alias. A copy's conjuncts are the top-level conjuncts of the `WHERE` and of each inner join's `ON` that read only that copy's columns, qualified by its alias, with no subquery. A conjunct is shared when every copy has it with its own alias in place of the others'. The literal oracle decides whether two placeholders match; no value is read. Shared conjuncts leave every copy and go in the CTE, with the first copy's placeholders. Every other conjunct stays where it was, and an `ON` left empty becomes `ON true`. It runs after `transitive_predicate_copy`, which can give the copies the conjuncts they share. It works only on plain tables in the top-level `FROM`, and only when every top-level `FROM` item has a name, so an aliased join can't hide a copy. It refuses a table with a copy on an outer join's nullable side, a query that already has a CTE of that name at any depth, a CTE body that calls a volatile function, and a query that reads a copy's whole row, other than as `copy.*` in the select list, since the CTE's row type isn't the table's. A name longer than Postgres keeps fails the faithful deparse. Postgres must be able to prepare the rewrite, so a query that names a copy's system column, such as `ctid`, or whose `GROUP BY` relied on the table's primary key, is refused. Reading once isn't always faster, since the CTE hides the table's indexes from the copies' own filters and join conditions; steps 8 onward decide. Step 8's index search covers the CTE's own scan of the base table, as 5a-1 does any CTE body. | None. |
+| `shared_scan_cte` | A table read more than once in the top-level `FROM`, each copy with the same filter, is read once: `WITH quaack_scan_of_<table> AS MATERIALIZED (SELECT * FROM <schema>.<table> WHERE <shared conjuncts>)`, and each copy reads that CTE under its old alias. A copy's conjuncts are the top-level conjuncts of the `WHERE` and of each inner join's `ON` that read only that copy's columns, qualified by its alias, with no subquery. A conjunct is shared when every copy has it with its own alias in place of the others'. The literal oracle decides whether two placeholders match; no value is read. Shared conjuncts leave every copy and go in the CTE, with the first copy's placeholders. Every other conjunct stays where it was, and an `ON` left empty becomes `ON true`. It runs after `transitive_predicate_copy`, which can give the copies the conjuncts they share. It works only on plain tables in the top-level `FROM`, and only when every top-level `FROM` item has a name, so an aliased join can't hide a copy. It refuses a table with a copy on an outer join's nullable side, a query that already has a CTE of that name at any depth, a CTE body that calls a volatile function, and a query that reads a copy's whole row, other than as `copy.*` in the select list, since the CTE's row type isn't the table's. A name longer than Postgres keeps fails the faithful deparse. Postgres must be able to prepare the rewrite, so a query that names a copy's system column, such as `ctid`, or whose `GROUP BY` relied on the table's primary key, is refused. Reading once isn't always faster, since the CTE hides the table's indexes from the copies' own filters and join conditions; plan-pruning onward decide. plan-pruning's index search covers the CTE's own scan of the base table, as index-from-query does any CTE body. | None. |
 | `key_in_self_join` | `t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key: drop the inner `t2`, move its predicates to the outer `t`, and leave an `EXISTS` on what's left of the subquery, correlated on `t.k`. With nothing left, only the predicates remain. Each arm of a `UNION ALL` in the subquery is handled on its own, and the arms are joined with `OR`. | `k` unique and not null. |
 | `or_to_union` | A top-level `OR` whose arms read different tables or subqueries becomes a `UNION` of one query per arm: the query's `FROM` and `WHERE` with only that arm in the `OR`'s place. Each arm selects the columns the rest of the query uses and a key of every `FROM` table. The query then reads the `UNION` in place of its tables, so its select list, aggregates, `DISTINCT`, `ORDER BY`, and `LIMIT` apply to the whole `UNION`. It leaves alone a query with `GROUP BY`, `HAVING`, a window function, `DISTINCT ON`, a locking clause, `WITH`, an outer join, or a `FROM` item that isn't a table, and one that uses a column of a type `UNION` can't compare, such as `json`. | A unique, not-null key of every `FROM` table, one column each, so `UNION` removes exactly the rows both arms return. |
 | `not_in_to_not_exists` | `t.x NOT IN (SELECT s.y ...)`, a condition the `WHERE` ANDs, becomes `NOT EXISTS (... WHERE x = y)`, with the rest of the subquery as it was. A subquery table under the outer table's name gets a fresh alias. `<> ALL`, a row on the left, and a subquery that's a set operation or has `GROUP BY`, `LIMIT`, or the like are left alone. | `x` and `y` not null, and neither table on the nullable side of an outer join. |
 | `existence_in_flip` | An existence check, a query whose select list is all constants, each perhaps cast, as in `1::integer`, with `LIMIT 1` and no `DISTINCT`, `GROUP BY`, `HAVING`, window, or `OFFSET`, is turned inside out on a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)`: `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the other conjuncts> AND x = y) LIMIT 1`. So `S` drives, which a `LIMIT 1` fast-start plan from the other side can lose to. The original FROM, outer joins included, moves whole into the `EXISTS`, and the original's CTEs stay at the top. Both return a row exactly when some combination of rows passes every predicate with `x = y`; the `IN` and the `=` use the same operator, so a `NULL` matches nothing in either. It needs `LIMIT 1`, since with more the two can return different numbers of rows. An `ORDER BY` becomes `ORDER BY 1`: every row is the same constants, so the order picks nothing, but result comparison needs a candidate to keep an `ORDER BY` the original has. Each key must be an output position, or a column written `name.column` of a plain table in the original FROM whose type is an enum or a built-in scalar, with no `USING`, since sorting can fail at run time, as `1 / 0` does, or a `json[]` or a whole row with a `json` column does when two rows compare, and the rewrite wouldn't sort them. `y` may be an expression with no subquery, since a bare name in one would see the original FROM first, and not a bare constant, which `IN` reads as `text` and `=` as `x`'s type, so `'a '` matches a `char(3)` `'a'` in one and not the other. Each column in `y` must be qualified, or unqualified with `S` a single table, or with `S` all plain tables of which the catalog says just one has that column; either way it's then qualified with that table. When the original FROM has an item under such a qualifier, that `S` table gets a fresh alias, and every reference to it in `S` is renamed, including in `S`'s subqueries, so nothing else anywhere in `S` may have that name as a FROM item: a table, a CTE read, an alias, or an unaliased function call. Every original FROM item must have a name. The subquery must be a plain `SELECT` with no `DISTINCT`, `GROUP BY`, `HAVING`, `LIMIT`, `OFFSET`, or set operation, and it refuses `= ANY`, `NOT IN`, and a query that calls a volatile function. Postgres must be able to prepare the rewrite, each placeholder declared its literal's type as the original is, so `generate_series($1, $2)` prepares; that refuses a correlated subquery, since only `S` is in scope at the top. Unsupported in v1: a bare name that names a FROM item on its own side, such as `posts` in `posts IS NULL`, is refused. Postgres reads a bare name as a column of any query in scope before it reads it as a whole row, and the flip puts each side in the scope of the other, whose column of that name would capture it. A qualified whole row, such as `posts.*`, is fine. Each qualifying `IN` gives its own rewrite. The same flip inside an `EXISTS` body is left for later. | None. |
 | `distinct_join_to_exists` | `SELECT DISTINCT` of one table's columns over a join becomes that table with `EXISTS` on the others, and no `DISTINCT`. The select list and `ORDER BY` read only that table: its columns, its `*`, or expressions of them such as a `COLLATE`, a cast, or a function call, written `t.col` or as a bare column only that table has. No call may be volatile, set-returning, an aggregate, or a window function. The joins are all inner, and the other tables go in one `EXISTS` with every condition that reads them. `ORDER BY`, `LIMIT`, and `OFFSET` carry over unchanged; with a `LIMIT` or `OFFSET`, the `ORDER BY` must hold the key as `t.col`, so the order is total. | The select list holds a unique, not-null key of the kept table, of one column. |
-| `cte_hoist_dedupe` | CTEs at any depth whose bodies, column names, and materialization option all match become one CTE at the front of the top-level `WITH`, and every reference to a copy reads it. The literal oracle decides whether two placeholders match; no value is read. The copies leave their `WITH`s, and a `WITH` left empty goes. The merged CTE keeps the first copy's name unless another CTE or an unrelated table reference uses it; then it's `quaack_cte_<n>`, the first such name the query doesn't use, and each renamed reference keeps its old name as an alias. So a nearer CTE of the same name can never hide it. A merged plain CTE may now be materialized, since it's read more than once; steps 8 onward decide whether that helps. A copy merges only if Postgres can analyze its body alone, so it isn't correlated, it reads no CTE from outside its body, and it calls no volatile function. It refuses a copy in a `RECURSIVE` `WITH`, and the whole query when the top-level `WITH` is `RECURSIVE` or any CTE modifies data. A copy inside another copy's body moves with it. | None. |
+| `cte_hoist_dedupe` | CTEs at any depth whose bodies, column names, and materialization option all match become one CTE at the front of the top-level `WITH`, and every reference to a copy reads it. The literal oracle decides whether two placeholders match; no value is read. The copies leave their `WITH`s, and a `WITH` left empty goes. The merged CTE keeps the first copy's name unless another CTE or an unrelated table reference uses it; then it's `quaack_cte_<n>`, the first such name the query doesn't use, and each renamed reference keeps its old name as an alias. So a nearer CTE of the same name can never hide it. A merged plain CTE may now be materialized, since it's read more than once; plan-pruning onward decide whether that helps. A copy merges only if Postgres can analyze its body alone, so it isn't correlated, it reads no CTE from outside its body, and it calls no volatile function. It refuses a copy in a `RECURSIVE` `WITH`, and the whole query when the top-level `WITH` is `RECURSIVE` or any CTE modifies data. A copy inside another copy's body moves with it. | None. |
 | `union_outer_filter_removal` | A top-level `WHERE` conjunct that reads only one `UNION` or `UNION ALL` subquery's output columns, qualified by its alias, is dropped when every arm's top-level `WHERE` holds the same conjunct on the columns that arm outputs in those positions. The literal oracle decides whether two placeholders match; no value is read. Every row an arm outputs passed its `WHERE`, `GROUP BY`, `DISTINCT ON`, `ORDER BY`, and `LIMIT` only pick among those rows, and `UNION` keeps one of each set of equal rows, so the outer conjunct already holds on every row. An arm column must be a qualified column of a table in the catalog, or a `*` it can expand from the catalog, and each position's columns must match in type and collation, so `UNION` casts nothing. It runs after `cte_hoist_dedupe`, so a conjunct's subquery reads the one shared top-level CTE. A conjunct with a subquery matches only if Postgres can analyze it under the top-level `WITH` alone, and no arm's nearer `WITH` hides a CTE it reads. It refuses a conjunct that calls a volatile function, a `LATERAL` or column-aliased `UNION` subquery or arm table, a `UNION` on an outer join's nullable side, an `INTERSECT` or `EXCEPT` anywhere in it, an arm with grouping sets, and an arm column read from a CTE or subquery. Only that conjunct goes, so the outer `GROUP BY` and `HAVING` stay as they were. | None. |
 | `unused_join_removal` | An inner join to a table that's read nowhere else is removed. | A foreign key from the joining columns to the joined table's key, and the joining columns not null. |
 | `polymorphic_key_copy` | A heuristic rule. With `child.j = parent.id` and the filters `parent.<p>_type = $m AND parent.<p>_id = $n`, in a top-level `AND` of the `WHERE` or an inner join's `ON`, it adds `child.<x>_id = $n` to the `WHERE`, so an index on the child's copy can be used. Each column is qualified, each constant a bare placeholder, and both tables plain tables, neither on an outer join's nullable side. The constant stays a placeholder and the copy reuses it. `<x>_id` is a column of the child whose class name the type literal is: `<x>` in CamelCase, of at most four words, with each `_` between words read either as nothing or as `::`, so `course_id` is `Course` and `foo_bar_id` is `FooBar` or `Foo::Bar`. The literal oracle decides which; no value is read. If the column has foreign keys, each must reference `<x>s` or `<x>es`. It refuses when two of the child's columns match, and it adds nothing when the copy is already there. Single-table inheritance and acronym inflections aren't supported. | `denormalized_equal`, checked against the data. |
@@ -671,60 +788,101 @@ Rules chain. A rule runs on the original and on every rule's output, its own inc
 
 A rule is one object with a name, and one method that takes a parse tree, the catalog facts, and a literal oracle, then returns zero or more rewritten trees, each with its assumptions. The oracle answers only booleans: whether two placeholders have the same literal text and shape, or whether a boolean expression over placeholders holds when Postgres evaluates it with the real values bound as parameters. The generator knows nothing about any one rule: it holds a list. Adding a rule means adding one file and one line in that list. A rule's name and its description are QUAACK's own constants, so they're shape-class data and the report can show them.
 
-Each rewrite goes through the same checks as an LLM's, in `rewrite-check`'s order: the inbound check, 6b, and step 8's structural discards. Survivors are stored as `rewrite_<n>` before 6a's, with their source (`rule`) and the names of the rules applied, in order. From there they go through steps 8 to 14 like any other rewrite. Rules are sound by design, but the tests still run: a rule's rewrite that steps 9, 10, or 14c disprove is a bug in QUAACK, and the report says so prominently, naming the rule. A rewrite resting on a `denormalized_equal` assumption is the exception for steps 9 and 10. Their fixtures honour it (step 9), but they're made-up data, not the data 6b checked, so their disproof of it isn't called a bug. 14c's is, since 14c runs on the data 6b checked.
+Each rewrite goes through rewrite-check, as an LLM's does: inbound-check, assumption-check, and structural-discard. Survivors are stored as `rewrite_<n>` before llm-rewrites', with their source (`rule`) and the names of the rules applied, in order. From there they go through plan-pruning to selection like any other rewrite. Rules are sound by design, but the tests still run: a rule's rewrite that rewrite-test, counterexamples, or result-comparison disprove is a bug in QUAACK, and the report says so prominently, naming the rule. A rewrite resting on a `denormalized_equal` assumption is the exception for rewrite-test and counterexamples. Their fixtures honour it (see rewrite-test), but they're made-up data, not the data assumption-check checked, so their disproof of it isn't called a bug. result-comparison's is, since result-comparison runs on the data assumption-check checked.
 
-`quaacks rewrite-rules --run <run ID>` runs this. The driver calls it right before 6a, with no LLM call and no payload. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. The marker holds how many results were dropped as duplicates and how many were over the cap. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
+`quaacks rewrite-rules --run <run ID>` runs this. The driver calls it right before llm-rewrites, with no LLM call and no payload. It writes the `rewrite_rules_applied` marker, which `quaacks status` reports, so a resumed run doesn't run it again. The marker holds how many results were dropped as duplicates and how many were over the cap. Its only output is one `rewrite_outcome` per rewrite, as `rewrite-check` sends.
 
-It records the 6c burndown stage: every result the rules made, counted by the last rule applied, and how many were dropped as a duplicate, as over the cap, or for failing the checks. A result pg_query can't deparse faithfully isn't counted.
+It records the rewrite-rules burndown stage: every result the rules made, counted by the last rule applied, and how many were dropped as a duplicate, as over the cap, or for failing the checks. A result pg_query can't deparse faithfully isn't counted.
 
-The marker is its last write, so a call that dies can leave rewrites stored with no marker, and the driver then calls it again. Running it again must change nothing. It writes in this order: each survivor, then the 6c and step 8 burndown records together in one write, then the marker. A second call keeps a rule-made rewrite the store already holds with the same SQL instead of storing it again, and records the burndown only if no 6c record is there yet.
+The marker is its last write, so a call that dies can leave rewrites stored with no marker, and the driver then calls it again. Running it again must change nothing. It writes in this order: each survivor, then the rewrite-rules and plan-pruning burndown records together in one write, then the marker. A second call keeps a rule-made rewrite the store already holds with the same SQL instead of storing it again, and records the burndown only if no rewrite-rules record is there yet.
 
-`report-payload` sends each rewrite's source (`rule`, `llm`, or `operator`) and, for a rule-made one, its rule names and its `denormalized_equal` assumptions as `empirical`: the tables and columns, never the type value. It sends a source or a rule name only if it's one of QUAACK's own, never what a store entry holds as it is, and an assumption only if every table and column it names is in the rewrite's own SQL, which the report sends anyway. It also sends `rule_bugs`: each rule-made rewrite that step 9, step 10, or 14c disproved, with its rule names and the step, less step 9 and 10 disproofs of a rewrite resting on `denormalized_equal`. Only a test that compared results and found them different counts. In 14c that means a failing verdict whose rule is a result mismatch (`column_count`, `column_types`, `row_count`, `value`, `multiset`, `subset`, or `candidate_unordered`). A 14c timeout (`timed_out`) isn't a disproof: 14c runs the rewrite with no index shown, so a sound rewrite that only wins with its index can run past the timeout. Nor is `unsupported_order`, which fails every candidate of an original whose order 14c can't check. 14d still drops such a rewrite, but the report doesn't call it a bug. A rewrite step 8 pruned for planning as the original does was never tested either, so it isn't one: on Postgres 18 the planner removes a single self-join on a key by itself, so `key_in_self_join`'s plainest rewrite is pruned that way.
+`report-payload` sends each rewrite's source (`rule`, `llm`, or `operator`) and, for a rule-made one, its rule names and its `denormalized_equal` assumptions as `empirical`: the tables and columns, never the type value. It sends a source or a rule name only if it's one of QUAACK's own, never what a store entry holds as it is, and an assumption only if every table and column it names is in the rewrite's own SQL, which the report sends anyway. It also sends `rule_bugs`: each rule-made rewrite that rewrite-test, counterexamples, or result-comparison disproved, with its rule names and the step, less rewrite-test and counterexamples disproofs of a rewrite resting on `denormalized_equal`. Only a test that compared results and found them different counts. In result-comparison that means a failing verdict whose rule is a result mismatch (`column_count`, `column_types`, `row_count`, `value`, `multiset`, `subset`, or `candidate_unordered`). A result-comparison timeout (`timed_out`) isn't a disproof: result-comparison runs the rewrite with no index shown, so a sound rewrite that only wins with its index can run past the timeout. Nor is `unsupported_order`, which fails every candidate of an original whose order result-comparison can't check. selection still drops such a rewrite, but the report doesn't call it a bug. A rewrite plan-pruning pruned for planning as the original does was never tested either, so it isn't one: on Postgres 18 the planner removes a single self-join on a key by itself, so `key_in_self_join`'s plainest rewrite is pruned that way.
 
-An operator can't yet assert a fact the schema doesn't state, such as "a content participation belongs to its submission's user". A rewrite that needs one is disproved in step 9 or 10.
+An operator can't yet assert a fact the schema doesn't state, such as "a content participation belongs to its submission's user". A rewrite that needs one is disproved in rewrite-test or counterexamples.
 
-## 7. Operator candidates.
+### llm-rewrites. LLM rewrites.
 
-Operators can submit their own rewrites through the driver as plain SQL. They write them with the 3g placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred.
+Give the LLM the redacted query and annotated plan from redact, plus the schema subset from schema-dump, trimmed the way llm-index-ideas trims it, to the query's own tables without pg_dump's noise. `quaacks rewrite-payload` sends these with the placeholders and stats, as llm-index-ideas' payload does, less `mechanical_results`. Require each rewrite candidate to state two things:
 
-Run the 6b constraint check on operator candidates too. But an unmet inferred assumption only adds a warning to the report. It doesn't reject the candidate, because the operator may know something the schema doesn't capture. The candidate still has to survive steps 8 through 10 like any other.
+- The transformation it applied.
+- Every assumption it relies on, such as a column being `NOT NULL` or a key being unique.
 
-The operator passes them as `quaack run --run <run ID> --rewrites <file>`, where the file is on the laptop and holds one `;`-terminated statement per rewrite. The driver reads and parses the file before it touches the jump server, so an unreadable or unparseable file, like an unknown run ID, fails at once with a usage error (exit 64). Right after 6a, on the same `quaacks rewrite-payload`, it sends the rewrites through `rewrite-check` with `"inferred": true`. The survivors are stored after 6a's, so they go through steps 8 to 11 like 6a's. That call writes the `operator_rewrites_checked` marker, which `quaacks status` reports, so a resumed run doesn't run step 7 again.
+Attach these statements to each candidate. Later steps use them to guide adversarial testing.
 
-## 8. Plan-based pruning.
+### operator-rewrites. Operator candidates.
 
-A rewrite can need completely different indexes than the original query. So each rewrite candidate gets its own index search, using the same sub-steps as 5a but run on the candidate's own parse and plan. That search is split into two halves:
+Operators can submit their own rewrites through the driver as plain SQL. They write them with the redact placeholders in place of literals, because the laptop never holds real values. For each one, ask the LLM to compare it with the redacted original query and infer the transformation and the assumptions it seems to rely on. Mark these as inferred.
 
-- **Step 8** does the cheaper mechanical half now, using no LLM calls. It tries to drop candidates we have a high confidence will not be able to run better than the original query, before they progress to more expensive parts of the pipeline.
-- **Step 11** uses LLM-suggested indices later, and only for candidates that survived steps 9 and 10. It's a more expensive operation, so we want to apply it after removing as many candidates as we can.
+Run the assumption-check constraint check on operator candidates too. But an unmet inferred assumption only adds a warning to the report. It doesn't reject the candidate, because the operator may know something the schema doesn't capture. The candidate still has to survive plan-pruning and rewrite-correctness like any other.
 
-Within one candidate's search, the 5a-3 filter compares only against existing indexes and against that candidate's own earlier proposals. An index that the original query's search also found still gets tested here, because it may behave differently with the rewrite.
+The operator passes them as `quaack run --run <run ID> --rewrites <file>`, where the file is on the laptop and holds one `;`-terminated statement per rewrite. The driver reads and parses the file before it touches the jump server, so an unreadable or unparseable file, like an unknown run ID, fails at once with a usage error (exit 64). Right after llm-rewrites, on the same `quaacks rewrite-payload`, it sends the rewrites through `rewrite-check` with `"inferred": true`. The survivors are stored after llm-rewrites', so they go through plan-pruning to selection like llm-rewrites'. That call writes the `operator_rewrites_checked` marker, which `quaacks status` reports, so a resumed run doesn't run operator-rewrites again.
 
-First, discard three kinds of candidates:
+### rewrite-check. Checking each rewrite.
 
-- Candidates that aren't a single `SELECT` without side effects. The enclave script actually rejects these as soon as they arrive from the driver, using the checks listed under "What goes into the enclave." They're listed here so the report counts them with the other discarded candidates.
-- Candidates that fail to plan on racetrack.
-- Candidates whose output column count or types differ from the original.
+Every rewrite goes through these checks, whichever source made it: llm-rewrites and operator-rewrites send their rewrites to `quaacks rewrite-check`, and rewrite-rules runs the same checks on its own rewrites inside the enclave. They run in order, on one racetrack connection, and a rewrite that fails one goes no further. First, a stated assumption must be one of QUAACK's kinds, and only a rewrite-rules rule may state `denormalized_equal`; anything else is refused as `bad_assumption` before anything is checked.
 
-For each remaining candidate, run the mechanical half of its index search:
+#### inbound-check. What goes into the enclave.
 
-1. **5a-1 and 5a-2:** Run generator one on the candidate's parse and generator two on its plan. Generator two uses the candidate's plain `EXPLAIN` plan from the racetrack, because a rewrite has no production `EXPLAIN ANALYZE`.
-2. **5a-3:** Filter the results.
-3. **5a-4:** Test each surviving index on its own, running the candidate query instead of the original.
+The rewrite must pass the checks under "What goes into the enclave": a single `SELECT` with no side effects, using only the supported SQL. A rewrite that fails is dropped and counted as `inbound_check`.
 
-Then `EXPLAIN` the candidate on the racetrack in three configurations:
+#### assumption-check. Assumption check.
+
+Check every stated assumption mechanically against `pg_constraint` and `pg_index`. Treat `NOT VALID` constraints as if they don't exist. This runs after inbound-check. Reject any candidate with an unmet assumption (`unmet_assumption`) before anything executes it. An operator's rewrite is the exception: see operator-rewrites.
+
+One kind, `denormalized_equal`, states what the data holds and the schema can't: a child row's `column` equals its parent's `id_column` wherever the parent's `type_column` is `type_value`, the child joining the parent on `join_column = references_column`. A polymorphic association copied into a column, such as Canvas's `submissions.course_id` and `assignments.context_id` where `context_type = 'Course'`, is one. assumption-check checks it against the data: on the racetrack, read only, with a 300000 ms statement timeout, it asks whether any child row of a parent with that type has a different value, with `IS DISTINCT FROM` so a `NULL` counts as different. The type value is bound as a parameter. Only a boolean comes back. It's met only if the answer is no; a timeout or an error makes it unmet, so the rewrite is dropped. The data can change after the check, so a rewrite resting on it is only as good as the data was then. Only a rewrite-rules rule may state it. `rewrite-check` refuses an LLM's or an operator's rewrite that carries one as `bad_assumption`, before anything is checked, so neither can make the enclave probe the tables it names. rewrite-test and counterexamples honour a checked one in the fixtures they test its rewrite on (see rewrite-test).
+
+#### structural-discard. Structural discards.
+
+Plan the rewrite on the racetrack with the slow literals. Discard it if it fails to plan (`failed_to_plan`), or if its output column count or types differ from the original's (`output_mismatch`). The burndown counts these drops, and inbound-check's, under plan-pruning, with its own.
+
+## plan-pruning. Plan-based pruning.
+
+A rewrite can need completely different indexes than the original query. So each rewrite candidate gets its own index search, using the same sub-steps as index-search but run on the candidate's own parse and plan. That search is split into two halves:
+
+- **plan-pruning** does the cheaper mechanical half now, using no LLM calls. It tries to drop candidates we have a high confidence will not be able to run better than the original query, before they progress to more expensive parts of the pipeline.
+- **rewrite-index-ideas** uses LLM-suggested indices later, and only for candidates that survived rewrite-test and counterexamples. It's a more expensive operation, so we want to apply it after removing as many candidates as we can.
+
+Within one candidate's search, the index-dedupe filter compares only against existing indexes and against that candidate's own earlier proposals. An index that the original query's search also found still gets tested here, because it may behave differently with the rewrite.
+
+rewrite-check has already dropped the rewrites that fail inbound-check or structural-discard. For each remaining candidate, rewrite-index-search runs the mechanical half of its index search:
+
+1. **index-from-query and index-from-plan:** Run generator one on the candidate's parse and generator two on its plan. Generator two uses the candidate's plain `EXPLAIN` plan from the racetrack, because a rewrite has no production `EXPLAIN ANALYZE`.
+2. **index-dedupe:** Filter the results.
+3. **index-test:** Test each surviving index on its own, running the candidate query instead of the original.
+
+rewrite-index-rank ranks what index-test kept, the same way index-rank does. Then rewrite-prune runs `EXPLAIN` on the candidate on the racetrack in three configurations:
 
 1. With no hypothetical indexes.
-2. With the original query's top three indexes from 5a-7.
-3. With the candidate's own top three mechanical indexes, ranked the same way 5a-7 ranks them.
+2. With the original query's top three indexes from index-rank.
+3. With the candidate's own top three mechanical indexes, ranked the same way index-rank ranks them.
 
 Discard the candidate only if its canonical plan matches the original's in all three configurations. A candidate like that can't run any better than the original.
 
-Save each remaining candidate's 5a-4 results. Step 11 picks up from there.
+Save each remaining candidate's index-test results. rewrite-index-ideas picks up from there.
 
-## 9. Predicate-aware fixtures.
+## arena-setup. Arena.
 
-The enclave script runs all of step 9. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
+The driver runs `quaacks arena-setup --run <run ID>` after plan-pruning, since rewrite-test and counterexamples need the arena and nothing before them does.
+
+Arena is a second database on the same server. Set it up like this:
+
+1. Create it from `template0`. Set `LOCALE_PROVIDER`, `LC_COLLATE`, `LC_CTYPE`, and `ICU_LOCALE` to match inventory. Do this before you load the schema dump.
+2. Load the full schema and the extensions from schema-dump.
+3. Create the `quaack` schema and `clock_anchor()` function, the same way as in the racetrack.
+4. Keep all `VALID` constraints.
+5. Disable user triggers only, so FK triggers still fire.
+
+Arena's job is to disprove rewrites, not to measure them. rewrite-test generates its fixtures from the query's predicate structure. Every fixture load happens inside a transaction that gets rolled back, so arena stays empty between tests.
+
+Arena shares the server with the racetrack, and its activity can change what's in the cache. That only affects the hit-versus-read split, which is a secondary measure. Total blocks don't depend on the cache.
+
+## rewrite-test. Predicate-aware fixtures.
+
+The enclave script runs all of rewrite-test. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
+
+rewrite-test and counterexamples together make up rewrite-correctness, which runs for each rewrite that rewrite-check kept and plan-pruning didn't prune. A rewrite either of them disproves goes no further.
+
+### fixture-scenarios. Scenarios.
 
 From the pg_query parse, pull out every predicate atom:
 
@@ -733,7 +891,7 @@ From the pg_query parse, pull out every predicate atom:
 - `IN` lists.
 - `IS NULL` tests.
 - Every join condition.
-- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. S1 through S5 also get tie rows, where the later columns decide: for each later column, a copy of the hit row with the columns before it at their literals and that column at its literal or one unit either side. A tie that would set a join key column or break a CHECK is left out. Unsupported in v1: a keyset whose columns span tables, or whose elements don't all evaluate to literals, gets no tie rows, and one with `=` or `<>`, or with an expression in the column row, gets no pool, so 9c may mark it untested.
+- Each keyset row comparison, as one atom. With `<`, `<=`, `>`, or `>=`, its pool is on its leading column: values that decide the comparison on that column alone. S1 through S5 also get tie rows, where the later columns decide: for each later column, a copy of the hit row with the columns before it at their literals and that column at its literal or one unit either side. A tie that would set a join key column or break a CHECK is left out. Unsupported in v1: a keyset whose columns span tables, or whose elements don't all evaluate to literals, gets no tie rows, and one with `=` or `<>`, or with an expression in the column row, gets no pool, so vacuity-guard may mark it untested.
 
 For each atom, build a pool of interesting values. Include one value that satisfies the atom, one that fails it, and the boundary values where they exist. Boundary values include the literal itself, one unit on either side of it, a matching and a non-matching pattern, and case variants for text. Add `NULL` for nullable columns, and add the type's boundary values for every column.
 
@@ -755,43 +913,35 @@ The scenarios are:
 - **S5:** Type boundary values substituted into the hit rows.
 - **S6:** One group with one row, one group with many rows, and one empty group.
 
-Columns the query never mentions still need values. A column with a `DEFAULT` gets its default. Any other column gets a type-typical value (0, an empty string, the epoch, `'empty'` for a range, `'{}'` for an array, `'(0,0)'` and its kin for a geometric type, zeros for a `bit(n)`), or, when a `CHECK` constrains it, a value that satisfies the `CHECK`. Step 9 works out a `CHECK`'s own satisfying values only when the typical value fails it. It asks Postgres whether a value passes an atom or a `CHECK` once per value: it keeps the answers for the whole step 9 run, and columns of one type with the same `CHECK`, such as many tables' `workflow_state`, share them.
+Columns the query never mentions still need values. A column with a `DEFAULT` gets its default. Any other column gets a type-typical value (0, an empty string, the epoch, `'empty'` for a range, `'{}'` for an array, `'(0,0)'` and its kin for a geometric type, zeros for a `bit(n)`), or, when a `CHECK` constrains it, a value that satisfies the `CHECK`. rewrite-test works out a `CHECK`'s own satisfying values only when the typical value fails it. It asks Postgres whether a value passes an atom or a `CHECK` once per value: it keeps the answers for the whole rewrite-test run, and columns of one type with the same `CHECK`, such as many tables' `workflow_state`, share them.
 
-A column that needs a distinct value per row, such as a key or a column of a unique key, gets the type's nth value: a number, a text such as `k7`, a date, a uuid, and so on. Each candidate is checked as an insert reads it, typmod and all, so a value too long for a `varchar(n)` or `char(n)` is passed over rather than cut short into a value another row has. A range's nth value is the range holding just its subtype's nth value, such as `[7,7]`, and an array's is the array holding just its element type's, such as `{7}`. A `bit(n)` is padded to its length. A `smallint`, an `integer`, or a `numeric` with a precision, or a domain over one, wraps to a negative number past the largest it holds, so a narrow column such as `numeric(5,2)` still gets distinct values. Columns that share a key, such as a `smallint` joined to an `integer`, take a value they all hold. A unique key needs only one of the columns step 9 fills on its own to differ per row: the one that takes distinct values best (a number, text, time, uuid, or network address before a boolean, enum, or bit string, and any of those before a type step 9 can't give distinct values, such as `pg_lsn`, and within each of those a column no `CHECK` constrains before one a `CHECK` does), unless one of them already varies for a smaller unique key or an expression unique index. The key's other such columns get their typical value. So a column that is a unique key on its own always varies, and in a key such as `(root_account_ids, login)`, only `login` does.
+A column that needs a distinct value per row, such as a key or a column of a unique key, gets the type's nth value: a number, a text such as `k7`, a date, a uuid, and so on. Each candidate is checked as an insert reads it, typmod and all, so a value too long for a `varchar(n)` or `char(n)` is passed over rather than cut short into a value another row has. A range's nth value is the range holding just its subtype's nth value, such as `[7,7]`, and an array's is the array holding just its element type's, such as `{7}`. A `bit(n)` is padded to its length. A `smallint`, an `integer`, or a `numeric` with a precision, or a domain over one, wraps to a negative number past the largest it holds, so a narrow column such as `numeric(5,2)` still gets distinct values. Columns that share a key, such as a `smallint` joined to an `integer`, take a value they all hold. A unique key needs only one of the columns rewrite-test fills on its own to differ per row: the one that takes distinct values best (a number, text, time, uuid, or network address before a boolean, enum, or bit string, and any of those before a type rewrite-test can't give distinct values, such as `pg_lsn`, and within each of those a column no `CHECK` constrains before one a `CHECK` does), unless one of them already varies for a smaller unique key or an expression unique index. The key's other such columns get their typical value. So a column that is a unique key on its own always varies, and in a key such as `(root_account_ids, login)`, only `login` does.
 
-Unsupported in v1: a column that needs a value and whose type step 9 can't fill is refused with `unsupported_type`. A domain whose `CHECK` rejects every candidate value is refused with `domain_check`. Both error lines also name the column, as `column`: `{ "table", "column", "type" }`, such as `{ "table": "public.courses", "column": "tags", "type": "int4range" }`, where the table is schema-qualified and the type is as `format_type` prints it. Table, column, and type names are schema, so they're shape. If any of them needs quoting or isn't that shape, the whole field is left out and the error names only the rule. The error line never names a value. The types that still refuse are those that read none of step 9's candidate values, such as `pg_lsn` and custom base types, and arrays and ranges over them. A nullable column of such a type is left `NULL` instead, when the query never names it (nor reads every column, as with `*`, a whole-row reference, or a `NATURAL` join; a `JOIN ... USING` names its columns; a name qualified by an alias that pins it to one other table doesn't count, but an unqualified one, or one through an alias step 9 can't pin to one table, does), no `NULLS NOT DISTINCT` key holds it, and neither its `CHECK`s nor a `NOT NULL` domain under its type rejects `NULL`. That choice looks at the original query only, so a rewrite that adds `IS NULL` on such a column still passes, as one that tests any unmentioned column's typical value does. Counterexample parent rows do the same, when neither the original nor the candidate reads the column. A `bit(n)` that needs more than 2^n distinct values repeats them.
+Unsupported in v1: a column that needs a value and whose type rewrite-test can't fill is refused with `unsupported_type`. A domain whose `CHECK` rejects every candidate value is refused with `domain_check`. Both error lines also name the column, as `column`: `{ "table", "column", "type" }`, such as `{ "table": "public.courses", "column": "tags", "type": "int4range" }`, where the table is schema-qualified and the type is as `format_type` prints it. Table, column, and type names are schema, so they're shape. If any of them needs quoting or isn't that shape, the whole field is left out and the error names only the rule. The error line never names a value. The types that still refuse are those that read none of rewrite-test's candidate values, such as `pg_lsn` and custom base types, and arrays and ranges over them. A nullable column of such a type is left `NULL` instead, when the query never names it (nor reads every column, as with `*`, a whole-row reference, or a `NATURAL` join; a `JOIN ... USING` names its columns; a name qualified by an alias that pins it to one other table doesn't count, but an unqualified one, or one through an alias rewrite-test can't pin to one table, does), no `NULLS NOT DISTINCT` key holds it, and neither its `CHECK`s nor a `NOT NULL` domain under its type rejects `NULL`. That choice looks at the original query only, so a rewrite that adds `IS NULL` on such a column still passes, as one that tests any unmentioned column's typical value does. Counterexample parent rows do the same, when neither the original nor the candidate reads the column. A `bit(n)` that needs more than 2^n distinct values repeats them.
 
-Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle is broken where it can be. A foreign key whose columns are all nullable is cut, meaning left out of the load order, when it still closes a cycle. Keys no predicate atom reads are tried first, then the ones an atom reads, so a query that joins on a cycle's only nullable edge still runs. The cut is only for load order. Its columns share their parent's key class as usual, so they get the same values as without the cycle. The exception is a group that leaves out a cut column's parent table and isn't a copy or a cross: S6's empty group, which holds only the tables with no uncut foreign key to another fixture table. Its cut columns are `NULL`, since their parents' tables have no row in the group. A copy of one table's row keeps its cut columns pointing at its row's parent, as without the cycle, so copies tie with their row on the cut column and a sort on it needs its tie-break. When that parent never built, the copy points at nothing and is left out like any orphan. A cut foreign key also gets an S3 cross row, like an uncut one: a row with no parent of its own that points its cut columns at the hit's parent, so two rows share one parent. With Canvas's `accounts.course_template_id`, that's an account with no courses whose template is the hit account's course, so a rewrite of a join on the template as `EXISTS`, or of "no template" as "no courses", is disproved. Each fixture row loads with `NULL` in its cut columns. Once every row has loaded, an `UPDATE` keyed to the row's `tableoid` and `ctid` (from `RETURNING`) sets them, in load order, so every constraint is still checked. If the row doesn't come back from its `INSERT`, or can't be found again that way (a trigger skipped or moved it, say), the load fails with `fixture_load_failed`. Only a cycle with no nullable foreign key is refused with `fk_cycle`. The refusal names the cycle that's left, as `cycle`: its tables, schema-qualified, in the order their foreign keys point, ending with the first again, such as `["public.accounts", "public.courses", "public.accounts"]`. Table names are schema, so they're shape. Before it leaves the enclave, each must be one of the run's `schema_subset` tables (3b), and the cycle must close and hold at least two tables, or the whole field is left out and the refusal names only the rule. On an error line, a table that needs quoting also leaves the field out. A refusal never names a row of a cycle's tables. A foreign key that references its own table never counts toward the load order. A unique index on an expression, such as `lower(email)`, is supported: one column its keys read gets a distinct value per row, a column that is a key on its own before one inside an expression, and step 9 evaluates the index keys in Postgres and leaves out a group whose keys still collide. One that calls a function outside `pg_catalog` is refused with `expression_unique_index`, since step 9 won't run user code. A partial unique index is treated as always unique. `NULLS NOT DISTINCT` keys collide on NULL. After loading a fixture, each identity or serial sequence is moved to its column's max, so an insert that leaves the column out doesn't collide with a fixture row.
+Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused with `complex_check`. A simple `CHECK` is an `AND` of tests of one column against constants: a comparison, an `IN` list, `BETWEEN`, or `IS [NOT] NULL`. A `CHECK` that compares two columns, uses `OR`, or calls a function on the column isn't simple. A foreign-key cycle is broken where it can be. A foreign key whose columns are all nullable is cut, meaning left out of the load order, when it still closes a cycle. Keys no predicate atom reads are tried first, then the ones an atom reads, so a query that joins on a cycle's only nullable edge still runs. The cut is only for load order. Its columns share their parent's key class as usual, so they get the same values as without the cycle. The exception is a group that leaves out a cut column's parent table and isn't a copy or a cross: S6's empty group, which holds only the tables with no uncut foreign key to another fixture table. Its cut columns are `NULL`, since their parents' tables have no row in the group. A copy of one table's row keeps its cut columns pointing at its row's parent, as without the cycle, so copies tie with their row on the cut column and a sort on it needs its tie-break. When that parent never built, the copy points at nothing and is left out like any orphan. A cut foreign key also gets an S3 cross row, like an uncut one: a row with no parent of its own that points its cut columns at the hit's parent, so two rows share one parent. With Canvas's `accounts.course_template_id`, that's an account with no courses whose template is the hit account's course, so a rewrite of a join on the template as `EXISTS`, or of "no template" as "no courses", is disproved. Each fixture row loads with `NULL` in its cut columns. Once every row has loaded, an `UPDATE` keyed to the row's `tableoid` and `ctid` (from `RETURNING`) sets them, in load order, so every constraint is still checked. If the row doesn't come back from its `INSERT`, or can't be found again that way (a trigger skipped or moved it, say), the load fails with `fixture_load_failed`. Only a cycle with no nullable foreign key is refused with `fk_cycle`. The refusal names the cycle that's left, as `cycle`: its tables, schema-qualified, in the order their foreign keys point, ending with the first again, such as `["public.accounts", "public.courses", "public.accounts"]`. Table names are schema, so they're shape. Before it leaves the enclave, each must be one of the run's `schema_subset` tables (schema-dump), and the cycle must close and hold at least two tables, or the whole field is left out and the refusal names only the rule. On an error line, a table that needs quoting also leaves the field out. A refusal never names a row of a cycle's tables. A foreign key that references its own table never counts toward the load order. A unique index on an expression, such as `lower(email)`, is supported: one column its keys read gets a distinct value per row, a column that is a key on its own before one inside an expression, and rewrite-test evaluates the index keys in Postgres and leaves out a group whose keys still collide. One that calls a function outside `pg_catalog` is refused with `expression_unique_index`, since rewrite-test won't run user code. A partial unique index is treated as always unique. `NULLS NOT DISTINCT` keys collide on NULL. After loading a fixture, each identity or serial sequence is moved to its column's max, so an insert that leaves the column out doesn't collide with a fixture row.
 
 A domain's `CHECK` counts as a `CHECK` on each column of that domain, with the same rule for what's simple.
 
-A refusal (`fk_cycle`, `complex_check`, `unsatisfiable_check`, `expression_unique_index`, `unsupported_type`, or `domain_check`) doesn't end the run. Step 9 can't build scenarios for the query, so it tests no rewrite. Each rewrite is stored as untested, with the refusal's rule and nothing else: not the column an `unsupported_type` or `domain_check` error names. The one exception is `fk_cycle`, which also stores its cycle's tables, for the report. An untested rewrite goes to neither step 10 nor step 11, and it's never measured or recommended. The run goes on to the index steps (12a, 13, 13a, 14) and the report, which says why, by the rule (step 15's `step9_untested`), and for `fk_cycle` names the cycle, such as `public.accounts -> public.courses -> public.accounts`. If step 10 meets a cycle anyway, because the arena changed after step 9, its error line names the cycle the same way. A resumed run reads the stored refusal and doesn't test the rewrite again.
+A refusal (`fk_cycle`, `complex_check`, `unsatisfiable_check`, `expression_unique_index`, `unsupported_type`, or `domain_check`) doesn't end the run. rewrite-test can't build scenarios for the query, so it tests no rewrite. Each rewrite is stored as untested, with the refusal's rule and nothing else: not the column an `unsupported_type` or `domain_check` error names. The one exception is `fk_cycle`, which also stores its cycle's tables, for the report. An untested rewrite goes to neither counterexamples nor rewrite-index-ideas, and it's never measured or recommended. The run goes on to the index steps (index-build, baseline, index-baseline, candidate-runs) and the report, which says why, by the rule (report's `rewrite_test_untested`), and for `fk_cycle` names the cycle, such as `public.accounts -> public.courses -> public.accounts`. If counterexamples meets a cycle anyway, because the arena changed after rewrite-test, its error line names the cycle the same way. A resumed run reads the stored refusal and doesn't test the rewrite again.
 
-Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark an atom untested, but they never make a fixture break a constraint:
+Also unsupported in v1, these limit what the fixtures exercise, so vacuity-guard may mark an atom untested, but they never make a fixture break a constraint:
 
 - Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
 - A join atom gets no near miss when a foreign key touches either of its columns.
 - A self-join's aliases share one row per group, so atoms on different aliases of the same table can't be failed one at a time.
-- A group whose row would collide with an earlier row on a unique key first tries the later pool values that still fit its atoms, so with `tg.name IN ('ruby', 'rails')` on a unique name, a second group takes `rails`. S3's cross rows come before its duplicates, so they get first pick. A cross row's group holds no parent of its own for the foreign key it points across, unless another of its foreign keys needs that parent. A group whose row points by foreign key at a parent row that isn't there, because that parent's group was left out, counts as colliding too. A group that still doesn't fit goes in a further fixture of the same scenario, with copies of the parent rows it points at: with `u.email = 'a@b'` on a unique email, S6's user with no profile can't share a fixture with the hit, so it gets its own. A group that fits no fixture as built tries, in a further fixture only, each pooled atom's near miss instead. Each fixture is loaded and compared, in both load orders, on its own, under its scenario's name, so a further fixture only adds comparisons. A group that fits nowhere is left out. The step 9 report counts as `dropped` the groups left out of their scenario's first fixture, and 9c checks the first fixture of S1 only.
-- The pools don't use 3e's literal sets or 3c's statistics.
+- A group whose row would collide with an earlier row on a unique key first tries the later pool values that still fit its atoms, so with `tg.name IN ('ruby', 'rails')` on a unique name, a second group takes `rails`. S3's cross rows come before its duplicates, so they get first pick. A cross row's group holds no parent of its own for the foreign key it points across, unless another of its foreign keys needs that parent. A group whose row points by foreign key at a parent row that isn't there, because that parent's group was left out, counts as colliding too. A group that still doesn't fit goes in a further fixture of the same scenario, with copies of the parent rows it points at: with `u.email = 'a@b'` on a unique email, S6's user with no profile can't share a fixture with the hit, so it gets its own. A group that fits no fixture as built tries, in a further fixture only, each pooled atom's near miss instead. Each fixture is loaded and compared, in both load orders, on its own, under its scenario's name, so a further fixture only adds comparisons. A group that fits nowhere is left out. The rewrite-test report counts as `dropped` the groups left out of their scenario's first fixture, and vacuity-guard checks the first fixture of S1 only.
+- The pools don't use the literals step's literal sets or the statistics step's statistics.
 
-A rule's rewrite that rests on a `denormalized_equal` assumption (6b, 6c) is right only on data that keeps the copy, so the fixtures it's tested on keep it. Once a fixture has loaded, inside its transaction, the arena runner drops the foreign keys on the copy column, since the copied id needn't be a row of the table they reference, and sets the column to the parent's id column on every row whose parent's type column is the class, and on no other row. Every name goes in as a quoted identifier and the class as a parameter, and the rollback undoes it all. Only the rewrite's own assumptions are honoured, and only when its entry's source is `rule`. The original runs on the same fixtures, and the 9c guard checks them too. Rows of any other class keep what the fixture gave them, so a rewrite that drops the type filter can pass step 9, and step 10's inserts are what catch it. A fixture the update breaks, say on a unique key over the copy, won't load, which step 9 treats as any other load failure.
+A rule's rewrite that rests on a `denormalized_equal` assumption (assumption-check, rewrite-rules) is right only on data that keeps the copy, so the fixtures it's tested on keep it. Once a fixture has loaded, inside its transaction, the arena runner drops the foreign keys on the copy column, since the copied id needn't be a row of the table they reference, and sets the column to the parent's id column on every row whose parent's type column is the class, and on no other row. Every name goes in as a quoted identifier and the class as a parameter, and the rollback undoes it all. Only the rewrite's own assumptions are honoured, and only when its entry's source is `rule`. The original runs on the same fixtures, and vacuity-guard checks them too. Rows of any other class keep what the fixture gave them, so a rewrite that drops the type filter can pass rewrite-test, and counterexamples' inserts are what catch it. A fixture the update breaks, say on a unique key over the copy, won't load, which rewrite-test treats as any other load failure.
 
-Run steps 9a through 9e for each scenario.
+First, vacuity-guard checks S1. Then, for each scenario, fixture-open, fixture-load, fixture-compare, and fixture-rollback run once for each load order (see fixture-compare). The first scenario whose results differ disproves the candidate, and the rest don't run.
 
-### 9a. Open the transaction.
-
-Begin a transaction on arena with `statement_timeout` set.
-
-### 9b. Load the fixture.
-
-Load the scenario's rows.
-
-### 9c. Vacuity guard.
+### vacuity-guard. Vacuity guard.
 
 This guard checks that the fixture actually tests every atom. Without it, a candidate can pass just because the fixture never exercised the part of the query it changed.
 
-Run the guard on S1 only. S1 is the scenario built to exercise every atom both ways. The other scenarios leave things empty on purpose. S0 has no rows at all, S4 withholds join partners, and S6 has an empty group. So they're extra coverage for edge cases, not full coverage.
+Run the guard on S1 only, in its own transactions that roll back, before any scenario is compared. S1 is the scenario built to exercise every atom both ways. The other scenarios leave things empty on purpose. S0 has no rows at all, S4 withholds join partners, and S6 has an empty group. So they're extra coverage for edge cases, not full coverage.
 
 For each atom, run the original query twice:
 
@@ -805,14 +955,22 @@ Don't use `EXPLAIN ANALYZE` row counts for this. "Rows Removed by Filter" is one
 When an atom is vacuous:
 
 1. **Retry.** Roll back, rebuild that atom's hit and near-miss rows from other values in its pool, and check again. Most vacuous atoms come from an unlucky value, such as a near-miss value that a `CHECK` constraint forces back into range. Try up to three times.
-2. **If it's still vacuous, keep going.** Mark the atom as untested. Every candidate that passes step 9 carries a note saying which atoms were never exercised, and that note goes into the report.
-3. **Hand it to step 10.** Pass the untested atoms to 10a so the LLM can aim its counterexamples at them.
+2. **If it's still vacuous, keep going.** Mark the atom as untested. Every candidate that passes rewrite-test carries a note saying which atoms were never exercised, and that note goes into the report.
+3. **Hand it to counterexamples.** Pass the untested atoms to llm-counterexamples so the LLM can aim its counterexamples at them.
 
-A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigger or constraint QUAACK doesn't model rejects a row, it exercises nothing: its atoms stay vacuous, get their retries, and end untested. In 9d, a scenario that won't load disproves each candidate with the load failure's rule, which is safe but means no candidate passes.
+A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigger or constraint QUAACK doesn't model rejects a row, it exercises nothing: its atoms stay vacuous, get their retries, and end untested. In fixture-compare, a scenario that won't load disproves each candidate with the load failure's rule, which is safe but means no candidate passes.
 
 The enclave script tells the driver which atoms are untested by their redacted shape, such as `o.status = $1`, never by their values.
 
-### 9d. Compare results.
+### fixture-open. Open the transaction.
+
+Begin a transaction on arena with `statement_timeout` set.
+
+### fixture-load. Load the fixture.
+
+Load the scenario's rows.
+
+### fixture-compare. Compare results.
 
 Run the original and every remaining candidate through the result comparator. The comparator follows these rules:
 
@@ -826,77 +984,78 @@ Run the original and every remaining candidate through the result comparator. Th
 
 Each comparison runs twice, each time in its own transaction that rolls back. The first run loads the fixture forward. The second loads it in reverse. Fixtures load in id order, and a small sort often keeps its input order for ties, so a rewrite can match one load by luck. Examples are a subquery that drops a secondary sort key before its `LIMIT`, or a `DISTINCT` that keeps `'24 hours'` where the original returns the equal `'1 day'`. The reverse load flips the order rows reach those steps in.
 
-- **Index scans are off.** Both runs turn off index, index-only, and bitmap scans for the transaction. Arena has the production indexes, and an index on `(grp, id)` returns the `grp` ties in `id` order however the rows were loaded. 9d compares only results, so the plan doesn't matter.
+- **Index scans are off.** Both runs turn off index, index-only, and bitmap scans for the transaction. Arena has the production indexes, and an index on `(grp, id)` returns the `grp` ties in `id` order however the rows were loaded. fixture-compare compares only results, so the plan doesn't matter.
 - **Rows reverse within each table.** Only each run of consecutive rows for one table is reversed. Rows of different tables keep their order, so parents still load before their children. A table whose foreign key references itself can't be reversed this way, and its reverse load fails with its own error, so the fixture isn't blamed for it.
-- **Step 10's raw inserts don't reverse.** One `INSERT` can hold many rows, and reordering them would mean rewriting it. They load in their own order, after the rows, in both runs. The rows' deferred `UPDATE`s for cut foreign-key columns (see step 9) run after all the rows and before the inserts, in the order the rows loaded. Every such row is updated, even to `NULL`, since an update moves a row to a new place in its table, and updating them all in load order keeps the order a scan returns them in. The inserts' own deferred `UPDATE`s (see 10a) run after all the inserts, in both runs.
+- **counterexamples' raw inserts don't reverse.** One `INSERT` can hold many rows, and reordering them would mean rewriting it. They load in their own order, after the rows, in both runs. The rows' deferred `UPDATE`s for cut foreign-key columns (see rewrite-test) run after all the rows and before the inserts, in the order the rows loaded. Every such row is updated, even to `NULL`, since an update moves a row to a new place in its table, and updating them all in load order keeps the order a scan returns them in. The inserts' own deferred `UPDATE`s (see llm-counterexamples) run after all the inserts, in both runs.
 - **Gaps remain.** A pick that doesn't follow the order rows arrive in comes out the same both ways, so the reverse load can't catch it. Examples are a hash aggregate's or hash join's order, a top-N heapsort's pick, and the middle row of an odd-sized tie group (`OFFSET 1 LIMIT 1` over three ties).
 - **Both runs must match.** A mismatch in either run disproves the candidate, and the verdict says which load order did it. If either run refuses to compare, the whole comparison refuses.
 
 Any mismatch disproves the candidate.
 
-### 9e. Roll back.
+### fixture-rollback. Roll back.
 
 Roll back the transaction.
 
-## 10. Adversarial fixtures.
+## counterexamples. Adversarial fixtures.
 
-Run up to three rounds of 10a through 10c for each surviving candidate. A rewrite step 9 refused to test (step 9's refusals) never survived it, so it never gets here.
+Run up to three rounds of llm-counterexamples through counterexample-rollback for each surviving candidate. A rewrite rewrite-test refused to test (see rewrite-test's refusals) never survived it, so it never gets here. Each round is one llm-counterexamples ask, then counterexample-compare and counterexample-rollback in the enclave; a round that disproves the candidate ends its rounds.
 
-### 10a. Generate counterexamples.
+### llm-counterexamples. Generate counterexamples.
 
 Give the LLM:
 
-- The candidate's stated transformation and assumptions from 6a, or the inferred ones from step 7.
+- The candidate's stated transformation and assumptions from llm-rewrites, or the inferred ones from operator-rewrites.
 - The subset schema.
 - The constraint list.
-- Any atoms that 9c marked as untested. Ask the LLM to make sure its counterexamples exercise these, since step 9 couldn't.
+- Any atoms that vacuity-guard marked as untested. Ask the LLM to make sure its counterexamples exercise these, since rewrite-test couldn't.
 
-Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints, except to honour a rule's `denormalized_equal`, as in step 9: once the inserts have loaded, and after any deferred `UPDATE`s, the copy column's foreign keys are dropped and the copy is set on the class's rows.
+Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints, except to honour a rule's `denormalized_equal`, as in rewrite-test: once the inserts have loaded, and after any deferred `UPDATE`s, the copy column's foreign keys are dropped and the copy is set on the class's rows.
 
 The enclave evaluates each value of an accepted insert in arena, once, to find its FK gaps and its deferred values (below). A value Postgres can't evaluate, such as `'abc'::integer`, refuses its insert with `bad_value`, and the round goes on without it. That's a data error (SQLSTATE class 22), a domain's CHECK or NOT NULL rejecting the value (class 23), or an expression that doesn't type-check, such as `abs('a'::text)` (class 42). Postgres's message can quote the value, so it's dropped: the refusal names only the rule. Any other error, such as a statement timeout or a dropped connection, isn't the value's fault. It fails the step, reported by rule and SQLSTATE alone.
 
-Inserts load parents' tables first. When a foreign-key cycle leaves no such order, nullable foreign keys are cut as in step 9, with no atoms to prefer around. An insert that sets a value in a cut column loads with NULL there. Once every insert has loaded, an `UPDATE` keyed to the inserted row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value, so the final data is exactly the LLM's rows and every constraint is still checked. The UPDATEs run last in both 9d load orders. A `DEFAULT` in a cut column stays `DEFAULT`. If an inserted row can't be found again by its `tableoid` and `ctid` (a trigger skipped it or moved it, say), the load fails with `insert_failed`, and the round disproves nothing.
+Inserts load parents' tables first. When a foreign-key cycle leaves no such order, nullable foreign keys are cut as in rewrite-test, with no atoms to prefer around. An insert that sets a value in a cut column loads with NULL there. Once every insert has loaded, an `UPDATE` keyed to the inserted row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value, so the final data is exactly the LLM's rows and every constraint is still checked. The UPDATEs run last in both fixture-compare load orders. A `DEFAULT` in a cut column stays `DEFAULT`. If an inserted row can't be found again by its `tableoid` and `ctid` (a trigger skipped it or moved it, say), the load fails with `insert_failed`, and the round disproves nothing.
 
-### 10b. Compare results.
+### counterexample-compare. Compare results.
 
-Run the comparator from 9d. Any mismatch disproves the candidate.
+Run the comparator from fixture-compare. Any mismatch disproves the candidate.
 
-For each atom that 9c marked as untested, also run the 9c test on this fixture. If the atom counts as exercised, record that step 10 covered it.
+For each atom that vacuity-guard marked as untested, also run the vacuity-guard test on this fixture. If the atom counts as exercised, record that counterexamples covered it.
 
-### 10c. Roll back.
+### counterexample-rollback. Roll back.
 
 Roll back the transaction.
 
-## 11. Per-candidate index ranking.
+## rewrite-index-ideas. Per-candidate index ranking.
 
-For each candidate that survived steps 9 and 10, run the LLM half of the index search that step 8 started:
+For each candidate that survived rewrite-test and counterexamples, and that plan-pruning didn't prune, run the LLM half of the index search that plan-pruning started:
 
-1. **5a-5:** Run generator three on the candidate. The payload uses the candidate's redacted query and plan in place of the original's, and its `mechanical_results` are the 5a-4 results that step 8 saved.
-2. **5a-3 and 5a-4:** Filter the LLM's proposals and test each survivor on its own, running the candidate query.
-3. **5a-6:** If any LLM proposal fell short, give the LLM its one refinement round.
-4. **5a-7:** Combine and rank all of the candidate's indexes, mechanical and LLM, and keep what 5a-7 keeps.
+1. **rewrite-llm-index-ideas:** Run generator three on the candidate, as llm-index-ideas does for the original. The payload uses the candidate's redacted query and plan in place of the original's, and its `mechanical_results` are the index-test results that plan-pruning saved. Then run index-dedupe and index-test on the LLM's proposals, running the candidate query.
+2. **rewrite-llm-index-refine:** If any LLM proposal fell short, give the LLM its one refinement round, as llm-index-refine does.
+3. **rewrite-index-rerank:** Combine and rank all of the candidate's indexes, mechanical and LLM, and keep what index-rank would keep.
 
-The candidate's plan came from the racetrack, so its quals contain real literals. The enclave script redacts it through 3g before sending it to the driver. The placeholder rules apply to candidate plans exactly as they apply to the production plan.
+The LLM asks here are the rewrite's own: the burndown and the progress lines count them as rewrite-llm-index-ideas and rewrite-llm-index-refine, never as the original query's llm-index-ideas or llm-index-refine.
+
+The candidate's plan came from the racetrack, so its quals contain real literals. The enclave script redacts it through redact before sending it to the driver. The placeholder rules apply to candidate plans exactly as they apply to the production plan.
 
 Each candidate's winning indexes may differ from the original query's.
 
-## 12. Measurement setup.
+## measurement-setup. Measurement setup.
 
-Steps 12 through 14 measure real block counts on the racetrack.
+measurement-setup, baseline, and candidate-runs measure real block counts on the racetrack. The burndown counts index-build through selection as one stage, `measurement`.
 
-### 12a. Indexes.
+### index-build. Indexes.
 
-Build every distinct index from 5a and step 11, with `maintenance_work_mem` and `max_parallel_maintenance_workers` raised. Record each index's built size for the report.
+Build every distinct index from index-search and rewrite-index-ideas, with `maintenance_work_mem` and `max_parallel_maintenance_workers` raised. Record each index's built size for the report.
 
 Hide all of them by setting `indisvalid` to false in `pg_index`. Only ever flip proposed non-unique indexes. Never touch existing constraints. Before measuring, confirm with a plain `EXPLAIN` that the right set of indexes is hidden.
 
-### 12b. Run discipline.
+### run-discipline. Run discipline.
 
 Run every statement in a `READ ONLY` transaction with `statement_timeout` set. Run one at a time, never in parallel.
 
-## 13. Baseline runs.
+## baseline. Baseline runs.
 
-For each set of literals from the step 3e, run the original query with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks, which is the sum of:
+For each set of literals the literals step chose, run the original query with `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`. Record total blocks, which is the sum of:
 
 - Shared hit and read.
 - Local hit and read.
@@ -906,49 +1065,49 @@ For a fixed plan, total blocks is nearly deterministic and doesn't depend on wha
 
 Also record the split between hits and reads. It's secondary, since it depends on whatever happened to be cached. But it's what tells you whether a candidate avoids I/O or just avoids work that was already in memory.
 
-### 13a. Index baselines.
+### index-baseline. Index baselines.
 
-Repeat the baseline runs for each index combination kept in 5a.
+Repeat the baseline runs for each index combination kept in index-search.
 
-## 14. Candidate runs.
+## candidate-runs. Candidate runs.
 
-Run each candidate and its index combinations using the same process as step 13.
+Run each candidate and its index combinations using the same process as baseline.
 
-### 14a. Metric.
+### blocks-metric. Metric.
 
 Use total blocks, and nothing else. The rewrite worth shipping is the one that touches fewer blocks. Buffer counts stay stable across runs and across machines, and wall-clock time doesn't.
 
 "Better" means more than 5% fewer total blocks. That threshold is about whether a gain matters, not about filtering out noise. A 2% buffer win is real, but it isn't worth adding an index for.
 
-### 14b. Minimax rule.
+### minimax. Minimax rule.
 
 A candidate must beat the original on the slow literal, and it must be no worse than the original on every other literal. When candidates tie, discard the one with the largest index footprint. Ties happen often when you rank on a single, nearly deterministic metric, so this tiebreaker matters. Ties are resolved greedily: take the survivors from smallest footprint up, and keep each one unless it ties one already kept, so a discarded candidate never knocks out another.
 
-### 14c. Result comparison.
+### result-comparison. Result comparison.
 
-This is the last correctness check. Steps 9 and 10 tested each candidate on small generated fixtures. This step tests it on full production data with the real literals.
+This is the last correctness check. rewrite-test and counterexamples tested each candidate on small generated fixtures. This step tests it on full production data with the real literals.
 
-The measurement runs in steps 13 and 14 use `EXPLAIN ANALYZE`, which runs the query but throws away its rows. So for each literal, run the original and each candidate once more, as plain queries, to get their results.
+The measurement runs in baseline and candidate-runs use `EXPLAIN ANALYZE`, which runs the query but throws away its rows. So for each literal, run the original and each candidate once more, as plain queries, to get their results.
 
-The enclave script compares the results itself, using the 9d comparator and its rules. Rows never leave the enclave. Only pass or fail goes to the driver.
+The enclave script compares the results itself, using the fixture-compare comparator and its rules. Rows never leave the enclave. Only pass or fail goes to the driver.
 
-Production-size results may be too big to hold in memory. In that case, stream the rows and compare hashes. Use a hash that ignores row order: hash each row, sort the row hashes, and hash the sorted list together with the row count, so that two queries returning the same rows in a different order still match. Where 9d compares in order, hash the row hashes in their order instead. Where 9d adds a tiebreaker to an `ORDER BY`, add the same tiebreaker here before hashing. A hash can't apply 9d's float tolerance, so round float columns to that tolerance before hashing them.
+Production-size results may be too big to hold in memory. In that case, stream the rows and compare hashes. Use a hash that ignores row order: hash each row, sort the row hashes, and hash the sorted list together with the row count, so that two queries returning the same rows in a different order still match. Where fixture-compare compares in order, hash the row hashes in their order instead. Where fixture-compare adds a tiebreaker to an `ORDER BY`, add the same tiebreaker here before hashing. A hash can't apply fixture-compare's float tolerance, so round float columns to that tolerance before hashing them.
 
-The one exception is 9d's rule for `LIMIT` with no `ORDER BY`, which runs the original without its `LIMIT`. At production size, that query could return millions of rows. Try it under `statement_timeout`. If it times out, check only that the candidate returns the expected number of rows, and mark the comparison as partial in the report.
+The one exception is fixture-compare's rule for `LIMIT` with no `ORDER BY`, which runs the original without its `LIMIT`. At production size, that query could return millions of rows. Try it under `statement_timeout`. If it times out, check only that the candidate returns the expected number of rows, and mark the comparison as partial in the report.
 
-A real difference here means a bug slipped past steps 9 and 10. Report it prominently and discard the candidate.
+A real difference here means a bug slipped past rewrite-test and counterexamples. Report it prominently and discard the candidate.
 
-### 14d. Selection.
+### selection. Selection.
 
 Keep the top three candidates by total blocks.
 
-## 15. Report.
+## report. Report.
 
 The driver builds the report from the results the enclave script sent back. Everything it needs is shape-class data.
 
 The enclave sends the same things whether or not anything beat the original:
 
-- The original query, redacted, with the 3h clock functions put back.
+- The original query, redacted, with the clock-anchor clock functions put back.
 - Every measured label, ranked or not: its measurements, its per-literal verdicts, and the built indexes it ran with. A run that timed out is listed too.
 - Every stored rewrite, ranked or not: its SQL, where it came from, and one fate. A rewrite the enclave refused on arrival isn't stored, so only the burndown counts it.
 
@@ -956,31 +1115,31 @@ A rewrite has several measured labels but one fate. It's the first of these that
 
 | Fate | Meaning | Sent with |
 | --- | --- | --- |
-| `ranked` | 14d ranked one of its labels. | |
-| `same_plans` | Step 8 found it can't run any differently from the original, so it was never tested. | |
-| `step9_disproved` | A step 9 scenario got different results. | Scenario, rule. |
-| `step9_untested` | Step 9 couldn't build scenarios for the query, so it never tested the rewrite. It's never recommended. | The refusal's rule, and for `fk_cycle` the cycle's tables. |
-| `step9_failed` | A step 9 scenario ended without comparing results: the original's order can't be checked, or a statement failed or timed out in arena. | Scenario, rule. |
-| `step10_disproved` | A step 10 round got different results. | Round, rule. |
-| `step10_failed` | A step 10 round ended without comparing results. | Round, rule. |
-| `production_mismatch` | 14c got different results on production data. | Rule. |
-| `production_timed_out` | 14c dropped it for a timeout, and no literal's results differed. | |
-| `production_not_compared` | 14c dropped it without comparing its results. | Rule. |
-| `below_top_three` | It beat the original and fell outside 14d's top three. | |
+| `ranked` | selection ranked one of its labels. | |
+| `same_plans` | plan-pruning found it can't run any differently from the original, so it was never tested. | |
+| `rewrite_test_disproved` | A rewrite-test scenario got different results. | Scenario, rule. |
+| `rewrite_test_untested` | rewrite-test couldn't build scenarios for the query, so it never tested the rewrite. It's never recommended. | The refusal's rule, and for `fk_cycle` the cycle's tables. |
+| `rewrite_test_failed` | A rewrite-test scenario ended without comparing results: the original's order can't be checked, or a statement failed or timed out in arena. | Scenario, rule. |
+| `counterexamples_disproved` | A counterexamples round got different results. | Round, rule. |
+| `counterexamples_failed` | A counterexamples round ended without comparing results. | Round, rule. |
+| `production_mismatch` | result-comparison got different results on production data. | Rule. |
+| `production_timed_out` | result-comparison dropped it for a timeout, and no literal's results differed. | |
+| `production_not_compared` | result-comparison dropped it without comparing its results. | Rule. |
+| `below_top_three` | It beat the original and fell outside selection's top three. | |
 | `footprint_tie` | It beat the original and lost the footprint tiebreak. | |
 | `not_better` | It was measured, and minimax found it no better than the original. | |
-| `measurement_timed_out` | Every one of its step 14 runs timed out. | |
+| `measurement_timed_out` | Every one of its candidate-runs runs timed out. | |
 | `unfinished` | The run took it no further. | The last stage it finished. |
 
-Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `step9_untested` rewrite isn't wrong either, and it's no 6c bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words, and for `fk_cycle` by the cycle's tables. Fates, rules, and scenarios are fixed words in the code, so they're shape, and table names are schema, checked against the run's `schema_subset`.
+Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `rewrite_test_untested` rewrite isn't wrong either, and it's no rewrite-rules bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words, and for `fk_cycle` by the cycle's tables. Fates, rules, and scenarios are fixed words in the code, so they're shape, and table names are schema, checked against the run's `schema_subset`.
 
-Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them. Say where each rewrite came from: the 6c rules that made it, the LLM, or the operator. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
+Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that vacuity-guard marked as untested, and say whether counterexamples exercised them. Say where each rewrite came from: the rewrite-rules rules that made it, the LLM, or the operator. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
 
-If a test disproved a rule-made rewrite (6c), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
+If a test disproved a rule-made rewrite (rewrite-rules), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
 
 For each proposed index, include:
 
-- Its built size from step 12a.
+- Its built size from index-build.
 - Whether an existing index already covers it as a prefix.
 - Whether it would make an existing index redundant.
 
@@ -992,21 +1151,21 @@ Write the report for a reader who hasn't read this document:
 
 - Open with the verdict: what won and by how much, or that nothing did.
 - Show the original query, then every stored rewrite, each pretty-printed by pg_query. SQL it can't parse is shown as sent.
-- Show no internal label, step number, or verdict name. A candidate is named by the query it ran and the indexes it ran with, not as `original:top:1`. A fate, a stage, and a drop reason are each said in words. For a label that wasn't ranked, give the blocks it read against the original's. A 6c rule's name is the exception, since a bug report needs it.
+- Show no internal label, step number, or verdict name. A candidate is named by the query it ran and the indexes it ran with, not as `original:top:1`. A fate, a stage, and a drop reason are each said in words. For a label that wasn't ranked, give the blocks it read against the original's. A rewrite-rules rule's name is the exception, since a bug report needs it.
 - Give sizes in the unit that fits (kB, MB, GB).
 - Call an index proposed only if a ranked candidate ran with it. The rest are indexes QUAACK built and measured. When nothing is ranked, none is proposed.
-- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, refused on arrival, same plan as the original, wrong results, not better, ranked, and stopped for another reason. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored, built and measured, not better, and ranked. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and 14d excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in 14c, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones.
+- Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, refused on arrival, same plan as the original, wrong results, not better, ranked, and stopped for another reason. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored, built and measured, not better, and ranked. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and selection excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in result-comparison, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones.
 - Where the payload doesn't carry a count, say "not recorded". Never show a zero for something that wasn't counted.
 
 The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network.
 
-### 15a. Negative result.
+### negative-result. Negative result.
 
-If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed steps 9 and 10 but minimax or 14c knocked out. The rewrites' fates say the first and the last.
+If nothing beats the original, explain why. Include which rewrites were disproved and by which scenario, which indexes the planner declined to use and why, which proposed indexes already existed, and which rewrites passed rewrite-test and counterexamples but minimax or result-comparison knocked out. The rewrites' fates say the first and the last.
 
 List each declined or already existing index once, with the searches it came up in: the original's, or a rewrite's. A rewrite's search repeats most of the original's candidates, and a plan prints a partial index's predicate with casts the query's text doesn't have, such as `'deleted'::text` for `'deleted'`. Two candidates are the same index here when they differ only by a cast on a constant or on a bare column.
 
-### 15b. Burndown.
+### burndown. Burndown.
 
 Every report ends with a burndown: how much work QUAACK did, and where candidates dropped out. It appears whether or not anything beat the original.
 
@@ -1016,32 +1175,32 @@ For each stage, show how many items came in, how many the stage added, how many 
 
 | Stage | Adds | Drops, by reason |
 | --- | --- | --- |
-| 5a-1 and 5a-2 | Candidates from generator one and from generator two, counted separately. | None. |
-| 5a-3 | None. | Already covered by an existing index, duplicate of an earlier proposal, or a partial index on a column that isn't low-cardinality. GIN and GiST candidates set aside untested are counted separately. |
-| 5a-4 | None. | The planner never used it. |
-| 5a-5 | LLM candidates, plus any replacements requested for dropped ones. | Same 5a-3 and 5a-4 reasons. |
-| 5a-6 | Revised candidates, if the round ran. Say whether it ran and why. | Same 5a-3 and 5a-4 reasons. |
-| 5a-7 | Combinations tested. | Candidates and combinations that didn't make the cut. |
+| index-from-query and index-from-plan | Candidates from generator one and from generator two, counted separately. | None. |
+| index-dedupe | None. | Already covered by an existing index, duplicate of an earlier proposal, or a partial index on a column that isn't low-cardinality. GIN and GiST candidates set aside untested are counted separately. |
+| index-test | None. | The planner never used it. |
+| llm-index-ideas | LLM candidates, plus any replacements requested for dropped ones. | Same index-dedupe and index-test reasons. |
+| llm-index-refine | Revised candidates, if the round ran. Say whether it ran and why. | Same index-dedupe and index-test reasons. |
+| index-rank | Combinations tested. | Candidates and combinations that didn't make the cut. |
 
 **Rewrite candidates:**
 
 | Stage | Adds | Drops, by reason |
 | --- | --- | --- |
-| 6c | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of ten, or failed the checks. |
-| 6a and step 7 | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
-| 6b | None. | Unmet assumption. Also count the step 7 warnings, which don't drop anything. |
-| Step 8 | None. | Failed to plan, output columns didn't match, or couldn't run any differently from the original. |
-| Step 9 | None. | Disproved, broken down by scenario, S0 through S6. Also count untested atoms and 9c retries. |
-| Step 10 | None. | Disproved, broken down by round. Also count untested atoms that step 10 covered. |
-| Steps 8 and 11 | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same 5a-3, 5a-4, and 5a-7 reasons. |
-| Step 14 | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in 14c, or fell outside the top three. Count partial 14c comparisons too. |
+| rewrite-rules | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of ten, or failed the checks. |
+| llm-rewrites and operator-rewrites | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
+| assumption-check | None. | Unmet assumption. Also count the operator-rewrites warnings, which don't drop anything. |
+| plan-pruning | None. | Failed inbound-check, failed to plan, output columns didn't match, or couldn't run any differently from the original. |
+| rewrite-test | None. | Disproved, broken down by scenario, S0 through S6. Also count untested atoms and vacuity-guard retries. |
+| counterexamples | None. | Disproved, broken down by round. Also count untested atoms that counterexamples covered. |
+| plan-pruning and rewrite-index-ideas | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same index-dedupe, index-test, and index-rank reasons. |
+| measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three. Count partial result-comparison comparisons too. |
 
 **Work totals:**
 
-- LLM calls, by step.
+- LLM calls, by step. A rewrite's own index asks count as rewrite-llm-index-ideas and rewrite-llm-index-refine, apart from the original query's.
 - Hypothetical-index `EXPLAIN`s on the racetrack.
-- Real indexes built in 12a.
-- Measurement runs in steps 13 and 14, including literals marked unstable.
+- Real indexes built in index-build.
+- Measurement runs in baseline and candidate-runs, including literals marked unstable.
 - Fixture loads in arena.
 
 The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.

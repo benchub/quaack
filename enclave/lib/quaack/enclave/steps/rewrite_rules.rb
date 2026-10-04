@@ -18,7 +18,7 @@ module Quaack
       # racetrack connection, where assumption-check's AssumptionCheck reads it too. Each
       # rewrite it gives then goes through RewriteCheck.check, the code
       # `quaacks rewrite-check` runs, so in the same order: the inbound
-      # check, assumption-check, plan-pruning's structural discards, and clock anchoring. A
+      # check, assumption-check, structural-discard, and clock anchoring. A
       # rule's rewrite gets no pass for being QUAACK's own.
       #
       # A survivor is stored as rewrite_<n>, in RewriteCheck's store format,
