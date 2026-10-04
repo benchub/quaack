@@ -61,7 +61,8 @@ module Quaack
       #   as posts in posts IS NULL. Postgres reads a bare name as a column
       #   of any query in scope before it reads it as a whole row, and the
       #   flip puts each side in the other's scope.
-      # - Postgres can prepare the rewrite.
+      # - Postgres can prepare the rewrite, with each placeholder declared
+      #   its literal's type, as the original is.
       #
       # It gives one rewrite per IN that qualifies, and states no
       # assumptions.
@@ -78,7 +79,7 @@ module Quaack
           return [] unless literals && top && existence_check?(top, literals)
           return [] if catalog.calls_volatile?(Deparse.faithfully(parse.tree))
 
-          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, catalog) }.compact
+          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, literals) }.compact
         rescue Deparse::Error
           []
         end
@@ -99,10 +100,10 @@ module Quaack
         def one?(limit, literals) = limit&.node == :param_ref && literals.holds?("$#{limit.param_ref.number} = 1")
 
         # A copy of the tree flipped on the WHERE's index-th condition, or
-        # nil if this rule doesn't apply to it.
-        def rewrite(original, index, catalog)
+        # nil if this rule doesn't apply to it or Postgres can't prepare it.
+        def rewrite(original, index, literals)
           tree = flipped(Deparse.copy(original), index)
-          Rewrite.new(tree:, assumptions: []) if tree && catalog.self_contained?(Deparse.faithfully(tree))
+          Rewrite.new(tree:, assumptions: []) if tree && literals.prepares?(Deparse.faithfully(tree))
         rescue Deparse::Error
           nil
         end

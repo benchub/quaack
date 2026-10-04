@@ -259,6 +259,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  it "flips when a placeholder's type comes from its literal, as in generate_series's bounds" do
+    sql = lambda do |low, high|
+      "SELECT 1 AS one FROM generate_series(#{low}, #{high}) AS g(n) WHERE g.n IN (SELECT courses.id " \
+        "FROM public.courses WHERE courses.workflow_state = 'available') LIMIT 1"
+    end
+    expect_flips(sql.call(1, 3), sql.call(2, 3), sql.call(4, 9), sql.call(5, 9))
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)

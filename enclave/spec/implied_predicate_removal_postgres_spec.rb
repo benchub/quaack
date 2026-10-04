@@ -99,6 +99,22 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
       expect(literals.same?("$5", "$6")).to be(false)
     end
 
+    it "says whether SQL prepares with each placeholder declared its literal's type, never running it" do
+      _redacted, literals = literals_for(
+        "SELECT g.n FROM generate_series(1, 3) AS g(n) WHERE g.n = 2 AND 'quaack-not-a-number' IS NOT NULL"
+      )
+      prepared = "SELECT count(*) FROM pg_catalog.pg_prepared_statements"
+      before = conn.exec(prepared).getvalue(0, 0)
+
+      expect(literals.prepares?("SELECT g.n FROM generate_series($1, $2) AS g(n)")).to be(true)
+      expect(literals.prepares?("SELECT g.n FROM generate_series($1, $2) AS g(n) WHERE g.n = $4::integer"))
+        .to be(true)
+      expect(literals.prepares?("SELECT g.missing FROM generate_series($1, $2) AS g(n)")).to be(false)
+      expect(literals.prepares?("SELECT $9")).to be(false)
+      expect(literals.prepares?("not sql")).to be(false)
+      expect(conn.exec(prepared).getvalue(0, 0)).to eq(before)
+    end
+
     it "never shows a placeholder value when inspected" do
       sentinel = "quaack-sentinel-literals-inspect"
       _redacted, literals = literals_for(
