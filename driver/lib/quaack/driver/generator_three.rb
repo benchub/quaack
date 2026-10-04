@@ -30,6 +30,8 @@ module Quaack
     # data, the LLM's own DDL, and the enclave's shape-only outcomes.
     class GeneratorThree
       STEP = "5a-5"
+      # The step its asks count under when it searches for a rewrite.
+      REWRITE_STEP = "rewrite-llm-index-ideas"
       MAX_TOKENS = 4000
 
       SCHEMA = {
@@ -80,9 +82,12 @@ module Quaack
         end
       end
 
-      def initialize(client:, index_test:)
+      # step is the LLM step its asks count under: STEP for the original
+      # query, REWRITE_STEP for a rewrite.
+      def initialize(client:, index_test:, step: STEP)
         @client = client
         @index_test = index_test
+        @step = step
       end
 
       def run(payload)
@@ -101,7 +106,7 @@ module Quaack
 
       # purpose is what progress hears the ask is for.
       def ask(messages, purpose)
-        @client.ask(step: STEP, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
+        @client.ask(step: @step, system: SYSTEM, messages:, max_tokens: MAX_TOKENS, schema: SCHEMA, purpose:)
                .fetch("indexes")
       end
 

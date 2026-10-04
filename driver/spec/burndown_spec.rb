@@ -18,10 +18,10 @@ RSpec.describe Quaack::Driver::Burndown do
   end
 
   it "counts LLM calls by step, in the order each step first called" do
-    %w[5a-5 5a-5 6a 5a-5 step11].each { burndown.llm_call(it) }
+    %w[5a-5 5a-5 6a 5a-5 rewrite-llm-index-ideas].each { burndown.llm_call(it) }
 
-    expect(burndown.llm_calls).to eq("5a-5" => 3, "6a" => 1, "step11" => 1)
-    expect(burndown.llm_calls.keys).to eq(%w[5a-5 6a step11])
+    expect(burndown.llm_calls).to eq("5a-5" => 3, "6a" => 1, "rewrite-llm-index-ideas" => 1)
+    expect(burndown.llm_calls.keys).to eq(%w[5a-5 6a rewrite-llm-index-ideas])
   end
 
   it "takes every step the protocol lists as one that calls an LLM" do

@@ -282,14 +282,29 @@ RSpec.describe Quaack::Driver::Pipeline do
     it "runs 5a-5, 5a-6, and 5a-7 on each rewrite status marks for step 11, after step 8" do
       entries.merge!("index_search_original" => true, "index_generated_original" => true,
                      "index_ranking_original" => true, **rewrite(1, step11: false), **rewrite(2, step11: true))
-      fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
+      fake.reply("rewrite-llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
 
       run
 
       expect(searched).to eq([%w[index-feedback original], ["status", nil],
                               %w[index-payload rewrite_2], %w[index-test rewrite_2], %w[index-feedback rewrite_2],
                               %w[index-rank rewrite_2]])
-      expect(fake.asks.map(&:step)).to eq(["5a-5"])
+      expect(fake.asks.map(&:step)).to eq(["rewrite-llm-index-ideas"])
+    end
+
+    it "counts a rewrite's LLM asks under the rewrite's own steps, not the original query's" do
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, **rewrite(1, step11: true))
+      feedback.merge!("revise" => true, "candidates" => [{ "shortfall" => "unused" }], "baseline" => {})
+      fake.reply("5a-6", { "indexes" => [] })
+      fake.reply("rewrite-llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
+      fake.reply("rewrite-llm-index-refine", { "indexes" => [] })
+
+      run
+
+      expect(fake.asks.map(&:step)).to eq(%w[5a-6 rewrite-llm-index-ideas rewrite-llm-index-refine])
+      expect(client.burndown.llm_calls)
+        .to eq({ "5a-6" => 1, "rewrite-llm-index-ideas" => 1, "rewrite-llm-index-refine" => 1 })
     end
 
     it "resumes, skipping 5a-5 and the second 5a-7 once they ran" do

@@ -145,8 +145,8 @@ module PromptPack
       messages = body[:messages]
       first = messages.first[:content]
       case step
-      when "5a-5" then { "indexes" => messages.size == 1 ? query.indexes : [] }
-      when "5a-6" then { "indexes" => [] }
+      when "5a-5", "rewrite-llm-index-ideas" then { "indexes" => messages.size == 1 ? query.indexes : [] }
+      when "5a-6", "rewrite-llm-index-refine" then { "indexes" => [] }
       when "6a" then { "rewrites" => [wrapped(first, query), buggy(first, query)] }
       when "step7" then { "rewrites" => Array.new(json_in(first)["rewrites"].size) { inferred } }
       when "10a" then { "inserts" => [] }
@@ -322,12 +322,8 @@ module PromptPack
     stopped = File.join(dir, "stopped.md")
     error ? File.write(stopped, stopped(error, asks.size)) : FileUtils.rm_f(stopped)
     counts = Hash.new(0)
-    rewrites = false
     kept = asks.map do |ask|
-      # 5a asks after 6a are step 11's, for the surviving rewrites.
-      rewrites ||= ask.step == "6a"
-      step = rewrites && ask.step.start_with?("5a-") ? "step11-#{ask.step}" : ask.step
-      name = "#{step}-#{counts[step] += 1}"
+      name = "#{ask.step}-#{counts[ask.step] += 1}"
       FileUtils.mkdir_p(File.join(dir, name))
       File.write(File.join(dir, name, "prompt.md"), prompt(ask))
       chat_file = File.join(dir, name, "chat.md")

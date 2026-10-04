@@ -14,8 +14,9 @@ module Quaack
                   step7 step8 step9 step10 step11 step14].map(&:freeze).freeze
 
       # The steps the driver runs that call an LLM (DESIGN.md, "Which part runs
-      # each step"). step11 is generator three inside step 11.
-      LLM_STEPS = %w[5a-5 5a-6 6a step7 10a step11].map(&:freeze).freeze
+      # each step"). The last two are 5a-5 and 5a-6 in step 11, searching
+      # for a rewrite.
+      LLM_STEPS = %w[5a-5 5a-6 6a step7 10a rewrite-llm-index-ideas rewrite-llm-index-refine].map(&:freeze).freeze
 
       # A lowercase word, such as duplicate or generator_one.
       NAME = /\A[a-z][a-z0-9_]{0,62}\z/

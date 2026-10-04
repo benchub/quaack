@@ -75,7 +75,8 @@ module Quaack
 
         def generate(transport, client, run_id, search, payload)
           index_test = GeneratorThree.index_test(transport, run_id:, search:)
-          result = GeneratorThree.new(client:, index_test:).run(payload)
+          step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
+          result = GeneratorThree.new(client:, index_test:, step:).run(payload)
           index_test.call([]) if result.rounds.empty?
           result
         end
@@ -86,7 +87,9 @@ module Quaack
           feedback = nil
           fetch = RefinementRound.index_feedback(transport, run_id:, search:)
           index_test = RefinementRound.index_test(transport, run_id:, search:)
-          result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:).run(payload)
+          step = search == SEARCH ? RefinementRound::STEP : RefinementRound::REWRITE_STEP
+          result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:, step:)
+                                  .run(payload)
           result || (:refined if feedback["refined"])
         end
       end

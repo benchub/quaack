@@ -31,7 +31,7 @@ The steps:
 - `6a`: query rewrites (RewriteGeneration).
 - `step7`: inferring what the operator's own rewrites assume (OperatorCandidates).
 - `10a`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`10a-4` is the second rewrite's first round). Each rewrite keeps its block of three numbers even if an earlier one is disproved before its third round, so the pipeline replay finds each reply by rewrite and round.
-- `step11-5a-5` and `step11-5a-6`: step 11's index asks for each rewrite that survived steps 9 and 10, the same prompts as 5a-5 and 5a-6 but for the rewrite. They're numbered on across rewrites too, so with two survivors, `step11-5a-5-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
+- `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`: step 11's index asks for each rewrite that survived steps 9 and 10, the same prompts as 5a-5 and 5a-6 but for the rewrite. They're numbered on across rewrites too, so with two survivors, `rewrite-llm-index-ideas-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
 
 ## How to fill it
 

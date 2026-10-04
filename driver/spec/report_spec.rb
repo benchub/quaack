@@ -881,7 +881,10 @@ RSpec.describe Quaack::Driver::Report do
         "totals" => { "hypothetical_explains" => 1234, "fixture_loads" => 3 } }
     end
 
-    let(:llm_calls) { { "5a-5" => 2, "5a-6" => 1, "6a" => 1, "step7" => 1, "10a" => 3, "step11" => 4 } }
+    let(:llm_calls) do
+      { "5a-5" => 2, "5a-6" => 1, "6a" => 1, "step7" => 1, "10a" => 3, "rewrite-llm-index-ideas" => 4,
+        "rewrite-llm-index-refine" => 2 }
+    end
     let(:burndown_section) { section(render(payload.merge("burndown" => burndown), llm_calls:), "burndown") }
     let(:index_table) { burndown_section[%r{<table id="burndown-index">.*?</table>}m] }
     let(:rewrite_table) { burndown_section[%r{<table id="burndown-rewrite">.*?</table>}m] }
@@ -957,7 +960,8 @@ RSpec.describe Quaack::Driver::Report do
         .to eq(["Index suggestions for the original query: 2 calls",
                 "Revised index suggestions for the original query: 1 call", "Rewrite suggestions: 1 call",
                 "Reading your own rewrites: 1 call", "Test data written to break the rewrites: 3 calls",
-                "Index suggestions for the rewrites: 4 calls"])
+                "Index suggestions for the rewrites: 4 calls",
+                "Revised index suggestions for the rewrites: 2 calls"])
     end
 
     it "says so when the driver counted no LLM call" do

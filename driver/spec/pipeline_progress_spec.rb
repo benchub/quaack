@@ -183,7 +183,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                    rewrite(3, rewrite_step11: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true))
     tests.push(false, true)
     3.times { fake.reply("10a", { "inserts" => [] }) }
-    fake.reply("5a-5", { "indexes" => [] })
+    fake.reply("rewrite-llm-index-ideas", { "indexes" => [] })
 
     run
 
@@ -201,8 +201,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
          "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
     end
     replies["index-feedback"] = ->(_) { feedback.shift }
-    fake.reply("5a-5", { "indexes" => [] })
-    fake.reply("5a-6", { "indexes" => [] })
+    fake.reply("rewrite-llm-index-ideas", { "indexes" => [] })
+    fake.reply("rewrite-llm-index-refine", { "indexes" => [] })
 
     run
 
@@ -284,7 +284,9 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     end
 
     def llm_replies
-      2.times { fake.reply("5a-5", { "indexes" => ["CREATE INDEX ON public.t ((#{PROGRESS_SENTINEL.inspect}))"] }) }
+      %w[5a-5 rewrite-llm-index-ideas].each do |step|
+        fake.reply(step, { "indexes" => ["CREATE INDEX ON public.t ((#{PROGRESS_SENTINEL.inspect}))"] })
+      end
       fake.reply("6a", { "rewrites" => [{ "sql" => "SELECT #{PROGRESS_SENTINEL.inspect}",
                                           "transformation" => PROGRESS_SENTINEL, "assumptions" => [] }] })
       fake.reply("step7", { "rewrites" => [{ "transformation" => PROGRESS_SENTINEL, "assumptions" => [] }] })

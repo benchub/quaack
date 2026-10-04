@@ -68,7 +68,7 @@ module E2ERun
 
     def empty(step, body)
       case step
-      when "5a-5", "5a-6" then { "indexes" => [] }
+      when "5a-5", "5a-6", "rewrite-llm-index-ideas", "rewrite-llm-index-refine" then { "indexes" => [] }
       when "6a" then { "rewrites" => [] }
       when "step7"
         content = body[:messages].first[:content]

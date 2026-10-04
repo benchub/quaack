@@ -74,7 +74,8 @@ module Quaack
                       "5a-6" => "Revised index suggestions for the original query",
                       "6a" => "Rewrite suggestions", "step7" => "Reading your own rewrites",
                       "10a" => "Test data written to break the rewrites",
-                      "step11" => "Index suggestions for the rewrites" }.freeze
+                      "rewrite-llm-index-ideas" => "Index suggestions for the rewrites",
+                      "rewrite-llm-index-refine" => "Revised index suggestions for the rewrites" }.freeze
 
         # DESIGN.md 15b's work totals from the enclave, always listed.
         TOTALS = { "hypothetical_explains" => "Plans tried with an index that wasn't built",

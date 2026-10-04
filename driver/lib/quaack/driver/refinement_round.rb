@@ -25,6 +25,8 @@ module Quaack
     # both shape data the enclave built for leaving.
     class RefinementRound
       STEP = "5a-6"
+      # The step its ask counts under when it searches for a rewrite.
+      REWRITE_STEP = "rewrite-llm-index-refine"
       MAX_TOKENS = GeneratorThree::MAX_TOKENS
 
       SYSTEM = <<~PROMPT.freeze
@@ -48,10 +50,12 @@ module Quaack
         end
       end
 
-      def initialize(client:, index_feedback:, index_test:)
+      # step is the LLM step its ask counts under, as for GeneratorThree.
+      def initialize(client:, index_feedback:, index_test:, step: STEP)
         @client = client
         @index_feedback = index_feedback
         @index_test = index_test
+        @step = step
       end
 
       def run(payload)
@@ -71,7 +75,7 @@ module Quaack
                   "Your candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
                   "Baseline cost per literal set: #{JSON.generate(feedback["baseline"])}\n\n" \
                   "Propose up to #{short} revised candidates. Answer with JSON: {\"indexes\": [...]}."
-        @client.ask(step: STEP, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
+        @client.ask(step: @step, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
                     schema: GeneratorThree::SCHEMA).fetch("indexes")
       end
     end

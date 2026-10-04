@@ -87,8 +87,8 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     [recorded.first, *planted]
   end
 
-  # The directory the prompt pack gives each ask, in order: its step, with
-  # step11- for a 5a ask after 6a, and a per-query count of that name. A
+  # The directory the prompt pack gives each ask, in order: its step, and
+  # a per-query count of that step. A
   # 10a ask is named by rewrite and round instead (task 20260927-24): each
   # rewrite gets a block of Counterexamples::ROUNDS numbers, in rewrite
   # order, so one disproved early doesn't shift the next rewrite's asks.
@@ -99,16 +99,13 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
     def initialize
       @counts = Hash.new(0)
-      @rewrites = false
       @rewrite = 0
     end
 
     def next(step, body)
       return counterexample(body) if step == "10a"
 
-      @rewrites ||= step == "6a"
-      name = @rewrites && step.start_with?("5a-") ? "step11-#{step}" : step
-      "#{name}-#{@counts[name] += 1}"
+      "#{step}-#{@counts[step] += 1}"
     end
 
     # A round's ask holds one user turn per round so far.

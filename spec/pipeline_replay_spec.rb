@@ -134,7 +134,7 @@ RSpec.describe PipelineReplay do
 
       it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
         outcome = run("group_having")
-        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
+        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "rewrite-llm-index-ideas-1: replayed",
                                        "10a-1: empty answer (no reply)", "10a-7: empty answer (no reply)")
         # 10a-4 disproves in round one, so the operator rewrite's rounds are
         # still 10a-7 to 10a-9, as the pack numbers them.
