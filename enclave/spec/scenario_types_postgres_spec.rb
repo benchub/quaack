@@ -254,6 +254,34 @@ RSpec.describe Quaack::Enclave::Scenarios do
       end
     end
 
+    it "leaves NULL a nullable one when the query reads only another table's column of that name" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (id integer PRIMARY KEY, lsn text);
+      SQL
+      scenarios = builds_and_loads("SELECT t.id FROM fx.t t JOIN fx.u u ON u.id = t.id WHERE u.lsn = 'x'",
+                                   "fx.t,fx.u")
+      expect(values(scenarios[:s1], "t", "lsn")).to all(be_nil)
+      expect(values(scenarios[:s1], "u", "lsn")).not_to include(nil)
+      scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x' AND EXISTS " \
+                                   "(SELECT 1 FROM fx.u WHERE fx.u.lsn = 'x')", "fx.t,fx.u")
+      expect(values(scenarios[:s1], "t", "lsn")).to all(be_nil)
+    end
+
+    it "still refuses one whose name the query reads unqualified, or through an alias it can't pin to one table" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (id integer PRIMARY KEY, lsn text);
+        CREATE TABLE fx.w (wid integer PRIMARY KEY);
+      SQL
+      ["SELECT t.id FROM fx.t t JOIN fx.u u ON u.id = t.id WHERE lsn = 'x'",
+       "SELECT a.id FROM fx.u a WHERE EXISTS (SELECT a.lsn FROM fx.t a)",
+       "SELECT id FROM fx.u WHERE EXISTS (SELECT u.lsn FROM fx.t u)",
+       "SELECT id FROM fx.u WHERE EXISTS (SELECT u.lsn FROM (fx.t a JOIN fx.w b ON a.id = b.wid) AS u)"].each do |sql|
+        expect { builder(sql).build }.to raise_error(described_class::Error, /fx\.t\.lsn/), sql
+      end
+    end
+
     it "still refuses a nullable unique one whose NULLs collide" do
       conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn UNIQUE NULLS NOT DISTINCT)")
       expect(refusal("SELECT id FROM fx.t WHERE v = 'x'").column).to eq(detail("fx.t", "lsn", "pg_lsn"))

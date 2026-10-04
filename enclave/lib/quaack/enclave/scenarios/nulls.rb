@@ -17,7 +17,7 @@ module Quaack
         end
 
         def allowed?(table, col)
-          col.nullable && !@reads.read?(col.name) && @values.nullable_type?(col) &&
+          col.nullable && !@reads.read?(table, col.name) && @values.nullable_type?(col) &&
             @checks.allows?(table, col, nil) && !collide?(table, col)
         end
 
