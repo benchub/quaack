@@ -1900,16 +1900,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 
 ### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-19. Name the tables in an `fk_cycle` refusal.
-
-`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
-
-Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
-
-- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
-- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-20. Give each rewrite a whimsical name.
 
@@ -2202,4 +2193,18 @@ These are minor findings from building and reviewing 20261003-40:
 - **Depends on:** 20261003-40.
 - **Came from:** The build and reviews of 20261003-40, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19.
+
+These are minor findings from building and reviewing 20261003-19:
+
+- **Quoted names are dropped.** The driver's name-shape check drops a cycle that has mixed-case or quoted table names, so the report falls back to the bare refusal. Allow any name that came from `schema_subset`, quoted the way the catalog quotes it.
+- **A dot inside a name can match the wrong table.** `CycleTables` matches by joining `schema.table` with a dot. The output is still a `schema_subset` string, so this isn't a leak. Match on the schema and the table separately.
+- **No end-to-end test.** Nothing runs a whole pipeline on an `fk_cycle` schema and checks the report sentence.
+- **Step 10's re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
+
+- **Depends on:** 20261003-19.
+- **Came from:** The build and reviews of 20261003-19, 2026-10-03.
+- **Design:** Step 9, step 15.
 - **Status:** todo

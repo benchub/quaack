@@ -4222,3 +4222,27 @@ Test with the taggings query: the correct rewrite must pass, and a wrong twin mu
     - The fix round replaced the prune with further fixtures.
     - Round 2 was clean. Every round-1 reproducer and 7 more realistic queries came out right: correct rewrites pass and wrong ones are disproved. All 11 mutations went red.
   - **Follow-ups:** filed as 20261003-42.
+
+### 20261003-19. Name the tables in an `fk_cycle` refusal.
+
+`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
+
+Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
+
+- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-19.
+  - **Change:**
+    - Topology records the cycle that blocks the load order: the tables in foreign-key order, with the first table repeated at the end. Nullable FKs that get cut are left out, and so are tables that only reference the cycle.
+    - Step 9 stores the cycle along with the `fk_cycle` refusal.
+    - The report payload (`CycleTables`) and step 10's re-raised error only name tables that exactly match a `schema_subset` string, and they send that string, not the stored value.
+    - The enclave's ErrorFilter passes `cycle` only for `fk_cycle`, and only when the cycle is closed and well formed.
+    - The protocol whitelist allows the field. The driver checks the rule and the name shape again, then names the tables in the report sentence.
+    - `Scenarios::LoadOrder` was pulled out of Topology to stay within RuboCop's limits after merging -40. DESIGN.md's step 9 and step 15 text is updated.
+  - **Review:**
+    - Round 1 found one blocking problem: a vacuous closure test, whose name SENTINEL.c failed the shape check anyway. It also found one minor: the empty-cycle guard was untested.
+    - The fix round corrected both, and each was confirmed to go red when its check is removed.
+    - Round 2 was clean. 13 of round 1's 15 mutations had already gone red, and the two survivors are the ones the fix round covered.
+  - **Follow-ups:** filed as 20261003-43.
