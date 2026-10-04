@@ -2133,6 +2133,7 @@ A user's `quaack run` failed at steps 9-10 with `unsupported_type`, and nothing 
 - **Geometric types** (category `G`): `'(0,0)'`, and its nth forms.
 - **`bit(n)`**: `'0'` only fits `bit(1)`. Pad to the length in the typmod.
 - **Arrays when a distinct value is needed** (`nth`, for keys and unique columns): `'{}'` covers only the typical value. Use `'{<nth of the element type>}'`.
+- **Small numeric types when a distinct value is needed.** `key_value` adds 100,000 to the key for a split group, which overflows `smallint` and narrow `numeric(p,s)`. Wrap the number within the type's range, or pick a smaller offset when the type is narrow.
 - **A domain whose CHECK rejects every candidate.** That's a real refusal, but say so.
 
 The rule:
