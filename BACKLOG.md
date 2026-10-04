@@ -1687,26 +1687,7 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
-
-Minor findings from the second review of 20261002-17:
-
-- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
-- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
-- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
-- **Mutations that survive:**
-  - dropping the column's `COLLATE` in `typed`;
-  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
-- **Missing tests:**
-  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
-  - a positive `NOT IN` case;
-  - an ON clause that dropping empties.
-- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
-
-- **Depends on:** 20261002-17.
-- **Came from:** The second review of 20261002-17, 2026-10-03.
-- **Design:** 6c.
-- **Status:** todo
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-7. Intake unreadable causes: minor findings.
 

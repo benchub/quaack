@@ -87,8 +87,7 @@ module Quaack
 
         def generate(store, connection, rules)
           parse = PgQuery.parse(store.read("redacted_query"))
-          literals = Enclave::RewriteRules::Literals.new(connection, store.read("placeholder_map"),
-                                                         store.read("placeholder_shapes"))
+          literals = Enclave::RewriteRules::Literals.new(connection, store.read("placeholder_map"))
           Enclave::RewriteRules.generate(parse, Enclave::RewriteRules::Catalog.new(connection), literals, rules:)
         end
 

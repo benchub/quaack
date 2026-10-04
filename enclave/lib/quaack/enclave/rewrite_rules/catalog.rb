@@ -4,6 +4,7 @@ require_relative "../assumption_check"
 require_relative "../rewrite_assumptions"
 require_relative "catalog/calls"
 require_relative "catalog/standalone"
+require_relative "catalog/types"
 
 module Quaack
   module Enclave
@@ -47,9 +48,13 @@ module Quaack
       #
       #   catalog.row_wise?([lower_call_node])     # => true
       #   catalog.row_wise?([unnest_call_node])    # => false
+      #
+      # It also names a type written in a cast as column_info names a
+      # column's (see Types).
       class Catalog
         include Standalone
         include Calls
+        include Types
 
         Column = Data.define(:name, :comparable)
         Info = Data.define(:type, :collation, :deterministic)

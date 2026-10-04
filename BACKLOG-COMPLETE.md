@@ -4155,3 +4155,40 @@ Test it end to end against real Postgres with a schema that refuses (a complex `
     - All six `REFUSALS` rules are pinned.
     - Each test went red before the fix, and every mutation went red.
   - **Review:** two rounds. The first found no leak test for the refusal message (blocking); the fix round added it. The second was clean. Its minor finding went to 20261003-41.
+
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+
+Minor findings from the second review of 20261002-17:
+
+- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
+- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
+- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
+- **Mutations that survive:**
+  - dropping the column's `COLLATE` in `typed`;
+  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
+- **Missing tests:**
+  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
+  - a positive `NOT IN` case;
+  - an ON clause that dropping empties.
+- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
+
+- **Depends on:** 20261002-17.
+- **Came from:** The second review of 20261002-17, 2026-10-03.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-6.
+  - **Change:**
+    - A new `Catalog#type_name` (`catalog/types.rb`) resolves a cast's type, typmod included. pg_query checks the type text first, so no literal value is ever sent to Postgres.
+    - A cast on a literal blocks the drop, unless it's to the column's own type.
+    - An exact duplicate that might call a volatile function is kept (`Catalog#calls_volatile?`; anything it can't check counts as volatile).
+    - Each SELECT is simplified on its own: the top level, subqueries, CTEs and set-operation arms. An equality only proves predicates in its own SELECT.
+    - COLLATE is pinned.
+    - The shape half of `Literals#same?` was removed as dead; the reviewer confirmed it.
+    - `Literals` redacts in `inspect`, `to_s` and `pretty_print`.
+    - New tests: an inner-join ON equality, and an emptied ON becoming CROSS JOIN.
+    - The DESIGN.md 6c row was updated.
+  - **Tests:** seven tests went red first for the right reason. 15 reviewer mutations and the builder's own mutations all went red.
+  - **Review:** one round, clean, with no findings. The reviewer checked 45 realistic queries against real Postgres, covering casts, SELECT levels, volatile duplicates and Rails duplicates.
+  - **Not done (builder's notes, not filed):**
+    - An unusual type that doesn't deparse as `NULL::<type>` is refused, which is conservative.
+    - Outer equalities are never used inside a correlated subquery, by design.

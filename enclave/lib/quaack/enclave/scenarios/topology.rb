@@ -48,6 +48,15 @@ module Quaack
           @order & found
         end
 
+        # The tables a cross group on the table's foreign key needs: the
+        # table and the ancestors its other foreign keys lead to. The cross
+        # points the key at another group's parent, so the group holds its
+        # own only when another path reaches it.
+        def cross_tables(table, foreign)
+          others = (foreign_keys(table) - [foreign]).map(&:parent).uniq - [table]
+          @order & [table, *others.flat_map { |p| ancestors(p) }]
+        end
+
         # The indexes of equality join atoms that no foreign key backs.
         def free_joins
           @atoms.each_index.select do |i|

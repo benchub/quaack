@@ -27,16 +27,20 @@ module Quaack
 
         def empty = group(fresh_key, @topology.roots)
 
-        def fan_outs(hit) = copies(hit) + crosses(hit)
+        # Crosses come first, so that when a unique column's filter leaves
+        # one value after the hit's, a cross takes it.
+        def fan_outs(hit) = crosses(hit) + copies(hit)
 
         def copies(hit) = order.map { |t| group(hit.key, [t], copy: 1) }
 
         # For each foreign key a row can point across groups (see
         # Topology#crossings), a group whose row points it at the hit's
-        # parent, not its own.
+        # parent, not its own, with no parent of its own that nothing else
+        # needs (see Topology#cross_tables).
         def crosses(hit)
           @topology.crossings.map do |table, fk|
-            group(fresh_key, @topology.ancestors(table), cross: Cross.new(table:, columns: fk.columns, key: hit.key))
+            group(fresh_key, @topology.cross_tables(table, fk),
+                  cross: Cross.new(table:, columns: fk.columns, key: hit.key))
           end
         end
 
