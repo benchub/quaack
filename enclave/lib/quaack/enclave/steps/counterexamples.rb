@@ -149,7 +149,7 @@ module Quaack
             search = options.fetch("search")
             number = Counterexamples.search!(store, search, "counterexample_round")
             inserts = check(store, number, options.fetch("round"), input)
-            outcome = run(store, search, number, inserts)
+            outcome = named_cycle(store) { run(store, search, number, inserts) }
             finish(store, number, options.fetch("round"), outcome)
             [{ type: :counterexample_round, **outcome }]
           end
@@ -197,6 +197,19 @@ module Quaack
 
           def tables(store)
             store.read("schema_subset")["tables"].map { |schema, name| TableName.new(schema:, name:) }
+          end
+
+          # Runs the block, and re-raises an fk_cycle refusal from it with
+          # its tables as the schema subset's "schema.name" strings, or
+          # none if any isn't one (CycleTables), so its error line can name
+          # them.
+          def named_cycle(store)
+            yield
+          rescue Scenarios::Error => e
+            raise unless e.rule == :fk_cycle
+
+            pairs = e.cycle&.map { [it.schema, it.name] }
+            raise Scenarios::Error.new(:fk_cycle, cycle: CycleTables.check(pairs, CycleTables.tables(store)))
           end
 
           # Round 1 may always start (a resumed run starts over); a later
