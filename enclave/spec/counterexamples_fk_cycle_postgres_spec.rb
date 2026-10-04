@@ -71,6 +71,19 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect([round.match, round.rule, round.load_failed]).to eq([true, nil, false])
   end
 
+  it "refuses by rule alone an insert whose cut column's value Postgres can't evaluate (20261003-24)" do
+    map["$2"] = { "value" => "SENTINEL_CUT", "type" => "unknown" }
+    bad = "INSERT INTO fx.accounts (id, name, course_template_id) VALUES (6, 'f', $2::integer)"
+    begin
+      prepared = prepare(inserts.first, bad)
+    rescue StandardError => e
+      raise "prepare raised, its message #{e.message.include?("SENTINEL_CUT") ? "with" : "without"} the sentinel"
+    end
+    expect(prepared.refused).to eq([{ index: 1, rule: "bad_value" }])
+    expect([prepared.inspect, prepared.inserts.map(&:to_s), prepared.rows.map(&:values)].to_s)
+      .not_to include("SENTINEL_CUT")
+  end
+
   it "fails the load, disproving nothing, when a trigger skips a row the UPDATE needs" do
     conn.exec(<<~SQL)
       CREATE FUNCTION fx.skip() RETURNS trigger LANGUAGE plpgsql AS $$

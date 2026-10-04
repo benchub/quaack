@@ -220,6 +220,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome).first).to include("match" => true, "load_failed" => false, "refused" => [])
     end
 
+    it "refuses by rule alone an insert whose bound value Postgres can't evaluate, and runs the round " \
+       "(20261003-24)" do
+      ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY);
+                              ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, note_row, "INSERT INTO public.orders (id, status, customer_id) VALUES (2, 'open', $1::int)")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => true, "load_failed" => false,
+                                              "refused" => [{ "index" => 1, "rule" => "bad_value" }])
+      expect_no_leaks(sentinels, outcome)
+    end
+
     it "decides survival only after a matching third round" do
       ready(same)
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])

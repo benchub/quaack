@@ -845,6 +845,8 @@ Give the LLM:
 
 Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints.
 
+The enclave evaluates each value of an accepted insert in arena, once, to find its FK gaps and its deferred values (below). A value Postgres can't evaluate, such as `'abc'::integer`, refuses its insert with `bad_value`, and the round goes on without it. Postgres's message can quote the value, so it's dropped: the refusal names only the rule.
+
 Inserts load parents' tables first. When a foreign-key cycle leaves no such order, each nullable foreign key that closes a cycle is cut, as in step 9, but here every nullable one is cut, since no atom guards it. An insert that sets a value in a cut column loads with NULL there. Once every insert has loaded, an `UPDATE` keyed to the inserted row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value, so the final data is exactly the LLM's rows and every constraint is still checked. The UPDATEs run last in both 9d load orders. A `DEFAULT` in a cut column stays `DEFAULT`. If an inserted row can't be found again by its `tableoid` and `ctid` (a trigger skipped it or moved it, say), the load fails with `insert_failed`, and the round disproves nothing.
 
 ### 10b. Compare results.
