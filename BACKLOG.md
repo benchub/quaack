@@ -2007,16 +2007,7 @@ Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a que
 - **Note (2026-10-03, not landed):** Built on `task/20261003-23` (kept, with its worktree). The first review's blocker (S6 empty on a cycle) was fixed. The second review found a regression that works on main: on a Canvas-like schema with a third table under `accounts`, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL` fails every candidate with `fixture_load_failed`. It fails safe, but it can't land. The rest moved to 20261003-30, which finishes this on the same branch.
 - **Status:** todo (continues as 20261003-30)
 
-### 20261003-24. ParentRows can leak a value in a Postgres error.
-
-Found while building 20261003-17. This predates that task. In 10a-10c, `Counterexamples::ParentRows` runs `SELECT (value)::text` on an LLM row's values (`counterexamples/parent_rows.rb`). If Postgres raises there, such as on a bad cast, the error can escape `prepare` with the value in its message. Errors from the enclave must carry only a rule.
-
-Reproduce it with a sentinel value that makes the cast fail, and check that the sentinel shows up today. Then wrap the error in a rule (with `cause: nil`, as elsewhere), and check that the sentinel never shows up in any output.
-
-- **Depends on:** none.
-- **Came from:** The build of 20261003-17, 2026-10-03.
-- **Design:** 10a, trust boundary.
-- **Status:** todo
+### 20261003-24. ParentRows can leak a value in a Postgres error. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-25. FK-cycle breaking: loose ends.
 
@@ -2191,4 +2182,16 @@ These are minor findings from building and reviewing 20261003-34:
 - **Depends on:** 20261003-34.
 - **Came from:** The build and review of 20261003-34, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-38. `bad_value`: loose ends from 20261003-24.
+
+These are minor findings from the review of 20261003-24:
+
+- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
+- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
+
+- **Depends on:** 20261003-24.
+- **Came from:** The review of 20261003-24, 2026-10-03.
+- **Design:** 10a.
 - **Status:** todo

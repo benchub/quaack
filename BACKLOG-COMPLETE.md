@@ -4086,3 +4086,22 @@ These are minor findings from building and reviewing 20261003-33. Do the first t
   - **Review:** one round, clean. Its minor findings went to 20261003-37:
     - a base table aliased with a column list;
     - the self-FK fix depends on foreign-key order.
+
+### 20261003-24. ParentRows can leak a value in a Postgres error.
+
+Found while building 20261003-17. This predates that task. In 10a-10c, `Counterexamples::ParentRows` runs `SELECT (value)::text` on an LLM row's values (`counterexamples/parent_rows.rb`). If Postgres raises there, such as on a bad cast, the error can escape `prepare` with the value in its message. Errors from the enclave must carry only a rule.
+
+Reproduce it with a sentinel value that makes the cast fail, and check that the sentinel shows up today. Then wrap the error in a rule (with `cause: nil`, as elsewhere), and check that the sentinel never shows up in any output.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261003-17, 2026-10-03.
+- **Design:** 10a, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-24.
+  - **Change:**
+    - The new `Counterexamples::Evaluated` evaluates each value of an accepted insert in the arena once. It catches Postgres errors.
+    - A bad value refuses only its own insert, recorded as `{index, rule: "bad_value"}`, with no cause. The round carries on, since a driver-ending error was too harsh for an ordinary LLM mistake.
+    - `ParentRows` and `Deferral` read the evaluated results and no longer query Postgres with LLM values. `Deferral.text`, used for cut columns, had the same leak.
+    - DESIGN.md 10a describes `bad_value`.
+  - **Tests:** sentinel tests for a bad FK value, a plain value, a cut column and a full step run went red on main. A meta-test proves the leak check catches a planted sentinel. The reviewer tried enum, date, jsonb, out-of-range, division by zero and multi-row cases, and nothing leaked. Mutations went red.
+  - **Review:** one round, clean. Its minor findings went to 20261003-38.
