@@ -267,6 +267,31 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(values(s3, "users", "login")).to all(eq(""))
     end
 
+    it "varies a key's column the join doesn't key, not the join key" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, name text);
+        CREATE TABLE fx.enrollments (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES fx.users,
+          type varchar(255) NOT NULL, position integer NOT NULL);
+        CREATE UNIQUE INDEX ON fx.enrollments (user_id, position);
+      SQL
+      sql = "SELECT u.id FROM fx.users u JOIN fx.enrollments e ON e.user_id = u.id " \
+            "WHERE u.name = 'x' AND e.type = 'StudentEnrollment'"
+      s3 = builds_and_loads(sql, "fx.users,fx.enrollments")[:s3]
+      positions = values(s3, "enrollments", "position")
+      expect(positions.size).to be > 1
+      expect(positions.uniq.size).to eq(positions.size)
+    end
+
+    it "varies a column whose type takes many values over a boolean" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, active boolean NOT NULL, name text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (active, name);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "name").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "active")).to all(eq("f"))
+    end
+
     it "varies a column whose type takes distinct values over one whose type can't" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, lsn pg_lsn NOT NULL DEFAULT '0/0',
