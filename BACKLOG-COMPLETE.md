@@ -4517,3 +4517,19 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
     - **On a terminal:** the open line carries a live clock, redrawn about once a second under the shared lock. The line plus its clock is cut to fit `IO#winsize`, and a cut line is reprinted whole before its newline. The timer thread is joined before the closing line.
     - **On a pipe:** no thread and no redraws.
   - **Review:** round 1 had one blocking finding: long lines wrapped on narrow terminals and stacked up copies. The fix round fixed it, and round 2 was clean. The minors went to 20261004-7 and -13.
+
+### 20261001-29. Renumber step 6 in running order, and give the rules table examples.
+
+DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and the assumption check (6b). Number them in the order they run: 6c becomes 6a, 6a becomes 6b, and 6b becomes 6c.
+
+- Rename everywhere, not only in DESIGN.md: README, BACKLOG.md's open tasks, code comments, error and report text, and names that carry the number, such as the protocol's burndown stages and LLM steps (`6a`, `6b`) and the driver's `STEP`. Rename in BACKLOG-COMPLETE.md too (the user, 2026-10-01), so every file uses one numbering.
+- A store written before the rename holds burndown records under the old stage names. Say what a resumed run does with them: refuse, or read them under the new names.
+- The before and after SQL examples for each rule moved to 20261004-14 (the user, 2026-10-04).
+
+Do this after 20261001-22 to -28 land, or between two of them, never while one is in flight: it touches the same lines.
+
+- **Depends on:** 20261001-22.
+- **Came from:** The user, 2026-10-01.
+- **Design:** Step 6.
+- **Decided (the user, 2026-10-04):** Dropped, superseded by 20261003-21, which renames every step to a slug and numbers steps in run order. -21 keeps the ordering this task asked for: the mechanical rules (old 6c) run first, candidate generation (old 6a) next, and the assumption check (old 6b) last of the three. The question about stored burndown stage names moved into -21.
+- **Status:** dropped

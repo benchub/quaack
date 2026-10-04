@@ -921,20 +921,7 @@ This takes over the 5a-5 burndown bullet of 20260926-3 and the `set_aside:` wiri
 - **Design:** 6a, 6c.
 - **Status:** todo
 
-### 20261001-29. Renumber step 6 in running order, and give the rules table examples.
-
-DESIGN.md says mechanical rules (6c) run before candidate generation (6a) and the assumption check (6b). Number them in the order they run: 6c becomes 6a, 6a becomes 6b, and 6b becomes 6c.
-
-- Rename everywhere, not only in DESIGN.md: README, BACKLOG.md's open tasks, code comments, error and report text, and names that carry the number, such as the protocol's burndown stages and LLM steps (`6a`, `6b`) and the driver's `STEP`. Rename in BACKLOG-COMPLETE.md too (the user, 2026-10-01), so every file uses one numbering.
-- A store written before the rename holds burndown records under the old stage names. Say what a resumed run does with them: refuse, or read them under the new names.
-- The before and after SQL examples for each rule moved to 20261004-14 (the user, 2026-10-04).
-
-Do this after 20261001-22 to -28 land, or between two of them, never while one is in flight: it touches the same lines.
-
-- **Depends on:** 20261001-22.
-- **Came from:** The user, 2026-10-01.
-- **Design:** Step 6.
-- **Status:** todo
+### 20261001-29. Renumber step 6 in running order, and give the rules table examples. Dropped, see BACKLOG-COMPLETE.md.
 
 ### 20261002-1. Rule generator: minor findings.
 
@@ -1849,6 +1836,7 @@ This touches nearly every file, so build it when no other task is in flight, or 
 - **Came from:** The user, 2026-10-03.
 - **Design:** All of it.
 - **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
+- **Note (2026-10-04, answers):** Build it all in one task: DESIGN.md, code, store keys, and the version bump. Number sections 1–4 (input, inventory, schema, run server) as steps in the outline too. The main session approves the slugs. This task absorbs the dropped 20261001-29: the outline must put the mechanical rules (old 6c) before candidate generation (old 6a), and the assumption check (old 6b) last of the three. It also says what a resumed run does with burndown records stored under the old stage names, which is to refuse the run like any other run from an older version.
 - **Status:** todo
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
