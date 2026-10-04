@@ -49,10 +49,15 @@ module Quaack
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
-        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
-                   dropped: builder.dropped, refused: nil, cycle: nil)
+        tested(guard, builder, results)
       rescue Scenarios::Error => e
         refused(candidates, e.rule, cycle: e.cycle)
+      end
+
+      # The report of candidates tested on the guard's scenarios.
+      def tested(guard, builder, results)
+        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
+                   dropped: builder.dropped, refused: nil, cycle: nil)
       end
 
       def refused(candidates, rule, cycle: nil)
