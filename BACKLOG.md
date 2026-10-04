@@ -2079,3 +2079,30 @@ Tests check that both lists have 200 words, no duplicates, and the syllable coun
 - **Came from:** The user, 2026-10-03.
 - **Design:** Progress lines for `quaack run`, step 15.
 - **Status:** todo
+
+### 20261003-21. Give the design's steps descriptive names, and number them in order.
+
+The design's steps have IDs like `5a-6`, `6c`, `steps 9-10` and `14b`. They show up in `quaack run`'s output, such as `quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)`, and also in the code, the run store's keys, the report and the specs. They say nothing about what a step does. Some are lettered sub-steps of a number, and their order doesn't match the order the pipeline runs them in (6c runs before 6a).
+
+The rule:
+
+- Give every step a short descriptive slug, in lowercase words joined by hyphens, such as `index-search`, `llm-index-ideas`, `llm-index-refine`, `rewrite-rules`, `llm-rewrites`, `counterexamples`. Some steps have slugs already (`index-search`, `index-rank`, `rewrite-prune`, `rewrite-test`); keep those unless they're unclear.
+- Use the slug everywhere the old ID was used:
+  - DESIGN.md's headings and cross-references;
+  - the code, including `Pipeline::SAY`, the progress lines, and the protocol's step names;
+  - the run store's keys;
+  - the report payload and the readable report;
+  - specs and fixtures, including the recorded replay runs, which may need re-recording.
+  
+  Progress lines keep the slug in parentheses at the end, as now.
+- In DESIGN.md, also number the steps in the order the pipeline runs them. The numbers say order only, and the slug stays the name. The numbering has to show the pipeline's loops. Number a loop's body as sub-steps of the loop, such as `7. For each rewrite:` then `7.1 rewrite-index-search`, `7.2 rewrite-prune`. Say plainly where a loop repeats, such as the counterexample rounds: "repeat 9.2–9.4 until …". Put one ordered outline of the whole pipeline near the top of DESIGN.md, which is the only place the numbers appear. Code and output use slugs only, so renumbering never touches code.
+- Add a table to DESIGN.md mapping each old ID to its new slug. BACKLOG-COMPLETE.md is history and keeps the old IDs, and the table keeps those entries readable. Update BACKLOG.md's open entries to the new slugs.
+- Changing the store keys means a run started by an older version can't be resumed. That's fine with a version bump. Make sure `quaack run` refuses such a run with a clear message, rather than misreading it.
+
+This touches nearly every file, so build it when no other task is in flight, or merge carefully with whatever is. It may be worth splitting into DESIGN.md first (outline, slugs, mapping table), then code and store keys. If so, the builder should propose the split before starting.
+
+- **Depends on:** none. Best built after 20261003-15, -16 and -20, which change the same progress lines.
+- **Came from:** The user, 2026-10-03.
+- **Design:** All of it.
+- **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
+- **Status:** todo
