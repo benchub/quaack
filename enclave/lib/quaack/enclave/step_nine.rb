@@ -25,12 +25,19 @@ module Quaack
     # runner's rule (such as :query_failed) and no load order. A candidate
     # that matches every scenario passes, with scenario nil.
     #
+    # When the scenarios can't be built for the query (a Scenarios::Error,
+    # such as fk_cycle or complex_check), no candidate is tested. The
+    # report's refused is then the error's rule, and every candidate's
+    # Result is not passed, with that rule and scenario nil. Otherwise
+    # refused is nil.
+    #
     # Trust boundary: the report holds booleans, symbols, counts, and 9c's
-    # redacted shapes. The fixtures, with the real literals, stay here.
+    # redacted shapes. The fixtures, with the real literals, stay here. A
+    # refusal keeps only its rule, never the column it names.
     module StepNine
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped).
-      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped)
+      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -41,7 +48,14 @@ module Quaack
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, sql, candidate) }
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
-                   dropped: builder.dropped)
+                   dropped: builder.dropped, refused: nil)
+      rescue Scenarios::Error => e
+        refused(candidates, e.rule)
+      end
+
+      def refused(candidates, rule)
+        results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
+        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule)
       end
 
       def test(runner, scenarios, sql, candidate)
