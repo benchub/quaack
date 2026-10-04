@@ -55,7 +55,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::PolymorphicKeyCopy do
   def literals_for(sql)
     redacted = redacted(sql)
     [redacted.sql,
-     Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map, redacted.placeholder_shapes)]
+     Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map)]
   end
 
   def rewrites(sql)
