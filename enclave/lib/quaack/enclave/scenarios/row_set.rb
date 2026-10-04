@@ -12,7 +12,8 @@ module Quaack
       # whole. A key with a NULL collides with nothing, unless its index is
       # NULLS NOT DISTINCT. An expression unique index's keys are evaluated
       # in Postgres (conn) on the row's values, against a VALUES list; a row
-      # whose keys can't be evaluated counts as colliding.
+      # whose keys can't be evaluated counts as colliding. A row whose
+      # parent was left out goes too.
       class RowSet
         def initialize(schema, conn)
           @schema = schema
@@ -30,9 +31,23 @@ module Quaack
           true
         end
 
-        def in_order(tables) = tables.flat_map { |t| @rows[t] }
+        # The rows, table by table, less every row whose foreign key points
+        # at a parent row that isn't here (one a left-out group held), and
+        # so on down.
+        def in_order(tables)
+          nil while @rows.values.any? { |rows| rows.reject! { |r| dangling?(r) } }
+          tables.flat_map { |t| @rows[t] }
+        end
 
         private
+
+        # A foreign key with a NULL column checks nothing (MATCH SIMPLE).
+        def dangling?(row)
+          @schema.constraints(row.table).foreign_keys.any? do |fk|
+            key = values(row, fk.columns)
+            key.none?(&:nil?) && @rows[fk.parent].none? { |parent| values(parent, fk.parent_columns) == key }
+          end
+        end
 
         def collides?(row)
           constraints = @schema.constraints(row.table)
