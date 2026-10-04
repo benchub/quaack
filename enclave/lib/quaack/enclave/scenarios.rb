@@ -66,7 +66,10 @@ module Quaack
     # can't, because it collides with an earlier row on a unique key, or no
     # value fails its near-miss atom, is left out, and 9c catches an atom
     # left vacuous. CHECKs must be simple (see Checks), or the build raises
-    # Error(:complex_check). A foreign-key cycle between tables raises
+    # Error(:complex_check). A foreign-key cycle between tables is broken
+    # where it can be: a foreign key in the cycle whose columns are all
+    # nullable, and that no atom reads, is cut (see Topology), and rows
+    # leave its columns NULL. A cycle with no such foreign key raises
     # Error(:fk_cycle). Rows come table by table, parents first, each
     # table's rows together, as 9d's reverse load needs.
     #
@@ -206,6 +209,8 @@ module Quaack
           # An identity column a key class ties to another takes the key's
           # value (the runner overrides the identity), or else its own.
           return :omit if generated?(col, keyed)
+          # A cut foreign key's column: the load order ignores it.
+          return nil if @topology.cut?(table, col.name)
 
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)

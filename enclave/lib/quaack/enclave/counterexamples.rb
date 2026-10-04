@@ -9,6 +9,7 @@ require_relative "result_comparison"
 require_relative "scenarios"
 require_relative "vacuity_guard"
 require_relative "counterexamples/parent_rows"
+require_relative "counterexamples/deferral"
 
 module Quaack
   module Enclave
@@ -37,6 +38,14 @@ module Quaack
     # parent row, built by the step 9 rules (see ParentRows), and so do
     # that row's own NOT NULL foreign keys, however far up. Constraints are
     # never bypassed.
+    #
+    # A foreign-key cycle can leave no parents-first order. Step 9's
+    # Topology, given no atoms, cuts each nullable foreign key that closes
+    # a cycle (see Deferral). An insert that sets a cut column becomes an
+    # ArenaRunner::DeferredInsert: it loads with NULL there, and once every
+    # insert has loaded, an UPDATE keyed to the row's tableoid and ctid
+    # sets the LLM's value. So the loaded data is exactly the LLM's rows.
+    # prepared.inserts holds Strings and DeferredInserts.
     #
     # Trust boundary: rows and inserts hold real values and stay in the
     # enclave. refused holds indexes and rule names only.
@@ -102,12 +111,14 @@ module Quaack
       def prepare(conn, inserts, placeholder_map:, tables:, settings: nil)
         accepted, refused = check(conn, inserts, placeholder_map, tables, settings)
         schema = ArenaSchema.load_closure(conn, accepted.map(&:table).uniq)
-        accepted = parents_first(schema, accepted)
-        Prepared.new(rows: ParentRows.new(conn, schema, accepted).rows, inserts: accepted.map(&:sql), refused:)
+        topology = Scenarios::Topology.new(schema, [])
+        accepted = parents_first(topology, accepted)
+        Prepared.new(rows: ParentRows.new(conn, schema, accepted).rows,
+                     inserts: accepted.map { |a| Deferral.insert(conn, a, topology.cut_columns(a.table)) }, refused:)
       end
 
-      def parents_first(schema, accepted)
-        order = Scenarios::Topology.new(schema, []).order
+      def parents_first(topology, accepted)
+        order = topology.order
         accepted.each_with_index.sort_by { |a, i| [order.index(a.table), i] }.map(&:first)
       end
 

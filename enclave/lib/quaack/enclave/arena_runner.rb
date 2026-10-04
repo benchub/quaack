@@ -83,10 +83,15 @@ module Quaack
       end
 
       # Opens the transaction, loads rows (FixtureRows) and then inserts (raw
-      # SQL INSERT statements, each run on its own with no parameters),
-      # yields a Transaction, and rolls back however the block ends. The
-      # inserts are for 10b, whose statements have already passed the
-      # inbound check.
+      # SQL INSERT statements, each run on its own with no parameters, or
+      # DeferredInserts), yields a Transaction, and rolls back however the
+      # block ends. The inserts are for 10b, whose statements have already
+      # passed the inbound check. Once every insert has loaded, each
+      # DeferredInsert's rows get their deferred columns, by UPDATEs the
+      # runner builds itself, keyed to each row's tableoid and ctid, with
+      # the values as parameters. If an insert returns a different number
+      # of rows than it has updates, or a row has moved from its ctid, the
+      # load fails with insert_failed.
       #
       # index_scans: false turns off index, index-only, and bitmap scans for
       # the transaction (NO_INDEX_SCANS), so each table is read in heap
@@ -114,10 +119,10 @@ module Quaack
 
       def check_fixture(rows, inserts, index_scans)
         raise ArgumentError, "rows must be an Array of FixtureRows" unless rows.is_a?(Array) && rows.all?(FixtureRow)
-        raise ArgumentError, "inserts must be an Array of Strings" unless inserts.is_a?(Array) && inserts.all?(String)
+        raise ArgumentError, "inserts must be an Array of Strings or DeferredInserts" unless Deferred.inserts?(inserts)
         raise ArgumentError, "index_scans must be true or false" unless [true, false].include?(index_scans)
 
-        inserts.each_with_index { |sql, index| StatementCheck.check(sql, :insert, index) }
+        inserts.each_with_index { |insert, index| StatementCheck.check(Deferred.text(insert), :insert, index) }
       end
 
       def refuse_unless_idle
@@ -166,7 +171,7 @@ module Quaack
         # database generates for other rows never collide with them.
         Sequences.advance(rows, method(:table_sql), method(:statement))
         rows.each_with_index { |row, i| statement(*insert_sql(row), step: :load, rule: :fixture_load_failed, index: i) }
-        inserts.each_with_index { |sql, index| statement(sql, [], step: :insert, rule: :insert_failed, index:) }
+        Deferred.load(inserts, method(:statement), method(:quote))
       end
 
       def run_query(sql, index)
@@ -235,3 +240,4 @@ end
 
 require_relative "arena_runner/sequences"
 require_relative "arena_runner/cancel"
+require_relative "arena_runner/deferred"

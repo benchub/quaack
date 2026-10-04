@@ -121,6 +121,38 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    it "runs a deferred insert's UPDATEs after every insert, on just the rows it inserted" do
+      conn.exec(<<~SQL)
+        CREATE TABLE "Fixture Space".parts (id integer, note text) PARTITION BY RANGE (id);
+        CREATE TABLE "Fixture Space".parts_low PARTITION OF "Fixture Space".parts FOR VALUES FROM (0) TO (10);
+        CREATE TABLE "Fixture Space".parts_high PARTITION OF "Fixture Space".parts FOR VALUES FROM (10) TO (100);
+      SQL
+      deferred = described_class::DeferredInsert.new(
+        sql: 'INSERT INTO "Fixture Space".parts VALUES (11, NULL)', updates: [{ "note" => "later" }]
+      )
+      inserts = ['INSERT INTO "Fixture Space".parts VALUES (1, NULL)', deferred,
+                 'INSERT INTO "Fixture Space".parts VALUES (12, NULL)']
+
+      rows = runner.with_fixture([], inserts:) do |tx|
+        tx.query('SELECT id, note FROM "Fixture Space".parts ORDER BY id').rows
+      end
+
+      # Rows 1 and 11 share a ctid in different partitions, so only tableoid tells them apart.
+      expect(rows).to eq([["1", nil], %w[11 later], ["12", nil]])
+      expect_nothing_persisted
+    end
+
+    it "refuses a deferred insert whose updates don't match the rows it inserts" do
+      deferred = described_class::DeferredInsert.new(
+        sql: 'INSERT INTO "Fixture Space".counters (label) VALUES (\'a\'), (\'b\')', updates: [{ "label" => "c" }]
+      )
+
+      error = run_error(inserts: [deferred])
+
+      expect([error.rule, error.step]).to eq(%i[insert_failed insert])
+      expect_nothing_persisted
+    end
+
     it "inserts a row with no columns as DEFAULT VALUES" do
       rows = runner.with_fixture([row(counters, {})]) do |tx|
         tx.query('SELECT id, label FROM "Fixture Space".counters').rows
@@ -742,13 +774,34 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect { PgQuery.parse(sql) }.to raise_error(PgQuery::ParseError, /#{sentinel}/)
     end
 
-    it "refuses a query and an insert that aren't Strings" do
+    it "refuses a query and an insert that aren't Strings or DeferredInserts" do
       expect { runner.with_fixture { |tx| tx.query(:select) } }
         .to raise_error(ArgumentError, "a query must be a String")
-      [[:insert], "INSERT"].each do |inserts|
+      [[:insert], "INSERT", [{ sql: "INSERT", updates: [] }]].each do |inserts|
         expect { runner.with_fixture([], inserts: inserts) { raise "not reached" } }
-          .to raise_error(ArgumentError, "inserts must be an Array of Strings"), inserts.inspect
+          .to raise_error(ArgumentError, "inserts must be an Array of Strings or DeferredInserts"), inserts.inspect
       end
+      expect_nothing_persisted
+    end
+
+    it "refuses a DeferredInsert whose sql isn't a String or whose updates aren't Hashes of Strings" do
+      deferred = described_class::DeferredInsert
+      expect { deferred.new(sql: :insert, updates: []) }
+        .to raise_error(ArgumentError, "a deferred insert's sql must be a String")
+      [{ "a" => "b" }, [[%w[a b]]], [{ "a" => 1 }], [{ a: "b" }]].each do |updates|
+        expect { deferred.new(sql: "INSERT", updates:) }
+          .to raise_error(ArgumentError, "a deferred insert's updates must be String Hashes"), updates.inspect
+      end
+      expect(deferred.new(sql: "INSERT", updates: [{ "a" => "b" }, {}]).updates).to eq([{ "a" => "b" }, {}])
+    end
+
+    it "checks a DeferredInsert's sql before the transaction starts, and never shows its values" do
+      deferred = described_class::DeferredInsert.new(sql: "SELECT '#{sentinel}'", updates: [{ "a" => sentinel }])
+
+      error = run_error(inserts: [deferred])
+
+      expect([error.rule, error.step, error.index]).to eq([:statement_not_allowed, :insert, 0])
+      expect([deferred.inspect, deferred.to_s, error.message].grep(/#{sentinel}/)).to be_empty
       expect_nothing_persisted
     end
 
