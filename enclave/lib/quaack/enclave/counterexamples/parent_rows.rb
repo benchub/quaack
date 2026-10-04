@@ -129,7 +129,7 @@ module Quaack
         # The columns pairs doesn't set that need a distinct value per row.
         def varying(table, pairs)
           free = @schema.columns(table).reject { |col| pairs.key?(col.name) || col.default == "generated" }
-          @schema.constraints(table).varying(free) { @values.rank(it) }
+          @schema.constraints(table).varying(free) { [@values.rank(it), @checks.checked?(table, it) ? 1 : 0] }
         end
 
         def free_value(table, col, varying)

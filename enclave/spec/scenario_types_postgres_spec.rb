@@ -313,6 +313,17 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
     end
 
+    it "varies a column with no CHECK over one whose CHECK allows few values" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, kind integer NOT NULL CHECK (kind IN (1, 2)),
+          login text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (kind, login);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "kind")).to all(eq("1"))
+    end
+
     it "varies a column the query's predicate doesn't constrain" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.users (id bigint PRIMARY KEY, root_account_ids bigint[] NOT NULL, login text NOT NULL);

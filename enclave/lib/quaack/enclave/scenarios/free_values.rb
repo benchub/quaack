@@ -6,8 +6,9 @@ module Quaack
       # Values for a table's free columns: ones no key class, atom (from
       # the block, given the column's slot), or cut foreign key sets, and
       # that aren't generated. A column a unique key needs to vary
-      # (ArenaSchema::Constraints#varying) gets UNIQUE, which
-      # Builder#identify turns into a value per distinct row. Any other
+      # (ArenaSchema::Constraints#varying, preferring a column no CHECK
+      # constrains) gets UNIQUE, which Builder#identify turns into a value
+      # per distinct row. Any other
       # column with a default is left to it, and the rest get a boundary
       # value, for a boundary group, or the type's typical value,
       # whichever the column's CHECKs allow.
@@ -38,7 +39,7 @@ module Quaack
         def varying(table)
           @varying[table] ||= @schema.constraints(table).varying(
             @schema.columns(table).select { free?(table, it) }
-          ) { @values.rank(it) }
+          ) { [@values.rank(it), @checks.checked?(table, it) ? 1 : 0] }
         end
 
         def free?(table, col)

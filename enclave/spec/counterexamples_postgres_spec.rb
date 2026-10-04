@@ -89,6 +89,14 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(customer_of_order(prepared)).to eq([%w[7 7]])
   end
 
+  it "varies a parent's unique-key column that has no CHECK over one whose CHECK allows few values" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN kind integer NOT NULL CHECK (kind IN (1, 2)),
+                 ADD COLUMN login text NOT NULL;
+               CREATE UNIQUE INDEX customers_kind_login ON fx.customers (kind, login)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b'), (3, 9, 'c')")
+    expect(load(prepared, "SELECT kind, count(DISTINCT login) FROM fx.customers GROUP BY 1")).to eq([%w[1 3]])
+  end
+
   it "refuses a parent whose unique column step 9 can't fill, naming the parent's table, column, and type" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn NOT NULL UNIQUE")
     expect { prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $1)") }
