@@ -18,6 +18,11 @@ module Quaack
     # original:top:1. The exception is a rewrite-rules rewrite rule's name, which
     # DESIGN.md's report says to give, and which a bug report needs.
     #
+    # It calls each rewrite by its name (RewriteNames), such as "Rewrite
+    # Silver Fox", never by its number, which the payload gives as
+    # rewrite_3: named gives the payload's rewrites their names, and Words
+    # maps the number in a label to the name.
+    #
     # In order, it shows:
     #
     # - A QUAACK bug, only if the payload's rule_bugs lists a rule-made
@@ -42,11 +47,21 @@ module Quaack
     module Report
       module_function
 
-      def render(payload, run_id:, llm_calls: {}) = View.new(payload, run_id, llm_calls).render
+      def render(payload, run_id:, llm_calls: {}) = View.new(named(payload, run_id), run_id, llm_calls).render
 
       def write(payload, run_id:, path:, llm_calls: {})
         File.write(path, render(payload, run_id:, llm_calls:))
         path
+      end
+
+      # The payload with each rewrite, and each rule_bugs entry, given its
+      # name in the run (RewriteNames) as "name", next to its number in
+      # "rewrite". The enclave only knows the number, so the driver adds
+      # the name. An entry with no number, or past the last name, gets nil.
+      def named(payload, run_id)
+        name = ->(entry) { entry.merge("name" => RewriteNames.name(run_id, RewriteNames.number(entry["rewrite"]))) }
+        lists = %w[rewrites rule_bugs].select { payload[it] }
+        payload.merge(lists.to_h { [it, payload[it].map(&name)] })
       end
     end
   end

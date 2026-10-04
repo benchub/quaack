@@ -9,7 +9,7 @@ module Quaack
       # ran with, from the label's entry in the payload's labels.
       #
       #   describe("original:top:1")  # => "Your query with a new index on public.t (a, b)"
-      #   describe("rewrite_2:none")  # => "Rewrite 2 with no new indexes"
+      #   describe("rewrite_2:none")  # => "Rewrite Silver Fox with no new indexes"
       #
       # It also says, for each label selection left out of the ranking, what it
       # read against the original and why that wasn't enough.
@@ -25,7 +25,7 @@ module Quaack
 
         def describe(label)
           search, key = label.to_s.split(":", 2)
-          "#{search == "original" ? "Your query" : Words.rewrite(search)} #{with(measured(label), key)}"
+          "#{search == "original" ? "Your query" : Words.rewrite(search, run_id)} #{with(measured(label), key)}"
         end
 
         # The new indexes a label ran with. Without the label's entry, only
@@ -70,7 +70,7 @@ module Quaack
           return "wasn't ranked." unless reason == "result_mismatch"
 
           "was dropped when QUAACK compared the rewrite's results with your query's on the real data. " \
-            "See #{Words.search(label.to_s.split(":").first)} under the queries."
+            "See #{Words.search(label.to_s.split(":").first, run_id)} under the queries."
         end
 
         # Why minimax found a label not better, with the blocks that say so.

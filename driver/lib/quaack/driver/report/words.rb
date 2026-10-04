@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../rewrite_names"
+
 module Quaack
   module Driver
     module Report
@@ -95,11 +97,16 @@ module Quaack
 
         def set(name) = SETS.fetch(name) { plain(name) }
 
-        # "rewrite_3" as "Rewrite 3". Anything else as it is.
-        def rewrite(name) = name.to_s.sub(/\Arewrite_(\d+)\z/, 'Rewrite \1')
+        # "rewrite_3" as "Rewrite" and its name in the run, such as
+        # "Rewrite Silver Fox" (RewriteNames). Anything else as it is.
+        def rewrite(name, run_id) = RewriteNames.label(run_id, name)
 
-        # A search, mid-sentence: "your query" or "rewrite 3".
-        def search(name) = name == "original" ? "your query" : lower(rewrite(name))
+        # "rewrite_3" as "Rewrite 3", for a rewrite with no name. Anything
+        # else as it is.
+        def numbered(name) = name.to_s.sub(/\Arewrite_(\d+)\z/, 'Rewrite \\1')
+
+        # A search, mid-sentence: "your query" or "rewrite Silver Fox".
+        def search(name, run_id) = name == "original" ? "your query" : lower(rewrite(name, run_id))
 
         def lower(text) = text.sub(/\A[A-Z]/, &:downcase)
 

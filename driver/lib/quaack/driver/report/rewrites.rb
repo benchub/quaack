@@ -51,6 +51,10 @@ module Quaack
                        "counterexamples" => "It passed every test, and the run ended before measuring it.",
                        "measurement" => "It was measured, and the run ended before QUAACK judged it." }.freeze
 
+        # A rewrite or rule_bugs entry as "Rewrite" and the name Report.named
+        # gave it, or by its number without one.
+        def called(entry) = entry["name"] ? "Rewrite #{entry["name"]}" : Words.numbered(entry["rewrite"])
+
         # Where a rewrite came from, or nil if the payload doesn't say.
         def source(entry) = entry["source"] == "rule" ? made_by(entry["rules"]) : SOURCES[entry["source"]]
 
@@ -111,7 +115,7 @@ module Quaack
         # A rewrite's name, source, and fate on one line, for the negative
         # result's list.
         def fate_line(entry)
-          "#{Words.rewrite(entry["rewrite"])} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
+          "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
         # The conditions rewrite-test's test data never exercised.
@@ -130,7 +134,7 @@ module Quaack
 
         def bug(entry)
           where = Words::BUG_STEPS.fetch(entry["step"], "in a test")
-          "#{Words.rewrite(entry["rewrite"])}, #{made_by(entry["rules"])}, returned different results #{where}."
+          "#{called(entry)}, #{made_by(entry["rules"])}, returned different results #{where}."
         end
       end
     end

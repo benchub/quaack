@@ -26,7 +26,7 @@ module Quaack
           "#{index["name"]} (#{size})"
         end
 
-        def searches(entry) = entry["searches"].map { Words.search(it) }.join(", ")
+        def searches(entry) = entry["searches"].map { Words.search(it, run_id) }.join(", ")
 
         def declined(entry)
           return DECLINED[entry["reason"]] || Words::MISSING unless entry["reason"] == "hypopg_refused"

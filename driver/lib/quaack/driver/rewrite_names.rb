@@ -111,14 +111,18 @@ module Quaack
         end
       end
 
-      # Rewrite number's name in the run, or nil past the last name.
-      def name(run_id, number) = (names(run_id, number).last if number.between?(1, SIZE))
+      # Rewrite number's name in the run, or nil past the last name or
+      # with no number.
+      def name(run_id, number) = (names(run_id, number).last if number&.between?(1, SIZE))
+
+      # A search such as rewrite_3's number, or nil for anything else.
+      def number(search) = search.to_s[/\Arewrite_(\d+)\z/, 1]&.to_i
 
       # A search such as rewrite_3 as "Rewrite" and its name, or its number
       # past the last name. Anything else as it is.
       def label(run_id, search)
-        number = search.to_s[/\Arewrite_(\d+)\z/, 1] or return search.to_s
-        "Rewrite #{name(run_id, number.to_i) || number}"
+        number = number(search) or return search.to_s
+        "Rewrite #{name(run_id, number) || number}"
       end
 
       # A number below bound, from SHA-256 of the run ID and the position.
