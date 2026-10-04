@@ -16,7 +16,10 @@ module Quaack
       # rules for everything else: a DEFAULT, a distinct value for a unique
       # column, NULL for a nullable foreign key, its own key for a NOT NULL
       # one to its own table, a new parent row for another NOT NULL one,
-      # and a type-typical or CHECK-satisfying value otherwise.
+      # and a type-typical or CHECK-satisfying value otherwise. A nullable
+      # column of a type with no such value is left NULL when Nulls allows
+      # it, given reads (Scenarios::Reads over the queries the fixture
+      # runs); with no reads, it's refused.
       class ParentRows
         # Distinct values start here, clear of the small numbers the LLM
         # tends to use for keys.
@@ -24,11 +27,12 @@ module Quaack
 
         attr_reader :rows
 
-        def initialize(conn, schema, accepted)
+        def initialize(conn, schema, accepted, reads = nil)
           @conn = conn
           @schema = schema
           @values = Scenarios::Values.new(conn)
           @checks = Scenarios::Checks.new(conn, schema)
+          @nulls = Scenarios::Nulls.new(schema, @values, @checks, reads) if reads
           @counter = FIRST
           @rows = []
           fill_all(accepted.map { |a| [a.table, evaluate(a.parse)] })
@@ -137,7 +141,13 @@ module Quaack
 
           typical = @values.typical(col)
           @checks.satisfying(table, col, [typical], (@values.refusal(col, table) unless typical))
+        rescue Scenarios::Error
+          raise if typical || !null?(table, col)
+
+          nil
         end
+
+        def null?(table, col) = @nulls&.allowed?(table, col)
       end
     end
   end

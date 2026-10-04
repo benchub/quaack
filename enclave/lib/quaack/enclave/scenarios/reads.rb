@@ -11,13 +11,14 @@ module Quaack
       # name is no column of a fixture table (a whole row, such as t in
       # SELECT t FROM x t, or an output name), counts as reading every
       # column. A JOIN ... USING reads the columns it names, and a NATURAL
-      # join reads every column.
+      # join reads every column. parse may be a list of parses, read by
+      # any of them.
       class Reads
         def initialize(parse, column_names)
           @names = []
           @all = false
           known = column_names.values.flatten
-          walk(parse.tree) { |fields| note(fields, known) }
+          (parse.is_a?(Array) ? parse : [parse]).each { |p| walk(p.tree) { |fields| note(fields, known) } }
         end
 
         def read?(name) = @all || @names.include?(name)

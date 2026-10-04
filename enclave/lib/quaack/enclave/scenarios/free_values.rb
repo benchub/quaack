@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "nulls"
+
 module Quaack
   module Enclave
     module Scenarios
@@ -12,9 +14,7 @@ module Quaack
       # column with a default is left to it, and the rest get a boundary
       # value, for a boundary group, or the type's typical value,
       # whichever the column's CHECKs allow. A nullable column whose type
-      # has no such value is left NULL when the query doesn't read it (see
-      # Reads), no NULLS NOT DISTINCT key holds it, and neither its CHECKs
-      # nor a NOT NULL domain reject NULL.
+      # has no such value is left NULL when Nulls allows it.
       class FreeValues
         UNIQUE = Object.new.freeze
 
@@ -23,7 +23,7 @@ module Quaack
           @topology = topology
           @checks = checks
           @values = values
-          @reads = reads
+          @nulls = Nulls.new(schema, values, checks, reads)
           @constrained = constrained
           @varying = {}
         end
@@ -51,16 +51,7 @@ module Quaack
           nil
         end
 
-        def null?(table, col)
-          col.nullable && !@reads.read?(col.name) && @values.nullable_type?(col) &&
-            @checks.allows?(table, col, nil) && !nulls_collide?(table, col)
-        end
-
-        def nulls_collide?(table, col)
-          constraints = @schema.constraints(table)
-          constraints.nulls_not_distinct.any? { it.include?(col.name) } ||
-            constraints.expressions.any? { it.nulls_not_distinct && it.columns.include?(col.name) }
-        end
+        def null?(table, col) = @nulls.allowed?(table, col)
 
         def varying(table)
           @varying[table] ||= @schema.constraints(table).varying(

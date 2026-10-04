@@ -107,6 +107,39 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       }
   end
 
+  describe "a parent's nullable column of a type step 9 can't fill" do
+    let(:insert) { "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')" }
+    let(:joined) { "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id" }
+
+    before { conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn, ADD COLUMN ulsn pg_lsn UNIQUE") }
+
+    def prepare_for(*queries)
+      described_class.prepare(conn, [insert], placeholder_map: map, tables: %w[customers orders].map { tn(it) },
+                                              queries:)
+    end
+
+    def lsn_refusal
+      raise_error(Quaack::Enclave::Scenarios::Error) { |e| expect(e.rule).to eq(:unsupported_type) }
+    end
+
+    it "is left NULL, unique or not, when neither query reads it" do
+      prepared = prepare_for(joined, "#{joined} WHERE o.status = 'a'")
+      expect(load(prepared, "SELECT id, lsn, ulsn FROM fx.customers")).to eq([["7", nil, nil]])
+    end
+
+    it "is refused when either query reads it, or when no queries are given" do
+      expect { prepare_for(joined, "SELECT o.id, c.lsn FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id") }
+        .to lsn_refusal
+      expect { prepare_for("SELECT c.* FROM fx.customers c", joined) }.to lsn_refusal
+      expect { prepare(insert) }.to lsn_refusal
+    end
+
+    it "is refused when a CHECK rejects NULL" do
+      conn.exec("ALTER TABLE fx.customers DROP COLUMN ulsn, ADD CHECK (lsn IS NOT NULL)")
+      expect { prepare_for(joined) }.to lsn_refusal
+    end
+  end
+
   it "refuses an insert the inbound check refuses, or one with an unknown placeholder, by rule alone" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) SELECT 1, 2, 'x'",
                        "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $9)",
