@@ -15,7 +15,8 @@ module Quaack
       # get their scenario values, but fixture rows defer them
       # (ArenaRunner::FixtureRow#deferred): they load as NULL and are set
       # once every row has loaded. A cut foreign key's columns are NULL in
-      # a group that leaves out its parent's table. A cycle with no
+      # a group that leaves out its parent's table, but for a copy or a
+      # cross (see null_cut?). A cycle with no
       # nullable foreign key left raises Error(:fk_cycle), naming one such
       # cycle's tables.
       class Topology
@@ -46,14 +47,13 @@ module Quaack
         def roots = @order.select { |t| load_parents(t).empty? }
 
         # Whether the column belongs to a cut foreign key whose parent's
-        # table the group leaves out, as the empty group and a copy of one
-        # table's row do, so it must be NULL, unless the group's cross
-        # points it at the hit's parent. A copy's parent row may not
-        # exist: when the parent's table has a column no value fits (c.id IS
-        # NULL), its copy and the hit never build, but other tables' copies
-        # still reference this table's copy.
+        # table the group leaves out, as the empty group does, so it must
+        # be NULL. A cross that points the column at the hit's parent keeps
+        # it, and so does a copy of one table's row, which points at its
+        # row's parent as without the cycle, so rows tie on the cut column.
+        # When that parent never built, the copy is an orphan (see RowSet).
         def null_cut?(table, name, group)
-          return false if group.cross&.points?(table, name)
+          return false if group.cross&.points?(table, name) || group.copy.positive?
 
           @cut.fetch(table, []).any? { |fk| fk.columns.include?(name) && !group.tables.include?(fk.parent) }
         end

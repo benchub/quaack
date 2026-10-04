@@ -153,14 +153,15 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(run(s6, anti_sql)).to eq(lonely.sort_by(&:to_i).map { |id| [id] })
       end
 
-      # c.id IS NULL has no value, so the hit and the copy of its courses row
-      # never build. The near miss builds a course, and its account points
-      # at it; the copy of the hit's account leaves courses out, so its cut
-      # column is NULL, and it loads.
-      it "gives the cut column its parent's key where the parent builds, NULL in a copy" do
+      # No stored value satisfies c.id IS NULL, so the hit ignores it and
+      # builds a course. The copy of the hit's account keeps the hit's
+      # course as its template, as without the cycle.
+      it "gives the cut column its parent's key wherever the parent builds, a copy included" do
         scenarios = build(anti_sql)
         expect(values(scenarios[:s1], "accounts", "course_template_id").compact).not_to be_empty
-        expect(values(scenarios[:s3], "accounts", "course_template_id")).to include(nil)
+        s3_templates = values(scenarios[:s3], "accounts", "course_template_id")
+        expect(s3_templates).not_to include(nil)
+        expect(s3_templates.tally.values.max).to be >= 2
         scenarios.each_value do |rows|
           expect(values(rows, "accounts", "course_template_id").compact - values(rows, "courses", "id")).to eq([])
           expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2)
@@ -264,10 +265,9 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       "SELECT a.id FROM fx.accounts a LEFT JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"
     end
 
-    # c.id IS NULL can't hold for a primary key, so the cut column's key
-    # class has no value, and the hit never builds. The copy of the hit's
-    # account leaves courses out, so its cut column is NULL and it loads
-    # for the enrollment_terms copy to reference.
+    # No stored value satisfies c.id IS NULL, so the hit ignores it and
+    # builds a course, which the copy of the hit's account keeps as its
+    # template. Every enrollment_terms row still has its account.
     it "loads every scenario of an anti join on the kept edge" do
       scenarios = build(anti_sql)
       expect(rows_of(scenarios[:s3], "accounts")).not_to be_empty
@@ -337,6 +337,19 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
          "SELECT c.id, a.id FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id ORDER BY c.id, a.id"]
       )
       expect(report.results.map(&:passed)).to eq([true, false])
+    end
+
+    # A copy of an account keeps its template, so accounts tie on it.
+    it "disproves dropping or reversing the sort key's tie-break on the cut column, under LIMIT" do
+      order_sql = "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id ORDER BY "
+      report = Quaack::Enclave::StepNine.run(
+        conn, "#{order_sql}a.course_template_id DESC, a.id LIMIT 1",
+        ["SELECT a.id FROM fx.courses t JOIN fx.accounts a ON a.course_template_id = t.id " \
+         "ORDER BY a.course_template_id DESC, a.id LIMIT 1",
+         "#{order_sql}a.id DESC LIMIT 1",
+         "#{order_sql}a.course_template_id DESC, a.id DESC LIMIT 1"]
+      )
+      expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :value], [false, :value]])
     end
 
     # Two accounts that share a template join its course twice.
