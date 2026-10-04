@@ -85,7 +85,11 @@ module Quaack
       # Opens the transaction, loads rows (FixtureRows) and then inserts (raw
       # SQL INSERT statements, each run on its own with no parameters, or
       # DeferredInserts), yields a Transaction, and rolls back however the
-      # block ends. The inserts are for 10b, whose statements have already
+      # block ends. A row's deferred columns load as NULL, and once every
+      # row has loaded, an UPDATE keyed to the row's tableoid and ctid sets
+      # them, row by row in load order, before the inserts run. If it
+      # doesn't find the row, the load fails with fixture_load_failed. The
+      # inserts are for 10b, whose statements have already
       # passed the inbound check. Once every insert has loaded, each
       # DeferredInsert's rows get their deferred columns, by UPDATEs the
       # runner builds itself, keyed to each row's tableoid and ctid, with
@@ -170,7 +174,7 @@ module Quaack
         # Advance sequences past the explicit values first, so ids the
         # database generates for other rows never collide with them.
         Sequences.advance(rows, method(:table_sql), method(:statement))
-        rows.each_with_index { |row, i| statement(*insert_sql(row), step: :load, rule: :fixture_load_failed, index: i) }
+        Deferred.load_rows(rows, method(:insert_sql), method(:table_sql), method(:statement), method(:quote))
         Deferred.load(inserts, method(:statement), method(:quote))
       end
 
@@ -198,7 +202,8 @@ module Quaack
         placeholders = Array.new(row.columns.size) { |i| "$#{i + 1}" }.join(", ")
         # A fixture row may set a GENERATED ALWAYS identity key, so its
         # parents' keys match; the override is a no-op on other tables.
-        ["INSERT INTO #{table} (#{columns}) OVERRIDING SYSTEM VALUE VALUES (#{placeholders})", row.values]
+        # A deferred column loads as NULL.
+        ["INSERT INTO #{table} (#{columns}) OVERRIDING SYSTEM VALUE VALUES (#{placeholders})", row.load_values]
       end
 
       def table_sql(table) = [table.schema, table.name].map { |part| quote(part) }.join(".")

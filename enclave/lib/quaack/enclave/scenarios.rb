@@ -45,7 +45,9 @@ module Quaack
     #   tables it references).
     # - boundary: the hit group, with type boundary values wherever they
     #   still satisfy the atoms and CHECKs.
-    # - empty: only the tables that reference no other fixture table.
+    # - empty: only the tables that reference no other fixture table
+    #   through a foreign key the load order keeps. A cut column there is
+    #   NULL, since its parent's table has no row in the group.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
     # S3: S1, crosses, and a copy of each table's hit row; S4: S1 and orphans; S5: S1
@@ -82,9 +84,15 @@ module Quaack
     # or for which no value fails its near-miss atom, is left out, and 9c
     # catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
     # Error(:complex_check). A foreign-key cycle between tables is broken
-    # where it can be: a foreign key in the cycle whose columns are all
-    # nullable, and that no atom reads, is cut (see Topology), and rows
-    # leave its columns NULL. A cycle with no such foreign key raises
+    # where it can be: foreign keys in the cycle whose columns are all
+    # nullable are cut from the load order (see Topology), preferring ones
+    # no atom reads. A cut column still gets its value, as without the
+    # cycle, but its rows defer it (ArenaRunner::FixtureRow#deferred): it
+    # loads as NULL and is set once every row has loaded. It's NULL in a
+    # group that leaves its parent's table out, except a copy or a cross,
+    # which keeps its parent (RowSet drops a copy whose parent is
+    # missing). A cycle with no nullable
+    # foreign key raises
     # Error(:fk_cycle). Rows come table by table, parents first, each
     # table's rows together, as 9d's reverse load needs.
     #
@@ -200,8 +208,6 @@ module Quaack
 
         private
 
-        def order = @topology.order
-
         def refuse_user_functions
           raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
         end
@@ -213,7 +219,7 @@ module Quaack
           parts = Parts.new(@schema, @conn)
           (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
           @dropped += parts.dropped
-          parts.in_order(order)
+          parts.in_order(@topology.order)
         end
 
         def retries = @retries ||= Retries.new(@pools.keys) { build_group(it) }
@@ -235,7 +241,7 @@ module Quaack
 
         # The group's rows, or nil when a near miss has no value.
         def build_group(group)
-          rows = order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
+          rows = @topology.order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
           rows unless rows.include?(:skip)
         end
 
@@ -243,8 +249,9 @@ module Quaack
           pairs = @schema.columns(table).map { |col| [col.name, column_value(table, col, group)] }
           return :skip if pairs.any? { |_, v| v == :skip }
 
-          pairs = identify(table, group, pairs.reject { |_, v| v == :omit })
-          ArenaRunner::FixtureRow.new(table:, columns: pairs.map(&:first), values: pairs.map(&:last))
+          pairs = identify(table, group, pairs.reject { |_, v| v == :omit }).to_h
+          ArenaRunner::FixtureRow.new(table:, columns: pairs.keys, values: pairs.values,
+                                      deferred: pairs.keys & @topology.cut_columns(table))
         end
 
         def column_value(table, col, group)
@@ -252,8 +259,7 @@ module Quaack
           # An identity column a key class ties to another takes the key's
           # value (the runner overrides the identity), or else its own.
           return :omit if generated?(col, keyed)
-          # A cut foreign key's column: the load order ignores it.
-          return nil if @topology.cut?(table, col.name)
+          return nil if @topology.null_cut?(table, col.name, group)
 
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)

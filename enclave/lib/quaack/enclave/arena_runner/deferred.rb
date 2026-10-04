@@ -27,6 +27,41 @@ module Quaack
 
         def text(insert) = insert.is_a?(DeferredInsert) ? insert.sql : insert
 
+        # Loads the fixture rows. A row with deferred columns loads with NULL
+        # there and returns its tableoid and ctid. Once every row has loaded,
+        # each such row's UPDATE sets them, in load order, even to NULL, so
+        # the heap keeps the load order. An INSERT that doesn't return its
+        # row (a trigger skipped it), or an UPDATE that doesn't find exactly
+        # its row, fails the load with fixture_load_failed.
+        def load_rows(rows, insert_sql, table_sql, statement, quote)
+          load = ->(sql, params, index) { statement.call(sql, params, step: :load, rule: :fixture_load_failed, index:) }
+          targets = rows.each_with_index.map { |row, index| insert_row(row, index, insert_sql, load) }
+          update_rows(rows, targets, load, table_sql, quote)
+        end
+
+        # The row's tableoid and ctid, when it has deferred columns.
+        def insert_row(row, index, insert_sql, load)
+          sql, params = insert_sql.call(row)
+          if row.deferred.empty?
+            load.call(sql, params, index)
+            return
+          end
+
+          returned = load.call("#{sql} RETURNING tableoid, ctid", params, index).rows
+          raise Error.new(:fixture_load_failed, step: :load, index:), cause: nil unless returned.size == 1
+
+          returned.first
+        end
+
+        def update_rows(rows, targets, load, table_sql, quote)
+          rows.zip(targets).each_with_index do |(row, target), index|
+            next if row.deferred.empty?
+
+            found = load.call(*update_sql(table_sql.call(row.table), row.deferred_values, *target, quote), index).rows
+            raise Error.new(:fixture_load_failed, step: :load, index:), cause: nil unless found.size == 1
+          end
+        end
+
         def run_insert(insert, index, statement)
           if insert.is_a?(String)
             run(statement, insert, [], index)
