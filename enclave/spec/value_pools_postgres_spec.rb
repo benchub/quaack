@@ -29,6 +29,14 @@ RSpec.describe Quaack::Enclave::ValuePools do
 
   def pool(where) = pools(where).fetch(0)
 
+  it "gives an array type none of its element type's boundaries" do
+    expect(described_class.boundaries("bigint[]")).to eq([])
+    expect(described_class.boundaries("character varying(20)[]")).to eq([])
+    expect(described_class.boundaries("timestamp with time zone[]")).to eq([])
+    expect(described_class.boundaries("bigint")).to include("9223372036854775807")
+    expect(described_class.boundaries("character varying(20)")).to eq(["", "~"])
+  end
+
   it "sorts the literal, a unit either side, and the type's boundaries for an integer equality" do
     p = pool("o.qty = 5")
     expect(p.satisfying).to eq(["5"])
