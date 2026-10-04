@@ -66,8 +66,8 @@ module Quaack
 
           # Gives the subquery's table under name a fresh alias, renames
           # every column the subquery reads as name.something, and returns
-          # the alias. Refuses, with nil, when a subquery inside could have
-          # a name of its own that's the same.
+          # the alias. Refuses, with nil, when anything else in the subquery
+          # has that name as a FROM item, so a name.something could mean it.
           def rename!(sub, name, tree)
             table = renamable(sub, name)
             return unless table
@@ -80,7 +80,18 @@ module Quaack
 
           def renamable(sub, name)
             table = Tree.from_items(sub.from_clause).find { it.name == name }&.table
-            table if [PgQuery::SubLink, PgQuery::RangeSubselect].all? { Tree.find(sub, it).empty? }
+            table if range_names(sub).count(name) == 1
+          end
+
+          # Every name a FROM item anywhere in sub could go by: each alias,
+          # each unaliased table's name, and each name in an unaliased
+          # function's call.
+          def range_names(sub)
+            Tree.find(sub, PgQuery::Alias).map(&:aliasname) +
+              Tree.find(sub, PgQuery::RangeVar).reject(&:alias).map(&:relname) +
+              Tree.find(sub, PgQuery::RangeFunction).reject(&:alias).flat_map do |function|
+                Tree.find(function, PgQuery::FuncCall).flat_map { it.funcname.map { it.string.sval } }
+              end
           end
 
           def rename_column!(column, name, fresh)

@@ -62,8 +62,9 @@ module Quaack
       #   that column. Either way it's then qualified.
       # - Every top-level item of the original's FROM has a name Tree can
       #   read. If one has the qualifier of a column in y, that is a table
-      #   of the subquery's FROM, which has no subquery of its own, so
-      #   every reference to it can be renamed.
+      #   of the subquery's FROM, and nothing else anywhere in the subquery
+      #   has that name as a FROM item, so every reference to it can be
+      #   renamed.
       # - No bare name on either side names a FROM item of that side, such
       #   as posts in posts IS NULL. Postgres reads a bare name as a column
       #   of any query in scope before it reads it as a whole row, and the

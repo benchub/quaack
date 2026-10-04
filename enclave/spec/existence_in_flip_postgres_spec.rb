@@ -408,6 +408,35 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  it "renames a table its subqueries read, when none of them has a FROM item of that name" do
+    expect_rewrites(
+      "SELECT 1 AS one FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
+      "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.courses WHERE courses.id = " \
+      "tool_lookups.assignment_id AND courses.workflow_state = 'available')) LIMIT 1",
+      "SELECT $1 AS one FROM public.tool_lookups tool_lookups_1 WHERE EXISTS (SELECT $2 FROM public.courses " \
+      "WHERE courses.id = tool_lookups_1.assignment_id AND courses.workflow_state = $3) AND EXISTS (SELECT 1 " \
+      "FROM public.tool_lookups WHERE tool_lookups.id = tool_lookups_1.assignment_id) LIMIT $4"
+    )
+    expect_flips(*%w[turnitin other].map do |code|
+      "SELECT 1 AS one FROM public.tool_lookups WHERE tool_lookups.tool_product_code = '#{code}' AND " \
+        "tool_lookups.id IN (SELECT tool_lookups.assignment_id FROM public.tool_lookups WHERE EXISTS (SELECT 1 " \
+        "FROM public.courses WHERE courses.id = tool_lookups.assignment_id AND " \
+        "courses.workflow_state = 'available')) LIMIT 1"
+    end)
+  end
+
+  it "refuses to rename a table when a subquery of its has a FROM item of that name" do
+    conn.exec("CREATE FUNCTION public.tool_lookups() RETURNS TABLE (id int) LANGUAGE sql IMMUTABLE AS 'SELECT 3'")
+    inners = ["public.tool_lookups WHERE tool_lookups.tool_product_code IS NULL",
+              "public.courses AS tool_lookups WHERE tool_lookups.id = 3",
+              "generate_series(3, 3) AS tool_lookups(id) WHERE tool_lookups.id = 3",
+              "public.tool_lookups() WHERE tool_lookups.id = 3"]
+    expect_no_flip(*inners.map do |inner|
+      "SELECT 1 AS one FROM public.tool_lookups WHERE tool_lookups.id = 1 AND tool_lookups.id IN (SELECT " \
+        "tool_lookups.assignment_id FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM #{inner})) LIMIT 1"
+    end)
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)
@@ -519,12 +548,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
   it "refuses a selected column it can't qualify or rename safely" do
     expect_refusals(
       [["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
-        "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
-        "WHERE assignments.id = tool_lookups.assignment_id)) LIMIT 1",
-        "SELECT 1 FROM public.tool_lookups AS t WHERE t.id IN (SELECT tool_lookups.assignment_id " \
-        "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
-        "WHERE assignments.id = tool_lookups.assignment_id)) LIMIT 1"],
-       ["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
         "FROM public.tool_lookups WHERE public.tool_lookups.tool_product_code = 'x') LIMIT 1",
         "SELECT 1 FROM public.tool_lookups AS t WHERE t.id IN (SELECT tool_lookups.assignment_id " \
         "FROM public.tool_lookups WHERE public.tool_lookups.tool_product_code = 'x') LIMIT 1"]]
