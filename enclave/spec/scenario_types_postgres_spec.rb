@@ -8,7 +8,7 @@ require "quaack/enclave/arena_schema"
 require "quaack/enclave/error_filter"
 require "quaack/enclave/scenarios"
 
-# Step 9's values for the types beyond numbers, text, and dates (20261003-27):
+# rewrite-test's values for the types beyond numbers, text, and dates (20261003-27):
 # ranges, geometric types, bit strings, arrays, narrow numerics, and the
 # columns of a multi-column unique index. Every scenario must load, with no
 # group left out for colliding on a unique key.
@@ -195,7 +195,7 @@ RSpec.describe Quaack::Enclave::Scenarios do
     end
   end
 
-  describe "a column step 9 can't fill" do
+  describe "a column rewrite-test can't fill" do
     def refusal(sql)
       builder(sql).build
       raise "no refusal"

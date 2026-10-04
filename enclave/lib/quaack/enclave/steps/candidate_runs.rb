@@ -9,9 +9,9 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks candidate-runs --run <run ID>` (DESIGN.md 14, 12b): on the
-      # racetrack, measures each rewrite candidate that survived steps 9 and
-      # 10 and wasn't pruned in step 8 (IndexSearch.llm_search?), first with
+      # `quaacks candidate-runs --run <run ID>` (DESIGN.md's candidate-runs, run-discipline): on the
+      # racetrack, measures each rewrite candidate that survived rewrite-test and
+      # counterexamples and wasn't pruned in plan-pruning (IndexSearch.llm_search?), first with
       # every built index hidden ("none") and then under each of its own
       # index_build combinations ("rewrite_<n>:<key>"), with Measurement and
       # the baseline's timeout_ms. A run that times out on any literal set is

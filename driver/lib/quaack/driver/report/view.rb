@@ -39,7 +39,7 @@ module Quaack
         %w[top excluded infinite_sets labels rewrites indexes original_sql original_plan original_measurements
            timed_out_count].each { |field| define_method(field) { @payload.fetch(field) } }
 
-        # DESIGN.md 15a, sent only when the selection is empty.
+        # DESIGN.md's negative-result, sent only when the selection is empty.
         def negative = @payload["negative"]
 
         def h(value) = Format.h(value)
@@ -115,7 +115,7 @@ module Quaack
         def stage_cells(record, stage)
           return %(<td colspan="6" class="missing">#{Words::MISSING}</td>) unless record
 
-          [num(record["in"]), "<td>#{h breakdown(record["added"], rules: stage == "6c")}</td>",
+          [num(record["in"]), "<td>#{h breakdown(record["added"], rules: stage == "rewrite-rules")}</td>",
            "<td>#{h breakdown(record["dropped"])}</td>", num(record["set_aside"]), num(record["out"]),
            "<td>#{h breakdown(record["extra"])}</td>"].join
         end

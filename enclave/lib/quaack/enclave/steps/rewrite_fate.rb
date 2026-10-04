@@ -8,61 +8,60 @@ module Quaack
   module Enclave
     module Steps
       # What became of one stored rewrite, for ReportPayload's rewrites
-      # field (DESIGN.md step 15 and 15a): the one step that took it out of
+      # field (DESIGN.md report and negative-result): the one step that took it out of
       # the run, or that it was ranked.
       #
       #   context = RewriteFate.context(store)
       #   RewriteFate.call(store, "rewrite_2", context)
-      #   # => { "fate" => "step9_disproved", "scenario" => "s3", "rule" => "multiset",
+      #   # => { "fate" => "rewrite_test_disproved", "scenario" => "s3", "rule" => "multiset",
       #   #      "round" => nil, "after" => nil }
       #
       # A rewrite has several measured labels and one fate. The first of
       # these that holds is its fate:
       #
-      #   ranked                   14d ranked one of its labels
-      #   same_plans               step 8 found it plans as the original
+      #   ranked                   selection ranked one of its labels
+      #   same_plans               plan-pruning found it plans as the original
       #                            does, so it was never tested
-      #   step9_disproved          a step 9 scenario got different results;
+      #   rewrite_test_disproved          a rewrite-test scenario got different results;
       #                            with the scenario and the rule
-      #   step9_untested           step 9 couldn't build scenarios for the
+      #   rewrite_test_untested           rewrite-test couldn't build scenarios for the
       #                            query (rewrite_tested_<n> says refused),
       #                            so the rewrite was never tested; with the
       #                            refusal's rule, and for fk_cycle the
       #                            cycle's tables
-      #   step9_failed             a step 9 scenario ended without comparing
+      #   rewrite_test_failed             a rewrite-test scenario ended without comparing
       #                            results (the original's order can't be
       #                            checked, or a statement failed in arena);
       #                            with the scenario and the rule
-      #   step10_disproved         a 10b round got different results; with
+      #   counterexamples_disproved         a counterexample-compare round got different results; with
       #                            the round and the rule
-      #   step10_failed            a 10b round ended without comparing
+      #   counterexamples_failed            a counterexample-compare round ended without comparing
       #                            results; with the round and the rule
-      #   production_mismatch      14c got different results on production
+      #   production_mismatch      result-comparison got different results on production
       #                            data; with the first rule of MISMATCHES
       #                            among its failing verdicts
-      #   production_timed_out     14c dropped it for a timeout, and no
+      #   production_timed_out     result-comparison dropped it for a timeout, and no
       #                            literal set's results differed
-      #   production_not_compared  14c dropped it without comparing (rule
-      #                            unsupported_order), or 14d excluded it as
-      #                            result_mismatch and 14c's entry doesn't
+      #   production_not_compared  result-comparison dropped it without comparing (rule
+      #                            unsupported_order), or selection excluded it as
+      #                            result_mismatch and result-comparison's entry doesn't
       #                            say why
       #   below_top_three          a label beat the original and fell
-      #                            outside 14d's top three
+      #                            outside selection's top three
       #   footprint_tie            a label beat the original and lost
       #                            minimax's footprint tiebreak
       #   not_better               it was measured and minimax found no
       #                            label better than the original
-      #   measurement_timed_out    every one of its step 14 runs timed out
+      #   measurement_timed_out    every one of its candidate-runs runs timed out
       #   unfinished               the run took it no further; after is the
       #                            last stage it finished: nil (only
-      #                            stored), step9, step10, or measurement
+      #                            stored), rewrite-test, counterexamples, or measurement
       #
-      # A step 8 prune (rewrite_pruned_<n> says discarded) comes before the
-      # step 9 fates because rewrite-test stores a pruned rewrite as not
-      # passed, with rule discarded, without testing it. The step 9 and 10 fates come before the measured ones
-      # because a rewrite either step stopped is never measured. Among the
-      # measured ones, 14c's come first: 14c drops the whole rewrite, so
-      # none of its labels counts.
+      # A plan-pruning prune (rewrite_pruned_<n> says discarded) comes before the rewrite-test fates because
+      # rewrite-test stores a pruned rewrite as not passed, with rule discarded, without testing it. The rewrite-test
+      # and counterexamples fates come before the measured ones because a rewrite either step stopped is never
+      # measured. Among the measured ones, result-comparison's come first: result-comparison drops the whole rewrite,
+      # so none of its labels counts.
       #
       # Trust boundary. Everything this returns is one of this module's own
       # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
@@ -73,14 +72,15 @@ module Quaack
       # each the schema_subset entry's own (the catalog's relations). A
       # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans step9_disproved step9_untested step9_failed step10_disproved step10_failed
-                   production_mismatch production_timed_out production_not_compared below_top_three
-                   footprint_tie not_better measurement_timed_out unfinished].freeze
+        FATES = %w[ranked same_plans rewrite_test_disproved rewrite_test_untested rewrite_test_failed
+                   counterexamples_disproved counterexamples_failed production_mismatch production_timed_out
+                   production_not_compared below_top_three footprint_tie not_better measurement_timed_out
+                   unfinished].freeze
 
-        # The rules that say two results differed, in steps 9, 10, and 14c.
+        # The rules that say two results differed, in rewrite-test, counterexamples, and result-comparison.
         MISMATCHES = ResultComparator::MISMATCHES.map(&:to_s).freeze
 
-        # The rules that end a step 9 scenario or a 10b round with nothing
+        # The rules that end a rewrite-test scenario or a counterexample-compare round with nothing
         # compared: the comparison's refusal, and ArenaRunner's and
         # ArenaFixture's failures.
         FAILURES = %w[unsupported_order statement_unparsable statement_not_allowed begin_failed
@@ -88,25 +88,25 @@ module Quaack
                       insert_failed query_failed transaction_ended rollback_failed statement_timeout
                       statement_canceled].freeze
 
-        # Scenarios::Error's rules: why step 9 couldn't build scenarios.
+        # Scenarios::Error's rules: why rewrite-test couldn't build scenarios.
         REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
                       domain_check].freeze
 
-        # 14c's failing rules that compare nothing.
+        # result-comparison's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
 
         SCENARIOS = Scenarios::NAMES.map(&:to_s).freeze
         ROUNDS = [1, 2, 3].freeze
-        AFTER = %w[step9 step10 measurement].freeze
+        AFTER = %w[rewrite-test counterexamples measurement].freeze
 
-        # 14d's reasons for a label that 14c didn't drop, strongest first.
+        # selection's reasons for a label that result-comparison didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
 
         BLANK = { "fate" => nil, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil,
                   "cycle" => nil }.freeze
 
-        # What every rewrite's fate reads from steps 14 on, read once.
-        # tables is the schema subset's relations (3b), as "schema.name".
+        # What every rewrite's fate reads from candidate-runs on, read once.
+        # tables is the schema subset's relations (schema-dump), as "schema.name".
         Context = Data.define(:top, :excluded, :measured, :timed_out, :verdicts, :tables)
 
         module_function
@@ -126,7 +126,7 @@ module Quaack
             measured(rewrite, context) || unfinished(rewrite, steps, context)
         end
 
-        # The rewrite's own step 8 to 10 entries, each nil if it isn't stored.
+        # The rewrite's own plan-pruning to counterexamples entries, each nil if it isn't stored.
         def steps(store, number)
           %w[pruned tested round survived].to_h do |step|
             entry = "rewrite_#{step}_#{number}"
@@ -145,46 +145,46 @@ module Quaack
           fate("ranked") if context.top.any? { mine?(rewrite, it) }
         end
 
-        # Steps 8, 9, and 10, in that order.
+        # plan-pruning, rewrite-test, and counterexamples, in that order.
         def early(steps, context)
           tested = steps["tested"]
           return fate("same_plans") if steps.dig("pruned", "discarded") == true
           return unless tested
-          return step9(tested, context) unless tested["passed"]
+          return rewrite_test(tested, context) unless tested["passed"]
 
-          step10(steps["round"] || {}) if steps.dig("survived", "survived") == false
+          counterexamples(steps["round"] || {}) if steps.dig("survived", "survived") == false
         end
 
-        def step9(tested, context)
+        def rewrite_test(tested, context)
           return untested(tested, context) if tested["refused"] == true
 
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
-          return fate("step9_disproved", scenario:, rule: mismatch) if mismatch
+          return fate("rewrite_test_disproved", scenario:, rule: mismatch) if mismatch
 
-          fate("step9_failed", scenario:, rule: known(FAILURES, tested["rule"]))
+          fate("rewrite_test_failed", scenario:, rule: known(FAILURES, tested["rule"]))
         end
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])
           cycle = CycleTables.check(tested["cycle"], context.tables) if rule == "fk_cycle"
-          fate("step9_untested", rule:, cycle:)
+          fate("rewrite_test_untested", rule:, cycle:)
         end
 
         # A round entry with no rule was written before rounds kept theirs
         # (or isn't there at all): then, survived false only ever followed a
         # round that didn't match, so it reads as a disproof.
-        def step10(round)
+        def counterexamples(round)
           number = known(ROUNDS, round["round"])
-          return fate("step10_disproved", round: number) if round["rule"].nil?
+          return fate("counterexamples_disproved", round: number) if round["rule"].nil?
 
           mismatch = known(MISMATCHES, round["rule"])
-          return fate("step10_disproved", round: number, rule: mismatch) if mismatch
+          return fate("counterexamples_disproved", round: number, rule: mismatch) if mismatch
 
-          fate("step10_failed", round: number, rule: known(FAILURES, round["rule"]))
+          fate("counterexamples_failed", round: number, rule: known(FAILURES, round["rule"]))
         end
 
-        # 14c's fates, from the rewrite's failing verdicts.
+        # result-comparison's fates, from the rewrite's failing verdicts.
         def production(rewrite, context)
           failing = failing_rules(context.verdicts[rewrite])
           mismatch = MISMATCHES.find { failing.include?(it) }
@@ -201,7 +201,7 @@ module Quaack
           verdicts.values.filter_map { it["rule"] if it.is_a?(Hash) && it["result"] == "fail" }
         end
 
-        # 14d's reasons for the rewrite's excluded labels.
+        # selection's reasons for the rewrite's excluded labels.
         def reasons(rewrite, context) = context.excluded.filter_map { |label, reason| reason if mine?(rewrite, label) }
 
         def measured(rewrite, context)
@@ -214,8 +214,8 @@ module Quaack
 
         def unfinished(rewrite, steps, context)
           after = if context.measured.include?(rewrite) then "measurement"
-                  elsif steps.dig("survived", "survived") == true then "step10"
-                  elsif steps.dig("tested", "passed") == true then "step9"
+                  elsif steps.dig("survived", "survived") == true then "counterexamples"
+                  elsif steps.dig("tested", "passed") == true then "rewrite-test"
                   end
           fate("unfinished", after: known(AFTER, after))
         end

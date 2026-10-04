@@ -14,7 +14,7 @@ module Quaack
 
       # A query written with the placeholders, such as the redacted query
       # or a rewrite candidate, with the real literals to run it with
-      # (DESIGN.md 3g: bind them with PREPARE, never splice them in). See
+      # (DESIGN.md's redact: bind them with PREPARE, never splice them in). See
       # Redaction.binding.
       #
       #   bound = Redaction.binding(sql, placeholder_map)

@@ -8,7 +8,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # The inbound check for step 10's inserts (DESIGN.md, "What goes into the
+    # The inbound check for counterexamples' inserts (DESIGN.md, "What goes into the
     # enclave"). The LLM writes them to fill a fixture, so they're
     # untrusted, and the arena runner accepts any single InsertStmt. This
     # check is the real guard, and runs on each insert before anything
@@ -21,7 +21,7 @@ module Quaack
     #
     # The inputs:
     # - sql, the insert's text.
-    # - tables, the TableNames of the 3b subset schema's tables.
+    # - tables, the TableNames of the schema-dump subset schema's tables.
     # - settings, the Settings hash from the input plan's EXPLAIN
     #   (SETTINGS), or nil, as RelationQualifier takes it. Its search_path
     #   is used only to look up unqualified function and operator names.
@@ -39,7 +39,7 @@ module Quaack
     # 3. with, on_conflict, and returning, in that order: it uses WITH, ON
     #    CONFLICT, or RETURNING. OVERRIDING SYSTEM VALUE and OVERRIDING USER
     #    VALUE are allowed (task 20260927-24), so a counterexample can set a
-    #    GENERATED ALWAYS identity key, as step 9's fixture rows do. The
+    #    GENERATED ALWAYS identity key, as rewrite-test's fixture rows do. The
     #    inserts load only into the throwaway arena.
     # 4. missing_columns: it has no column list, DEFAULT VALUES included.
     # 5. insert_select: its rows aren't a bare VALUES list, as with INSERT
@@ -58,14 +58,14 @@ module Quaack
     #     named argument, or aggregate or window syntax. A negative number
     #     is a constant: the parser folds the minus in.
     # 11. not_immutable (or bad_search_path): a function call could
-    #     resolve to a function that isn't IMMUTABLE. As in the 3d check,
+    #     resolve to a function that isn't IMMUTABLE. As in the volatility check,
     #     every function of that name that could take that many arguments
     #     counts, in the named schema or else every schema of the plan's
     #     search path. That refuses now(), random(), nextval, set_config,
     #     and the advisory locks.
-    # 12. volatile_function: the 3d VolatilityCheck, run on the values as a
+    # 12. volatile_function: the volatility VolatilityCheck, run on the values as a
     #     SELECT's target list, finds a volatile cast. A cast is held only
-    #     to the 3d rule, not to IMMUTABLE, since the input functions of
+    #     to the volatility rule, not to IMMUTABLE, since the input functions of
     #     date, timestamptz, and the like are STABLE, and '2024-01-01'::date
     #     is what fixtures are made of.
     # 13. deparse_mismatch: the insert doesn't parse back to the same tree

@@ -429,7 +429,7 @@ quaack setup --run 20260928T201702Z-3f9a1c2e --host runsrv-7.prod.example.com --
 
 `quaack run` takes the same four run-server flags. Any you leave out come from `run_server_command`. They only matter the first time: once the run server has been checked, setup skips that step, flags and all.
 
-Setup runs these eleven `quaacks` commands on the jump server, in this order, over ssh. It shows a line on stderr as each starts and ends, such as `quaack: [3/11] Finding the tables the query reads (3a)`, and skips each one the run already has, so after a failure you fix the problem and run the same command again. A failure prints `quaack setup failed: <rule>` and keeps the run.
+Setup runs these eleven `quaacks` commands on the jump server, in this order, over ssh. It shows a line on stderr as each starts and ends, such as `quaack: [3/11] Finding the tables the query reads (qualify)`, and skips each one the run already has, so after a failure you fix the problem and run the same command again. A failure prints `quaack setup failed: <rule>` and keeps the run.
 
 | Command | What it does |
 | --- | --- |
@@ -442,7 +442,7 @@ Setup runs these eleven `quaacks` commands on the jump server, in this order, ov
 | `classify` | Decides which columns hold personal data, and which statistics may go to the LLM. |
 | `redact` | Swaps every literal for `$1`, `$2`, and so on. |
 | `literals` | Picks the worst-case and typical values to test with, alongside the slow ones. |
-| `anchor` | Pins `now()` and friends to the time the plan was captured. |
+| `clock-anchor` | Pins `now()` and friends to the time the plan was captured. |
 | `racetrack-setup` | Installs HypoPG and QUAACK's clock function on the racetrack. |
 
 ### Step 4. Run it.
@@ -457,7 +457,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Done in 42s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
@@ -718,6 +718,7 @@ Common rules:
 | `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, the AWS credential chain found nothing (for `bedrock`), or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. For Bedrock, check your AWS credentials, for example with `aws sts get-caller-identity`, or run `aws sso login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
+| `run_from_older_version` | An older version of QUAACK started this run, and its store means something else to this version. | Start a new run with `quaack start`. `quaack teardown` still works on the old run. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
 
 ## What QUAACK won't do.

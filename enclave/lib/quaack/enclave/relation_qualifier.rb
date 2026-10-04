@@ -10,7 +10,7 @@ require_relative "relation_qualifier/errors"
 
 module Quaack
   module Enclave
-    # DESIGN.md step 1: rewrite the query so every relation names its schema,
+    # DESIGN.md's input: rewrite the query so every relation names its schema,
     # and search_path never matters again.
     #
     #   RelationQualifier.qualify(sql, settings, connection)
@@ -40,7 +40,7 @@ module Quaack
     # somewhere; "$user" is the connecting role's name; and a schema that
     # doesn't exist, or that the connecting role has no USAGE on, is
     # skipped. The first remaining schema with a pg_class entry of that name
-    # wins, whatever its relkind. Step 3a checks the relkind.
+    # wins, whatever its relkind. qualify checks the relkind.
     #
     # Known limits: "$user" and the USAGE check use the role QUAACK
     # connects as, so if the plan's session ran as another role, resolution

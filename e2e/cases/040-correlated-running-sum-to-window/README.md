@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** correlated subquery per row; window function rewrite; unique ORDER BY key assumption (6b).
+**Exercises:** correlated subquery per row; window function rewrite; unique ORDER BY key assumption (assumption-check).
 
 ## Setup.
 

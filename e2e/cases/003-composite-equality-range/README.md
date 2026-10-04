@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** index scan whose Filter removes most rows (5a-2); equality column then one range column (5a-1); range literals as a BETWEEN-like pair (3e).
+**Exercises:** index scan whose Filter removes most rows (index-from-plan); equality column then one range column (index-from-query); range literals as a BETWEEN-like pair (literals).
 
 ## Setup.
 

@@ -5,7 +5,7 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/dedupe"
 require "quaack/enclave/single_candidate_test"
 
-# The 5a-4 burndown record from a real SingleCandidateTest report, run
+# The index-test burndown record from a real SingleCandidateTest report, run
 # against HypoPG on the test harness.
 RSpec.describe Quaack::Enclave::Burndown do
   let(:conn) { test_database.connection }
@@ -52,8 +52,9 @@ RSpec.describe Quaack::Enclave::Burndown do
 
     burndown = described_class.read(Quaack::Enclave::Store.open(store.run_id, base: @base))
     expect(burndown["stages"]).to eq(
-      "5a-4" => { "original" => { "in" => 4, "added" => {}, "dropped" => { "never_used" => 1, "hypopg_refused" => 1 },
-                                  "set_aside" => 0, "out" => 2, "extra" => {} } }
+      "index-test" => { "original" => { "in" => 4, "added" => {},
+                                        "dropped" => { "never_used" => 1, "hypopg_refused" => 1 },
+                                        "set_aside" => 0, "out" => 2, "extra" => {} } }
     )
     expect(burndown["totals"]).to eq("hypothetical_explains" => 9)
     expect(File.read(File.join(store.path, "burndown.json"))).not_to include(sentinel)
@@ -65,22 +66,22 @@ RSpec.describe Quaack::Enclave::Burndown do
                                                             candidates: [candidate(key: ["a"]), candidate(key: ["c"])])
     described_class.record_single_candidate_test(store, tested, search: :original)
 
-    expect(described_class.read(store).dig("stages", "5a-4", "original", "dropped")).to eq("never_used" => 1)
+    expect(described_class.read(store).dig("stages", "index-test", "original", "dropped")).to eq("never_used" => 1)
   end
 
-  it "counts an unused candidate set aside for 12a as set aside, not dropped (20260927-11)" do
+  it "counts an unused candidate set aside for index-build as set aside, not dropped (20260927-11)" do
     unused = candidate(key: ["c"])
     tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
                                                             literal_sets: { slow: ["5"] },
                                                             candidates: [candidate(key: ["a"]), unused])
     described_class.record_single_candidate_test(store, tested, search: :original, set_aside: [unused])
 
-    expect(described_class.read(store).dig("stages", "5a-4", "original"))
+    expect(described_class.read(store).dig("stages", "index-test", "original"))
       .to include("in" => 2, "dropped" => {}, "set_aside" => 1, "out" => 1)
   end
 
-  it "records only 5a-4, so it takes no stage" do
-    expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "5a-5") }
+  it "records only index-test, so it takes no stage" do
+    expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "llm-index-ideas") }
       .to raise_error(ArgumentError, /unknown keyword: :stage/)
   end
 
@@ -99,7 +100,7 @@ RSpec.describe Quaack::Enclave::Burndown do
 
     def llm(**) = Quaack::Enclave::IndexCandidate.new(table: t, sources: [:llm], **)
 
-    # 5a-3 and 5a-4 on two mechanical candidates, which the planner uses.
+    # index-dedupe and index-test on two mechanical candidates, which the planner uses.
     def mechanical
       survivors = dedupe.filter([candidate(key: ["a"]), candidate(key: %w[a c])])
       since = described_class.record_dedupe(store, dedupe, search: :original)
@@ -112,35 +113,36 @@ RSpec.describe Quaack::Enclave::Burndown do
     # planner never uses.
     def llm_candidates = [llm(key: ["a"]), llm(key: ["c"], access_method: :gin), llm(key: ["c"])]
 
-    it "records 5a-3 and 5a-4 on the LLM's candidates as one 5a-5 record that adds them" do
+    it "records index-dedupe and index-test on the LLM's candidates as one llm-index-ideas record that adds them" do
       since, = mechanical
       survivors = dedupe.filter(llm_candidates)
       llm_report = test(survivors)
       expect(llm_report.results.map(&:used?)).to eq([false])
 
-      described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:, report: llm_report)
+      described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since:,
+                                              report: llm_report)
 
       burndown = described_class.read(store)
-      expect(burndown.dig("stages", "5a-5", "original")).to eq(
+      expect(burndown.dig("stages", "llm-index-ideas", "original")).to eq(
         "in" => 0, "added" => { "llm" => 3 }, "dropped" => { "duplicate" => 1, "never_used" => 1 },
         "set_aside" => 1, "out" => 0, "extra" => {}
       )
-      expect(burndown.dig("stages", "5a-3", "original", "in")).to eq(2)
-      expect(burndown.dig("stages", "5a-4", "original", "out")).to eq(2)
+      expect(burndown.dig("stages", "index-dedupe", "original", "in")).to eq(2)
+      expect(burndown.dig("stages", "index-test", "original", "out")).to eq(2)
       expect(burndown["totals"]).to eq("hypothetical_explains" => 6 + 3)
     end
 
-    it "records the 5a-6 round from what the 5a-5 round returned" do
+    it "records the llm-index-refine round from what the llm-index-ideas round returned" do
       since, = mechanical
-      after_5a5 = described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:,
+      after_5a5 = described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since:,
                                                           report: test(dedupe.filter(llm_candidates)))
       revised = test(dedupe.filter([llm(key: %w[a s])]))
       expect(revised.results.map(&:used?)).to eq([true])
 
-      described_class.record_llm_round(store, stage: "5a-6", search: :original, dedupe:, since: after_5a5,
+      described_class.record_llm_round(store, stage: "llm-index-refine", search: :original, dedupe:, since: after_5a5,
                                               report: revised)
 
-      expect(described_class.read(store).dig("stages", "5a-6", "original")).to eq(
+      expect(described_class.read(store).dig("stages", "llm-index-refine", "original")).to eq(
         "in" => 0, "added" => { "llm" => 1 }, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {}
       )
     end
@@ -150,10 +152,10 @@ RSpec.describe Quaack::Enclave::Burndown do
       dedupe.filter(llm_candidates)
 
       expect do
-        described_class.record_llm_round(store, stage: "5a-5", search: :original, dedupe:, since:,
+        described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since:,
                                                 report: mechanical_report)
-      end.to raise_error(described_class::Error, /5a-5/)
-      expect(described_class.read(store)["stages"].keys).to eq(%w[5a-3 5a-4])
+      end.to raise_error(described_class::Error, /llm-index-ideas/)
+      expect(described_class.read(store)["stages"].keys).to eq(%w[index-dedupe index-test])
     end
   end
 end

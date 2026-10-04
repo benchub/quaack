@@ -14,7 +14,7 @@ July's totals, written with `extract()`. `extract` on a `timestamptz` isn't immu
 
 ## Expected result.
 
-A half-open range built from the same year and month, plus `orders (created_at) INCLUDE (total_cents)`. `make_timestamptz` uses the session time zone, like `extract`, so the two agree when the time zones match (step 4). Both literals are compared with `extract(...)`, so 3e keeps the slow literals in every set. The other sets here only prove equivalence.
+A half-open range built from the same year and month, plus `orders (created_at) INCLUDE (total_cents)`. `make_timestamptz` uses the session time zone, like `extract`, so the two agree when the time zones match (run-server). Both literals are compared with `extract(...)`, so literals keeps the slow literals in every set. The other sets here only prove equivalence.
 
 ## Proof.
 

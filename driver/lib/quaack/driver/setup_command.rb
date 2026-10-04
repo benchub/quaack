@@ -3,7 +3,7 @@
 module Quaack
   module Driver
     # `quaack setup --run <ID>`, with the run-server flags in any order
-    # after it: DESIGN.md steps 2 to 4a (Setup), each skipped when the store
+    # after it: DESIGN.md setup (Setup), each skipped when the store
     # says it's done, then the run ID and "set up". A failure prints only
     # its rule, as for start, and keeps the run, so setup can run again.
     # It needs CLI::RUN_FILES loaded.
@@ -49,7 +49,7 @@ module Quaack
         @stdout.print "#{run_id} set up\n"
         0
       rescue EnclaveError, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack setup failed: #{e.is_a?(EnclaveError) ? e.rule : e.message}\n"
+        @stderr.print "quaack setup failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
         1
       end
     end

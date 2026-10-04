@@ -5,8 +5,8 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/predicate_atoms"
 
-# 10b and 10c: load one round's counterexamples, compare with 9d, recheck
-# 9c's untested atoms on them, and roll back.
+# counterexample-compare and counterexample-rollback: load one round's counterexamples, compare with fixture-compare,
+# recheck vacuity-guard's untested atoms on them, and roll back.
 RSpec.describe Quaack::Enclave::Counterexamples, ".compare" do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }

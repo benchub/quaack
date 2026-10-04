@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** BETWEEN atom; BETWEEN worst case is the first and last histogram bounds (3e); no worse on the worst-case literal (14b).
+**Exercises:** BETWEEN atom; BETWEEN worst case is the first and last histogram bounds (literals); no worse on the worst-case literal (minimax).
 
 ## Setup.
 

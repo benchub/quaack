@@ -8,7 +8,7 @@ require_relative "../denormalized_fixture"
 require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../scenarios"
-require_relative "../step_nine"
+require_relative "../scenario_tests"
 require_relative "../table_name"
 require_relative "index_payload"
 require_relative "index_search"
@@ -16,25 +16,25 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # DESIGN.md steps 9 and 10 for one stored rewrite, on the arena. Each
+      # DESIGN.md rewrite-test and counterexamples for one stored rewrite, on the arena. Each
       # takes --search rewrite_<n>. The original runs as anchored_query; the
       # candidate is the rewrite's SQL with each $n bound to its literal
       # from placeholder_map (Enclave::Counterexamples.bind). The arena's
       # fixtures honour the rewrite's own denormalized_equal assumptions
-      # when a 6c rule wrote it (DenormalizedFixture).
+      # when a rewrite-rules rule wrote it (DenormalizedFixture).
       #
-      # Store entries, which the driver resumes by and step 11 reads:
+      # Store entries, which the driver resumes by and rewrite-index-ideas reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
-      #                          "untested_atoms" }, step 9's result, plus
-      #                          "refused" true when step 9 couldn't build
+      #                          "untested_atoms" }, rewrite-test's result, plus
+      #                          "refused" true when rewrite-test couldn't build
       #                          scenarios for the query: then the rule is
       #                          the refusal's, and the rewrite is untested
       #                          and never recommended
       #   rewrite_round_<n>    { "round", "evidence", "rule" }, the last
-      #                        10b round run (see Round.finish)
+      #                        counterexample-compare round run (see Round.finish)
       #   rewrite_survived_<n> { "survived" => Boolean }, written once
-      #                        steps 9 and 10 are done with the rewrite:
-      #                        false when step 8 discarded it, step 9
+      #                        rewrite-test and counterexamples are done with the rewrite:
+      #                        false when plan-pruning discarded it, rewrite-test
       #                        disproved it, or a round found a mismatch;
       #                        true after a matching round 3, with
       #                        "evidence" false if no round's inserts
@@ -56,7 +56,7 @@ module Quaack
         end
 
         # The original and the candidate, each with its $n bound.
-        # Refuses (<prefix>_no_arena_setup) a run whose arena 4b hasn't set up.
+        # Refuses (<prefix>_no_arena_setup) a run whose arena arena-setup hasn't set up.
         def arena!(store, prefix)
           raise Error, "#{prefix}_no_arena_setup" unless store.entry?("arena_setup")
         end
@@ -66,7 +66,7 @@ module Quaack
           [store.read("anchored_query"), RewriteEntry.run_sql(store.read(search))].map { Enclave::Counterexamples.bind(it, map) }
         end
 
-        # The rewrite's own denormalized_equal assumptions, from a 6c rule,
+        # The rewrite's own denormalized_equal assumptions, from a rewrite-rules rule,
         # that the arena's fixtures honour (DenormalizedFixture).
         def honour(store, search) = DenormalizedFixture.copies(store.read(search))
 
@@ -74,7 +74,7 @@ module Quaack
           store.write("rewrite_survived_#{number}", "survived" => survived)
         end
 
-        # `quaacks rewrite-test` (step 9). A rewrite whose
+        # `quaacks rewrite-test` (rewrite-test). A rewrite whose
         # rewrite_pruned_<n> says discarded is skipped, with rule discarded.
         # Sends one rewrite_test: rewrite, passed, scenario, rule. An
         # fk_cycle refusal also stores cycle, the cycle's [schema, name]
@@ -104,7 +104,7 @@ module Quaack
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            outcome(StepNine.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
+            outcome(ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
           ensure
             connection&.close
           end
@@ -118,12 +118,12 @@ module Quaack
           end
         end
 
-        # `quaacks counterexample-payload` (10a): the shape-only payload for
+        # `quaacks counterexample-payload` (llm-counterexamples): the shape-only payload for
         # the LLM, as one counterexample_payload: original (the redacted
         # query), candidate ({ "sql" }, the rewrite's SQL with $n
         # placeholders; its transformation and assumptions stay here),
         # placeholders and schema as in index_payload, and untested_atoms
-        # (step 9's redacted shapes). It doesn't connect to anything.
+        # (rewrite-test's redacted shapes). It doesn't connect to anything.
         module Payload
           module_function
 
@@ -140,9 +140,9 @@ module Quaack
           end
         end
 
-        # `quaacks counterexample-round --round <1 to 3>` (10b and 10c).
+        # `quaacks counterexample-round --round <1 to 3>` (counterexample-compare and counterexample-rollback).
         # stdin is {"inserts": [String, ...]}, the LLM's inserts. It needs
-        # step 9 to have passed. Sends one counterexample_round: match,
+        # rewrite-test to have passed. Sends one counterexample_round: match,
         # rule, load_order, covered (redacted atom shapes), refused (each
         # refused insert's index and rule), and load_failed.
         module Round

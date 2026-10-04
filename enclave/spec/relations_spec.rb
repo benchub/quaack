@@ -331,7 +331,7 @@ RSpec.describe Quaack::Enclave::Relations do
     end
   end
 
-  # A user-defined function in FROM could read a view or foreign table 3a
+  # A user-defined function in FROM could read a view or foreign table qualify
   # never sees, so only pg_catalog's set-returning functions may go there.
   describe "a function in FROM" do
     before do
@@ -429,7 +429,7 @@ RSpec.describe Quaack::Enclave::Relations do
     def refusal(sql, rule, settings = nil)
       error = nil
       expect { check(sql, settings) }.to(rejected(rule) { |raised| error = raised })
-      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "3a")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "qualify")
       expect(line).to include(%("rule":"#{rule}"))
       [error.message, line]
     end

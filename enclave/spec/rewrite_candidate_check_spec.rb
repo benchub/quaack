@@ -237,7 +237,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
     end
 
-    # The original's relation set comes from 3a, which should hold only
+    # The original's relation set comes from qualify, which should hold only
     # tables, but the check doesn't rely on that: a view's body could call a
     # volatile function the volatility check never sees.
     describe "that aren't plain tables, even when the original uses them" do
@@ -256,7 +256,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     end
   end
 
-  # The volatility check (3d) runs on every candidate. These are the calls
+  # The volatility check (volatility) runs on every candidate. These are the calls
   # the arena runner relies on it to refuse, since their effects outlive
   # the transaction or change the session.
   describe "volatile functions" do
@@ -339,7 +339,7 @@ RSpec.describe Quaack::Enclave::RewriteCandidateCheck do
     def refusal(sql, rule)
       error = nil
       expect { check(sql) }.to(rejected(rule) { |raised| error = raised })
-      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "6a")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "llm-rewrites")
       expect(line).to include(%("rule":"#{rule}"))
       [error.message, line]
     end

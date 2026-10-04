@@ -3,8 +3,8 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/index_build"
 
-# DESIGN.md 12a: `quaacks index-build` builds every distinct index from the
-# 5a and step 11 rankings and the set-aside GIN/GiST/SP-GiST candidates,
+# DESIGN.md's index-build: `quaacks index-build` builds every distinct index from the
+# index-search and rewrite-index-ideas rankings and the set-aside GIN/GiST/SP-GiST candidates,
 # records sizes, and hides them. IndexBuild.show_only unhides one
 # combination and confirms with a plain EXPLAIN that the rest are hidden.
 RSpec.describe "quaacks index-build, against a real server" do
@@ -95,7 +95,7 @@ RSpec.describe "quaacks index-build, against a real server" do
     expect_no_leaks(sentinels, outcome)
   end
 
-  it "builds the unused low-cardinality B-tree candidates 5a-4 set aside (20260927-11)" do
+  it "builds the unused low-cardinality B-tree candidates index-test set aside (20260927-11)" do
     ranked_run
     btree = Quaack::Enclave::IndexCandidate.new(table: orders, key: %w[status total], sources: [:parse])
     entry = store.read("index_search_original")

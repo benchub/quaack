@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's distinct_join_to_exists, on a real server: what it writes,
+# DESIGN.md's rewrite-rules' distinct_join_to_exists, on a real server: what it writes,
 # that its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves a
 # selected column of the kept table unique and not null and the shape is one
@@ -91,7 +91,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expected
   end
 
-  # As step 1 qualifies it.
+  # As input qualifies it.
   def qualified(sql) = Quaack::Enclave::RelationQualifier.qualify(sql, nil, conn).sql
 
   fires = "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s ON s.a_id = a.id " \
@@ -116,7 +116,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expect(same_rows(fires, rewrites)).to eq([%w[1 one], %w[2 two], %w[5 twin], %w[6 twin]])
   end
 
-  it "states the key unique and not null, in 6b's vocabulary" do
+  it "states the key unique and not null, in assumption-check's vocabulary" do
     expect(rule.rewrites(PgQuery.parse(fires), catalog).map(&:assumptions)).to eq(
       [[{ "kind" => "unique", "table" => "public.assignments", "columns" => ["id"] },
         { "kind" => "not_null", "table" => "public.assignments", "column" => "id" }]]

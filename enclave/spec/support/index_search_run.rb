@@ -14,8 +14,8 @@ require "quaack/enclave/store"
 require "quaack/enclave/table_name"
 require_relative "production_server"
 
-# A run ready for `quaacks index-search` and the 5a-5 steps after it: its
-# inputs come from steps 1, 3c, 3e, 3f, 3g, 3h, and 4a, run in-process
+# A run ready for `quaacks index-search` and the llm-index-ideas steps after it: its
+# inputs come from input, statistics, literals, classify, redact, clock-anchor, and racetrack-setup, run in-process
 # against the stand-in production database, which is also the racetrack, as
 # in racetrack_setup_step_postgres_spec.rb. The slow literal is a sentinel.
 RSpec.shared_context "an index search run" do
@@ -45,7 +45,7 @@ RSpec.shared_context "an index search run" do
     SQL
   end
 
-  # Steps 1, 3c, 3f, 3g, 3e, 3h, 4 and 4a, in order.
+  # input, statistics, classify, redact, literals, clock-anchor, run-server and racetrack-setup, in order.
   def prepare(racetrack_setup: true)
     conn = production.connect
     seed(conn)

@@ -10,19 +10,19 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks run-server --run <run ID> [--host <host>] [--port <port>]
-      # [--racetrack-db <name>] [--arena-db <name>]` (DESIGN.md, step 4): checks
+      # [--racetrack-db <name>] [--arena-db <name>]` (DESIGN.md's run-server): checks
       # the run server, given by the flags or by the configured
-      # run_server_command (see RunServerCommand), against the run's step 2 inventory,
+      # run_server_command (see RunServerCommand), against the run's inventory inventory,
       # and records it in the run's run_server entry (see RunServer), for
       # later steps to connect with (RunServer.connect).
       #
       # It checks the arguments first, then that the run has an inventory
       # (run_server_no_inventory), both before any connection. Then it
       # connects to the racetrack database with the operator's libpq setup
-      # and runs RunServerCheck there. It checks only the racetrack: 4b
+      # and runs RunServerCheck there. It checks only the racetrack: arena-setup
       # makes arena, from template0, so arena needn't exist yet. The quiet
       # checks see every database on the server, arena's included, and the
-      # rest are what 4a and step 5 depend on. Anything that fails writes
+      # rest are what racetrack-setup and index-search depend on. Anything that fails writes
       # nothing, so a recorded run server is one that passed.
       #
       # Its only line is DONE. The host, the port, and the database names

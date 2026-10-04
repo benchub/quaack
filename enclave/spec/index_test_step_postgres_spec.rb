@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-test` (DESIGN.md 5a-5 and 5a-4): the LLM's DDL, filtered
+# `quaacks index-test` (DESIGN.md's llm-index-ideas and index-test): the LLM's DDL, filtered
 # through the stored search's Dedupe and tested on the racetrack, the way
 # the jump server runs it, after a real index-search.
 RSpec.describe "quaacks index-test, against a real server" do
@@ -81,7 +81,7 @@ RSpec.describe "quaacks index-test, against a real server" do
       .to eq(%w[created_at total])
   end
 
-  it "tags the 5a-6 revisions with --round refinement, and records that the round ran even if nothing survived" do
+  it "tags llm-index-refine revisions with --round refinement, and records the round ran even if nothing survived" do
     prepare
     index_search
     index_test(ddls(partial))

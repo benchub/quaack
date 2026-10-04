@@ -5,9 +5,9 @@
   "features": [
     "OR across a join",
     "UNION rewrite",
-    "btree from an equality atom (5a-1)",
-    "index unused by the original (15a)",
-    "uniqueness assumption checked in 6b"
+    "btree from an equality atom (index-from-query)",
+    "index unused by the original (negative-result)",
+    "uniqueness assumption checked in assumption-check"
   ],
   "literal_sets": [
     {

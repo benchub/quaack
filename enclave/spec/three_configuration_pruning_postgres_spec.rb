@@ -2,7 +2,7 @@
 
 require "quaack/enclave/three_configuration_pruning"
 
-# DESIGN.md step 8's three-configuration pruning, against real HypoPG. Each
+# DESIGN.md's plan-pruning's three-configuration pruning, against real HypoPG. Each
 # configuration compares the rewrite's canonical plan with the original's
 # under the same hypothetical indexes.
 RSpec.describe Quaack::Enclave::ThreeConfigurationPruning do

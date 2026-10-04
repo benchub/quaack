@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** LEFT JOIN with no match; orphan fixtures (step 9, S4); count over an outer join.
+**Exercises:** LEFT JOIN with no match; orphan fixtures (rewrite-test, S4); count over an outer join.
 
 ## Setup.
 

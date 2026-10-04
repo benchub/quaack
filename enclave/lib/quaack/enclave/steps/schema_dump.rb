@@ -7,13 +7,13 @@ require_relative "../table_name"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks schema-dump --run <run ID>` (DESIGN.md 3b): the schema-only
+      # `quaacks schema-dump --run <run ID>` (DESIGN.md's schema-dump): the schema-only
       # dump of the namespaces of the query's tables and their FK ancestors,
       # plus public, and the subset, the query's tables and their FK
       # ancestors (see Enclave::SchemaDump).
       #
       # It reads the run's server and relations entries, the latter written
-      # by `quaacks qualify`. It connects to the server as step 2 does
+      # by `quaacks qualify`. It connects to the server as inventory does
       # (Inventory::Production.connect) and reads the catalog inside
       # Production.read_only. pg_dump runs from PATH with the operator's own
       # libpq setup, given only the run's host, as the connection is.
@@ -21,10 +21,10 @@ module Quaack
       # It writes two entries:
       #
       # - schema_dump: {"namespaces" => [...], "ddl" => "<pg_dump output>"},
-      #   for 4a, which loads the full schema into the arena.
+      #   for racetrack-setup, which loads the full schema into the arena.
       # - schema_subset: {"tables" => [[schema, name], ...], "ddl" => "..."},
       #   the only schema the LLM and the fixture generator see. This step
-      #   doesn't send it: the payload step for 5a-5 reads it from here.
+      #   doesn't send it: the payload step for llm-index-ideas reads it from here.
       #
       # SchemaDump.run writes both only once every read and both dumps
       # have succeeded, so a failure stores nothing. Its only line is DONE. A

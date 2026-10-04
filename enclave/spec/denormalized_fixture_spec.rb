@@ -3,9 +3,9 @@
 require "quaack/enclave/denormalized_fixture"
 require "quaack/enclave/table_name"
 
-# Which denormalized_equal assumptions steps 9 and 10 honour in their
-# fixtures for one stored rewrite (DESIGN.md 6c, 9, 10a): its own, and only
-# when a 6c rule wrote it.
+# Which denormalized_equal assumptions rewrite-test and counterexamples honour in their
+# fixtures for one stored rewrite (DESIGN.md's rewrite-rules, rewrite-test, llm-counterexamples): its own, and only
+# when a rewrite-rules rule wrote it.
 RSpec.describe Quaack::Enclave::DenormalizedFixture do
   let(:assumption) do
     { "kind" => "denormalized_equal", "table" => "public.submissions", "column" => "course_id",

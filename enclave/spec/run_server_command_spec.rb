@@ -6,7 +6,7 @@ require "shellwords"
 require "tmpdir"
 require "quaack/enclave/run_server_command"
 
-# The operator's run_server_command and destroy_command (DESIGN.md, step 4 and
+# The operator's run_server_command and destroy_command (DESIGN.md's run-server and
 # run teardown), run with /bin/sh on the jump server. Their output is the
 # operator's, so an error names only its rule.
 RSpec.describe Quaack::Enclave::RunServerCommand do

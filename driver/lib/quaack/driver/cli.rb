@@ -104,8 +104,8 @@ module Quaack
           keep: keep == 1, server: SetupCommand.server(options) }
       end
 
-      # DESIGN.md steps 2 to 4a first, as Setup, unless the store says the
-      # run has had them, then step 5 onward, with step 7 after 6a if
+      # DESIGN.md setup first, as Setup, unless the store says the
+      # run has had them, then index-search onward, with operator-rewrites after llm-rewrites if
       # there's a rewrites file, then prints the run ID and done. The file
       # is read and the LLM client built first, from the llm block of
       # ~/.quaack/driver.json, so a bad file, a bad block, or missing

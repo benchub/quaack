@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 require "delegate"
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 
-# Step 9 asks Postgres about each CHECK value once per run, not once per
+# rewrite-test asks Postgres about each CHECK value once per run, not once per
 # row, group, retry, or build. A Canvas-like schema, with several
 # workflow_state-style CHECK IN lists of eight values, once sent tens of
 # thousands of the same probes.
@@ -73,8 +73,8 @@ RSpec.describe Quaack::Enclave::Scenarios::Checks do
     expect(conn.sent.map(&:first).grep(/CAST\(q\.v AS integer\)/)).to eq([])
   end
 
-  it "runs step 9 on the join in a few hundred queries" do
-    Quaack::Enclave::StepNine.run(conn, sql, [sql])
+  it "runs rewrite-test on the join in a few hundred queries" do
+    Quaack::Enclave::ScenarioTests.run(conn, sql, [sql])
     expect(probes.size).to eq(probes.uniq.size)
     expect(conn.sent.size).to be < 1500
   end

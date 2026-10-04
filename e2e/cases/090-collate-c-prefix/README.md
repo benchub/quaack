@@ -14,7 +14,7 @@ Prefix search with byte-order sorting, written with `COLLATE "C"`. The `en_US.ut
 
 ## Expected result.
 
-`companies (name COLLATE "C")`. The collation must match the query's, and 5a-3 must treat it as a different key from `companies_name_idx`.
+`companies (name COLLATE "C")`. The collation must match the query's, and index-dedupe must treat it as a different key from `companies_name_idx`.
 
 ## Proof.
 

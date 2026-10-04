@@ -4,8 +4,8 @@
   "compare": "ordered",
   "features": [
     "non-sargable function on an indexed column",
-    "shared placeholder between GROUP BY and the select list (3g)",
-    "range rewrite depends on TimeZone (step 2)"
+    "shared placeholder between GROUP BY and the select list (redact)",
+    "range rewrite depends on TimeZone (inventory)"
   ],
   "literal_sets": [
     {

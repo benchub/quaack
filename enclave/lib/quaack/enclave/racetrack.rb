@@ -5,7 +5,7 @@ require_relative "intake/error"
 
 module Quaack
   module Enclave
-    # DESIGN.md 4a: set up the restored racetrack database.
+    # DESIGN.md's racetrack-setup: set up the restored racetrack database.
     #
     #   Racetrack.setup(store:, connection:)  # nil, or raises an Error
     #
@@ -15,7 +15,7 @@ module Quaack
     # Intake::ClockAnchor). Running it again is fine: the extension and
     # schema are kept, and the function is replaced.
     #
-    # The function is what 3h's anchored queries call (ClockFunctions::ANCHOR):
+    # The function is what clock-anchor's anchored queries call (ClockFunctions::ANCHOR):
     # no arguments, returning pg_catalog.timestamptz, STABLE. It's also
     # PARALLEL SAFE with COST 1, as now() is, so the anchored query plans
     # like the original. It's PL/pgSQL rather than SQL so the planner can't

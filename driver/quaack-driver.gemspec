@@ -28,6 +28,6 @@ Gem::Specification.new do |spec|
   # for the AWS credential chain and SigV4 signing (the bedrock adapter).
   # Driver only, as above.
   spec.add_dependency "aws-sdk-bedrockruntime", "~> 1.0"
-  # For splitting an operator's rewrites file into statements (step 7).
+  # For splitting an operator's rewrites file into statements (operator-rewrites).
   spec.add_dependency "pg_query", "~> 6.2"
 end

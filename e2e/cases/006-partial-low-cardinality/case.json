@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "ordered",
   "features": [
-    "partial index on a low-cardinality column (5a-5, 3f)",
+    "partial index on a low-cardinality column (llm-index-ideas, classify)",
     "MCV values sent for a low-cardinality column",
-    "top-MCV worst-case literal (3e)",
+    "top-MCV worst-case literal (literals)",
     "partial-index tag in the report"
   ],
   "literal_sets": [

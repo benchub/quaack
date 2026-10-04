@@ -3,7 +3,7 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "INCLUDE columns for an index-only scan (5a-1)",
+    "INCLUDE columns for an index-only scan (index-from-query)",
     "aggregate over one account's rows"
   ],
   "literal_sets": [

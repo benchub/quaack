@@ -31,12 +31,12 @@ RSpec.describe "the bedrock adapter" do
       additionalProperties: false }
   end
 
-  def ask(step = "5a-5", **)
+  def ask(step = "llm-index-ideas", **)
     client.ask(step: step, messages: messages, max_tokens: 1000, **)
   end
 
   # The LLM::Error an ask raises. Fails the spec if it raises nothing.
-  def ask_error(step = "5a-5", **)
+  def ask_error(step = "llm-index-ideas", **)
     ask(step, **)
     raise "expected an LLM::Error for step #{step}, but the ask succeeded"
   rescue Quaack::Driver::LLM::Error => e
@@ -49,7 +49,7 @@ RSpec.describe "the bedrock adapter" do
     Quaack::Driver::LLM::Client.new(settings:, burndown:, transport: fake)
   end
 
-  def ask_with(client) = client.ask(step: "6a", messages: messages, max_tokens: 10)
+  def ask_with(client) = client.ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
 
   # The SigV4 scope an authorization header names: access key ID, region,
   # and service.
@@ -71,23 +71,23 @@ RSpec.describe "the bedrock adapter" do
 
   describe "the request" do
     it "goes to the model's invoke URL in the settings' region, signed with SigV4 for bedrock" do
-      fake.reply("6a", "ok")
-      ask("6a")
+      fake.reply("llm-rewrites", "ok")
+      ask("llm-rewrites")
 
       expect(fake.asks.map(&:url)).to eq([invoke_url("us-west-2")])
       expect(fake.auths.map { scope(it) }).to eq([[FakeBedrock::ACCESS_KEY, "us-west-2", "bedrock"]])
     end
 
     it "sends the system prompt, messages, max_tokens, and Bedrock's API version, with the model in the URL" do
-      fake.reply("6a", "ok")
-      client.ask(step: "6a", system: "You rewrite SQL.", messages: messages, max_tokens: 321)
+      fake.reply("llm-rewrites", "ok")
+      client.ask(step: "llm-rewrites", system: "You rewrite SQL.", messages: messages, max_tokens: 321)
 
       expect(fake.asks.map(&:body)).to eq([{ max_tokens: 321, system: "You rewrite SQL.", messages: messages,
                                              anthropic_version: "bedrock-2023-05-31" }])
     end
 
     it "asks for structured output with the schema" do
-      fake.reply("5a-5", { "ddl" => [] })
+      fake.reply("llm-index-ideas", { "ddl" => [] })
 
       expect(ask(schema: schema)).to eq("ddl" => [])
       expect(fake.asks.first.body[:output_config])
@@ -95,16 +95,16 @@ RSpec.describe "the bedrock adapter" do
     end
 
     it "signs every attempt, retries included" do
-      fake.error("6a", status: 503).reply("6a", "ok")
+      fake.error("llm-rewrites", status: 503).reply("llm-rewrites", "ok")
 
-      expect(ask("6a")).to eq("ok")
+      expect(ask("llm-rewrites")).to eq("ok")
       expect(fake.auths.map { scope(it) }).to eq([[FakeBedrock::ACCESS_KEY, "us-west-2", "bedrock"]] * 2)
     end
 
     it "goes to the settings' base URL when there is one" do
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       settings = FakeBedrock.settings("base_url" => "https://bedrock.example.com")
-      fake.client(burndown:, settings:).ask(step: "6a", messages: messages, max_tokens: 10)
+      fake.client(burndown:, settings:).ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
 
       expect(fake.asks.map(&:url)).to eq(["https://bedrock.example.com/model/#{FakeBedrock::MODEL}/invoke"])
     end
@@ -114,7 +114,7 @@ RSpec.describe "the bedrock adapter" do
     it "come from AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY" do
       ENV["AWS_ACCESS_KEY_ID"] = "AKIAQUAACKSPECENV001"
       ENV["AWS_SECRET_ACCESS_KEY"] = "SENTINEL-ENV-SECRET"
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build)
 
       expect(fake.auths.map { scope(it) }).to eq([%w[AKIAQUAACKSPECENV001 us-west-2 bedrock]])
@@ -125,7 +125,7 @@ RSpec.describe "the bedrock adapter" do
       ENV["AWS_ACCESS_KEY_ID"] = "ASIAQUAACKSPECTEMP01"
       ENV["AWS_SECRET_ACCESS_KEY"] = "s"
       ENV["AWS_SESSION_TOKEN"] = "fake-session-token"
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build)
 
       expect(fake.auths.map { scope(it) }).to eq([%w[ASIAQUAACKSPECTEMP01 us-west-2 bedrock]])
@@ -136,7 +136,7 @@ RSpec.describe "the bedrock adapter" do
     it "come from the profile llm.aws_profile names, over the default one" do
       write_aws_profile(@aws_dir, "default", "AKIAQUAACKSPECDEFLT1", "s")
       write_aws_profile(@aws_dir, "quaack-spec", "AKIAQUAACKSPECNAMED1", "s")
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build(FakeBedrock.settings("aws_profile" => "quaack-spec")))
 
       expect(fake.auths.map { scope(it) }).to eq([%w[AKIAQUAACKSPECNAMED1 us-west-2 bedrock]])
@@ -146,7 +146,7 @@ RSpec.describe "the bedrock adapter" do
       write_aws_profile(@aws_dir, "default", "AKIAQUAACKSPECDEFLT1", "s")
       write_aws_profile(@aws_dir, "quaack-env", "AKIAQUAACKSPECENVPR1", "s")
       ENV["AWS_PROFILE"] = "quaack-env"
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build)
 
       expect(fake.auths.map { scope(it) }).to eq([%w[AKIAQUAACKSPECENVPR1 us-west-2 bedrock]])
@@ -177,14 +177,14 @@ RSpec.describe "the bedrock adapter" do
     end
 
     it "fail with llm_auth on credentials AWS refuses, without quoting its message or retrying" do
-      fake.error("5a-5", status: 403, message: "SENTINEL-AWS-MESSAGE")
+      fake.error("llm-index-ideas", status: 403, message: "SENTINEL-AWS-MESSAGE")
 
       e = ask_error
 
       expect(e.message).to eq("llm_auth: AWS refused the credentials (403) " \
-                              "[step 5a-5, max_tokens 1000, system 0 chars, messages: user 31]")
+                              "[step llm-index-ideas, max_tokens 1000, system 0 chars, messages: user 31]")
       expect(e.cause).to be_nil
-      expect(burndown.llm_calls).to eq("5a-5" => 1)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
     end
 
     describe "a Bedrock API key in AWS_BEARER_TOKEN_BEDROCK" do
@@ -192,7 +192,7 @@ RSpec.describe "the bedrock adapter" do
         ENV["AWS_BEARER_TOKEN_BEDROCK"] = "SENTINEL-BEDROCK-KEY"
         ENV["AWS_ACCESS_KEY_ID"] = "AKIAQUAACKSPECENV001"
         ENV["AWS_SECRET_ACCESS_KEY"] = "s"
-        fake.reply("6a", "ok")
+        fake.reply("llm-rewrites", "ok")
         ask_with(build)
 
         expect(fake.auths).to eq(["Bearer SENTINEL-BEDROCK-KEY"])
@@ -202,7 +202,7 @@ RSpec.describe "the bedrock adapter" do
       it "goes to the region AWS_REGION names when the settings name none" do
         ENV["AWS_BEARER_TOKEN_BEDROCK"] = "k"
         ENV["AWS_REGION"] = "eu-west-3"
-        fake.reply("6a", "ok")
+        fake.reply("llm-rewrites", "ok")
         ask_with(build(FakeBedrock.settings.with(aws_region: nil)))
 
         expect(fake.asks.map(&:url)).to eq([invoke_url("eu-west-3")])
@@ -231,7 +231,7 @@ RSpec.describe "the bedrock adapter" do
 
         expect { build(regionless) }.to raise_error(Quaack::Driver::LLM::ConfigError, no_region)
 
-        fake.reply("6a", "ok")
+        fake.reply("llm-rewrites", "ok")
         ask_with(build(regionless.with(base_url: "https://bedrock.example.com")))
         expect(fake.asks.map(&:url)).to eq(["https://bedrock.example.com/model/#{FakeBedrock::MODEL}/invoke"])
       end
@@ -248,7 +248,7 @@ RSpec.describe "the bedrock adapter" do
 
     it "is llm.aws_region, over AWS_REGION" do
       ENV["AWS_REGION"] = "eu-west-3"
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build)
 
       expect(fake.asks.map(&:url)).to eq([invoke_url("us-west-2")])
@@ -257,7 +257,7 @@ RSpec.describe "the bedrock adapter" do
 
     it "is AWS_REGION when the settings name none" do
       ENV["AWS_REGION"] = "eu-west-3"
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build(regionless))
 
       expect(fake.asks.map(&:url)).to eq([invoke_url("eu-west-3")])
@@ -267,7 +267,7 @@ RSpec.describe "the bedrock adapter" do
     it "is the profile's region when neither names one" do
       write_aws_config(@aws_dir, "profile quaack-regional", "region = ap-southeast-2")
       write_aws_profile(@aws_dir, "quaack-regional", "AKIAQUAACKSPECREGN01", "s")
-      fake.reply("6a", "ok")
+      fake.reply("llm-rewrites", "ok")
       ask_with(build(regionless.with(aws_profile: "quaack-regional")))
 
       expect(fake.asks.map(&:url)).to eq([invoke_url("ap-southeast-2")])
@@ -297,7 +297,7 @@ RSpec.describe "the bedrock adapter" do
         NoNetwork.always_refuse do
           real = Quaack::Driver::LLM::Client.new(settings:, burndown:, max_retries: 0)
 
-          expect { real.ask(step: "6a", messages: messages, max_tokens: 10) }.to raise_error(NoNetwork::Refused)
+          expect { real.ask(step: "llm-rewrites", messages: messages, max_tokens: 10) }.to raise_error(NoNetwork::Refused)
         end
       end
     end

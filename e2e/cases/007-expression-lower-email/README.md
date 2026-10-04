@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** expression index (5a-5); unique index the planner can't use; PII column: MCVs withheld (3f).
+**Exercises:** expression index (llm-index-ideas); unique index the planner can't use; PII column: MCVs withheld (classify).
 
 ## Setup.
 

@@ -17,7 +17,7 @@ require_relative "rewrite_rules/union_outer_filter_removal"
 
 module Quaack
   module Enclave
-    # DESIGN.md 6c: the mechanical rewrite rules, and the generator that
+    # DESIGN.md's rewrite-rules: the mechanical rewrite rules, and the generator that
     # chains them.
     #
     #   generated = RewriteRules.generate(PgQuery.parse(sql), RewriteRules::Catalog.new(connection))
@@ -32,10 +32,10 @@ module Quaack
     # parse is a PgQuery::ParseResult, which the rule must not change, and
     # catalog the catalog facts (see Catalog). Each Rewrite's tree is the
     # rewritten query's PgQuery::ParseResult, and its assumptions are the
-    # catalog facts it relies on, in 6b's vocabulary (see
+    # catalog facts it relies on, in assumption-check's vocabulary (see
     # RewriteAssumptions). A rule fires only when the catalog proves them,
     # except a heuristic rule's denormalized_equal, which no catalog can
-    # prove and 6b checks against the data instead. A rule's name and
+    # prove and assumption-check checks against the data instead. A rule's name and
     # description are QUAACK's own constants, never anything read from the
     # query, so they're shape-class data.
     #
@@ -53,7 +53,7 @@ module Quaack
     # (see Deparse), though it isn't counted. The first MAX results are
     # kept, and over_cap counts the rest. made counts every result that was
     # kept, a duplicate, or over the cap, by the name of the last rule
-    # applied to make it, for the 6c burndown (DESIGN.md 15b).
+    # applied to make it, for the rewrite-rules burndown (DESIGN.md's burndown).
     #
     # A Candidate's sql is its tree deparsed, parse that SQL's own parse,
     # rules the rules applied, in order, and assumptions those of every rule

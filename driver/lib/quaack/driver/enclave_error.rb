@@ -6,7 +6,7 @@ module Quaack
     # only what the driver can trust to be shape-class data: the subcommand
     # the driver asked for, the step, rule, and SQLSTATE from the enclave's
     # error line (each checked for shape, and nil if it's missing or not
-    # shaped), a volatile_function refusal's function, a step 9 refusal's
+    # shaped), a volatile_function refusal's function, a rewrite-test refusal's
     # column (its table, name, and type), an fk_cycle refusal's cycle (its
     # tables, in the order their foreign keys point), and a
     # run_server_other_clients failure's clients (each pid and start time),
@@ -33,6 +33,11 @@ module Quaack
       EX_SOFTWARE = 70
 
       attr_reader :subcommand, :rule, :exit_status, :signal
+
+      # What run_from_older_version means: the run's store is in an older
+      # format, whose entries this version would misread.
+      OLDER_VERSION = "an older version of QUAACK started this run, and this version can't resume it. " \
+                      "Start a new run with quaack start."
 
       # The error line's fields beyond its rule.
       LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
@@ -61,12 +66,12 @@ module Quaack
 
       # The rule, and for query_unparsable a fixed note naming pg_query's
       # grammar, which is older than production's Postgres. The enclave's
-      # error line holds only the rule, so the driver adds the note. A step
-      # 9 refusal that names its column gets the table, column, and type,
-      # and an fk_cycle refusal that names its tables gets them.
+      # error line holds only the rule, so the driver adds the note. A
+      # rewrite-test refusal that names its column gets the table, column, and type,
+      # and an fk_cycle refusal that names its tables gets them. A run an
+      # older version started gets what to do instead.
       def rule_with_note
-        return "#{rule}: #{reason_message(reason)}" if %w[query_unreadable plan_unreadable].include?(rule) && reason
-        return "#{rule}: #{named_schema}" if named_schema
+        return "#{rule}: #{note}" if note
 
         return rule unless rule == "query_unparsable"
 
@@ -77,6 +82,14 @@ module Quaack
       end
 
       private
+
+      # What rule_with_note adds after the rule, or nil.
+      def note
+        return OLDER_VERSION if rule == "run_from_older_version"
+        return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
+
+        named_schema
+      end
 
       def describe
         details = (line_details + named_details + ending_details).compact
@@ -97,7 +110,7 @@ module Quaack
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
-      # The column or cycle a step 9 refusal named, or nil.
+      # The column or cycle a rewrite-test refusal named, or nil.
       def named_schema = (described_column if column) || (described_cycle if cycle)
 
       def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"

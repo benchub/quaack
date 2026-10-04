@@ -2,7 +2,7 @@
 
 **Category:** `none`, nothing beats the original (negative result).
 
-**Exercises:** negative result (15a); proposed index already covered by an existing one (5a-3); duplicate recorded with the index that covers it.
+**Exercises:** negative result (negative-result); proposed index already covered by an existing one (index-dedupe); duplicate recorded with the index that covers it.
 
 ## Setup.
 
@@ -14,7 +14,7 @@ A customer's five latest orders. The existing index already serves it perfectly.
 
 ## Expected result.
 
-Nothing. Generator one's candidate, `orders (customer_id, created_at DESC) INCLUDE (id, total_cents)`, is the existing index, so 5a-3 drops it and records the covering index for 15a. `indexes.sql` builds a close variant with `id` in the key, to show that doesn't help either. QUAACK should end with a negative result.
+Nothing. Generator one's candidate, `orders (customer_id, created_at DESC) INCLUDE (id, total_cents)`, is the existing index, so index-dedupe drops it and records the covering index for negative-result. `indexes.sql` builds a close variant with `id` in the key, to show that doesn't help either. QUAACK should end with a negative result.
 
 ## Proof.
 

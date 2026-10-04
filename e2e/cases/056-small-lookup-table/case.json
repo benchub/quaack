@@ -3,7 +3,7 @@
   "category": "none",
   "compare": "multiset",
   "features": [
-    "negative result (15a)",
+    "negative result (negative-result)",
     "sequential scan of a two-page table"
   ],
   "literal_sets": [

@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "LEFT JOIN with no match",
-    "orphan fixtures (step 9, S4)",
+    "orphan fixtures (rewrite-test, S4)",
     "count over an outer join"
   ],
   "literal_sets": [

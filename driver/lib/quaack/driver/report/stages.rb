@@ -3,10 +3,10 @@
 module Quaack
   module Driver
     module Report
-      # DESIGN.md 15b, the burndown: the payload's stage records and work
+      # DESIGN.md's burndown, the burndown: the payload's stage records and work
       # totals, and the driver's own LLM calls, in words.
       #
-      # Every stage of 15b's two tables gets a row. A row is [name, record,
+      # Every stage of burndown's two tables gets a row. A row is [name, record,
       # stage], and its record is nil for a stage the run didn't record,
       # which the report shows as "not recorded". So a stage that's
       # recorded later shows up without a change here.
@@ -22,8 +22,8 @@ module Quaack
         end
 
         # The rewrite stages, each summed over its searches, with the
-        # rewrites' own index searches (steps 8 and 11) totaled per stage
-        # between step 10 and step 11.
+        # rewrites' own index searches (plan-pruning and rewrite-index-ideas) totaled per stage
+        # between counterexamples and rewrite-index-ideas.
         def rewrite_rows = summed(Words::REWRITE_STAGES) + search_rows + summed(Words::LATE_STAGES)
 
         def summed(stages) = stages.map { |stage, name| [name, sum(burndown["stages"].fetch(stage, {}).values), stage] }
@@ -44,7 +44,7 @@ module Quaack
         end
 
         # A record's added, dropped, or extra counts in words, leaving out
-        # a name that counted nothing. 6c adds by rule, and names the rule.
+        # a name that counted nothing. rewrite-rules adds by rule, and names the rule.
         def breakdown(counts, rules: false)
           counted = counts.reject { |_, n| n.to_i.zero? }
           return "none" if counted.empty?
@@ -63,7 +63,7 @@ module Quaack
           end
         end
 
-        # 15b's work totals, each always listed, then any other the enclave
+        # burndown's work totals, each always listed, then any other the enclave
         # counted.
         def total_lines
           totals = burndown["totals"]

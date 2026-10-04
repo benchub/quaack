@@ -9,11 +9,11 @@ module Quaack
     # out, never data from the enclave.
     #
     #   progress = Progress.new(io: $stderr, total: 18)
-    #   progress.step("5a-5", "Asking the LLM for index ideas") { ... }
-    #   # quaack: [2/18] Asking the LLM for index ideas (5a-5) 41s   on a terminal
-    #   # quaack: [2/18] Done in 42s (5a-5)                 or "Failed after 42s"
-    #   progress.step("5a-5", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
-    #   # quaack: [2/18] Got 4 index ideas in 42s (5a-5)
+    #   progress.step("llm-index-ideas", "Asking the LLM for index ideas") { ... }
+    #   # quaack: [2/18] Asking the LLM for index ideas (llm-index-ideas) 41s   on a terminal
+    #   # quaack: [2/18] Done in 42s (llm-index-ideas)                 or "Failed after 42s"
+    #   progress.step("llm-index-ideas", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
+    #   # quaack: [2/18] Got 4 index ideas in 42s (llm-index-ideas)
     #   progress.skip("index-search", "Searching for indexes")
     #   # quaack: [1/18] Already done, skipping: Searching for indexes (index-search)
     #

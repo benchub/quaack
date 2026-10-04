@@ -268,7 +268,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
   end
 
-  # The 3d rule, with its conservative overload resolution.
+  # The volatility rule, with its conservative overload resolution.
   describe "volatile functions" do
     {
       "a key expression" => ["((random()))", "function pg_catalog.random is volatile"],
@@ -357,7 +357,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     def refusal(sql, rule, settings = nil)
       error = nil
       expect { check(sql, settings) }.to(rejected(rule) { |raised| error = raised })
-      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "5a-5")
+      line = Quaack::Enclave::ErrorFilter.to_egress(error, step: "llm-index-ideas")
       expect(line).to include(%("rule":"#{rule}"))
       [error.message, line]
     end

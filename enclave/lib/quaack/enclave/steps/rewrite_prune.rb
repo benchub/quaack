@@ -12,7 +12,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks rewrite-prune --run <run ID> --search rewrite_<n>` (DESIGN.md
-      # step 8's three-configuration pruning): whether a rewrite can't run
+      # plan-pruning's three-configuration pruning): whether a rewrite can't run
       # any differently from the original, by ThreeConfigurationPruning
       # against index_ranking_original's top three and the rewrite's own
       # (index_ranking_rewrite_<n>).
@@ -21,7 +21,7 @@ module Quaack
       # (rewrite_prune_unknown_search) and one missing either ranking
       # (rewrite_prune_no_ranking), before connecting. It writes
       # rewrite_pruned_<n> => { "discarded" => Boolean }, and adds to the
-      # step 8 burndown under the search pruning: in 1, dropped same_plans.
+      # plan-pruning burndown under the search pruning: in 1, dropped same_plans.
       # Its only line is DONE.
       module RewritePrune
         OPTIONS = { "search" => :value }.freeze
@@ -36,8 +36,8 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           discarded = discard?(store, connection, search)
           store.write("rewrite_pruned_#{search.delete_prefix("rewrite_")}", "discarded" => discarded)
-          Burndown.record(store, "step8", :pruning, in: 1, dropped: { same_plans: discarded ? 1 : 0 },
-                                                    out: discarded ? 0 : 1)
+          Burndown.record(store, "plan-pruning", :pruning, in: 1, dropped: { same_plans: discarded ? 1 : 0 },
+                                                           out: discarded ? 0 : 1)
           []
         ensure
           connection&.close

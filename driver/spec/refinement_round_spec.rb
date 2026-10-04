@@ -27,14 +27,15 @@ RSpec.describe Quaack::Driver::RefinementRound do
 
   def run = described_class.new(client:, index_feedback: -> { feedback }, index_test:).run(payload)
 
-  it "sends the payload and the LLM's own 5a-4 results, and tests its revisions as the refinement round" do
-    fake.reply("5a-6", { "indexes" => ["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"] })
+  it "sends the payload and the LLM's own index-test results, and tests its revisions as the refinement round" do
+    fake.reply("llm-index-refine",
+               { "indexes" => ["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"] })
 
     result = run
     ask = fake.asks.first
     text = ask.body[:messages].map { it[:content] }.join
 
-    expect(ask.step).to eq("5a-6")
+    expect(ask.step).to eq("llm-index-refine")
     expect(text).to include(JSON.generate(payload)).and include(JSON.generate(feedback["candidates"]))
     expect(text).to include("Propose up to 1 revised")
     expect(ask.body[:system]).to include("revise")
@@ -52,7 +53,7 @@ RSpec.describe Quaack::Driver::RefinementRound do
   end
 
   it "records that the round ran, with an empty refinement index-test, when the LLM offers no revision" do
-    fake.reply("5a-6", { "indexes" => [] })
+    fake.reply("llm-index-refine", { "indexes" => [] })
 
     expect(run.ddls).to eq([])
     expect(tested).to eq([[[], "refinement"]])

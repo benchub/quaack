@@ -6,13 +6,13 @@ require_relative "index_ddl_check"
 
 module Quaack
   module Enclave
-    # The enclave's half of DESIGN.md 5a-5: it takes the index DDL the LLM
-    # wrote, through the driver, and filters it the way 5a-3 filters the
+    # The enclave's half of DESIGN.md's llm-index-ideas: it takes the index DDL the LLM
+    # wrote, through the driver, and filters it the way index-dedupe filters the
     # mechanical generators' output. The same call runs the replacement
-    # round, and 5a-6's revision.
+    # round, and llm-index-refine's revision.
     #
     #   result = GeneratorThree.filter(ddls, dedupe:, tables:, settings:, connection:)
-    #   result.survivors  # IndexCandidates for 5a-4, sources [:llm]
+    #   result.survivors  # IndexCandidates for index-test, sources [:llm]
     #   GeneratorThree.messages(result)  # index_outcome messages, for egress
     #
     # ddls is an Array of Strings, one CREATE INDEX each, in the LLM's
@@ -29,10 +29,10 @@ module Quaack
     #   Dedupe drop reason. covered_by is the existing index's name for
     #   covered_by_existing, and nil otherwise.
     # - :set_aside, for a GIN, GiST, or SP-GiST candidate HypoPG can't test.
-    # - :accepted, for a survivor, which goes on to 5a-4.
+    # - :accepted, for a survivor, which goes on to index-test.
     #
     # partial_constant_only is true for a partial candidate that wasn't
-    # dropped (DESIGN.md 5a-5): it only works if the predicate's literal is a
+    # dropped (DESIGN.md's llm-index-ideas): it only works if the predicate's literal is a
     # constant in the application's SQL, not a bind parameter.
     #
     # Trust boundary. The DDL came from the LLM, which only saw shape, but a
@@ -42,7 +42,7 @@ module Quaack
     # only the position, status, rule, covering index name (schema, so
     # shape), and tag. Every rule is one of the enclave's constants.
     module GeneratorThree
-      # DESIGN.md 5a-5 asks for up to five.
+      # DESIGN.md's llm-index-ideas asks for up to five.
       MAX_CANDIDATES = 5
 
       Outcome = Data.define(:index, :status, :rule, :covered_by, :partial_constant_only, :candidate)

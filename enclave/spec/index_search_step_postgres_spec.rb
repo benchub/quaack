@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-search` (DESIGN.md 5 and 5a-1 to 5a-4) the way the jump server
+# `quaacks index-search` (DESIGN.md's index-search and index-from-query to index-test) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler.
 RSpec.describe "quaacks index-search, against a real server" do
   include_context "an index search run"
@@ -88,7 +88,7 @@ RSpec.describe "quaacks index-search, against a real server" do
       SQL
     end
 
-    it "sets aside each unused key-only B-tree candidate on a low-cardinality leading column for 12a" do
+    it "sets aside each unused key-only B-tree candidate on a low-cardinality leading column for index-build" do
       prepare
 
       index_search
@@ -106,7 +106,7 @@ RSpec.describe "quaacks index-search, against a real server" do
     end
   end
 
-  it "stores each plan redacted through 3g, with placeholders where the sentinel literal was" do
+  it "stores each plan redacted through redact, with placeholders where the sentinel literal was" do
     prepare
     index_search
 

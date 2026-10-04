@@ -2,10 +2,10 @@
 
 require "quaack/enclave/schema_payload"
 
-# The schema the 5a-5 and 6a payloads send (DESIGN.md 5a-5): the subset's
+# The schema the llm-index-ideas and llm-rewrites payloads send (DESIGN.md's llm-index-ideas): the subset's
 # DDL for the query's own tables only, without pg_dump's noise.
 RSpec.describe Quaack::Enclave::SchemaPayload do
-  # pg_dump --schema-only --no-owner --no-privileges output, as 3b stores it
+  # pg_dump --schema-only --no-owner --no-privileges output, as schema-dump stores it
   # for a query on orders, whose FK parent is customers.
   let(:dump) do
     <<~SQL

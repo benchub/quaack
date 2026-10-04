@@ -26,7 +26,7 @@ RSpec.describe "quaacks gemspec" do
     expect(spec.runtime_dependencies.map(&:name)).to include("pg_query", "quaack-protocol")
   end
 
-  # Step 2 connects to production, and later steps to the run server.
+  # inventory connects to production, and later steps to the run server.
   it "depends at runtime on pg, for its database connections" do
     expect(spec.runtime_dependencies.map(&:name)).to include("pg")
   end

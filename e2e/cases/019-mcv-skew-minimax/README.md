@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** top MCV as the worst-case literal (3e); index that helps the slow literal and is no worse for the top MCV (14b); rank by worst-case reduction (5a-7).
+**Exercises:** top MCV as the worst-case literal (literals); index that helps the slow literal and is no worse for the top MCV (minimax); rank by worst-case reduction (index-rank).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ A small tenant's activity summary. Without an index, it costs a full scan, the s
 
 ## Expected result.
 
-`audit_log (tenant_id)`. For the worst-case literal, tenant 1, the planner keeps its sequential scan, so the index is no worse there, and minimax (14b) accepts it.
+`audit_log (tenant_id)`. For the worst-case literal, tenant 1, the planner keeps its sequential scan, so the index is no worse there, and minimax accepts it.
 
 ## Proof.
 

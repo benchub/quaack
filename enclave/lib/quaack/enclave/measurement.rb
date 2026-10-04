@@ -8,7 +8,7 @@ require_relative "run_discipline"
 
 module Quaack
   module Enclave
-    # DESIGN.md 13 (and 13a, 14): the measurement process. For each 3e literal
+    # DESIGN.md's baseline (and index-baseline, candidate-runs): the measurement process. For each literals literal
     # set, runs sql three times with EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
     # FORMAT JSON) under RunDiscipline, with only one index combination
     # visible among index_build's indexes.
@@ -17,17 +17,17 @@ module Quaack
     #   # => { set name => measurement }
     #
     # combination is an index_build combination key, or nil to hide every
-    # built index (the baseline). sql is written with 3g's placeholders
+    # built index (the baseline). sql is written with redact's placeholders
     # (anchored_query or a rewrite) and is bound with each set's literals
     # through PREPARE, never spliced in. A measurement is either
     # { "timed_out" => true }, when any of the three runs hit
     # statement_timeout (the caller drops that candidate and counts it), or:
     #   "runs"         [{ "total_blocks", "hit", "read", "execution_ms" }]
     #   "stable"       whether total_blocks was the same in all three runs
-    #   "total_blocks" the max of the three (for an unstable literal, 14a and
-    #                  14b use the max)
+    #   "total_blocks" the max of the three (for an unstable literal, blocks-metric and
+    #                  minimax use the max)
     #   "plans"        only when unstable: each run's plan, redacted through
-    #                  3g against that set's literals
+    #                  redact against that set's literals
     # total_blocks is shared hit + read, local hit + read, and temp read +
     # written, from the top plan node (its counts include its children).
     # hit is shared + local hit; read is the rest.

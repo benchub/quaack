@@ -18,7 +18,7 @@ RSpec.describe "quaack run" do
   let(:stdout) { StringIO.new }
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
-  # Steps 2 to 4a's outputs, all stored: the run has had setup.
+  # Setup's outputs, all stored: the run has had setup.
   let(:setup_done) do
     %w[inventory run_server qualified_query schema_subset statistics volatility classification redacted_plan
        literal_sets clock_replacements racetrack_setup].to_h { [it, true] }
@@ -102,10 +102,10 @@ RSpec.describe "quaack run" do
     expect(transport.calls[1].last[:args]).to eq(run: run_id)
   end
 
-  it "sends the --rewrites file's rewrites through step 7 inside the pipeline, before step 8" do
+  it "sends the --rewrites file's rewrites through operator-rewrites inside the pipeline, before plan-pruning" do
     file = File.join(home, "rewrites.sql")
     File.write(file, "SELECT 2 WHERE $1;\n")
-    fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+    fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
 
     status = cli.run(["run", "--run", run_id, "--rewrites", file, "--out", out])
 
@@ -113,7 +113,7 @@ RSpec.describe "quaack run" do
     expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback rewrite-payload rewrite-check status
                                                   status status report-payload teardown])
     expect(transport.calls[4].last[:input]["rewrites"].map { it["sql"] }).to eq(["SELECT 2 WHERE $1"])
-    expect(fake.asks.map(&:step)).to eq(["step7"])
+    expect(fake.asks.map(&:step)).to eq(["operator-rewrites"])
   end
 
   # stderr without its progress lines.
@@ -129,32 +129,33 @@ RSpec.describe "quaack run" do
                      "index_ranking_original" => true, "rewrites_generated" => true)
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
-      steps = [["4b", "Setting up the arena, a second database for test rows", "Set up the arena"],
-               ["steps 9-10", "Testing each rewrite for wrong results", "No rewrites left to test"],
-               ["step 11", "Asking the LLM for index ideas for each rewrite", "No rewrites needed index ideas"],
-               ["12a", "Building the candidate indexes", "No index to build"],
-               ["13", "Measuring the original query", "Measured the original query"],
-               ["13a", "Measuring the original query with each set of indexes",
+      steps = [["arena-setup", "Setting up the arena, a second database for test rows", "Set up the arena"],
+               ["rewrite-correctness", "Testing each rewrite for wrong results", "No rewrites left to test"],
+               ["rewrite-index-ideas", "Asking the LLM for index ideas for each rewrite",
+                "No rewrites needed index ideas"],
+               ["index-build", "Building the candidate indexes", "No index to build"],
+               ["baseline", "Measuring the original query", "Measured the original query"],
+               ["index-baseline", "Measuring the original query with each set of indexes",
                 "Measured the original query with each set of indexes"],
-               ["14", "Measuring each rewrite", "Measured each rewrite"],
-               ["14b", "Dropping choices that lose to the original on any literal",
+               ["candidate-runs", "Measuring each rewrite", "Measured each rewrite"],
+               ["minimax", "Dropping choices that lose to the original on any literal",
                 "Checked each choice against the original on every literal"],
-               ["14c", "Checking that each rewrite returns the same rows on production data",
+               ["result-comparison", "Checking that each rewrite returns the same rows on production data",
                 "Checked each rewrite's rows on production data"],
-               ["14d", "Picking the top three", "Picked the top choices"],
-               ["15", "Writing the report", "Wrote the report to #{out}"]]
+               ["selection", "Picking the top three", "Picked the top choices"],
+               ["report", "Writing the report", "Wrote the report to #{out}"]]
       expect(progress).to eq(
         ["quaack: [1/18] Already done, skipping: Checking the query plan and searching for indexes (index-search)\n",
          "quaack: [2/18] Already done, skipping: " \
-         "Asking the LLM for index ideas the mechanical search missed (5a-5)\n",
-         "quaack: [3/18] Asking the LLM to improve its index ideas (5a-6)\n",
-         "quaack: [3/18] No index ideas needed improving in Ns (5a-6)\n",
-         "quaack: [4/18] Already done, skipping: Ranking the index ideas (5a-7)\n",
-         "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)\n",
-         "quaack: [5/18] No rule applied in Ns (6c)\n",
-         "quaack: [6/18] Already done, skipping: Asking the LLM for rewrites of the query (6a)\n",
-         "quaack: [7/18] Searching for indexes for each rewrite (step 8)\n",
-         "quaack: [7/18] No rewrites to search in Ns (step 8)\n",
+         "Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)\n",
+         "quaack: [3/18] Asking the LLM to improve its index ideas (llm-index-refine)\n",
+         "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
+         "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
+         "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+         "quaack: [5/18] No rule applied in Ns (rewrite-rules)\n",
+         "quaack: [6/18] Already done, skipping: Asking the LLM for rewrites of the query (llm-rewrites)\n",
+         "quaack: [7/18] Searching for indexes for each rewrite (plan-pruning)\n",
+         "quaack: [7/18] No rewrites to search in Ns (plan-pruning)\n",
          *steps.each_with_index.flat_map do |(name, description, did), i|
            ["quaack: [#{8 + i}/18] #{description} (#{name})\n", "quaack: [#{8 + i}/18] #{did} in Ns (#{name})\n"]
          end]
@@ -162,24 +163,24 @@ RSpec.describe "quaack run" do
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
     end
 
-    it "counts step 7, and prints each LLM ask and retry, when there's a rewrites file" do
-      fake.error("step7", status: 529).reply("step7", { "rewrites" => [{ "transformation" => "t",
-                                                                         "assumptions" => [] }] })
+    it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do
+      reply = { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] }
+      fake.error("operator-rewrites", status: 529).reply("operator-rewrites", reply)
       entries["rewrites_generated"] = false
       replies["rewrite-check"] = []
-      fake.reply("6a", { "rewrites" => [] })
+      fake.reply("llm-rewrites", { "rewrites" => [] })
 
       expect(cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])).to eq(0)
 
       expect(progress).to include("quaack: [5/19] Already done, skipping: " \
-                                  "Applying QUAACK's own rewrite rules to the query (6c)\n",
-                                  "quaack: [6/19] Asking the LLM for rewrites of the query (6a)\n",
-                                  "quaack: [6/19] Asking the LLM (6a)\n",
-                                  "quaack: [7/19] Checking your own rewrites (step 7)\n",
-                                  "quaack: [7/19] Asking the LLM (step7)\n",
-                                  "quaack: [7/19] Asking the LLM, attempt 2 (step7)\n",
-                                  "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (step 7)\n",
-                                  "quaack: [19/19] Writing the report (15)\n")
+                                  "Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+                                  "quaack: [6/19] Asking the LLM for rewrites of the query (llm-rewrites)\n",
+                                  "quaack: [6/19] Asking the LLM (llm-rewrites)\n",
+                                  "quaack: [7/19] Checking your own rewrites (operator-rewrites)\n",
+                                  "quaack: [7/19] Asking the LLM (operator-rewrites)\n",
+                                  "quaack: [7/19] Asking the LLM, attempt 2 (operator-rewrites)\n",
+                                  "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (operator-rewrites)\n",
+                                  "quaack: [19/19] Writing the report (report)\n")
     end
 
     it "prints a step's sub-steps for each rewrite, under the step" do
@@ -190,14 +191,14 @@ RSpec.describe "quaack run" do
 
       skipped = "Rewrite 1: Already done, skipping:"
       expect(progress).to include(
-        "quaack: [7/18] #{skipped} Checking the query plan and searching for indexes (index-search)\n",
-        "quaack: [7/18] Rewrite 1: Ranking the index ideas (index-rank)\n",
+        "quaack: [7/18] #{skipped} Checking the query plan and searching for indexes (rewrite-index-search)\n",
+        "quaack: [7/18] Rewrite 1: Ranking the index ideas (rewrite-index-rank)\n",
         "quaack: [7/18] #{skipped} Dropping the rewrite if its plan can't win (rewrite-prune)\n",
-        "quaack: [9/18] #{skipped} Testing the rewrite for wrong results (steps 9-10)\n"
+        "quaack: [9/18] #{skipped} Testing the rewrite for wrong results (rewrite-correctness)\n"
       )
     end
 
-    it "prints each index 12a builds as the enclave reports it, with its redacted DDL" do
+    it "prints each index index-build builds as the enclave reports it, with its redacted DDL" do
       entries["index_build"] = false
       ddl = "CREATE INDEX quaack_505c95b84989bfd37136 ON public.orders USING btree (id, status) WHERE note = ?"
       streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => ddl },
@@ -206,10 +207,10 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
       lines = progress.select { it.start_with?("quaack: [11/18]") }
-      expect(lines).to eq(["quaack: [11/18] Building the candidate indexes (12a)\n",
+      expect(lines).to eq(["quaack: [11/18] Building the candidate indexes (index-build)\n",
                            "quaack: [11/18] Building index 1/2: #{ddl}\n",
                            "quaack: [11/18] Building index 2/2\n",
-                           "quaack: [11/18] Built 2 indexes in Ns (12a)\n"])
+                           "quaack: [11/18] Built 2 indexes in Ns (index-build)\n"])
     end
 
     it "prints a failed line for the step that fails, before the failure" do
@@ -217,7 +218,7 @@ RSpec.describe "quaack run" do
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
 
-      expect(progress.last).to eq("quaack: [3/18] Failed after 0s (5a-6)\n")
+      expect(progress.last).to eq("quaack: [3/18] Failed after 0s (llm-index-refine)\n")
       expect(errors).to eq("#{torn}quaack run failed: arena_missing\n")
     end
   end
@@ -244,7 +245,7 @@ RSpec.describe "quaack run" do
     end
 
     it "takes --out alongside --rewrites, in either order" do
-      fake.reply("step7", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+      fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
 
       expect(cli.run(["run", "--run", run_id, "--out", out, "--rewrites", rewrites_file])).to eq(0)
       expect(File.exist?(out)).to be(true)
@@ -259,7 +260,18 @@ RSpec.describe "quaack run" do
     expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
-  it "names the table, column, and type when step 9 can't fill a column" do
+  it "says to start a new run when an older version of QUAACK started this one" do
+    failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version")
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, stdout.string, errors]).to eq(
+      [1, "", "#{torn}quaack run failed: run_from_older_version: an older version of QUAACK started this run, " \
+              "and this version can't resume it. Start a new run with quaack start.\n"]
+    )
+  end
+
+  it "names the table, column, and type when rewrite-test can't fill a column" do
     column = { "table" => "public.courses", "column" => "tags", "type" => "int4range" }
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "unsupported_type",
                                                                  column:)
@@ -275,9 +287,9 @@ RSpec.describe "quaack run" do
     expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
   end
 
-  describe "setup, steps 2 to 4a" do
+  describe "setup, setup" do
     let(:setup) do
-      %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor
+      %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
          racetrack-setup]
     end
 
@@ -300,12 +312,12 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
       expect(progress.first).to eq("quaack: [1/29] Already done, skipping: " \
-                                   "Reading production's version, settings, and extensions (2)\n")
+                                   "Reading production's version, settings, and extensions (inventory)\n")
       expect(progress).to include("quaack: [11/29] Setting up the racetrack, a copy of production's schema and " \
-                                  "statistics (4a)\n",
+                                  "statistics (racetrack-setup)\n",
                                   "quaack: [12/29] Already done, skipping: " \
                                   "Checking the query plan and searching for indexes (index-search)\n",
-                                  "quaack: [29/29] Writing the report (15)\n")
+                                  "quaack: [29/29] Writing the report (report)\n")
     end
 
     it "skips setup, without counting it, when the store says the run has had it" do
@@ -357,7 +369,7 @@ RSpec.describe "quaack run" do
   end
 
   it "fails with exit 1 and the LLM error's rule and detail when an LLM call fails" do
-    fake.error("step7", status: 400)
+    fake.error("operator-rewrites", status: 400)
 
     status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
 
@@ -629,8 +641,8 @@ RSpec.describe "quaack run" do
         client = without_anthropic_credentials("QUAACK_SPEC_KEY" => "fake-key") do
           Quaack::Driver::CLI.build_client(settings, transport: fake)
         end
-        fake.reply("6a", "ok")
-        client.ask(step: "6a", messages: [{ role: "user", content: "hi" }], max_tokens: 10)
+        fake.reply("llm-rewrites", "ok")
+        client.ask(step: "llm-rewrites", messages: [{ role: "user", content: "hi" }], max_tokens: 10)
 
         expect(fake.asks.map { [it.body[:model], it.url] })
           .to eq([["claude-from-block", "https://llm.example.com/v1/messages"]])

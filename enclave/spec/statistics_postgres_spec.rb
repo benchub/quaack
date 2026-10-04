@@ -124,7 +124,7 @@ RSpec.describe "value_frequency against real Postgres statistics" do
     expect(planner_rows("nullable_flags", "active", "false")).to be > false_rows + 1000
   end
 
-  # Most columns 5a-2 sees have a negative n_distinct: a fraction of the
+  # Most columns index-from-plan sees have a negative n_distinct: a fraction of the
   # rows, not a count.
   it "matches the planner on a column whose n_distinct is negative, with a full MCV list" do
     conn.exec(<<~SQL)

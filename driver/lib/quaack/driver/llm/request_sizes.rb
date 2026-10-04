@@ -11,7 +11,7 @@ module Quaack
       # top-level key's length, largest first. It never holds content, only
       # sizes, roles, the step, and key names.
       #
-      #   [step 5a-5, max_tokens 4000, system 1234 chars,
+      #   [llm-index-ideas, max_tokens 4000, system 1234 chars,
       #    messages: user 98765 (payload: schema_subset 80000, query 120)]
       #
       # A block that won't parse as a JSON object gets no breakdown.

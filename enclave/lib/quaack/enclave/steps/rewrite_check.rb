@@ -14,26 +14,23 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-check --run <run ID>` (DESIGN.md 6a, 6b, and step 8's
-      # structural discards): checks rewrites and stores the survivors.
+      # `quaacks rewrite-check --run <run ID>` (DESIGN.md's rewrite-check): checks rewrites and stores the survivors.
       #
       # stdin is one JSON object, {"rewrites": [{"sql", "transformation",
       # "assumptions"}, ...], "inferred": true|false}, "inferred" optional
       # and false by default: each rewrite's SQL with the original's $n
       # placeholders, its transformation as a String, and its assumptions as
       # an Array (see RewriteAssumptions). Any other shape is refused with
-      # rewrite_check_bad_rewrites. For 6a's rewrites, only the first MAX
-      # are checked; the rest are rejected as too_many. Step 7's operator
+      # rewrite_check_bad_rewrites. For llm-rewrites' rewrites, only the first MAX
+      # are checked; the rest are rejected as too_many. operator-rewrites' operator
       # rewrites come with "inferred": true: their transformation and
       # assumptions were inferred by the LLM, so they have no cap, and an
-      # unmet assumption only adds a warning (DESIGN.md step 7).
+      # unmet assumption only adds a warning (DESIGN.md's operator-rewrites).
       #
-      # On one racetrack connection, each rewrite goes through, in order:
-      # its assumptions' vocabulary (bad_assumption, which a
-      # denormalized_equal from anything but a 6c rule is too),
-      # RewriteCandidateCheck
-      # (its rules), 6b's AssumptionCheck (unmet_assumption), and step 8's StructuralDiscard, with the
-      # slow literals (failed_to_plan, output_mismatch).
+      # On one racetrack connection, each rewrite goes through, in order: its assumptions' vocabulary (bad_assumption,
+      # which a denormalized_equal from anything but a rewrite-rules rule is too), RewriteCandidateCheck (its rules),
+      # assumption-check's AssumptionCheck (unmet_assumption), and structural-discard's StructuralDiscard, with the slow
+      # literals (failed_to_plan, output_mismatch).
       #
       # The store format, which later steps read. Each survivor is saved as
       # rewrite_<n>, n counting up from 1 across calls in the run, as:
@@ -41,30 +38,30 @@ module Quaack
       #                    qualified, deparsed, with $n placeholders
       #   "transformation" the stated (or inferred) transformation, a String
       #   "assumptions"    the stated (or inferred) assumptions, as given
-      #   "inferred"       false for 6a's rewrites, true for step 7's
+      #   "inferred"       false for llm-rewrites' rewrites, true for operator-rewrites'
       #   "warnings"       [{ "assumption", "kind" }], one per unmet inferred
-      #                    assumption (step 7): its 1-based position in
-      #                    "assumptions" and its kind; always [] for 6a
+      #                    assumption (operator-rewrites): its 1-based position in
+      #                    "assumptions" and its kind; always [] for llm-rewrites
       #   "result_types"   its output column types, as regtype text
       #   "anchored_sql"   "sql" with its clock anchored as the original's
-      #                    is (DESIGN.md 3h), with the same placeholder map and
+      #                    is (DESIGN.md's clock-anchor), with the same placeholder map and
       #                    column types; what later steps run, plan, and
       #                    bind (see RewriteEntry). "sql" keeps the clock as
       #                    written, for the payloads and the report. A
       #                    candidate ClockAnchoring refuses is rejected by
       #                    that error's rule.
-      #   "source"         where it came from: "rule" (6c), "llm" (6a), or
-      #                    "operator" (step 7)
-      #   "rules"          only for a rule-made rewrite (6c): the names of
+      #   "source"         where it came from: "rule" (rewrite-rules), "llm" (llm-rewrites), or
+      #                    "operator" (operator-rewrites)
+      #   "rules"          only for a rule-made rewrite (rewrite-rules): the names of
       #                    the rules applied, in order
-      # The transformation and assumptions come from the LLM (or, for 6c,
+      # The transformation and assumptions come from the LLM (or, for rewrite-rules,
       # from the rules), so they're kept in the store only, never sent.
       #
-      # Each call adds its counts to the step 8 burndown (StructuralDiscard.
+      # Each call adds its counts to the plan-pruning burndown (StructuralDiscard.
       # stage_record, search rewrites), with the inbound check's rejections
-      # as inbound_check. A call with 6a's rewrites (not inferred) also writes
-      # the rewrites_generated marker, so a resumed run skips 6a. A call
-      # with step 7's (inferred) writes operator_rewrites_checked instead.
+      # as inbound_check. A call with llm-rewrites' rewrites (not inferred) also writes
+      # the rewrites_generated marker, so a resumed run skips llm-rewrites. A call
+      # with operator-rewrites' (inferred) writes operator_rewrites_checked instead.
       #
       # It sends one rewrite_outcome per rewrite: index, outcome (accepted
       # or rejected), rule, rewrite (the entry name, or nil), and warnings.
@@ -89,25 +86,25 @@ module Quaack
         end
 
         # Checks the rewrites the block gives, stores the survivors, and
-        # records the step 8 burndown. It returns one rewrite_outcome per
+        # records the plan-pruning burndown. It returns one rewrite_outcome per
         # rewrite. The block gets the racetrack connection every check runs
-        # on. `quaacks rewrite-rules` (6c) shares this, with source "rule".
+        # on. `quaacks rewrite-rules` (rewrite-rules) shares this, with source "rule".
         #
         # also is called with the outcomes, and gives more burndown records,
         # as Burndown.record_all takes them, to store in the same write as
-        # step 8's. If it gives nil, nothing is recorded, step 8's included:
-        # that's how 6c, run again, says an earlier call recorded them all.
+        # plan-pruning's. If it gives nil, nothing is recorded, plan-pruning's included:
+        # that's how rewrite-rules, run again, says an earlier call recorded them all.
         #
         # stored is { accepted SQL => entry name }, the rewrites an earlier
         # call already stored. A survivor whose accepted SQL is there keeps
-        # that entry, and nothing new is written for it. That's how 6c, run
+        # that entry, and nothing new is written for it. That's how rewrite-rules, run
         # again after a call that died, stores no rewrite twice.
         def check(store, source:, stored: {}, also: ->(_) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
           context = context(store, connection, source).merge(stored: stored.dup)
           outcomes = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
           more = also.call(outcomes)
-          Burndown.record_all(store, [Step8.record(outcomes), *more]) if more
+          Burndown.record_all(store, [PlanPruning.record(outcomes), *more]) if more
           outcomes
         ensure
           connection&.close
@@ -160,10 +157,10 @@ module Quaack
           rejected(index, e.rule)
         end
 
-        # Whether the assumptions are in 6b's vocabulary, with
-        # denormalized_equal, which 6b checks against the data, only from a
-        # 6c rule (DATA_KINDS). From anyone else it's refused here, before
-        # anything is checked, so the LLM or the operator can't make 6b
+        # Whether the assumptions are in assumption-check's vocabulary, with
+        # denormalized_equal, which assumption-check checks against the data, only from a
+        # rewrite-rules rule (DATA_KINDS). From anyone else it's refused here, before
+        # anything is checked, so the LLM or the operator can't make assumption-check
         # probe the tables it names.
         def assumptions?(assumptions, source)
           RewriteAssumptions.valid?(assumptions) &&
@@ -197,10 +194,10 @@ module Quaack
                      .map { |assumption, i| { "assumption" => i + 1, "kind" => assumption["kind"] } }
         end
 
-        # The step 8 burndown record for a call: the rewrites the inbound
+        # The plan-pruning burndown record for a call: the rewrites the inbound
         # check rejected, those StructuralDiscard dropped, and the survivors.
-        # Rejections by this step's own rules (6a and 6b) aren't step 8's.
-        module Step8
+        # Rejections by this step's own rules (llm-rewrites and assumption-check) aren't plan-pruning's.
+        module PlanPruning
           module_function
 
           def record(outcomes)
@@ -227,7 +224,7 @@ module Quaack
           name
         end
 
-        # sql anchored as the original is (DESIGN.md 3h), or raises
+        # sql anchored as the original is (DESIGN.md's clock-anchor), or raises
         # ClockAnchoring::Error.
         def anchored(sql, context)
           store = context[:store]

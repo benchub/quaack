@@ -7,8 +7,8 @@ require "quaack/enclave/pii_classification"
 require "quaack/enclave/table_name"
 require_relative "support/index_search_run"
 
-# `quaacks rewrite-rules` running polymorphic_key_copy (DESIGN.md 6c) in
-# Canvas's shape, with 6b checking its denormalized_equal assumption against
+# `quaacks rewrite-rules` running polymorphic_key_copy (DESIGN.md's rewrite-rules) in
+# Canvas's shape, with assumption-check checking its denormalized_equal assumption against
 # the racetrack's data. The polymorphic type, the class whose column the
 # rule finds, is itself a sentinel, as are the id and the other literal, so
 # neither the type literal nor any data leaves the enclave.
@@ -122,7 +122,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
   context "when the data breaks the assumption" do
     let(:violated) { true }
 
-    it "drops the rewrite as an unmet assumption, which 6b found in the data" do
+    it "drops the rewrite as an unmet assumption, which assumption-check found in the data" do
       prepare
 
       outcome = rewrite_rules
@@ -136,9 +136,9 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
     end
   end
 
-  # Steps 9 and 10 on an arena of the same tables, with no rows. The
+  # rewrite-test and counterexamples on an arena of the same tables, with no rows. The
   # fixtures honour the rule's own assumption, and only on the class's rows.
-  context "when steps 9 and 10 test the rewrite on the arena" do
+  context "when rewrite-test and counterexamples test the rewrite on the arena" do
     let(:arena_name) { "quaack_arena_#{SecureRandom.hex(4)}" }
     let(:courses) { "public.#{column.delete_suffix("_id")}s" }
 
@@ -187,7 +187,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
 
     def outcome(output) = lines(output).first
 
-    it "passes the rule's rewrite in step 9 and every round, sending no type literal or data" do
+    it "passes the rule's rewrite in rewrite-test and every round, sending no type literal or data" do
       ready
       outputs = [test("rewrite_1"), *(1..3).map { round("rewrite_1", it, inserts) }]
 
@@ -200,16 +200,16 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
       end
     end
 
-    it "disproves in step 9 a twin that copies the wrong id" do
+    it "disproves in rewrite-test a twin that copies the wrong id" do
       ready
 
       expect(outcome(test(twin(rewritten.sub("#{column} = $2", "#{column} = $2 + 1"))))).to include("passed" => false)
     end
 
-    # Rows of another class aren't honoured, so step 9's near misses keep
-    # no copy and the twin matches them; 10b's insert of such a row with a
+    # Rows of another class aren't honoured, so rewrite-test's near misses keep
+    # no copy and the twin matches them; counterexample-compare's insert of such a row with a
     # copy is what tells them apart.
-    it "disproves in step 10 a twin that drops the type filter" do
+    it "disproves in counterexamples a twin that drops the type filter" do
       ready
       search = twin(rewritten.sub("assignments.context_type = $1 AND ", ""))
 
@@ -218,7 +218,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
       expect(stored.read("rewrite_survived_2")).to eq("survived" => false)
     end
 
-    it "honours only the rule's own assumption, so the same SQL from elsewhere is disproved in step 9" do
+    it "honours only the rule's own assumption, so the same SQL from elsewhere is disproved in rewrite-test" do
       ready
       llm = outcome(test(twin(rewritten, { "source" => "llm" })))
       bare = outcome(test(twin(rewritten, { "assumptions" => [] }, search: "rewrite_3")))

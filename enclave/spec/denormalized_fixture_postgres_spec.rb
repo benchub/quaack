@@ -3,11 +3,11 @@
 require "pg_query"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/denormalized_fixture"
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 require "quaack/enclave/table_name"
 
 # Arena fixtures that honour a rule's denormalized_equal assumption (DESIGN.md
-# 6c, 9, 10a), in Canvas's shape: a submission of an assignment whose
+# rewrite-rules, rewrite-test, llm-counterexamples), in Canvas's shape: a submission of an assignment whose
 # context is a Course keeps a copy of the course id, which a foreign key
 # checks.
 RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
@@ -84,7 +84,7 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
     end
   end
 
-  describe Quaack::Enclave::StepNine do
+  describe Quaack::Enclave::ScenarioTests do
     let(:original) do
       "SELECT s.id FROM cv.submissions s JOIN cv.assignments a ON a.id = s.assignment_id " \
         "WHERE a.context_type = 'Course' AND a.context_id = 50 AND s.body = 'SENTINEL_77'"
@@ -92,7 +92,7 @@ RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do
     let(:rewritten) { original.sub("AND s.body", "AND s.course_id = 50 AND s.body") }
 
     def run(*candidates, honour: [copy])
-      Quaack::Enclave::StepNine.run(conn, original, candidates, honour:).results.map { [it.passed, it.scenario] }
+      Quaack::Enclave::ScenarioTests.run(conn, original, candidates, honour:).results.map { [it.passed, it.scenario] }
     end
 
     it "passes the rule's rewrite on fixtures that honour its assumption, and disproves wrong twins" do

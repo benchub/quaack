@@ -7,8 +7,8 @@ require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/intake"
 require "quaack/enclave/store"
 
-# DESIGN.md 4a: the racetrack gets hypopg, the quaack schema, and
-# quaack.clock_anchor(), which returns the run's clock anchor from 3h.
+# DESIGN.md's racetrack-setup: the racetrack gets hypopg, the quaack schema, and
+# quaack.clock_anchor(), which returns the run's clock anchor from clock-anchor.
 RSpec.describe Quaack::Enclave::Racetrack do
   let(:base) { Dir.mktmpdir }
   let(:store) { Quaack::Enclave::Store.create(base:) }
@@ -48,7 +48,7 @@ RSpec.describe Quaack::Enclave::Racetrack do
     expect(returned_anchor).to eq("2026-09-23T22:15:00.500000Z")
   end
 
-  it "creates the function 3h's queries call, with now()'s planner attributes" do
+  it "creates the function clock-anchor's queries call, with now()'s planner attributes" do
     setup_racetrack
     function = conn.exec(<<~SQL).to_a
       SELECT p.pronargs, p.prorettype::regtype::text AS returns, p.provolatile, p.proparallel, p.procost
@@ -76,7 +76,7 @@ RSpec.describe Quaack::Enclave::Racetrack do
     expect(value("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq("1")
   end
 
-  it "runs a query 3h anchored, which then sees the anchor's time" do
+  it "runs a query clock-anchor anchored, which then sees the anchor's time" do
     setup_racetrack
     conn.exec("SET TimeZone = 'UTC'")
     sql = Quaack::Enclave::ClockAnchoring.anchor("SELECT now(), CURRENT_DATE, LOCALTIMESTAMP(0)", nil).sql

@@ -5,7 +5,7 @@
   "features": [
     "ALL subquery",
     "ALL over an empty set is true",
-    "orphan fixtures (step 9, S4)"
+    "orphan fixtures (rewrite-test, S4)"
   ],
   "literal_sets": [
     {

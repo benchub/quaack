@@ -5,7 +5,7 @@ require_relative "index_payload"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-payload --run <run ID>` (DESIGN.md 6a): sends the
+      # `quaacks rewrite-payload --run <run ID>` (DESIGN.md's llm-rewrites): sends the
       # shape-only payload the driver gives the LLM when it asks for
       # rewrites, as one rewrite_payload message. It doesn't connect to
       # anything. Its fields are index_payload's (see IndexPayload), less

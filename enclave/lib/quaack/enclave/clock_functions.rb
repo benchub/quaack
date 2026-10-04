@@ -4,7 +4,7 @@ require "pg_query"
 
 module Quaack
   module Enclave
-    # Which calls clock anchoring (3h) replaces, and with what. See
+    # Which calls clock anchoring (clock-anchor) replaces, and with what. See
     # ClockAnchoring for the rules.
     #
     #   ClockFunctions.anchored_sql(node)  # => "quaack.clock_anchor()::pg_catalog.date", or nil

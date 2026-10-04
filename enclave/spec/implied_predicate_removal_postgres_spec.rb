@@ -10,7 +10,7 @@ require "quaack/enclave/rewrite_rules/implied_predicate_removal"
 require "quaack/enclave/rewrite_rules/literals"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's implied_predicate_removal, on a real server: redundant
+# DESIGN.md's rewrite-rules' implied_predicate_removal, on a real server: redundant
 # Rails predicates are removed only when a column equality proves them, and
 # the proof about placeholder values stays inside Postgres.
 RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do

@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** non-sargable function on an indexed column; shared placeholder between GROUP BY and the select list (3g); range rewrite depends on TimeZone (step 2).
+**Exercises:** non-sargable function on an indexed column; shared placeholder between GROUP BY and the select list (redact); range rewrite depends on TimeZone (inventory).
 
 ## Setup.
 
@@ -17,12 +17,12 @@ Daily totals for March. `date_trunc` on the column hides it from the index, so P
 A half-open range on `created_at`. The month literal appears twice in the rewrite. Both copies take the same value, as the rewrite's placeholder rules require.
 
 Stated assumptions:
-- The literal is the start of a month. For `'2025-03-15'` the original matches nothing, but the range still matches from the 15th on. That's a literal-dependent rewrite. 3e keeps the slow literal for a placeholder compared with a function, so QUAACK's literal sets all satisfy it, but step 9 or 10 should try a mid-month value.
+- The literal is the start of a month. For `'2025-03-15'` the original matches nothing, but the range still matches from the 15th on. That's a literal-dependent rewrite. literals keeps the slow literal for a placeholder compared with a function, so QUAACK's literal sets all satisfy it, but rewrite-test or counterexamples should try a mid-month value.
 - The literal has no UTC offset. `date_trunc` works in the session's `TimeZone`, and so do the unzoned literal and `+ interval '1 month'`, so the two agree in any time zone. With a `+00` literal they'd agree only in a UTC session.
 
 ## Notes.
 
-The `'day'` and `'month'` literals in the select list and the `GROUP BY` must share one placeholder (3g), or the redacted query won't prepare.
+The `'day'` and `'month'` literals in the select list and the `GROUP BY` must share one placeholder (redact), or the redacted query won't prepare.
 
 ## Proof.
 

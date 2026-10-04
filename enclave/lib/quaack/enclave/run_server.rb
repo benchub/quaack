@@ -6,7 +6,7 @@ require_relative "intake"
 
 module Quaack
   module Enclave
-    # The run server (DESIGN.md, step 4), which `quaacks run-server` records in
+    # The run server (DESIGN.md's run-server), which `quaacks run-server` records in
     # the run's run_server entry (see Steps::RunServer), and how later steps
     # connect to it.
     #
@@ -32,7 +32,7 @@ module Quaack
     #   underscore first, then those or hyphens, at most 63 characters, the
     #   length Postgres keeps. Other names are unsupported in v1.
     # - run_server_same_database: the racetrack and arena are the same
-    #   database. 4b builds arena from scratch, so it can't be the
+    #   database. arena-setup builds arena from scratch, so it can't be the
     #   racetrack.
     #
     # A connection that fails is run_server_connection_failed, with nothing

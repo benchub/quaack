@@ -7,14 +7,18 @@ require "quaack/protocol/burndown"
 # The burndown's shared names. The enclave records stage counts under STAGES
 # and the driver counts LLM calls under LLM_STEPS, so both sides use one list.
 RSpec.describe Quaack::Protocol::Burndown do
-  it "lists each stage of the DESIGN.md 15b tables once, as a frozen String" do
-    expect(described_class::STAGES).to eq(%w[5a-1 5a-2 5a-3 5a-4 5a-5 5a-6 5a-7 6c 6a 6b
-                                             step7 step8 step9 step10 step11 step14])
+  it "lists each stage of the DESIGN.md's burndown tables once, as a frozen String" do
+    expect(described_class::STAGES).to eq(%w[index-from-query index-from-plan index-dedupe index-test llm-index-ideas
+                                             llm-index-refine index-rank rewrite-rules llm-rewrites assumption-check
+                                             operator-rewrites plan-pruning rewrite-test counterexamples
+                                             rewrite-index-ideas measurement])
     expect(described_class::STAGES).to be_frozen.and(all(be_frozen))
   end
 
   it "lists the driver steps that call an LLM, once each, as frozen Strings" do
-    expect(described_class::LLM_STEPS).to eq(%w[5a-5 5a-6 6a step7 10a step11])
+    expect(described_class::LLM_STEPS)
+      .to eq(%w[llm-index-ideas llm-index-refine llm-rewrites operator-rewrites llm-counterexamples
+                rewrite-llm-index-ideas rewrite-llm-index-refine])
     expect(described_class::LLM_STEPS).to be_frozen.and(all(be_frozen))
   end
 
@@ -35,10 +39,11 @@ RSpec.describe Quaack::Protocol::Burndown do
 
     def valid?(stages, totals = self.totals) = described_class.valid?(stages:, totals:)
 
-    def with_record(changed) = { "5a-3" => { "original" => changed } }
+    def with_record(changed) = { "index-dedupe" => { "original" => changed } }
 
     it "takes stages and totals of counts, keyed by stage, search, field, and lowercase-word names" do
-      expect(valid?({ "5a-3" => { "original" => record, "rewrite2" => record }, "step8" => {} })).to be(true)
+      expect(valid?({ "index-dedupe" => { "original" => record, "rewrite2" => record },
+                      "plan-pruning" => {} })).to be(true)
       expect(valid?({}, {})).to be(true)
     end
 
@@ -53,7 +58,7 @@ RSpec.describe Quaack::Protocol::Burndown do
 
     it "refuses a name that isn't a lowercase-word String, as JSON reads one back" do
       ["bob@example.com", "Original", :original, 7, nil].each do |bad|
-        expect(valid?({ "5a-3" => { bad => record } })).to be(false), bad.inspect
+        expect(valid?({ "index-dedupe" => { bad => record } })).to be(false), bad.inspect
         expect(valid?(with_record(record.merge("dropped" => { bad => 0 })))).to be(false), bad.inspect
         expect(valid?({}, { bad => 1 })).to be(false), bad.inspect
       end
@@ -61,7 +66,7 @@ RSpec.describe Quaack::Protocol::Burndown do
 
     it "refuses a stage that isn't one of STAGES" do
       expect(valid?({ "orders.email" => {} })).to be(false)
-      expect(valid?({ "5a-3": {} })).to be(false)
+      expect(valid?({ "index-dedupe": {} })).to be(false)
     end
 
     it "refuses a record with a field missing or added, or a breakdown that isn't a Hash" do
@@ -91,8 +96,8 @@ RSpec.describe Quaack::Protocol::Burndown do
     it "refuses stages or totals that aren't Hashes" do
       expect(valid?(nil)).to be(false)
       expect(valid?({}, nil)).to be(false)
-      expect(valid?({ "5a-3" => "bob@example.com" })).to be(false)
-      expect(valid?([["5a-3", {}]])).to be(false)
+      expect(valid?({ "index-dedupe" => "bob@example.com" })).to be(false)
+      expect(valid?([["index-dedupe", {}]])).to be(false)
     end
   end
 

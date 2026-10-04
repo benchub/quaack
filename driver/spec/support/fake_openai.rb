@@ -15,10 +15,10 @@ require "quaack/driver/llm"
 # Script it by step, then build a client from it:
 #
 #   fake = FakeOpenAI.new
-#   fake.reply("5a-5", "CREATE INDEX ...")            # a text answer
-#   fake.reply("6a", { "rewrites" => [] })            # a Hash or Array goes out as JSON text
-#   fake.error("10a", status: 503)                    # one failed attempt, which the gem may retry
-#   fake.raw("6a", "[1]")                             # a 200 whose body isn't a completion
+#   fake.reply("llm-index-ideas", "CREATE INDEX ...")            # a text answer
+#   fake.reply("llm-rewrites", { "rewrites" => [] })            # a Hash or Array goes out as JSON text
+#   fake.error("llm-counterexamples", status: 503)                    # one failed attempt, which the gem may retry
+#   fake.raw("llm-rewrites", "[1]")                             # a 200 whose body isn't a completion
 #   client = fake.client(burndown: burndown)
 #
 # Each step's answers are used in the order they were scripted, one per

@@ -8,7 +8,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's polymorphic_key_copy, a heuristic rule checked
+      # DESIGN.md's rewrite-rules' polymorphic_key_copy, a heuristic rule checked
       # against the data. Where a SELECT joins child.<x> = parent.id and
       # filters parent.<p>_type = $m and parent.<p>_id = $n, Rails's
       # polymorphic convention, and the child has its own column for that
@@ -19,7 +19,7 @@ module Quaack
       # It only adds a predicate, so it can drop rows but never add them,
       # and it drops none if every joined row of that type has the child's
       # column equal to parent.<p>_id. The schema can't say that, so the
-      # rewrite states it as a denormalized_equal assumption, and 6b checks
+      # rewrite states it as a denormalized_equal assumption, and assumption-check checks
       # it against the data.
       #
       # The rule never reads the type literal. For each child column named

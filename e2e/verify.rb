@@ -18,7 +18,7 @@ module E2E
   ROOT = File.expand_path(__dir__)
   IMAGE = ENV.fetch("QUAACK_E2E_IMAGE", "postgres:18")
   LABEL = "quaack.e2e"
-  # DESIGN.md step 14a: better means more than 5% fewer total blocks.
+  # DESIGN.md's blocks-metric: better means more than 5% fewer total blocks.
   WIN = 0.95
   # How far a count may move between repeated runs and still count as stable.
   STABLE = 0.01
@@ -29,7 +29,7 @@ module E2E
   class Postgres
     def initialize
       system("docker", "rm", "-f", "-v", *leftovers, out: File::NULL, err: File::NULL) unless leftovers.empty?
-      # Autovacuum is off, as DESIGN.md step 4 requires of the run server, so a
+      # Autovacuum is off, as DESIGN.md's run-server requires of the run server, so a
       # background vacuum or analyze can't change a measurement.
       @id = capture("docker", "run", "-d", "--label", LABEL, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", IMAGE,
                     "-c", "autovacuum=off").strip
@@ -88,7 +88,7 @@ module E2E
     def unlimited = optional("slow_unlimited.sql")
 
     # Planner settings the production plan ran with, from its SETTINGS
-    # section (DESIGN.md step 2). Applied to every statement the case runs.
+    # section (DESIGN.md's inventory). Applied to every statement the case runs.
     def settings = meta.fetch("settings", {}).map { |name, value| "SET #{name} = #{value};\n" }.join
 
     def bind(sql, set)
@@ -204,7 +204,7 @@ module E2E
 
     def row_count(set) = sql(@case.bind(@case.slow, set)).lines.count
 
-    # DESIGN.md step 13: shared, local, and temp blocks, three runs after one
+    # DESIGN.md's baseline: shared, local, and temp blocks, three runs after one
     # warm-up. A count that moves by more than 1% between runs fails the case,
     # because every claim here rests on counts being repeatable. Parallel
     # workers can wobble a count by a block or two, which changes no claim.
@@ -220,7 +220,7 @@ module E2E
     end
   end
 
-  # The result comparisons from DESIGN.md 9d, for the cases' own data.
+  # The result comparisons from DESIGN.md's fixture-compare, for the cases' own data.
   class Compare
     def initialize(mode)
       @mode = mode
@@ -302,7 +302,7 @@ module E2E
       beats(failures, :rewrite_idx, :orig_idx, "the new index alone")
     end
 
-    # Nothing may pass 14a and 14b: the tempting rewrite, the strongest index
+    # Nothing may pass blocks-metric and minimax: the tempting rewrite, the strongest index
     # candidate, or both together. Without an index to try, the claim that
     # no index wins would go unchecked.
     def check_none(failures)
@@ -333,14 +333,14 @@ module E2E
       end
     end
 
-    # DESIGN.md 14a and 14b: more than 5% better on the slow literals, and no
+    # DESIGN.md's blocks-metric and minimax: more than 5% better on the slow literals, and no
     # worse on any other literal set.
     def accepted?(column)
       slow_row[column] < slow_row.orig * WIN && minimax_rows.all? { |r| r[column] <= r.orig }
     end
 
     # Literal sets marked "minimax": false only prove equivalence. They
-    # aren't sets 3e would pick, so 14b doesn't judge them.
+    # aren't sets literals would pick, so minimax doesn't judge them.
     def minimax_rows = @rows.select(&:minimax)
 
     def beats(failures, column, other, what)
@@ -356,7 +356,7 @@ module E2E
              "| --- | ---: | ---: | ---: | ---: | ---: |\n"
 
     OUTCOMES = {
-      "none" => "QUAACK must accept nothing and report a negative result (15a).",
+      "none" => "QUAACK must accept nothing and report a negative result (negative-result).",
       "trap" => "QUAACK must reject the rewrite in `fast.sql`.",
       "refused" => "`quaacks intake` must refuse the query with `unsupported_construct`."
     }.freeze
@@ -368,7 +368,7 @@ module E2E
         "| #{r.set} | #{r.rows} | #{r.orig} | #{r.rewrite || "-"} | #{r.orig_idx || "-"} | #{r.rewrite_idx || "-"} |"
       end
       verdict = failures.empty? ? "Every claim holds." : failures.map { |f| "- FAILED: #{f}" }.join("\n")
-      "# #{kase.name} results.\n\nTotal blocks (DESIGN.md step 13), from `ruby e2e/verify.rb`.\n" \
+      "# #{kase.name} results.\n\nTotal blocks (DESIGN.md's blocks-metric), from `ruby e2e/verify.rb`.\n" \
         "Category: `#{kase.category}`.\n\n#{HEADER}#{body.join("\n")}\n\n#{verdict}\n\n#{bound(kase, rows.first)}\n"
     end
 
@@ -379,7 +379,7 @@ module E2E
       return "**For 20260922-65:** #{OUTCOMES.fetch(kase.category)}" unless column
 
       "**For 20260922-65:** QUAACK's top-ranked fix must touch at most #{slow[column]} total blocks " \
-        "on the slow literals, and pass 14b."
+        "on the slow literals, and pass minimax."
     end
 
     def index(cases)

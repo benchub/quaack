@@ -5,7 +5,7 @@ require "tmpdir"
 require "quaack/enclave/planner_statistics"
 require "quaack/enclave/store"
 
-# DESIGN.md 3c against the harness's sample schema (spec/support/postgres),
+# DESIGN.md's statistics against the harness's sample schema (spec/support/postgres),
 # public.customers and public.orders, with more indexes and an extended
 # statistics object added and then ANALYZE run:
 #
@@ -94,7 +94,7 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(orders["relpages"]).to be_a(Integer).and be_positive
     end
 
-    # For 3f's heuristic: the string types, a domain over one, and citext.
+    # For classify's heuristic: the string types, a domain over one, and citext.
     # An array of text isn't text itself.
     it "lists the text-like columns, in attnum order" do
       conn.exec(<<~SQL)
@@ -108,7 +108,7 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
     end
 
-    # For 3h's clock literals: the date and timestamp columns, by their
+    # For clock-anchor's clock literals: the date and timestamp columns, by their
     # type, a domain's by its base type.
     it "maps the date and timestamp columns to their types" do
       conn.exec(<<~SQL)

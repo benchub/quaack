@@ -4,7 +4,7 @@ require "pg"
 
 module Quaack
   module Enclave
-    # DESIGN.md 12b: run discipline for measurement statements.
+    # DESIGN.md's run-discipline: run discipline for measurement statements.
     #
     #   RunDiscipline.timeout_ms(baseline_ms)            # Integer
     #   RunDiscipline.run(connection:, sql:, timeout_ms:) # Run

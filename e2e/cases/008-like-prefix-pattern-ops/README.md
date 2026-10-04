@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** LIKE with a trailing wildcard (3g shape); operator class text_pattern_ops (5a-5); dedupe must count the operator class as part of the key (5a-3).
+**Exercises:** LIKE with a trailing wildcard (redact shape); operator class text_pattern_ops (llm-index-ideas); dedupe must count the operator class as part of the key (index-dedupe).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ SKU search by prefix. Under a non-C collation, the ordinary index can't serve `L
 
 ## Expected result.
 
-`products (sku text_pattern_ops)`, from the LLM generator. 5a-3 must not drop it as a duplicate of `products_sku_idx`: same column, different operator class.
+`products (sku text_pattern_ops)`, from the LLM generator. index-dedupe must not drop it as a duplicate of `products_sku_idx`: same column, different operator class.
 
 ## Proof.
 

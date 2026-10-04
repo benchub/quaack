@@ -1,7 +1,7 @@
 -- Sample rows for schema.sql. Everything is computed from the row number,
 -- not random(), so every run gets the same rows. The tables are small enough
 -- that ANALYZE samples every row, so pg_stats comes out the same every run
--- too. It follows the shape of DESIGN.md's 5a-5 example, not its exact
+-- too. It follows the shape of DESIGN.md's llm-index-ideas example, not its exact
 -- numbers:
 --
 -- - customers.name looks like PII: first name, last name, then the row

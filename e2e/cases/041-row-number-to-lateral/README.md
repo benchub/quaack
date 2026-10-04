@@ -2,7 +2,7 @@
 
 **Category:** `none`, nothing beats the original (negative result).
 
-**Exercises:** window function with PARTITION BY; LATERAL top-N rewrite; existing index used by the rewrite; generator-one candidates already exist, so 5a-3 drops them.
+**Exercises:** window function with PARTITION BY; LATERAL top-N rewrite; existing index used by the rewrite; generator-one candidates already exist, so index-dedupe drops them.
 
 ## Setup.
 

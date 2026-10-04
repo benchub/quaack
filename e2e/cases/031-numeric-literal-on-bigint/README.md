@@ -14,7 +14,7 @@ A driver sends the id as a numeric. `bigint = numeric` casts the column, so the 
 
 ## Expected result.
 
-Cast the literal to `bigint` instead. Stated assumption: the parameter is always a whole number. The literal sets all are, since 3e takes them from `customer_id`'s own statistics.
+Cast the literal to `bigint` instead. Stated assumption: the parameter is always a whole number. The literal sets all are, since literals takes them from `customer_id`'s own statistics.
 
 ## Notes.
 

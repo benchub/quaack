@@ -21,12 +21,12 @@ RSpec.shared_examples "an LLM client" do
       additionalProperties: false }
   end
 
-  def ask(step = "5a-5", **)
+  def ask(step = "llm-index-ideas", **)
     client.ask(step: step, messages: messages, max_tokens: 1000, **)
   end
 
   # The LLM::Error an ask raises. Fails the spec if it raises nothing.
-  def ask_error(step = "5a-5", **)
+  def ask_error(step = "llm-index-ideas", **)
     ask(step, **)
     raise "expected an LLM::Error for step #{step}, but the ask succeeded"
   rescue Quaack::Driver::LLM::Error => e
@@ -48,7 +48,7 @@ RSpec.shared_examples "an LLM client" do
 
   describe "#ask" do
     it "returns the reply's text" do
-      fake.reply("5a-5", "CREATE INDEX ON orders (status)")
+      fake.reply("llm-index-ideas", "CREATE INDEX ON orders (status)")
 
       expect(ask).to eq("CREATE INDEX ON orders (status)")
     end
@@ -56,54 +56,58 @@ RSpec.shared_examples "an LLM client" do
 
   describe "the burndown" do
     it "counts one LLM call for each ask, under its step" do
-      fake.reply("5a-5", "a").reply("5a-5", "b").reply("10a", "c")
-      ask("5a-5")
-      ask("5a-5")
-      ask("10a")
+      fake.reply("llm-index-ideas", "a").reply("llm-index-ideas", "b").reply("llm-counterexamples", "c")
+      ask("llm-index-ideas")
+      ask("llm-index-ideas")
+      ask("llm-counterexamples")
 
-      expect(burndown.llm_calls).to eq("5a-5" => 2, "10a" => 1)
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 2, "llm-counterexamples" => 1)
     end
 
     it "counts every attempt, since a retry is an API call too" do
-      fake.error("6a", status: 529).error("6a", status: 429).reply("6a", "ok")
+      fake.error("llm-rewrites", status: 529).error("llm-rewrites", status: 429).reply("llm-rewrites", "ok")
 
-      expect(ask("6a")).to eq("ok")
-      expect(burndown.llm_calls).to eq("6a" => 3)
+      expect(ask("llm-rewrites")).to eq("ok")
+      expect(burndown.llm_calls).to eq("llm-rewrites" => 3)
       expect(fake.asks.size).to eq(3)
     end
 
     it "tells its progress when each ask starts, and each attempt after the first" do
       notes = []
       client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
-      fake.error("6a", status: 529).error("6a", status: 429).reply("6a", "ok").reply("5a-5", "ok")
-      ask("6a")
-      ask("5a-5")
+      fake.error("llm-rewrites", status: 529).error("llm-rewrites", status: 429).reply("llm-rewrites", "ok").reply(
+        "llm-index-ideas", "ok"
+      )
+      ask("llm-rewrites")
+      ask("llm-index-ideas")
 
-      expect(notes).to eq(["Asking the LLM (6a)", "Asking the LLM, attempt 2 (6a)", "Asking the LLM, attempt 3 (6a)",
-                           "Asking the LLM (5a-5)"])
+      expect(notes).to eq(["Asking the LLM (llm-rewrites)", "Asking the LLM, attempt 2 (llm-rewrites)",
+                           "Asking the LLM, attempt 3 (llm-rewrites)", "Asking the LLM (llm-index-ideas)"])
     end
 
     it "says what an ask is for when the caller does" do
       notes = []
       client.progress = Object.new.tap { |p| p.define_singleton_method(:note) { notes << it } }
-      fake.reply("5a-5", "ok")
-      ask("5a-5", purpose: "Asking the LLM again for replacements")
+      fake.reply("llm-index-ideas", "ok")
+      ask("llm-index-ideas", purpose: "Asking the LLM again for replacements")
 
-      expect(notes).to eq(["Asking the LLM again for replacements (5a-5)"])
+      expect(notes).to eq(["Asking the LLM again for replacements (llm-index-ideas)"])
     end
 
     it "counts attempts that end in an error" do
-      3.times { fake.error("step7", status: 529) }
+      3.times { fake.error("operator-rewrites", status: 529) }
 
-      expect { ask("step7") }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("step7" => 3)
+      expect { ask("operator-rewrites") }.to llm_error("llm_unavailable")
+      expect(burndown.llm_calls).to eq("operator-rewrites" => 3)
     end
 
     it "counts an attempt whose reply can't be used" do
-      fake.reply("6a", "not json")
+      fake.reply("llm-rewrites", "not json")
 
-      expect { ask("6a", json: true) }.to llm_error("llm_bad_response", "llm_bad_response: the reply wasn't valid JSON")
-      expect(burndown.llm_calls).to eq("6a" => 1)
+      expect do
+        ask("llm-rewrites", json: true)
+      end.to llm_error("llm_bad_response", "llm_bad_response: the reply wasn't valid JSON")
+      expect(burndown.llm_calls).to eq("llm-rewrites" => 1)
     end
   end
 
@@ -115,7 +119,7 @@ RSpec.shared_examples "an LLM client" do
     end
 
     it "refuses a step that doesn't call an LLM before making any call" do
-      ["5a-3", "step8", "6A", :"6a", nil].each do |step|
+      ["index-dedupe", "plan-pruning", "6A", :"llm-rewrites", nil].each do |step|
         expect { ask(step) }.to raise_error(ArgumentError, step_error)
       end
       expect(fake.asks).to eq([])
@@ -125,13 +129,13 @@ RSpec.shared_examples "an LLM client" do
 
   describe "JSON replies" do
     it "returns the parsed JSON that matches the schema" do
-      fake.reply("5a-5", { "ddl" => ["CREATE INDEX ON t (a)"] })
+      fake.reply("llm-index-ideas", { "ddl" => ["CREATE INDEX ON t (a)"] })
 
       expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
     end
 
     it "starts the system prompt with the caller's, then the JSON-only line, when there's a schema" do
-      fake.reply("5a-5", { "ddl" => [] })
+      fake.reply("llm-index-ideas", { "ddl" => [] })
       ask(system: "You propose indexes.", schema: schema)
 
       expect(fake.system_prompt(fake.asks.first))
@@ -139,47 +143,48 @@ RSpec.shared_examples "an LLM client" do
     end
 
     it "leaves the system prompt as it is without a schema" do
-      fake.reply("6a", [])
-      ask("6a", system: "You rewrite SQL.", json: true)
+      fake.reply("llm-rewrites", [])
+      ask("llm-rewrites", system: "You rewrite SQL.", json: true)
 
       expect(fake.system_prompt(fake.asks.first)).to eq("You rewrite SQL.")
     end
 
     it "reads the JSON object out of a code fence with prose around it" do
-      fake.reply("5a-5", "Here you go:\n\n```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```\n\nHope that helps.")
+      fake.reply("llm-index-ideas",
+                 "Here you go:\n\n```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```\n\nHope that helps.")
 
       expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
     end
 
     it "reads a bare JSON object followed by trailing prose" do
-      fake.reply("5a-5", "{\"ddl\": []}\nThese cover the filter.")
+      fake.reply("llm-index-ideas", "{\"ddl\": []}\nThese cover the filter.")
 
       expect(ask(schema: schema)).to eq("ddl" => [])
     end
 
     it "skips a stray example object in the prose and reads the one that matches the schema" do
-      fake.reply("5a-5", "Using {\"a\": 1} as shown, here are the indexes:\n\n" \
-                         "```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```")
+      fake.reply("llm-index-ideas", "Using {\"a\": 1} as shown, here are the indexes:\n\n" \
+                                    "```json\n{\"ddl\": [\"CREATE INDEX ON t (a)\"]}\n```")
 
       expect(ask(schema: schema)).to eq("ddl" => ["CREATE INDEX ON t (a)"])
     end
 
     it "skips an earlier object whose required key has the wrong type" do
-      fake.reply("5a-5", "For example {\"ddl\": \"one\"} is wrong. The answer: {\"ddl\": []}")
+      fake.reply("llm-index-ideas", "For example {\"ddl\": \"one\"} is wrong. The answer: {\"ddl\": []}")
 
       expect(ask(schema: schema)).to eq("ddl" => [])
     end
 
     it "parses the text as JSON when asked, without a schema" do
-      fake.reply("6a", [{ "sql" => "SELECT 1" }])
+      fake.reply("llm-rewrites", [{ "sql" => "SELECT 1" }])
 
-      expect(ask("6a", json: true)).to eq([{ "sql" => "SELECT 1" }])
+      expect(ask("llm-rewrites", json: true)).to eq([{ "sql" => "SELECT 1" }])
     end
 
     it "fails with llm_bad_response on a reply that isn't the JSON asked for, without quoting it" do
-      fake.reply("6a", "SENTINEL-REPLY {")
+      fake.reply("llm-rewrites", "SENTINEL-REPLY {")
 
-      e = ask_error("6a", json: true)
+      e = ask_error("llm-rewrites", json: true)
 
       expect(e.rule).to eq("llm_bad_response")
       expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply wasn't valid JSON")
@@ -190,7 +195,7 @@ RSpec.shared_examples "an LLM client" do
 
   describe "replies that can't be used" do
     it "fails with llm_bad_response on a reply cut short at the token limit" do
-      fake.cut_short("5a-5", "CREATE INDEX ON t (")
+      fake.cut_short("llm-index-ideas", "CREATE INDEX ON t (")
 
       e = ask_error
 
@@ -199,9 +204,9 @@ RSpec.shared_examples "an LLM client" do
     end
 
     it "fails with llm_bad_response on a reply body that isn't a JSON object, without quoting it" do
-      fake.raw("5a-5", JSON.generate(%w[SENTINEL-BODY])).raw("10a", "SENTINEL-BODY not json")
+      fake.raw("llm-index-ideas", JSON.generate(%w[SENTINEL-BODY])).raw("llm-counterexamples", "SENTINEL-BODY not json")
 
-      [ask_error("5a-5"), ask_error("10a")].each do |e|
+      [ask_error("llm-index-ideas"), ask_error("llm-counterexamples")].each do |e|
         expect(e.rule).to eq("llm_bad_response")
         expect(e.cause).to be_nil
         expect(e.message).not_to include("SENTINEL")
@@ -211,7 +216,7 @@ RSpec.shared_examples "an LLM client" do
 
   describe "API errors" do
     it "fails with llm_rate_limited once the gem's retries run out on 429s" do
-      3.times { fake.error("5a-5", status: 429) }
+      3.times { fake.error("llm-index-ideas", status: 429) }
 
       expect { ask }.to llm_error("llm_rate_limited")
       expect(fake.asks.size).to eq(3)
@@ -221,58 +226,58 @@ RSpec.shared_examples "an LLM client" do
     # second. One retry keeps the spec quick.
     it "fails with llm_unavailable once retries run out on dropped connections" do
       client = fake.client(burndown: burndown, max_retries: 1)
-      2.times { fake.drop("5a-5") }
+      2.times { fake.drop("llm-index-ideas") }
 
-      expect { client.ask(step: "5a-5", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("5a-5" => 2)
+      expect { client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
     end
 
     it "fails with llm_unavailable on a server error that persists" do
-      3.times { fake.error("5a-5", status: 500) }
+      3.times { fake.error("llm-index-ideas", status: 500) }
 
       expect { ask }.to llm_error("llm_unavailable")
     end
 
     it "fails with llm_auth on a bad key or a forbidden request, without retrying" do
-      fake.error("5a-5", status: 401).error("10a", status: 403)
+      fake.error("llm-index-ideas", status: 401).error("llm-counterexamples", status: 403)
 
-      expect { ask("5a-5") }.to llm_error("llm_auth")
-      expect { ask("10a") }.to llm_error("llm_auth")
-      expect(burndown.llm_calls).to eq("5a-5" => 1, "10a" => 1)
+      expect { ask("llm-index-ideas") }.to llm_error("llm_auth")
+      expect { ask("llm-counterexamples") }.to llm_error("llm_auth")
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 1, "llm-counterexamples" => 1)
     end
 
     # 408 is a timeout and 409 a lock, both passing, so the gem retries them
     # and what's left once it gives up is an API that isn't answering.
     it "fails with llm_unavailable once retries run out on 408s or 409s" do
-      3.times { fake.error("5a-5", status: 408).error("10a", status: 409) }
+      3.times { fake.error("llm-index-ideas", status: 408).error("llm-counterexamples", status: 409) }
 
-      expect { ask("5a-5") }.to llm_error("llm_unavailable")
-      expect { ask("10a") }.to llm_error("llm_unavailable")
-      expect(burndown.llm_calls).to eq("5a-5" => 3, "10a" => 3)
+      expect { ask("llm-index-ideas") }.to llm_error("llm_unavailable")
+      expect { ask("llm-counterexamples") }.to llm_error("llm_unavailable")
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 3, "llm-counterexamples" => 3)
     end
 
     it "fails with llm_bad_request on a request the API rejects, without retrying" do
-      fake.error("5a-5", status: 400).error("10a", status: 404)
+      fake.error("llm-index-ideas", status: 400).error("llm-counterexamples", status: 404)
 
-      expect { ask("5a-5") }.to llm_error("llm_bad_request")
-      expect { ask("10a") }.to llm_error("llm_bad_request")
+      expect { ask("llm-index-ideas") }.to llm_error("llm_bad_request")
+      expect { ask("llm-counterexamples") }.to llm_error("llm_bad_request")
       expect(fake.asks.size).to eq(2)
     end
 
     it "retries as many times as max_retries says" do
       client = fake.client(burndown: burndown, max_retries: 0)
-      fake.error("5a-5", status: 529)
+      fake.error("llm-index-ideas", status: 529)
 
-      expect { client.ask(step: "5a-5", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
+      expect { client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10) }.to llm_error("llm_unavailable")
       expect(fake.asks.size).to eq(1)
     end
 
     it "keeps the API key out of its error messages" do
       client = fake.client(burndown: burndown, api_key: "SENTINEL-KEY")
-      [401, 400, 429, 429, 429].each { fake.error("5a-5", status: it) }
+      [401, 400, 429, 429, 429].each { fake.error("llm-index-ideas", status: it) }
 
       seen = Array.new(3) do
-        client.ask(step: "5a-5", messages: messages, max_tokens: 10)
+        client.ask(step: "llm-index-ideas", messages: messages, max_tokens: 10)
       rescue Quaack::Driver::LLM::Error => e
         e.message
       end
@@ -284,8 +289,9 @@ RSpec.shared_examples "an LLM client" do
 
   describe "the settings" do
     it "take a model given over the settings'" do
-      fake.reply("5a-5", "ok")
-      fake.client(burndown: burndown, model: "other-model-1").ask(step: "5a-5", messages: messages, max_tokens: 10)
+      fake.reply("llm-index-ideas", "ok")
+      fake.client(burndown: burndown, model: "other-model-1").ask(step: "llm-index-ideas", messages: messages,
+                                                                  max_tokens: 10)
 
       expect(fake.model(fake.asks.first)).to eq("other-model-1")
     end

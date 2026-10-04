@@ -5,8 +5,8 @@
   "features": [
     "array subscript",
     "array slice",
-    "expression index on an array element (5a-5)",
-    "text[] column statistics (3f)"
+    "expression index on an array element (llm-index-ideas)",
+    "text[] column statistics (classify)"
   ],
   "literal_sets": [
     {

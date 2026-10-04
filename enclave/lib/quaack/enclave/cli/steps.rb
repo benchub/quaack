@@ -57,7 +57,7 @@ module Quaack
         "classify" => Step.new(handler: Steps::Classify, run: true),
         "redact" => Step.new(handler: Steps::Redact, run: true),
         "literals" => Step.new(handler: Steps::Literals, run: true),
-        "anchor" => Step.new(handler: Steps::Anchor, run: true),
+        "clock-anchor" => Step.new(handler: Steps::Anchor, run: true),
         "racetrack-setup" => Step.new(handler: Steps::RacetrackSetup, run: true),
         "arena-setup" => Step.new(handler: Steps::ArenaSetup, run: true),
         "index-search" => Step.new(handler: Steps::IndexSearch, run: true, options: Steps::IndexSearch::OPTIONS),

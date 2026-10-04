@@ -13,8 +13,8 @@ require_relative "index_search"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-test --run <run ID> [--search original]` (DESIGN.md 5a-5,
-      # then 5a-4): filters the LLM's index DDL through the search's stored
+      # `quaacks index-test --run <run ID> [--search original]` (DESIGN.md's llm-index-ideas,
+      # then index-test): filters the LLM's index DDL through the search's stored
       # Dedupe and tests the survivors on the racetrack. The driver calls it
       # once for the LLM's candidates and once more for its replacements.
       #
@@ -25,19 +25,19 @@ module Quaack
       # (index_test_no_index_search), before connecting.
       #
       # On one racetrack connection, GeneratorThree.filter checks each DDL
-      # (IndexDdlCheck, against the racetrack's catalog, with the step 1
+      # (IndexDdlCheck, against the racetrack's catalog, with the input
       # plan's settings) and runs it through the Dedupe, and
-      # SingleCandidateTest tests the accepted ones for each 3e literal set.
+      # SingleCandidateTest tests the accepted ones for each literals literal set.
       # Then it rewrites index_search_<search> with the Dedupe as it is now,
       # and with each tested candidate appended to "llm_results", in the
       # same form as "results" (see IndexSearch). "baseline" and "results",
       # the mechanical ones, stay as they were.
       #
       # Without a round, it also writes index_generated_<search>, so `quaacks
-      # status` shows 5a-5 ran; the driver calls it with no DDL when the LLM
+      # status` shows llm-index-ideas ran; the driver calls it with no DDL when the LLM
       # proposed none.
       #
-      # With --round refinement (DESIGN.md 5a-6), each tested candidate also
+      # With --round refinement (DESIGN.md's llm-index-refine), each tested candidate also
       # carries "round" => "refinement", and the entry gets "refined" =>
       # true, even if nothing survived. Any other round is refused with
       # index_test_unknown_round.

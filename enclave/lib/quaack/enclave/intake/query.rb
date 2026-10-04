@@ -21,7 +21,7 @@ module Quaack
       #    anything but SELECT, SELECT INTO, and locking clauses.
       # 5. query_has_parameters: it has a $n parameter, as a query copied
       #    from pg_stat_statements does. It can't be replayed without the
-      #    values, and 3g uses $n for its own placeholders.
+      #    values, and redact uses $n for its own placeholders.
       #
       # One leading byte order mark, which some editors write, is dropped
       # first, since pg_query can't parse it.

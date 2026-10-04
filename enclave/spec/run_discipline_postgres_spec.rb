@@ -2,7 +2,7 @@
 
 require "quaack/enclave/run_discipline"
 
-# DESIGN.md 12b: every measurement statement runs alone, in a READ ONLY
+# DESIGN.md's run-discipline: every measurement statement runs alone, in a READ ONLY
 # transaction, with statement_timeout at 3x the baseline, clamped to 5s..5min.
 RSpec.describe Quaack::Enclave::RunDiscipline do
   let(:conn) { racetrack_and_arena.racetrack.connection }

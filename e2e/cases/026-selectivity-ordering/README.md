@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** equality columns ranked by selectivity (5a-1); negative n_distinct converted to a count (5a-1); ORDER BY after the equality columns.
+**Exercises:** equality columns ranked by selectivity (index-from-query); negative n_distinct converted to a count (index-from-query); ORDER BY after the equality columns.
 
 ## Setup.
 

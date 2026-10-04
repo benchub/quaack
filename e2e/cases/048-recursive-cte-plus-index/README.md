@@ -20,7 +20,7 @@ One root's subtree. The CTE walks every tree in the forest, and the filter only 
 
 ## Notes.
 
-The "not a root" set proves both return nothing for a non-root id. It isn't a 3e set, so minimax doesn't judge it.
+The "not a root" set proves both return nothing for a non-root id. It isn't a literals set, so minimax doesn't judge it.
 
 ## Proof.
 

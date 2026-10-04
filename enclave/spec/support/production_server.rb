@@ -3,7 +3,7 @@
 require "pg"
 require "securerandom"
 
-# A stand-in for the production server step 2 reads (DESIGN.md, step 2): a
+# A stand-in for the production server inventory reads (DESIGN.md's inventory): a
 # database of its own on the test harness's Postgres, made from template0
 # with the builtin locale provider, so its pg_database locale fields differ
 # from the harness's own databases. Its name, its text search config, and

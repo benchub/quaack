@@ -7,7 +7,7 @@ require "quaack/driver/cli"
 require "quaack/driver/enclave_error"
 require "quaack/driver/runs"
 
-# `quaack setup --run <ID>`: DESIGN.md steps 2 to 4a over ssh to the run's
+# `quaack setup --run <ID>`: DESIGN.md setup over ssh to the run's
 # jump server. ssh is the edge, so the transport is a fake that records
 # each call.
 RSpec.describe "quaack setup" do
@@ -17,7 +17,8 @@ RSpec.describe "quaack setup" do
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
   let(:order) do
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor racetrack-setup]
+    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+       racetrack-setup]
   end
   let(:entries) { {} }
   let(:failing) { {} }
@@ -54,7 +55,7 @@ RSpec.describe "quaack setup" do
   def progress = stderr.string.lines.grep(%r{\Aquaack: \[\d+/\d+\] })
   def errors = stderr.string.lines.grep_v(%r{\Aquaack: \[\d+/\d+\] }).join
 
-  it "runs steps 2 to 4a in order on the run's jump host, then says the run is set up" do
+  it "runs setup in order on the run's jump host, then says the run is set up" do
     expect(cli.run(["setup", "--run", run_id])).to eq(0)
 
     expect(hosts).to eq(["jump-1"])
@@ -67,7 +68,7 @@ RSpec.describe "quaack setup" do
     cli.run(["setup", "--run", run_id])
 
     expect(progress.grep_v(/Done in/).map { it[%r{\[\d+/\d+\]}] }).to eq((1..11).map { "[#{it}/11]" })
-    expect(progress.first).to eq("quaack: [1/11] Reading production's version, settings, and extensions (2)\n")
+    expect(progress.first).to eq("quaack: [1/11] Reading production's version, settings, and extensions (inventory)\n")
     expect(progress.grep(/Done in/).size).to eq(11)
   end
 
@@ -93,7 +94,7 @@ RSpec.describe "quaack setup" do
 
     expect(subcommands).to eq(%w[version status] + order.drop(2))
     expect(progress.first).to eq("quaack: [1/11] Already done, skipping: " \
-                                 "Reading production's version, settings, and extensions (2)\n")
+                                 "Reading production's version, settings, and extensions (inventory)\n")
   end
 
   it "stops at a failing step, prints only its rule, and keeps the run" do
@@ -104,6 +105,16 @@ RSpec.describe "quaack setup" do
 
     expect(subcommands).to eq(%w[version status inventory run-server qualify])
     expect([stdout.string, errors]).to eq(["", "quaack setup failed: unknown_relation\n"])
+  end
+
+  it "says to start a new run when an older version of QUAACK started this one" do
+    failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version",
+                                                         exit_status: 64)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+
+    expect(errors).to eq("quaack setup failed: run_from_older_version: an older version of QUAACK started this run, " \
+                         "and this version can't resume it. Start a new run with quaack start.\n")
   end
 
   context "with another quaacks version on the jump server" do

@@ -14,7 +14,7 @@ A per-customer total, with the customer filter written in `HAVING`.
 
 ## Expected result.
 
-Moving the filter to `WHERE` is correct, but Postgres already does it: a `HAVING` clause with no aggregate is pushed down to `WHERE`. So this rewrite isn't more than 5% better, and QUAACK should report a negative result for it (15a). `indexes.sql` tries `orders (customer_id, total_cents)`, which reads no fewer blocks than the existing covering index.
+Moving the filter to `WHERE` is correct, but Postgres already does it: a `HAVING` clause with no aggregate is pushed down to `WHERE`. So this rewrite isn't more than 5% better, and QUAACK should report a negative result for it (negative-result). `indexes.sql` tries `orders (customer_id, total_cents)`, which reads no fewer blocks than the existing covering index.
 
 ## Proof.
 

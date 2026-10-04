@@ -11,7 +11,7 @@ module Quaack
       #   describe("original:top:1")  # => "Your query with a new index on public.t (a, b)"
       #   describe("rewrite_2:none")  # => "Rewrite 2 with no new indexes"
       #
-      # It also says, for each label 14d left out of the ranking, what it
+      # It also says, for each label selection left out of the ranking, what it
       # read against the original and why that wasn't enough.
       module Candidates
         DDL = /\ACREATE INDEX ON (\S+) USING (\w+) (.*)\z/m
@@ -52,14 +52,14 @@ module Quaack
 
         def list(items) = items.size < 3 ? items.join(" and ") : "#{items[0..-2].join(", ")}, and #{items.last}"
 
-        # One sentence for each measured label that isn't ranked: 14d's
+        # One sentence for each measured label that isn't ranked: selection's
         # excluded ones, then the ones whose measurement timed out.
         def unranked
           excluded.map { |label, reason| "#{describe(label)} #{lost(label, reason)}" } +
             timed_out_labels.map { "#{describe(it)} timed out while QUAACK measured it." }
         end
 
-        # The labels that timed out, which 14d neither ranks nor excludes.
+        # The labels that timed out, which selection neither ranks nor excludes.
         def timed_out_labels = labels.select { it["timed_out"] }.map { it["label"] } - excluded.keys - ranked_labels
 
         def ranked_labels = top.map { it["label"] }

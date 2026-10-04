@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** UNION collapses duplicate rows; select list with no unique key; duplicates fixture (step 9, S3).
+**Exercises:** UNION collapses duplicate rows; select list with no unique key; duplicates fixture (rewrite-test, S3).
 
 ## Setup.
 

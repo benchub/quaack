@@ -2,7 +2,7 @@
 
 require "quaack/enclave/result_comparator"
 
-# Step 9d's comparator over two results built by hand. See
+# fixture-compare's comparator over two results built by hand. See
 # result_comparison_postgres_spec.rb for the rules run against Postgres.
 RSpec.describe Quaack::Enclave::ResultComparator do
   # Type OIDs.

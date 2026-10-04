@@ -8,7 +8,7 @@ require_relative "intake/plan"
 
 module Quaack
   module Enclave
-    # The checks on step 1's three operator inputs (DESIGN.md, step 1), which
+    # The checks on input's three operator inputs (DESIGN.md's input), which
     # `quaacks intake` runs (see Steps::Intake). Each returns what the run
     # stores, or raises Intake::Error with the rule the input broke:
     #

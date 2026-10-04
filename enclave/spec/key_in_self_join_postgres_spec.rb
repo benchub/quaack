@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's key_in_self_join, on a real server: what it writes, that
+# DESIGN.md's rewrite-rules' key_in_self_join, on a real server: what it writes, that
 # its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves the
 # key unique and not null and the shape is one it can relocate.
@@ -71,7 +71,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       expect(same_rows(fires, rewrites)).to eq([["1"], ["4"]])
     end
 
-    it "states the key unique and not null, in 6b's vocabulary" do
+    it "states the key unique and not null, in assumption-check's vocabulary" do
       expect(rule.rewrites(PgQuery.parse(fires), catalog).map(&:assumptions)).to eq(
         [[{ "kind" => "unique", "table" => "public.t", "columns" => ["id"] },
           { "kind" => "not_null", "table" => "public.t", "column" => "id" }]]
@@ -412,7 +412,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::KeyInSelfJoin do
       SQL
     end
 
-    # As step 1 qualifies it.
+    # As input qualifies it.
     def qualified(sql) = Quaack::Enclave::RelationQualifier.qualify(sql, nil, conn).sql
 
     it "moves each arm's assignment predicates out and leaves an EXISTS on the first arm's other tables" do

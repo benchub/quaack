@@ -117,10 +117,10 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     end
   end
 
-  # The racetrack runs 3h's anchored query, so its plan prints
+  # The racetrack runs clock-anchor's anchored query, so its plan prints
   # quaack.clock_anchor() where production's printed now() and the like.
   # These are the texts Postgres 18 prints, plain and VERBOSE.
-  describe "clock functions and 3h's anchor" do
+  describe "clock functions and clock-anchor's anchor" do
     {
       "(created_at > now())" => "(created_at > quaack.clock_anchor())",
       "(orders.created_at > transaction_timestamp())" => "(orders.created_at > quaack.clock_anchor())",

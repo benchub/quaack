@@ -5,7 +5,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/predicate_atoms"
 require "quaack/enclave/scenarios"
 
-# Step 9: scenarios S0 through S6, built from the value pools. Each one must
+# rewrite-test: scenarios S0 through S6, built from the value pools. Each one must
 # load into arena as is, so every row satisfies every constraint.
 RSpec.describe Quaack::Enclave::Scenarios do
   let(:conn) { racetrack_and_arena.arena.connection }

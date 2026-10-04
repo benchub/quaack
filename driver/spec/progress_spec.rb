@@ -15,10 +15,11 @@ RSpec.describe Quaack::Driver::Progress do
 
   it "prints a numbered start line and a done line with the step's time" do
     times.replace([0.0, 42.4])
-    result = progress.step("5a-5", "Asking the LLM for index ideas") { :value }
+    result = progress.step("llm-index-ideas", "Asking the LLM for index ideas") { :value }
 
     expect(result).to eq(:value)
-    expect(io.string).to eq("quaack: [1/3] Asking the LLM for index ideas (5a-5)\nquaack: [1/3] Done in 42s (5a-5)\n")
+    expect(io.string).to eq("quaack: [1/3] Asking the LLM for index ideas (llm-index-ideas)\n" \
+                            "quaack: [1/3] Done in 42s (llm-index-ideas)\n")
   end
 
   describe "a step's summary" do
@@ -35,21 +36,21 @@ RSpec.describe Quaack::Driver::Progress do
 
     it "closes with Done when the summary gives none" do
       times.replace([0.0, 2.0])
-      progress.step("5a-7", "Ranking", summary: ->(_) {}) { :ranked }
+      progress.step("index-rank", "Ranking", summary: ->(_) {}) { :ranked }
 
-      expect(io.string.lines.last).to eq("quaack: [1/3] Done in 2s (5a-7)\n")
+      expect(io.string.lines.last).to eq("quaack: [1/3] Done in 2s (index-rank)\n")
     end
 
     it "closes a failed step with its failed line, without a summary" do
       times.replace([0.0, 3.0])
-      expect { progress.step("6a", "Asking", summary:) { raise "boom" } }.to raise_error("boom")
+      expect { progress.step("llm-rewrites", "Asking", summary:) { raise "boom" } }.to raise_error("boom")
 
-      expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (6a)\n")
+      expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (llm-rewrites)\n")
     end
 
     it "is taken, and ignored, by sub-steps and NULL, which print no closing line" do
       p = progress
-      p.step("step 8", "Searching") do
+      p.step("plan-pruning", "Searching") do
         expect(p.within("Rewrite 1").step("index-search", "Searching", summary:) { :ran }).to eq(:ran)
       end
       expect(described_class::NULL.step("a", "b", summary:) { 7 }).to eq(7)
@@ -62,17 +63,17 @@ RSpec.describe Quaack::Driver::Progress do
   it "numbers each step and skip in turn, and prints a skip line that says what's skipped" do
     p = progress
     p.skip("index-search", "Searching for indexes")
-    p.step("5a-5", "Asking the LLM for index ideas") { nil }
+    p.step("llm-index-ideas", "Asking the LLM for index ideas") { nil }
 
     expect(io.string.lines.first).to eq("quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n")
-    expect(io.string.lines[1]).to eq("quaack: [2/3] Asking the LLM for index ideas (5a-5)\n")
+    expect(io.string.lines[1]).to eq("quaack: [2/3] Asking the LLM for index ideas (llm-index-ideas)\n")
   end
 
   it "prints notes under the current step" do
     p = progress
-    p.step("6a", "Asking the LLM for rewrites") { p.note("Asking the LLM (6a)") }
+    p.step("llm-rewrites", "Asking the LLM for rewrites") { p.note("Asking the LLM (llm-rewrites)") }
 
-    expect(io.string.lines[1]).to eq("quaack: [1/3] Asking the LLM (6a)\n")
+    expect(io.string.lines[1]).to eq("quaack: [1/3] Asking the LLM (llm-rewrites)\n")
   end
 
   it "prints minutes and hours in times" do
@@ -88,8 +89,8 @@ RSpec.describe Quaack::Driver::Progress do
 
   it "prints a failed line with the time, and re-raises, when the step raises" do
     times.replace([0.0, 3.0])
-    expect { progress.step("6a", "Asking the LLM for rewrites") { raise "boom" } }.to raise_error("boom")
-    expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (6a)\n")
+    expect { progress.step("llm-rewrites", "Asking the LLM for rewrites") { raise "boom" } }.to raise_error("boom")
+    expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (llm-rewrites)\n")
   end
 
   describe "the live clock" do
@@ -106,40 +107,40 @@ RSpec.describe Quaack::Driver::Progress do
 
     it "counts up in place on the latest line, which keeps its final reading under a new line" do
       before = Thread.list.size
-      live.step("6a", "Asking the LLM for rewrites of the query") do
-        live.note("Asking the LLM (6a)")
+      live.step("llm-rewrites", "Asking the LLM for rewrites of the query") do
+        live.note("Asking the LLM (llm-rewrites)")
         now[0] = 1.2
-        wait_for(terminal, "(6a) 1s\e[K")
+        wait_for(terminal, "(llm-rewrites) 1s\e[K")
         sleep(0.05) # many redraws' time, at the same reading
         now[0] = 61.0
-        wait_for(terminal, "(6a) 1m01s\e[K")
+        wait_for(terminal, "(llm-rewrites) 1m01s\e[K")
         now[0] = 65.0
-        live.note("Asking the LLM, attempt 2 (6a)")
+        live.note("Asking the LLM, attempt 2 (llm-rewrites)")
         now[0] = 70.0
       end
 
       expect(terminal.string).to eq(
-        "quaack: [1/3] Asking the LLM for rewrites of the query (6a)\n" \
-        "quaack: [1/3] Asking the LLM (6a)" \
-        "\rquaack: [1/3] Asking the LLM (6a) 1s\e[K" \
-        "\rquaack: [1/3] Asking the LLM (6a) 1m01s\e[K" \
-        "\rquaack: [1/3] Asking the LLM (6a) 1m05s\e[K\n" \
-        "quaack: [1/3] Asking the LLM, attempt 2 (6a)" \
-        "\rquaack: [1/3] Asking the LLM, attempt 2 (6a) 1m10s\e[K\n" \
-        "quaack: [1/3] Done in 1m10s (6a)\n"
+        "quaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites)\n" \
+        "quaack: [1/3] Asking the LLM (llm-rewrites)" \
+        "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1s\e[K" \
+        "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1m01s\e[K" \
+        "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1m05s\e[K\n" \
+        "quaack: [1/3] Asking the LLM, attempt 2 (llm-rewrites)" \
+        "\rquaack: [1/3] Asking the LLM, attempt 2 (llm-rewrites) 1m10s\e[K\n" \
+        "quaack: [1/3] Done in 1m10s (llm-rewrites)\n"
       )
       expect(Thread.list.size).to eq(before)
     end
 
     it "puts no clock on a line that ends within the step's first second, and ends whole lines between steps" do
       live.skip("index-search", "Searching for indexes")
-      live.step("5a-5", "Asking the LLM for index ideas") { now[0] = 0.4 }
+      live.step("llm-index-ideas", "Asking the LLM for index ideas") { now[0] = 0.4 }
       live.note("Between steps")
 
       expect(terminal.string).to eq(
         "quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n" \
-        "quaack: [2/3] Asking the LLM for index ideas (5a-5)\n" \
-        "quaack: [2/3] Done in 0s (5a-5)\n" \
+        "quaack: [2/3] Asking the LLM for index ideas (llm-index-ideas)\n" \
+        "quaack: [2/3] Done in 0s (llm-index-ideas)\n" \
         "quaack: [2/3] Between steps\n"
       )
     end
@@ -147,9 +148,9 @@ RSpec.describe Quaack::Driver::Progress do
     it "stops redrawing when a step fails, so nothing lands after its failed line" do
       before = Thread.list.size
       expect do
-        live.step("6a", "Asking") do
+        live.step("llm-rewrites", "Asking") do
           now[0] = 2.0
-          wait_for(terminal, "(6a) 2s\e[K")
+          wait_for(terminal, "(llm-rewrites) 2s\e[K")
           now[0] = 3.0
           raise "boom"
         end
@@ -159,18 +160,19 @@ RSpec.describe Quaack::Driver::Progress do
       sleep(0.05)
 
       expect(terminal.string).to eq(ended)
-      expect(ended).to end_with("Asking (6a) 3s\e[K\nquaack: [1/3] Failed after 3s (6a)\n")
+      expect(ended).to end_with("Asking (llm-rewrites) 3s\e[K\nquaack: [1/3] Failed after 3s (llm-rewrites)\n")
       expect(Thread.list.size).to eq(before)
     end
 
     it "stops redrawing when a step is interrupted, too" do
       before = Thread.list.size
-      expect { live.step("6a", "Asking") { raise Interrupt } }.to raise_error(Interrupt)
+      expect { live.step("llm-rewrites", "Asking") { raise Interrupt } }.to raise_error(Interrupt)
       ended = terminal.string.dup
       now[0] = 9.0
       sleep(0.05)
 
-      expect(terminal.string).to eq("quaack: [1/3] Asking (6a)\nquaack: [1/3] Failed after 0s (6a)\n")
+      expect(terminal.string)
+        .to eq("quaack: [1/3] Asking (llm-rewrites)\nquaack: [1/3] Failed after 0s (llm-rewrites)\n")
       expect(terminal.string).to eq(ended)
       expect(Thread.list.size).to eq(before)
     end
@@ -190,7 +192,7 @@ RSpec.describe Quaack::Driver::Progress do
 
       it "cuts the open line to fit, clock and all, and prints it whole when it ends" do
         narrow.columns = 40
-        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") do
+        fitted.step("llm-index-ideas", "Asking the LLM for index ideas the mechanical search missed") do
           now[0] = 70.0
           wait_for(narrow, " 1m10s\e[K")
         end
@@ -198,14 +200,14 @@ RSpec.describe Quaack::Driver::Progress do
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM for index…" \
           "\rquaack: [1/3] Asking the LLM for… 1m10s\e[K" \
-          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 1m10s\e[K\n" \
-          "quaack: [1/3] Done in 1m10s (5a-5)\n"
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 1m10s\e[K\n" \
+          "quaack: [1/3] Done in 1m10s (llm-index-ideas)\n"
         )
       end
 
       it "cuts a line only once its clock won't fit, and reads the width at each redraw" do
-        narrow.columns = 36
-        fitted.step("6a", "Asking the LLM") do
+        narrow.columns = 46
+        fitted.step("llm-rewrites", "Asking the LLM") do
           now[0] = 1.2
           wait_for(narrow, " 1s\e[K")
           narrow.columns = 80
@@ -214,44 +216,47 @@ RSpec.describe Quaack::Driver::Progress do
         end
 
         expect(narrow.string).to eq(
-          "quaack: [1/3] Asking the LLM (6a)" \
-          "\rquaack: [1/3] Asking the LLM (6… 1s\e[K" \
-          "\rquaack: [1/3] Asking the LLM (6a) 1m01s\e[K\n" \
-          "quaack: [1/3] Done in 1m01s (6a)\n"
+          "quaack: [1/3] Asking the LLM (llm-rewrites)" \
+          "\rquaack: [1/3] Asking the LLM (llm-rewrite… 1s\e[K" \
+          "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1m01s\e[K\n" \
+          "quaack: [1/3] Done in 1m01s (llm-rewrites)\n"
         )
       end
 
       it "prints a cut line whole when it ends, even once the terminal is wide enough for it" do
         narrow.columns = 40
-        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { narrow.columns = 200 }
+        fitted.step("llm-index-ideas", "Asking the LLM for index ideas the mechanical search missed") do
+          narrow.columns = 200
+        end
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM for index…" \
-          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)\e[K\n" \
-          "quaack: [1/3] Done in 0s (5a-5)\n"
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)\e[K\n" \
+          "quaack: [1/3] Done in 0s (llm-index-ideas)\n"
         )
       end
 
       it "prints a line whole when it ends, if its final reading won't fit beside it" do
-        narrow.columns = 36
+        narrow.columns = 46
         slow = described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 60)
-        slow.step("6a", "Asking the LLM") { now[0] = 1.2 }
+        slow.step("llm-rewrites", "Asking the LLM") { now[0] = 1.2 }
 
         expect(narrow.string).to eq(
-          "quaack: [1/3] Asking the LLM (6a)" \
-          "\rquaack: [1/3] Asking the LLM (6a) 1s\e[K\n" \
-          "quaack: [1/3] Done in 1s (6a)\n"
+          "quaack: [1/3] Asking the LLM (llm-rewrites)" \
+          "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1s\e[K\n" \
+          "quaack: [1/3] Done in 1s (llm-rewrites)\n"
         )
       end
 
       it "keeps within a terminal too narrow for the clock" do
         narrow.columns = 5
-        fitted.step("6a", "Asking") do
+        fitted.step("llm-rewrites", "Asking") do
           now[0] = 2.0
           wait_for(narrow, "\r")
         end
 
-        expect(narrow.string).to eq("qua…\rqua…\e[K\rquaack: [1/3] Asking (6a) 2s\e[K\nquaack: [1/3] Done in 2s (6a)\n")
+        expect(narrow.string).to eq("qua…\rqua…\e[K\rquaack: [1/3] Asking (llm-rewrites) 2s\e[K\n" \
+                                    "quaack: [1/3] Done in 2s (llm-rewrites)\n")
       end
 
       it "doesn't cut when the terminal can't say its width" do
@@ -268,12 +273,15 @@ RSpec.describe Quaack::Driver::Progress do
         [unsized, zero].each do |out|
           now[0] = 0.0
           described_class.new(io: out, total: 3, clock: -> { now.first }, interval: 0.005)
-                         .step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { now[0] = 2.0 }
+                         .step("llm-index-ideas", "Asking the LLM for index ideas the mechanical search missed") do
+            now[0] =
+              2.0
+          end
 
           expect(out.string).to eq(
-            "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)" \
-            "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 2s\e[K\n" \
-            "quaack: [1/3] Done in 2s (5a-5)\n"
+            "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)" \
+            "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 2s\e[K\n" \
+            "quaack: [1/3] Done in 2s (llm-index-ideas)\n"
           )
         end
       end
@@ -291,7 +299,7 @@ RSpec.describe Quaack::Driver::Progress do
       # A clock a second later at every read, so every redraw is new.
       ticks = [0.0]
       p = described_class.new(io: slow, total: 3, clock: -> { ticks[0] += 1 }, interval: 0.0005)
-      p.step("6a", "Asking") do
+      p.step("llm-rewrites", "Asking") do
         50.times { |n| p.note("Note #{n}") }
       end
 
@@ -307,23 +315,23 @@ RSpec.describe Quaack::Driver::Progress do
     now = [0.0]
     threads = []
     p = described_class.new(io:, total: 3, clock: -> { now.first }, interval: 0.005)
-    p.step("6a", "Asking the LLM for rewrites of the query") do
-      p.note("Asking the LLM (6a)")
+    p.step("llm-rewrites", "Asking the LLM for rewrites of the query") do
+      p.note("Asking the LLM (llm-rewrites)")
       threads << Thread.list.size
       now[0] = 70.0
       sleep(0.05)
     end
 
     expect(threads).to eq([Thread.list.size])
-    expect(io.string).to eq("quaack: [1/3] Asking the LLM for rewrites of the query (6a)\n" \
-                            "quaack: [1/3] Asking the LLM (6a)\n" \
-                            "quaack: [1/3] Done in 1m10s (6a)\n")
+    expect(io.string).to eq("quaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites)\n" \
+                            "quaack: [1/3] Asking the LLM (llm-rewrites)\n" \
+                            "quaack: [1/3] Done in 1m10s (llm-rewrites)\n")
   end
 
   describe "#within" do
     it "prints sub-steps and their skips as notes under the step, without numbering them" do
       p = progress
-      p.step("step 8", "Searching for indexes for each rewrite") do
+      p.step("plan-pruning", "Searching for indexes for each rewrite") do
         sub = p.within("Rewrite 1")
         expect(sub.step("index-search", "Searching for indexes") { :ran }).to eq(:ran)
         sub.skip("index-rank", "Ranking the index ideas")

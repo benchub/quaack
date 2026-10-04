@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "DISTINCT removed on a false uniqueness claim",
-    "unmet uniqueness assumption (6b)",
-    "duplicates fixture (step 9, S3)"
+    "unmet uniqueness assumption (assumption-check)",
+    "duplicates fixture (rewrite-test, S3)"
   ],
   "literal_sets": [
     {

@@ -2,7 +2,7 @@
 
 module Quaack
   module Enclave
-    # DESIGN.md 14a and 14b: the metric and the minimax rule, as pure logic.
+    # DESIGN.md's blocks-metric and minimax: the metric and the minimax rule, as pure logic.
     #
     #   Minimax.decide(original: { set => measurement },
     #                  candidates: [{ "label", "sets" => { set => measurement }, "footprint" }])

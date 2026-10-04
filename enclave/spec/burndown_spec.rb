@@ -23,7 +23,9 @@ RSpec.describe Quaack::Enclave::Burndown do
 
   def reopened = Quaack::Enclave::Store.open(store.run_id, base: @base)
 
-  def record(stage = "5a-3", search = :original, **counts) = described_class.record(store, stage, search, **counts)
+  def record(stage = "index-dedupe", search = :original, **counts)
+    described_class.record(store, stage, search, **counts)
+  end
 
   def expect_refused(pattern = nil, &)
     expect(&).to raise_error(described_class::Error) do |error|
@@ -57,7 +59,7 @@ RSpec.describe Quaack::Enclave::Burndown do
 
       expect(JSON.parse(File.read(stored_file))).to eq(
         "stages" => {
-          "5a-3" => {
+          "index-dedupe" => {
             "original" => { "in" => 10, "added" => {}, "dropped" => { "duplicate" => 2, "covered_by_existing" => 1 },
                             "set_aside" => 1, "out" => 6, "extra" => { "gist_candidates" => 1 } }
           }
@@ -67,34 +69,35 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
 
     it "keeps each stage and each search apart" do
-      record("5a-1", :original, in: 0, added: { generator_one: 4 }, out: 4)
-      record("5a-3", :original, in: 4, out: 4)
-      record("5a-3", :rewrite2, in: 3, dropped: { duplicate: 1 }, out: 2)
+      record("index-from-query", :original, in: 0, added: { generator_one: 4 }, out: 4)
+      record("index-dedupe", :original, in: 4, out: 4)
+      record("index-dedupe", :rewrite2, in: 3, dropped: { duplicate: 1 }, out: 2)
 
       stages = described_class.read(store)["stages"]
-      expect(stages.keys).to eq(%w[5a-1 5a-3])
-      expect(stages["5a-3"].keys).to eq(%w[original rewrite2])
-      expect(stages.dig("5a-1", "original", "added")).to eq("generator_one" => 4)
-      expect(stages.dig("5a-3", "rewrite2", "out")).to eq(2)
+      expect(stages.keys).to eq(%w[index-from-query index-dedupe])
+      expect(stages["index-dedupe"].keys).to eq(%w[original rewrite2])
+      expect(stages.dig("index-from-query", "original", "added")).to eq("generator_one" => 4)
+      expect(stages.dig("index-dedupe", "rewrite2", "out")).to eq(2)
     end
 
     describe ".record_all" do
       it "stores several stages' records in one write, as record stores each" do
-        described_class.record_all(store, [["6c", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
-                                           ["step8", :rewrites, { in: 2, dropped: { failed_to_plan: 1 }, out: 1 }]])
+        described_class.record_all(store, [["rewrite-rules", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
+                                           ["plan-pruning", :rewrites,
+                                            { in: 2, dropped: { failed_to_plan: 1 }, out: 1 }]])
 
         expect(described_class.read(reopened)["stages"]).to eq(
-          "6c" => { "rewrites" => { "in" => 0, "added" => { "some_rule" => 2 }, "dropped" => {}, "set_aside" => 0,
-                                    "out" => 2, "extra" => {} } },
-          "step8" => { "rewrites" => { "in" => 2, "added" => {}, "dropped" => { "failed_to_plan" => 1 },
-                                       "set_aside" => 0, "out" => 1, "extra" => {} } }
+          "rewrite-rules" => { "rewrites" => { "in" => 0, "added" => { "some_rule" => 2 }, "dropped" => {},
+                                               "set_aside" => 0, "out" => 2, "extra" => {} } },
+          "plan-pruning" => { "rewrites" => { "in" => 2, "added" => {}, "dropped" => { "failed_to_plan" => 1 },
+                                              "set_aside" => 0, "out" => 1, "extra" => {} } }
         )
       end
 
       it "stores none of them when one is refused" do
-        expect_refused(/a step8 record's in/) do
-          described_class.record_all(store, [["6c", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
-                                             ["step8", :rewrites, { in: 2, out: 1 }]])
+        expect_refused(/the plan-pruning record's in/) do
+          described_class.record_all(store, [["rewrite-rules", :rewrites, { in: 0, added: { some_rule: 2 }, out: 2 }],
+                                             ["plan-pruning", :rewrites, { in: 2, out: 1 }]])
         end
         expect(store.entry?("burndown")).to be(false)
       end
@@ -103,18 +106,18 @@ RSpec.describe Quaack::Enclave::Burndown do
     describe "across calls to the enclave script" do
       it "adds each call's counts to what earlier calls stored, never losing one" do
         record(in: 5, added: { generator_one: 1 }, dropped: { duplicate: 2 }, out: 4, extra: { retries: 1 })
-        described_class.record(reopened, "5a-3", :original, in: 3, added: { generator_two: 2 },
-                                                            dropped: { duplicate: 1, covered_by_existing: 1 },
-                                                            set_aside: 1, out: 2, extra: { masks: 3 })
-        described_class.record(reopened, "5a-4", :original, in: 6, dropped: { never_used: 2 }, out: 4)
+        described_class.record(reopened, "index-dedupe", :original, in: 3, added: { generator_two: 2 },
+                                                                    dropped: { duplicate: 1, covered_by_existing: 1 },
+                                                                    set_aside: 1, out: 2, extra: { masks: 3 })
+        described_class.record(reopened, "index-test", :original, in: 6, dropped: { never_used: 2 }, out: 4)
 
         expect(described_class.read(reopened)["stages"]).to eq(
-          "5a-3" => {
+          "index-dedupe" => {
             "original" => { "in" => 8, "added" => { "generator_one" => 1, "generator_two" => 2 },
                             "dropped" => { "duplicate" => 3, "covered_by_existing" => 1 }, "set_aside" => 1,
                             "out" => 6, "extra" => { "retries" => 1, "masks" => 3 } }
           },
-          "5a-4" => {
+          "index-test" => {
             "original" => { "in" => 6, "added" => {}, "dropped" => { "never_used" => 2 }, "set_aside" => 0,
                             "out" => 4, "extra" => {} }
           }
@@ -132,17 +135,17 @@ RSpec.describe Quaack::Enclave::Burndown do
       it "keeps the stages when it adds totals, and the totals when it records a stage" do
         record(in: 1, out: 1)
         described_class.add_totals(reopened, measurement_runs: 2)
-        described_class.record(reopened, "5a-4", :original, in: 1, out: 1)
+        described_class.record(reopened, "index-test", :original, in: 1, out: 1)
 
         burndown = described_class.read(reopened)
-        expect(burndown["stages"].keys).to eq(%w[5a-3 5a-4])
+        expect(burndown["stages"].keys).to eq(%w[index-dedupe index-test])
         expect(burndown["totals"]).to eq("measurement_runs" => 2)
       end
     end
 
     describe "the consistency check" do
       it "refuses a record where in plus added, less dropped and set aside, isn't out, storing nothing" do
-        expect_refused(/5a-3.*in \+ added - dropped - set_aside must equal out/) do
+        expect_refused(/index-dedupe.*in \+ added - dropped - set_aside must equal out/) do
           record(in: 10, added: { generator_one: 2 }, dropped: { duplicate: 3 }, set_aside: 1, out: 9)
         end
         expect(store.entry?("burndown")).to be(false)
@@ -159,34 +162,35 @@ RSpec.describe Quaack::Enclave::Burndown do
       it "leaves extra out of the sum" do
         record(in: 2, out: 2, extra: { untested_atoms: 5 })
 
-        expect(described_class.read(store).dig("stages", "5a-3", "original", "extra")).to eq("untested_atoms" => 5)
+        expect(described_class.read(store).dig("stages", "index-dedupe", "original",
+                                               "extra")).to eq("untested_atoms" => 5)
       end
 
       it "leaves an earlier record alone when a later one is refused" do
         record(in: 2, out: 2)
         expect_refused { record(in: 2, out: 1) }
 
-        expect(described_class.read(reopened).dig("stages", "5a-3", "original", "in")).to eq(2)
+        expect(described_class.read(reopened).dig("stages", "index-dedupe", "original", "in")).to eq(2)
       end
     end
 
     describe "type checks" do
-      it "refuses a stage that isn't one of the DESIGN.md 15b stages, without quoting it" do
+      it "refuses a stage that isn't one of the DESIGN.md's burndown stages, without quoting it" do
         expect_refused(/stage/) { record(BURNDOWN_SENTINEL, in: 0, out: 0) }
-        expect_refused(/stage/) { record(:"5a-3", in: 0, out: 0) }
-        expect_refused(/stage/) { record("5a-3\n", in: 0, out: 0) }
+        expect_refused(/stage/) { record(:"index-dedupe", in: 0, out: 0) }
+        expect_refused(/stage/) { record("index-dedupe\n", in: 0, out: 0) }
       end
 
       it "stores a stage given as a String subclass as the protocol's own String" do
-        record(Class.new(String).new("5a-3"), in: 1, out: 1)
+        record(Class.new(String).new("index-dedupe"), in: 1, out: 1)
 
-        expect(described_class.read(store)["stages"].keys).to eq(["5a-3"])
+        expect(described_class.read(store)["stages"].keys).to eq(["index-dedupe"])
       end
 
       it "refuses a search that isn't a Symbol naming a lowercase word, without quoting it" do
-        expect_refused(/search/) { record("5a-3", "original", in: 0, out: 0) }
-        expect_refused(/search/) { record("5a-3", :"#{BURNDOWN_SENTINEL}@x.com", in: 0, out: 0) }
-        expect_refused(/search/) { record("5a-3", :"SENTINEL-5f2b", in: 0, out: 0) }
+        expect_refused(/search/) { record("index-dedupe", "original", in: 0, out: 0) }
+        expect_refused(/search/) { record("index-dedupe", :"#{BURNDOWN_SENTINEL}@x.com", in: 0, out: 0) }
+        expect_refused(/search/) { record("index-dedupe", :"SENTINEL-5f2b", in: 0, out: 0) }
       end
 
       it "refuses a reason, source, or extra key that isn't a Symbol naming a lowercase word, without quoting it" do
@@ -237,7 +241,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       end
 
       it "the sentinel check itself sees a sentinel that's a lowercase word, which a name can't tell from a value" do
-        record("5a-3", :original, in: 1, dropped: { BURNDOWN_SENTINEL.to_sym => 1 }, out: 0)
+        record("index-dedupe", :original, in: 1, dropped: { BURNDOWN_SENTINEL.to_sym => 1 }, out: 0)
 
         expect(File.read(stored_file)).to include(BURNDOWN_SENTINEL)
       end
@@ -258,17 +262,17 @@ RSpec.describe Quaack::Enclave::Burndown do
       ["counts that don't add up", ->(r) { r.merge("out" => 2) }]
     ].each do |what, change|
       it "refuses to read one with #{what}, without quoting it" do
-        plant("stages" => { "5a-3" => { "original" => change[good_record] } }, "totals" => {})
+        plant("stages" => { "index-dedupe" => { "original" => change[good_record] } }, "totals" => {})
 
         expect_refused(/burndown entry in run #{store.run_id}/) { described_class.read(store) }
-        expect_refused { described_class.record(store, "5a-3", :original, in: 0, out: 0) }
+        expect_refused { described_class.record(store, "index-dedupe", :original, in: 0, out: 0) }
       end
     end
 
     it "refuses one with an unknown stage, search, or total, or a top level that isn't stages and totals" do
       [
         { "stages" => { "SENTINEL" => {} }, "totals" => {} },
-        { "stages" => { "5a-3" => { "Sentinel@x" => good_record } }, "totals" => {} },
+        { "stages" => { "index-dedupe" => { "Sentinel@x" => good_record } }, "totals" => {} },
         { "stages" => {}, "totals" => { "fixture_loads" => BURNDOWN_SENTINEL } },
         { "stages" => {}, "totals" => {}, "rows" => [BURNDOWN_SENTINEL] },
         { "stages" => {} },
@@ -280,7 +284,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
 
     it "reads one that is, as a check on the plants above" do
-      plant("stages" => { "5a-3" => { "original" => good_record } }, "totals" => { "fixture_loads" => 2 })
+      plant("stages" => { "index-dedupe" => { "original" => good_record } }, "totals" => { "fixture_loads" => 2 })
 
       expect(described_class.read(store)["totals"]).to eq("fixture_loads" => 2)
     end
@@ -307,11 +311,11 @@ RSpec.describe Quaack::Enclave::Burndown do
                      candidate(["note"], access_method: :gin), candidate(["id"]), candidate(%w[status id])])
     end
 
-    it "records a search's drops by reason, what it set aside, and what went on to 5a-4" do
+    it "records a search's drops by reason, what it set aside, and what went on to index-test" do
       mechanical
       described_class.record_dedupe(store, dedupe, search: :original)
 
-      expect(described_class.read(store).dig("stages", "5a-3", "original")).to eq(
+      expect(described_class.read(store).dig("stages", "index-dedupe", "original")).to eq(
         "in" => 7, "added" => {},
         "dropped" => { "covered_by_existing" => 1, "duplicate" => 1, "partial_not_low_cardinality" => 1 },
         "set_aside" => 1, "out" => 3, "extra" => {}
@@ -324,13 +328,13 @@ RSpec.describe Quaack::Enclave::Burndown do
       lossy = Struct.new(:considered, :drops, :set_aside, :proposals)
                     .new(dedupe.considered, dedupe.drops, dedupe.set_aside, dedupe.proposals.drop(1))
 
-      expect_refused(/5a-3/) { described_class.record_dedupe(store, lossy, search: :original) }
+      expect_refused(/index-dedupe/) { described_class.record_dedupe(store, lossy, search: :original) }
       expect(store.entry?("burndown")).to be(false)
     end
 
-    it "records only 5a-3, so it takes no stage and no since" do
+    it "records only index-dedupe, so it takes no stage and no since" do
       mechanical
-      expect { described_class.record_dedupe(store, dedupe, search: :original, stage: "5a-5") }
+      expect { described_class.record_dedupe(store, dedupe, search: :original, stage: "llm-index-ideas") }
         .to raise_error(ArgumentError, /unknown keyword: :stage/)
       expect { described_class.record_dedupe(store, dedupe, search: :original, since: {}) }
         .to raise_error(ArgumentError, /unknown keyword: :since/)
@@ -356,22 +360,27 @@ RSpec.describe Quaack::Enclave::Burndown do
       Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::Statistics.new(tables: [table]), low_cardinality: [])
     end
 
-    def round(stage: "5a-5", since: self.since)
+    def round(stage: "llm-index-ideas", since: self.since)
       described_class.record_llm_round(store, stage:, search: :original, dedupe:, since:, report:)
     end
 
     it "records an empty round as adding nothing" do
       round
 
-      expect(described_class.read(store).dig("stages", "5a-5", "original")).to eq(
+      expect(described_class.read(store).dig("stages", "llm-index-ideas", "original")).to eq(
         "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0, "extra" => {}
       )
     end
 
-    it "refuses any stage but 5a-5 or 5a-6" do
-      round(stage: "5a-6")
-      %w[5a-3 5a-4 step11].each { |stage| expect_refused(/5a-5 or 5a-6/) { round(stage:) } }
-      expect(described_class.read(store)["stages"].keys).to eq(["5a-6"])
+    it "refuses any stage but llm-index-ideas or llm-index-refine" do
+      round(stage: "llm-index-refine")
+      %w[index-dedupe index-test
+         rewrite-index-ideas].each do |stage|
+        expect_refused(/llm-index-ideas or llm-index-refine/) do
+          round(stage:)
+        end
+      end
+      expect(described_class.read(store)["stages"].keys).to eq(["llm-index-refine"])
     end
 
     it "refuses a since that isn't the counts an earlier record returned, as Burndown::Error" do
@@ -400,8 +409,8 @@ RSpec.describe Quaack::Enclave::Burndown do
       out = Quaack::Enclave::Egress.serialize(described_class.message(store))
       expect(JSON.parse(out)).to eq(
         "type" => "burndown",
-        "stages" => { "5a-3" => { "original" => { "in" => 3, "added" => {}, "dropped" => { "duplicate" => 1 },
-                                                  "set_aside" => 0, "out" => 2, "extra" => {} } } },
+        "stages" => { "index-dedupe" => { "original" => { "in" => 3, "added" => {}, "dropped" => { "duplicate" => 1 },
+                                                          "set_aside" => 0, "out" => 2, "extra" => {} } } },
         "totals" => { "hypothetical_explains" => 6 }
       )
     end

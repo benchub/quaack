@@ -4,13 +4,13 @@ require "quaack/protocol/burndown"
 
 module Quaack
   module Driver
-    # The driver's side of the DESIGN.md 15b burndown: how many LLM calls each
+    # The driver's side of the DESIGN.md's burndown burndown: how many LLM calls each
     # step made. The enclave script records its own counts in the governed
     # store. These stay in memory for the run, and the report reads them.
     #
     #   burndown = Burndown.new
-    #   burndown.llm_call("5a-5")   # the LLM client calls this once per call
-    #   burndown.llm_calls          # => { "5a-5" => 1 }
+    #   burndown.llm_call("llm-index-ideas")   # the LLM client calls this once per call
+    #   burndown.llm_calls          # => { "llm-index-ideas" => 1 }
     #
     # A step is one of Protocol::Burndown::LLM_STEPS, the steps the driver
     # runs that call an LLM.

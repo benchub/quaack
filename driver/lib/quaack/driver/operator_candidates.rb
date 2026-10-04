@@ -6,8 +6,8 @@ require_relative "rewrite_generation"
 
 module Quaack
   module Driver
-    # DESIGN.md step 7: an operator's own rewrites, from a file on the laptop
-    # (`--rewrites <file>`), written with the 3g placeholders in place of
+    # DESIGN.md's operator-rewrites: an operator's own rewrites, from a file on the laptop
+    # (`--rewrites <file>`), written with the redact placeholders in place of
     # literals, one per ;-terminated statement.
     #
     #   sqls = OperatorCandidates.from_file(path)
@@ -23,7 +23,7 @@ module Quaack
     class OperatorCandidates
       class Error < StandardError; end
 
-      STEP = "step7"
+      STEP = "operator-rewrites"
       MAX_TOKENS = 8000
 
       INFERRED = {

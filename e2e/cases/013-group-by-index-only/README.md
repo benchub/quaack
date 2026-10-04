@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** Sort or Hash feeding an aggregate (5a-2); GROUP BY columns after the equality column (5a-1); index-only scan.
+**Exercises:** Sort or Hash feeding an aggregate (index-from-plan); GROUP BY columns after the equality column (index-from-query); index-only scan.
 
 ## Setup.
 

@@ -7,7 +7,7 @@ require_relative "../run_discipline"
 module Quaack
   module Enclave
     module AssumptionCheck
-      # DESIGN.md 6b's check of a denormalized_equal assumption (see
+      # DESIGN.md's assumption-check's check of a denormalized_equal assumption (see
       # RewriteAssumptions), against the data:
       #
       #   DenormalizedEqual.met?(assumption, racetrack_connection)   # => true

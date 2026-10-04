@@ -33,25 +33,27 @@ RSpec.describe "error filtering against real Postgres" do
     error = pg_error("INSERT INTO filter_accounts VALUES (#{conn.escape_literal(PG_ERROR_SENTINEL)})")
     expect(error.result.error_field(PG::Result::PG_DIAG_MESSAGE_DETAIL)).to include(PG_ERROR_SENTINEL)
 
-    expect(filter.to_egress(error, step: "9b")).to eq(line(step: "9b", rule: "internal_error", sqlstate: "23505"))
+    expect(filter.to_egress(error, step: "fixture-load"))
+      .to eq(line(step: "fixture-load", rule: "internal_error", sqlstate: "23505"))
   end
 
   it "filters a check violation, whose DETAIL holds the row" do
     error = pg_error("INSERT INTO filter_accounts VALUES (#{conn.escape_literal("#{PG_ERROR_SENTINEL}-bad")})")
     expect(error.result.error_field(PG::Result::PG_DIAG_MESSAGE_DETAIL)).to include(PG_ERROR_SENTINEL)
 
-    expect(filter.to_egress(error, step: "10b")).to eq(line(step: "10b", rule: "internal_error", sqlstate: "23514"))
+    expect(filter.to_egress(error, step: "counterexample-compare"))
+      .to eq(line(step: "counterexample-compare", rule: "internal_error", sqlstate: "23514"))
   end
 
   it "filters a unique violation raised inside the guard" do
     out = StringIO.new
 
-    status = filter.guard(step: "9b", out:) do
+    status = filter.guard(step: "fixture-load", out:) do
       conn.exec_params("INSERT INTO filter_accounts VALUES ($1)", [PG_ERROR_SENTINEL])
     end
 
     expect(status).to eq(Quaack::Enclave::ErrorFilter::EX_SOFTWARE)
-    expect(out.string).to eq("#{line(step: "9b", rule: "internal_error", sqlstate: "23505")}\n")
+    expect(out.string).to eq("#{line(step: "fixture-load", rule: "internal_error", sqlstate: "23505")}\n")
   end
 
   it "filters a connection error, which has no result" do
@@ -74,8 +76,8 @@ RSpec.describe "error filtering against real Postgres" do
     end
     expect(error.message).to include("pg_catalog.random")
 
-    expect(filter.to_egress(error, step: "3d"))
-      .to eq(line(step: "3d", rule: "volatile_function", function: "pg_catalog.random"))
+    expect(filter.to_egress(error, step: "volatility"))
+      .to eq(line(step: "volatility", rule: "volatile_function", function: "pg_catalog.random"))
   end
 
   describe ".drop_notices" do

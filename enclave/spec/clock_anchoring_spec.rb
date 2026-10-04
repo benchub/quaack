@@ -2,7 +2,7 @@
 
 require "quaack/enclave/clock_anchoring"
 
-# What 3h rewrites, read from the parse alone. clock_anchoring_postgres_spec.rb
+# What clock-anchor rewrites, read from the parse alone. clock_anchoring_postgres_spec.rb
 # checks on real Postgres that each rewrite keeps the type and the value.
 RSpec.describe Quaack::Enclave::ClockAnchoring do
   def anchor(sql, settings = nil) = described_class.anchor(sql, settings)

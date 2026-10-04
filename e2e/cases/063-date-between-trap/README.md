@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** BETWEEN ... 23:59:59 misses fractional seconds; boundary-value fixtures (step 9, S5); one unit past the literal (step 9).
+**Exercises:** BETWEEN ... 23:59:59 misses fractional seconds; boundary-value fixtures (rewrite-test, S5); one unit past the literal (rewrite-test).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Logins on one day.
 
 ## Expected result.
 
-QUAACK must reject the closed `BETWEEN`, which misses logins in the last half second of the day. The correct rewrite is the half-open range from case 046. Step 9's boundary values, one unit past the literal, should catch it.
+QUAACK must reject the closed `BETWEEN`, which misses logins in the last half second of the day. The correct rewrite is the half-open range from case 046. rewrite-test's boundary values, one unit past the literal, should catch it.
 
 ## Proof.
 

@@ -3,9 +3,9 @@
 require "json"
 require "quaack/enclave/canonical_plan"
 
-# Real plans from the test harness's Postgres. The production plan in step 1
+# Real plans from the test harness's Postgres. The production plan in input
 # comes from EXPLAIN (ANALYZE, BUFFERS, SETTINGS), and the racetrack plans
-# steps 5, 5a-4, and 8 compare with it come from a plain EXPLAIN.
+# index-search, index-test, and plan-pruning compare with it come from a plain EXPLAIN.
 CANONICAL_PLAN_PRODUCTION = "EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)"
 CANONICAL_PLAN_RACETRACK = "EXPLAIN (FORMAT JSON)"
 CANONICAL_PLAN_JOIN = "SELECT c.name, o.total_cents FROM public.customers c JOIN public.orders o " \
@@ -94,9 +94,9 @@ RSpec.describe Quaack::Enclave::CanonicalPlan do
     expect(described_class.new(plans.first).matches?(described_class.new(plans.last))).to be(false)
   end
 
-  # A quoted identifier can look like a name HypoPG makes. The step 1 plan
+  # A quoted identifier can look like a name HypoPG makes. The input plan
   # has no map, and the racetrack's has one for its hypothetical indexes,
-  # none here, as step 5 compares them.
+  # none here, as index-search compares them.
   describe "a real index named like a hypothetical one" do
     let(:query) { "SELECT o.id FROM public.orders o WHERE o.total_cents = 5100" }
 

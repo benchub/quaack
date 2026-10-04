@@ -8,7 +8,7 @@ require_relative "supported_sql"
 
 module Quaack
   module Enclave
-    # Generator one (DESIGN.md 5a-1): index candidates from the parse of the
+    # Generator one (DESIGN.md's index-from-query): index candidates from the parse of the
     # query alone, with the statistics input to rank columns.
     #
     #   GeneratorOne.candidates(PgQuery.parse(sql), statistics)
@@ -87,7 +87,7 @@ module Quaack
     #   pattern isn't empty and its first character isn't %, _, or a
     #   backslash. A LIKE with ESCAPE doesn't count. A btree only serves that
     #   LIKE under the C collation or text_pattern_ops, which this shape
-    #   can't express, so 5a-4 finds out whether the planner uses it. A
+    #   can't express, so index-test finds out whether the planner uses it. A
     #   column with both an equality and a range predicate is equality.
     #
     # - Keyset: a row comparison, (a, b) < ($1, $2) with <, <=, >, or >=,
@@ -457,7 +457,7 @@ module Quaack
       # @collations for the COLLATEs it sees.
       module Values
         # Built-in volatile functions. A call to one changes from row to
-        # row, so an index can't seek to it. Step 3d refuses a query that
+        # row, so an index can't seek to it. volatility refuses a query that
         # calls any volatile function, and this is a backstop.
         VOLATILE_FUNCTIONS = %w[random random_normal gen_random_uuid uuidv4 uuidv7 clock_timestamp timeofday
                                 nextval setval currval lastval txid_current pg_sleep].freeze
@@ -927,7 +927,7 @@ module Quaack
 
       # The candidates for one table.
       class TableCandidates
-        # 3f's default low-cardinality threshold (PiiClassification).
+        # classify's default low-cardinality threshold (PiiClassification).
         LOW_CARDINALITY = 50
 
         def initialize(table, uses, limits)
@@ -1034,9 +1034,9 @@ module Quaack
         end
 
         # The INCLUDE columns appended to the key, when the leading key
-        # column is low-cardinality (3f: fewer than 50 distinct values).
+        # column is low-cardinality (classify: fewer than 50 distinct values).
         # B-tree deduplication makes that index small, and HypoPG can't see
-        # it, so 12a may build it for real (20260927-11).
+        # it, so index-build may build it for real (20260927-11).
         def moved(key, include)
           return [] unless low_cardinality?(key.first) && key.size + include.size <= @limits[:max_key_columns]
 

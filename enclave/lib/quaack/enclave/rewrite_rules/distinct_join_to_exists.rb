@@ -8,7 +8,7 @@ require_relative "distinct_join_to_exists/query"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's distinct_join_to_exists. An ORM that wants the rows
+      # DESIGN.md's rewrite-rules' distinct_join_to_exists. An ORM that wants the rows
       # of one table that have a match in another joins them and removes
       # the duplicates the join makes:
       #

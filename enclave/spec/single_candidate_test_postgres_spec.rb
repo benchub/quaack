@@ -5,7 +5,7 @@ require "json"
 require "pp"
 require "quaack/enclave/single_candidate_test"
 
-# 5a-4 against real HypoPG on the test harness. The table's s column is
+# index-test against real HypoPG on the test harness. The table's s column is
 # skewed: 90% of rows hold 0, and the rest each hold a value of their own.
 # So s = 0 wants a sequential scan and s = 10 wants an index.
 RSpec.describe Quaack::Enclave::SingleCandidateTest do

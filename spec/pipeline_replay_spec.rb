@@ -44,18 +44,20 @@ RSpec.describe PipelineReplay do
           end
 
           it "never reports the subtly wrong rewrite as a winning fix" do
-            # Disproved at step 9 or 10: never marked for step 11, and so
+            # Disproved at rewrite-test or counterexamples: never marked for rewrite-index-ideas, and so
             # never measured or ranked. The report sends it with that fate.
             labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
             fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
             outcome.wrong.each do |n|
-              expect(outcome.entries["rewrite_step11_#{n}"]).to be(false)
+              expect(outcome.entries["rewrite_index_ideas_#{n}"]).to be(false)
               expect(labels.grep(/\Arewrite_#{n}:/)).to be_empty
-              expect(fates["rewrite_#{n}"]).to eq("step9_disproved").or eq("step10_disproved") if outcome.report
+              if outcome.report
+                expect(fates["rewrite_#{n}"]).to eq("rewrite_test_disproved").or eq("counterexamples_disproved")
+              end
             end
           end
 
-          it "finds the wrong rewrite whenever the 6a reply holds the wrong condition" do
+          it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
             wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
             expect(outcome.wrong).not_to be_empty if wrong_condition
           end
@@ -63,19 +65,19 @@ RSpec.describe PipelineReplay do
       end
     end
 
-    # Task 20261001-23: DESIGN.md 6c end to end. The rule's rewrite is the
+    # Task 20261001-23: DESIGN.md's rewrite-rules end to end. The rule's rewrite is the
     # run's only one, since every LLM ask gets an empty answer.
     describe "a query the key_in_self_join rule fires on" do
       let(:outcome) { described_class.cached(TestPostgres.server, described_class::RULE_QUERY, described_class::EMPTY) }
       let(:rewrite) { outcome.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
       let(:ranked) { outcome.report["top"].map { it["label"] }.grep(/\Arewrite_1:/) }
 
-      it "applies the rules before 6a, storing the rule's rewrite, and ends in a report" do
+      it "applies the rules before llm-rewrites, storing the rule's rewrite, and ends in a report" do
         expect(outcome.error).to be_nil
         expect(outcome.entries).to include("rewrite_rules_applied" => true, "rewrite_1" => true,
-                                           "rewrites_generated" => true, "rewrite_step11_1" => true)
+                                           "rewrites_generated" => true, "rewrite_index_ideas_1" => true)
         expect(outcome.entries).not_to include("rewrite_2")
-        expect(outcome.log).to include("6a-1: empty answer (no reply)")
+        expect(outcome.log).to include("llm-rewrites-1: empty answer (no reply)")
         expect(outcome.log.grep(/replayed\z/)).to be_empty
       end
 
@@ -101,13 +103,13 @@ RSpec.describe PipelineReplay do
         expect(labels.flat_map { it["indexes"] } - built).to be_empty
       end
 
-      it "records the 6c burndown, and flags no rule bug, since no test disproved the rewrite" do
-        expect(outcome.report["burndown"]["stages"]["6c"]["rewrites"])
+      it "records the rewrite-rules burndown, and flags no rule bug, since no test disproved the rewrite" do
+        expect(outcome.report["burndown"]["stages"]["rewrite-rules"]["rewrites"])
           .to include("added" => { "key_in_self_join" => 1 }, "out" => 1)
         expect(outcome.report["rule_bugs"]).to eq([])
       end
 
-      it "shows the source and the 6c row in the report file `quaack run` writes" do
+      it "shows the source and the rewrite-rules row in the report file `quaack run` writes" do
         expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
         expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
                                         '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
@@ -132,27 +134,32 @@ RSpec.describe PipelineReplay do
         described_class.cached(TestPostgres.server, query, variant)
       end
 
-      it "read a prose-wrapped 6a reply, and step 10 disproves its wrong rewrite with the replayed 10a-4" do
+      it "read a prose-wrapped llm-rewrites reply, and counterexamples disproves its wrong rewrite with the replayed " \
+         "llm-counterexamples-4" do
         outcome = run("group_having")
-        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed", "step11-5a-5-1: replayed",
-                                       "10a-1: empty answer (no reply)", "10a-7: empty answer (no reply)")
-        # 10a-4 disproves in round one, so the operator rewrite's rounds are
-        # still 10a-7 to 10a-9, as the pack numbers them.
-        expect(outcome.log.grep(/\A10a-[56]:/)).to be_empty
+        expect(outcome.log).to include("llm-rewrites-1: replayed", "llm-counterexamples-4: replayed",
+                                       "rewrite-llm-index-ideas-1: replayed",
+                                       "llm-counterexamples-1: empty answer (no reply)",
+                                       "llm-counterexamples-7: empty answer (no reply)")
+        # llm-counterexamples-4 disproves in round one, so the operator
+        # rewrite's rounds are still llm-counterexamples-7 to -9, as the pack
+        # numbers them.
+        expect(outcome.log.grep(/\Allm-counterexamples-[56]:/)).to be_empty
         expect(outcome.wrong).to eq([2])
-        expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
+        expect(outcome.entries).to include("rewrite_index_ideas_1" => true, "rewrite_index_ideas_2" => false)
       end
 
-      it "load a 10a-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it disproves (orm_join)" do
+      it "load an llm-counterexamples-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it " \
+         "disproves (orm_join)" do
         outcome = run("orm_join")
-        expect(outcome.log).to include("6a-1: replayed", "10a-4: replayed")
+        expect(outcome.log).to include("llm-rewrites-1: replayed", "llm-counterexamples-4: replayed")
         expect(outcome.wrong).to eq([2])
-        expect(outcome.entries).to include("rewrite_step11_1" => true, "rewrite_step11_2" => false)
+        expect(outcome.entries).to include("rewrite_index_ideas_1" => true, "rewrite_index_ideas_2" => false)
       end
 
       it "refuse a wrong-shape reply cleanly as llm_bad_response" do
         outcome = run("correlated_exists")
-        expect(outcome.log).to eq(["5a-5-1: replayed"])
+        expect(outcome.log).to eq(["llm-index-ideas-1: replayed"])
         expect(outcome.error).to have_attributes(class: Quaack::Driver::LLM::Error, rule: "llm_bad_response")
       end
     end
@@ -173,25 +180,27 @@ RSpec.describe PipelineReplay do
 
     let(:variant) { PipelineReplay::Variant.new(llm: "t", k: 1) }
 
-    it "names 10a asks by rewrite and round, three numbers per rewrite, so an early disproof shifts nothing" do
+    it "names llm-counterexamples asks by rewrite and round, three per rewrite, so an early disproof shifts nothing" do
       replies = PipelineReplay::Replies.new("q", variant, roots: [])
-      replies.for("6a", body("x"))
+      replies.for("llm-rewrites", body("x"))
       # Rewrite 1 runs all three rounds, rewrite 2 is disproved in round
       # one, and rewrite 3 is disproved in round two.
-      [1, 2, 3, 1, 1, 2].each { replies.for("10a", body("x", it)) }
-      expect(replies.log.map { it.split(":").first }).to eq(%w[6a-1 10a-1 10a-2 10a-3 10a-4 10a-7 10a-8])
+      [1, 2, 3, 1, 1, 2].each { replies.for("llm-counterexamples", body("x", it)) }
+      names = replies.log.map { it.split(":").first }
+      expect(names).to eq(%w[llm-rewrites-1 llm-counterexamples-1 llm-counterexamples-2 llm-counterexamples-3
+                             llm-counterexamples-4 llm-counterexamples-7 llm-counterexamples-8])
     end
 
     it "checks a reply's prompt against the prompt.md in the root it came from, then the corpus" do
       Dir.mktmpdir do |root|
         sent = PromptPack.prompt(PipelineReplay::Replies::Ask.new(body("x")))
-        save(root, "6a-1", prompt: sent)
-        save(root, "10a-1", prompt: sent.sub("# System\n\nS", "# System\n\nchanged"))
+        save(root, "llm-rewrites-1", prompt: sent)
+        save(root, "llm-counterexamples-1", prompt: sent.sub("# System\n\nS", "# System\n\nchanged"))
         replies = PipelineReplay::Replies.new("q", variant, roots: [root])
-        replies.for("6a", body("x"))
-        replies.for("10a", body("x"))
-        expect(replies.drift).to eq(["10a-1: the system prompt sent differs from #{File.join(root, "q", "10a-1",
-                                                                                             "prompt.md")}"])
+        replies.for("llm-rewrites", body("x"))
+        replies.for("llm-counterexamples", body("x"))
+        prompt = File.join(root, "q", "llm-counterexamples-1", "prompt.md")
+        expect(replies.drift).to eq(["llm-counterexamples-1: the system prompt sent differs from #{prompt}"])
       end
     end
   end
@@ -208,7 +217,7 @@ RSpec.describe PipelineReplay do
       expect(described_class.wrong(query, text)).to eq([2])
     end
 
-    it "finds nothing when there's no 6a reply, or it doesn't parse" do
+    it "finds nothing when there's no llm-rewrites reply, or it doesn't parse" do
       expect([described_class.wrong(query, nil), described_class.wrong(query, "no json")]).to eq([[], []])
     end
   end
@@ -244,8 +253,8 @@ RSpec.describe PipelineReplay do
 
     it "fails instead of silently running no recorded examples in the per-commit replay" do
       Dir.mktmpdir do |root|
-        FileUtils.mkdir_p(File.join(root, "query", "6a-1"))
-        File.write(File.join(root, "query", "6a-1", "reply-planted-1.md"), "{}")
+        FileUtils.mkdir_p(File.join(root, "query", "llm-rewrites-1"))
+        File.write(File.join(root, "query", "llm-rewrites-1", "reply-planted-1.md"), "{}")
 
         expect { described_class.selected_variants("query", roots: [root]) }
           .to raise_error(/no recorded replay variants for query/)

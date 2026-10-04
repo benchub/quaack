@@ -7,9 +7,9 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks index-baseline --run <run ID>` (DESIGN.md 13a): on the
+      # `quaacks index-baseline --run <run ID>` (DESIGN.md's index-baseline): on the
       # racetrack, measures anchored_query under each of the original's
-      # index_build combinations (the ones 5a kept), with baseline's
+      # index_build combinations (the ones index-search kept), with baseline's
       # timeout_ms. It writes index_baseline:
       #   "combinations" { combination key => { set name => measurement } }
       #   "timed_out"    the combination keys where any set timed out

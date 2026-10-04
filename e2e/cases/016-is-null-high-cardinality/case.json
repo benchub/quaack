@@ -4,7 +4,7 @@
   "compare": "ordered",
   "features": [
     "IS NULL predicate atom",
-    "partial index dropped because its column isn't low-cardinality (5a-3)",
+    "partial index dropped because its column isn't low-cardinality (index-dedupe)",
     "plain btree serves IS NULL"
   ],
   "literal_sets": [

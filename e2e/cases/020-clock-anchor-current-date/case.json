@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "clock function anchored to quaack.clock_anchor() (3h)",
+    "clock function anchored to quaack.clock_anchor() (clock-anchor)",
     "range predicate against an expression",
-    "report puts the original function back (3h)"
+    "report puts the original function back (clock-anchor)"
   ],
   "literal_sets": [
     {

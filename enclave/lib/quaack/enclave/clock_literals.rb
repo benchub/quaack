@@ -6,15 +6,15 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # The clock-reading literals 3h anchors: 'now', 'today', 'yesterday',
+    # The clock-reading literals clock-anchor anchors: 'now', 'today', 'yesterday',
     # and 'tomorrow', where Postgres reads them as a date or timestamp.
-    # They read the clock just as now() does (DESIGN.md 3h).
+    # They read the clock just as now() does (DESIGN.md's clock-anchor).
     #
     #   found = ClockLiterals.find(placeholder_map, statistics) { |column_names| LiteralSet.feeds(parse, column_names) }
     #   # => Found(words: {1 => "today"}, types: {1 => "timestamptz"})
     #   ClockLiterals.anchored_node(node, found)   # => the node that replaces node, or nil
     #
-    # 3g has already made each literal a placeholder, so the words come
+    # redact has already made each literal a placeholder, so the words come
     # from the placeholder map: an untyped string ("unknown") that is one of
     # the words, in any case and with whitespace around it, as Postgres
     # reads it. Anything longer, such as 'today 12:00', or a real date, is
@@ -26,8 +26,8 @@ module Quaack
     #   precision. 'now' as a time or timetz reads the clock too; the other
     #   words aren't valid times.
     # - A comparison with a column (col = $n, col < $n, BETWEEN, IN, as
-    #   3e's feeds find them) whose type, from 3c's clock_columns, is date,
-    #   timestamp, or timestamptz. A placeholder 3g shares isn't one.
+    #   literals' feeds find them) whose type, from statistics' clock_columns, is date,
+    #   timestamp, or timestamptz. A placeholder redact shares isn't one.
     #
     # The replacement is the word's value from the anchor, cast to the
     # target type: 'now' is quaack.clock_anchor(), 'today' its date,
@@ -56,7 +56,7 @@ module Quaack
       # The clock words by placeholder number, and each one's implicit
       # type, from a column it's compared with, where it has one.
       #
-      # The block takes the column names by TableName, and returns 3e's
+      # The block takes the column names by TableName, and returns literals'
       # feeds for the query (LiteralSet.feeds). It runs only when there are
       # words and statistics.
       def find(placeholder_map, statistics, &)

@@ -12,7 +12,7 @@ require_relative "transport/ssh"
 module Quaack
   module Driver
     # `quaack start --server <prod> --query <file> --plan <file>` (DESIGN.md,
-    # "Where QUAACK runs" and step 1). The query and plan paths are on the
+    # "Where QUAACK runs" and input). The query and plan paths are on the
     # jump server, and their files never leave it.
     #
     # It finds the jump server with jump_command from the driver config,

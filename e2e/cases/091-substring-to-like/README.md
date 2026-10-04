@@ -14,7 +14,7 @@ Parts in a SKU family, tested with `substring`. The function hides `sku` from it
 
 ## Expected result.
 
-`sku LIKE 'ABX-001' || '%'`. Stated assumptions: the literal is exactly as long as the `FOR` length, and holds no `%` or `_`. A shorter literal would never equal the 7-character substring but would match as a prefix. 3e keeps the slow literal for a placeholder compared with a function, so every literal set has 7 characters.
+`sku LIKE 'ABX-001' || '%'`. Stated assumptions: the literal is exactly as long as the `FOR` length, and holds no `%` or `_`. A shorter literal would never equal the 7-character substring but would match as a prefix. literals keeps the slow literal for a placeholder compared with a function, so every literal set has 7 characters.
 
 ## Proof.
 

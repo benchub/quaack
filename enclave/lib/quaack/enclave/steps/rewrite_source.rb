@@ -7,12 +7,12 @@ module Quaack
   module Enclave
     module Steps
       # Where a stored rewrite came from, for ReportPayload
-      # and RuleBugs (DESIGN.md 6c and step 15).
+      # and RuleBugs (DESIGN.md's rewrite-rules and report).
       #
       #   RewriteSource.fields(store.read("rewrite_1"))
       #   # => { "source" => "rule", "rules" => ["key_in_self_join"] }
       #
-      # source is rule (6c), llm (6a), or operator (step 7), or nil for an
+      # source is rule (rewrite-rules), llm (llm-rewrites), or operator (operator-rewrites), or nil for an
       # entry that holds none of them. rules is the names of the rules
       # applied, in order, for a rule-made rewrite, and nil for any other.
       # empirical is, for a rule-made rewrite, the denormalized_equal

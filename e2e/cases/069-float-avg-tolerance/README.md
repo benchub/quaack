@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** float aggregates compared with a tolerance (9d); correlated subquery to a pre-aggregated join.
+**Exercises:** float aggregates compared with a tolerance (fixture-compare); correlated subquery to a pre-aggregated join.
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Each recent sample's distance from its sensor's mean. The average is recomputed 
 
 ## Expected result.
 
-Pre-aggregate the averages once and join. Float sums can differ in the last bits when rows are added in a different order, so the comparison needs 9d's float tolerance. The proof compares each number to within a relative 1e-9.
+Pre-aggregate the averages once and join. Float sums can differ in the last bits when rows are added in a different order, so the comparison needs fixture-compare's float tolerance. The proof compares each number to within a relative 1e-9.
 
 ## Proof.
 

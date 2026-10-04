@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "greedy combination of candidates (5a-7)",
+    "greedy combination of candidates (index-rank)",
     "range column plus a join key",
-    "Hash Join with a large inner build (5a-2)"
+    "Hash Join with a large inner build (index-from-plan)"
   ],
   "literal_sets": [
     {

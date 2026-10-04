@@ -5,7 +5,7 @@
   "features": [
     "NOT IN subquery",
     "anti-join rewrite",
-    "NOT NULL assumption checked in 6b"
+    "NOT NULL assumption checked in assumption-check"
   ],
   "literal_sets": [
     {

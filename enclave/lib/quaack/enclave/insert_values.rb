@@ -28,7 +28,7 @@ module Quaack
         end
       end
 
-      # The functions a call could reach that aren't IMMUTABLE, by the 3d
+      # The functions a call could reach that aren't IMMUTABLE, by the volatility
       # check's rule for which ones a call could reach.
       MUTABLE_SQL = <<~SQL
         SELECT pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),

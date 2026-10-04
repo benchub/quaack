@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# DESIGN.md 14 and 12b: `quaacks candidate-runs` measures each surviving rewrite
+# DESIGN.md's candidate-runs and run-discipline: `quaacks candidate-runs` measures each surviving rewrite
 # with no extra indexes and under each of its index combinations, with the
 # baseline's timeout, drops timed-out runs and counts them.
 RSpec.describe "quaacks candidate-runs, against a real server" do
@@ -62,7 +62,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["timed_out_count"]).to eq(0)
     expect(valid_count(build["indexes"].keys)).to eq("0")
 
-    # DESIGN.md 14a and 14b, end to end: minimax reads these real runs.
+    # DESIGN.md's blocks-metric and minimax, end to end: minimax reads these real runs.
     run("index-baseline")
     expect(run("minimax").stdout).to eq(%({"type":"done"}\n))
     verdicts = stored.read("minimax")["verdicts"]
@@ -94,7 +94,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["timed_out_count"]).to eq(1)
   end
 
-  # DESIGN.md 3h: step 13 runs the candidate's anchored_sql, so it reads the
+  # DESIGN.md's clock-anchor: baseline runs the candidate's anchored_sql, so it reads the
   # anchored clock. Here that clock is years back, and only the real clock
   # makes the candidate sleep past the timeout.
   it "measures the candidate on the anchored clock" do

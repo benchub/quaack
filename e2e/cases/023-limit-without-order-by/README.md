@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** LIMIT with no ORDER BY: subset comparison (9d); two equality columns; non-default planner setting from the plan's SETTINGS (steps 2 and 4).
+**Exercises:** LIMIT with no ORDER BY: subset comparison (fixture-compare); two equality columns; non-default planner setting from the plan's SETTINGS (inventory and run-server).
 
 ## Setup.
 
@@ -14,11 +14,11 @@ Any five overdue invoices, for a reminder email. With no index, the scan runs un
 
 ## Expected result.
 
-`invoices (customer_id, status)`. The query has no `ORDER BY`, so the indexed plan may return different rows. 9d only asks for the same count, all from the unlimited result, and so does this proof.
+`invoices (customer_id, status)`. The query has no `ORDER BY`, so the indexed plan may return different rows. fixture-compare only asks for the same count, all from the unlimited result, and so does this proof.
 
 ## Notes.
 
-The production plan ran with `max_parallel_workers_per_gather = 0`, which `case.json` records as `settings`. Step 2 should pick it up from the plan's `SETTINGS`, and step 4 should require the run server to match. With parallel workers, a scan that stops at the `LIMIT` touches a different number of blocks each run, depending on how the workers race. README 13 would mark such a literal unstable.
+The production plan ran with `max_parallel_workers_per_gather = 0`, which `case.json` records as `settings`. inventory should pick it up from the plan's `SETTINGS`, and run-server should require the run server to match. With parallel workers, a scan that stops at the `LIMIT` touches a different number of blocks each run, depending on how the workers race. README 13 would mark such a literal unstable.
 
 ## Proof.
 

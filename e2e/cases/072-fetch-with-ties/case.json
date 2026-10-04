@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "FETCH FIRST WITH TIES",
-    "ORDER BY that isn't a total order (9d tiebreaker)",
-    "Sort under a Limit (5a-2)"
+    "ORDER BY that isn't a total order (fixture-compare tiebreaker)",
+    "Sort under a Limit (index-from-plan)"
   ],
   "literal_sets": [
     {

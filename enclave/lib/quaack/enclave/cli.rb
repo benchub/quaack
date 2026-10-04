@@ -168,15 +168,21 @@ module Quaack
 
       # The run ID's form is checked first, so a missing (nil) or malformed
       # one is usage, and a well-formed one with no usable run is bad_run.
-      # A store base it can't use is bad_store_base.
+      # A store base it can't use is bad_store_base. A run an older version
+      # started (StoreFormat) is run_from_older_version, since its
+      # entries may mean something else now. A step that only names the
+      # run, such as teardown, doesn't open it, so it still works on one.
       def open_store(run_id)
         raise Refused, "usage" unless Store::RUN_ID.match?(run_id)
 
-        begin
+        store = begin
           BadStoreBase.from_store { Store.open(run_id, base: store_base) }
         rescue Store::Error
           raise Refused, "bad_run", cause: nil
         end
+        raise Refused, "run_from_older_version" unless StoreFormat.current?(store)
+
+        store
       end
 
       # What a step that names a run without opening it gets: the run ID,

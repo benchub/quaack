@@ -5,7 +5,7 @@ require_relative "../result_comparator"
 module Quaack
   module Enclave
     module ResultComparison
-      # Which output columns step 9d's tiebreaker can sort by, and the
+      # Which output columns fixture-compare's tiebreaker can sort by, and the
       # catalog checks around it. ResultComparison (result_comparison.rb)
       # says how the tiebreaker is used and why these rules keep it sound.
       module Tiebreaker

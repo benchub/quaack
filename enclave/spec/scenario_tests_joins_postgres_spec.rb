@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-require "quaack/enclave/step_nine"
+require "quaack/enclave/scenario_tests"
 
-# Step 9 on ordinary joins that apps and ORMs write: an anti-join on a
+# rewrite-test on ordinary joins that apps and ORMs write: an anti-join on a
 # self-referencing foreign key, a JOIN against EXISTS, and a foreign key
 # that need not point at the parent its row's other keys lead to. Each
 # wrong rewrite is disproved, and its correct twin passes.
-RSpec.describe Quaack::Enclave::StepNine do
+RSpec.describe Quaack::Enclave::ScenarioTests do
   let(:conn) { racetrack_and_arena.arena.connection }
 
   before do

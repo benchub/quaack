@@ -12,25 +12,25 @@ RSpec.describe FakeLLM do
   def ask(step) = client.ask(step: step, messages: [{ role: "user", content: "hi" }], max_tokens: 10)
 
   it "answers each step from its own script, in the order scripted" do
-    fake.reply("10a", "other").reply("6a", "first").reply("6a", "second")
+    fake.reply("llm-counterexamples", "other").reply("llm-rewrites", "first").reply("llm-rewrites", "second")
 
-    expect([ask("6a"), ask("10a"), ask("6a")]).to eq(%w[first other second])
+    expect([ask("llm-rewrites"), ask("llm-counterexamples"), ask("llm-rewrites")]).to eq(%w[first other second])
   end
 
   it "raises on an attempt for a step with nothing left scripted" do
-    fake.reply("6a", "only")
-    ask("6a")
+    fake.reply("llm-rewrites", "only")
+    ask("llm-rewrites")
 
-    expect { ask("6a") }.to raise_error(FakeLLM::Unscripted, /step 6a/)
-    expect { ask("10a") }.to raise_error(FakeLLM::Unscripted, /step 10a/)
+    expect { ask("llm-rewrites") }.to raise_error(FakeLLM::Unscripted, /step llm-rewrites/)
+    expect { ask("llm-counterexamples") }.to raise_error(FakeLLM::Unscripted, /step llm-counterexamples/)
   end
 
   it "records each attempt's step and request body, never its headers" do
-    fake.error("10a", status: 529).reply("10a", "ok").reply("6a", "ok")
-    ask("10a")
-    ask("6a")
+    fake.error("llm-counterexamples", status: 529).reply("llm-counterexamples", "ok").reply("llm-rewrites", "ok")
+    ask("llm-counterexamples")
+    ask("llm-rewrites")
 
-    expect(fake.asks.map(&:step)).to eq(%w[10a 10a 6a])
+    expect(fake.asks.map(&:step)).to eq(%w[llm-counterexamples llm-counterexamples llm-rewrites])
     expect(fake.asks.map { it.body[:messages] }).to all(eq([{ role: "user", content: "hi" }]))
     expect(fake.asks.map(&:to_h).inspect).not_to include("fake-key")
   end

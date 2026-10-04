@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** BRIN candidate from a well-correlated range column (5a-1 rule 7, 5a-5); correlation sent as a derived scalar (3f); GROUP BY over the range.
+**Exercises:** BRIN candidate from a well-correlated range column (index-from-query rule 7, llm-index-ideas); correlation sent as a derived scalar (classify); GROUP BY over the range.
 
 ## Setup.
 

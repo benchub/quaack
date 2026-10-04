@@ -5,7 +5,7 @@ require "quaack/enclave/single_candidate_test"
 require "quaack/enclave/index_candidate"
 require "quaack/enclave/table_name"
 
-# 20260927-11: which of 5a-4's results 12a builds for real anyway.
+# 20260927-11: which of index-test's results index-build builds for real anyway.
 RSpec.describe Quaack::Enclave::UnusedSetAside do
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }
   let(:low) { [[orders, "status"]] }

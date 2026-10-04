@@ -2,9 +2,9 @@
 
 module Quaack
   module Enclave
-    # The candidates 5a-4 found unused that 12a builds for real anyway
+    # The candidates index-test found unused that index-build builds for real anyway
     # (20260927-11): a non-unique, non-partial B-tree with no INCLUDE whose
-    # leading key is a bare column 3f classes as low-cardinality. B-tree
+    # leading key is a bare column classify classes as low-cardinality. B-tree
     # deduplication makes such an index far smaller than HypoPG estimates,
     # so the planner may well use the real one.
     #

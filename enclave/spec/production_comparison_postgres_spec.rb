@@ -2,8 +2,8 @@
 
 require "quaack/enclave/production_comparison"
 
-# DESIGN.md 14c: the original and a candidate run as plain queries on the
-# racetrack, streamed and compared by hash with 9d's rules.
+# DESIGN.md's result-comparison: the original and a candidate run as plain queries on the
+# racetrack, streamed and compared by hash with fixture-compare's rules.
 RSpec.describe Quaack::Enclave::ProductionComparison do
   let(:conn) { racetrack_and_arena.racetrack.connection }
 
@@ -37,7 +37,7 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(verdict("SELECT 1::int4", "SELECT 1::int8")).to eq(%w[fail column_types])
   end
 
-  it "rounds floats to 9d's tolerance before hashing" do
+  it "rounds floats to fixture-compare's tolerance before hashing" do
     expect(verdict("SELECT 0.3::float8", "SELECT 0.1::float8 + 0.2::float8")).to eq(["pass", nil])
   end
 

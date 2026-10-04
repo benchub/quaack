@@ -8,7 +8,7 @@ require_relative "shell_command"
 module Quaack
   module Enclave
     # The operator's run_server_command and destroy_command from the quaacks
-    # config (DESIGN.md, step 4 and "Run teardown"), run by ShellCommand. In
+    # config (DESIGN.md's run-server and "Run teardown"), run by ShellCommand. In
     # each, every {server} becomes the run's production server name and
     # every {run} the run ID, each as one shell word.
     #

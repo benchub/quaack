@@ -2,7 +2,7 @@
 
 require "quaack/enclave/run_server"
 
-# The checks on `quaacks run-server`'s arguments (DESIGN.md, step 4). Each is
+# The checks on `quaacks run-server`'s arguments (DESIGN.md's run-server). Each is
 # refused rather than guessed at.
 RSpec.describe Quaack::Enclave::RunServer do
   let(:good) { { host: "run-db-7.internal", port: "5433", racetrack_db: "racetrack", arena_db: "arena_1" } }
@@ -53,7 +53,7 @@ RSpec.describe Quaack::Enclave::RunServer do
     expect(described_class.record(**good, arena_db: "a" * 63)["arena_db"]).to eq("a" * 63)
   end
 
-  # 4b builds arena from scratch, so sharing a name would put it on top of
+  # arena-setup builds arena from scratch, so sharing a name would put it on top of
   # the racetrack.
   it "refuses the same database for the racetrack and arena as run_server_same_database" do
     expect_refused("run_server_same_database", arena_db: "racetrack")

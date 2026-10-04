@@ -4,7 +4,7 @@ require "securerandom"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-test`, `counterexample-payload`, and
-# `counterexample-round` (DESIGN.md steps 9 and 10), the way the jump server
+# `counterexample-round` (DESIGN.md rewrite-test and counterexamples), the way the jump server
 # runs them, on an arena of the same schema with no rows.
 RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a real server" do
   include_context "an index search run"
@@ -63,7 +63,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
          stdin: JSON.generate("inserts" => inserts))
   end
 
-  describe "rewrite-test (step 9)" do
+  describe "rewrite-test" do
     it "passes an equivalent rewrite, stores its result, and doesn't decide survival yet" do
       ready(same)
 
@@ -87,7 +87,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "marks the rewrite untested when step 9 can't build scenarios, by the refusal's rule, and goes on" do
+    it "marks the rewrite untested when rewrite-test can't build scenarios, by the refusal's rule, and goes on" do
       ready(same, status_check: "status = 'open' OR status = 'closed'")
 
       outcome = step("rewrite-test", "--search", "rewrite_1")
@@ -103,7 +103,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
 
     # The refusal's error names the column and its type; only the rule may
-    # leave step 9, on stdout or into the store that report-payload reads.
+    # leave rewrite-test, on stdout or into the store that report-payload reads.
     it "keeps the column and type a refusal names out of its output and the store" do
       column = LeakCheck::Sentinels.new
       domain = LeakCheck::Sentinels.new
@@ -135,7 +135,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome, objects: { tested: })
     end
 
-    it "skips a rewrite step 8 discarded, without connecting to the arena" do
+    it "skips a rewrite plan-pruning discarded, without connecting to the arena" do
       ready(same, arena: false)
       store.write("rewrite_pruned_1", "discarded" => true)
 
@@ -145,7 +145,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
     end
 
-    it "reports step 9 and survival progress in status" do
+    it "reports rewrite-test and survival progress in status" do
       ready(looser)
       before = JSON.parse(step("status").stdout.lines.first)["entries"]
       step("rewrite-test", "--search", "rewrite_1")
@@ -156,7 +156,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
                 { "rewrite_tested_1" => true, "rewrite_survived_1" => true }])
     end
 
-    it "refuses to test, or run a round, before the arena is set up (4b)" do
+    it "refuses to test, or run a round, before the arena is set up (arena-setup)" do
       ready(same, setup: false)
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
 
@@ -170,7 +170,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(step("rewrite-test", "--search", "rewrite_9")).first["rule"]).to eq("rewrite_test_unknown_search")
     end
 
-    context "with now() and an anchor far from the real clock (DESIGN.md 3h)" do
+    context "with now() and an anchor far from the real clock (DESIGN.md's clock-anchor)" do
       let(:query) do
         "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' AND o.status = 'held' " \
           "AND o.created_at < now()"
@@ -195,7 +195,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
   end
 
-  describe "counterexample-payload (10a)" do
+  describe "counterexample-payload (llm-counterexamples)" do
     it "sends the redacted original, the candidate's SQL, placeholders, schema, and untested atoms" do
       ready(same)
       step("rewrite-test", "--search", "rewrite_1")
@@ -209,8 +209,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "sends step 9's untested atom shapes" do
-      # No row can fail o.status = 'held', so 9c leaves it untested.
+    it "sends rewrite-test's untested atom shapes" do
+      # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
       ready(same, status_check: "status = 'held'")
       expect(lines(step("rewrite-test", "--search", "rewrite_1")).first).to include("passed" => true)
 
@@ -220,7 +220,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
   end
 
-  describe "counterexample-round (10b and 10c)" do
+  describe "counterexample-round (counterexample-compare and counterexample-rollback)" do
     let(:note_row) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open')" }
     let(:dup_rows) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open'), (1, $1, 'open')" }
 
@@ -242,7 +242,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
-    it "builds a parent row that leaves NULL a nullable column step 9 can't fill, when neither query reads it" do
+    it "builds a parent row that leaves NULL a nullable column rewrite-test can't fill, when neither query reads it" do
       ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY, lsn pg_lsn);
                               ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
@@ -318,7 +318,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
     end
 
-    it "refuses a round before step 9 passed, and a round number outside 1 to 3" do
+    it "refuses a round before rewrite-test passed, and a round number outside 1 to 3" do
       ready(same)
 
       expect(lines(round(1, note_row)).first["rule"]).to eq("counterexample_round_untested")
@@ -326,7 +326,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
     end
 
-    # Step 9 refuses an fk_cycle first, so a round meets one only if the
+    # rewrite-test refuses an fk_cycle first, so a round meets one only if the
     # arena changed after it; its error line still names the cycle's tables,
     # but only those of the schema subset, and never a row of theirs.
     context "when the arena's foreign keys make a NOT NULL cycle" do

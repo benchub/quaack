@@ -5,11 +5,12 @@ require "json"
 require "securerandom"
 require_relative "plain_data"
 require_relative "private_files"
+require_relative "store_format"
 
 module Quaack
   module Enclave
     # The governed store (DESIGN.md, "Where QUAACK runs"): one directory per
-    # run on the jump server, holding the step 1 inputs and every
+    # run on the jump server, holding input's inputs and every
     # intermediate result between calls to the enclave script. Everything
     # in it can be value-class data, so it never leaves the enclave.
     #
@@ -86,7 +87,7 @@ module Quaack
         run_id = "#{Time.now.utc.strftime("%Y%m%dT%H%M%SZ")}-#{SecureRandom.hex(4)}"
         path = File.join(base, run_id)
         in_base(base, "couldn't make a run directory in the store's base") { PrivateFiles.make_directory(path) }
-        new(run_id, path)
+        new(run_id, path).tap { StoreFormat.mark(it) }
       end
 
       # Opens a run an earlier call started. The run directory must be a

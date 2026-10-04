@@ -332,7 +332,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
                           pg_dump:)
     end
 
-    # What arena's load (4a) makes of ddl, in a fresh template0 database.
+    # What arena's load (racetrack-setup) makes of ddl, in a fresh template0 database.
     def arena_extensions(ddl)
       admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
       arena = PG.connect(**db.connection_params, dbname: target)
@@ -463,7 +463,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       data, = Open3.capture3(*everything)
       expect(data).to include(sentinels.text, sentinels.word, sentinels.number.to_s)
       stored = Dir.children(store.path).sort
-      expect(stored).to eq(%w[schema_dump.json schema_subset.json])
+      expect(stored).to eq(%w[schema_dump.json schema_subset.json store_format.json])
       files = stored.map { File.read(File.join(store.path, it)) }.join("\n")
       expect_no_leaks(sentinels, stdout: files, objects: { result: })
     end
@@ -627,7 +627,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
     end
   end
 
-  def nothing_stored = expect(Dir.children(store.path)).to eq([])
+  def nothing_stored = expect(Dir.children(store.path)).to eq(["store_format.json"])
 
   describe "pg_dump itself" do
     it "must be at least the server's major version, since pg_dump refuses an older one" do
@@ -698,7 +698,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
         .to include(sentinels.word)
       nothing_stored
       expect(error).to be_a(described_class::Error)
-      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "schema-dump"),
+                                 objects: { error: })
     end
 
     # pg_dump takes an ACCESS SHARE lock on each table it dumps. Rather
@@ -739,7 +740,8 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(pg_dump_stderr("--schema-only", "--strict-names", missing, "--dbname=dbname=#{db.name} user=postgres"))
         .to include(sentinels.word)
       expect(error).to be_a(described_class::Error)
-      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "3b"), objects: { error: })
+      expect_no_leaks(sentinels, stdout: Quaack::Enclave::ErrorFilter.to_egress(error, step: "schema-dump"),
+                                 objects: { error: })
     end
   end
 end

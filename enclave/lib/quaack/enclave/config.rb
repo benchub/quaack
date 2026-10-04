@@ -5,18 +5,18 @@ require_relative "cli/input"
 module Quaack
   module Enclave
     # The quaacks config file on the jump server, ~/.quaack/config.json
-    # (DESIGN.md, step 2): one JSON object, which the operator writes. Only the
+    # (DESIGN.md's inventory): one JSON object, which the operator writes. Only the
     # keys below mean anything to this version, and any other key is left
     # alone, so a later step can add its own.
     #
     # - memory_command: the one-line shell command that prints the production
-    #   server's instance memory (see Inventory::Memory). Without it, step 2
+    #   server's instance memory (see Inventory::Memory). Without it, inventory
     #   records the memory as unknown.
     # - run_server_command and destroy_command: one-line shell commands that
     #   build or find, and destroy, the run's run server (see
     #   RunServerCommand). Without them, the operator passes the run server
     #   to `quaacks run-server` as flags, and destroys it by hand.
-    # - pii_columns: DESIGN.md 3f's configured PII list, an Array of
+    # - pii_columns: DESIGN.md's classify's configured PII list, an Array of
     #   schema.table.column globs, such as "*.users.email". Each glob has
     #   exactly three non-empty parts. A * matches any run of characters
     #   within one part, so it never crosses a dot, and every other
@@ -25,7 +25,7 @@ module Quaack
     #   more: the safe way to be wrong. A table or column whose name holds
     #   a dot can be matched only by a * part. Without the key, no column
     #   is on the list.
-    # - cardinality_threshold: DESIGN.md 3f's line between few and many
+    # - cardinality_threshold: DESIGN.md's classify's line between few and many
     #   distinct values, a positive Integer. Without it, it's 50.
     #
     # A missing file is an empty config. A file that's there but can't be
@@ -49,7 +49,7 @@ module Quaack
       MAX_BYTES = 64 * 1024
       # A memory command is one line of text, and not a blank one.
       NOT_ONE_LINE = /[\r\n\x00]/
-      # DESIGN.md 3f: fewer than this many distinct values is few.
+      # DESIGN.md's classify: fewer than this many distinct values is few.
       DEFAULT_CARDINALITY_THRESHOLD = 50
 
       def self.default_path = File.join(Dir.home, ".quaack", "config.json")

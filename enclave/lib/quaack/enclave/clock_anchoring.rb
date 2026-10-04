@@ -12,7 +12,7 @@ require_relative "supported_sql"
 
 module Quaack
   module Enclave
-    # DESIGN.md step 3h: replace the functions that read the transaction's
+    # DESIGN.md's clock-anchor: replace the functions that read the transaction's
     # clock with calls to quaack.clock_anchor(), so every run of the query
     # sees the time the production plan ran.
     #
@@ -27,9 +27,9 @@ module Quaack
     # The inputs are the query, qualified by RelationQualifier, and the
     # Settings hash from the input plan's EXPLAIN (SETTINGS), or nil.
     #
-    # Pipeline order: run 3d, VolatilityCheck, on the original query, then
-    # anchor. quaack.clock_anchor() exists only on the run server (4a and
-    # 4b), so 3d would find no such function in the production catalog.
+    # Pipeline order: run volatility, VolatilityCheck, on the original query, then
+    # anchor. quaack.clock_anchor() exists only on the run server (racetrack-setup and
+    # arena-setup), so volatility would find no such function in the production catalog.
     #
     # What's replaced, and with what. clock_anchor() returns timestamptz,
     # so each replacement casts it to the type and precision the original
@@ -44,13 +44,13 @@ module Quaack
     #   LOCALTIME[(p)]        -> quaack.clock_anchor()::pg_catalog.time[(p)]
     #
     # Clock-reading literals ('now', 'today', 'yesterday', 'tomorrow') are
-    # anchored too, when placeholder_map, 3g's map, holds them and they're
-    # read as a date or timestamp; statistics, 3c's entry, gives the column
+    # anchored too, when placeholder_map, redact's map, holds them and they're
+    # read as a date or timestamp; statistics, statistics' entry, gives the column
     # types for that. See ClockLiterals. Their replacements record the
     # placeholder, as $1 or $1::date, so they're shape as well.
     #
     # Nothing else changes: not CURRENT_TIME, not clock_timestamp() or
-    # timeofday(), which 3d refuses as volatile, and no other function.
+    # timeofday(), which volatility refuses as volatile, and no other function.
     #
     # Which now() is pg_catalog's. The SQL-value functions are keywords, so
     # they can't be anyone else's. A function call is replaced only when
@@ -73,7 +73,7 @@ module Quaack
     # order a walk of the tree meets them. restore walks the SQL it's
     # given the same way and puts each original back where its anchored
     # expression is, so the SQL may have changed elsewhere since, such as
-    # literals turned into placeholders by 3g. A query that already calls
+    # literals turned into placeholders by redact. A query that already calls
     # quaack.clock_anchor() is refused (rule clock_anchor_in_query), since
     # restore couldn't tell that call from one anchor made. If the anchors
     # in the SQL don't match the list one for one, restore raises Error

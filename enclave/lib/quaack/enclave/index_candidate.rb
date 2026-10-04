@@ -9,9 +9,9 @@ require_relative "index_methods"
 
 module Quaack
   module Enclave
-    # One proposed index, as the mechanical generators emit it (DESIGN.md 5a-1
-    # and 5a-2) and as the filter and tests downstream consume it (5a-3,
-    # 5a-4), and as 5a-5 reads the LLM's DDL. A key column can be an
+    # One proposed index, as the mechanical generators emit it (DESIGN.md's index-from-query
+    # and index-from-plan) and as the filter and tests downstream consume it (index-dedupe,
+    # index-test), and as llm-index-ideas reads the LLM's DDL. A key column can be an
     # expression, with an opclass and a collation (see KeyColumn).
     #
     #   IndexCandidate.new(
@@ -33,14 +33,14 @@ module Quaack
     # unique is for existing indexes, which from_ddl reads: primary keys,
     # UNIQUE constraints, and CREATE UNIQUE INDEX. The generators propose
     # plain indexes. A unique index and a plain one on the same columns are
-    # different definitions, so 5a-3 compares key columns itself when it
+    # different definitions, so index-dedupe compares key columns itself when it
     # checks whether an existing index covers a candidate. A deferrable
     # UNIQUE constraint also reads as unique: true, because pg_get_indexdef
     # prints it the same way. To propose a candidate built on an existing
-    # index, as 5a-2 does when it extends the index in use, use
+    # index, as index-from-plan does when it extends the index in use, use
     # existing.with(key: ..., unique: false, sources: [...]). A plain
     # with(key: ...) on orders_pkey would keep unique: true and
-    # sources: [:existing], so 5a-3 couldn't dedupe it against the other
+    # sources: [:existing], so index-dedupe couldn't dedupe it against the other
     # generators' plain candidates.
     #
     # The constructor refuses what Postgres would refuse for the built-in
@@ -60,7 +60,7 @@ module Quaack
     # sum(b) by name, against the aggregates and window functions built into
     # Postgres 18, so a user-defined aggregate or window function called
     # without aggregate or window syntax gets through. It doesn't check function volatility (random(), now()),
-    # because that needs the catalog. DESIGN.md 3d does that.
+    # because that needs the catalog. DESIGN.md's volatility does that.
     #
     # That name check is unqualified: an unqualified call to a user-defined
     # function that happens to share a built-in's name, such as lead(x) where
@@ -228,7 +228,7 @@ module Quaack
     # the catalog, so (email text_ops) and (email) are different key
     # columns. pg_get_indexdef leaves defaults off, so an existing index
     # reads as the plain column, and only a candidate that spells out a
-    # default fails to match it. That only costs one more test in 5a-4.
+    # default fails to match it. That only costs one more test in index-test.
     #
     # An expression can hold a literal, so it's value-class data, like a
     # predicate: inspect, to_s, pp, and pattern matching leave it out, and

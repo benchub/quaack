@@ -5,7 +5,7 @@ require_relative "../clock_anchoring"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks anchor --run <run ID>` (DESIGN.md 3h): anchors the clock in the
+      # `quaacks anchor --run <run ID>` (DESIGN.md's clock-anchor): anchors the clock in the
       # run's redacted query (see ClockAnchoring).
       #
       # It runs after `quaacks redact`. It reads redacted_query, the
@@ -13,10 +13,10 @@ module Quaack
       # literals, and statistics for the column types they're compared with
       # (see ClockLiterals). It doesn't touch production. It
       # writes two entries: anchored_query, the SQL the run server runs
-      # (PlanGate.check and 5a-4 take it); and clock_replacements,
+      # (PlanGate.check and index-test take it); and clock_replacements,
       # {"replacements" => [{"original", "anchored"}], "added_names" =>
       # [{"slot", "name"}]}, which ClockAnchoring.restore takes to put the
-      # original functions back for the step 15 report. Both are shape: the
+      # original functions back for the report report. Both are shape: the
       # literals are already placeholders, and the replacements are
       # function names, or the placeholder a clock literal was. The words
       # themselves are never written. Everything is

@@ -5,9 +5,9 @@ require_relative "arena_fixture"
 
 module Quaack
   module Enclave
-    # Steps 9a, 9b, and 9e, reused by 10b and 10c: open a transaction on
-    # arena with statement_timeout, load a fixture, run queries, and always
-    # roll back, so arena stays empty between tests.
+    # fixture-open, fixture-load, and fixture-rollback, reused by counterexample-compare and counterexample-rollback:
+    # open a transaction on arena with statement_timeout, load a fixture, run queries, and always roll back, so arena
+    # stays empty between tests.
     #
     #   runner = ArenaRunner.new(arena_connection, statement_timeout_ms: 10_000)
     #   runner.with_fixture(rows, inserts: statements) do |tx|
@@ -15,14 +15,14 @@ module Quaack
     #   end
     #
     # with_fixture returns the block's value. A block can run any number of
-    # queries against the one loaded fixture, which 9c needs to run the
+    # queries against the one loaded fixture, which vacuity-guard needs to run the
     # original twice. Retrying with rebuilt rows is another with_fixture call.
     #
     # Each insert must be one INSERT and each query one SELECT. pg_query
     # checks that before anything runs.
     #
     # The connection is a live PG::Connection to arena, passed in. Arena setup
-    # (4b, task 20260922-27) isn't built yet. pg isn't an enclave dependency
+    # (arena-setup, task 20260922-27) isn't built yet. pg isn't an enclave dependency
     # yet either, so this uses only the methods of the connection it's handed
     # and never names a PG constant.
     #
@@ -89,7 +89,7 @@ module Quaack
       # row has loaded, an UPDATE keyed to the row's tableoid and ctid sets
       # them, row by row in load order, before the inserts run. If it
       # doesn't find the row, the load fails with fixture_load_failed. The
-      # inserts are for 10b, whose statements have already
+      # inserts are for counterexample-compare, whose statements have already
       # passed the inbound check. Once every insert has loaded, each
       # DeferredInsert's rows get their deferred columns, by UPDATEs the
       # runner builds itself, keyed to each row's tableoid and ctid, with
@@ -99,7 +99,7 @@ module Quaack
       #
       # index_scans: false turns off index, index-only, and bitmap scans for
       # the transaction (NO_INDEX_SCANS), so each table is read in heap
-      # order. Step 9d compares results only, so the plan doesn't matter,
+      # order. fixture-compare compares results only, so the plan doesn't matter,
       # and an index would hand back tied rows in its own order however the
       # fixture was loaded (see ResultComparison.compare_in_both_orders).
       #

@@ -12,24 +12,24 @@ module Quaack
         STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
         FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
-        # An intake refusal's reason (DESIGN.md, step 1), one fixed cause.
+        # An intake refusal's reason (DESIGN.md's input), one fixed cause.
         REASON_RULES = %w[query_unreadable plan_unreadable].freeze
         REASONS = %w[missing symlink not_regular_file permission_denied].freeze
-        # A run_server_other_clients failure's clients (DESIGN.md, step 4), as
+        # A run_server_other_clients failure's clients (DESIGN.md's run-server), as
         # the enclave's ErrorFilter shapes them: 1 to MAX_CLIENTS entries, each
         # exactly a positive Integer pid and a UTC backend_start.
         CLIENTS_RULE = "run_server_other_clients"
         CLIENT_KEYS = %w[pid backend_start].freeze
         BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
         MAX_CLIENTS = 20
-        # A step 9 refusal's column (DESIGN.md, step 9), as the enclave's
+        # A rewrite-test refusal's column (DESIGN.md's rewrite-test), as the enclave's
         # ErrorFilter shapes it: exactly a qualified table, a column name,
         # and a type as format_type prints it.
         COLUMN_RULES = %w[unsupported_type domain_check].freeze
         COLUMN_KEYS = %w[table column type].freeze
         IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
         TYPE = /\A[a-z_][a-z0-9_ $.,()\[\]]{0,127}\z/
-        # An fk_cycle refusal's tables (DESIGN.md, step 9), as the enclave's
+        # An fk_cycle refusal's tables (DESIGN.md's rewrite-test), as the enclave's
         # ErrorFilter shapes them: 3 to 64 plain schema.name Strings, the
         # last the first again.
         CYCLE_RULE = "fk_cycle"

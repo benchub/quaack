@@ -4,9 +4,9 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # DESIGN.md 5a-7: rank the index candidates that 5a-4 tested, and combine
-    # them greedily. Step 8 ranks a rewrite's mechanical candidates the same
-    # way, and step 11 calls it for a rewrite, with the rewrite's query.
+    # DESIGN.md's index-rank: rank the index candidates that index-test tested, and combine
+    # them greedily. plan-pruning ranks a rewrite's mechanical candidates the same
+    # way, and rewrite-index-ideas calls it for a rewrite, with the rewrite's query.
     #
     #   report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates:)
     #   IndexRanking.rank(connection, query:, literal_sets:,
@@ -14,7 +14,7 @@ module Quaack
     #   # => Ranking(top: [Entry, Entry, Entry], combination: Entry or nil)
     #
     # connection, query, and literal_sets are as SingleCandidateTest.run
-    # takes them. baseline is a 5a-4 Baseline, and results are 5a-4 Results
+    # takes them. baseline is an index-test Baseline, and results are index-test Results
     # from any generator and any number of runs, all for this query and
     # these literal sets. literal_sets must name the same sets as the
     # baseline and every result that wasn't refused, or rank raises
@@ -30,20 +30,20 @@ module Quaack
     # DDL, so the same results rank the same way in any order.
     #
     # Only candidates the planner used for some literal set are ranked. As
-    # DESIGN.md 5a-4 says, one it never used is discarded here, and so is one
-    # HypoPG refused. Their Results stay with the caller for 5a-5. top holds
+    # DESIGN.md's index-test says, one it never used is discarded here, and so is one
+    # HypoPG refused. Their Results stay with the caller for llm-index-ideas. top holds
     # the first three.
     #
     # The combination starts from the best single candidate. Each round
     # measures it together with each ranked candidate it doesn't hold yet,
     # with all of their hypothetical indexes present at once. Of those whose
     # plans use every one of their indexes for some literal set, and that
-    # lower some literal set's cost without raising any (DESIGN.md 5a-7), the
+    # lower some literal set's cost without raising any (DESIGN.md's index-rank), the
     # best by the same ranking replaces it. Rounds stop at three
     # indexes or when nothing is better. combination is nil if no pair beat
     # the best single candidate, and otherwise holds its candidates in the
     # order they were added. The measuring runs in a SingleCandidateTest
-    # Session, so it has 5a-4's transaction, settings, hidden-index check,
+    # Session, so it has index-test's transaction, settings, hidden-index check,
     # fresh prepares, notice handling, and cleanup. It happens only when
     # there are at least two ranked candidates. Its costs are compared with
     # the caller's baseline.
@@ -58,7 +58,7 @@ module Quaack
     # - Enclave-only: Entry#canonical_plans (see 20260923-28), and
     #   Entry#candidates and #ddl. A partial index's predicate, in its DDL,
     #   holds a literal from a low-cardinality column, which may leave only
-    #   under DESIGN.md 3f's rule, so inspect and to_s leave the DDL out.
+    #   under DESIGN.md's classify's rule, so inspect and to_s leave the DDL out.
     # Nothing here goes through egress yet.
     module IndexRanking
       # top has up to three single-index Entries, best first. combination
@@ -71,9 +71,9 @@ module Quaack
       # used, and canonical_plans map each literal set's name to its Cost,
       # to one boolean per index saying whether the plan uses it, and to
       # its CanonicalPlan. partial is true if any index has a predicate:
-      # DESIGN.md 5a-5 says such an index works only if the predicate's literal
+      # DESIGN.md's llm-index-ideas says such an index works only if the predicate's literal
       # is a constant in the application's SQL. plans maps each literal set
-      # to its 5a-4 Plan, raw and enclave-only.
+      # to its index-test Plan, raw and enclave-only.
       Entry = Data.define(:candidates, :ddl, :size, :costs, :used, :canonical_plans, :plans, :partial) do
         def reductions = costs.transform_values(&:reduction)
 
@@ -152,7 +152,7 @@ module Quaack
         current.candidates.size > 1 ? current : nil
       end
 
-      # DESIGN.md 5a-7: an addition lowers the cost if it lowers some literal
+      # DESIGN.md's index-rank: an addition lowers the cost if it lowers some literal
       # set's cost and raises none.
       def lower?(entry, current)
         pairs = entry.costs.map { |set, cost| [cost.after, current.costs[set].after] }

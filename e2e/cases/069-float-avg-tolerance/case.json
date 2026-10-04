@@ -3,7 +3,7 @@
   "category": "rewrite",
   "compare": "tolerance",
   "features": [
-    "float aggregates compared with a tolerance (9d)",
+    "float aggregates compared with a tolerance (fixture-compare)",
     "correlated subquery to a pre-aggregated join"
   ],
   "literal_sets": [

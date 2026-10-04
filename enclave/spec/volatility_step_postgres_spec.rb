@@ -4,7 +4,7 @@ require "securerandom"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks volatility --run <run ID>` (DESIGN.md 3d) the way the jump server
+# `quaacks volatility --run <run ID>` (DESIGN.md's volatility) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler, with
 # the operator's libpq setup in a temporary HOME, as `quaacks qualify` does.
 # It reads the run's server, plan, and qualified_query entries. The query

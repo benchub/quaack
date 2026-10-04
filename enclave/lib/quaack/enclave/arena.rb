@@ -5,7 +5,7 @@ require_relative "racetrack"
 
 module Quaack
   module Enclave
-    # DESIGN.md 4b: build arena, the empty database step 9 loads fixtures into.
+    # DESIGN.md's arena-setup: build arena, the empty database rewrite-test loads fixtures into.
     #
     #   Arena.build(store:, racetrack:, name:, connect:)  # nil, or raises an Error
     #
@@ -14,7 +14,7 @@ module Quaack
     # arena_db; connect is called with no arguments once arena exists and
     # returns a connection to it.
     #
-    # Arena is made from template0 with step 2's locale settings (the
+    # Arena is made from template0 with inventory's locale settings (the
     # inventory's database entry): its provider (c libc, i ICU, b builtin),
     # LC_COLLATE, LC_CTYPE, and its ICU or builtin locale. The inventory
     # doesn't record the encoding, so arena gets the run server's default.
@@ -22,7 +22,7 @@ module Quaack
     # database. An untagged database of that name is arena_database_foreign
     # and is left alone.
     #
-    # Into it goes 3b's full dump, with pg_dump's \restrict and \unrestrict
+    # Into it goes schema-dump's full dump, with pg_dump's \restrict and \unrestrict
     # lines removed, as one implicit transaction. The fresh database's
     # public schema is dropped first, since the dump runs CREATE SCHEMA
     # public. A dump that won't load is arena_dump_load_failed. Then the

@@ -37,7 +37,7 @@ module FilterFakes
     def error_field(code) = code == 67 ? sqlstate : ERROR_SENTINEL
   end
 
-  # A 3d refusal, which names the function that caused it.
+  # A volatility refusal, which names the function that caused it.
   class FunctionError < StandardError
     attr_reader :rule, :function
 
@@ -60,7 +60,7 @@ module FilterFakes
     end
   end
 
-  # A step 9 refusal, which names the column it can't fill.
+  # A rewrite-test refusal, which names the column it can't fill.
   class ColumnError < StandardError
     attr_reader :rule, :column
 
@@ -124,20 +124,20 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
   it "is loaded by quaack/enclave" do
     out, err, status = run_ruby("-I", File.join(GEM_ROOT, "lib"), "-e", <<~RUBY)
       require "quaack/enclave"
-      print Quaack::Enclave::ErrorFilter.to_egress(RuntimeError.new("x"), step: "3f")
+      print Quaack::Enclave::ErrorFilter.to_egress(RuntimeError.new("x"), step: "classify")
     RUBY
 
     expect(status).to be_success, "stderr was #{err}"
-    expect(out).to eq(line(step: "3f", rule: "internal_error"))
+    expect(out).to eq(line(step: "classify", rule: "internal_error"))
   end
 
   describe ".to_egress" do
     it "sends the step, the error's rule, and its SQLSTATE, and nothing else" do
       error = FilterFakes::RuledError.new(rule: "unique_email", sqlstate: "23505")
 
-      out = filter.to_egress(error, step: "3f")
+      out = filter.to_egress(error, step: "classify")
 
-      expect(out).to eq(line(step: "3f", rule: "unique_email", sqlstate: "23505"))
+      expect(out).to eq(line(step: "classify", rule: "unique_email", sqlstate: "23505"))
       expect_no_leaks(sentinels, stdout: out)
     end
 
@@ -151,7 +151,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
     it "sends no function for any rule but volatile_function" do
       error = FilterFakes::FunctionError.new(rule: "unique_email", function: "pg_catalog.random")
 
-      expect(filter.to_egress(error, step: "3d")).to eq(line(step: "3d", rule: "unique_email"))
+      expect(filter.to_egress(error, step: "volatility")).to eq(line(step: "volatility", rule: "unique_email"))
     end
 
     it "sends an intake unreadable refusal's fixed reason" do
@@ -189,9 +189,9 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       it "drops a function that's #{label}" do
         error = FilterFakes::FunctionError.new(rule: "volatile_function", function:)
 
-        out = filter.to_egress(error, step: "3d")
+        out = filter.to_egress(error, step: "volatility")
 
-        expect(out).to eq(line(step: "3d", rule: "volatile_function"))
+        expect(out).to eq(line(step: "volatility", rule: "volatile_function"))
         expect(out).not_to include("SENTINEL")
       end
     end
@@ -268,7 +268,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
     end
 
-    describe "a step 9 refusal's column" do
+    describe "a rewrite-test refusal's column" do
       let(:column) { { "table" => "fx.users", "column" => "root_account_ids", "type" => "bigint[]" } }
 
       def column_line(column, rule: "unsupported_type")
@@ -382,24 +382,24 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       held = LeakCheck.findings(sentinels, objects: { error: }).map(&:sentinel).uniq
       expect(held).to match_array(LeakCheck::Sentinels::KINDS)
 
-      expect_no_leaks(sentinels, stdout: filter.to_egress(error, step: "9b"))
+      expect_no_leaks(sentinels, stdout: filter.to_egress(error, step: "fixture-load"))
     end
 
     it "takes a rule given as a Symbol" do
-      expect(filter.to_egress(FilterFakes::RuledError.new(rule: :bad_search_path), step: "3a"))
-        .to eq(line(step: "3a", rule: "bad_search_path"))
+      expect(filter.to_egress(FilterFakes::RuledError.new(rule: :bad_search_path), step: "qualify"))
+        .to eq(line(step: "qualify", rule: "bad_search_path"))
     end
 
     it "takes steps named the way DESIGN.md and the subcommands name them" do
-      ["3f", "5a-1", "10b", "intake", "qualify_relations", "a" * 63].each do |step|
+      ["classify", "index-from-query", "counterexample-compare", "intake", "qualify_relations", "a" * 63].each do |step|
         expect(filter.to_egress(RuntimeError.new, step:)).to eq(line(step:, rule: "internal_error"))
       end
     end
 
     it "sends internal_error, and no SQLSTATE, for an error with neither" do
-      out = filter.to_egress(RuntimeError.new("Key (email)=(#{ERROR_SENTINEL}) already exists."), step: "9b")
+      out = filter.to_egress(RuntimeError.new("Key (email)=(#{ERROR_SENTINEL}) already exists."), step: "fixture-load")
 
-      expect(out).to eq(line(step: "9b", rule: "internal_error"))
+      expect(out).to eq(line(step: "fixture-load", rule: "internal_error"))
     end
 
     it "never sends the cause chain, even when a cause has a rule and a SQLSTATE" do
@@ -410,34 +410,36 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
       expect(error.cause.message).to eq(ERROR_SENTINEL)
 
-      expect(filter.to_egress(error, step: "3f")).to eq(line(step: "3f", rule: "internal_error"))
+      expect(filter.to_egress(error, step: "classify")).to eq(line(step: "classify", rule: "internal_error"))
     end
 
     it "never asks the error for its message, backtrace, inspect, or cause" do
-      out = filter.to_egress(FilterFakes::LoudError.new, step: "3f")
+      out = filter.to_egress(FilterFakes::LoudError.new, step: "classify")
 
-      expect(out).to eq(line(step: "3f", rule: "loud_rule"))
+      expect(out).to eq(line(step: "classify", rule: "loud_rule"))
     end
 
     it "sends internal_error when the error's rule method raises" do
       error = FilterFakes::RuledError.new(sqlstate: "23505")
       def error.rule = raise(ERROR_SENTINEL)
 
-      expect(filter.to_egress(error, step: "3f")).to eq(line(step: "3f", rule: "internal_error", sqlstate: "23505"))
+      expect(filter.to_egress(error,
+                              step: "classify")).to eq(line(step: "classify", rule: "internal_error",
+                                                            sqlstate: "23505"))
     end
 
     it "keeps the step when asking for the rule, SQLSTATE, or result raises something that isn't a StandardError" do
       cases = {
-        rule: [{ sqlstate: "23505" }, line(step: "3f", rule: "internal_error", sqlstate: "23505")],
-        sqlstate: [{ rule: "r" }, line(step: "3f", rule: "r")],
+        rule: [{ sqlstate: "23505" }, line(step: "classify", rule: "internal_error", sqlstate: "23505")],
+        sqlstate: [{ rule: "r" }, line(step: "classify", rule: "r")],
         # With no sqlstate method answer, the filter goes on to ask for the result.
-        result: [{ rule: "r" }, line(step: "3f", rule: "r")]
+        result: [{ rule: "r" }, line(step: "classify", rule: "r")]
       }
       cases.each do |method, (fields, expected)|
         error = FilterFakes::RuledError.new(**fields)
         error.define_singleton_method(method) { raise NoMemoryError, ERROR_SENTINEL }
 
-        expect(raised { filter.to_egress(error, step: "3f") }).to eq(expected), "for #{method}"
+        expect(raised { filter.to_egress(error, step: "classify") }).to eq(expected), "for #{method}"
       end
     end
 
@@ -445,16 +447,17 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       tricky = Class.new(String) { def to_s = ERROR_SENTINEL }
       [ERROR_SENTINEL, :"Unique-Violation", "unique-violation", "unique_violation\n", "", "_rule", "9rule", "a" * 64,
        "rule\xFF".b, "rule".encode("UTF-16LE"), tricky.new("tricky_rule"), 42, nil, [:rule]].each do |rule|
-        out = filter.to_egress(FilterFakes::RuledError.new(rule:), step: "3f")
+        out = filter.to_egress(FilterFakes::RuledError.new(rule:), step: "classify")
 
-        expect(out).to eq(line(step: "3f", rule: "internal_error")), "for rule #{rule.inspect}"
+        expect(out).to eq(line(step: "classify", rule: "internal_error")), "for rule #{rule.inspect}"
       end
     end
 
     it "takes a rule of up to 63 characters" do
       rule = "a" * 63
 
-      expect(filter.to_egress(FilterFakes::RuledError.new(rule:), step: "3f")).to eq(line(step: "3f", rule:))
+      expect(filter.to_egress(FilterFakes::RuledError.new(rule:),
+                              step: "classify")).to eq(line(step: "classify", rule:))
     end
 
     it "drops a SQLSTATE that isn't five digits or capital letters" do
@@ -462,30 +465,32 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       [ERROR_SENTINEL, "2350", "235055", "23505\n", "2350a", "2350\xFF".b, "23505".encode("UTF-16LE"), 23_505,
        :"23505", odd.new("23505"), nil]
         .each do |sqlstate|
-        out = filter.to_egress(FilterFakes::RuledError.new(rule: "r", sqlstate:), step: "3f")
+        out = filter.to_egress(FilterFakes::RuledError.new(rule: "r", sqlstate:), step: "classify")
 
-        expect(out).to eq(line(step: "3f", rule: "r")), "for sqlstate #{sqlstate.inspect}"
+        expect(out).to eq(line(step: "classify", rule: "r")), "for sqlstate #{sqlstate.inspect}"
       end
     end
 
     it "reads the SQLSTATE from a PG-style error's result" do
-      expect(filter.to_egress(FilterFakes::ResultError.new(FilterFakes::FakeResult.new("40P01")), step: "13"))
-        .to eq(line(step: "13", rule: "internal_error", sqlstate: "40P01"))
+      expect(filter.to_egress(FilterFakes::ResultError.new(FilterFakes::FakeResult.new("40P01")), step: "baseline"))
+        .to eq(line(step: "baseline", rule: "internal_error", sqlstate: "40P01"))
     end
 
     it "takes the error's own sqlstate over its result's" do
       error = FilterFakes::ResultError.new(FilterFakes::FakeResult.new("40P01"))
       def error.sqlstate = "23505"
 
-      expect(filter.to_egress(error, step: "13")).to eq(line(step: "13", rule: "internal_error", sqlstate: "23505"))
+      expect(filter.to_egress(error,
+                              step: "baseline")).to eq(line(step: "baseline", rule: "internal_error",
+                                                            sqlstate: "23505"))
     end
 
     it "drops a bad SQLSTATE from a PG-style error's result, or a result that isn't there" do
       results = [FilterFakes::FakeResult.new(ERROR_SENTINEL), FilterFakes::FakeResult.new(nil), nil, ERROR_SENTINEL]
       results.each do |result|
-        out = filter.to_egress(FilterFakes::ResultError.new(result), step: "13")
+        out = filter.to_egress(FilterFakes::ResultError.new(result), step: "baseline")
 
-        expect(out).to eq(line(step: "13", rule: "internal_error")), "for result #{result.inspect}"
+        expect(out).to eq(line(step: "baseline", rule: "internal_error")), "for result #{result.inspect}"
       end
     end
 
@@ -501,13 +506,13 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       error = raised { Quaack::Enclave::Egress.serialize(type: :error, rule: "#{ERROR_SENTINEL}\xFF".b) }
       expect(error).to be_a(Quaack::Enclave::Egress::Error)
 
-      expect(filter.to_egress(error, step: "3f")).to eq(line(step: "3f", rule: "internal_error"))
+      expect(filter.to_egress(error, step: "classify")).to eq(line(step: "classify", rule: "internal_error"))
     end
 
     it "filters an Egress::Error with the sentinel in its message" do
       error = Quaack::Enclave::Egress::Error.new(ERROR_SENTINEL)
 
-      expect(filter.to_egress(error, step: "3f")).to eq(line(step: "3f", rule: "internal_error"))
+      expect(filter.to_egress(error, step: "classify")).to eq(line(step: "classify", rule: "internal_error"))
     end
 
     describe "when the egress function fails" do
@@ -520,20 +525,22 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       it "sends the fallback line when the egress function returns nil" do
         allow(Quaack::Enclave::Egress).to receive(:serialize).and_return(nil)
 
-        expect(filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "3f")).to eq(described_class::FALLBACK)
+        expect(filter.to_egress(FilterFakes::RuledError.new(rule: "r"),
+                                step: "classify")).to eq(described_class::FALLBACK)
       end
 
       it "sends the fallback line, and doesn't raise, when the egress function raises" do
         allow(Quaack::Enclave::Egress).to receive(:serialize).and_raise(Quaack::Enclave::Egress::Error, ERROR_SENTINEL)
 
-        expect(filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "3f")).to eq(described_class::FALLBACK)
+        expect(filter.to_egress(FilterFakes::RuledError.new(rule: "r"),
+                                step: "classify")).to eq(described_class::FALLBACK)
       end
 
       it "sends the fallback line when the egress function raises something that isn't a StandardError" do
         allow(Quaack::Enclave::Egress).to receive(:serialize).and_raise(NoMemoryError, ERROR_SENTINEL)
 
         # RSpec lets a NoMemoryError end the run, so raised turns an escape into a plain failure.
-        expect(raised { filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "3f") })
+        expect(raised { filter.to_egress(FilterFakes::RuledError.new(rule: "r"), step: "classify") })
           .to eq(described_class::FALLBACK)
       end
     end
@@ -544,7 +551,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
 
     it "returns the block's value, and writes nothing, when the block succeeds" do
       result = nil
-      expect { result = filter.guard(step: "3f", out:) { 0 } }.not_to output.to_stderr
+      expect { result = filter.guard(step: "classify", out:) { 0 } }.not_to output.to_stderr
 
       expect(result).to eq(0)
       expect(out.string).to eq("")
@@ -564,29 +571,31 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         out = StringIO.new
         status = nil
 
-        expect { status = filter.guard(step: "3f", out:, &block) }.not_to output.to_stderr
+        expect { status = filter.guard(step: "classify", out:, &block) }.not_to output.to_stderr
 
         expect(status).to eq(described_class::EX_SOFTWARE), "for #{name}"
         expect(out.string.lines.size).to eq(1), "for #{name}"
-        expect(JSON.parse(out.string)).to include("type" => "error", "step" => "3f"), "for #{name}"
+        expect(JSON.parse(out.string)).to include("type" => "error", "step" => "classify"), "for #{name}"
         expect_no_leaks(sentinels, stdout: out.string, why: "for #{name}")
       end
     end
 
     it "fails with EX_SOFTWARE, which is nonzero" do
-      status = filter.guard(step: "3f", out:) { raise ERROR_SENTINEL }
+      status = filter.guard(step: "classify", out:) { raise ERROR_SENTINEL }
 
       expect(status).to eq(70)
     end
 
     it "writes what to_egress gives, as a line" do
-      filter.guard(step: "3f", out:) { raise FilterFakes::RuledError.new(rule: "unique_email", sqlstate: "23505") }
+      filter.guard(step: "classify", out:) { raise FilterFakes::RuledError.new(rule: "unique_email", sqlstate: "23505") }
 
-      expect(out.string).to eq("#{line(step: "3f", rule: "unique_email", sqlstate: "23505")}\n")
+      expect(out.string).to eq("#{line(step: "classify", rule: "unique_email", sqlstate: "23505")}\n")
     end
 
     it "lets exit pass, with its status" do
-      expect { filter.guard(step: "3f", out:) { exit 3 } }.to raise_error(SystemExit) { |e| expect(e.status).to eq(3) }
+      expect { filter.guard(step: "classify", out:) { exit 3 } }.to raise_error(SystemExit) { |e|
+        expect(e.status).to eq(3)
+      }
       expect(out.string).to eq("")
     end
 
@@ -595,9 +604,9 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       signals.each do |name, signal|
         out = StringIO.new
 
-        expect { filter.guard(step: "3f", out:) { raise signal } }
+        expect { filter.guard(step: "classify", out:) { raise signal } }
           .to raise_error(be(signal)).and(not_output.to_stderr), "for #{name}"
-        expect(out.string).to eq("#{line(step: "3f", rule: "internal_error")}\n"), "for #{name}"
+        expect(out.string).to eq("#{line(step: "classify", rule: "internal_error")}\n"), "for #{name}"
       end
     end
 
@@ -606,7 +615,11 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       def out.write(*) = raise(NoMemoryError)
 
       # RSpec lets a NoMemoryError end the run, so raised turns an escape into a plain failure.
-      expect(raised { filter.guard(step: "3f", out:) { raise ERROR_SENTINEL } }).to eq(described_class::EX_SOFTWARE)
+      expect(raised do
+        filter.guard(step: "classify", out:) do
+          raise ERROR_SENTINEL
+        end
+      end).to eq(described_class::EX_SOFTWARE)
     end
 
     # A signal that arrives while guard is already reporting an error must
@@ -616,20 +629,20 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         error = RuntimeError.new(ERROR_SENTINEL)
         def error.rule = raise(Interrupt)
 
-        expect(raised { filter.guard(step: "3f", out:) { raise error } }).to be_a(Interrupt)
+        expect(raised { filter.guard(step: "classify", out:) { raise error } }).to be_a(Interrupt)
       end
 
       it "raises one that arrives inside the egress function" do
         allow(Quaack::Enclave::Egress).to receive(:serialize).and_raise(SignalException, "TERM")
 
-        expect(raised { filter.guard(step: "3f", out:) { raise ERROR_SENTINEL } }).to be_a(SignalException)
+        expect(raised { filter.guard(step: "classify", out:) { raise ERROR_SENTINEL } }).to be_a(SignalException)
       end
 
       it "raises one that arrives while it writes the line" do
         loud = Object.new
         def loud.write(*) = raise(Interrupt)
 
-        expect(raised { filter.guard(step: "3f", out: loud) { raise ERROR_SENTINEL } }).to be_a(Interrupt)
+        expect(raised { filter.guard(step: "classify", out: loud) { raise ERROR_SENTINEL } }).to be_a(Interrupt)
       end
     end
 
@@ -638,9 +651,9 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
         path = File.join(dir, "out")
         File.open(path, "w") do |file|
           file.sync = false
-          filter.guard(step: "3f", out: file) { raise ERROR_SENTINEL }
+          filter.guard(step: "classify", out: file) { raise ERROR_SENTINEL }
 
-          expect(File.read(path)).to eq("#{line(step: "3f", rule: "internal_error")}\n")
+          expect(File.read(path)).to eq("#{line(step: "classify", rule: "internal_error")}\n")
         end
       end
     end
@@ -649,7 +662,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       closed = StringIO.new.tap(&:close)
       status = nil
 
-      expect { status = filter.guard(step: "3f", out: closed) { raise ERROR_SENTINEL } }.not_to output.to_stderr
+      expect { status = filter.guard(step: "classify", out: closed) { raise ERROR_SENTINEL } }.not_to output.to_stderr
       expect(status).to eq(described_class::EX_SOFTWARE)
     end
   end

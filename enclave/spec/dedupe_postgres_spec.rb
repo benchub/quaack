@@ -7,8 +7,8 @@ require "quaack/enclave/pg_array"
 
 # Checks Dedupe.covers? against the planner. For each case, a real index
 # stands for the existing index, read back through pg_get_indexdef and
-# IndexCandidate.from_ddl, as DESIGN.md 3b will read it. The candidate is
-# created with HypoPG, as 5a-4 would. The query is one the candidate
+# IndexCandidate.from_ddl, as DESIGN.md's schema-dump will read it. The candidate is
+# created with HypoPG, as index-test would. The query is one the candidate
 # serves on its own: the planner scans the candidate, with no sort, no
 # filter on the scan, and an index-only scan when the candidate has INCLUDE
 # columns. The existing index covers the candidate when it serves that query
@@ -120,7 +120,7 @@ RSpec.describe "Dedupe.covers? against the planner" do
     { name: "an existing index with a collation", existing: "(s COLLATE \"C\")", candidate: { key: ["s"] },
       query: "SELECT * FROM t ORDER BY s LIMIT 10", covered: false },
     # Expression keys, opclasses, and collations (20260922-33), as the LLM
-    # proposes them in 5a-5.
+    # proposes them in llm-index-ideas.
     { name: "the same expression key, spelled differently", existing: "(lower(s))",
       candidate: { key: [expr_key(expression: "LOWER( s )")] },
       query: "SELECT * FROM t ORDER BY lower(s) LIMIT 10", covered: true },

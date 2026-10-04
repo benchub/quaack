@@ -467,7 +467,7 @@ RSpec.describe Quaack::Driver::Transport do
     end
   end
 
-  # A long step, such as 12a, sends progress lines while it works, and the
+  # A long step, such as index-build, sends progress lines while it works, and the
   # driver hands each to the call's block as it arrives, not once the run
   # has ended. Only Protocol::PROGRESS types reach the block.
   describe "progress as it arrives" do

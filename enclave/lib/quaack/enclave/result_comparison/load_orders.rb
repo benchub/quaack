@@ -11,7 +11,7 @@ module Quaack
 
       module_function
 
-      # Step 9d's entry point, for step 9 orchestration (task 20260922-49)
+      # fixture-compare's entry point, for rewrite-test orchestration (task 20260922-49)
       # to call. It runs the whole comparison (compare) twice, each time in
       # its own ArenaRunner transaction that rolls back: first with the
       # fixture loaded as given, then with it loaded in reverse.
@@ -29,7 +29,7 @@ module Quaack
       # Both runs turn index scans off (ArenaRunner's index_scans: false).
       # Arena has the production indexes and no statistics, so the planner
       # reaches for them, and an index on (grp, id) hands back the grp ties
-      # in id order whatever order the heap holds them in. 9d compares only
+      # in id order whatever order the heap holds them in. fixture-compare compares only
       # results, so the plan doesn't matter.
       #
       # rows are FixtureRows and inserts are raw INSERT statements, as

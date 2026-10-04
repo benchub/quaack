@@ -22,13 +22,13 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
 
   def run = described_class.new(client:, rewrite_check:).run(payload)
 
-  before { fake.reply("6a", { "rewrites" => [rewrite] }) }
+  before { fake.reply("llm-rewrites", { "rewrites" => [rewrite] }) }
 
   it "sends the payload and asks for up to five rewrites with structured assumptions" do
     run
     ask = fake.asks.first
 
-    expect(ask.step).to eq("6a")
+    expect(ask.step).to eq("llm-rewrites")
     expect(JSON.parse(ask.body[:messages].first[:content][/```json\n(.*)\n```/m, 1])).to eq(payload)
     expect(ask.body[:output_config]).to eq(format: { type: :json_schema, schema: described_class::SCHEMA })
     expect(ask.body[:system]).to include("up to five")
@@ -42,9 +42,9 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     expect(result).to eq(described_class::Result.new(rewrites: [rewrite], outcomes: [outcome]))
   end
 
-  it "records that 6a ran, with an empty rewrite-check, when the LLM proposes nothing" do
+  it "records that llm-rewrites ran, with an empty rewrite-check, when the LLM proposes nothing" do
     fake = FakeLLM.new
-    fake.reply("6a", { "rewrites" => [] })
+    fake.reply("llm-rewrites", { "rewrites" => [] })
 
     described_class.new(client: fake.client(burndown: Quaack::Driver::Burndown.new), rewrite_check:).run(payload)
 

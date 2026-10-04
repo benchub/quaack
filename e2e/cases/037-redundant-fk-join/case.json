@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "join elimination",
-    "validated FK plus NOT NULL assumption (6b)",
-    "NOT VALID constraints don't count (6b)"
+    "validated FK plus NOT NULL assumption (assumption-check)",
+    "NOT VALID constraints don't count (assumption-check)"
   ],
   "literal_sets": [
     {

@@ -62,7 +62,7 @@ module Quaack
       # INSERT ... DEFAULT VALUES.
       #
       # deferred names columns, among columns, whose values load late, for a
-      # foreign-key cycle step 9 cuts (Scenarios::Topology): the row loads
+      # foreign-key cycle rewrite-test cuts (Scenarios::Topology): the row loads
       # with NULL there, and once every row has loaded, an UPDATE keyed to
       # its tableoid and ctid sets its values in them.
       FixtureRow = Data.define(:table, :columns, :values, :deferred) do
@@ -125,7 +125,7 @@ module Quaack
         alias_method :to_s, :inspect
       end
 
-      # One query's result, for the 9d comparator (task 20260922-47).
+      # One query's result, for the fixture-compare comparator (task 20260922-47).
       # columns are the output column names. types are their type OIDs, from
       # ftype, so the comparator can find the float columns. rows are Arrays
       # of Postgres text output, with nil for NULL.

@@ -8,13 +8,13 @@ require "quaack/enclave/inventory/production"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks run-server` (DESIGN.md, step 4) the way the jump server runs it: the
+# `quaacks run-server` (DESIGN.md's run-server) the way the jump server runs it: the
 # installed quaacks in its own process, outside Bundler, connecting with the
 # operator's libpq setup in a temporary HOME. The stand-in production
 # database from ProductionServer is production and the racetrack both, as
-# in run_server_check_postgres_spec.rb: step 2's inventory is read from it,
+# in run_server_check_postgres_spec.rb: inventory's inventory is read from it,
 # and then the step checks it as the run server. Arena isn't connected to
-# at this step, since 4b makes it, so its name needn't exist yet.
+# at this step, since arena-setup makes it, so its name needn't exist yet.
 RSpec.describe "quaacks run-server, against a real server" do
   let(:quaacks) { LeakCheck::Quaacks.new }
   let(:sentinels) { ProductionServer.sentinels }
@@ -37,7 +37,7 @@ RSpec.describe "quaacks run-server, against a real server" do
   # setup a test builds is used.
   def libpq_env(**vars) = ENV.keys.grep(/\APG/).to_h { [it, nil] }.merge(vars.transform_keys(&:to_s))
 
-  # Stores production's inventory the way step 2 does, after the block, if
+  # Stores production's inventory the way inventory does, after the block, if
   # any, changes it.
   def record_inventory
     conn = production.connect
@@ -53,7 +53,7 @@ RSpec.describe "quaacks run-server, against a real server" do
                 "--arena-db", arena, env: libpq_env(**env))
   end
 
-  # The run server must have no other clients (DESIGN.md, 4a), so every
+  # The run server must have no other clients (DESIGN.md's racetrack-setup), so every
   # connection this process holds, including the harness's own and any a
   # spec left open, is ended first.
   def close_every_harness_connection
@@ -93,7 +93,7 @@ RSpec.describe "quaacks run-server, against a real server" do
     end
 
     # PgBouncer in session mode in front of the run server reports a pid of
-    # its own to libpq, not the server backend's (DESIGN.md, step 4).
+    # its own to libpq, not the server backend's (DESIGN.md's run-server).
     it "records a run server behind PgBouncer in session mode" do
       bouncer_port = TestPostgres.server.pgbouncer_port
       record_inventory

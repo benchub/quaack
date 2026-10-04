@@ -4,7 +4,7 @@ require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks classify --run <run ID>` (DESIGN.md 3f) the way the jump server runs
+# `quaacks classify --run <run ID>` (DESIGN.md's classify) the way the jump server runs
 # it: the installed quaacks in its own process, outside Bundler, in a
 # temporary HOME with the operator's config. It reads the run's statistics
 # entry, which a real `quaacks statistics` run writes first, from a real
@@ -12,7 +12,7 @@ require_relative "support/production_server"
 #
 # public.orders holds:
 # - status, a low-cardinality text column of made-up categories, whose MCV
-#   values DESIGN.md 3f lets out.
+#   values DESIGN.md's classify lets out.
 # - email, few distinct values that repeat, but PII by the config's glob.
 #   Its values are the text sentinel.
 # - code, an int column with 60 distinct values that repeat, so not PII but

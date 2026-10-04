@@ -6,7 +6,7 @@
     "aggregate with DISTINCT",
     "aggregate with ORDER BY",
     "ordered-set aggregate WITHIN GROUP",
-    "float result compared with a tolerance (9d)"
+    "float result compared with a tolerance (fixture-compare)"
   ],
   "literal_sets": [
     {

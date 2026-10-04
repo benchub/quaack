@@ -5,7 +5,7 @@
   "features": [
     "DISTINCT ON with a matching ORDER BY",
     "IN list",
-    "INCLUDE column for an index-only scan (5a-1)"
+    "INCLUDE column for an index-only scan (index-from-query)"
   ],
   "literal_sets": [
     {

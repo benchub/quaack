@@ -2,10 +2,10 @@
 
 require "quaack/enclave/clock_anchoring"
 
-# 3h for the clock-reading literals 'now', 'today', 'yesterday', and
-# 'tomorrow' (task 20260926-48). By the time 3h runs, 3g has made each
+# clock-anchor for the clock-reading literals 'now', 'today', 'yesterday', and
+# 'tomorrow' (task 20260926-48). By the time clock-anchor runs, redact has made each
 # literal a placeholder, so anchoring reads the words from the placeholder
-# map, and the implicit types from 3c's clock_columns.
+# map, and the implicit types from statistics' clock_columns.
 # clock_anchoring_postgres_spec.rb checks the values on real Postgres.
 RSpec.describe Quaack::Enclave::ClockAnchoring do
   let(:statistics) do

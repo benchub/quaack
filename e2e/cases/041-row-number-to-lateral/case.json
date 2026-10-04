@@ -6,7 +6,7 @@
     "window function with PARTITION BY",
     "LATERAL top-N rewrite",
     "existing index used by the rewrite",
-    "generator-one candidates already exist, so 5a-3 drops them"
+    "generator-one candidates already exist, so index-dedupe drops them"
   ],
   "literal_sets": [
     {

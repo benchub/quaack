@@ -6,16 +6,16 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # Steps 9 and 10's fixtures for a rewrite from a 6c rule that rests on a
-    # denormalized_equal assumption, which 6b checked against the data
-    # (DESIGN.md 6c, 9, 10a). Such a rewrite is only right on data that
+    # rewrite-test and counterexamples' fixtures for a rewrite from a rewrite-rules rule that rests on a
+    # denormalized_equal assumption, which assumption-check checked against the data
+    # (DESIGN.md's rewrite-rules, rewrite-test, llm-counterexamples). Such a rewrite is only right on data that
     # keeps the copy, so the arena makes its fixtures keep it too:
     #
     #   copies = DenormalizedFixture.copies(store.read("rewrite_1"))
     #   DenormalizedFixture::Runner.new(arena_connection, copies)   # an ArenaRunner
     #
-    # copies reads only the entry's own assumptions, and only when a 6c
-    # rule wrote it ("source" "rule"); 6b refuses the kind from anyone
+    # copies reads only the entry's own assumptions, and only when a rewrite-rules
+    # rule wrote it ("source" "rule"); assumption-check refuses the kind from anyone
     # else, and this is a second guard, so no other rewrite's fixtures are
     # bent to fit it.
     #

@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** jsonb @> operator; GIN with jsonb_path_ops, set aside untested (5a-3); json values never sent, only frequencies (3f).
+**Exercises:** jsonb @> operator; GIN with jsonb_path_ops, set aside untested (index-dedupe); json values never sent, only frequencies (classify).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Find refund webhooks. `@>` on an unindexed `jsonb` column means a full scan.
 
 ## Expected result.
 
-A GIN index on `payload` with `jsonb_path_ops`. Like case 009, it's set aside untested in 5a and measured in step 12.
+A GIN index on `payload` with `jsonb_path_ops`. Like case 009, it's set aside untested in index-search and measured in measurement-setup.
 
 ## Notes.
 

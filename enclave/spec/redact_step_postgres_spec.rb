@@ -4,7 +4,7 @@ require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks redact --run <run ID>` (DESIGN.md 3g) the way the jump server runs
+# `quaacks redact --run <run ID>` (DESIGN.md's redact) the way the jump server runs
 # it: the installed quaacks in its own process, outside Bundler. It reads the
 # run's qualified_query and plan entries, here a real EXPLAIN ANALYZE of a
 # query whose literals are sentinels, and needs no production connection.

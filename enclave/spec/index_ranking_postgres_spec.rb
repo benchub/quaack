@@ -4,11 +4,11 @@ require "delegate"
 require "pp"
 require "quaack/enclave/index_ranking"
 
-# 5a-7 against real HypoPG on the test harness. Each table is analyzed with
+# index-rank against real HypoPG on the test harness. Each table is analyzed with
 # a statistics target big enough to read every row, so the statistics, and
 # with them every cost, come out the same on every run.
 #
-# t's s column is skewed as in 5a-4's spec: 90% of rows hold 0, and the
+# t's s column is skewed as in index-test's spec: 90% of rows hold 0, and the
 # rest each hold a value of their own. o and cu join on o.cid = cu.id. w is
 # one more table, of a size between o's and cu's.
 RSpec.describe Quaack::Enclave::IndexRanking do
@@ -50,7 +50,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     described_class.rank(connection, query:, literal_sets:, baseline: report.baseline, results:)
   end
 
-  # 5a-4, then 5a-7 on its results.
+  # index-test, then index-rank on its results.
   def ranked(query, literal_sets, candidates)
     rank(query, literal_sets, single_test(query, literal_sets, candidates))
   end
@@ -119,7 +119,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
   end
 
   # What the plans use with these candidates' indexes all present, from
-  # 5a-4's shared core.
+  # index-test's shared core.
   def used_together(query, literal_sets, candidates)
     Quaack::Enclave::SingleCandidateTest.session(conn, query:, literal_sets:) do |session|
       session.measure(candidates).plans.transform_values(&:used)
@@ -128,7 +128,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
 
   # With both indexes, s = 10 uses the one on s and s = 0 uses the one on
   # b, whose cost doesn't depend on s. So the worst case is no better, but
-  # the slow set is, and no set is worse (DESIGN.md 5a-7, 20260927-9).
+  # the slow set is, and no set is worse (DESIGN.md's index-rank, 20260927-9).
   it "combines an index that lowers one set's cost without making any set worse" do
     ranking = ranked(skewed, skewed_sets, [on_s, on_b])
     pair = ranking.combination
@@ -402,7 +402,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
 
   # With hypopg.use_real_oids on, HypoPG gives an index a new oid each
   # time, so the "<oid>" in an entry's plan differs from the one a later
-  # session gives the same index. Step 8 compares plans across sessions
+  # session gives the same index. plan-pruning compares plans across sessions
   # like that, so the entry's canonical plans have to tell the index by
   # what it is, through SingleCandidateTest's oid map (20260929-30).
   it "keeps canonical plans that match the same indexes planned in a later session" do

@@ -7,8 +7,8 @@ module Quaack
   module Enclave
     module Steps
       # The denormalized_equal assumptions a stored rewrite rests on (DESIGN.md
-      # 6b): what 6b found the data holds and the schema doesn't enforce, for
-      # the report to name (DESIGN.md 15).
+      # assumption-check): what assumption-check found the data holds and the schema doesn't enforce, for
+      # the report to name (DESIGN.md's report).
       #
       #   EmpiricalAssumptions.call(store.read("rewrite_1"))
       #   # => [{ "table" => "public.submissions", "column" => "course_id",

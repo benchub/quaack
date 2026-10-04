@@ -2,7 +2,7 @@
 
 # The enclave does everything that touches a database, so its specs are the
 # main users of the test database harness. This proves the harness works
-# from this suite, and that HypoPG does what step 5a needs: a hypothetical
+# from this suite, and that HypoPG does what index-search needs: a hypothetical
 # index shows up in a plain EXPLAIN.
 RSpec.describe "the test database" do
   it "lets a test create a hypothetical index and see the planner use it" do

@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "NOT IN with a NULL in the subquery",
-    "NULL fixtures disprove the rewrite (step 9, S2)",
-    "unmet NOT NULL assumption (6b)"
+    "NULL fixtures disprove the rewrite (rewrite-test, S2)",
+    "unmet NOT NULL assumption (assumption-check)"
   ],
   "literal_sets": [
     {

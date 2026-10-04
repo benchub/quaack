@@ -2,7 +2,7 @@
 
 require "quaack/enclave/result_comparison"
 
-# How step 9d reads the original query to pick a comparison mode, and the
+# How fixture-compare reads the original query to pick a comparison mode, and the
 # queries it builds. result_comparison_postgres_spec.rb runs them.
 RSpec.describe Quaack::Enclave::ResultComparison do
   let(:sentinel) { "SENTINEL-9d20b4" }

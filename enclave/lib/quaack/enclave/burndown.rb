@@ -5,37 +5,35 @@ require_relative "store"
 
 module Quaack
   module Enclave
-    # The enclave script's side of the DESIGN.md 15b burndown: per-stage counts
+    # The enclave script's side of the DESIGN.md's burndown burndown: per-stage counts
     # and work totals, kept in the governed store as each step runs, in one
     # entry named burndown.
     #
-    #   Burndown.record(store, "5a-3", :original, in: 10, dropped: { duplicate: 2 }, set_aside: 1, out: 7)
-    #   Burndown.add_totals(store, hypothetical_explains: 12)
-    #   Burndown.read(store)
-    #   # => { "stages" => { "5a-3" => { "original" => { "in" => 10, "added" => {}, "dropped" => { "duplicate" => 2 },
-    #   #                                                 "set_aside" => 1, "out" => 7, "extra" => {} } } },
-    #   #      "totals" => { "hypothetical_explains" => 12 } }
-    #   Egress.serialize(Burndown.message(store))  # the burndown type on the whitelist
+    #   Burndown.record(store, "index-dedupe", :original, in: 10, dropped: { duplicate: 2 }, set_aside: 1, out: 7)
+    #   Burndown.add_totals(store, hypothetical_explains: 12) Burndown.read(store) # => { "stages" => { "index-dedupe"
+    #   => { "original" => { "in" => 10, "added" => {}, "dropped" => { "duplicate" => 2 }, # "set_aside" => 1, "out"
+    #   => 7, "extra" => {} } } }, # "totals" => { "hypothetical_explains" => 12 } }
+    #   Egress.serialize(Burndown.message(store)) # the burndown type on the whitelist
     #
     # Stages that have a result object record it through an adapter:
     #
-    #   since = Burndown.record_dedupe(store, dedupe, search: :original)          # 5a-3
-    #   Burndown.record_single_candidate_test(store, report, search: :original)   # 5a-4
-    #   Burndown.record_llm_round(store, stage: "5a-5", search: :original,        # 5a-5
+    #   since = Burndown.record_dedupe(store, dedupe, search: :original)          # index-dedupe
+    #   Burndown.record_single_candidate_test(store, report, search: :original)   # index-test
+    #   Burndown.record_llm_round(store, stage: "llm-index-ideas", search: :original,        # llm-index-ideas
     #                             dedupe:, since:, report: llm_report)
     #
     # A stage is one of Protocol::Burndown::STAGES. A search is :original
-    # for the original query, or a Symbol naming a rewrite, since 5a-3
-    # through 5a-7 run again for each rewrite in steps 8 and 11. A record's
+    # for the original query, or a Symbol naming a rewrite, since index-dedupe
+    # through index-rank run again for each rewrite in plan-pruning and rewrite-index-ideas. A record's
     # fields:
     #
     # - in: how many items came into the stage.
     # - added: how many the stage added, by source, such as generator_one.
     # - dropped: how many it dropped, by reason, such as duplicate.
-    # - set_aside: how many it held back untested, such as 5a-3's GIN and
+    # - set_aside: how many it held back untested, such as index-dedupe's GIN and
     #   GiST candidates.
     # - out: how many went on.
-    # - extra: counts that don't move items, such as untested atoms or 9c
+    # - extra: counts that don't move items, such as untested atoms or vacuity-guard
     #   retries. They're kept, not summed.
     #
     # in and out are required. The rest default to none.
@@ -69,6 +67,8 @@ module Quaack
       class Error < StandardError; end
 
       ENTRY = "burndown"
+      # The LLM rounds record_llm_round records.
+      ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
       FIELDS = Protocol::Burndown::FIELDS
       BREAKDOWNS = Protocol::Burndown::BREAKDOWNS
@@ -87,37 +87,37 @@ module Quaack
       # indexes_built, measurement_runs, and fixture_loads.
       def add_totals(store, **counts) = add(store, [], counts)
 
-      # Records one Dedupe search as a 5a-3 run: in is every candidate it
+      # Records one Dedupe search as an index-dedupe run: in is every candidate it
       # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
       # and SP-GiST candidates, and out is its proposals, which go on to
-      # 5a-4. It returns the counts it recorded, for the since of the LLM
+      # index-test. It returns the counts it recorded, for the since of the LLM
       # round that follows (see record_llm_round).
       def record_dedupe(store, dedupe, search:)
         counts = Adapters.dedupe_counts(dedupe)
-        add(store, [["5a-3", search, counts]], {})
+        add(store, [["index-dedupe", search, counts]], {})
         counts
       end
 
-      # Records a SingleCandidateTest report as a 5a-4 run: in is every
+      # Records a SingleCandidateTest report as an index-test run: in is every
       # candidate tested, out is the ones the planner used for some literal
       # set, and the rest are dropped as never_used or, if HypoPG wouldn't
       # create them, hypopg_refused. Each plan with a hypothetical index adds
       # one to the hypothetical_explains total. The baseline's plans have
       # none, so they don't count. set_aside is the unused candidates held
-      # for 12a to build for real (IndexSearch's "set_aside"), which count
+      # for index-build to build for real (IndexSearch's "set_aside"), which count
       # as set aside rather than never_used.
       def record_single_candidate_test(store, report, search:, set_aside: [])
-        add(store, [["5a-4", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
+        add(store, [["index-test", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
       end
 
-      # Records one LLM round, 5a-5 or 5a-6, as one record. A round filters
+      # Records one LLM round, llm-index-ideas or llm-index-refine, as one record. A round filters
       # the LLM's candidates through the search's own Dedupe, which already
-      # holds the mechanical proposals, and then tests what's left in 5a-4.
+      # holds the mechanical proposals, and then tests what's left in index-test.
       # The two are a chain, so the round's record covers both:
       #
       # - in is 0, and added is { llm: the candidates the round filtered },
-      #   including any replacements asked for in 5a-5.
-      # - dropped holds the round's 5a-3 reasons and its 5a-4 ones.
+      #   including any replacements asked for in llm-index-ideas.
+      # - dropped holds the round's index-dedupe reasons and its index-test ones.
       # - set_aside is what the round's filtering set aside.
       # - out is what the planner used, from report.
       #
@@ -127,7 +127,7 @@ module Quaack
       # kept, or the record won't add up and it's refused. It returns the
       # search's counts, for the since of the next round.
       def record_llm_round(store, stage:, search:, dedupe:, since:, report:) # rubocop:disable Metrics/ParameterLists
-        raise Error, "an LLM round's stage must be 5a-5 or 5a-6" unless %w[5a-5 5a-6].include?(stage)
+        raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
         add(store, [[stage, search, Adapters.round_counts(counts, Adapters.since(since), report)]],
@@ -229,7 +229,7 @@ module Quaack
           index = Protocol::Burndown::STAGES.index(stage)
           return Protocol::Burndown::STAGES[index] if index
 
-          raise Error, "the stage must be one of the DESIGN.md 15b stages"
+          raise Error, "the stage must be one of the DESIGN.md burndown stages"
         end
 
         def name(name, what)
@@ -255,7 +255,7 @@ module Quaack
           end
           return record if Protocol::Burndown.adds_up?(record)
 
-          raise Error, "a #{stage} record's in + added - dropped - set_aside must equal out"
+          raise Error, "the #{stage} record's in + added - dropped - set_aside must equal out"
         end
 
         def check_fields(stage, counts)

@@ -5,13 +5,14 @@ require "quaack/driver/enclave_error"
 require "quaack/driver/progress"
 require "quaack/driver/setup"
 
-# DESIGN.md steps 2 to 4a, as `quaack setup` and `quaack run` drive them:
+# DESIGN.md setup, as `quaack setup` and `quaack run` drive them:
 # the eleven quaacks subcommands in order, each skipped once the store
 # holds its output. ssh is the edge, so the transport is a fake that
 # records each call.
 RSpec.describe Quaack::Driver::Setup do
   let(:order) do
-    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor racetrack-setup]
+    %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
+       racetrack-setup]
   end
   let(:outputs) do
     %w[inventory run_server qualified_query schema_subset statistics volatility classification redacted_plan
@@ -82,7 +83,7 @@ RSpec.describe Quaack::Driver::Setup do
 
     expect { run }.to raise_error(error)
     expect(subcommands).to eq(order.take(6))
-    expect(io.string.lines.last).to eq("quaack: [6/11] Failed after 0s (3d)\n")
+    expect(io.string.lines.last).to eq("quaack: [6/11] Failed after 0s (volatility)\n")
   end
 
   it "says in plain English what each step does, numbered, with each skip" do
@@ -91,17 +92,17 @@ RSpec.describe Quaack::Driver::Setup do
     run
 
     expect(io.string.lines.grep_v(/Done in/)).to eq(
-      ["quaack: [1/11] Already done, skipping: Reading production's version, settings, and extensions (2)\n",
-       "quaack: [2/11] Checking the run server (4)\n",
-       "quaack: [3/11] Finding the tables the query reads (3a)\n",
-       "quaack: [4/11] Dumping the schema of those tables (3b)\n",
-       "quaack: [5/11] Reading the planner statistics for those tables (3c)\n",
-       "quaack: [6/11] Checking the query calls no volatile functions (3d)\n",
-       "quaack: [7/11] Finding the columns that may hold personal data (3f)\n",
-       "quaack: [8/11] Replacing the query's literals with placeholders (3g)\n",
-       "quaack: [9/11] Choosing the literal sets to measure with (3e)\n",
-       "quaack: [10/11] Pinning the query's clock to when the plan was captured (3h)\n",
-       "quaack: [11/11] Setting up the racetrack, a copy of production's schema and statistics (4a)\n"]
+      ["quaack: [1/11] Already done, skipping: Reading production's version, settings, and extensions (inventory)\n",
+       "quaack: [2/11] Checking the run server (run-server)\n",
+       "quaack: [3/11] Finding the tables the query reads (qualify)\n",
+       "quaack: [4/11] Dumping the schema of those tables (schema-dump)\n",
+       "quaack: [5/11] Reading the planner statistics for those tables (statistics)\n",
+       "quaack: [6/11] Checking the query calls no volatile functions (volatility)\n",
+       "quaack: [7/11] Finding the columns that may hold personal data (classify)\n",
+       "quaack: [8/11] Replacing the query's literals with placeholders (redact)\n",
+       "quaack: [9/11] Choosing the literal sets to measure with (literals)\n",
+       "quaack: [10/11] Pinning the query's clock to when the plan was captured (clock-anchor)\n",
+       "quaack: [11/11] Setting up the racetrack, a copy of production's schema and statistics (racetrack-setup)\n"]
     )
     expect(io.string.lines.grep(/Done in/).size).to eq(10)
   end

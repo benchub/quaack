@@ -5,8 +5,8 @@ require_relative "generator_three"
 
 module Quaack
   module Driver
-    # The driver's half of DESIGN.md 5a-6: one revision round for the LLM's
-    # index candidates that fell short in 5a-4.
+    # The driver's half of DESIGN.md's llm-index-refine: one revision round for the LLM's
+    # index candidates that fell short in index-test.
     #
     #   RefinementRound.new(client:, index_feedback:, index_test:).run(payload)
     #   # => nil (skipped) or Result(ddls: [...], outcomes: [...])
@@ -14,7 +14,7 @@ module Quaack
     # index_feedback stands for `quaacks index-feedback` and returns its
     # index_feedback message. If it says nothing fell short (revise false),
     # or the round already ran (refined true), the round is skipped. Else
-    # the LLM gets the 5a-5 payload and the feedback, and is asked for up to
+    # the LLM gets the llm-index-ideas payload and the feedback, and is asked for up to
     # as many revised candidates as fell short. index_test, as in
     # GeneratorThree but called with round: "refinement", filters and tests
     # them, even an empty list, which records that the round ran. Only one
@@ -24,7 +24,9 @@ module Quaack
     # Trust boundary. The prompt carries only the payload and the feedback,
     # both shape data the enclave built for leaving.
     class RefinementRound
-      STEP = "5a-6"
+      STEP = "llm-index-refine"
+      # The step its ask counts under when it searches for a rewrite.
+      REWRITE_STEP = "rewrite-llm-index-refine"
       MAX_TOKENS = GeneratorThree::MAX_TOKENS
 
       SYSTEM = <<~PROMPT.freeze
@@ -48,10 +50,12 @@ module Quaack
         end
       end
 
-      def initialize(client:, index_feedback:, index_test:)
+      # step is the LLM step its ask counts under, as for GeneratorThree.
+      def initialize(client:, index_feedback:, index_test:, step: STEP)
         @client = client
         @index_feedback = index_feedback
         @index_test = index_test
+        @step = step
       end
 
       def run(payload)
@@ -71,7 +75,7 @@ module Quaack
                   "Your candidates' results:\n\n```json\n#{JSON.generate(feedback["candidates"])}\n```\n\n" \
                   "Baseline cost per literal set: #{JSON.generate(feedback["baseline"])}\n\n" \
                   "Propose up to #{short} revised candidates. Answer with JSON: {\"indexes\": [...]}."
-        @client.ask(step: STEP, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
+        @client.ask(step: @step, system: SYSTEM, messages: [{ role: :user, content: }], max_tokens: MAX_TOKENS,
                     schema: GeneratorThree::SCHEMA).fetch("indexes")
       end
     end

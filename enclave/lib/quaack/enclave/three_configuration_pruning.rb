@@ -4,8 +4,8 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # DESIGN.md step 8's three-configuration pruning: whether a rewrite
-    # candidate can't run any differently from the original, so step 8
+    # DESIGN.md's plan-pruning's three-configuration pruning: whether a rewrite
+    # candidate can't run any differently from the original, so plan-pruning
     # discards it.
     #
     #   ThreeConfigurationPruning.discard?(connection, original: sql, rewrite: sql,
@@ -15,7 +15,7 @@ module Quaack
     #
     # connection, literal_sets, and the queries are as SingleCandidateTest
     # takes them. top[:original] is the original's top three indexes from
-    # 5a-7 (IndexRanking's top, as candidates), and top[:rewrite] the
+    # index-rank (IndexRanking's top, as candidates), and top[:rewrite] the
     # rewrite's own top three mechanical indexes, ranked the same way.
     #
     # Both queries are planned with EXPLAIN in three configurations: no
@@ -27,7 +27,7 @@ module Quaack
     # refuses an index, that configuration can't be compared, so it counts
     # as a difference and the rewrite is kept.
     #
-    # The planning runs in SingleCandidateTest sessions, so it has 5a-4's
+    # The planning runs in SingleCandidateTest sessions, so it has index-test's
     # transaction, settings, fresh prepares, and cleanup, and its errors.
     # The result is a Boolean, so nothing from the plans or literals leaves.
     # types, if given, holds :original and :rewrite, each query's placeholder

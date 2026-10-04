@@ -3,7 +3,7 @@
 require "pg_query"
 require "quaack/enclave/rewrite_rules"
 
-# DESIGN.md 6c's generator: it holds a list of rules and chains them, and
+# DESIGN.md's rewrite-rules' generator: it holds a list of rules and chains them, and
 # knows nothing about any one rule. These rules are fakes, given through the
 # generator's own list interface.
 RSpec.describe Quaack::Enclave::RewriteRules do
@@ -96,7 +96,7 @@ RSpec.describe Quaack::Enclave::RewriteRules do
     expect(sqls(generated)).to eq(["SELECT 3"])
   end
 
-  describe "made, for the 6c burndown" do
+  describe "made, for the rewrite-rules burndown" do
     it "counts every result by the last rule applied, those kept and those over the cap" do
       # a, b, a a, a b, and b a are kept, and b b is over the cap.
       expect(generate(appending("a"), appending("b")).made).to eq("a" => 3, "b" => 3)

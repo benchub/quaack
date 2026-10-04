@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** join elimination; validated FK plus NOT NULL assumption (6b); NOT VALID constraints don't count (6b).
+**Exercises:** join elimination; validated FK plus NOT NULL assumption (assumption-check); NOT VALID constraints don't count (assumption-check).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ December's orders. The join selects nothing from `customers`. It only checks tha
 
 ## Expected result.
 
-Drop the join. Stated assumptions: `orders.customer_id` is `NOT NULL`, and its foreign key to `customers.id` is valid. If the constraint were `NOT VALID`, 6b would treat it as missing and reject the rewrite.
+Drop the join. Stated assumptions: `orders.customer_id` is `NOT NULL`, and its foreign key to `customers.id` is valid. If the constraint were `NOT VALID`, assumption-check would treat it as missing and reject the rewrite.
 
 ## Proof.
 

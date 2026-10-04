@@ -9,7 +9,7 @@ require "quaack/enclave/planner_statistics"
 require "quaack/enclave/redaction"
 require "quaack/enclave/store"
 
-# DESIGN.md 3e against real statistics. Each example runs 3g and 3c the way the
+# DESIGN.md's literals against real statistics. Each example runs redact and statistics the way the
 # run does, then LiteralSet on what they stored.
 #
 # public.readings has a skewed k: 7 in half the rows, 3 in a tenth, 11 in
@@ -48,7 +48,7 @@ RSpec.describe Quaack::Enclave::LiteralSet do
     %w[readings fresh orders customers].map { Quaack::Enclave::TableName.new(schema: "public", name: it) }
   end
 
-  # 3g and 3c, then 3e. Returns the redacted SQL and the Result.
+  # redact and statistics, then literals. Returns the redacted SQL and the Result.
   def literal_sets(query)
     sql = redact(query)
     Quaack::Enclave::PlannerStatistics.run(store:, relations:, connection: conn)
@@ -262,7 +262,7 @@ RSpec.describe Quaack::Enclave::LiteralSet do
       expect(result.fallbacks["worst_case"]).to eq("$1" => "shared_placeholder")
     end
 
-    # 3h anchors these (ClockLiterals), so a picked value would stand for
+    # clock-anchor anchors these (ClockLiterals), so a picked value would stand for
     # a different time than the anchored query's.
     it "for a clock-reading literal compared with a timestamp column, but not for a text one" do
       sql, result = literal_sets("SELECT o.id FROM public.orders o WHERE o.created_at >= ' Yesterday' " \

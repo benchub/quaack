@@ -4,11 +4,11 @@ require_relative "deparse"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3g: the redacted query and plans, which are what the driver
+    # DESIGN.md's redact: the redacted query and plans, which are what the driver
     # and every LLM call get, and the placeholder map, which stays in the
     # governed store.
     #
-    #   result = Redaction.redact(qualified.parse, explain)   # the step 1 plan
+    #   result = Redaction.redact(qualified.parse, explain)   # the input plan
     #   result.query.sql            # "SELECT ... WHERE o.status = $1 ..."
     #   result.plan.explain         # the plan, with $n where its literals were
     #   result.placeholder_shapes   # {"$1" => {"type" => "text", "rows" => {...}}}
@@ -50,8 +50,8 @@ module Quaack
     # (see Plan), with each literal in an expression replaced with the
     # placeholder whose value it matches, after its cast is set aside
     # (see Matcher), or with $? when none does. The same map redacts the
-    # step 1 plan and every racetrack plan. masked counts the $? masks, for
-    # the 15b burndown. dropped counts known fields left out because they
+    # input plan and every racetrack plan. masked counts the $? masks, for
+    # the burndown burndown. dropped counts known fields left out because they
     # couldn't be read.
     #
     # == Expressions that must match
@@ -69,7 +69,7 @@ module Quaack
     # == Row counts
     #
     # Redaction.redact also gives each placeholder's shape a "rows" entry,
-    # from the step 1 plan node that consumes it: the node whose qual
+    # from the input plan node that consumes it: the node whose qual
     # (Filter, Index Cond, Join Filter, Hash Cond, and the like) holds a
     # literal that matches it. "status" is "found", with the node's type,
     # the qual, and its estimated rows, actual rows, and loops; "none",
@@ -128,7 +128,7 @@ module Quaack
 
       RedactedPlan = Data.define(:explain, :masked, :dropped)
 
-      # The whole of 3g for the step 1 inputs.
+      # The whole of redact for input's inputs.
       Redacted = Data.define(:query, :plan, :placeholder_map, :placeholder_shapes) do
         # Writes the two store entries: placeholder_map, which never leaves
         # the enclave, and placeholder_shapes, which may.

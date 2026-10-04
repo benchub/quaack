@@ -2,11 +2,11 @@
 
 module Quaack
   module Enclave
-    # DESIGN.md 14d: selection, as pure logic.
+    # DESIGN.md's selection: selection, as pure logic.
     #
     #   Selection.select(minimax: <minimax entry>, result_comparison: <result_comparison entry>)
     #
-    # Drops every minimax survivor whose rewrite 14c discarded (a label's
+    # Drops every minimax survivor whose rewrite result-comparison discarded (a label's
     # rewrite is the part before its first ":", so "rewrite_1:top:2" goes
     # with "rewrite_1"; "original:..." index-only candidates are never
     # discarded), ranks the rest by slow blocks and then by the sum across

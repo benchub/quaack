@@ -20,7 +20,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks index-search --run <run ID> [--search original|rewrite_<n>]`
-      # (DESIGN.md 5, 5a-1 to 5a-4, and step 8): the mechanical half of the
+      # (DESIGN.md's index-search, index-from-query to index-test, and plan-pruning): the mechanical half of the
       # index search, on the racetrack that `quaacks racetrack-setup` set up.
       # A rewrite search runs rewrite_entry on the stored rewrite's SQL, with
       # no plan gate.
@@ -28,31 +28,31 @@ module Quaack
       # It refuses an unknown search (index_search_unknown_search: neither
       # original nor a stored rewrite_<n>) and a run with no racetrack_setup
       # marker (index_search_no_racetrack_setup), before connecting. Then,
-      # on one racetrack connection: the plan gate on anchored_query; 5a-1
-      # on the parse of anchored_query and 5a-2 on the step 1 plan, each
-      # filtered by one 5a-3 Dedupe as soon as it's produced; and 5a-4 on
-      # the survivors, for each 3e literal set.
+      # on one racetrack connection: the plan gate on anchored_query; index-from-query
+      # on the parse of anchored_query and index-from-plan on the input plan, each
+      # filtered by one index-dedupe Dedupe as soon as it's produced; and index-test on
+      # the survivors, for each literals literal set.
       #
       # It writes one entry, index_search_<search>, only when all of that
       # succeeds:
-      #   "dedupe"   => the Dedupe, as IndexStore saves it, so 5a-5's
+      #   "dedupe"   => the Dedupe, as IndexStore saves it, so llm-index-ideas'
       #                 index-test can go on with the same search
       #   "baseline" => { set name => a plan, as below, with no hypothetical
       #                 index }
       #   "results"  => one per tested candidate, in test order (the
       #                 Dedupe's proposals): { "candidate" (as IndexStore
       #                 saves it, sources merged), "partial_constant_only"
-      #                 (DESIGN.md 5a-5's tag: true for a partial index, which
+      #                 (DESIGN.md's llm-index-ideas' tag: true for a partial index, which
       #                 works only when the predicate's literal is a constant
       #                 in the application's SQL), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>
       #                 { "used", "total_cost", "plan" } } }
       #   "set_aside" => the tested candidates (as IndexStore saves them)
-      #                 that 5a-4 found unused but that 12a builds for real
+      #                 that index-test found unused but that index-build builds for real
       #                 anyway (see UnusedSetAside)
       #   "parameter_types" => { $n => the type Postgres infers for it }
-      #                 (the original only: 5a-5, 6a, and 9c send it)
-      # "plan" is the EXPLAIN redacted through 3g (Redaction.plan) against
+      #                 (the original only: llm-index-ideas, llm-rewrites, and vacuity-guard send it)
+      # "plan" is the EXPLAIN redacted through redact (Redaction.plan) against
       # that set's own literals, so it holds placeholders, never a literal.
       # Raw plans aren't saved.
       #
@@ -85,7 +85,7 @@ module Quaack
         end
 
         # The search's entry: the original's behind the plan gate, or a
-        # stored rewrite's (DESIGN.md step 8).
+        # stored rewrite's (DESIGN.md's plan-pruning).
         def search_entry(store, connection, search)
           return rewrite_entry(store, connection, RewriteEntry.run_sql(store.read(search))) unless search == "original"
 
@@ -104,9 +104,9 @@ module Quaack
           search == "original" || (REWRITE.match?(search) && store.entry?(search))
         end
 
-        # Whether the LLM-side steps (5a-5, 5a-6) take search: original, or
-        # (DESIGN.md step 11) a stored rewrite_<n> that survived steps 9 and 10
-        # (rewrite_survived_<n> says survived true) and that step 8 didn't
+        # Whether the LLM-side steps (llm-index-ideas, llm-index-refine) take search: original, or
+        # (DESIGN.md's rewrite-index-ideas) a stored rewrite_<n> that survived rewrite-test and counterexamples
+        # (rewrite_survived_<n> says survived true) and that plan-pruning didn't
         # prune (rewrite_pruned_<n> doesn't say discarded true).
         def llm_search?(store, search)
           return search == "original" unless search.is_a?(String) && REWRITE.match?(search) && store.entry?(search)
@@ -117,7 +117,7 @@ module Quaack
           survived && !pruned
         end
 
-        # 5a-1 to 5a-4 for the original, on the step 1 plan.
+        # index-from-query to index-test for the original, on the input plan.
         def original_entry(store, connection, sql)
           dedupe, candidates = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
           maps = LiteralSet.load(store).sets
@@ -139,12 +139,12 @@ module Quaack
           names.each_with_index.to_h { |name, i| ["$#{i + 1}", name] }
         end
 
-        # DESIGN.md step 8: the same search for one rewrite candidate, sql, as
-        # the inbound check accepted it, with the original's $n. 5a-1 runs on
-        # its parse, and 5a-2 on its plain EXPLAIN on the racetrack with the
+        # DESIGN.md's plan-pruning: the same search for one rewrite candidate, sql, as
+        # the inbound check accepted it, with the original's $n. index-from-query runs on
+        # its parse, and index-from-plan on its plain EXPLAIN on the racetrack with the
         # slow literals (analyzed: false, since a rewrite has no production
-        # EXPLAIN ANALYZE). Its Dedupe is its own, so 5a-3 compares only
-        # against existing indexes and its own proposals. 5a-4 runs the
+        # EXPLAIN ANALYZE). Its Dedupe is its own, so index-dedupe compares only
+        # against existing indexes and its own proposals. index-test runs the
         # rewrite. It returns the entry, in the index_search_<search> form,
         # for the caller to store. There's no plan gate: the rewrite has no
         # production plan to compare with.
@@ -173,8 +173,8 @@ module Quaack
           search
         end
 
-        # 5a-1 and 5a-2, each filtered by the search's Dedupe as soon as
-        # it's produced. plan is the EXPLAIN 5a-2 reads, and analyzed says
+        # index-from-query and index-from-plan, each filtered by the search's Dedupe as soon as
+        # it's produced. plan is the EXPLAIN index-from-plan reads, and analyzed says
         # whether it has actual rows. Returns the Dedupe and the survivors.
         def mechanical(store, sql, plan:, analyzed:)
           statistics = PlannerStatistics.load(store).statistics
@@ -186,7 +186,7 @@ module Quaack
 
         def schemas(store) = store.read("relations").map { it["schema"] }.uniq
 
-        # Each 3e set's values, in parameter order, as SingleCandidateTest
+        # Each literals set's values, in parameter order, as SingleCandidateTest
         # takes them.
         def values(maps)
           maps.transform_values do |map|
@@ -204,7 +204,7 @@ module Quaack
         end
 
         # Each set's plan: whether it used the candidate, its cost, and the
-        # plan redacted through 3g against that set's own literals, so each
+        # plan redacted through redact against that set's own literals, so each
         # of them is its placeholder and any other literal is masked.
         def plans(plans, maps)
           plans.to_h do |set, plan|

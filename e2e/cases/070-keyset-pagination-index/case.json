@@ -4,7 +4,7 @@
   "compare": "ordered",
   "features": [
     "row comparison for keyset pagination (SupportedSql)",
-    "Sort under a Limit (5a-2)",
+    "Sort under a Limit (index-from-plan)",
     "DESC sort direction"
   ],
   "literal_sets": [

@@ -3,8 +3,8 @@
   "category": "none",
   "compare": "ordered",
   "features": [
-    "negative result (15a)",
-    "proposed index already covered by an existing one (5a-3)",
+    "negative result (negative-result)",
+    "proposed index already covered by an existing one (index-dedupe)",
     "duplicate recorded with the index that covers it"
   ],
   "literal_sets": [

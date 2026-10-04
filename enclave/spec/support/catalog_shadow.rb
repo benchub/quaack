@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Objects in the public schema named like the catalog relations, functions,
-# and types that step 2 (Inventory::Production) and step 4 (RunServerCheck)
+# and types that inventory (Inventory::Production) and run-server (RunServerCheck)
 # read. On a database whose search_path puts public before pg_catalog, an
 # unqualified name finds these instead, and each one gives a wrong answer:
 # a missing extension, a bogus setting, no clients, and so on.

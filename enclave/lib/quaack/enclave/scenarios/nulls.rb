@@ -3,7 +3,7 @@
 module Quaack
   module Enclave
     module Scenarios
-      # Whether a fixture row may leave a column NULL when step 9 has no
+      # Whether a fixture row may leave a column NULL when rewrite-test has no
       # value of its type to give it: the column is nullable, the queries
       # don't read it (see Reads), neither its CHECKs nor a NOT NULL domain
       # under its type rejects NULL, and no NULLS NOT DISTINCT key holds it,

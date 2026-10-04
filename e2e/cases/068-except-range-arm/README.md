@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** EXCEPT set operation; range-only arm: generator one keys on the range column (5a-1); INCLUDE column for an index-only scan.
+**Exercises:** EXCEPT set operation; range-only arm: generator one keys on the range column (index-from-query); INCLUDE column for an index-only scan.
 
 ## Setup.
 

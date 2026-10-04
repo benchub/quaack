@@ -11,14 +11,14 @@ module Quaack
       #
       # Rewrites. The payload gives every stored rewrite a source and a
       # fate, so the outcome columns are always counts. How many each source
-      # proposed is what its burndown stage added (6c, 6a, step 7), over
+      # proposed is what its burndown stage added (rewrite-rules, llm-rewrites, operator-rewrites), over
       # every search. Those refused on arrival are the proposals that
       # weren't stored. Both are nil until the stage is recorded.
       #
       # Indexes. The payload doesn't say which source proposed a built,
       # declined, or existing index, so most cells by source are nil. What
-      # each source proposed is what 5a-1, 5a-2, and the LLM rounds (5a-5,
-      # 5a-6) added. An LLM round's record also holds its own drops. The
+      # each source proposed is what index-from-query, index-from-plan, and the LLM rounds (llm-index-ideas,
+      # llm-index-refine) added. An LLM round's record also holds its own drops. The
       # last row counts what the payload does carry, whatever the source.
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
@@ -28,15 +28,15 @@ module Quaack
 
         # Each source of rewrites: its row's name, and the stage that
         # counts what it proposed.
-        REWRITE_SOURCES = { "rule" => ["QUAACK's own rules", "6c"], "llm" => ["The LLM", "6a"],
-                            "operator" => %w[You step7] }.freeze
+        REWRITE_SOURCES = { "rule" => ["QUAACK's own rules", "rewrite-rules"], "llm" => ["The LLM", "llm-rewrites"],
+                            "operator" => %w[You operator-rewrites] }.freeze
 
         # The outcome column a fate counts in. Any other fate is the last.
-        OUTCOMES = { "same_plans" => 0, "step9_disproved" => 1, "step10_disproved" => 1,
+        OUTCOMES = { "same_plans" => 0, "rewrite_test_disproved" => 1, "counterexamples_disproved" => 1,
                      "production_mismatch" => 1, "not_better" => 2, "ranked" => 3 }.freeze
         OTHER = 4
 
-        LLM_ROUNDS = %w[5a-5 5a-6].freeze
+        LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
         def rewrite_account
           rows = REWRITE_SOURCES.map do |source, (name, stage)|
@@ -53,7 +53,7 @@ module Quaack
         end
 
         def index_account
-          proposals = [added("5a-1"), added("5a-2"), added(*LLM_ROUNDS)]
+          proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]
           [["Generator one, from the query's text", proposals[0], *[nil] * 5],
            ["Generator two, from the query's plan", proposals[1], *[nil] * 5],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
@@ -72,11 +72,11 @@ module Quaack
         end
 
         # The built indexes that were not better: at least one measured
-        # label ran with it, and 14d excluded every one of them as
+        # label ran with it, and selection excluded every one of them as
         # not_better. One label that did anything else keeps the index out,
         # so an index with mixed labels (one not better, one that beat the
         # original and tied) isn't counted here. Neither is one whose label
-        # tied, fell below the top three, was dropped in 14c, or timed out,
+        # tied, fell below the top three, was dropped in result-comparison, or timed out,
         # nor one no label ran with. Those count only as built.
         def not_better_indexes
           indexes.keys.select do |name|

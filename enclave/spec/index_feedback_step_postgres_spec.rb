@@ -2,7 +2,7 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-feedback` (DESIGN.md 5a-6): the 5a-4 results for the LLM's
+# `quaacks index-feedback` (DESIGN.md's llm-index-refine): the index-test results for the LLM's
 # own candidates, and which fell short, after a real index-search.
 RSpec.describe "quaacks index-feedback, against a real server" do
   include_context "an index search run"
@@ -56,7 +56,7 @@ RSpec.describe "quaacks index-feedback, against a real server" do
     JSON.parse(lines.first)
   end
 
-  it "sends each LLM candidate's redacted DDL, 5a-4 results, and shortfall, and asks for a revision" do
+  it "sends each LLM candidate's redacted DDL, index-test results, and shortfall, and asks for a revision" do
     prepare
     index_search
     entry = plant

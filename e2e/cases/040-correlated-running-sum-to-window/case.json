@@ -5,7 +5,7 @@
   "features": [
     "correlated subquery per row",
     "window function rewrite",
-    "unique ORDER BY key assumption (6b)"
+    "unique ORDER BY key assumption (assumption-check)"
   ],
   "literal_sets": [
     {

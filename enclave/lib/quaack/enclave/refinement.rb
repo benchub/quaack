@@ -2,14 +2,14 @@
 
 module Quaack
   module Enclave
-    # DESIGN.md 5a-6: which of the LLM's 5a-5 candidates fell short in 5a-4.
+    # DESIGN.md's llm-index-refine: which of the LLM's llm-index-ideas candidates fell short in index-test.
     #
     #   Refinement.shortfalls(entry)
     #   # => [nil, ["unused", nil], ["beaten", 2], ...]
     #
     # entry is an index_search_<search> store entry (see Steps::IndexSearch
     # and Steps::IndexTest). There's one element per first-round LLM result,
-    # in order: the revisions 5a-6 itself tested (tagged "round" =>
+    # in order: the revisions llm-index-refine itself tested (tagged "round" =>
     # "refinement") are left out. Each is nil if the candidate held up, or:
     # - ["unused", nil] if HypoPG refused it or the planner used it for no
     #   literal set.

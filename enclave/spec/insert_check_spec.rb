@@ -13,7 +13,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
 
   def table_name(schema, name) = Quaack::Enclave::TableName.new(schema:, name:)
 
-  # The 3b subset's tables.
+  # The schema-dump subset's tables.
   let(:tables) { [table_name("public", "orders"), table_name("public", "customers"), table_name("sales", "items")] }
 
   before do
@@ -258,7 +258,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
         .to rejected("bad_search_path", "bad_search_path: search_path public, has an empty entry")
     end
 
-    it "refuses a cast whose function is volatile, through the 3d check" do
+    it "refuses a cast whose function is volatile, through the volatility check" do
       conn.exec(<<~SQL)
         CREATE TYPE sales.odd;
         CREATE FUNCTION sales.odd_in(cstring) RETURNS sales.odd LANGUAGE internal VOLATILE AS 'textin';
