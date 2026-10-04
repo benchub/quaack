@@ -2,6 +2,7 @@
 
 require "pg_query"
 require_relative "arena_runner"
+require_relative "denormalized_fixture"
 require_relative "result_comparison"
 require_relative "scenarios"
 require_relative "vacuity_guard"
@@ -25,6 +26,11 @@ module Quaack
     # runner's rule (such as :query_failed) and no load order. A candidate
     # that matches every scenario passes, with scenario nil.
     #
+    # honour is the DenormalizedFixture::Copies of a rule's rewrite under
+    # test. Every fixture, the guard's included, then keeps each copy on
+    # the class's rows. Steps 9 and 10 test one rewrite at a time, so the
+    # copies are its own.
+    #
     # When the scenarios can't be built for the query (a Scenarios::Error,
     # such as fk_cycle or complex_check), no candidate is tested. The
     # report's refused is then the error's rule, and every candidate's
@@ -44,8 +50,8 @@ module Quaack
 
       module_function
 
-      def run(conn, sql, candidates, statement_timeout_ms: 10_000)
-        runner = ArenaRunner.new(conn, statement_timeout_ms:)
+      def run(conn, sql, candidates, statement_timeout_ms: 10_000, honour: [])
+        runner = DenormalizedFixture::Runner.new(conn, honour, statement_timeout_ms:)
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }

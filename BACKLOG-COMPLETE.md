@@ -4287,3 +4287,128 @@ From the build and review of 20261002-10.
     - The grandchild-stdout test's outer limit went from 1s to 10s (`hang_limit`). The fake grandchild still sleeps 60s.
     - The two sibling timeout and process-group tests had the same problem. They get a 3s adapter timeout (`slow_start_timeout`) and a 10s outer limit or poll.
   - **Review:** one round, clean. Three deliberate breaks each turned the matching test red: the success path reading stdout to EOF, the timeout path reading to EOF, and killing only the child. The two timeout tests now take about 3s each.
+
+### 20261003-15. `quaack run`: say what each step did when it finishes.
+
+Today every finished step in `quaack run` prints the same line, such as `quaack: [1/18] Done in 15s (index-search)`. That says how long the step took but not what it found. A step that found 12 indexes looks just like one that found none. Instead, the closing line should give a short count of the step's output, such as:
+
+```
+quaack: [1/18] Checking the query plan and searching for indexes (index-search)
+quaack: [1/18] Found 12 possible index definitions mechanically in 15s (index-search)
+```
+
+The rule: `Progress#step` (`driver/lib/quaack/driver/progress.rb`) lets a step give a summary for its closing line, built from its result. When it gives one, the line says `<summary> in <duration>`. When it doesn't, or when the step was skipped or failed, the line stays as it is now. Give every step in `Pipeline::SAY` a summary that says what it produced, for example:
+
+- index-search: how many index definitions were found mechanically.
+- 5a-5 and 5a-6: how many index ideas the LLM gave, and how many were new.
+- 5a-7 and index-rank: how many ideas were kept, out of how many.
+- 6c: which rules fired, or "No rule applied".
+- 6a: how many rewrites the LLM gave.
+- rewrite-prune: whether the rewrite was kept or dropped.
+- steps 9-10 and 14b-14d: how many rewrites or choices are left.
+- 12a: how many indexes were built.
+- 13, 13a and 14: how many measurements were taken.
+- 15: where the report was written.
+
+Summaries carry only counts, step names, and rule names, which the progress lines already allow. They never carry data, SQL, or literal values from the enclave. A test plants a sentinel in a step's result and checks that it never shows up in the progress output.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-15.
+  - **Change:**
+    - `Progress#step` takes a `summary:`, so the closing line reads `<summary> in <duration> (<step>)`. Steps with no summary still end with `Done`. Skipped, failed and sub-step closing lines are unchanged.
+    - The summaries live in `driver/step_summary.rb`. Examples: `Got 4 index ideas from the LLM, 1 of them new and tested, 1 set aside untested`, `Got 3 rewrites from the LLM, 2 kept`, `Tested 2 rewrites, 1 passed`, `Built 2 indexes`, `No rule applied`.
+    - On a resumed run, steps 8 and 11 count only the rewrites they did work for, as in `for 1 rewrite, 2 already done`.
+    - DESIGN.md is updated.
+  - **Not built:** some steps can't give counts, and 6c can't name the rules that fired, because the enclave sends neither. Those steps get plain wording. This is filed as 20261004-1.
+  - **Review:**
+    - Round 1 was blocking: on resumed runs, steps 8 and 11 counted rewrites that had already been done. The fix round corrected it and four minors.
+    - Round 2 was clean, with 12 of 12 mutations caught.
+  - **Minor, not filed:** steps 9–10 don't say how many rewrites were already done, unlike steps 8 and 11. 20261003-16 and -21 will rework these lines.
+
+### 20261003-38. `bad_value`: loose ends from 20261003-24.
+
+These are minor findings from the review of 20261003-24:
+
+- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
+- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
+
+- **Depends on:** 20261003-24.
+- **Came from:** The review of 20261003-24, 2026-10-03.
+- **Design:** 10a.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-38.
+  - **Change:** `counterexamples/evaluated.rb` reports `bad_value` only for SQLSTATE classes 22, 23 and 42. Any other PG error is re-raised as `internal_error`, carrying only the sqlstate.
+  - **Review:** one round, clean. The minors went to 20261004-3.
+
+### 20261004-2. Step 9 re-probes CHECK constraints thousands of times.
+
+On a real Canvas run, rewrite-test spent over 10 minutes on one rewrite. It sent the same query again and again: `SELECT $1::text = ANY(ARRAY['complete'::varchar::text, 'processing'::varchar::text, …])`, a CHECK on a `workflow_state`-like column.
+
+The cause is in `scenarios/checks.rb`:
+- `Checks#satisfying` eagerly runs `ValuePools.sorted` for every CHECK on the column, about 35 probe queries, on every call. It does this even when the first preferred value passes.
+- `allows?` calls each probe twice per value.
+- Nothing is cached, and `FreeValues#plain_value` calls `satisfying` for every free column of every row, in every group, retry, further fixture, scenario and rewrite.
+
+The fix:
+- Cache the probe results per CHECK node and value, and the sorted values per node, within a run's `Checks`. A CHECK's answer for a value never changes during a run.
+- Compute a CHECK's own satisfying values lazily, only when no preferred value passes.
+- Call each probe once per value.
+- Look for other hot paths with the same pattern, such as `ValuePools.sorted` for atom pools and `Values#readable?`, and cache them too if they repeat.
+
+Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK IN list of 8 values and several such columns. Count the queries the connection sends during scenario building, using a thin counting wrapper around the real connection. Assert that a second scenario build sends no new probe queries for the same column and value, and that the total stays below a small bound. The results, the fixtures and the step 9 outcomes must not change.
+
+- **Depends on:** none.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261004-2.
+  - **Change:** a new `ValuePools::CachedProbe` asks each CHECK and atom probe once per value. Columns of the same type with the same CHECK share one cache. A CHECK's own values are sorted only when no preferred value passes. The value pools and the Picker share their atom probes.
+  - **Effect:** on a Canvas-like join, one step 9 run went from 60,968 queries to 274, and from 39–171s to 0.75s. Fixtures are byte-identical to before.
+  - **Tests:** `enclave/spec/scenarios_query_count_postgres_spec.rb` counts the queries through a thin wrapper around the real connection.
+  - **Review:** one round, clean. The minor went to 20261004-6, and the builder's candidates went to 20261004-4 and -5.
+
+### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data.
+
+- **Note:** First filed as 20261002-3. Renumbered when merging another machine's work, which had already used -3.
+
+A hand-tuned Canvas query got much faster by repeating a predicate across a join. The original read:
+
+```sql
+FROM submissions JOIN assignments ON assignments.id = submissions.assignment_id ...
+WHERE assignments.context_type = 'Course' AND assignments.context_id = 2588916 AND submissions.user_id = 2418270 ...
+```
+
+The tuned version keeps every predicate and adds `submissions.course_id = 2588916`, which lets Postgres narrow `submissions` before the join. The planner doesn't do this itself, because the query never states `submissions.course_id = assignments.context_id`.
+
+The rule: when a query joins `s.<x>_id = a.id` and filters `a.<p>_type = '<Klass>'` and `a.<p>_id = <const>` (Rails's polymorphic convention), and `s` has a column named Rails's way for `<Klass>` (`Course` becomes `course_id`, and `Foo::Bar` becomes `foo_bar_id`), add `s.<klass>_id = <const>` and keep the original predicates. If a foreign key from that column exists, it must point at `<Klass>`'s table, and the rule doesn't fire otherwise.
+
+The rewrite only adds a predicate, so it can drop rows but never add them. It's sound only if every joined row has `s.<klass>_id = a.<p>_id` when `a.<p>_type = '<Klass>'`. The catalog can't prove that from naming alone, so this rule is a heuristic, unlike the sound rules 6c describes. It's checked against the data instead:
+
+- The rule states a new assumption kind, such as `denormalized_equal` (child column, parent column, type column, and type value).
+- 6b checks it with one query on the real database, in the enclave: `EXISTS` a joined row where `a.<p>_type = '<Klass>'` and `s.<klass>_id IS DISTINCT FROM a.<p>_id`. Only the boolean leaves the jump server. If any such row exists, the assumption is unmet and the rewrite is dropped.
+- The report marks the rewrite as resting on an empirical assumption, one the data holds today but the schema doesn't enforce, and names the columns.
+- Steps 9 and 10 test it like any other rewrite. If they disprove it, the report doesn't call that a rule bug, since the assumption was empirical.
+
+Open questions to settle before building: the cost of the `EXISTS` check on large tables (a statement timeout, and treat a timeout as unmet?), what to do when two candidate columns could match, and which Rails inflections to support (STI, namespaced classes, irregular plurals for the table check).
+
+DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic rules whose assumptions are checked against the data, and list the new assumption kind in 6b.
+
+- **Depends on:** 20261001-22, 20261001-23.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6b, 6c, 15.
+- **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
+- **Note (2026-10-03, set aside for a question):** Built on `task/20261002-15` (worktree kept). The first review found two blocking issues.
+  - **Trust boundary:** `rewrite-check` accepts `denormalized_equal` from any source, so an LLM or operator rewrite can probe production data. Fix: accept it only from `rule`.
+  - **Step 9:** the rule's rewrite never passes step 9 on the Canvas shape. S1's hit row gives `course_id` a value other than the parent's `context_id`, so the rewrite is disproved and never ranked.
+  - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
+- **Note (2026-10-04, answers):** Honour it. Step 9 and 10 fixtures for a rewrite that rests on `denormalized_equal` generate rows that keep the child column equal to the parent column wherever the type column holds the class. Also make the trust fix: accept `denormalized_equal` only from `rule`.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261002-15.
+  - **6c rule `polymorphic_key_copy`:** it adds `child.<x>_id = $n`, reusing the placeholder, when the query filters `parent.<p>_type = $m AND parent.<p>_id = $n`. The class name comes only from `Literals#holds?`. The rule refuses when two columns match or an FK points to the wrong table.
+  - **6b `denormalized_equal`:** an assumption checked against the data on the racetrack, read-only and within the time limit. Only a rule may state it; a rewrite from the LLM or an operator gets `bad_assumption`, with no probe.
+  - **Steps 9 and 10:** fixtures honour a rule's own assumption, through `DenormalizedFixture`, inside the rolled-back transaction.
+  - **Report:** each rewrite gets an `empirical` field, plus a driver sentence.
+  - **Review:** round 1 had two blocking findings, the source trust check and the fixture honouring. The fix round fixed both, and round 2 was clean. The minors went to 20261004-9.

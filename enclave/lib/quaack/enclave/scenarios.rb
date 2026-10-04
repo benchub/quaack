@@ -184,10 +184,9 @@ module Quaack
           @conn = conn
           @parse = parse
           @schema = ArenaSchema.load_closure(conn, Scenarios.query_tables(parse.tree))
-          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
-
+          refuse_user_functions
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
-          @pools = ValuePools.build(conn, parse, @atoms, @schema)
+          @pools = ValuePools.build(conn, parse, @atoms, @schema, probes)
           @topology = Topology.new(@schema, @atoms)
           @checks = Checks.new(conn, @schema)
           @values = Values.new(conn)
@@ -208,13 +207,12 @@ module Quaack
 
         private
 
-        def probes
-          @probes ||= @pools.keys.to_h do |i|
-            column = @atoms[i].columns[0]
-            col = @schema.column(column.table, column.name)
-            [i, ValuePools.probe(@conn, @parse, @atoms[i], col)]
-          end
+        def refuse_user_functions
+          raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
         end
+
+        # The pools and the picker share these, so each asks once per value.
+        def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)
 
         def fill(groups, tie_rows)
           parts = Parts.new(@schema, @conn)

@@ -198,6 +198,69 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect(prepare(good, sql).refused).to eq([{ index: 1, rule: "bad_value" }])
     end
 
+    it "refuses it by rule alone when a domain's CHECK rejects the value (class 23)" do
+      conn.exec("CREATE DOMAIN fx.small AS integer CHECK (VALUE < 3)")
+      sql = "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, $1, $2::fx.small)"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      prepared = prepare(good, sql)
+      expect(prepared.refused).to eq([{ index: 1, rule: "bad_value" }])
+      expect(prepared.inserts.size).to eq(1)
+    end
+
+    # Postgres's message for this quotes the query, value and all.
+    it "refuses it by rule alone when the value's expression doesn't type-check (class 42)" do
+      sql = "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, 'b', abs($1::text))"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      prepared = prepare(good, sql)
+      expect(prepared.refused).to eq([{ index: 1, rule: "bad_value" }])
+      expect(prepared.inserts.size).to eq(1)
+    end
+
+    # Each call to fx.slow sleeps, so evaluating a fx.slow_int value takes
+    # long enough to be timed out or have its backend terminated. It claims
+    # IMMUTABLE so the inbound check lets the cast through.
+    describe "when evaluating it fails for a reason that isn't the value" do
+      let(:slow) { "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, $1, $2::fx.slow_int)" }
+
+      before do
+        conn.exec(<<~SQL)
+          CREATE FUNCTION fx.slow(integer) RETURNS boolean LANGUAGE plpgsql IMMUTABLE
+            AS 'BEGIN PERFORM pg_sleep(5); RETURN true; END';
+          CREATE DOMAIN fx.slow_int AS integer CHECK (fx.slow(VALUE));
+        SQL
+      end
+
+      def sleeping?(watcher, pid)
+        watcher.exec_params("SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'PgSleep'", [pid])
+               .ntuples == 1
+      end
+
+      it "lets a statement timeout go up, not as bad_value, with no value in it" do
+        conn.exec("SET statement_timeout = 300")
+        expect(everything_from { prepare(good, slow) }).not_to include("SENTINEL_10a")
+        expect { prepare(good, slow) }.to raise_error(PG::QueryCanceled)
+      end
+
+      it "lets a terminated connection go up, not as bad_value, with no value in it" do
+        watcher = racetrack_and_arena.arena.connect
+        pid = conn.backend_pid
+        killer = Thread.new do
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+          sleep 0.05 until sleeping?(watcher, pid) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          watcher.exec_params("SELECT pg_terminate_backend($1)", [pid])
+        end
+        outcome = everything_from { prepare(good, slow) }
+        killer.join
+        # Raised by Evaluated itself: a later query would fail with
+        # "PQsocket() can't get socket descriptor" instead.
+        expect(outcome).to include("PG::ConnectionBad", "terminating connection due to administrator command")
+        expect(outcome).not_to include("SENTINEL_10a")
+      ensure
+        killer&.kill
+        watcher&.close
+      end
+    end
+
     it "has a leak check that catches a planted sentinel, in what prepare returns or in an error's cause" do
       planted = described_class::Prepared.new(rows: [], inserts: ["SENTINEL_10a"], refused: [])
       expect(everything_from { planted }).to include("SENTINEL_10a")
