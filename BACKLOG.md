@@ -586,6 +586,7 @@ Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --aren
 - **Design:** Steps 2 through 4, "Where QUAACK runs."
 - **Status:** todo
 - **Open questions:** Should `quaack run` call setup itself when the run hasn't had it, so `start` then `run` is all an operator types? Should `quaack start` take the run-server flags and do setup too?
+- **Note (2026-10-03, answers):** Yes, `quaack run` runs setup first when the run hasn't had it, so it accepts the same run-server flags as `quaack setup` and passes them through. No, `quaack start` stays as it is and does no setup.
 
 ### 20260928-2. `quaack start --captured-at`.
 
