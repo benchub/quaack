@@ -2222,3 +2222,27 @@ The review of 20261003-38 found four minor issues:
 - **Came from:** The review of 20261003-38.
 - **Design:** Step 9, ErrorFilter.
 - **Status:** todo
+
+### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
+
+When no value in the pool satisfies both the atom and the column's CHECKs, the Picker falls back to the first value in the pool, even if that value breaks a CHECK. On Canvas-like schemas:
+- `workflow_state <> 'deleted'` picks `'DELETED'`, which isn't in the CHECK's IN list.
+- `role_state LIKE 'c%'` picks `'c%'`.
+
+S1 then fails to load with `fixture_load_failed` (23514), so every candidate is disproved. This was there before 20261004-2. It will likely hit the next Canvas run.
+
+The fix: add the CHECK's own values that satisfy the atom to the Picker's candidates. Test on real Postgres with a CHECK IN list and both atoms above.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-5. Build the original query's scenarios once, not once per rewrite.
+
+`steps/counterexamples.rb` calls `StepNine.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
