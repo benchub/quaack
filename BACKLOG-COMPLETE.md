@@ -4129,3 +4129,29 @@ Test both on real Postgres, with the wrong rewrite disproved and the right one p
   - **Tests:** `enclave/spec/step_nine_joins_postgres_spec.rb`, on real Postgres. Each wrong rewrite was red on main and is now disproved, and each correct twin passes. In the fix round, tests were added that pin `own_key?` and the outward guard in `own_slots`; each goes red under its mutation.
   - **Review:** two rounds. The first found `own_key?` and the outward guard untested (blocking), and the fix round added tests for both. The second review was clean, with 26 Rails-style cases: no new load failures, no new false passes, and two more wrong rewrites now disproved. Minor findings went to 20261003-39 and 20261003-40.
   - **Not done:** the cyclic form (Canvas `accounts.course_template_id` ↔ `courses`), which belongs to 20261003-23 and -30.
+
+### 20261003-18. A scenario refusal shouldn't end the run.
+
+When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check`, `expression_unique_index` or `unsupported_type`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
+
+The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
+
+Test it end to end against real Postgres with a schema that refuses (a complex `CHECK` is the easiest). The run should finish, the report should name the rule, and no rewrite should be recommended.
+
+- **Depends on:** none.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Steps 9-10, step 15.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-18.
+  - **Change:**
+    - `StepNine.run` catches `Scenarios::Error` and gives every rewrite "not passed", carrying only the rule. It stores `"refused" => true` and `survived = false`, so steps 10 and 11 and ranking skip the rewrite.
+    - A new fate, `step9_untested`. Its rule must be on `REFUSALS`, or it goes out as nil. A refused rewrite isn't counted as a rule bug.
+    - The report says per rule that QUAACK couldn't make up test data, so it never tested the rewrite and won't recommend it.
+    - The index steps and the report still run. A resumed run skips the refused step.
+    - DESIGN.md: steps 9 and 10, the fate table, and step 15.
+  - **Tests:**
+    - `spec/pipeline_scenario_refusal_spec.rb` runs end to end on real Postgres, with a complex CHECK, and covers resume.
+    - A sentinel `domain_check` spec checks that column and domain names never leave the enclave.
+    - All six `REFUSALS` rules are pinned.
+    - Each test went red before the fix, and every mutation went red.
+  - **Review:** two rounds. The first found no leak test for the refusal message (blocking); the fix round added it. The second was clean. Its minor finding went to 20261003-41.

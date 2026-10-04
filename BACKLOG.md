@@ -1917,18 +1917,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 
 ### 20261003-17. Step 9: break foreign-key cycles through nullable columns. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-18. A scenario refusal shouldn't end the run.
-
-When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check`, `expression_unique_index` or `unsupported_type`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
-
-The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
-
-Test it end to end against real Postgres with a schema that refuses (a complex `CHECK` is the easiest). The run should finish, the report should name the rule, and no rewrite should be recommended.
-
-- **Depends on:** none.
-- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
-- **Design:** Steps 9-10, step 15.
-- **Status:** todo
+### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-19. Name the tables in an `fk_cycle` refusal.
 
@@ -2215,4 +2204,17 @@ Test with the taggings query: the correct rewrite must pass, and a wrong twin mu
 - **Depends on:** 20261003-31.
 - **Came from:** The fix round of 20261003-31, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-41. Step 9 refusals and results: loose ends from 20261003-18.
+
+These are minor findings from building and reviewing 20261003-18:
+
+- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to 10a, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail step 9 too. Store both results together, or have resume rebuild `survived` from `tested`.
+- **Scenarios are rebuilt for every rewrite.** A refusal comes from the query, not the rewrite, so every rewrite is refused the same way. Record the refusal once per run, and reuse it.
+- **The rule-bug check counts `step9_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
+
+- **Depends on:** 20261003-18.
+- **Came from:** The build and review of 20261003-18, 2026-10-03.
+- **Design:** Steps 9-10.
 - **Status:** todo
