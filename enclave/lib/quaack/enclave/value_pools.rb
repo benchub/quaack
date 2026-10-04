@@ -104,7 +104,12 @@ module Quaack
         PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind:, name:, lexpr:, rexpr:))
       end
 
-      def boundaries(type) = BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
+      # An array type, such as bigint[], has none.
+      def boundaries(type)
+        return [] if type.end_with?("]")
+
+        BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
+      end
 
       def pool(conn, parse, atom, schema)
         column = atom.columns[0]

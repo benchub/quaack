@@ -18,12 +18,20 @@ module Quaack
           @picks = {}
         end
 
-        # :skip when a near miss has no value.
-        def pick(atoms, columns, near, mode)
-          @picks[[atoms, columns, near, mode]] ||= begin
+        # The atoms some stored value satisfies. One no stored value can,
+        # such as r.id IS NULL on a NOT NULL key that an outer join reads,
+        # doesn't constrain the slot: every value already fails it, so its
+        # near miss needs none.
+        def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
+
+        # :skip when a near miss has no value. shift takes the value after
+        # that many others that fit, or the first when there are no more.
+        def pick(atoms, columns, near, mode, shift = 0)
+          @picks[[atoms, columns, near, mode, shift]] ||= begin
             candidates = prefer_boundaries(candidates(atoms, near), atoms, mode)
-            index = candidates.index { |v| fits?(atoms, columns, near, v) }
-            if index then candidates[index]
+            fitting = candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
+            if fitting.size > shift then fitting[shift]
+            elsif shift.positive? then pick(atoms, columns, near, mode)
             else
               near ? :skip : candidates.fetch(0, :skip)
             end

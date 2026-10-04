@@ -22,7 +22,11 @@ module Quaack
       #
       # Store entries, which the driver resumes by and step 11 reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
-      #                          "untested_atoms" }, step 9's result
+      #                          "untested_atoms" }, step 9's result, plus
+      #                          "refused" true when step 9 couldn't build
+      #                          scenarios for the query: then the rule is
+      #                          the refusal's, and the rewrite is untested
+      #                          and never recommended
       #   rewrite_round_<n>    { "round", "evidence", "rule" }, the last
       #                        10b round run (see Round.finish)
       #   rewrite_survived_<n> { "survived" => Boolean }, written once
@@ -65,7 +69,9 @@ module Quaack
 
         # `quaacks rewrite-test` (step 9). A rewrite whose
         # rewrite_pruned_<n> says discarded is skipped, with rule discarded.
-        # Sends one rewrite_test: rewrite, passed, scenario, rule.
+        # Sends one rewrite_test: rewrite, passed, scenario, rule. An
+        # fk_cycle refusal also stores cycle, the cycle's [schema, name]
+        # pairs, for the report; it isn't sent here.
         module RewriteTest
           module_function
 
@@ -91,12 +97,17 @@ module Quaack
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            report = StepNine.run(connection, original, [candidate])
-            result = report.results.first
-            { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
-              "untested" => report.untested, "untested_atoms" => report.untested_atoms }
+            outcome(StepNine.run(connection, original, [candidate]))
           ensure
             connection&.close
+          end
+
+          def outcome(report)
+            result = report.results.first
+            { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
+              **({ "refused" => true } if report.refused),
+              **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
+              "untested" => report.untested, "untested_atoms" => report.untested_atoms }
           end
         end
 
@@ -138,7 +149,7 @@ module Quaack
             search = options.fetch("search")
             number = Counterexamples.search!(store, search, "counterexample_round")
             inserts = check(store, number, options.fetch("round"), input)
-            outcome = run(store, search, number, inserts)
+            outcome = named_cycle(store) { run(store, search, number, inserts) }
             finish(store, number, options.fetch("round"), outcome)
             [{ type: :counterexample_round, **outcome }]
           end
@@ -163,7 +174,7 @@ module Quaack
 
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
-            prepared = prepare(connection, store, inserts)
+            prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
             round = compare(connection, prepared, store, search, number)
             { match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
               refused: prepared.refused, load_failed: round.load_failed }
@@ -171,9 +182,9 @@ module Quaack
             connection&.close
           end
 
-          def prepare(connection, store, inserts)
+          def prepare(connection, store, inserts, queries)
             Enclave::Counterexamples.prepare(connection, inserts, placeholder_map: Redaction.placeholder_map(store),
-                                                                  tables: tables(store))
+                                                                  tables: tables(store), queries:)
           end
 
           def compare(connection, prepared, store, search, number)
@@ -186,6 +197,19 @@ module Quaack
 
           def tables(store)
             store.read("schema_subset")["tables"].map { |schema, name| TableName.new(schema:, name:) }
+          end
+
+          # Runs the block, and re-raises an fk_cycle refusal from it with
+          # its tables as the schema subset's "schema.name" strings, or
+          # none if any isn't one (CycleTables), so its error line can name
+          # them.
+          def named_cycle(store)
+            yield
+          rescue Scenarios::Error => e
+            raise unless e.rule == :fk_cycle
+
+            pairs = e.cycle&.map { [it.schema, it.name] }
+            raise Scenarios::Error.new(:fk_cycle, cycle: CycleTables.check(pairs, CycleTables.tables(store)))
           end
 
           # Round 1 may always start (a resumed run starts over); a later

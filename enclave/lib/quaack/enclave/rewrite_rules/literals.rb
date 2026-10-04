@@ -7,16 +7,18 @@ module Quaack
     module RewriteRules
       # The literal oracle for rules that need to compare placeholders
       # (DESIGN.md 6c). It reads the governed-store placeholder map inside
-      # the enclave, but answers only booleans to rule code.
+      # the enclave, but answers only booleans to rule code, and inspect
+      # never shows the map.
       class Literals
-        def initialize(connection, placeholder_map, placeholder_shapes)
+        def initialize(connection, placeholder_map)
           @connection = connection
           @map = Redaction.checked_map(placeholder_map)
-          @shapes = placeholder_shapes
           @next = 0
         end
 
-        def same?(left, right) = entry(left) == entry(right) && shape(left) == shape(right)
+        # Whether two placeholders hold the same literal: the same value,
+        # read as the same type.
+        def same?(left, right) = entry(left) == entry(right)
 
         def holds?(expr)
           name = "quaack_literals_#{@next += 1}"
@@ -26,6 +28,25 @@ module Quaack
         ensure
           deallocate(name)
         end
+
+        # Whether Postgres can prepare sql, written with these placeholders,
+        # each declared its literal's type, as Redaction.binding declares
+        # them. It's prepared and deallocated, never run.
+        def prepares?(sql)
+          name = "quaack_literals_#{@next += 1}"
+          Redaction.binding(sql, @map).prepare(@connection, name)
+          prepared = true
+        rescue StandardError
+          false
+        ensure
+          deallocate(name) if prepared
+        end
+
+        def inspect = "#<#{self.class} placeholders=#{@map.size}, placeholder_map=<redacted>>"
+
+        alias to_s inspect
+
+        def pretty_print(pp) = pp.text(inspect)
 
         private
 
@@ -42,8 +63,6 @@ module Quaack
         end
 
         def entry(placeholder) = @map[placeholder.to_s]
-
-        def shape(placeholder) = @shapes[placeholder.to_s]&.except("rows")
       end
     end
   end

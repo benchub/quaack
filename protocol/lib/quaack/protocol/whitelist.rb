@@ -33,8 +33,17 @@ module Quaack
       # start time a UTC YYYY-MM-DDTHH:MM:SSZ, so both are shape: a process
       # number and a clock time, neither configuration nor free text. No
       # other pg_stat_activity column goes out. The enclave's ErrorFilter
-      # sends clients only if every entry has exactly that shape.
-      error: %i[step rule sqlstate reason function clients].freeze,
+      # sends clients only if every entry has exactly that shape. column is
+      # only on an unsupported_type or domain_check refusal from step 9: the
+      # { "table", "column", "type" } of the column step 9 can't fill, which
+      # are schema names, a schema.name pair, a name, and a type as
+      # format_type prints it, never a row value. The enclave's ErrorFilter
+      # sends it only if each is a plain unquoted name of that shape. cycle
+      # is only on an fk_cycle refusal: the tables of a foreign key cycle,
+      # 3 to 64 schema.name Strings in the order their foreign keys point,
+      # the last the first again. They're schema names, each one checked to
+      # be a relation of the run's schema subset, and never a row value.
+      error: %i[step rule sqlstate reason function clients column cycle].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
@@ -146,8 +155,9 @@ module Quaack
       # made it, the rule names and the tables and columns of the
       # denormalized_equal assumptions it rests on (only names its SQL
       # already holds, never the type value), its fate with the scenario,
-      # rule, round,
-      # or last stage that goes with it, its plan's node shapes, its
+      # rule, round, or last stage that goes with it (and, for an fk_cycle
+      # refusal, the cycle's table names, each a relation of the run's
+      # schema subset), its plan's node shapes, its
       # untested atoms (step 9's redacted shapes), and its step 10
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each

@@ -29,10 +29,12 @@ module Quaack
       # The other tables all go in one EXISTS, under the names they had,
       # with every condition that reads any of them, whole, so an OR across
       # the kept table and another is asked as it was. The conditions on
-      # the kept table alone stay in the WHERE. Nothing is renamed: every
-      # column is written name.column, each FROM item has a name of its
-      # own, and no other subquery is there to take a name, so each column
-      # reads the table it read before.
+      # the kept table alone stay in the WHERE. Nothing is renamed: each
+      # FROM item has a name of its own, and no other subquery is there to
+      # take a name. A column written name.column reads the table it read
+      # before. A bare column belongs to the one FROM table that has it
+      # (see Columns), so in the EXISTS no inner table has it unless it was
+      # that table's, and outside it only the kept table is left.
       #
       # It gives one rewrite, stating the key unique and not null. The key
       # is the first selected column the catalog proves both of (see
@@ -49,19 +51,24 @@ module Quaack
       #   inner or cross joins: no outer join, NATURAL, USING, or join
       #   alias. So the ONs are more WHERE conditions. An outer join keeps
       #   rows with no match, which EXISTS drops.
-      # - Each select-list item is name.column or name.*, all of one
-      #   table, the kept one. An expression isn't taken, even of that
-      #   table: a window function counts the join's rows, and a
-      #   set-returning one gives several rows for one of the table's,
+      # - Every column in the select list and the ORDER BY is a column of
+      #   the kept table, or its star. An expression of them, such as a
+      #   COLLATE, a cast, or a function call, gives one value for each of
+      #   the kept table's rows, so it's taken, but only if each function
+      #   and operator it could call gives one value per row (see
+      #   Catalog#row_wise?): a window function counts the join's rows, and
+      #   a set-returning one gives several rows for one of the table's,
       #   which DISTINCT merges.
-      # - Each ORDER BY item is name.column of the kept table, or a
-      #   position in the select list.
-      # - With a LIMIT or OFFSET, the ORDER BY holds the key by name.
-      #   That makes the order total, so both queries give the same rows.
-      #   Without it the original may give any of several answers, and a
-      #   test that compares the two would call a sound rewrite wrong.
-      # - Every column in the conditions is written name.column, where
-      #   name is one of the FROM's tables, and nowhere is there a subquery.
+      # - Nothing in the query could call a volatile function
+      #   (Catalog#calls_volatile?): the rewrite calls it for other rows.
+      # - With a LIMIT or OFFSET, the ORDER BY holds the key by
+      #   name.column. That makes the order total, so both queries give the
+      #   same rows. Without it the original may give any of several
+      #   answers, and a test that compares the two would call a sound
+      #   rewrite wrong. A bare name there may be an output column's, as in
+      #   ORDER BY x for SELECT a.title AS x, so it doesn't count.
+      # - Every column in the conditions is name.column or a bare column
+      #   of one FROM table, never a star, and nowhere is there a subquery.
       # - A key of one column. A key of several isn't looked for in v1.
       class DistinctJoinToExists
         def name = "distinct_join_to_exists"
@@ -74,9 +81,9 @@ module Quaack
         def rewrites(parse, catalog, _literals = nil)
           tree = Deparse.copy(parse.tree)
           select = Tree.select(tree)
-          query = Query.read(select) if select && distinct?(select)
+          query = Query.read(select, catalog) if select && distinct?(select)
           key = query&.key(catalog)
-          return [] unless key
+          return [] unless key && catalog.row_wise?(query.shown) && !catalog.calls_volatile?(Deparse.faithfully(tree))
 
           query.rewrite!(select)
           [Rewrite.new(tree:, assumptions: query.assumptions(key))]

@@ -34,8 +34,9 @@ module Quaack
       ForeignKey = Data.define(:columns, :parent, :parent_columns)
       # A unique index with an expression key: the columns it reads (keys,
       # expressions, and predicate), each key as pg_get_indexdef prints it,
-      # and whether NULL keys collide.
-      ExpressionUnique = Data.define(:columns, :keys, :nulls_not_distinct)
+      # whether NULL keys collide, and the columns its keys read, those
+      # that are a key on their own first.
+      ExpressionUnique = Data.define(:columns, :keys, :nulls_not_distinct, :key_columns)
       # Each table's primary key, unique constraints, and plain unique
       # indexes (as lists of key column names, not INCLUDE ones), foreign
       # keys, validated CHECK expressions as pg_get_constraintdef prints
@@ -46,9 +47,30 @@ module Quaack
       # step 9 won't evaluate.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
                                 :user_function) do
-        # Whether a unique key or expression unique index reads the column,
-        # so it needs a distinct value per row.
-        def distinct?(name) = (uniques + expressions.map(&:columns)).any? { |u| u.include?(name) }
+        # The names of the columns of free (Columns a row may set freely)
+        # that need a distinct value per row. A unique key, or an
+        # expression unique index's key columns, needs only one of its
+        # free columns to vary, since rows that differ in one column
+        # differ as a key: one that already varies for another key, or else
+        # the one with the lowest rank (from the block, such as a number or
+        # text before a range), in key order. Shorter keys go first, so a
+        # column a single-column key covers is the one its wider keys use.
+        # RowSet catches rows whose expression keys still collide.
+        def varying(free, &)
+          by_name = free.to_h { [it.name, it] }
+          chosen = []
+          (uniques + expressions.map(&:key_columns)).sort_by(&:size).each do |key|
+            options = by_name.values_at(*key).compact
+            chosen << pick(options, &) if needed?(options, chosen)
+          end
+          chosen.uniq
+        end
+
+        private
+
+        def needed?(options, chosen) = options.any? && options.none? { chosen.include?(it.name) }
+
+        def pick(options) = options.each_with_index.min_by { |col, i| [yield(col), i] }.first.name
       end
 
       CONSTRAINTS_SQL = <<~SQL

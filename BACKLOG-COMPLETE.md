@@ -3951,3 +3951,339 @@ Add it to 6c's table in DESIGN.md.
   - **Tests:** 16 examples on real Postgres with NULLs and duplicates; every refusal has a twin that fires. The builder ran 25 mutations and the reviewer 23; the one survivor in each is equivalent.
   - **Review:** one round, clean. The reviewer compared 26 Rails-style existence checks on real Postgres. One minor, a whole-row reference captured by a column of S, went to 20261003-29.
   - **Follow-ups:** the builder's widenings went to 20261003-29.
+
+### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types.
+
+A user's `quaack run` failed at steps 9-10 with `unsupported_type`, and nothing says which column caused it. `Scenarios::Values` (`scenarios/values.rb`) picks a value for each fixture column by trying a short list of strings and keeping the first one Postgres can cast to the column's type. When none of them casts, it raises `unsupported_type`. Types that likely miss today:
+
+- **Range types** (category `R`): none of the strings reads. `'empty'` would.
+- **Geometric types** (category `G`): `'(0,0)'`, and its nth forms.
+- **`bit(n)`**: `'0'` only fits `bit(1)`. Pad to the length in the typmod.
+- **Arrays when a distinct value is needed** (`nth`, for keys and unique columns): `'{}'` covers only the typical value. Use `'{<nth of the element type>}'`. **Seen in the user's run:** Canvas's `users.root_account_ids bigint[]` is in a unique index, so it's treated as unique and needs `nth`.
+- **A multi-column unique index needs only one column to vary.** Today every column of a unique index gets an `nth` value. Instead, vary one column that can take distinct values, such as an integer or text one, and give the others their typical value. That sidesteps types with no `nth` at all.
+- **Small numeric types when a distinct value is needed.** `key_value` adds 100,000 to the key for a split group, which overflows `smallint` and narrow `numeric(p,s)`. Wrap the number within the type's range, or pick a smaller offset when the type is narrow.
+- **A domain whose CHECK rejects every candidate.** That's a real refusal, but say so.
+
+The rule:
+
+- Add candidates for each type above, with real-Postgres tests that build a fixture holding a column of each type, both as a plain column and as a unique one.
+- Make the error name the type and column, such as `unsupported_type: courses.tags (int4range)`, as 20261003-19 does for `fk_cycle`. Type, table and column names are schema, not data. Add a sentinel test showing no row value appears in the error.
+- DESIGN.md lists the types that still refuse.
+
+Until then, the user can find the column with a catalog query over the query's tables and their foreign-key closure, listing columns whose type category isn't N, S, B, D, T or E, or that are domains.
+
+- **Depends on:** none. Fits with 20261003-18, which stops this refusal from ending the run, and 20261003-19, which names tables in `fk_cycle`.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-27.
+  - **Error detail:** `unsupported_type` and the new `domain_check` carry a `column` field, `{table, column, type}`, such as `unsupported_type: public.courses.tags (int4range)`. It holds schema names only. The enclave's error filter, the protocol whitelist, and the driver each check its exact shape and drop the whole field if any part fails. `quaack run` prints it.
+  - **Values:** new candidates for ranges (`'empty'`, `[v,v]`), geometric types, `bit(n)` padded to its length, arrays (`{<element's distinct value>}`), and narrow numerics, which wrap negative instead of overflowing on the +100,000 offset. A domain whose CHECK rejects every candidate refuses as `domain_check`.
+  - **Unique keys:** `Constraints#varying` varies one column per unique key, narrower keys first, so a wider key reuses a column already varied. It picks the best-ranked column, never a join key, and types with no readable distinct value rank last. A single-column unique key still varies. Expression unique indexes still vary every column they read. ParentRows follows the same rule.
+  - **Tests:** `scenario_types_postgres_spec.rb` on real Postgres, including the Canvas case (a `bigint[]` in a multi-column unique key), plus sentinel tests on both sides of the boundary.
+  - **Review:** three rounds. Round 1: the varying logic's `needed?` and sort order were untested; fixed, along with the rank of unreadable types. Round 2: the join-key exclusion and the FEW tier were untested; the builder's tests-only round added them. Round 3 checked those two tests, and both went red under two mutations each.
+  - **Follow-ups:** 20261003-33.
+
+### 20261003-33. Step 9 values: loose ends from 20261003-27.
+
+Minor findings from building and reviewing 20261003-27. Do the false-collision and load-failure items first.
+
+- **`readable?` tests a value with an explicit CAST, which is laxer than inserting it.** CAST quietly truncates `varchar(n)` and `char(n)`, so distinct values can collide after truncation or fail on insert. Check readability with an assignment coercion, as an INSERT does, rather than an explicit CAST.
+- **ParentRows gives a nullable self-FK the value 0.** For example, `accounts.root_account_id`; the parent row then fails to load. This reproduces on main.
+- **The varying pick ignores CHECKs.** With `kind int CHECK (kind IN (1,2))` and `UNIQUE (kind, login)`, it varies `kind`, so the third row fails to load. Prefer a column with no CHECK.
+- **A split group's key takes the type of the slot's first column** (`scenarios.rb`, around lines 251-253). A smallint FK and an integer parent in the same slot can still overflow on the smallint side.
+- **`bit varying` with no length gets only 2 distinct values**, since `Literals.bits` falls back to length 1. `bit(n)` also repeats values when it needs more than 2^n.
+- **A nullable column of an unsupported type could take NULL** instead of refusing, when the query doesn't read it.
+- **Expression unique indexes still vary every column they read.**
+- **ValuePools' boundary regex may match array types** such as `bigint[]`.
+- **Arrays over a domain over a domain** may not find their element type.
+- **No test checks that FEW ranks below the middle tier** in `Values#rank`.
+
+- **Depends on:** 20261003-27.
+- **Came from:** The build and reviews of 20261003-27, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-33.
+  - **Change, by item:**
+    1. `readable?` uses `pg_input_is_valid`, which checks a value as an INSERT does. DESIGN.md requires Postgres 17 or later.
+    2. ParentRows sets a nullable self-FK to NULL, and points a NOT NULL one at the row itself.
+    3. `Checks#checked?` breaks ties toward unchecked columns, in FreeValues and ParentRows.
+    4. `Values#shared_nth` picks a split slot's value that every column in the slot accepts.
+    5. `bit varying` with no length gets unlimited distinct values.
+    6. `Scenarios::Reads`: a nullable column of an unsupported type that the query doesn't read becomes NULL instead of refusing.
+    7. `ExpressionUnique#key_columns` lets an expression index vary one column.
+    8. The boundary regex skips array types.
+    9. Arrays over nested domains get a regression test.
+    10. The FEW tier gets a rank test.
+  - **Not done:** `bit(n)` past 2^n values, which is an inherent limit already in DESIGN.md.
+  - **Tests:** each fix went red first. The builder's and reviewer's mutations all went red.
+  - **Review:** one round, clean. Its minor findings went to 20261003-34.
+
+### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
+
+- **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
+- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
+- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
+
+A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
+
+```sql
+SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
+FROM users JOIN enrollments ON users.id = enrollments.user_id
+WHERE enrollments.course_id = 341535 AND ...
+ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC
+LIMIT 20 OFFSET 0;
+```
+
+This is `distinct_join_to_exists`'s case, but the rule must handle three things 20261001-26's entry doesn't mention. Check what 20261001-26 landed, and add whichever of these it lacks:
+
+- `t.*` in the select list. It holds the kept table's key.
+- Select-list expressions that read only the kept table's columns, such as `col COLLATE ...`, a cast, or a function call. A volatile function stays refused.
+- `ORDER BY`, `LIMIT`, and `OFFSET`, carried over unchanged. Their expressions read only the kept table, as `DISTINCT` already requires them to appear in the select list.
+
+Test it with this query's shape. Also test that the rule refuses when the select list reads a column of a table it would remove.
+
+- **Depends on:** 20261001-26.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-16.
+  - **Change:** `distinct_join_to_exists` now matches the shapes Rails sends: qualified select-list columns, ORDER BY and LIMIT in the forms Rails generates, and calls the catalog resolves by name (`catalog/calls.rb`). The select-list column checks moved to `distinct_join_to_exists/columns.rb`. The DESIGN.md 6c row was updated.
+  - **Tests:** real-Postgres specs in `enclave/spec/distinct_join_to_exists_postgres_spec.rb` went red first. Mutations went red.
+  - **Review:** one round, clean. Follow-ups went to 20261003-35. The pre-landing rake had one timing flake in `driver/spec/copilot_cli_adapter_spec.rb:204`, which -16 doesn't touch. It passed when rerun alone and went to 20261003-36.
+
+### 20261003-34. Step 9 values: loose ends from 20261003-33.
+
+These are minor findings from building and reviewing 20261003-33. Do the first two first.
+
+- **`Reads` misses `USING` and `NATURAL` joins** (`scenarios/reads.rb`). It only collects `ColumnRef`s, so a column read only through `JOIN ... USING (lsn)` looks unread and gets NULL.
+  - Every scenario then returns 0 rows, and a wrong rewrite passes step 9. 9c does list `USING (lsn)` as untested, so this isn't silent.
+  - Fix: count `using_clause` names as reads, and treat `is_natural` as reading every column.
+- **A NOT NULL CHECK or NOT NULL domain now fails the load instead of refusing.** Examples: `lsn pg_lsn CHECK (lsn IS NOT NULL)`, or a domain `AS pg_lsn NOT NULL`.
+  - `null?` in `free_values.rb` should check `@checks.allows?(table, col, nil)` and the domain's not-null flag before choosing NULL, as main's clean `unsupported_type` did.
+- **The NULL is chosen from the original query only.** A rewrite that adds `AND lsn IS NULL` passes. That's the same weakness every unmentioned column's constant has, so give it one line in DESIGN.md.
+- **`bit(n)` still repeats values past 2^n.**
+- **ParentRows still refuses a nullable column of an unsupported type.** Use `Reads` there too.
+- **`Reads` matches columns by name only**, so it sometimes refuses a column the query doesn't really read.
+- **`null?` ignores a domain's NOT NULL.** Overlaps with the second bullet.
+- **A NOT NULL self-FK whose referenced columns the row doesn't set** still gets a new parent row.
+- **`Literals.bits` dropped its `match&.` guard**, so a custom base type of category `V` would crash instead of refusing.
+
+- **Depends on:** 20261003-33.
+- **Came from:** The build and review of 20261003-33, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-34.
+  - **Change:**
+    - `Reads` counts `USING` and `NATURAL` join columns as reads. It also tracks join aliases and pins a qualifier to its table.
+    - The new `scenarios/nulls.rb` picks NULL only when CHECK constraints and the domain's NOT NULL (nested domains included) allow it. Otherwise it refuses cleanly.
+    - ParentRows uses `Reads` over the original query and the candidate, so it NULLs an unread nullable column of an unsupported type.
+    - A NOT NULL self-FK whose referenced columns the row doesn't set points at the row itself.
+    - `Literals.bits` got its `match&.` guard back.
+    - DESIGN.md says the NULL is chosen from the original query only.
+  - **Not done:** `bit(n)` past 2^n values, an inherent limit already in DESIGN.md.
+  - **Tests:** each fix went red first. The reviewer ran 14 mutations of the diff and 13 went red. The survivor is minor finding 2 below.
+  - **Review:** one round, clean. Its minor findings went to 20261003-37:
+    - a base table aliased with a column list;
+    - the self-FK fix depends on foreign-key order.
+
+### 20261003-24. ParentRows can leak a value in a Postgres error.
+
+Found while building 20261003-17. This predates that task. In 10a-10c, `Counterexamples::ParentRows` runs `SELECT (value)::text` on an LLM row's values (`counterexamples/parent_rows.rb`). If Postgres raises there, such as on a bad cast, the error can escape `prepare` with the value in its message. Errors from the enclave must carry only a rule.
+
+Reproduce it with a sentinel value that makes the cast fail, and check that the sentinel shows up today. Then wrap the error in a rule (with `cause: nil`, as elsewhere), and check that the sentinel never shows up in any output.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261003-17, 2026-10-03.
+- **Design:** 10a, trust boundary.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-24.
+  - **Change:**
+    - The new `Counterexamples::Evaluated` evaluates each value of an accepted insert in the arena once. It catches Postgres errors.
+    - A bad value refuses only its own insert, recorded as `{index, rule: "bad_value"}`, with no cause. The round carries on, since a driver-ending error was too harsh for an ordinary LLM mistake.
+    - `ParentRows` and `Deferral` read the evaluated results and no longer query Postgres with LLM values. `Deferral.text`, used for cut columns, had the same leak.
+    - DESIGN.md 10a describes `bad_value`.
+  - **Tests:** sentinel tests for a bad FK value, a plain value, a cut column and a full step run went red on main. A meta-test proves the leak check catches a planted sentinel. The reviewer tried enum, date, jsonb, out-of-range, division by zero and multi-row cases, and nothing leaked. Mutations went red.
+  - **Review:** one round, clean. Its minor findings went to 20261003-38.
+
+### 20261003-31. Step 9: two false passes on ordinary joins.
+
+The second review of 20261003-23 found two cases where step 9 passes a wrong rewrite. Both are on main and both are realistic, so this goes ahead of widenings.
+
+- **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
+- **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
+- **A nullable FK always points at the group's own parent.** On the Canvas `accounts.course_template_id` cycle, "courses that are some account's template" passes as equal to "courses whose account has a template", on main too (review of 20261003-30, case C6). Some group must hold a row whose nullable FK points at a parent from another group. Note: on a cycle this interacts with 20261003-23/-30, which are set aside. Do the acyclic form here, and leave the cyclic form for them.
+
+Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-31.
+  - **Change:**
+    - An atom no stored value can satisfy, such as `r.id IS NULL` on a NOT NULL key, no longer drops every group. That fixes the self-referencing anti-join false pass.
+    - A copy row gets its own value for a key its table holds unique (`topology.rb` `own_key?`/`own_slots`). Before, it collided with the original and was dropped, so a parent never had two children. That fixes EXISTS vs JOIN.
+    - S3 adds rows whose foreign key points at another group's parent. This is the acyclic form only; cycle-cutting is untouched.
+    - DESIGN.md step 9 notes.
+  - **Tests:** `enclave/spec/step_nine_joins_postgres_spec.rb`, on real Postgres. Each wrong rewrite was red on main and is now disproved, and each correct twin passes. In the fix round, tests were added that pin `own_key?` and the outward guard in `own_slots`; each goes red under its mutation.
+  - **Review:** two rounds. The first found `own_key?` and the outward guard untested (blocking), and the fix round added tests for both. The second review was clean, with 26 Rails-style cases: no new load failures, no new false passes, and two more wrong rewrites now disproved. Minor findings went to 20261003-39 and 20261003-40.
+  - **Not done:** the cyclic form (Canvas `accounts.course_template_id` ↔ `courses`), which belongs to 20261003-23 and -30.
+
+### 20261003-18. A scenario refusal shouldn't end the run.
+
+When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check`, `expression_unique_index` or `unsupported_type`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
+
+The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
+
+Test it end to end against real Postgres with a schema that refuses (a complex `CHECK` is the easiest). The run should finish, the report should name the rule, and no rewrite should be recommended.
+
+- **Depends on:** none.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Steps 9-10, step 15.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-18.
+  - **Change:**
+    - `StepNine.run` catches `Scenarios::Error` and gives every rewrite "not passed", carrying only the rule. It stores `"refused" => true` and `survived = false`, so steps 10 and 11 and ranking skip the rewrite.
+    - A new fate, `step9_untested`. Its rule must be on `REFUSALS`, or it goes out as nil. A refused rewrite isn't counted as a rule bug.
+    - The report says per rule that QUAACK couldn't make up test data, so it never tested the rewrite and won't recommend it.
+    - The index steps and the report still run. A resumed run skips the refused step.
+    - DESIGN.md: steps 9 and 10, the fate table, and step 15.
+  - **Tests:**
+    - `spec/pipeline_scenario_refusal_spec.rb` runs end to end on real Postgres, with a complex CHECK, and covers resume.
+    - A sentinel `domain_check` spec checks that column and domain names never leave the enclave.
+    - All six `REFUSALS` rules are pinned.
+    - Each test went red before the fix, and every mutation went red.
+  - **Review:** two rounds. The first found no leak test for the refusal message (blocking); the fix round added it. The second was clean. Its minor finding went to 20261003-41.
+
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
+
+Minor findings from the second review of 20261002-17:
+
+- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
+- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
+- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
+- **Mutations that survive:**
+  - dropping the column's `COLLATE` in `typed`;
+  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
+- **Missing tests:**
+  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
+  - a positive `NOT IN` case;
+  - an ON clause that dropping empties.
+- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
+
+- **Depends on:** 20261002-17.
+- **Came from:** The second review of 20261002-17, 2026-10-03.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-6.
+  - **Change:**
+    - A new `Catalog#type_name` (`catalog/types.rb`) resolves a cast's type, typmod included. pg_query checks the type text first, so no literal value is ever sent to Postgres.
+    - A cast on a literal blocks the drop, unless it's to the column's own type.
+    - An exact duplicate that might call a volatile function is kept (`Catalog#calls_volatile?`; anything it can't check counts as volatile).
+    - Each SELECT is simplified on its own: the top level, subqueries, CTEs and set-operation arms. An equality only proves predicates in its own SELECT.
+    - COLLATE is pinned.
+    - The shape half of `Literals#same?` was removed as dead; the reviewer confirmed it.
+    - `Literals` redacts in `inspect`, `to_s` and `pretty_print`.
+    - New tests: an inner-join ON equality, and an emptied ON becoming CROSS JOIN.
+    - The DESIGN.md 6c row was updated.
+  - **Tests:** seven tests went red first for the right reason. 15 reviewer mutations and the builder's own mutations all went red.
+  - **Review:** one round, clean, with no findings. The reviewer checked 45 realistic queries against real Postgres, covering casts, SELECT levels, volatile duplicates and Rails duplicates.
+  - **Not done (builder's notes, not filed):**
+    - An unusual type that doesn't deparse as `NULL::<type>` is refused, which is conservative.
+    - Outer equalities are never used inside a correlated subquery, by design.
+
+### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents.
+
+Found while fixing 20261003-31. It happens on main too. It fails safe, but it rejects correct rewrites of an ordinary query shape.
+
+- **An equality filter on a unique parent column, joined to a child,** fails to load at S6. Example: `posts JOIN taggings JOIN tags tg … WHERE tg.name = 'ruby'`. The S6 "many" group collides with the hit on the unique `name`, so the whole group is dropped. The group's single-table copies stay, though, and the taggings copy points at a post and tag that were never loaded, so the load fails with `fixture_load_failed`.
+- **The S3 cross rows assume the hit group is never dropped.** If it were, they'd point at a missing parent in the same way.
+- Fix: when a group is dropped, also drop every row that points at its rows, and the rows built only for it. Or pick the colliding group's unique values so they can't collide. Check whether this also clears 20261003-32's "a group that skips leaves orphaned copies".
+
+Test with the taggings query: the correct rewrite must pass, and a wrong twin must still be disproved.
+
+- **Depends on:** 20261003-31.
+- **Came from:** The fix round of 20261003-31, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-40.
+  - **Change:**
+    - The scenario builder retries a colliding group with later values from the pool (a new `Retries` class).
+    - Cross rows go first and are trimmed.
+    - A unique column that an ignored atom reads now gets varied values.
+    - A row whose parent isn't loaded counts as a collision, and a group that collides partway rolls back its earlier rows.
+    - A group that doesn't fit beside the hit goes into a further fixture of the same scenario, with copies of its parent rows (`RowSet#parents_of`). If it fits nowhere, it tries its near-miss version.
+    - Step 9 loads and compares every further fixture, in both load orders.
+    - `Ties.allowed?` was pulled out of the scenario code. DESIGN.md's step 9 notes are updated.
+  - **Tests:** a new `step_nine_unique_filter_postgres_spec.rb` covers has_one, LEFT JOIN, DISTINCT has_many, a three-level chain, tags with `=` and `IN`, and sender/recipient. The RowSet tests cover a three-level chain, a partly-NULL composite FK, a parent in the same group, and `parents_of`.
+  - **Review:**
+    - Round 1 was blocking. The first version pruned orphaned rows, which turned safe refusals into false passes (for example, dropping a has_one join under a unique email filter).
+    - The fix round replaced the prune with further fixtures.
+    - Round 2 was clean. Every round-1 reproducer and 7 more realistic queries came out right: correct rewrites pass and wrong ones are disproved. All 11 mutations went red.
+  - **Follow-ups:** filed as 20261003-42.
+
+### 20261003-19. Name the tables in an `fk_cycle` refusal.
+
+`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
+
+Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
+
+- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-19.
+  - **Change:**
+    - Topology records the cycle that blocks the load order: the tables in foreign-key order, with the first table repeated at the end. Nullable FKs that get cut are left out, and so are tables that only reference the cycle.
+    - Step 9 stores the cycle along with the `fk_cycle` refusal.
+    - The report payload (`CycleTables`) and step 10's re-raised error only name tables that exactly match a `schema_subset` string, and they send that string, not the stored value.
+    - The enclave's ErrorFilter passes `cycle` only for `fk_cycle`, and only when the cycle is closed and well formed.
+    - The protocol whitelist allows the field. The driver checks the rule and the name shape again, then names the tables in the report sentence.
+    - `Scenarios::LoadOrder` was pulled out of Topology to stay within RuboCop's limits after merging -40. DESIGN.md's step 9 and step 15 text is updated.
+  - **Review:**
+    - Round 1 found one blocking problem: a vacuous closure test, whose name SENTINEL.c failed the shape check anyway. It also found one minor: the empty-cycle guard was untested.
+    - The fix round corrected both, and each was confirmed to go red when its check is removed.
+    - Round 2 was clean. 13 of round 1's 15 mutations had already gone red, and the two survivors are the ones the fix round covered.
+  - **Follow-ups:** filed as 20261003-43.
+
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
+
+From the build and review of 20261002-10.
+
+- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
+- **Widenings:**
+  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
+  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
+  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
+
+- **Depends on:** 20261002-10.
+- **Came from:** The build and review of 20261002-10, 2026-10-03.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-29.
+  - **Change:**
+    - **The capture fix:** the rule refuses a bare one-field name in the moved conditions, or in x, when it names a FROM item on its own side. Qualified `t.*` still flips. DESIGN.md lists the bare form as unsupported in v1.
+    - **Widenings:**
+      - (A) The prepare check gives each placeholder its literal's type, through `Literals#prepares?`, which returns only true or false. So `generate_series($2,$3)` flips.
+      - (B) An ORDER BY whose keys are all safe becomes `ORDER BY 1`. A safe key is an output position, or a qualified column of a plain table whose type can be compared, with no USING.
+      - (C) A cast constant in the select list.
+      - (D) A bare y when S has several tables, qualified by the one plain table that has that column.
+      - (E) y as an expression. Its columns are qualified and renamed. A SubLink and a bare top-level constant are refused.
+      - (F) Renaming when S has subqueries, allowed when nothing else in S introduces that name.
+  - **Review:** one round, clean. The reviewer compared about 55 realistic queries in real Postgres, and 29 of 31 mutations went red.
+  - **Follow-ups:** filed as 20261003-44.
+
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
+
+`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
+
+- **Depends on:** none.
+- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
+- **Design:** none (test only).
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-36.
+  - **Change:** only `driver/spec/copilot_cli_adapter_spec.rb` changed.
+    - The grandchild-stdout test's outer limit went from 1s to 10s (`hang_limit`). The fake grandchild still sleeps 60s.
+    - The two sibling timeout and process-group tests had the same problem. They get a 3s adapter timeout (`slow_start_timeout`) and a 10s outer limit or poll.
+  - **Review:** one round, clean. Three deliberate breaks each turned the matching test red: the success path reading stdout to EOF, the timeout path reading to EOF, and killing only the child. The two timeout tests now take about 3s each.

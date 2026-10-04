@@ -173,5 +173,19 @@ RSpec.describe Quaack::Enclave::Scenarios do
       .to raise_error(described_class::Error) { |e| expect(e.rule).to eq(:expression_unique_index) }
   end
 
+  # No value satisfies t.id IS NULL on the NOT NULL key, so the atom is
+  # ignored, and t.id still takes a value per row. Repeating one would
+  # leave S6's many group out.
+  it "gives a unique column a value per row when the atom it reads is ignored" do
+    conn.exec("CREATE TABLE fx.templates (id bigint PRIMARY KEY, customer_id integer NOT NULL REFERENCES fx.customers)")
+    sql = "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id " \
+          "LEFT JOIN fx.templates t ON t.customer_id = c.id WHERE t.id IS NULL"
+    builder = described_class::Builder.new(conn, PgQuery.parse(sql))
+    s6 = builder.build[:s6]
+    expect(values(s6, "templates", "id").size).to eq(4)
+    expect(values(s6, "templates", "id").uniq.size).to eq(4)
+    expect(builder.dropped).to eq(0)
+  end
+
   def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
 end

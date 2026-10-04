@@ -249,6 +249,16 @@ RSpec.describe "quaack run" do
     expect([status, stdout.string, errors]).to eq([1, "", "#{torn}quaack run failed: arena_missing\n"])
   end
 
+  it "names the table, column, and type when step 9 can't fill a column" do
+    column = { "table" => "public.courses", "column" => "tags", "type" => "int4range" }
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "unsupported_type",
+                                                                 column:)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq([1, "#{torn}quaack run failed: unsupported_type: public.courses.tags (int4range)\n"])
+  end
+
   it "tears the run down after an enclave call fails" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
     cli.run(["run", "--run", run_id, "--out", out])

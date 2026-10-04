@@ -15,29 +15,47 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   after { production.server.admin.exec(%(DROP DATABASE IF EXISTS "#{arena_name}" WITH (FORCE))) }
 
-  def ready(sql, arena: true, setup: true, status_check: nil)
+  def ready(sql, arena: true, setup: true, status_check: nil, arena_sql: nil)
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
     store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
-    make_arena(status_check) if arena
+    make_arena(status_check, arena_sql) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
                              "inferred" => false, "warnings" => [], "result_types" => %w[text text])
   end
 
-  # status_check, if given, becomes a CHECK on status in the arena.
-  def make_arena(status_check = nil)
+  # status_check, if given, becomes a CHECK on status in the arena, and
+  # extra, if given, runs there after.
+  def make_arena(status_check = nil, extra = nil)
     production.server.admin.exec(%(CREATE DATABASE "#{arena_name}"))
     server = production.server
     conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
                       password: TestPostgres::PASSWORD)
     conn.exec("CREATE TABLE public.orders (id int PRIMARY KEY, note text, " \
               "status text#{" CHECK (#{status_check})" if status_check}, total int, created_at timestamptz)")
+    conn.exec(extra) if extra
   ensure
     conn&.close
   end
 
   def step(*argv, stdin: nil) = quaacks.run(*argv, "--run", store.run_id, stdin:, env: libpq_env)
+
+  # Arena SQL for a NOT NULL foreign key cycle, orders -> accounts ->
+  # orders, holding a row of rows' sentinels in each table.
+  def cycle_sql(rows)
+    <<~SQL
+      CREATE TABLE public.accounts (id int PRIMARY KEY, order_id int NOT NULL, label text);
+      INSERT INTO public.orders (id, note, status) VALUES (#{rows.number}, '#{rows.text}', '#{rows.word}');
+      INSERT INTO public.accounts VALUES (#{rows.number}, #{rows.number}, '#{rows.text}');
+      ALTER TABLE public.orders ADD COLUMN account_id int;
+      UPDATE public.orders SET account_id = #{rows.number};
+      ALTER TABLE public.orders ALTER COLUMN account_id SET NOT NULL;
+      ALTER TABLE public.orders ADD FOREIGN KEY (account_id) REFERENCES public.accounts;
+      ALTER TABLE public.accounts ADD FOREIGN KEY (order_id) REFERENCES public.orders;
+    SQL
+  end
+
   def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
 
   def round(number, *inserts)
@@ -67,6 +85,54 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome).first).to include("passed" => false, "scenario" => "s1", "rule" => "row_count")
       expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
       expect_no_leaks(sentinels, outcome)
+    end
+
+    it "marks the rewrite untested when step 9 can't build scenarios, by the refusal's rule, and goes on" do
+      ready(same, status_check: "status = 'open' OR status = 'closed'")
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
+                                      "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
+      expect(stored.read("rewrite_tested_1"))
+        .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
+               "untested" => [], "untested_atoms" => [])
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # The refusal's error names the column and its type; only the rule may
+    # leave step 9, on stdout or into the store that report-payload reads.
+    it "keeps the column and type a refusal names out of its output and the store" do
+      column = LeakCheck::Sentinels.new
+      domain = LeakCheck::Sentinels.new
+      ready(same, arena_sql: "CREATE DOMAIN public.#{domain.word} AS int CHECK (VALUE > 5 AND VALUE < 3); " \
+                             "ALTER TABLE public.orders ADD COLUMN #{column.word} public.#{domain.word} NOT NULL")
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      tested = stored.read("rewrite_tested_1")
+      expect(tested).to include("refused" => true)
+      [column, domain].each { expect_no_leaks(it, outcome, objects: { tested: }) }
+      expect(tested).to include("rule" => "domain_check")
+    end
+
+    # An fk_cycle refusal keeps the cycle's tables, which are schema, in the
+    # store for the report: never a row of theirs, on stdout or in the store.
+    it "stores the tables of an fk_cycle refusal, in the order their foreign keys point, and no row value" do
+      rows = LeakCheck::Sentinels.new
+      ready(same, arena_sql: cycle_sql(rows))
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
+                                      "scenario" => nil, "rule" => "fk_cycle" }, { "type" => "done" }])
+      tested = stored.read("rewrite_tested_1")
+      expect(tested).to include("refused" => true, "rule" => "fk_cycle",
+                                "cycle" => [%w[public orders], %w[public accounts], %w[public orders]])
+      expect_no_leaks(rows, outcome, objects: { tested: })
+      expect_no_leaks(sentinels, outcome, objects: { tested: })
     end
 
     it "skips a rewrite step 8 discarded, without connecting to the arena" do
@@ -176,6 +242,31 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    it "builds a parent row that leaves NULL a nullable column step 9 can't fill, when neither query reads it" do
+      ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY, lsn pg_lsn);
+                              ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, status, customer_id) VALUES (1, $1, 'open', 7)")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => true, "load_failed" => false, "refused" => [])
+    end
+
+    it "refuses by rule alone an insert whose bound value Postgres can't evaluate, and runs the round " \
+       "(20261003-24)" do
+      ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY);
+                              ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, note_row, "INSERT INTO public.orders (id, status, customer_id) VALUES (2, 'open', $1::int)")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => true, "load_failed" => false,
+                                              "refused" => [{ "index" => 1, "rule" => "bad_value" }])
+      expect_no_leaks(sentinels, outcome)
+    end
+
     it "decides survival only after a matching third round" do
       ready(same)
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
@@ -216,6 +307,41 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(1, note_row)).first["rule"]).to eq("counterexample_round_untested")
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
+    end
+
+    # Step 9 refuses an fk_cycle first, so a round meets one only if the
+    # arena changed after it; its error line still names the cycle's tables,
+    # but only those of the schema subset, and never a row of theirs.
+    context "when the arena's foreign keys make a NOT NULL cycle" do
+      let(:rows) { LeakCheck::Sentinels.new }
+
+      def cycle_ready(subset)
+        ready(same, arena_sql: cycle_sql(rows))
+        store.write("schema_subset", "tables" => subset, "ddl" => "CREATE TABLE public.orders (id int);")
+        store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+      end
+
+      it "ends the round naming the cycle's tables, in the order their foreign keys point" do
+        cycle_ready([%w[public orders], %w[public accounts]])
+
+        outcome = round(1, note_row)
+
+        expect(lines(outcome).first).to include("type" => "error", "step" => "counterexample-round",
+                                                "rule" => "fk_cycle",
+                                                "cycle" => %w[public.orders public.accounts public.orders])
+        expect_no_leaks(rows, outcome)
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "names no table when one of the cycle's isn't in the schema subset" do
+        cycle_ready([%w[public orders]])
+
+        outcome = round(1, note_row)
+
+        expect(lines(outcome).first).to include("type" => "error", "rule" => "fk_cycle")
+        expect(lines(outcome).first).not_to have_key("cycle")
+        expect_no_leaks(rows, outcome)
+      end
     end
   end
 end

@@ -12,13 +12,29 @@ module Quaack
           def column_and_value(left, right)
             column = left.column_ref if left.node == :column_ref
             found = value(right)
-            [column, found] if column && found
+            [column, *found] if column && found
           end
 
+          # [the placeholder, and the TypeName it's cast to or nil], for a
+          # placeholder cast at most once.
           def value(node)
-            inner = node.type_cast.arg if node.node == :type_cast
-            node = inner || node
-            node if node.node == :param_ref
+            cast = node.type_cast if node.node == :type_cast
+            param = cast ? cast.arg : node
+            [param, cast&.type_name] if param.node == :param_ref
+          end
+
+          # Whether a literal cast to type_name, or not cast, reads as the
+          # column's own type, modifiers included. Any other cast changes
+          # the value the column is compared with, as 2.7::int does.
+          def own_type?(type_name, info, catalog)
+            return true unless type_name
+
+            cast = Tree.where_of("SELECT WHERE NULL::int")
+            cast.type_cast.type_name = Deparse.copy(type_name)
+            sql = Deparse.expression(cast)
+            sql.start_with?("NULL::") && catalog.type_name(sql.delete_prefix("NULL::")) == info.type
+          rescue Deparse::Error
+            false
           end
 
           def typed(value, info)

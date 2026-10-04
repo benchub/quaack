@@ -98,9 +98,11 @@ module Quaack
 
         # For RuleBugs only, as it was before RewriteFate (20261002-5 covers
         # RuleBugs' own logic): step 9's or step 10's disproof of a rewrite.
+        # A rewrite step 9 refused to test (20261003-18) wasn't disproved.
         def disproved(store, search)
           number = search.delete_prefix("rewrite_")
           tested = optional(store, "rewrite_tested_#{number}") or return
+          return if tested["refused"] == true
           return { "step" => "step9", "rule" => tested["rule"] } unless tested["passed"]
 
           survived = optional(store, "rewrite_survived_#{number}")

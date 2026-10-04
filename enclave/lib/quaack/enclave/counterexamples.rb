@@ -8,6 +8,7 @@ require_relative "insert_check"
 require_relative "result_comparison"
 require_relative "scenarios"
 require_relative "vacuity_guard"
+require_relative "counterexamples/evaluated"
 require_relative "counterexamples/parent_rows"
 require_relative "counterexamples/deferral"
 
@@ -17,7 +18,8 @@ module Quaack
     # a fixture for 10b.
     #
     #   prepared = Counterexamples.prepare(arena_connection, inserts,
-    #                                      placeholder_map: map, tables: subset_tables)
+    #                                      placeholder_map: map, tables: subset_tables,
+    #                                      queries: [original, candidate])
     #   prepared.rows     # => parent FixtureRows that fill foreign-key gaps, parents first
     #   prepared.inserts  # => the accepted inserts, bound, parents' tables first
     #   prepared.refused  # => [{ index: 0, rule: "insert_select" }, ...]
@@ -28,15 +30,21 @@ module Quaack
     # as a string constant the column's type reads, or NULL for a NULL
     # literal. A $n the map doesn't have refuses the insert with
     # unknown_placeholder. The bound insert then goes through the inbound
-    # check (InsertCheck), and a refusal keeps only its rule. tables are
-    # the 3b subset schema's tables. The connection is arena's: the check
-    # reads its catalog, which matches production's schema.
+    # check (InsertCheck), and a refusal keeps only its rule. Each value of
+    # an accepted insert is then evaluated in arena (see Evaluated); one
+    # Postgres can't evaluate, such as a bad cast, refuses the insert with
+    # bad_value, and Postgres's message, which can quote the value, is
+    # dropped. tables are the 3b subset schema's tables. The connection is
+    # arena's: the check reads its catalog, which matches production's
+    # schema.
     #
     # Accepted inserts are ordered so each table's inserts come after
     # those of the tables it references, keeping the LLM's order
     # otherwise. Any foreign-key value that no insert supplies gets a
     # parent row, built by the step 9 rules (see ParentRows), and so do
-    # that row's own NOT NULL foreign keys, however far up. Constraints are
+    # that row's own NOT NULL foreign keys, however far up. queries are the
+    # SQL the fixture runs: a parent row leaves NULL a nullable column
+    # step 9 can't fill only when none of them reads it. Constraints are
     # never bypassed.
     #
     # A foreign-key cycle can leave no parents-first order. Step 9's
@@ -108,13 +116,19 @@ module Quaack
                     .map { |i| atoms[i].shape }
       end
 
-      def prepare(conn, inserts, placeholder_map:, tables:, settings: nil)
+      def prepare(conn, inserts, placeholder_map:, tables:, queries: nil, settings: nil) # rubocop:disable Metrics/ParameterLists
         accepted, refused = check(conn, inserts, placeholder_map, tables, settings)
         schema = ArenaSchema.load_closure(conn, accepted.map(&:table).uniq)
         topology = Scenarios::Topology.new(schema, [])
         accepted = parents_first(topology, accepted)
-        Prepared.new(rows: ParentRows.new(conn, schema, accepted).rows,
-                     inserts: accepted.map { |a| Deferral.insert(conn, a, topology.cut_columns(a.table)) }, refused:)
+        Prepared.new(rows: ParentRows.new(conn, schema, accepted, reads(schema, queries)).rows,
+                     inserts: accepted.map { |a| Deferral.insert(a, topology.cut_columns(a.table)) }, refused:)
+      end
+
+      # What the queries read, or nil, so every column counts as read, when
+      # there are none.
+      def reads(schema, queries)
+        queries && Scenarios::Reads.new(queries.map { PgQuery.parse(it) }, schema.column_names)
       end
 
       def parents_first(topology, accepted)
@@ -122,11 +136,12 @@ module Quaack
         accepted.each_with_index.sort_by { |a, i| [order.index(a.table), i] }.map(&:first)
       end
 
+      # The accepted inserts, each Evaluated, and the refusals.
       def check(conn, inserts, placeholder_map, tables, settings)
         accepted = []
         refused = []
         inserts.each_with_index do |sql, index|
-          accepted << InsertCheck.check(bind(sql, placeholder_map), tables, settings, conn)
+          accepted << Evaluated.of(conn, InsertCheck.check(bind(sql, placeholder_map), tables, settings, conn))
         rescue InsertCheck::Error, Refusal => e
           refused << { index:, rule: e.rule.to_s }
         end

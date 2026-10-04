@@ -7,8 +7,8 @@ module Quaack
     # Error filtering (DESIGN.md, "Where QUAACK runs"): every error the enclave
     # script reports goes out through the egress function as one error line,
     # with only which step failed, which rule it broke, and the Postgres
-    # SQLSTATE if there was one, plus, for two rules, the shape-class detail
-    #   below (reason, function, and clients).
+    # SQLSTATE if there was one, plus, for some rules, the shape-class detail
+    #   below (reason, function, clients, and column).
     #
     #   ErrorFilter.to_egress(unique_violation, step: "9b")
     #   # => '{"type":"error","step":"9b","rule":"internal_error","sqlstate":"23505"}'
@@ -42,6 +42,22 @@ module Quaack
     #   Integer, then backend_start, a UTC time such as
     #   2026-09-29T16:01:02Z. Otherwise the whole field is
     #   left out, so no other detail of a client is ever sent.
+    # - The column comes from the error's column method, and is sent only
+    #   when the rule is unsupported_type or domain_check (DESIGN.md, step
+    #   9): the table, column, and type that step 9 can't fill, which are
+    #   schema, never a row value. It must be a Hash with exactly three
+    #   String keys, in this order: table, one plain schema.name pair like
+    #   the function; column, one plain name; and type, as format_type
+    #   prints it, unquoted, such as numeric(5,2) or bigint[]. Otherwise the
+    #   whole field is left out.
+    # - The cycle comes from the error's cycle method, and is sent only
+    #   when the rule is fk_cycle (DESIGN.md, step 9): the tables of a
+    #   foreign key cycle, in the order their foreign keys point, which are
+    #   schema, never a row value. It must be an Array of 3 to 64 plain
+    #   schema.name Strings, like the function, whose last is its first.
+    #   Otherwise the whole field is left out. This file can't see the
+    #   run's schema, so whoever raises the error checks that each is one
+    #   of the run's relations (Steps::CycleTables).
     #
     # The enclave script runs its work inside guard, with stderr silenced by
     # silence_stderr!, and drops the notices on every database connection
@@ -59,6 +75,12 @@ module Quaack
       CLIENTS_RULE = "run_server_other_clients"
       CLIENT_KEYS = %w[pid backend_start].freeze
       MAX_CLIENTS = 20
+      COLUMN_RULES = %w[unsupported_type domain_check].freeze
+      COLUMN_KEYS = %w[table column type].freeze
+      IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
+      # A type as format_type prints it, unquoted: a name, maybe schema
+      # qualified, with a typmod, words such as "with time zone", and [].
+      TYPE = /\A[a-z_][a-z0-9_ $.,()\[\]]{0,127}\z/
       INTERNAL_ERROR = "internal_error"
       # libpq's PG_DIAG_SQLSTATE, the error field code for the SQLSTATE.
       PG_DIAG_SQLSTATE = "C".ord
@@ -86,7 +108,9 @@ module Quaack
         { type: :error, step: name(step, STEP), rule:, sqlstate: sqlstate(exception),
           reason: (reason(ask(exception, :reason)) if UNREADABLE_RULES.include?(rule)),
           function: (shaped_or_nil(ask(exception, :function), FUNCTION) if rule == FUNCTION_RULE),
-          clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE) }.compact
+          clients: (clients(ask(exception, :clients)) if rule == CLIENTS_RULE),
+          column: (column(ask(exception, :column)) if COLUMN_RULES.include?(rule)),
+          cycle: (Cycle.check(ask(exception, :cycle)) if rule == Cycle::RULE) }.compact
       end
 
       # Runs the block and returns its value. If it raises anything, even a
@@ -166,6 +190,38 @@ module Quaack
         client.instance_of?(Hash) && client.keys == CLIENT_KEYS && client.keys.map(&:class) == [String, String] &&
           client["pid"].instance_of?(Integer) && client["pid"].positive? &&
           shaped?(client["backend_start"], BACKEND_START)
+      end
+
+      # column if it's a Hash with exactly COLUMN_KEYS, each a plain name of
+      # its shape, and nil otherwise.
+      def column(column)
+        return unless exact_keys?(column, COLUMN_KEYS)
+
+        column if shaped?(column["table"], FUNCTION) && shaped?(column["column"], IDENTIFIER) &&
+                  shaped?(column["type"], TYPE)
+      end
+
+      # Whether hash is a Hash whose keys are exactly keys, each a String.
+      def exact_keys?(hash, keys)
+        hash.instance_of?(Hash) && hash.keys == keys && hash.keys.map(&:class) == [String] * keys.size
+      end
+
+      # An fk_cycle refusal's tables.
+      module Cycle
+        RULE = "fk_cycle"
+        # A cycle names at least two tables and its first again, and at
+        # most 64 in all.
+        SIZES = (3..64)
+
+        module_function
+
+        # cycle if it's an Array of SIZES plain schema.name Strings whose
+        # last is its first, and nil otherwise.
+        def check(cycle)
+          return unless cycle.instance_of?(Array) && SIZES.cover?(cycle.size) && cycle.first == cycle.last
+
+          cycle if cycle.all? { ErrorFilter.shaped?(it, FUNCTION) }
+        end
       end
 
       def sqlstate(exception)

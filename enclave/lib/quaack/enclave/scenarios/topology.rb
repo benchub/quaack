@@ -12,7 +12,7 @@ module Quaack
       # however far up), all its child columns are nullable, and no atom
       # reads any of them. Fixture rows leave a cut foreign key's columns
       # NULL, and those columns join no key class. A cycle with no cut
-      # foreign key raises Error(:fk_cycle).
+      # foreign key raises Error(:fk_cycle), naming one such cycle's tables.
       class Topology
         attr_reader :order
 
@@ -48,6 +48,15 @@ module Quaack
           @order & found
         end
 
+        # The tables a cross group on the table's foreign key needs: the
+        # table and the ancestors its other foreign keys lead to. The cross
+        # points the key at another group's parent, so the group holds its
+        # own only when another path reaches it.
+        def cross_tables(table, foreign)
+          others = (foreign_keys(table) - [foreign]).map(&:parent).uniq - [table]
+          @order & [table, *others.flat_map { |p| ancestors(p) }]
+        end
+
         # The indexes of equality join atoms that no foreign key backs.
         def free_joins
           @atoms.each_index.select do |i|
@@ -57,15 +66,43 @@ module Quaack
 
         def keyed?(table, name) = @classes.key?([table, name])
 
+        # Each [table, foreign key] whose row can point at another group's
+        # parent: a foreign key to another table, not cut, that shares no
+        # column with another of the table's foreign keys.
+        def crossings
+          @order.flat_map do |t|
+            fks = foreign_keys(t).reject { |fk| fk.parent == t }
+            fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
+          end
+        end
+
         # The slot a column's value comes from: its key class's root, or
         # the column itself.
         def slot(table, name) = @classes.fetch([table, name], [table, name])
 
         def members(slot) = @classes.value?(slot) ? @classes.select { |_, root| root == slot }.keys : [slot]
 
+        # Whether a copy of the table's row takes a key of its own for the
+        # column, rather than the row's. A copy can't repeat a value that a
+        # unique key of its table holds, so the slots of those columns get
+        # the copy's key, and a self-reference follows its row. The table's
+        # foreign keys to other tables still point at the row's parents, so
+        # the parents get a second child.
+        def own_key?(table, name)
+          keyed?(table, name) && own_slots(table).include?(slot(table, name))
+        end
+
         private
 
         def all_foreign_keys(table) = @schema.constraints(table).foreign_keys
+
+        # The columns of the table's foreign keys to other tables.
+        def outward(table) = foreign_keys(table).reject { |fk| fk.parent == table }.flat_map(&:columns)
+
+        def own_slots(table)
+          (@schema.constraints(table).uniques.flatten.uniq - outward(table))
+            .select { |c| keyed?(table, c) }.map { |c| slot(table, c) }
+        end
 
         def foreign_keys(table) = all_foreign_keys(table) - @cut.fetch(table, [])
 
@@ -100,18 +137,7 @@ module Quaack
           end
         end
 
-        def load_order
-          order = []
-          pending = @schema.tables.dup
-          until pending.empty?
-            ready = pending.select { |t| (parents(t) - order).empty? }
-            raise Error, :fk_cycle if ready.empty?
-
-            order.concat(ready)
-            pending -= ready
-          end
-          order
-        end
+        def load_order = LoadOrder.new(@schema.tables) { parents(it) }.call
 
         def key_classes
           union = UnionFind.new
@@ -127,6 +153,40 @@ module Quaack
           @schema.tables.flat_map do |t|
             foreign_keys(t).flat_map { |fk| fk.columns.zip(fk.parent_columns).map { |c, p| [[t, c], [fk.parent, p]] } }
           end
+        end
+      end
+
+      # Tables in load order, parents first, given each table's parents.
+      # A cycle raises Error(:fk_cycle), naming one cycle's tables.
+      class LoadOrder
+        def initialize(tables, &parents)
+          @tables = tables
+          @parents = parents
+        end
+
+        def call
+          order = []
+          pending = @tables.dup
+          until pending.empty?
+            ready = pending.select { |t| (@parents.call(t) - order).empty? }
+            raise Error.new(:fk_cycle, cycle: cycle(pending)) if ready.empty?
+
+            order.concat(ready)
+            pending -= ready
+          end
+          order
+        end
+
+        private
+
+        # One cycle among pending, every one of which has a parent still
+        # pending: from the first, follow the first pending parent until a
+        # table comes round again. The tables from that one on, in the
+        # order their foreign keys point, end with it again.
+        def cycle(pending)
+          walk = [pending.first]
+          walk << @parents.call(walk.last).find { pending.include?(it) } until walk.count(walk.last) == 2
+          walk.drop(walk.index(walk.last))
         end
       end
 

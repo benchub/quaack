@@ -2,6 +2,7 @@
 
 require_relative "../result_comparator"
 require_relative "../scenarios"
+require_relative "cycle_tables"
 
 module Quaack
   module Enclave
@@ -23,6 +24,11 @@ module Quaack
       #                            does, so it was never tested
       #   step9_disproved          a step 9 scenario got different results;
       #                            with the scenario and the rule
+      #   step9_untested           step 9 couldn't build scenarios for the
+      #                            query (rewrite_tested_<n> says refused),
+      #                            so the rewrite was never tested; with the
+      #                            refusal's rule, and for fk_cycle the
+      #                            cycle's tables
       #   step9_failed             a step 9 scenario ended without comparing
       #                            results (the original's order can't be
       #                            checked, or a statement failed in arena);
@@ -59,12 +65,15 @@ module Quaack
       # none of its labels counts.
       #
       # Trust boundary. Everything this returns is one of this module's own
-      # constants: a fate from FATES, a rule from MISMATCHES, FAILURES, or
-      # PRODUCTION_FAILURES, a scenario from Scenarios::NAMES, a round from
-      # ROUNDS, and an after from AFTER. A stored value that isn't on its
-      # list goes out as nil, never as it is.
+      # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
+      # REFUSALS, or PRODUCTION_FAILURES, a scenario from Scenarios::NAMES,
+      # a round from ROUNDS, and an after from AFTER. A stored value that
+      # isn't on its list goes out as nil, never as it is. The one
+      # exception is an fk_cycle's cycle: table names, which are schema,
+      # each the schema_subset entry's own (the catalog's relations). A
+      # cycle with any other value goes out as nil.
       module RewriteFate
-        FATES = %w[ranked same_plans step9_disproved step9_failed step10_disproved step10_failed
+        FATES = %w[ranked same_plans step9_disproved step9_untested step9_failed step10_disproved step10_failed
                    production_mismatch production_timed_out production_not_compared below_top_three
                    footprint_tie not_better measurement_timed_out unfinished].freeze
 
@@ -79,6 +88,10 @@ module Quaack
                       insert_failed query_failed transaction_ended rollback_failed statement_timeout
                       statement_canceled].freeze
 
+        # Scenarios::Error's rules: why step 9 couldn't build scenarios.
+        REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
+                      domain_check].freeze
+
         # 14c's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
 
@@ -89,10 +102,12 @@ module Quaack
         # 14d's reasons for a label that 14c didn't drop, strongest first.
         EXCLUDED = %w[below_top_three footprint_tie not_better].freeze
 
-        BLANK = { "fate" => nil, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil }.freeze
+        BLANK = { "fate" => nil, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil,
+                  "cycle" => nil }.freeze
 
         # What every rewrite's fate reads from steps 14 on, read once.
-        Context = Data.define(:top, :excluded, :measured, :timed_out, :verdicts)
+        # tables is the schema subset's relations (3b), as "schema.name".
+        Context = Data.define(:top, :excluded, :measured, :timed_out, :verdicts, :tables)
 
         module_function
 
@@ -102,12 +117,12 @@ module Quaack
           compared = store.read("result_comparison") if store.entry?("result_comparison")
           Context.new(top: selection["top"].map { it["label"] }, excluded: selection["excluded"],
                       measured: runs["candidates"].keys, timed_out: runs["timed_out"],
-                      verdicts: compared ? compared["verdicts"] : {})
+                      verdicts: compared ? compared["verdicts"] : {}, tables: CycleTables.tables(store))
         end
 
         def call(store, rewrite, context)
           steps = steps(store, rewrite.delete_prefix("rewrite_"))
-          ranked(rewrite, context) || early(steps) || production(rewrite, context) ||
+          ranked(rewrite, context) || early(steps, context) || production(rewrite, context) ||
             measured(rewrite, context) || unfinished(rewrite, steps, context)
         end
 
@@ -131,21 +146,29 @@ module Quaack
         end
 
         # Steps 8, 9, and 10, in that order.
-        def early(steps)
+        def early(steps, context)
           tested = steps["tested"]
           return fate("same_plans") if steps.dig("pruned", "discarded") == true
           return unless tested
-          return step9(tested) unless tested["passed"]
+          return step9(tested, context) unless tested["passed"]
 
           step10(steps["round"] || {}) if steps.dig("survived", "survived") == false
         end
 
-        def step9(tested)
+        def step9(tested, context)
+          return untested(tested, context) if tested["refused"] == true
+
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
           return fate("step9_disproved", scenario:, rule: mismatch) if mismatch
 
           fate("step9_failed", scenario:, rule: known(FAILURES, tested["rule"]))
+        end
+
+        def untested(tested, context)
+          rule = known(REFUSALS, tested["rule"])
+          cycle = CycleTables.check(tested["cycle"], context.tables) if rule == "fk_cycle"
+          fate("step9_untested", rule:, cycle:)
         end
 
         # A round entry with no rule was written before rounds kept theirs
