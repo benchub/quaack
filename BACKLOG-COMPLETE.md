@@ -4222,3 +4222,54 @@ Test with the taggings query: the correct rewrite must pass, and a wrong twin mu
     - The fix round replaced the prune with further fixtures.
     - Round 2 was clean. Every round-1 reproducer and 7 more realistic queries came out right: correct rewrites pass and wrong ones are disproved. All 11 mutations went red.
   - **Follow-ups:** filed as 20261003-42.
+
+### 20261003-19. Name the tables in an `fk_cycle` refusal.
+
+`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
+
+Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
+
+- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-19.
+  - **Change:**
+    - Topology records the cycle that blocks the load order: the tables in foreign-key order, with the first table repeated at the end. Nullable FKs that get cut are left out, and so are tables that only reference the cycle.
+    - Step 9 stores the cycle along with the `fk_cycle` refusal.
+    - The report payload (`CycleTables`) and step 10's re-raised error only name tables that exactly match a `schema_subset` string, and they send that string, not the stored value.
+    - The enclave's ErrorFilter passes `cycle` only for `fk_cycle`, and only when the cycle is closed and well formed.
+    - The protocol whitelist allows the field. The driver checks the rule and the name shape again, then names the tables in the report sentence.
+    - `Scenarios::LoadOrder` was pulled out of Topology to stay within RuboCop's limits after merging -40. DESIGN.md's step 9 and step 15 text is updated.
+  - **Review:**
+    - Round 1 found one blocking problem: a vacuous closure test, whose name SENTINEL.c failed the shape check anyway. It also found one minor: the empty-cycle guard was untested.
+    - The fix round corrected both, and each was confirmed to go red when its check is removed.
+    - Round 2 was clean. 13 of round 1's 15 mutations had already gone red, and the two survivors are the ones the fix round covered.
+  - **Follow-ups:** filed as 20261003-43.
+
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
+
+From the build and review of 20261002-10.
+
+- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
+- **Widenings:**
+  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
+  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
+  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
+
+- **Depends on:** 20261002-10.
+- **Came from:** The build and review of 20261002-10, 2026-10-03.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-29.
+  - **Change:**
+    - **The capture fix:** the rule refuses a bare one-field name in the moved conditions, or in x, when it names a FROM item on its own side. Qualified `t.*` still flips. DESIGN.md lists the bare form as unsupported in v1.
+    - **Widenings:**
+      - (A) The prepare check gives each placeholder its literal's type, through `Literals#prepares?`, which returns only true or false. So `generate_series($2,$3)` flips.
+      - (B) An ORDER BY whose keys are all safe becomes `ORDER BY 1`. A safe key is an output position, or a qualified column of a plain table whose type can be compared, with no USING.
+      - (C) A cast constant in the select list.
+      - (D) A bare y when S has several tables, qualified by the one plain table that has that column.
+      - (E) y as an expression. Its columns are qualified and renamed. A SubLink and a bare top-level constant are refused.
+      - (F) Renaming when S has subqueries, allowed when nothing else in S introduces that name.
+  - **Review:** one round, clean. The reviewer compared about 55 realistic queries in real Postgres, and 29 of 31 mutations went red.
+  - **Follow-ups:** filed as 20261003-44.

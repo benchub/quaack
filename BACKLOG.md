@@ -1900,16 +1900,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 
 ### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-19. Name the tables in an `fk_cycle` refusal.
-
-`fk_cycle` says only that a cycle exists, so the user has to find it with their own catalog query. The error should name the tables in one cycle, in order, such as `fk_cycle: accounts -> courses -> accounts`. Table names are schema, not data, and the relations step already lets them out. Constraint names and column names may go too. Check DESIGN.md's trust-boundary rules for errors, which today say they "name only a rule", and update that sentence for this case.
-
-Add a sentinel test: plant a row value in the cycle's tables, and check that it never shows up in the error. Check too that the cycle shown is real, in the order the foreign keys point.
-
-- **Depends on:** none. If 20261003-17 lands first, the cycle shown must be one that's left after nullable edges are ignored.
-- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-19. Name the tables in an `fk_cycle` refusal. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-20. Give each rewrite a whimsical name.
 
@@ -2041,20 +2032,7 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
-
-From the build and review of 20261002-10.
-
-- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
-- **Widenings:**
-  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
-  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
-  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
-
-- **Depends on:** 20261002-10.
-- **Came from:** The build and review of 20261002-10, 2026-10-03.
-- **Design:** 6c.
-- **Status:** todo
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class.
 
@@ -2202,4 +2180,36 @@ These are minor findings from building and reviewing 20261003-40:
 - **Depends on:** 20261003-40.
 - **Came from:** The build and reviews of 20261003-40, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-43. `fk_cycle` table names: loose ends from 20261003-19.
+
+These are minor findings from building and reviewing 20261003-19:
+
+- **Quoted names are dropped.** The driver's name-shape check drops a cycle that has mixed-case or quoted table names, so the report falls back to the bare refusal. Allow any name that came from `schema_subset`, quoted the way the catalog quotes it.
+- **A dot inside a name can match the wrong table.** `CycleTables` matches by joining `schema.table` with a dot. The output is still a `schema_subset` string, so this isn't a leak. Match on the schema and the table separately.
+- **No end-to-end test.** Nothing runs a whole pipeline on an `fk_cycle` schema and checks the report sentence.
+- **Step 10's re-raise of a cycle is nearly unreachable.** Prove it can happen, or simplify it.
+
+- **Depends on:** 20261003-19.
+- **Came from:** The build and reviews of 20261003-19, 2026-10-03.
+- **Design:** Step 9, step 15.
+- **Status:** todo
+
+### 20261003-44. `existence_in_flip`: loose ends from 20261003-29.
+
+These are findings from building and reviewing 20261003-29:
+
+- **A wrong result with a constant under COLLATE** (`selection.rb:35`). The bare-constant refusal for y only looks at a bare placeholder, so `users.code IN (SELECT 'a ' COLLATE "C" FROM groups)` on a `char(3)` column still flips. The original returns no rows and the rewrite returns one. Refuse a placeholder under COLLATE, or under any wrapper that keeps it a plain constant.
+- **Siblings may have the capture bug.** `cte_hoist_dedupe`, `shared_scan_cte` and `union_outer_filter_removal` check a hoisted body by preparing it on its own, so a bare name that used to read an outer column might prepare as a whole-row reference. Write a reproducer for each, and fix any that capture.
+- **Skipped widenings:** the flip inside an EXISTS body, and `x = ANY (SELECT ...)`.
+- **ORDER BY keys** from CTEs, subqueries or tables that aren't plain are refused. Widen this if real queries need it.
+- **The scope check** ignores the names of unaliased function calls in FROM.
+- **Errors (E):** a y expression that can raise, such as `1/(x-1)`, may raise on rows the original's plan never evaluated. Consider refusing a y that can raise.
+- **Originals that already error** still get rewrites: `ORDER BY 2` with one output column, and `y COLLATE "C"` against a nondeterministic collation. Refuse them, or leave them be.
+- **Test gaps:** the `ival` guard on constant ORDER BY keys (`ordering.rb:31`), and the `sole_table` path when S is a single CTE or a table that isn't plain (`selection.rb:46`).
+
+- **Depends on:** 20261003-29.
+- **Came from:** The build and review of 20261003-29, 2026-10-03.
+- **Design:** 6c, `existence_in_flip`.
 - **Status:** todo

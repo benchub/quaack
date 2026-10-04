@@ -40,6 +40,22 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   end
 
   def step(*argv, stdin: nil) = quaacks.run(*argv, "--run", store.run_id, stdin:, env: libpq_env)
+
+  # Arena SQL for a NOT NULL foreign key cycle, orders -> accounts ->
+  # orders, holding a row of rows' sentinels in each table.
+  def cycle_sql(rows)
+    <<~SQL
+      CREATE TABLE public.accounts (id int PRIMARY KEY, order_id int NOT NULL, label text);
+      INSERT INTO public.orders (id, note, status) VALUES (#{rows.number}, '#{rows.text}', '#{rows.word}');
+      INSERT INTO public.accounts VALUES (#{rows.number}, #{rows.number}, '#{rows.text}');
+      ALTER TABLE public.orders ADD COLUMN account_id int;
+      UPDATE public.orders SET account_id = #{rows.number};
+      ALTER TABLE public.orders ALTER COLUMN account_id SET NOT NULL;
+      ALTER TABLE public.orders ADD FOREIGN KEY (account_id) REFERENCES public.accounts;
+      ALTER TABLE public.accounts ADD FOREIGN KEY (order_id) REFERENCES public.orders;
+    SQL
+  end
+
   def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
 
   def round(number, *inserts)
@@ -100,6 +116,23 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(tested).to include("refused" => true)
       [column, domain].each { expect_no_leaks(it, outcome, objects: { tested: }) }
       expect(tested).to include("rule" => "domain_check")
+    end
+
+    # An fk_cycle refusal keeps the cycle's tables, which are schema, in the
+    # store for the report: never a row of theirs, on stdout or in the store.
+    it "stores the tables of an fk_cycle refusal, in the order their foreign keys point, and no row value" do
+      rows = LeakCheck::Sentinels.new
+      ready(same, arena_sql: cycle_sql(rows))
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
+                                      "scenario" => nil, "rule" => "fk_cycle" }, { "type" => "done" }])
+      tested = stored.read("rewrite_tested_1")
+      expect(tested).to include("refused" => true, "rule" => "fk_cycle",
+                                "cycle" => [%w[public orders], %w[public accounts], %w[public orders]])
+      expect_no_leaks(rows, outcome, objects: { tested: })
+      expect_no_leaks(sentinels, outcome, objects: { tested: })
     end
 
     it "skips a rewrite step 8 discarded, without connecting to the arena" do
@@ -274,6 +307,41 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(round(1, note_row)).first["rule"]).to eq("counterexample_round_untested")
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
       expect(lines(round(4, note_row)).first["rule"]).to eq("counterexample_round_bad_round")
+    end
+
+    # Step 9 refuses an fk_cycle first, so a round meets one only if the
+    # arena changed after it; its error line still names the cycle's tables,
+    # but only those of the schema subset, and never a row of theirs.
+    context "when the arena's foreign keys make a NOT NULL cycle" do
+      let(:rows) { LeakCheck::Sentinels.new }
+
+      def cycle_ready(subset)
+        ready(same, arena_sql: cycle_sql(rows))
+        store.write("schema_subset", "tables" => subset, "ddl" => "CREATE TABLE public.orders (id int);")
+        store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+      end
+
+      it "ends the round naming the cycle's tables, in the order their foreign keys point" do
+        cycle_ready([%w[public orders], %w[public accounts]])
+
+        outcome = round(1, note_row)
+
+        expect(lines(outcome).first).to include("type" => "error", "step" => "counterexample-round",
+                                                "rule" => "fk_cycle",
+                                                "cycle" => %w[public.orders public.accounts public.orders])
+        expect_no_leaks(rows, outcome)
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "names no table when one of the cycle's isn't in the schema subset" do
+        cycle_ready([%w[public orders]])
+
+        outcome = round(1, note_row)
+
+        expect(lines(outcome).first).to include("type" => "error", "rule" => "fk_cycle")
+        expect(lines(outcome).first).not_to have_key("cycle")
+        expect_no_leaks(rows, outcome)
+      end
     end
   end
 end
