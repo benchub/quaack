@@ -60,14 +60,22 @@ module Quaack
       # columns are the real column names, unquoted. values are in Postgres
       # text input form, one per column, with nil for NULL. No columns means
       # INSERT ... DEFAULT VALUES.
-      FixtureRow = Data.define(:table, :columns, :values) do
-        def initialize(table:, columns:, values:)
+      #
+      # deferred names columns, among columns, whose values load late, for a
+      # foreign-key cycle step 9 cuts (Scenarios::Topology): the row loads
+      # with NULL there, and once every row has loaded, an UPDATE keyed to
+      # its tableoid and ctid sets its values in them.
+      FixtureRow = Data.define(:table, :columns, :values, :deferred) do
+        def initialize(table:, columns:, values:, deferred: [])
           problem, = FIXTURE_ROW_CHECKS.find { |_, ok| !ok.call(table, columns, values) }
           raise ArgumentError, problem if problem
+          unless deferred.is_a?(Array) && (deferred - columns).empty?
+            raise ArgumentError, "a fixture row's deferred columns must be among its columns"
+          end
 
           # nil.dup is nil, so a NULL stays nil.
           super(table:, columns: columns.map { |c| c.dup.freeze }.freeze,
-                values: values.map { |v| v.dup.freeze }.freeze)
+                values: values.map { |v| v.dup.freeze }.freeze, deferred: deferred.dup.freeze)
         end
       end
 
