@@ -125,6 +125,37 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       end
     end
 
+    describe "with an anti join on the kept edge" do
+      let(:anti_sql) do
+        "SELECT a.id FROM fx.accounts a LEFT JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"
+      end
+
+      it "holds an account with no courses in S6, its cut column NULL, loading both ways round" do
+        s6 = build(anti_sql)[:s6]
+        lonely = rows_of(s6, "accounts").map { |r| r.values[0] } - values(s6, "courses", "account_id")
+        expect(lonely.size).to eq(1)
+        lonely_row = rows_of(s6, "accounts").find { |r| r.values[0] == lonely.first }
+        expect(lonely_row.values[lonely_row.columns.index("course_template_id")]).to be_nil
+        others = values(s6, "accounts", "course_template_id").compact
+        expect(others.size).to eq(rows_of(s6, "accounts").size - 1)
+        expect(others - values(s6, "courses", "id")).to eq([])
+        expect(loaded_templates(s6)).to eq([expected_templates(s6)] * 2)
+        expect(run(s6, anti_sql)).to eq([lonely])
+      end
+
+      it "passes NOT EXISTS and disproves an inner join" do
+        report = Quaack::Enclave::StepNine.run(
+          conn, anti_sql,
+          ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
+           "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
+           "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"]
+        )
+        expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
+        # The same as without the cycle's other edge.
+        expect(report.untested).to eq(["c.account_id = a.id"])
+      end
+    end
+
     it "gives an orphan group its cut column's parent row, so every scenario loads both ways round" do
       conn.exec("CREATE TABLE fx.notes (id integer PRIMARY KEY, account_name text NOT NULL)")
       scenarios = build("SELECT n.id FROM fx.notes n JOIN fx.accounts a ON a.name = n.account_name")

@@ -38,7 +38,9 @@ module Quaack
     #   tables it references).
     # - boundary: the hit group, with type boundary values wherever they
     #   still satisfy the atoms and CHECKs.
-    # - empty: only the tables that reference no other fixture table.
+    # - empty: only the tables that reference no other fixture table
+    #   through a foreign key the load order keeps. A cut column there is
+    #   NULL, since its parent's table has no row in the group.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
     # S3: S1 and a copy of each table's hit row; S4: S1 and orphans; S5: S1
@@ -214,6 +216,7 @@ module Quaack
           # An identity column a key class ties to another takes the key's
           # value (the runner overrides the identity), or else its own.
           return :omit if generated?(col, keyed)
+          return nil if @topology.dangling?(table, col.name, group)
 
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)

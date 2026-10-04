@@ -39,8 +39,18 @@ module Quaack
         # Every table the table references, cut or not, but itself.
         def parents(table) = all_foreign_keys(table).map(&:parent).uniq - [table]
 
-        # The tables that reference no other fixture table.
-        def roots = @order.select { |t| parents(t).empty? }
+        # The tables that reference no other fixture table through a foreign
+        # key the load order keeps.
+        def roots = @order.select { |t| load_parents(t).empty? }
+
+        # Whether the column belongs to a cut foreign key whose parent's
+        # table the group leaves out, as the empty group does, so it must be
+        # NULL. A copy (Group#copy) shares its keys with a group that holds
+        # the parent, so it keeps its value.
+        def dangling?(table, name, group)
+          group.copy.zero? &&
+            @cut.fetch(table, []).any? { |fk| fk.columns.include?(name) && !group.tables.include?(fk.parent) }
+        end
 
         # The table and every table it references, however far up, in load
         # order.

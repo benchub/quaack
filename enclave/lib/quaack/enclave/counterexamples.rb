@@ -40,8 +40,9 @@ module Quaack
     # never bypassed.
     #
     # A foreign-key cycle can leave no parents-first order. Step 9's
-    # Topology, given no atoms, cuts each nullable foreign key that closes
-    # a cycle (see Deferral). An insert that sets a cut column becomes an
+    # Topology, given no atoms, cuts nullable foreign keys, one at a time
+    # while each still closes a cycle (see Deferral). An insert that sets a
+    # cut column becomes an
     # ArenaRunner::DeferredInsert: it loads with NULL there, and once every
     # insert has loaded, an UPDATE keyed to the row's tableoid and ctid
     # sets the LLM's value. So the loaded data is exactly the LLM's rows.
