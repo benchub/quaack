@@ -29,8 +29,10 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
                                     values: [id.to_s, template&.to_s], deferred: ["course_template_id"])
   end
 
-  def course(id, account) = described_class::FixtureRow.new(table: courses, columns: %w[id account_id],
-                                                             values: [id.to_s, account.to_s])
+  def course(id, account)
+    described_class::FixtureRow.new(table: courses, columns: %w[id account_id],
+                                    values: [id.to_s, account.to_s])
+  end
 
   let(:rows) { [account(1, 10), account(2, nil), account(3, 20), course(10, 1), course(20, 3)] }
 

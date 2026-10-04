@@ -67,16 +67,25 @@ module Quaack
       # its tableoid and ctid sets its values in them.
       FixtureRow = Data.define(:table, :columns, :values, :deferred) do
         def initialize(table:, columns:, values:, deferred: [])
-          problem, = FIXTURE_ROW_CHECKS.find { |_, ok| !ok.call(table, columns, values) }
-          raise ArgumentError, problem if problem
-          unless deferred.is_a?(Array) && (deferred - columns).empty?
-            raise ArgumentError, "a fixture row's deferred columns must be among its columns"
-          end
-
+          self.class.check(table, columns, values, deferred)
           # nil.dup is nil, so a NULL stays nil.
           super(table:, columns: columns.map { |c| c.dup.freeze }.freeze,
                 values: values.map { |v| v.dup.freeze }.freeze, deferred: deferred.dup.freeze)
         end
+
+        def self.check(table, columns, values, deferred)
+          problem, = FIXTURE_ROW_CHECKS.find { |_, ok| !ok.call(table, columns, values) }
+          unless problem || (deferred.is_a?(Array) && (deferred - columns).empty?)
+            problem = "a fixture row's deferred columns must be among its columns"
+          end
+          raise ArgumentError, problem if problem
+        end
+
+        # The values the row's INSERT loads, with NULL in its deferred columns.
+        def load_values = columns.zip(values).map { |c, v| deferred.include?(c) ? nil : v }
+
+        # Each deferred column with the value its UPDATE sets.
+        def deferred_values = deferred.to_h { |c| [c, values[columns.index(c)]] }
       end
 
       # Each FixtureRow check in order, with the message for a row that fails

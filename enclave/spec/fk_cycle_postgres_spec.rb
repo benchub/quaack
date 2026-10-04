@@ -5,10 +5,12 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
 require "quaack/enclave/step_nine"
 
-# Step 9 on a schema whose foreign keys form a cycle. A foreign key in the
-# cycle whose child columns are all nullable, and that no predicate atom
-# reads, is left out of the load order, and fixture rows leave its columns
-# NULL. A cycle with no such foreign key still refuses with fk_cycle.
+# Step 9 on a schema whose foreign keys form a cycle. Enough foreign keys
+# in the cycle whose child columns are all nullable are cut from the load
+# order to break it, preferring ones no predicate atom reads. A cut column
+# still takes its scenario value, as without the cycle: fixture rows load
+# with NULL there and an UPDATE sets it once every row has loaded. A cycle
+# with no nullable foreign key still refuses with fk_cycle.
 RSpec.describe Quaack::Enclave::Scenarios::Topology do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
@@ -44,15 +46,28 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       "SELECT c.id, a.name FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id WHERE c.title = 'x'"
     end
 
-    it "builds every scenario, accounts first, with the nullable column NULL, and each loads" do
+    let(:templates_sql) { "SELECT id, course_template_id FROM fx.accounts" }
+
+    def expected_templates(rows) = rows_of(rows, "accounts").map { |r| [r.values[0], r.values[2]] }.sort_by(&:to_s)
+
+    # Loads rows in both of 9d's load orders and returns what accounts
+    # holds each time.
+    def loaded_templates(rows)
+      [rows, Quaack::Enclave::ResultComparison.reverse_load(rows)].map { |loaded| run(loaded, templates_sql).sort_by(&:to_s) }
+    end
+
+    it "builds every scenario, accounts first, with the cut column its parent's key, set after both load orders" do
       scenarios = build(join_sql)
-      expect(values(scenarios[:s1], "accounts", "course_template_id")).to all(be_nil)
-      expect(values(scenarios[:s1], "accounts", "course_template_id")).not_to be_empty
+      s1_templates = values(scenarios[:s1], "accounts", "course_template_id")
+      expect(s1_templates).not_to be_empty
+      expect(s1_templates - values(scenarios[:s1], "courses", "id")).to eq([])
+      expect(rows_of(scenarios[:s1], "accounts").map(&:deferred)).to all(eq(["course_template_id"]))
+      expect(rows_of(scenarios[:s1], "courses").map(&:deferred)).to all(eq([]))
       scenarios.each_value do |rows|
         next if rows.empty?
 
         expect(tables_in_order(rows) & %w[accounts courses]).to eq(%w[accounts courses])
-        expect(run(rows, "SELECT count(*) FROM fx.courses")).to eq([[rows_of(rows, "courses").size.to_s]])
+        expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2)
       end
       expect(run(scenarios[:s1], join_sql).size).to be >= 1
     end
@@ -72,24 +87,91 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       expect(report.untested).to eq([])
     end
 
-    it "still refuses when an atom reads the nullable column" do
-      expect_fk_cycle("SELECT a.id FROM fx.accounts a WHERE a.course_template_id = 5")
+    describe "with a query that joins on the nullable edge" do
+      let(:canvas_sql) do
+        "SELECT a.id, a.name, c.title FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id " \
+          "WHERE a.name = 'x' ORDER BY a.course_template_id DESC, a.id"
+      end
+
+      it "cuts the edge it reads, and loads its value after both load orders" do
+        scenarios = build(canvas_sql)
+        expect(rows_of(scenarios[:s1], "accounts").map(&:deferred)).to all(eq(["course_template_id"]))
+        expect(values(scenarios[:s1], "accounts", "course_template_id")).not_to include(nil)
+        scenarios.each_value do |rows|
+          expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2) unless rows.empty?
+        end
+        expect(run(scenarios[:s1], canvas_sql).size).to be >= 1
+      end
+
+      it "builds when a filter atom reads the cut column, giving it the atom's value" do
+        s1 = build("SELECT a.id FROM fx.accounts a WHERE a.course_template_id = 5")[:s1]
+        expect(values(s1, "accounts", "course_template_id")).to include("5")
+        expect(run(s1, "SELECT a.id FROM fx.accounts a WHERE a.course_template_id = 5").size).to be >= 1
+      end
+
+      it "passes a correct rewrite, and disproves one that adds IS NULL on the cut column or drops it as a sort key" do
+        report = Quaack::Enclave::StepNine.run(
+          conn, canvas_sql,
+          ["SELECT a.id, a.name, c.title FROM fx.courses c JOIN fx.accounts a ON a.course_template_id = c.id " \
+           "WHERE a.name = 'x' ORDER BY a.course_template_id DESC, a.id",
+           "SELECT a.id, a.name, c.title FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id " \
+           "WHERE a.name = 'x' AND a.course_template_id IS NULL ORDER BY a.course_template_id DESC, a.id",
+           "SELECT a.id, a.name, c.title FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id " \
+           "WHERE a.name = 'x' ORDER BY a.id"]
+        )
+        expect(report.results.map { |r| [r.passed, r.rule] })
+          .to eq([[true, nil], [false, :row_count], [false, :value]])
+        expect(report.untested).to eq([])
+      end
     end
 
-    it "still refuses when a join atom reads the nullable column" do
-      expect_fk_cycle("SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id")
+    it "gives an orphan group its cut column's parent row, so every scenario loads both ways round" do
+      conn.exec("CREATE TABLE fx.notes (id integer PRIMARY KEY, account_name text NOT NULL)")
+      scenarios = build("SELECT n.id FROM fx.notes n JOIN fx.accounts a ON a.name = n.account_name")
+      s4 = scenarios[:s4]
+      expect(rows_of(s4, "accounts").size).to be > rows_of(scenarios[:s1], "accounts").size
+      expect(values(s4, "accounts", "course_template_id") - values(s4, "courses", "id")).to eq([])
+      scenarios.each_value do |rows|
+        expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2) unless rows.empty?
+      end
     end
 
-    it "keeps the cut column out of every key class, and out of what counts as a foreign-key column" do
+    it "ties the cut column to its parent's key class, as without the cycle" do
       conn.exec("CREATE TABLE fx.notes (id integer PRIMARY KEY, course_ref integer)")
       sql = "SELECT n.id FROM fx.notes n JOIN fx.courses c ON c.id = n.course_ref"
       schema = Quaack::Enclave::ArenaSchema.load_closure(conn, [tn("notes"), tn("courses")])
       atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql), column_names: schema.column_names)
       topology = Quaack::Enclave::Scenarios::Topology.new(schema, atoms)
       expect(topology.cut_columns(tn("accounts"))).to eq(["course_template_id"])
-      expect(topology.keyed?(tn("accounts"), "course_template_id")).to be(false)
+      expect(topology.keyed?(tn("accounts"), "course_template_id")).to be(true)
+      expect(topology.slot(tn("accounts"), "course_template_id")).to eq(topology.slot(tn("courses"), "id"))
       expect(topology.keyed?(tn("courses"), "account_id")).to be(true)
-      expect(topology.free_joins).to eq([0])
+    end
+  end
+
+  describe "with two nullable edges" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA fx;
+        CREATE TABLE fx.accounts (id integer PRIMARY KEY, course_template_id integer);
+        CREATE TABLE fx.courses (id integer PRIMARY KEY, account_id integer REFERENCES fx.accounts);
+        ALTER TABLE fx.accounts ADD FOREIGN KEY (course_template_id) REFERENCES fx.courses;
+      SQL
+    end
+
+    def cuts(sql)
+      schema = Quaack::Enclave::ArenaSchema.load_closure(conn, [tn("accounts")])
+      atoms = Quaack::Enclave::PredicateAtoms.extract(PgQuery.parse(sql), column_names: schema.column_names)
+      topology = Quaack::Enclave::Scenarios::Topology.new(schema, atoms)
+      [tn("accounts"), tn("courses")].map { |t| topology.cut_columns(t) }
+    end
+
+    it "cuts just one, preferring the one no atom reads" do
+      expect(cuts("SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.id = a.course_template_id"))
+        .to eq([[], ["account_id"]])
+      expect(cuts("SELECT c.id FROM fx.courses c JOIN fx.accounts a ON a.id = c.account_id"))
+        .to eq([["course_template_id"], []])
+      expect(cuts("SELECT a.id FROM fx.accounts a")).to eq([["course_template_id"], []])
     end
   end
 
@@ -103,7 +185,8 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     SQL
     scenarios = build("SELECT c.id FROM fx.c c JOIN fx.b b ON b.id = c.b_id WHERE b.v = 'x'")
     expect(tables_in_order(scenarios[:s1])).to eq(%w[a b c])
-    expect(values(scenarios[:s1], "a", "c_id")).to all(be_nil)
+    expect(values(scenarios[:s1], "a", "c_id")).not_to include(nil)
+    expect(values(scenarios[:s1], "a", "c_id") - values(scenarios[:s1], "c", "id")).to eq([])
     expect(values(scenarios[:s1], "b", "a_id") - values(scenarios[:s1], "a", "id")).to eq([])
     scenarios.each_value { |rows| expect(run(rows, "SELECT count(*) FROM fx.c")[0][0].to_i).to be >= 0 }
     expect(run(scenarios[:s1], "SELECT count(*) FROM fx.c c JOIN fx.b b ON b.id = c.b_id JOIN fx.a a ON a.id = b.a_id")
@@ -142,5 +225,6 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     ids = values(s1, "courses", "account_id")
     expect(ids).not_to include(nil)
     expect(ids - values(s1, "accounts", "id")).to eq([])
+    expect(s1.map(&:deferred)).to all(eq([]))
   end
 end

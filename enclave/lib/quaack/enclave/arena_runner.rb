@@ -174,31 +174,8 @@ module Quaack
         # Advance sequences past the explicit values first, so ids the
         # database generates for other rows never collide with them.
         Sequences.advance(rows, method(:table_sql), method(:statement))
-        load_rows(rows)
+        Deferred.load_rows(rows, method(:insert_sql), method(:table_sql), method(:statement), method(:quote))
         Deferred.load(inserts, method(:statement), method(:quote))
-      end
-
-      # Each row with deferred columns loads with NULL there and returns
-      # its tableoid and ctid. Once every row has loaded, each such row's
-      # UPDATE sets them, in load order, even to NULL, so the heap keeps
-      # the load order.
-      def load_rows(rows)
-        targets = rows.each_with_index.map do |row, i|
-          sql, params = insert_sql(row)
-          sql += " RETURNING tableoid, ctid" unless row.deferred.empty?
-          load_statement(sql, params, i).rows.first
-        end
-        rows.zip(targets).each_with_index do |(row, target), i|
-          next if row.deferred.empty?
-
-          set = row.deferred.to_h { |c| [c, row.values[row.columns.index(c)]] }
-          found = load_statement(*Deferred.update_sql(table_sql(row.table), set, *target, method(:quote)), i).rows.size
-          raise Error.new(:fixture_load_failed, step: :load, index: i), cause: nil unless found == 1
-        end
-      end
-
-      def load_statement(sql, params, index)
-        statement(sql, params, step: :load, rule: :fixture_load_failed, index:)
       end
 
       def run_query(sql, index)
@@ -226,8 +203,7 @@ module Quaack
         # A fixture row may set a GENERATED ALWAYS identity key, so its
         # parents' keys match; the override is a no-op on other tables.
         # A deferred column loads as NULL.
-        values = row.columns.zip(row.values).map { |c, v| row.deferred.include?(c) ? nil : v }
-        ["INSERT INTO #{table} (#{columns}) OVERRIDING SYSTEM VALUE VALUES (#{placeholders})", values]
+        ["INSERT INTO #{table} (#{columns}) OVERRIDING SYSTEM VALUE VALUES (#{placeholders})", row.load_values]
       end
 
       def table_sql(table) = [table.schema, table.name].map { |part| quote(part) }.join(".")
