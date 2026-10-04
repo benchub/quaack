@@ -71,8 +71,9 @@ module Quaack
           return if present?(table, fixed)
 
           pairs = fixed.merge(foreign_keys(table, fixed))
-          free = @schema.columns(table).reject { |col| pairs.key?(col.name) || omitted?(table, col) }
-          add(table, pairs.merge(free.to_h { |col| [col.name, free_value(table, col)] }))
+          varying = varying(table, pairs)
+          free = @schema.columns(table).reject { |col| pairs.key?(col.name) || omitted?(varying, col) }
+          add(table, pairs.merge(free.to_h { |col| [col.name, free_value(table, col, varying)] }))
         end
 
         def present?(table, fixed) = @present[table].any? { |row| fixed.all? { |c, v| row[c] == v } }
@@ -95,23 +96,35 @@ module Quaack
         def foreign_key(table, foreign)
           return foreign.columns.map { nil } if foreign.columns.any? { |c| @schema.column(table, c).nullable }
 
-          key = foreign.parent_columns.map { |c| @values.nth(@schema.column(foreign.parent, c), @counter += 1) }
-          need(foreign.parent, foreign.parent_columns.zip(key).to_h)
-          key
+          parent_key(foreign).tap { need(foreign.parent, foreign.parent_columns.zip(it).to_h) }
+        end
+
+        # A new parent row's key, a distinct value in each column.
+        def parent_key(foreign)
+          foreign.parent_columns.map do |c|
+            @values.nth(@schema.column(foreign.parent, c), @counter += 1, table: foreign.parent)
+          end
         end
 
         # A unique column with a default still needs a distinct value, but a
         # generated one can't take any.
-        def omitted?(table, col)
-          col.default == "generated" || (!col.default.nil? && !col.default.empty? && !unique?(table, col))
+        def omitted?(varying, col)
+          col.default == "generated" || (!col.default.nil? && !col.default.empty? && !unique?(varying, col))
         end
 
-        def unique?(table, col) = @schema.constraints(table).distinct?(col.name)
+        def unique?(varying, col) = varying.include?(col.name)
 
-        def free_value(table, col)
-          return @values.nth(col, @counter += 1) if unique?(table, col)
+        # The columns pairs doesn't set that need a distinct value per row.
+        def varying(table, pairs)
+          free = @schema.columns(table).reject { |col| pairs.key?(col.name) || col.default == "generated" }
+          @schema.constraints(table).varying(free) { @values.rank(it) }
+        end
 
-          @checks.satisfying(table, col, [@values.typical(col, strict: false)])
+        def free_value(table, col, varying)
+          return @values.nth(col, @counter += 1, table:) if unique?(varying, col)
+
+          typical = @values.typical(col)
+          @checks.satisfying(table, col, [typical], (@values.refusal(col, table) unless typical))
         end
       end
     end

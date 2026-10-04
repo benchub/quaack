@@ -6,9 +6,10 @@ module Quaack
     # only what the driver can trust to be shape-class data: the subcommand
     # the driver asked for, the step, rule, and SQLSTATE from the enclave's
     # error line (each checked for shape, and nil if it's missing or not
-    # shaped), a volatile_function refusal's function and a
-    # run_server_other_clients failure's clients (each pid and start time),
-    # likewise checked, and how the process ended. It never carries the process's
+    # shaped), a volatile_function refusal's function, a step 9 refusal's
+    # column (its table, name, and type), and a run_server_other_clients
+    # failure's clients (each pid and start time), likewise checked, and how
+    # the process ended. It never carries the process's
     # output, and it's raised with no cause.
     #
     # rule is the error line's rule, or one of the driver's own:
@@ -30,19 +31,19 @@ module Quaack
       EX_USAGE = 64
       EX_SOFTWARE = 70
 
-      attr_reader :subcommand, :rule, :step, :sqlstate, :reason, :function, :clients, :exit_status, :signal
+      attr_reader :subcommand, :rule, :exit_status, :signal
+
+      # The error line's fields beyond its rule.
+      LINE_FIELDS = %i[step sqlstate reason function column clients].freeze
+      LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
-      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, clients: nil, # rubocop:disable Metrics/ParameterLists
-                     exit_status: nil, signal: nil)
+      def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
+                     clients: nil, exit_status: nil, signal: nil)
         @subcommand = subcommand
         @rule = rule
-        @step = step
-        @sqlstate = sqlstate
-        @reason = reason
-        @function = function
-        @clients = clients
+        @line = { step:, sqlstate:, reason:, function:, column:, clients: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -59,9 +60,11 @@ module Quaack
 
       # The rule, and for query_unparsable a fixed note naming pg_query's
       # grammar, which is older than production's Postgres. The enclave's
-      # error line holds only the rule, so the driver adds the note.
+      # error line holds only the rule, so the driver adds the note. A step
+      # 9 refusal that names its column gets the table, column, and type.
       def rule_with_note
         return "#{rule}: #{reason_message(reason)}" if %w[query_unreadable plan_unreadable].include?(rule) && reason
+        return "#{rule}: #{described_column}" if column
 
         return rule unless rule == "query_unparsable"
 
@@ -82,10 +85,13 @@ module Quaack
       def line_details
         [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
          ("reason #{reason_message(reason)}" if reason),
-         ("function #{function}" if function), ("clients #{described_clients}" if clients)]
+         ("function #{function}" if function), ("column #{described_column}" if column),
+         ("clients #{described_clients}" if clients)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
+
+      def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"
 
       def described_clients = clients.map { "pid #{it["pid"]} started #{it["backend_start"]}" }.join(", ")
 

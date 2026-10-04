@@ -1,0 +1,353 @@
+# frozen_string_literal: true
+
+require "pg_query"
+require "quaack/enclave/deparse"
+require "quaack/enclave/redaction"
+require "quaack/enclave/rewrite_rules"
+require "quaack/enclave/rewrite_rules/catalog"
+require "quaack/enclave/rewrite_rules/existence_in_flip"
+require "quaack/enclave/rewrite_rules/literals"
+require_relative "support/production_server"
+
+# DESIGN.md 6c's existence_in_flip, on a real server: an existence check
+# under LIMIT 1 with an uncorrelated IN subquery is turned inside out, so
+# the subquery's table drives, and every rewrite returns the original's
+# rows.
+RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
+  subject(:rule) { described_class.new }
+
+  let!(:production) { ProductionServer.create(ProductionServer.sentinels) }
+  let(:conn) { production.connect }
+  let(:catalog) { Quaack::Enclave::RewriteRules::Catalog.new(conn) }
+
+  before do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.courses (id int PRIMARY KEY, workflow_state text);
+      CREATE TABLE public.enrollments (id int PRIMARY KEY, user_id int, course_id int, workflow_state text);
+      CREATE TABLE public.assignments (id int PRIMARY KEY, context_id int, workflow_state text);
+      CREATE TABLE public.tool_lookups (id int PRIMARY KEY, assignment_id int, tool_product_code text);
+      CREATE TABLE public.submissions (id int PRIMARY KEY, assignment_id int, user_id int);
+      INSERT INTO public.courses VALUES (1, 'available'), (2, 'deleted'), (3, NULL), (4, 'available');
+      INSERT INTO public.enrollments VALUES
+        (1, 10, 1, 'active'), (2, 10, 2, 'active'), (3, 11, 1, 'deleted'), (4, 11, 3, 'active'),
+        (5, NULL, 1, 'active'), (6, 10, 1, 'active'), (7, 12, NULL, 'active'), (8, 13, 4, 'active');
+      INSERT INTO public.assignments VALUES
+        (1, 1, 'published'), (2, 1, 'deleted'), (3, 2, 'published'), (4, 3, 'published'), (5, NULL, 'published'),
+        (6, 4, 'draft'), (7, 1, 'published');
+      INSERT INTO public.tool_lookups VALUES
+        (1, 1, 'turnitin'), (2, 1, 'turnitin'), (3, 3, 'turnitin'), (4, NULL, 'turnitin'), (5, 4, 'other'),
+        (6, 2, NULL), (7, 5, 'turnitin'), (8, 6, 'other');
+      INSERT INTO public.submissions VALUES (1, 1, 10), (2, 2, 11), (3, 6, 13), (4, NULL, 12), (5, 4, 13);
+    SQL
+  end
+
+  after do
+    conn.close
+    production.drop
+  end
+
+  def redacted(sql) = Quaack::Enclave::Redaction.query(PgQuery.parse(sql))
+
+  def literals_for(sql)
+    redacted = redacted(sql)
+    literals = Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map,
+                                                           redacted.placeholder_shapes)
+    [redacted.sql, literals]
+  end
+
+  def rewritten(sql)
+    redacted, literals = literals_for(sql)
+    rule.rewrites(PgQuery.parse(redacted), catalog, literals).map { Quaack::Enclave::Deparse.faithfully(it.tree) }
+  end
+
+  def rows(sql, map)
+    name = "quaack_rule_spec"
+    binding = Quaack::Enclave::Redaction.binding(sql, map)
+    binding.prepare(conn, name)
+    binding.execute(conn, name).values
+  ensure
+    begin
+      conn.exec("DEALLOCATE #{name}")
+    rescue StandardError
+      nil
+    end
+  end
+
+  def runs(sql)
+    original = redacted(sql)
+    rows(original.sql, original.placeholder_map)
+  end
+
+  # The rewrites of sql are exactly expected, and each returns sql's rows.
+  # Returns those rows.
+  def expect_rewrites(sql, *expected)
+    expect(rewritten(sql)).to eq(expected), sql
+    want = runs(sql)
+    map = redacted(sql).placeholder_map
+    expected.each { expect(rows(it, map)).to eq(want), sql }
+    want
+  end
+
+  # Each of sqls has one rewrite, which returns its rows. At least one of
+  # them returns a row and one returns none.
+  def expect_flips(*sqls)
+    found = sqls.map { flip_rows(it) }
+    expect(found.map(&:empty?).uniq.sort_by(&:to_s)).to eq([false, true])
+  end
+
+  # The rows of sql, which has one rewrite that returns them.
+  def flip_rows(sql)
+    rewrites = rewritten(sql)
+    expect(rewrites.size).to eq(1), sql
+    want = runs(sql)
+    expect(rows(rewrites.first, redacted(sql).placeholder_map)).to eq(want), sql
+    want
+  end
+
+  # Each refused query, which Postgres runs, makes no rewrite, and its
+  # twin, the same query without what it refuses, makes one.
+  def expect_refusals(cases)
+    cases.each do |refused, twin|
+      expect { conn.exec(refused) }.not_to raise_error, refused
+      expect(rewritten(refused)).to eq([]), refused
+      expect(rewritten(twin).size).to eq(1), twin
+    end
+  end
+
+  def turnitin(code = "turnitin")
+    "SELECT tool_lookups.assignment_id FROM public.tool_lookups WHERE tool_lookups.tool_product_code = '#{code}'"
+  end
+
+  def canvas(user, code: "turnitin", limit: "LIMIT 1", select: "1 AS one")
+    "SELECT #{select} FROM public.enrollments JOIN public.courses ON courses.id = enrollments.course_id " \
+      "JOIN public.assignments ON assignments.context_id = courses.id " \
+      "WHERE enrollments.user_id = #{user} AND enrollments.workflow_state = 'active' " \
+      "AND courses.workflow_state <> 'deleted' AND assignments.workflow_state = 'published' " \
+      "AND assignments.id IN (#{turnitin(code)}) #{limit}"
+  end
+
+  it "has a name and a description that are QUAACK's own constants" do
+    expect([rule.name, rule.description]).to eq(
+      ["existence_in_flip",
+       "An existence check under LIMIT 1 is turned inside out: an uncorrelated IN subquery's table drives, and " \
+       "the rest of the query becomes an EXISTS correlated on the IN's two sides."]
+    )
+  end
+
+  it "makes the IN subquery's table drive the Canvas existence check" do
+    want = expect_rewrites(
+      canvas(10),
+      "SELECT $1 AS one FROM public.tool_lookups WHERE tool_lookups.tool_product_code = $6 AND EXISTS (" \
+      "SELECT 1 FROM public.enrollments JOIN public.courses ON courses.id = enrollments.course_id " \
+      "JOIN public.assignments ON assignments.context_id = courses.id " \
+      "WHERE enrollments.user_id = $2 AND enrollments.workflow_state = $3 AND courses.workflow_state <> $4 " \
+      "AND assignments.workflow_state = $5 AND assignments.id = tool_lookups.assignment_id) LIMIT $7"
+    )
+    expect(want).to eq([["1"]])
+  end
+
+  it "returns a row exactly when the original does, with NULLs and duplicate matches on both sides" do
+    expect_flips(canvas(10), canvas(11), canvas(12), canvas(13), canvas("NULL"), canvas(10, code: "other"),
+                 canvas(13, code: "other"))
+  end
+
+  it "matches NULL to nothing, as IN does" do
+    in_published = "SELECT assignments.context_id FROM public.assignments WHERE assignments.workflow_state = "
+    queries = [["published", 12], ["published", 10], ["published", 11], ["draft", 13], ["draft", 10]]
+    expect_flips(*queries.map do |state, user|
+      "SELECT 1 AS one FROM public.enrollments WHERE enrollments.user_id = #{user} " \
+        "AND enrollments.course_id IN (#{in_published}'#{state}') LIMIT 1"
+    end)
+  end
+
+  it "keeps an outer join in the original FROM whole inside the EXISTS" do
+    sql = lambda do |state|
+      "SELECT 1 AS one FROM public.enrollments LEFT JOIN public.courses ON courses.id = enrollments.course_id " \
+        "AND courses.workflow_state = 'available' WHERE courses.id IS NULL AND enrollments.course_id IN (" \
+        "SELECT assignments.context_id FROM public.assignments WHERE assignments.workflow_state = '#{state}') LIMIT 1"
+    end
+    expect_rewrites(
+      sql.call("published"),
+      "SELECT $1 AS one FROM public.assignments WHERE assignments.workflow_state = $3 AND EXISTS (" \
+      "SELECT 1 FROM public.enrollments LEFT JOIN public.courses ON courses.id = enrollments.course_id " \
+      "AND courses.workflow_state = $2 WHERE courses.id IS NULL AND enrollments.course_id = assignments.context_id) " \
+      "LIMIT $4"
+    )
+    expect_flips(sql.call("published"), sql.call("draft"))
+  end
+
+  it "keeps the original's CTEs at the top, where both sides can read them" do
+    expect_rewrites(
+      "WITH active AS (SELECT enrollments.course_id FROM public.enrollments " \
+      "WHERE enrollments.workflow_state = 'active'), published AS (SELECT assignments.context_id " \
+      "FROM public.assignments WHERE assignments.workflow_state = 'published') " \
+      "SELECT 1 AS one FROM active WHERE active.course_id IN (SELECT published.context_id FROM published) LIMIT 1",
+      "WITH active AS (SELECT enrollments.course_id FROM public.enrollments WHERE enrollments.workflow_state = $1), " \
+      "published AS (SELECT assignments.context_id FROM public.assignments WHERE assignments.workflow_state = $2) " \
+      "SELECT $3 AS one FROM published WHERE EXISTS (SELECT 1 FROM active " \
+      "WHERE active.course_id = published.context_id) LIMIT $4"
+    )
+  end
+
+  it "renames the subquery's table when the original's FROM has its name" do
+    sql = lambda do |outer, inner|
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.workflow_state = '#{outer}' " \
+        "AND assignments.context_id IN (SELECT assignments.context_id FROM public.assignments " \
+        "WHERE assignments.workflow_state = '#{inner}') LIMIT 1"
+    end
+    expect_rewrites(
+      sql.call("deleted", "published"),
+      "SELECT $1 AS one FROM public.assignments assignments_1 WHERE assignments_1.workflow_state = $3 " \
+      "AND EXISTS (SELECT 1 FROM public.assignments WHERE assignments.workflow_state = $2 " \
+      "AND assignments.context_id = assignments_1.context_id) LIMIT $4"
+    )
+    expect_flips(sql.call("deleted", "published"), sql.call("deleted", "draft"))
+  end
+
+  it "renames an alias the original's FROM also uses, keeping the subquery's other names" do
+    sql = lambda do |code|
+      "SELECT 1 AS one FROM public.submissions AS l WHERE l.user_id = 13 AND l.assignment_id IN (" \
+        "SELECT l.assignment_id FROM public.tool_lookups AS l JOIN public.assignments " \
+        "ON assignments.id = l.assignment_id WHERE l.tool_product_code = '#{code}') LIMIT 1"
+    end
+    expect_rewrites(
+      sql.call("other"),
+      "SELECT $1 AS one FROM public.tool_lookups l_1 JOIN public.assignments ON assignments.id = l_1.assignment_id " \
+      "WHERE l_1.tool_product_code = $3 AND EXISTS (SELECT 1 FROM public.submissions l WHERE l.user_id = $2 " \
+      "AND l.assignment_id = l_1.assignment_id) LIMIT $4"
+    )
+    expect_flips(sql.call("other"), sql.call("turnitin"))
+  end
+
+  it "qualifies an unqualified selected column, so the original's FROM can't capture it" do
+    sql = lambda do |user|
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = #{user} " \
+        "AND submissions.assignment_id IN (SELECT assignment_id FROM public.tool_lookups " \
+        "WHERE tool_product_code = 'turnitin') LIMIT 1"
+    end
+    expect_rewrites(
+      sql.call(10),
+      "SELECT $1 AS one FROM public.tool_lookups WHERE tool_product_code = $3 AND EXISTS (SELECT 1 " \
+      "FROM public.submissions WHERE submissions.user_id = $2 " \
+      "AND submissions.assignment_id = tool_lookups.assignment_id) LIMIT $4"
+    )
+    expect_flips(sql.call(10), sql.call(11), sql.call(13), sql.call(12))
+  end
+
+  it "makes one rewrite per IN that qualifies, each leaving the others inside its EXISTS" do
+    sql = "SELECT 1 AS one FROM public.assignments WHERE assignments.workflow_state = 'published' " \
+          "AND assignments.id IN (#{turnitin}) AND assignments.context_id IN (SELECT courses.id " \
+          "FROM public.courses WHERE courses.workflow_state = 'available') LIMIT 1"
+    expect(expect_rewrites(
+             sql,
+             "SELECT $1 AS one FROM public.tool_lookups WHERE tool_lookups.tool_product_code = $3 AND EXISTS (" \
+             "SELECT 1 FROM public.assignments WHERE assignments.workflow_state = $2 AND assignments.context_id IN (" \
+             "SELECT courses.id FROM public.courses WHERE courses.workflow_state = $4) " \
+             "AND assignments.id = tool_lookups.assignment_id) LIMIT $5",
+             "SELECT $1 AS one FROM public.courses WHERE courses.workflow_state = $4 AND EXISTS (" \
+             "SELECT 1 FROM public.assignments WHERE assignments.workflow_state = $2 AND assignments.id IN (" \
+             "SELECT tool_lookups.assignment_id FROM public.tool_lookups WHERE tool_lookups.tool_product_code = $3) " \
+             "AND assignments.context_id = courses.id) LIMIT $5"
+           )).to eq([["1"]])
+  end
+
+  it "drops a plain DISTINCT from the subquery, which IN doesn't count" do
+    expect_rewrites(
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT DISTINCT tool_lookups.assignment_id " \
+      "FROM public.tool_lookups) LIMIT 1",
+      "SELECT $1 AS one FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
+      "WHERE assignments.id = tool_lookups.assignment_id) LIMIT $2"
+    )
+  end
+
+  it "refuses a query that isn't an existence check under LIMIT 1" do
+    expect_refusals(
+      [[canvas(10, limit: "LIMIT 2"), canvas(10)],
+       [canvas(10, limit: ""), canvas(10)],
+       [canvas(10, limit: "LIMIT NULL"), canvas(10)],
+       [canvas(10, limit: "LIMIT 1 OFFSET 0"), canvas(10)],
+       [canvas(10, limit: "ORDER BY enrollments.id LIMIT 1"), canvas(10)],
+       [canvas(10, select: "enrollments.id"), canvas(10, select: "1")],
+       [canvas(10, select: "1, enrollments.id"), canvas(10, select: "1, 2")],
+       [canvas(10, select: "count(*)"), canvas(10, select: "1")],
+       [canvas(10, select: "DISTINCT 1"), canvas(10, select: "1")],
+       [canvas(10, limit: "GROUP BY enrollments.id LIMIT 1"), canvas(10)],
+       [canvas(10, limit: "HAVING count(*) > 0 LIMIT 1"), canvas(10)],
+       [canvas(10, limit: "WINDOW w AS (ORDER BY enrollments.id) LIMIT 1"), canvas(10)],
+       [canvas(10, limit: "ORDER BY 1 LIMIT 1"), canvas(10)],
+       [canvas(10, limit: "GROUP BY 1 LIMIT 1"), canvas(10)],
+       [canvas(10, limit: "WINDOW w AS () LIMIT 1"), canvas(10)]]
+    )
+  end
+
+  it "refuses an IN it can't flip" do
+    qualifying = "SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin}) LIMIT 1"
+    expect_refusals(
+      [["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} " \
+        "AND tool_lookups.id <> assignments.id) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} AND context_id = 1) LIMIT 1",
+        qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT assignments.context_id " \
+        "FROM public.tool_lookups) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE EXISTS (#{turnitin}) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments JOIN (public.submissions JOIN public.courses ON courses.id = " \
+        "submissions.id) AS j ON j.user_id = assignments.id WHERE assignments.id IN (#{turnitin}) LIMIT 1",
+        "SELECT 1 FROM public.assignments JOIN (public.submissions JOIN public.courses ON courses.id = " \
+        "submissions.id) ON submissions.user_id = assignments.id WHERE assignments.id IN (#{turnitin}) LIMIT 1"],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} LIMIT 5) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} OFFSET 0) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT max(tool_lookups.assignment_id) " \
+        "FROM public.tool_lookups) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT tool_lookups.assignment_id " \
+        "FROM public.tool_lookups GROUP BY tool_lookups.assignment_id HAVING count(*) > 1) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} UNION " \
+        "SELECT submissions.assignment_id FROM public.submissions) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin} AND random() < 2) LIMIT 1",
+        qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin}) AND random() < 2 LIMIT 1",
+        qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT DISTINCT ON (tool_lookups.id) " \
+        "tool_lookups.assignment_id FROM public.tool_lookups) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id = ANY (#{turnitin}) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id NOT IN (#{turnitin}) LIMIT 1", qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin}) OR assignments.id = 1 LIMIT 1",
+        qualifying],
+       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT tool_lookups.assignment_id + 0 " \
+        "FROM public.tool_lookups) LIMIT 1", qualifying]]
+    )
+  end
+
+  it "refuses a selected column it can't qualify or rename safely" do
+    lookup = "SELECT 1 FROM public.submissions WHERE submissions.assignment_id IN "
+    expect_refusals(
+      [["#{lookup}(SELECT assignment_id FROM public.tool_lookups JOIN public.courses " \
+        "ON courses.id = tool_lookups.id) LIMIT 1",
+        "#{lookup}(SELECT tool_lookups.assignment_id FROM public.tool_lookups JOIN public.courses " \
+        "ON courses.id = tool_lookups.id) LIMIT 1"],
+       ["#{lookup}(SELECT assignment_id FROM public.tool_lookups, public.courses " \
+        "WHERE courses.id = tool_lookups.id) LIMIT 1",
+        "#{lookup}(SELECT tool_lookups.assignment_id FROM public.tool_lookups, public.courses " \
+        "WHERE courses.id = tool_lookups.id) LIMIT 1"],
+       ["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
+        "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
+        "WHERE assignments.id = tool_lookups.assignment_id)) LIMIT 1",
+        "SELECT 1 FROM public.tool_lookups AS t WHERE t.id IN (SELECT tool_lookups.assignment_id " \
+        "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
+        "WHERE assignments.id = tool_lookups.assignment_id)) LIMIT 1"],
+       ["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
+        "FROM public.tool_lookups WHERE public.tool_lookups.tool_product_code = 'x') LIMIT 1",
+        "SELECT 1 FROM public.tool_lookups AS t WHERE t.id IN (SELECT tool_lookups.assignment_id " \
+        "FROM public.tool_lookups WHERE public.tool_lookups.tool_product_code = 'x') LIMIT 1"]]
+    )
+  end
+
+  it "makes nothing without the literal oracle, which it needs to read the limit" do
+    expect(rule.rewrites(PgQuery.parse(redacted(canvas(10)).sql), catalog, nil)).to eq([])
+  end
+
+  it "is part of RULES and gives the generator its rewrite" do
+    generated = Quaack::Enclave::RewriteRules.generate(PgQuery.parse(redacted(canvas(10)).sql), catalog,
+                                                       literals_for(canvas(10)).last)
+    expect(generated.rewrites.map { it.rules.map(&:name) }).to include(["existence_in_flip"])
+  end
+end

@@ -3878,3 +3878,108 @@ Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees 
     - The builder ran 34 mutations and the reviewer 14; every one went red.
   - **Review:** one round, clean. Probes covered `NOT IN` with NULLs, swapped columns, a varchar arm against a text one, and a Rails `users.*` query. The one minor, an untested name guard, can't be reached, since Postgres rejects an ambiguous name first.
   - **Follow-ups:** the builder's widenings, and duplicate candidates reached by different rule orders, went to 20261003-26.
+
+### 20261002-6. 6c rule: `shared_scan_cte`.
+
+A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
+
+The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
+
+The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
+
+- A copy is on the nullable side of an outer join.
+- A shared conjunct calls a volatile function.
+- The query already has a CTE of that name.
+- A copy is in a subquery or CTE rather than the top-level `FROM`.
+
+It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c, 8.
+- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
+- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-6.
+  - **Change:** the new rule `rewrite_rules/shared_scan_cte.rb` (with `shared_scan_cte/copies.rb`) comes right after `transitive_predicate_copy` in RULES, since that rule can create the shared conjuncts. DESIGN.md's 6c table has its row.
+    - Conjuncts are compared with each alias replaced by a placeholder, and literals only through `Literals#same?`. An `ON` left empty becomes `ON true`.
+    - Beyond the listed refusals, it also refuses whole-row references other than `copy.*`, unnamed FROM items such as aliased joins, tables that aren't plain, copies that rename columns, and anything Postgres can't prepare, such as a GROUP BY relying on the primary key.
+  - **Tests:** 25 examples on real Postgres check the exact SQL and that rows match on data with NULLs and duplicates. Every refusal has a twin that fires. A step-8 test shows candidates land on the base table, never on the copies.
+    - The builder ran 19 mutations and the reviewer 15; every one went red.
+  - **Review:** one round, clean. The reviewer ran 21 Rails-style self-join queries (DISTINCT ON, aggregates, windows, LIMIT/OFFSET, `USING`, `SELECT *`, an inherited table) and every rewrite returned the same rows.
+  - **Follow-ups:** the builder's widenings went to 20261003-28.
+
+### 20261002-10. 6c rule: `existence_in_flip`.
+
+A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
+
+```sql
+SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
+WHERE enrollments.user_id = 6504 AND ...
+  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
+LIMIT 1;
+```
+
+The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
+
+The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
+
+- Every select-list item is a constant.
+- It has `LIMIT 1`.
+- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
+
+The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
+
+It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
+
+Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
+
+When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-10.
+  - **Change:** the new rule `rewrite_rules/existence_in_flip.rb` comes right after `not_in_to_not_exists` in RULES, and after `key_in_self_join`, so when both match the same IN the self-join removal comes first under the cap of ten. DESIGN.md's 6c table has its row.
+    - It fires only on an existence check (constant select list, `LIMIT 1` read through the literal oracle, no DISTINCT, GROUP BY, HAVING, WINDOW, ORDER BY or OFFSET, no volatile function) with a top-level `x IN (SELECT y FROM S WHERE P)`.
+    - The original FROM goes whole into the EXISTS, outer joins included; the original's CTEs stay on top. A bare y is qualified, and S's table is renamed when its name clashes. A correlated subquery is refused, since Postgres can't prepare the rewrite.
+  - **Tests:** 16 examples on real Postgres with NULLs and duplicates; every refusal has a twin that fires. The builder ran 25 mutations and the reviewer 23; the one survivor in each is equivalent.
+  - **Review:** one round, clean. The reviewer compared 26 Rails-style existence checks on real Postgres. One minor, a whole-row reference captured by a column of S, went to 20261003-29.
+  - **Follow-ups:** the builder's widenings went to 20261003-29.
+
+### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types.
+
+A user's `quaack run` failed at steps 9-10 with `unsupported_type`, and nothing says which column caused it. `Scenarios::Values` (`scenarios/values.rb`) picks a value for each fixture column by trying a short list of strings and keeping the first one Postgres can cast to the column's type. When none of them casts, it raises `unsupported_type`. Types that likely miss today:
+
+- **Range types** (category `R`): none of the strings reads. `'empty'` would.
+- **Geometric types** (category `G`): `'(0,0)'`, and its nth forms.
+- **`bit(n)`**: `'0'` only fits `bit(1)`. Pad to the length in the typmod.
+- **Arrays when a distinct value is needed** (`nth`, for keys and unique columns): `'{}'` covers only the typical value. Use `'{<nth of the element type>}'`. **Seen in the user's run:** Canvas's `users.root_account_ids bigint[]` is in a unique index, so it's treated as unique and needs `nth`.
+- **A multi-column unique index needs only one column to vary.** Today every column of a unique index gets an `nth` value. Instead, vary one column that can take distinct values, such as an integer or text one, and give the others their typical value. That sidesteps types with no `nth` at all.
+- **Small numeric types when a distinct value is needed.** `key_value` adds 100,000 to the key for a split group, which overflows `smallint` and narrow `numeric(p,s)`. Wrap the number within the type's range, or pick a smaller offset when the type is narrow.
+- **A domain whose CHECK rejects every candidate.** That's a real refusal, but say so.
+
+The rule:
+
+- Add candidates for each type above, with real-Postgres tests that build a fixture holding a column of each type, both as a plain column and as a unique one.
+- Make the error name the type and column, such as `unsupported_type: courses.tags (int4range)`, as 20261003-19 does for `fk_cycle`. Type, table and column names are schema, not data. Add a sentinel test showing no row value appears in the error.
+- DESIGN.md lists the types that still refuse.
+
+Until then, the user can find the column with a catalog query over the query's tables and their foreign-key closure, listing columns whose type category isn't N, S, B, D, T or E, or that are domains.
+
+- **Depends on:** none. Fits with 20261003-18, which stops this refusal from ending the run, and 20261003-19, which names tables in `fk_cycle`.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-27.
+  - **Error detail:** `unsupported_type` and the new `domain_check` carry a `column` field, `{table, column, type}`, such as `unsupported_type: public.courses.tags (int4range)`. It holds schema names only. The enclave's error filter, the protocol whitelist, and the driver each check its exact shape and drop the whole field if any part fails. `quaack run` prints it.
+  - **Values:** new candidates for ranges (`'empty'`, `[v,v]`), geometric types, `bit(n)` padded to its length, arrays (`{<element's distinct value>}`), and narrow numerics, which wrap negative instead of overflowing on the +100,000 offset. A domain whose CHECK rejects every candidate refuses as `domain_check`.
+  - **Unique keys:** `Constraints#varying` varies one column per unique key, narrower keys first, so a wider key reuses a column already varied. It picks the best-ranked column, never a join key, and types with no readable distinct value rank last. A single-column unique key still varies. Expression unique indexes still vary every column they read. ParentRows follows the same rule.
+  - **Tests:** `scenario_types_postgres_spec.rb` on real Postgres, including the Canvas case (a `bigint[]` in a multi-column unique key), plus sentinel tests on both sides of the boundary.
+  - **Review:** three rounds. Round 1: the varying logic's `needed?` and sort order were untested; fixed, along with the rank of unreadable types. Round 2: the join-key exclusion and the FEW tier were untested; the builder's tests-only round added them. Round 3 checked those two tests, and both went red under two mutations each.
+  - **Follow-ups:** 20261003-33.

@@ -1003,7 +1003,11 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6b, 6c, 15.
 - **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
-- **Status:** todo
+- **Note (2026-10-03, set aside for a question):** Built on `task/20261002-15` (worktree kept). The first review found two blocking issues.
+  - **Trust boundary:** `rewrite-check` accepts `denormalized_equal` from any source, so an LLM or operator rewrite can probe production data. Fix: accept it only from `rule`.
+  - **Step 9:** the rule's rewrite never passes step 9 on the Canvas shape. S1's hit row gives `course_id` a value other than the parent's `context_id`, so the rewrite is disproved and never ranked.
+  - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
+- **Status:** todo (set aside, waiting on an answer)
 
 ### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
 
@@ -1036,29 +1040,7 @@ Test it with this query's shape. Also test that the rule refuses when the select
 
 ### 20261002-17. 6c rule: `implied_predicate_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-6. 6c rule: `shared_scan_cte`.
-
-A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
-
-The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
-
-The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
-
-- A copy is on the nullable side of an outer join.
-- A shared conjunct calls a volatile function.
-- The query already has a CTE of that name.
-- A copy is in a subquery or CTE rather than the top-level `FROM`.
-
-It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
-
-Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c, 8.
-- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
-- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
-- **Status:** todo
+### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`. Done, see BACKLOG-COMPLETE.md.
 
@@ -1066,39 +1048,7 @@ Add it to 6c's table in DESIGN.md.
 
 ### 20261002-9. 6c rule: `union_outer_filter_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-10. 6c rule: `existence_in_flip`.
-
-A hand-tuned Canvas existence check got much faster by turning it inside out. The original:
-
-```sql
-SELECT 1 AS one FROM enrollments JOIN courses ON ... JOIN assignments ON ...
-WHERE enrollments.user_id = 6504 AND ...
-  AND assignments.id IN (SELECT assignment_id FROM assignment_configuration_tool_lookups WHERE tool_product_code = 'turnitin-lti' AND ...)
-LIMIT 1;
-```
-
-The tuned version reads `assignment_configuration_tool_lookups` with its filters, and checks the rest with `EXISTS (SELECT 1 FROM enrollments JOIN courses ... JOIN assignments ... WHERE <the original's other conjuncts> AND assignments.id = assignment_configuration_tool_lookups.assignment_id)`, still under `LIMIT 1`. Postgres could choose that plan for the semi-join itself, but with `LIMIT 1` it bets on a fast-start plan from the other side and loses.
-
-The rule: when a query is an existence check, rewrite it so the `IN` subquery's table drives. An existence check here means:
-
-- Every select-list item is a constant.
-- It has `LIMIT 1`.
-- It has no `DISTINCT`, `GROUP BY`, aggregate, window function, `HAVING`, `OFFSET`, or locking clause.
-
-The query must also have a top-level `WHERE` conjunct `x IN (SELECT y FROM S WHERE P)` whose subquery is uncorrelated and has no `LIMIT`, `OFFSET`, aggregate, set operation, or volatile function. The rewrite is `SELECT <the same constants> FROM S WHERE P AND EXISTS (SELECT 1 FROM <the original FROM> WHERE <the original's other conjuncts> AND x = y) LIMIT 1`. Keep the original's CTEs at the top. Rename `S`'s aliases if they clash with the original's.
-
-It's sound with no catalog facts. Both return one row exactly when some combination of rows passes every predicate with `x = y`. The `IN` and the `=` use the same operator, so NULLs behave the same. It states no assumptions. It needs `LIMIT 1`: with a higher limit, or none, the two can return different numbers of rows.
-
-Leave these for later: the same flip inside an `EXISTS (...)` body, and `x = ANY (SELECT ...)`.
-
-When several `IN` conjuncts qualify, emit one candidate per conjunct, within the cap of ten (the user, 2026-10-03).
-
-Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Status:** todo
+### 20261002-10. 6c rule: `existence_in_flip`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-11. 6c keeps up to ten rewrites. Done, see BACKLOG-COMPLETE.md.
 
@@ -1996,7 +1946,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 
 ### 20261003-18. A scenario refusal shouldn't end the run.
 
-When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check` or `expression_unique_index`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
+When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check`, `expression_unique_index` or `unsupported_type`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
 
 The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
 
@@ -2081,7 +2031,8 @@ Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a que
 - **Came from:** The build and review of 20261003-17, 2026-10-03.
 - **Design:** Step 9.
 - **Note (2026-10-03, answers):** The user chose this as the next side task. Prefer the second option, loading NULL and then UPDATEing to the parent's key, since it covers more cycles and also tests the cut column's value.
-- **Status:** todo
+- **Note (2026-10-03, not landed):** Built on `task/20261003-23` (kept, with its worktree). The first review's blocker (S6 empty on a cycle) was fixed. The second review found a regression that works on main: on a Canvas-like schema with a third table under `accounts`, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL` fails every candidate with `fixture_load_failed`. It fails safe, but it can't land. The rest moved to 20261003-30, which finishes this on the same branch.
+- **Status:** todo (continues as 20261003-30)
 
 ### 20261003-24. ParentRows can leak a value in a Postgres error.
 
@@ -2125,6 +2076,8 @@ From the build of 20261002-9:
 - **Design:** 6c.
 - **Status:** todo
 
+### 20261003-27. Step 9: `unsupported_type` should say which type, and cover more types. Done, see BACKLOG-COMPLETE.md.
+
 ### 20261003-22. `quaack setup`: loose ends.
 
 Minor findings from the build and review of 20260928-1:
@@ -2137,4 +2090,98 @@ Minor findings from the build and review of 20260928-1:
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
 - **Design:** Steps 2 through 4.
+- **Status:** todo
+
+### 20261003-28. `shared_scan_cte`: widenings.
+
+Minor follow-ups from building 20261002-6. Each one widens what the rule covers; none is a correctness bug.
+
+- **Copies inside subqueries or CTE bodies aren't shared.** Only the top-level `FROM` is searched.
+- **One nullable copy refuses the whole group.** When another two or more copies are on inner joins, they could still share a CTE.
+- **A GROUP BY that relies on the primary key is refused.** Postgres can't prepare the rewrite, since a CTE has no primary key. The rule could add the select list's columns to the GROUP BY.
+- **`places()` descends into aliased joins.** Only the refusal of unnamed FROM items stops it. Make it stop there by itself, so later widenings can't trip on it.
+- **`ONLY` tables aren't shared.**
+
+- **Depends on:** 20261002-6.
+- **Came from:** The build of 20261002-6, 2026-10-03.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
+
+From the build and review of 20261002-10.
+
+- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
+- **Widenings:**
+  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
+  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
+  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
+
+- **Depends on:** 20261002-10.
+- **Came from:** The build and review of 20261002-10, 2026-10-03.
+- **Design:** 6c.
+- **Status:** todo
+
+### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class.
+
+20261003-23 is built on `task/20261003-23` (worktree `.claude/worktrees/20261003-23`) and passed one review. Its second review found a regression that main doesn't have. Fix it on that branch, then land 20261003-23 and this task together.
+
+- **The regression.** The schema is Canvas-like: `accounts` has self-references `root_account_id` and `parent_account_id`, plus a nullable `course_template_id` that points at `courses`. `courses` has `account_id` and `root_account_id` (NOT NULL) and `enrollment_term_id`. `enrollment_terms` has `root_account_id` (NOT NULL). On this schema, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id` fails every candidate with `fixture_load_failed` at S3, and at S6 too. On main, the correct NOT EXISTS rewrite passes and the wrong ones are disproved.
+- **Why.** `fk_edges` in `topology.rb` follows every foreign key, so the cut column `accounts.course_template_id` joins `courses.id`'s key class. The pool for `c.id IS NULL` is empty, because `courses.id` is a NOT NULL primary key, so the slot becomes `:skip`. That drops the hit's `accounts` row and the copy groups' `accounts` rows. But the `enrollment_terms` copy is still built with `root_account_id=1`, which now points at nothing.
+- **Fix, either way:**
+  - Keep a cut column out of a key class whose atom pool is empty.
+  - When a group skips, also drop the copy and "many" rows that depend on it.
+- **Test** with a third table under `accounts`. Reviewer reproducer, in the review scratch dir: `canvas_spec.rb`, case 7.
+- **Also:** in `arena_runner/deferred.rb` (`load_rows`/`update_rows`), a row that RETURNING doesn't give back raises a bare `ArgumentError`. That happens, for example, with a BEFORE INSERT trigger that returns NULL. Raise `fixture_load_failed` instead, as DESIGN.md says.
+
+- **Depends on:** 20261003-23 (its branch).
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-31. Step 9: two false passes on ordinary joins.
+
+The second review of 20261003-23 found two cases where step 9 passes a wrong rewrite. Both are on main and both are realistic, so this goes ahead of widenings.
+
+- **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
+- **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
+
+Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-32. Step 9: loads that fail on `IS NULL` and skipped groups.
+
+These were found in the second review of 20261003-23, and they fail safe (the load fails, so the rewrite is refused):
+
+- **`IS NULL` on a nullable FK column fails the load.** The NULL goes into the parent primary key's class. Seen on an acyclic schema.
+- **A group that skips leaves orphaned copies.** This is 20261003-30's mechanism in an acyclic schema: `courses JOIN accounts LEFT JOIN templates t … WHERE t.id IS NULL`. 20261003-30 may fix it in general. If so, add a test here and close this task.
+- **An anti-join on a cut edge itself** fails the load for every candidate. Recheck it after 20261003-30.
+
+- **Depends on:** 20261003-30.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-33. Step 9 values: loose ends from 20261003-27.
+
+Minor findings from building and reviewing 20261003-27. Do the false-collision and load-failure items first.
+
+- **`readable?` tests a value with an explicit CAST, which is laxer than inserting it.** CAST quietly truncates `varchar(n)` and `char(n)`, so distinct values can collide after truncation or fail on insert. Check readability with an assignment coercion, as an INSERT does, rather than an explicit CAST.
+- **ParentRows gives a nullable self-FK the value 0.** For example, `accounts.root_account_id`; the parent row then fails to load. This reproduces on main.
+- **The varying pick ignores CHECKs.** With `kind int CHECK (kind IN (1,2))` and `UNIQUE (kind, login)`, it varies `kind`, so the third row fails to load. Prefer a column with no CHECK.
+- **A split group's key takes the type of the slot's first column** (`scenarios.rb`, around lines 251-253). A smallint FK and an integer parent in the same slot can still overflow on the smallint side.
+- **`bit varying` with no length gets only 2 distinct values**, since `Literals.bits` falls back to length 1. `bit(n)` also repeats values when it needs more than 2^n.
+- **A nullable column of an unsupported type could take NULL** instead of refusing, when the query doesn't read it.
+- **Expression unique indexes still vary every column they read.**
+- **ValuePools' boundary regex may match array types** such as `bigint[]`.
+- **Arrays over a domain over a domain** may not find their element type.
+- **No test checks that FEW ranks below the middle tier** in `Values#rank`.
+
+- **Depends on:** 20261003-27.
+- **Came from:** The build and reviews of 20261003-27, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo

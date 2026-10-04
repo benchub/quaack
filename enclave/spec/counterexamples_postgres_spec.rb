@@ -65,6 +65,24 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(load(prepared, "SELECT count(DISTINCT c.email) FROM fx.customers c")).to eq([["2"]])
   end
 
+  it "varies one column of a parent's multi-column unique index, and gives the rest their typical value" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_account_ids bigint[] NOT NULL, ADD COLUMN login text NOT NULL;
+               CREATE UNIQUE INDEX customers_login ON fx.customers (root_account_ids, login)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b')")
+    expect(load(prepared, "SELECT root_account_ids::text, count(DISTINCT login) FROM fx.customers GROUP BY 1"))
+      .to eq([["{}", "2"]])
+  end
+
+  it "refuses a parent whose unique column step 9 can't fill, naming the parent's table, column, and type" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn NOT NULL UNIQUE")
+    expect { prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $1)") }
+      .to raise_error(Quaack::Enclave::Scenarios::Error) { |e|
+        expect([e.rule, e.column]).to eq([:unsupported_type,
+                                          { "table" => "fx.customers", "column" => "lsn", "type" => "pg_lsn" }])
+        expect(e.message).not_to include("SENTINEL")
+      }
+  end
+
   it "refuses an insert the inbound check refuses, or one with an unknown placeholder, by rule alone" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) SELECT 1, 2, 'x'",
                        "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $9)",
