@@ -4287,3 +4287,43 @@ From the build and review of 20261002-10.
     - The grandchild-stdout test's outer limit went from 1s to 10s (`hang_limit`). The fake grandchild still sleeps 60s.
     - The two sibling timeout and process-group tests had the same problem. They get a 3s adapter timeout (`slow_start_timeout`) and a 10s outer limit or poll.
   - **Review:** one round, clean. Three deliberate breaks each turned the matching test red: the success path reading stdout to EOF, the timeout path reading to EOF, and killing only the child. The two timeout tests now take about 3s each.
+
+### 20261003-15. `quaack run`: say what each step did when it finishes.
+
+Today every finished step in `quaack run` prints the same line, such as `quaack: [1/18] Done in 15s (index-search)`. That says how long the step took but not what it found. A step that found 12 indexes looks just like one that found none. Instead, the closing line should give a short count of the step's output, such as:
+
+```
+quaack: [1/18] Checking the query plan and searching for indexes (index-search)
+quaack: [1/18] Found 12 possible index definitions mechanically in 15s (index-search)
+```
+
+The rule: `Progress#step` (`driver/lib/quaack/driver/progress.rb`) lets a step give a summary for its closing line, built from its result. When it gives one, the line says `<summary> in <duration>`. When it doesn't, or when the step was skipped or failed, the line stays as it is now. Give every step in `Pipeline::SAY` a summary that says what it produced, for example:
+
+- index-search: how many index definitions were found mechanically.
+- 5a-5 and 5a-6: how many index ideas the LLM gave, and how many were new.
+- 5a-7 and index-rank: how many ideas were kept, out of how many.
+- 6c: which rules fired, or "No rule applied".
+- 6a: how many rewrites the LLM gave.
+- rewrite-prune: whether the rewrite was kept or dropped.
+- steps 9-10 and 14b-14d: how many rewrites or choices are left.
+- 12a: how many indexes were built.
+- 13, 13a and 14: how many measurements were taken.
+- 15: where the report was written.
+
+Summaries carry only counts, step names, and rule names, which the progress lines already allow. They never carry data, SQL, or literal values from the enclave. A test plants a sentinel in a step's result and checks that it never shows up in the progress output.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-15.
+  - **Change:**
+    - `Progress#step` takes a `summary:`, so the closing line reads `<summary> in <duration> (<step>)`. Steps with no summary still end with `Done`. Skipped, failed and sub-step closing lines are unchanged.
+    - The summaries live in `driver/step_summary.rb`. Examples: `Got 4 index ideas from the LLM, 1 of them new and tested, 1 set aside untested`, `Got 3 rewrites from the LLM, 2 kept`, `Tested 2 rewrites, 1 passed`, `Built 2 indexes`, `No rule applied`.
+    - On a resumed run, steps 8 and 11 count only the rewrites they did work for, as in `for 1 rewrite, 2 already done`.
+    - DESIGN.md is updated.
+  - **Not built:** some steps can't give counts, and 6c can't name the rules that fired, because the enclave sends neither. Those steps get plain wording. This is filed as 20261004-1.
+  - **Review:**
+    - Round 1 was blocking: on resumed runs, steps 8 and 11 counted rewrites that had already been done. The fix round corrected it and four minors.
+    - Round 2 was clean, with 12 of 12 mutations caught.
+  - **Minor, not filed:** steps 9–10 don't say how many rewrites were already done, unlike steps 8 and 11. 20261003-16 and -21 will rework these lines.
