@@ -123,6 +123,16 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(joined).to be < values(s1, "a", "k").size
   end
 
+  it "keeps a split group's join key inside the narrowest type of its slot" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.a (id integer PRIMARY KEY, k integer NOT NULL, v text);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, k smallint NOT NULL);
+      CREATE TABLE fx.c (id integer PRIMARY KEY, k integer NOT NULL);
+    SQL
+    builds_and_loads("SELECT a.id FROM fx.a a JOIN fx.b b ON a.k = b.k JOIN fx.c c ON b.k = c.k WHERE a.v = 'x'",
+                     "fx.a,fx.b,fx.c")
+  end
+
   describe "Values#nth and #readable?" do
     let(:values_for) { described_class::Values.new(conn) }
 

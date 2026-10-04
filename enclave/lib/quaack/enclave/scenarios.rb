@@ -247,10 +247,14 @@ module Quaack
 
         def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
 
+        # The key's value from the first of the slot's columns whose value
+        # every column of the slot reads, so a smallint and an integer
+        # joined take a value both hold.
         def key_value(slot, group, table)
           key = group.split == table ? group.key + 100_000 : group.key
-          table_name, col = slot_columns(slot).first
-          @values.nth(col, key, table: table_name)
+          columns = slot_columns(slot)
+          values = columns.map { |t, col| @values.nth(col, key, table: t) }
+          values.find { |v| columns.all? { |_, col| @values.readable?(col, v) } } || values.first
         end
 
         # Unique columns get a value per distinct row: rows alike in every
