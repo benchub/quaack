@@ -12,9 +12,16 @@ module Quaack
       # the names and booleans go out, never an entry's data. Each
       # orchestration task adds the entries its stage needs.
       module Status
-        ENTRIES = %w[index_search_original index_generated_original index_ranking_original
-                     rewrite_rules_applied rewrites_generated operator_rewrites_checked arena_setup index_build baseline
-                     index_baseline candidate_runs minimax result_comparison selection].freeze
+        # For `quaack setup`, the entry each step from 2 to 4a stores last, so
+        # one that's there means its step finished: inventory, run-server,
+        # qualify, schema-dump, statistics, volatility, classify, redact,
+        # literals, anchor, and racetrack-setup.
+        SETUP = %w[inventory run_server qualified_query schema_subset statistics volatility classification
+                   redacted_plan literal_sets clock_replacements racetrack_setup].freeze
+        ENTRIES = (SETUP + %w[index_search_original index_generated_original index_ranking_original
+                              rewrite_rules_applied rewrites_generated operator_rewrites_checked arena_setup
+                              index_build baseline index_baseline candidate_runs minimax result_comparison
+                              selection]).freeze
 
         module_function
 
