@@ -11,11 +11,15 @@ module Quaack
     #   # quaack: [2/18] Asking the LLM for index ideas (5a-5)
     #   # quaack: [2/18] Still working, 30s so far (5a-5)   every interval
     #   # quaack: [2/18] Done in 42s (5a-5)                 or "Failed after 42s"
+    #   progress.step("5a-5", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
+    #   # quaack: [2/18] Got 4 index ideas in 42s (5a-5)
     #   progress.skip("index-search", "Searching for indexes")
     #   # quaack: [1/18] Already done, skipping: Searching for indexes (index-search)
     #
     # Each line says in plain English what's happening, and ends with the
-    # step's ID in parentheses.
+    # step's ID in parentheses. A summary must carry only counts, step
+    # names, and QUAACK's own words, never anything the enclave sent as
+    # text.
     #
     # note prints a line under the current step, such as an LLM ask, and
     # within(prefix) gives the same interface for a step's sub-steps, as
@@ -34,12 +38,14 @@ module Quaack
       end
 
       # Runs the block as the next step and returns what it returns.
-      def step(name, description, &)
+      # summary, if given, is called with that result, and what it returns,
+      # unless nil, closes the step in place of Done.
+      def step(name, description, summary: nil, &)
         @number += 1
         say("#{description} (#{name})")
         start = @clock.call
         result = heartbeat(name, start, &)
-        say("Done in #{since(start)} (#{name})")
+        say("#{summary&.call(result) || "Done"} in #{since(start)} (#{name})")
         result
       rescue StandardError, Interrupt
         say("Failed after #{since(start)} (#{name})")
@@ -95,7 +101,8 @@ module Quaack
           @prefix = prefix
         end
 
-        def step(name, description)
+        # A sub-step prints no closing line, so it has no use for a summary.
+        def step(name, description, **)
           @progress.note("#{@prefix}: #{description} (#{name})")
           yield
         end
@@ -111,7 +118,7 @@ module Quaack
       module Null
         module_function
 
-        def step(*) = yield
+        def step(*, **) = yield
 
         def skip(*) = nil
 

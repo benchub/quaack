@@ -129,25 +129,34 @@ RSpec.describe "quaack run" do
                      "index_ranking_original" => true, "rewrites_generated" => true)
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
-      steps = [["4b", "Setting up the arena, a second database for test rows"],
-               ["steps 9-10", "Testing each rewrite for wrong results"],
-               ["step 11", "Asking the LLM for index ideas for each rewrite"],
-               ["12a", "Building the candidate indexes"], ["13", "Measuring the original query"],
-               ["13a", "Measuring the original query with each set of indexes"], ["14", "Measuring each rewrite"],
-               ["14b", "Dropping choices that lose to the original on any literal"],
-               ["14c", "Checking that each rewrite returns the same rows on production data"],
-               ["14d", "Picking the top three"], ["15", "Writing the report"]]
+      steps = [["4b", "Setting up the arena, a second database for test rows", "Set up the arena"],
+               ["steps 9-10", "Testing each rewrite for wrong results", "No rewrites left to test"],
+               ["step 11", "Asking the LLM for index ideas for each rewrite", "No rewrites needed index ideas"],
+               ["12a", "Building the candidate indexes", "No index to build"],
+               ["13", "Measuring the original query", "Measured the original query"],
+               ["13a", "Measuring the original query with each set of indexes",
+                "Measured the original query with each set of indexes"],
+               ["14", "Measuring each rewrite", "Measured each rewrite"],
+               ["14b", "Dropping choices that lose to the original on any literal",
+                "Checked each choice against the original on every literal"],
+               ["14c", "Checking that each rewrite returns the same rows on production data",
+                "Checked each rewrite's rows on production data"],
+               ["14d", "Picking the top three", "Picked the top choices"],
+               ["15", "Writing the report", "Wrote the report to #{out}"]]
       expect(progress).to eq(
         ["quaack: [1/18] Already done, skipping: Checking the query plan and searching for indexes (index-search)\n",
          "quaack: [2/18] Already done, skipping: " \
          "Asking the LLM for index ideas the mechanical search missed (5a-5)\n",
-         "quaack: [3/18] Asking the LLM to improve its index ideas (5a-6)\n", "quaack: [3/18] Done in Ns (5a-6)\n",
+         "quaack: [3/18] Asking the LLM to improve its index ideas (5a-6)\n",
+         "quaack: [3/18] No index ideas needed improving in Ns (5a-6)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (5a-7)\n",
-         "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)\n", "quaack: [5/18] Done in Ns (6c)\n",
+         "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)\n",
+         "quaack: [5/18] No rule applied in Ns (6c)\n",
          "quaack: [6/18] Already done, skipping: Asking the LLM for rewrites of the query (6a)\n",
-         "quaack: [7/18] Searching for indexes for each rewrite (step 8)\n", "quaack: [7/18] Done in Ns (step 8)\n",
-         *steps.each_with_index.flat_map do |(name, description), i|
-           ["quaack: [#{8 + i}/18] #{description} (#{name})\n", "quaack: [#{8 + i}/18] Done in Ns (#{name})\n"]
+         "quaack: [7/18] Searching for indexes for each rewrite (step 8)\n",
+         "quaack: [7/18] No rewrites to search in Ns (step 8)\n",
+         *steps.each_with_index.flat_map do |(name, description, did), i|
+           ["quaack: [#{8 + i}/18] #{description} (#{name})\n", "quaack: [#{8 + i}/18] #{did} in Ns (#{name})\n"]
          end]
       )
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
@@ -169,7 +178,8 @@ RSpec.describe "quaack run" do
                                   "quaack: [7/19] Checking your own rewrites (step 7)\n",
                                   "quaack: [7/19] Asking the LLM (step7)\n",
                                   "quaack: [7/19] Asking the LLM, attempt 2 (step7)\n",
-                                  "quaack: [7/19] Done in Ns (step 7)\n", "quaack: [19/19] Writing the report (15)\n")
+                                  "quaack: [7/19] Checked your 1 rewrite, 0 kept in Ns (step 7)\n",
+                                  "quaack: [19/19] Writing the report (15)\n")
     end
 
     it "prints a step's sub-steps for each rewrite, under the step" do
@@ -199,7 +209,7 @@ RSpec.describe "quaack run" do
       expect(lines).to eq(["quaack: [11/18] Building the candidate indexes (12a)\n",
                            "quaack: [11/18] Building index 1/2: #{ddl}\n",
                            "quaack: [11/18] Building index 2/2\n",
-                           "quaack: [11/18] Done in Ns (12a)\n"])
+                           "quaack: [11/18] Built 2 indexes in Ns (12a)\n"])
     end
 
     it "prints a failed line for the step that fails, before the failure" do
