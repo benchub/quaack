@@ -280,6 +280,22 @@ RSpec.describe Quaack::Driver::Report do
                                                  "about whether it's right."))
       end
 
+      it "names the tables of an fk_cycle refusal, in the order their foreign keys point" do
+        expect(fate("step9_untested", rule: "fk_cycle", cycle: %w[public.accounts public.courses public.accounts]))
+          .to eq(esc("QUAACK couldn't make up test data for your query, because its tables' foreign keys form a " \
+                     "cycle QUAACK can't load (public.accounts -&gt; public.courses -&gt; public.accounts), so it " \
+                     "never tested this rewrite and won't recommend it. That says nothing about whether it's right."))
+        expect(fate("step9_untested", rule: "fk_cycle", cycle: %w[public.<b> public.a public.<b>]))
+          .to include("(public.&lt;b&gt; -&gt; public.a -&gt; public.&lt;b&gt;)")
+      end
+
+      it "names no tables for another rule, or a cycle that isn't a list of names" do
+        expect(fate("step9_untested", rule: "complex_check", cycle: %w[public.a public.b public.a]))
+          .not_to include("public.a")
+        expect(fate("step9_untested", rule: "fk_cycle", cycle: "public.a"))
+          .to include(esc("load, so it never")).and(satisfy { !it.include?("public.a") })
+      end
+
       it "says what the real data showed" do
         expect(fate("production_mismatch", rule: "multiset"))
           .to eq(esc("It passed the tests on made-up data, but returned different results from your query on the " \

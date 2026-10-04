@@ -66,12 +66,25 @@ module Quaack
 
           text = FATES[entry["fate"]] or return "#{Words::MISSING}."
           format(text, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
-                       round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry["rule"]))
+                       round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry))
+        end
+
+        # An fk_cycle refusal's tables, in the order their foreign keys
+        # point, or nil.
+        def cycle(entry)
+          tables = entry["cycle"]
+          return unless entry["rule"] == "fk_cycle" && tables.is_a?(Array) && !tables.empty? && tables.all?(String)
+
+          tables.join(" -> ")
         end
 
         # A fate's rule, read as a failure or as step 9's refusal: its
-        # sentence uses whichever it names.
-        def because(rule) = { why: why(rule), refusal: refusal(rule) }
+        # sentence uses whichever it names. A refusal names an fk_cycle's
+        # tables too.
+        def because(entry)
+          rule = entry["rule"]
+          { why: why(rule), refusal: refusal(rule) + bracket(cycle(entry)) }
+        end
 
         def bracket(text) = text ? " (#{text})" : ""
 
