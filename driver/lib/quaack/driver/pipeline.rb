@@ -55,18 +55,22 @@ module Quaack
         end
 
         # 5a-5 unless done[:generated], 5a-6, and 5a-7 unless done[:ranked],
-        # for search.
+        # for search. Returns 5a-6's result, from refine.
         def llm(transport, client, run_id, search, done, progress = Progress::NULL) # rubocop:disable Metrics/ParameterLists
           args = { run: run_id, search: }
-          fetched = nil
-          payload = lambda do
-            fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
-          end
+          payload = payload(transport, args)
           Pipeline.run_step(progress, done[:generated], "5a-5") do
             generate(transport, client, run_id, search, payload.call)
           end
-          Pipeline.step(progress, "5a-6") { refine(transport, client, run_id, search, payload) }
+          refined = Pipeline.step(progress, "5a-6") { refine(transport, client, run_id, search, payload) }
           Pipeline.run_step(progress, done[:ranked], "5a-7") { transport.call("index-rank", args:) }
+          refined
+        end
+
+        # index-payload's payload, fetched on the first call only.
+        def payload(transport, args)
+          fetched = nil
+          -> { fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" } }
         end
 
         def generate(transport, client, run_id, search, payload)
@@ -76,10 +80,14 @@ module Quaack
           result
         end
 
+        # RefinementRound's result, or, when it skips the round, :refined if
+        # the round already ran, else nil.
         def refine(transport, client, run_id, search, payload)
-          index_feedback = RefinementRound.index_feedback(transport, run_id:, search:)
+          feedback = nil
+          fetch = RefinementRound.index_feedback(transport, run_id:, search:)
           index_test = RefinementRound.index_test(transport, run_id:, search:)
-          RefinementRound.new(client:, index_feedback:, index_test:).run(payload)
+          result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:).run(payload)
+          result || (:refined if feedback["refined"])
         end
       end
 
@@ -109,7 +117,7 @@ module Quaack
           Pipeline.step(progress, "step 8") do
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
               step8(transport, run_id, entries, number, progress.within("Rewrite #{number}"))
-            end.count
+            end.to_a
           end
         end
 
@@ -156,12 +164,16 @@ module Quaack
           end
         end
 
+        # Whether any of step 8's sub-steps ran for the rewrite, rather than
+        # all being stored already.
         def step8(transport, run_id, entries, number, progress)
+          ran = STEP8.values.any? { !entries["#{it}#{number}"] }
           STEP8.each do |subcommand, output|
             Pipeline.run_step(progress, entries["#{output}#{number}"], subcommand) do
               transport.call(subcommand, args: { run: run_id, search: "rewrite_#{number}" })
             end
           end
+          ran
         end
       end
 
@@ -239,11 +251,18 @@ module Quaack
           Pipeline.step(progress, "step 11") do
             entries = Pipeline.status(transport, run_id)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.select { entries["rewrite_step11_#{it}"] }.map do |n|
-              IndexStage.llm(transport, client, run_id, "rewrite_#{n}",
-                             { generated: entries["index_generated_rewrite_#{n}"],
-                               ranked: entries["index_llm_ranked_rewrite_#{n}"] }, progress.within("Rewrite #{n}"))
-            end.count
+              asked?(transport, client, run_id, entries, n, progress.within("Rewrite #{n}"))
+            end.to_a
           end
+        end
+
+        # Runs IndexStage.llm for rewrite n, and returns whether any of 5a-5
+        # to 5a-7 did anything, rather than finding it already done.
+        def asked?(transport, client, run_id, entries, number, progress) # rubocop:disable Metrics/ParameterLists
+          done = { generated: entries["index_generated_rewrite_#{number}"],
+                   ranked: entries["index_llm_ranked_rewrite_#{number}"] }
+          refined = IndexStage.llm(transport, client, run_id, "rewrite_#{number}", done, progress)
+          !done[:generated] || !done[:ranked] || refined.is_a?(RefinementRound::Result)
         end
       end
 

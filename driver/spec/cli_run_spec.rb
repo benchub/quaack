@@ -148,7 +148,7 @@ RSpec.describe "quaack run" do
          "quaack: [2/18] Already done, skipping: " \
          "Asking the LLM for index ideas the mechanical search missed (5a-5)\n",
          "quaack: [3/18] Asking the LLM to improve its index ideas (5a-6)\n",
-         "quaack: [3/18] No index ideas left to improve in Ns (5a-6)\n",
+         "quaack: [3/18] No index ideas needed improving in Ns (5a-6)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (5a-7)\n",
          "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)\n",
          "quaack: [5/18] No rule applied in Ns (6c)\n",

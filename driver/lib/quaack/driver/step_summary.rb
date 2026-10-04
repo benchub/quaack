@@ -22,12 +22,14 @@ module Quaack
       # How many of an enclave step's outcome messages are accepted.
       def kept(outcomes) = outcomes.count { it["outcome"] == "accepted" }
 
-      # What an LLM's index ideas came to: how many, and how many the
-      # enclave didn't drop.
+      # What an LLM's index ideas came to: how many, how many the enclave
+      # tested as new, and how many it set aside untested (GIN and GiST).
       def ideas(ddls, outcomes, kind = "index idea")
         return "Got no #{kind}s from the LLM" if ddls.empty?
 
-        "Got #{count(ddls.size, kind)} from the LLM, #{outcomes.count { it["outcome"] != "dropped" }} of them new"
+        aside = outcomes.count { it["outcome"] == "set_aside" }
+        got = "Got #{count(ddls.size, kind)} from the LLM, #{kept(outcomes)} of them new"
+        aside.zero? ? got : "#{got} and tested, #{aside} set aside untested"
       end
 
       # 6c's, from rewrite-rules' reply.
@@ -46,7 +48,11 @@ module Quaack
       end
 
       # Step 7's, from OperatorCandidates' result.
-      def operator(result) = "Checked your #{count(result.rewrites.size, "rewrite")}, #{kept(result.outcomes)} kept"
+      def operator(result)
+        return "You gave no rewrites to check" if result.rewrites.empty?
+
+        "Checked your #{count(result.rewrites.size, "rewrite")}, #{kept(result.outcomes)} kept"
+      end
 
       # Steps 9-10's, from whether each rewrite tested passed.
       def tested(passed)
@@ -55,23 +61,38 @@ module Quaack
         "Tested #{count(passed.size, "rewrite")}, #{passed.count(true)} passed"
       end
 
-      # A step that worked on n rewrites, or says none if there were none.
-      def per_rewrite(number, did, none) = number.zero? ? none : "#{did} #{count(number, "rewrite")}"
+      # A step that went through each rewrite, from whether it did anything
+      # for each, rather than finding it all already done on a resumed run.
+      def per_rewrite(ran, did, none)
+        return none if ran.empty?
+
+        done = ran.count(false)
+        return "#{count(done, "rewrite")} already done" if done == ran.size
+
+        "#{did} #{count(ran.count(true), "rewrite")}#{", #{done} already done" unless done.zero?}"
+      end
+
+      # 5a-6's, from RefinementRound's result, or what Pipeline says it
+      # skipped.
+      def refined(result)
+        return "No index ideas needed improving" if result.nil?
+        return "Already improved the index ideas" if result == :refined
+
+        ideas(result.ddls, result.outcomes, "revised index idea")
+      end
 
       SUMMARY = {
         "index-search" => ->(_) { "Searched for indexes" },
         "5a-5" => ->(result) { ideas(result.rounds.flat_map(&:ddls), result.rounds.flat_map(&:outcomes)) },
-        "5a-6" => lambda do |result|
-          result ? ideas(result.ddls, result.outcomes, "revised index idea") : "No index ideas left to improve"
-        end,
+        "5a-6" => ->(result) { refined(result) },
         "5a-7" => ->(_) { "Ranked the index ideas" },
         "6c" => ->(reply) { rules(reply) },
         "6a" => ->(result) { rewrites(result) },
         "step 7" => ->(result) { operator(result) },
-        "step 8" => ->(n) { per_rewrite(n, "Searched for indexes for", "No rewrites to search") },
+        "step 8" => ->(ran) { per_rewrite(ran, "Searched for indexes for", "No rewrites to search") },
         "4b" => ->(_) { "Set up the arena" },
         "steps 9-10" => ->(passed) { tested(passed) },
-        "step 11" => ->(n) { per_rewrite(n, "Asked for index ideas for", "No rewrites needed index ideas") },
+        "step 11" => ->(ran) { per_rewrite(ran, "Asked for index ideas for", "No rewrites needed index ideas") },
         "12a" => ->(n) { n.zero? ? "No index to build" : "Built #{count(n, "index", "indexes")}" },
         "13" => ->(_) { "Measured the original query" },
         "13a" => ->(_) { "Measured the original query with each set of indexes" },

@@ -98,8 +98,8 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     run
 
     expect(closing("index-search")).to eq(["Searched for indexes"])
-    expect(closing("5a-5")).to eq(["Got 3 index ideas from the LLM, 2 of them new"])
-    expect(closing("5a-6")).to eq(["No index ideas left to improve"])
+    expect(closing("5a-5")).to eq(["Got 3 index ideas from the LLM, 1 of them new and tested, 1 set aside untested"])
+    expect(closing("5a-6")).to eq(["No index ideas needed improving"])
     expect(closing("5a-7")).to eq(["Ranked the index ideas"])
   end
 
@@ -121,6 +121,14 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     run
 
     expect(closing("5a-6")).to eq(["Got 1 revised index idea from the LLM, 1 of them new"])
+  end
+
+  it "says when 5a-6 already improved the index ideas, on a resumed run" do
+    replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => true }]
+
+    run
+
+    expect(closing("5a-6")).to eq(["Already improved the index ideas"])
   end
 
   it "says how many rewrites QUAACK's rules made in 6c and how many were kept, or that none applied" do
@@ -151,6 +159,15 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("step 7")).to eq(["Checked your 2 rewrites, 1 kept"])
   end
 
+  it "says when the operator gave no rewrites for step 7" do
+    entries.merge!("rewrites_generated" => false, "operator_rewrites_checked" => false)
+    fake.reply("6a", { "rewrites" => [] })
+
+    run(rewrites: [])
+
+    expect(closing("step 7")).to eq(["You gave no rewrites to check"])
+  end
+
   it "says when the LLM gave no rewrites in 6a" do
     entries["rewrites_generated"] = false
     fake.reply("6a", { "rewrites" => [] })
@@ -160,20 +177,46 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("6a")).to eq(["Got no rewrites from the LLM"])
   end
 
-  it "says how many rewrites steps 8, 9-10, and 11 worked on, and how many passed steps 9-10" do
+  it "says how many rewrites steps 8, 9-10, and 11 worked on, how many were already done, and how many passed" do
     entries.merge!(rewrite(1, index_search_rewrite: false, rewrite_survived: false, rewrite_step11: true),
-                   rewrite(2, rewrite_survived: false, rewrite_step11: false, index_generated_rewrite: true,
-                              index_llm_ranked_rewrite: true),
-                   rewrite(3))
+                   rewrite(2, rewrite_survived: false, rewrite_step11: false),
+                   rewrite(3, rewrite_step11: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true))
     tests.push(false, true)
     3.times { fake.reply("10a", { "inserts" => [] }) }
     fake.reply("5a-5", { "indexes" => [] })
 
     run
 
-    expect(closing("step 8")).to eq(["Searched for indexes for 3 rewrites"])
+    expect(closing("step 8")).to eq(["Searched for indexes for 1 rewrite, 2 already done"])
     expect(closing("steps 9-10")).to eq(["Tested 2 rewrites, 1 passed"])
-    expect(closing("step 11")).to eq(["Asked for index ideas for 1 rewrite"])
+    expect(closing("step 11")).to eq(["Asked for index ideas for 1 rewrite, 1 already done"])
+  end
+
+  it "counts a rewrite as asked in step 11 when any one of 5a-5, 5a-6, and 5a-7 still had work" do
+    entries.merge!(rewrite(1, rewrite_step11: true, index_llm_ranked_rewrite: true),
+                   rewrite(2, rewrite_step11: true, index_generated_rewrite: true),
+                   rewrite(3, rewrite_step11: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true))
+    feedback = [false, false, false, true].map do |revise|
+      [{ "type" => "index_feedback", "revise" => revise, "refined" => false,
+         "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
+    end
+    replies["index-feedback"] = ->(_) { feedback.shift }
+    fake.reply("5a-5", { "indexes" => [] })
+    fake.reply("5a-6", { "indexes" => [] })
+
+    run
+
+    expect(closing("step 11")).to eq(["Asked for index ideas for 3 rewrites"])
+  end
+
+  it "says when steps 8 and 11 had already done every rewrite, on a resumed run" do
+    entries.merge!(rewrite(1, rewrite_step11: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true),
+                   rewrite(2))
+    replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => true }]
+
+    run
+
+    expect([closing("step 8"), closing("step 11")]).to eq([["2 rewrites already done"], ["1 rewrite already done"]])
   end
 
   it "says a rewrite steps 10a-10c disproved didn't pass" do
@@ -230,7 +273,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     def plant
       entries.merge!(%w[index_search_original index_generated_original index_ranking_original rewrite_rules_applied
                         rewrites_generated operator_rewrites_checked index_build].to_h { [it, false] },
-                     rewrite(1, rewrite_survived: false, rewrite_step11: true))
+                     rewrite(1, index_search_rewrite: false, rewrite_survived: false, rewrite_step11: true))
       %w[index-test rewrite-rules rewrite-check].each do |subcommand|
         replies[subcommand] = outcomes(subcommand == "index-test" ? "index_outcome" : "rewrite_outcome",
                                        { "outcome" => "accepted", **planted })
