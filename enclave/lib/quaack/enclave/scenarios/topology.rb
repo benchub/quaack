@@ -7,12 +7,18 @@ module Quaack
       # first), and the key classes, sets of [table, column] tied together
       # by an equality join atom or a foreign key, which share one value.
       #
-      # A foreign key that references its own table is left out. So is one
-      # that's cut: it's part of a cycle (its parent references its table,
-      # however far up), all its child columns are nullable, and no atom
-      # reads any of them. Fixture rows leave a cut foreign key's columns
-      # NULL, and those columns join no key class. A cycle with no cut
-      # foreign key raises Error(:fk_cycle), naming one such cycle's tables.
+      # A foreign key that references its own table is left out of the
+      # load order. A foreign-key cycle is broken by cutting foreign keys
+      # whose child columns are all nullable from the load order, one at a
+      # time while it still closes a cycle: first those no atom reads, then
+      # the rest. A cut foreign key's columns still join its key class and
+      # get their scenario values, but fixture rows defer them
+      # (ArenaRunner::FixtureRow#deferred): they load as NULL and are set
+      # once every row has loaded. A cut foreign key's columns are NULL in
+      # a group that leaves out its parent's table, but for a copy or a
+      # cross (see null_cut?). A cycle with no
+      # nullable foreign key left raises Error(:fk_cycle), naming one such
+      # cycle's tables.
       class Topology
         attr_reader :order
 
@@ -30,15 +36,27 @@ module Quaack
         end
 
         # The table's columns that belong to a cut foreign key, which
-        # fixture rows leave NULL.
+        # fixture rows defer.
         def cut_columns(table) = @cut.fetch(table, []).flat_map(&:columns).uniq
 
-        def cut?(table, name) = cut_columns(table).include?(name)
+        # Every table the table references, cut or not, but itself.
+        def parents(table) = all_foreign_keys(table).map(&:parent).uniq - [table]
 
-        def parents(table) = foreign_keys(table).map(&:parent).uniq - [table]
+        # The tables that reference no other fixture table through a foreign
+        # key the load order keeps.
+        def roots = @order.select { |t| load_parents(t).empty? }
 
-        # The tables that reference no other fixture table.
-        def roots = @order.select { |t| parents(t).empty? }
+        # Whether the column belongs to a cut foreign key whose parent's
+        # table the group leaves out, as the empty group does, so it must
+        # be NULL. A cross that points the column at the hit's parent keeps
+        # it, and so does a copy of one table's row, which points at its
+        # row's parent as without the cycle, so rows tie on the cut column.
+        # When that parent never built, the copy is an orphan (see RowSet).
+        def null_cut?(table, name, group)
+          return false if group.cross&.points?(table, name) || group.copy.positive?
+
+          @cut.fetch(table, []).any? { |fk| fk.columns.include?(name) && !group.tables.include?(fk.parent) }
+        end
 
         # The table and every table it references, however far up, in load
         # order.
@@ -67,11 +85,13 @@ module Quaack
         def keyed?(table, name) = @classes.key?([table, name])
 
         # Each [table, foreign key] whose row can point at another group's
-        # parent: a foreign key to another table, not cut, that shares no
-        # column with another of the table's foreign keys.
+        # parent: a foreign key to another table, cut or not, that shares
+        # no column with another of the table's foreign keys. A cut one
+        # gives two rows that share a parent, though the hit's row points
+        # at its own group's.
         def crossings
           @order.flat_map do |t|
-            fks = foreign_keys(t).reject { |fk| fk.parent == t }
+            fks = all_foreign_keys(t).reject { |fk| fk.parent == t }
             fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
           end
         end
@@ -106,38 +126,48 @@ module Quaack
 
         def foreign_keys(table) = all_foreign_keys(table) - @cut.fetch(table, [])
 
+        def load_parents(table) = foreign_keys(table).map(&:parent).uniq - [table]
+
+        # Greedy, so every cut foreign key closed a cycle when it was cut,
+        # and any cycle left has no nullable foreign key.
         def cut_foreign_keys
-          @schema.tables.to_h do |t|
-            [t, all_foreign_keys(t).select { |fk| fk.parent != t && reaches?(fk.parent, t) && cuttable?(t, fk) }]
+          unread, read = cut_candidates.partition { |t, fk| fk.columns.none? { |c| read?(t, c) } }
+          (unread + read).each_with_object({}) do |(t, fk), cut|
+            (cut[t] ||= []) << fk if reaches?(fk.parent, t, cut)
           end
         end
 
-        def cuttable?(table, foreign)
-          foreign.columns.all? { |c| @schema.column(table, c).nullable && !read?(table, c) }
+        # Each [table, foreign key] whose child columns are all nullable,
+        # but for one that references its own table.
+        def cut_candidates
+          @schema.tables.flat_map do |t|
+            all_foreign_keys(t).select { |fk| fk.parent != t && nullable?(t, fk) }.map { |fk| [t, fk] }
+          end
         end
+
+        def nullable?(table, foreign) = foreign.columns.all? { |c| @schema.column(table, c).nullable }
 
         def read?(table, name) = @atoms.any? { |a| a.columns.any? { |c| c.table == table && c.name == name } }
 
-        # Whether to is from, or a table from references, however far up.
-        def reaches?(from, to)
-          @reach ||= {}
-          @reach[from] ||= begin
-            found = [from]
-            found.each { |t| all_foreign_keys(t).each { |fk| found << fk.parent unless found.include?(fk.parent) } }
-            found
+        # Whether to is from, or a table from references, however far up,
+        # through foreign keys not yet cut.
+        def reaches?(from, to, cut)
+          found = [from]
+          found.each do |t|
+            (all_foreign_keys(t) - cut.fetch(t, [])).each { |fk| found << fk.parent unless found.include?(fk.parent) }
           end
-          @reach[from].include?(to)
+          found.include?(to)
         end
 
         def fk_column?(table, name)
           @schema.tables.any? do |t|
-            foreign_keys(t).any? do |fk|
+            all_foreign_keys(t).any? do |fk|
               (t == table && fk.columns.include?(name)) || (fk.parent == table && fk.parent_columns.include?(name))
             end
           end
         end
 
-        def load_order = LoadOrder.new(@schema.tables) { parents(it) }.call
+        def load_order = LoadOrder.new(@schema.tables) { load_parents(it) }.call
 
         def key_classes
           union = UnionFind.new
@@ -151,7 +181,9 @@ module Quaack
 
         def fk_edges
           @schema.tables.flat_map do |t|
-            foreign_keys(t).flat_map { |fk| fk.columns.zip(fk.parent_columns).map { |c, p| [[t, c], [fk.parent, p]] } }
+            all_foreign_keys(t).flat_map do |fk|
+              fk.columns.zip(fk.parent_columns).map { |c, p| [[t, c], [fk.parent, p]] }
+            end
           end
         end
       end

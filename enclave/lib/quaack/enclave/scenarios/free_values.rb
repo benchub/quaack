@@ -59,9 +59,11 @@ module Quaack
           ) { [@values.rank(it), @checks.checked?(table, it) ? 1 : 0] }
         end
 
+        # A cut foreign key's column is keyed too: it joins its parent's
+        # key class (Topology).
         def free?(table, col)
           !@topology.keyed?(table, col.name) && !%w[generated identity].include?(col.default) &&
-            !@topology.cut?(table, col.name) && !@constrained.call(@topology.slot(table, col.name))
+            !@constrained.call(@topology.slot(table, col.name))
         end
       end
     end
