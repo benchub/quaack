@@ -2286,3 +2286,14 @@ The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts
 - **Came from:** The review of 20261003-23 and -30.
 - **Design:** Step 9.
 - **Status:** todo
+
+### 20261004-9. Report `polymorphic_key_copy` disproofs in steps 9 and 10 as rule bugs.
+
+`rule_bugs.rb:58` still skips every step 9 or 10 disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
+
+Also, a twin that drops the type filter is caught only if step 10's LLM writes a row of another class with the copy set. Consider making step 9's fixtures add such a row themselves.
+
+- **Depends on:** 20261002-15.
+- **Came from:** The second review of 20261002-15.
+- **Design:** Steps 9, 10 and 15.
+- **Status:** todo
