@@ -12,7 +12,7 @@ module Quaack
       # however far up), all its child columns are nullable, and no atom
       # reads any of them. Fixture rows leave a cut foreign key's columns
       # NULL, and those columns join no key class. A cycle with no cut
-      # foreign key raises Error(:fk_cycle).
+      # foreign key raises Error(:fk_cycle), naming one such cycle's tables.
       class Topology
         attr_reader :order
 
@@ -133,12 +133,22 @@ module Quaack
           pending = @schema.tables.dup
           until pending.empty?
             ready = pending.select { |t| (parents(t) - order).empty? }
-            raise Error, :fk_cycle if ready.empty?
+            raise Error.new(:fk_cycle, cycle: cycle(pending)) if ready.empty?
 
             order.concat(ready)
             pending -= ready
           end
           order
+        end
+
+        # One cycle among pending, every one of which has a parent still
+        # pending: from the first, follow the first pending parent until a
+        # table comes round again. The tables from that one on, in the
+        # order their foreign keys point, end with it again.
+        def cycle(pending)
+          walk = [pending.first]
+          walk << parents(walk.last).find { pending.include?(it) } until walk.count(walk.last) == 2
+          walk.drop(walk.index(walk.last))
         end
 
         def key_classes

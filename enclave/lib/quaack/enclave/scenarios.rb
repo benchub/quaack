@@ -86,12 +86,15 @@ module Quaack
     # row value.
     module Scenarios
       class Error < StandardError
-        attr_reader :rule, :column
+        attr_reader :rule, :column, :cycle
 
         # column is { "table", "column", "type" }, as ErrorFilter sends it.
-        def initialize(rule, column: nil)
+        # cycle is an fk_cycle's TableNames, in the order their foreign
+        # keys point, ending with the first again.
+        def initialize(rule, column: nil, cycle: nil)
           @rule = rule
           @column = column
+          @cycle = cycle
           super(column ? "#{rule}: #{column["table"]}.#{column["column"]} (#{column["type"]})" : rule.to_s)
         end
       end
