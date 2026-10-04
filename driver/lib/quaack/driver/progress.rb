@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "io/console"
+
 module Quaack
   module Driver
     # Progress lines for `quaack run`, on stderr. Lines carry only step
@@ -88,8 +90,9 @@ module Quaack
           line = "quaack: [#{@number}/#{@total}] #{text}"
           next @io.print("#{line}\n") unless @tty && @start
 
-          @io.print(line)
           @line = line
+          text, @cut = fit("")
+          @io.print(text)
         end
       end
 
@@ -127,13 +130,20 @@ module Quaack
       end
 
       # Ends the open line, if any, at its final reading: elapsed, or none.
-      # Callers hold the lock.
+      # A line that was cut to fit, or won't fit now, is printed whole, from
+      # the start of its one row, so it wraps only once it's done. Callers
+      # hold the lock.
       def finish(elapsed)
         return unless @line
 
-        draw(elapsed) if elapsed
+        suffix = elapsed && elapsed >= 1 ? " #{self.class.duration(elapsed)}" : ""
+        if @cut || fit(suffix).last
+          @io.print("\r#{@line}#{suffix}\e[K")
+        elsif elapsed
+          draw(elapsed)
+        end
         @io.print("\n")
-        @line = @shown = nil
+        @line = @shown = @cut = nil
       end
 
       # Redraws the open line with elapsed after it, once there's a whole
@@ -143,11 +153,42 @@ module Quaack
         reading = self.class.duration(elapsed)
         return if elapsed < 1 || reading == @shown
 
-        @io.print("\r#{@line} #{reading}\e[K")
+        text, @cut = fit(" #{reading}")
+        @io.print("\r#{text}\e[K")
         @shown = reading
       end
 
-      private :say, :close, :clocked, :redrawing, :finish, :draw
+      # The open line with suffix after it, as Fit cuts it for the terminal
+      # now; and whether it was cut.
+      def fit(suffix) = Fit.call(@line, suffix, columns)
+
+      # The terminal's width now, or nil when it can't say.
+      def columns
+        width = @io.winsize[1] if @io.respond_to?(:winsize)
+        width if width&.positive?
+      rescue SystemCallError
+        nil
+      end
+
+      private :say, :close, :clocked, :redrawing, :finish, :draw, :fit, :columns
+
+      # Cuts a line, with suffix after it, short of width so it never
+      # wraps, since \r goes back only to the start of a row. It answers the
+      # text and whether it was cut. The suffix is dropped only when even a
+      # bit of the line won't fit beside it. A nil width cuts nothing.
+      module Fit
+        module_function
+
+        def call(line, suffix, width)
+          text = "#{line}#{suffix}"
+          return [text, false] if width.nil? || text.size < width
+
+          room = width - 1 - suffix.size
+          return ["#{line[0, room - 1]}…#{suffix}", true] if room >= 2
+
+          ["#{line[0, [width - 2, 0].max]}…"[0, width - 1], true]
+        end
+      end
 
       # A step's sub-steps, printed as notes under it, each after prefix,
       # such as "Rewrite 1".

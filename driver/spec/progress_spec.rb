@@ -175,6 +175,110 @@ RSpec.describe Quaack::Driver::Progress do
       expect(Thread.list.size).to eq(before)
     end
 
+    describe "on a narrow terminal" do
+      # A terminal whose width can change, as a resized window's does.
+      let(:narrow) do
+        Class.new(StringIO) do
+          attr_accessor :columns
+
+          def tty? = true
+
+          def winsize = [24, columns]
+        end.new
+      end
+      let(:fitted) { described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 0.005) }
+
+      it "cuts the open line to fit, clock and all, and prints it whole when it ends" do
+        narrow.columns = 40
+        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") do
+          now[0] = 70.0
+          wait_for(narrow, " 1m10s\e[K")
+        end
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM for index…" \
+          "\rquaack: [1/3] Asking the LLM for… 1m10s\e[K" \
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 1m10s\e[K\n" \
+          "quaack: [1/3] Done in 1m10s (5a-5)\n"
+        )
+      end
+
+      it "cuts a line only once its clock won't fit, and reads the width at each redraw" do
+        narrow.columns = 36
+        fitted.step("6a", "Asking the LLM") do
+          now[0] = 1.2
+          wait_for(narrow, " 1s\e[K")
+          narrow.columns = 80
+          now[0] = 61.0
+          wait_for(narrow, " 1m01s\e[K")
+        end
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM (6a)" \
+          "\rquaack: [1/3] Asking the LLM (6… 1s\e[K" \
+          "\rquaack: [1/3] Asking the LLM (6a) 1m01s\e[K\n" \
+          "quaack: [1/3] Done in 1m01s (6a)\n"
+        )
+      end
+
+      it "prints a cut line whole when it ends, even once the terminal is wide enough for it" do
+        narrow.columns = 40
+        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { narrow.columns = 200 }
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM for index…" \
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)\e[K\n" \
+          "quaack: [1/3] Done in 0s (5a-5)\n"
+        )
+      end
+
+      it "prints a line whole when it ends, if its final reading won't fit beside it" do
+        narrow.columns = 36
+        slow = described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 60)
+        slow.step("6a", "Asking the LLM") { now[0] = 1.2 }
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM (6a)" \
+          "\rquaack: [1/3] Asking the LLM (6a) 1s\e[K\n" \
+          "quaack: [1/3] Done in 1s (6a)\n"
+        )
+      end
+
+      it "keeps within a terminal too narrow for the clock" do
+        narrow.columns = 5
+        fitted.step("6a", "Asking") do
+          now[0] = 2.0
+          wait_for(narrow, "\r")
+        end
+
+        expect(narrow.string).to eq("qua…\rqua…\e[K\rquaack: [1/3] Asking (6a) 2s\e[K\nquaack: [1/3] Done in 2s (6a)\n")
+      end
+
+      it "doesn't cut when the terminal can't say its width" do
+        unsized = Class.new(StringIO) do
+          def tty? = true
+
+          def winsize = raise(Errno::ENOTTY)
+        end.new
+        zero = Class.new(StringIO) do
+          def tty? = true
+
+          def winsize = [0, 0]
+        end.new
+        [unsized, zero].each do |out|
+          now[0] = 0.0
+          described_class.new(io: out, total: 3, clock: -> { now.first }, interval: 0.005)
+                         .step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { now[0] = 2.0 }
+
+          expect(out.string).to eq(
+            "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)" \
+            "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 2s\e[K\n" \
+            "quaack: [1/3] Done in 2s (5a-5)\n"
+          )
+        end
+      end
+    end
+
     it "never redraws a line once a note has ended it, however fast notes come" do
       # A slow terminal, so the timer gets its chance in the middle of a note.
       slow = Class.new(StringIO) do
