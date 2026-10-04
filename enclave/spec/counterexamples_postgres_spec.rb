@@ -157,6 +157,58 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.refused.to_s).not_to include("SENTINEL_10a")
   end
 
+  describe "an insert with a value Postgres can't evaluate (20261003-24)" do
+    # $1 binds to the sentinel, and casting it to integer fails with the
+    # value in Postgres's message.
+    let(:good) { "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')" }
+
+    # Everything prepare gives back, as one String: what it returns, real
+    # values included, or the error it raises, with its message, full
+    # message, and every cause's.
+    def everything_from
+      prepared = yield
+      [prepared.inspect, prepared.rows.map { [it.table.to_s, it.columns, it.values] }, prepared.inserts.map(&:to_s),
+       prepared.refused].to_s
+    rescue StandardError => e
+      error_chain(e)
+    end
+
+    def error_chain(error)
+      chain = []
+      while error
+        chain << [error.class.name, error.message, error.full_message(highlight: false)]
+        error = error.cause
+      end
+      chain.to_s
+    end
+
+    it "refuses it by rule alone, and loads the rest, when the value is a foreign key" do
+      sql = "INSERT INTO fx.orders (id, customer_id, status) VALUES (2, $1::integer, 'b')"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      prepared = prepare(good, sql)
+      expect(prepared.refused).to eq([{ index: 1, rule: "bad_value" }])
+      expect(prepared.inserts.size).to eq(1)
+      expect(load(prepared, "SELECT o.id, c.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id"))
+        .to eq([%w[1 7]])
+    end
+
+    it "refuses it by rule alone when the value is in a column with no foreign key" do
+      sql = "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, 'b', $1::integer)"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      expect(prepare(good, sql).refused).to eq([{ index: 1, rule: "bad_value" }])
+    end
+
+    it "has a leak check that catches a planted sentinel, in what prepare returns or in an error's cause" do
+      planted = described_class::Prepared.new(rows: [], inserts: ["SENTINEL_10a"], refused: [])
+      expect(everything_from { planted }).to include("SENTINEL_10a")
+      expect(everything_from do
+        raise PG::Error, "SENTINEL_10a"
+      rescue PG::Error
+        raise ArgumentError, "no value here"
+      end).to include("SENTINEL_10a")
+    end
+  end
+
   it "builds a parent whose domain column rejects the type-typical value, from the column's CHECK" do
     conn.exec(<<~SQL)
       CREATE DOMAIN fx.code AS integer CHECK (VALUE > 1000);

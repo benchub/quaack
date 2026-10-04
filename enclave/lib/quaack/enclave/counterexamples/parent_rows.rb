@@ -3,16 +3,15 @@
 require "pg"
 require_relative "../arena_fixture"
 require_relative "../scenarios"
-require_relative "../value_pools"
 
 module Quaack
   module Enclave
     module Counterexamples
       # The parent rows that fill the accepted inserts' foreign-key gaps.
-      # A foreign-key value is read by evaluating the insert's value in
-      # arena (it passed the inbound check, so it's immutable). A value
-      # that's NULL or DEFAULT, or a column the insert leaves out, needs no
-      # parent. A parent row takes the referenced values, and the step 9
+      # accepted are Evaluated inserts, so a foreign-key value is the
+      # insert's value as evaluated in arena. A value that's NULL or
+      # DEFAULT, or a column the insert leaves out, needs no parent. A
+      # parent row takes the referenced values, and the step 9
       # rules for everything else: a DEFAULT, a distinct value for a unique
       # column, NULL for a nullable foreign key, its own key for a NOT NULL
       # one to its own table, a new parent row for another NOT NULL one,
@@ -28,14 +27,13 @@ module Quaack
         attr_reader :rows
 
         def initialize(conn, schema, accepted, reads = nil)
-          @conn = conn
           @schema = schema
           @values = Scenarios::Values.new(conn)
           @checks = Scenarios::Checks.new(conn, schema)
           @nulls = Scenarios::Nulls.new(schema, @values, @checks, reads) if reads
           @counter = FIRST
           @rows = []
-          fill_all(accepted.map { |a| [a.table, evaluate(a.parse)] })
+          fill_all(accepted.map { |a| [a.table, a.rows] })
         end
 
         private
@@ -46,21 +44,6 @@ module Quaack
           # Only once every insert's rows are present, so none gets a
           # parent another insert supplies.
           evaluated.each { |table, rows| rows.each { |row| fill(table, row) } } # rubocop:disable Style/CombinableLoops
-        end
-
-        # Each VALUES row as { column => text }, with :default for DEFAULT.
-        def evaluate(parse)
-          stmt = parse.tree.stmts[0].stmt.insert_stmt
-          columns = stmt.cols.map { |c| c.res_target.name }
-          stmt.select_stmt.select_stmt.values_lists.map { |list| columns.zip(texts(list)).to_h }
-        end
-
-        def texts(list) = list.list.items.map { |value| text(value) }
-
-        def text(value)
-          return :default if value.set_to_default
-
-          @conn.exec("SELECT (#{ValuePools::Sides.select_of(value).delete_prefix("SELECT ")})::text").getvalue(0, 0)
         end
 
         def fill(table, row)
