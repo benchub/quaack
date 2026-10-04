@@ -4412,3 +4412,65 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
   - **Steps 9 and 10:** fixtures honour a rule's own assumption, through `DenormalizedFixture`, inside the rolled-back transaction.
   - **Report:** each rewrite gets an `empirical` field, plus a driver sentence.
   - **Review:** round 1 had two blocking findings, the source trust check and the fixture honouring. The fix round fixed both, and round 2 was clean. The minors went to 20261004-9.
+
+### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge.
+
+20261003-17 breaks a foreign-key cycle by cutting a nullable edge, but only when no predicate atom reads the edge's columns. A query that joins on that very edge, such as `JOIN courses c ON c.id = a.course_template_id` in Canvas, still refuses with `fk_cycle`. That's a common shape, so many real queries still can't be tested.
+
+Find a sound way to break such a cycle. Two options:
+
+- Cut a different edge in the cycle, one the query doesn't read, when there is one.
+- Load the rows with the read column as NULL, then UPDATE it to its parent's key once every table is loaded. The deferred UPDATE from 20261003-17's counterexample path already does this, keyed by `tableoid` and `ctid`. The column then joins its key class as usual.
+
+The second covers more cycles. It also fixes the minor finding from 20261003-17's review: a cut column is always NULL in step 9's fixtures, so a rewrite that depends on its value, such as adding `AND a.course_template_id IS NULL` or dropping a sort key on it, passes step 9 when it would fail on the same schema without the cycle.
+
+Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a query that joins on the nullable edge. Also test that the two rewrites above are disproved.
+
+- **Depends on:** 20261003-17.
+- **Came from:** The build and review of 20261003-17, 2026-10-03.
+- **Design:** Step 9.
+- **Note (2026-10-03, answers):** The user chose this as the next side task. Prefer the second option, loading NULL and then UPDATEing to the parent's key, since it covers more cycles and also tests the cut column's value.
+- **Note (2026-10-03, not landed):** Built on `task/20261003-23` (kept, with its worktree). The first review's blocker (S6 empty on a cycle) was fixed. The second review found a regression that works on main: on a Canvas-like schema with a third table under `accounts`, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL` fails every candidate with `fixture_load_failed`. It fails safe, but it can't land. The rest moved to 20261003-30, which finishes this on the same branch.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-23, together with 20261003-30.
+  - **Change:** step 9 handles FK cycles the query joins through, by cutting the nullable edge, as in Canvas `accounts.course_template_id` → `courses` → `accounts`.
+    - Cut columns are deferred: rows load first, and the cut column is set by UPDATE afterwards. The INSERT and UPDATE counts are checked, and a load error carries no value.
+    - Copies and crosses keep their parent on a cut FK. The empty group's is NULL.
+    - Work is in `scenarios/topology.rb`, `arena_runner/deferred.rb` and `spec/fk_cycle_postgres_spec.rb`.
+  - **Review:** round 1 had one blocking finding: a dropped sort key on the cut column still passed under LIMIT, because copies NULLed the cut column. The fix round fixed it, and round 2 was clean. The minors went to 20261004-8.
+
+### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class.
+
+20261003-23 is built on `task/20261003-23` (worktree `.claude/worktrees/20261003-23`) and passed one review. Its second review found a regression that main doesn't have. Fix it on that branch, then land 20261003-23 and this task together.
+
+- **The regression.** The schema is Canvas-like: `accounts` has self-references `root_account_id` and `parent_account_id`, plus a nullable `course_template_id` that points at `courses`. `courses` has `account_id` and `root_account_id` (NOT NULL) and `enrollment_term_id`. `enrollment_terms` has `root_account_id` (NOT NULL). On this schema, `SELECT a.id FROM accounts a LEFT JOIN courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id` fails every candidate with `fixture_load_failed` at S3, and at S6 too. On main, the correct NOT EXISTS rewrite passes and the wrong ones are disproved.
+- **Why.** `fk_edges` in `topology.rb` follows every foreign key, so the cut column `accounts.course_template_id` joins `courses.id`'s key class. The pool for `c.id IS NULL` is empty, because `courses.id` is a NOT NULL primary key, so the slot becomes `:skip`. That drops the hit's `accounts` row and the copy groups' `accounts` rows. But the `enrollment_terms` copy is still built with `root_account_id=1`, which now points at nothing.
+- **Fix, either way:**
+  - Keep a cut column out of a key class whose atom pool is empty.
+  - When a group skips, also drop the copy and "many" rows that depend on it.
+- **Test** with a third table under `accounts`. Reviewer reproducer, in the review scratch dir: `canvas_spec.rb`, case 7.
+- **Also:** in `arena_runner/deferred.rb` (`load_rows`/`update_rows`), a row that RETURNING doesn't give back raises a bare `ArgumentError`. That happens, for example, with a BEFORE INSERT trigger that returns NULL. Raise `fixture_load_failed` instead, as DESIGN.md says.
+- **Also (from 20261003-31's build, still open on main):** these are cases in the Canvas reproducer.
+  - **Case 4:** `ORDER BY … NULLS FIRST` on a column that was cut to break a cycle still passes a wrong rewrite.
+  - **Case 7:** the correct candidate's fixture fails to load at S6 because of the cycle.
+  - **The cyclic form of 20261003-31's C6** isn't covered: a nullable FK in a cycle always points at its own group's parent. 20261003-31 fixed only the acyclic form.
+
+- **Depends on:** 20261003-23 (its branch).
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Note (2026-10-03, set aside for a question):** Two review rounds ran on `task/20261003-23` (worktree kept).
+  - **Round 1:** NULLing the cut column in every scenario let Rails's `where.missing(:course_template)` pass a wrong rewrite.
+  - **Fix round:** the cut column is now NULL only where the group has no parent row.
+  - **Round 2:** still blocking. Each group holds one account and one course, so "has a template" always means "has a course", and "the template" always means "the account's own course". The results:
+    - For the anti-join `accounts LEFT JOIN courses ON account_id … c.id IS NULL`, the wrong rewrite `WHERE a.course_template_id IS NULL` passes, which main disproves.
+    - In two cases main refuses with `fk_cycle`, and the branch passes a wrong rewrite: `where.missing(:course_template)` against "no courses", and a template lookup by `account_id`.
+  - **A real fix** needs more varied scenarios: an account with courses and a NULL template, and a template pointing at another account's course.
+  - **Question for the user:** keep pushing on that, or drop 20261003-23 and keep main's `fk_cycle` refusal for a query that joins on the cycle's nullable edge? Dropping it would make 20261003-18 (a refusal doesn't end the run) the way to keep such runs going.
+- **Note (2026-10-04, answers):** Keep pushing. Build scenarios varied enough to break these cycles soundly, such as an account that has courses and a NULL template, and a template that points at another account's course.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-23, together with 20261003-30.
+  - **Change:** step 9 handles FK cycles the query joins through, by cutting the nullable edge, as in Canvas `accounts.course_template_id` → `courses` → `accounts`.
+    - Cut columns are deferred: rows load first, and the cut column is set by UPDATE afterwards. The INSERT and UPDATE counts are checked, and a load error carries no value.
+    - Copies and crosses keep their parent on a cut FK. The empty group's is NULL.
+    - Work is in `scenarios/topology.rb`, `arena_runner/deferred.rb` and `spec/fk_cycle_postgres_spec.rb`.
+  - **Review:** round 1 had one blocking finding: a dropped sort key on the cut column still passed under LIMIT, because copies NULLed the cut column. The fix round fixed it, and round 2 was clean. The minors went to 20261004-8.
