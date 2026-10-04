@@ -92,28 +92,232 @@ RSpec.describe Quaack::Driver::Progress do
     expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (6a)\n")
   end
 
-  it "prints a still-working line every interval while a step runs, and leaves no thread behind" do
-    times.replace([0.0, 30.0, 90.0, 95.0])
-    before = Thread.list.size
-    progress(interval: 0.01).step("5a-5", "Asking the LLM for index ideas") do
-      400.times { io.string.lines.size >= 3 ? break : sleep(0.005) }
+  describe "the live clock" do
+    # A terminal, as far as Progress can tell.
+    let(:terminal) { Class.new(StringIO) { def tty? = true }.new }
+    let(:now) { [0.0] }
+    let(:live) { described_class.new(io: terminal, total: 3, clock: -> { now.first }, interval: 0.005) }
+
+    # Waits, briefly, until out holds text.
+    def wait_for(out, text)
+      400.times { out.string.include?(text) ? break : sleep(0.005) }
+      expect(out.string).to include(text)
     end
 
-    expect(io.string.lines[1..2]).to eq(["quaack: [1/3] Still working, 30s so far (5a-5)\n",
-                                         "quaack: [1/3] Still working, 1m30s so far (5a-5)\n"])
-    expect(io.string.lines.last).to eq("quaack: [1/3] Done in 1m35s (5a-5)\n")
-    expect(Thread.list.size).to eq(before)
+    it "counts up in place on the latest line, which keeps its final reading under a new line" do
+      before = Thread.list.size
+      live.step("6a", "Asking the LLM for rewrites of the query") do
+        live.note("Asking the LLM (6a)")
+        now[0] = 1.2
+        wait_for(terminal, "(6a) 1s\e[K")
+        sleep(0.05) # many redraws' time, at the same reading
+        now[0] = 61.0
+        wait_for(terminal, "(6a) 1m01s\e[K")
+        now[0] = 65.0
+        live.note("Asking the LLM, attempt 2 (6a)")
+        now[0] = 70.0
+      end
+
+      expect(terminal.string).to eq(
+        "quaack: [1/3] Asking the LLM for rewrites of the query (6a)\n" \
+        "quaack: [1/3] Asking the LLM (6a)" \
+        "\rquaack: [1/3] Asking the LLM (6a) 1s\e[K" \
+        "\rquaack: [1/3] Asking the LLM (6a) 1m01s\e[K" \
+        "\rquaack: [1/3] Asking the LLM (6a) 1m05s\e[K\n" \
+        "quaack: [1/3] Asking the LLM, attempt 2 (6a)" \
+        "\rquaack: [1/3] Asking the LLM, attempt 2 (6a) 1m10s\e[K\n" \
+        "quaack: [1/3] Done in 1m10s (6a)\n"
+      )
+      expect(Thread.list.size).to eq(before)
+    end
+
+    it "puts no clock on a line that ends within the step's first second, and ends whole lines between steps" do
+      live.skip("index-search", "Searching for indexes")
+      live.step("5a-5", "Asking the LLM for index ideas") { now[0] = 0.4 }
+      live.note("Between steps")
+
+      expect(terminal.string).to eq(
+        "quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n" \
+        "quaack: [2/3] Asking the LLM for index ideas (5a-5)\n" \
+        "quaack: [2/3] Done in 0s (5a-5)\n" \
+        "quaack: [2/3] Between steps\n"
+      )
+    end
+
+    it "stops redrawing when a step fails, so nothing lands after its failed line" do
+      before = Thread.list.size
+      expect do
+        live.step("6a", "Asking") do
+          now[0] = 2.0
+          wait_for(terminal, "(6a) 2s\e[K")
+          now[0] = 3.0
+          raise "boom"
+        end
+      end.to raise_error("boom")
+      ended = terminal.string.dup
+      now[0] = 9.0
+      sleep(0.05)
+
+      expect(terminal.string).to eq(ended)
+      expect(ended).to end_with("Asking (6a) 3s\e[K\nquaack: [1/3] Failed after 3s (6a)\n")
+      expect(Thread.list.size).to eq(before)
+    end
+
+    it "stops redrawing when a step is interrupted, too" do
+      before = Thread.list.size
+      expect { live.step("6a", "Asking") { raise Interrupt } }.to raise_error(Interrupt)
+      ended = terminal.string.dup
+      now[0] = 9.0
+      sleep(0.05)
+
+      expect(terminal.string).to eq("quaack: [1/3] Asking (6a)\nquaack: [1/3] Failed after 0s (6a)\n")
+      expect(terminal.string).to eq(ended)
+      expect(Thread.list.size).to eq(before)
+    end
+
+    describe "on a narrow terminal" do
+      # A terminal whose width can change, as a resized window's does.
+      let(:narrow) do
+        Class.new(StringIO) do
+          attr_accessor :columns
+
+          def tty? = true
+
+          def winsize = [24, columns]
+        end.new
+      end
+      let(:fitted) { described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 0.005) }
+
+      it "cuts the open line to fit, clock and all, and prints it whole when it ends" do
+        narrow.columns = 40
+        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") do
+          now[0] = 70.0
+          wait_for(narrow, " 1m10s\e[K")
+        end
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM for index…" \
+          "\rquaack: [1/3] Asking the LLM for… 1m10s\e[K" \
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 1m10s\e[K\n" \
+          "quaack: [1/3] Done in 1m10s (5a-5)\n"
+        )
+      end
+
+      it "cuts a line only once its clock won't fit, and reads the width at each redraw" do
+        narrow.columns = 36
+        fitted.step("6a", "Asking the LLM") do
+          now[0] = 1.2
+          wait_for(narrow, " 1s\e[K")
+          narrow.columns = 80
+          now[0] = 61.0
+          wait_for(narrow, " 1m01s\e[K")
+        end
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM (6a)" \
+          "\rquaack: [1/3] Asking the LLM (6… 1s\e[K" \
+          "\rquaack: [1/3] Asking the LLM (6a) 1m01s\e[K\n" \
+          "quaack: [1/3] Done in 1m01s (6a)\n"
+        )
+      end
+
+      it "prints a cut line whole when it ends, even once the terminal is wide enough for it" do
+        narrow.columns = 40
+        fitted.step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { narrow.columns = 200 }
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM for index…" \
+          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)\e[K\n" \
+          "quaack: [1/3] Done in 0s (5a-5)\n"
+        )
+      end
+
+      it "prints a line whole when it ends, if its final reading won't fit beside it" do
+        narrow.columns = 36
+        slow = described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 60)
+        slow.step("6a", "Asking the LLM") { now[0] = 1.2 }
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking the LLM (6a)" \
+          "\rquaack: [1/3] Asking the LLM (6a) 1s\e[K\n" \
+          "quaack: [1/3] Done in 1s (6a)\n"
+        )
+      end
+
+      it "keeps within a terminal too narrow for the clock" do
+        narrow.columns = 5
+        fitted.step("6a", "Asking") do
+          now[0] = 2.0
+          wait_for(narrow, "\r")
+        end
+
+        expect(narrow.string).to eq("qua…\rqua…\e[K\rquaack: [1/3] Asking (6a) 2s\e[K\nquaack: [1/3] Done in 2s (6a)\n")
+      end
+
+      it "doesn't cut when the terminal can't say its width" do
+        unsized = Class.new(StringIO) do
+          def tty? = true
+
+          def winsize = raise(Errno::ENOTTY)
+        end.new
+        zero = Class.new(StringIO) do
+          def tty? = true
+
+          def winsize = [0, 0]
+        end.new
+        [unsized, zero].each do |out|
+          now[0] = 0.0
+          described_class.new(io: out, total: 3, clock: -> { now.first }, interval: 0.005)
+                         .step("5a-5", "Asking the LLM for index ideas the mechanical search missed") { now[0] = 2.0 }
+
+          expect(out.string).to eq(
+            "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5)" \
+            "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (5a-5) 2s\e[K\n" \
+            "quaack: [1/3] Done in 2s (5a-5)\n"
+          )
+        end
+      end
+    end
+
+    it "never redraws a line once a note has ended it, however fast notes come" do
+      # A slow terminal, so the timer gets its chance in the middle of a note.
+      slow = Class.new(StringIO) do
+        def tty? = true
+
+        def print(*)
+          super.tap { sleep(0.001) }
+        end
+      end.new
+      # A clock a second later at every read, so every redraw is new.
+      ticks = [0.0]
+      p = described_class.new(io: slow, total: 3, clock: -> { ticks[0] += 1 }, interval: 0.0005)
+      p.step("6a", "Asking") do
+        50.times { |n| p.note("Note #{n}") }
+      end
+
+      expect(slow.string.scan("\rquaack").size).to be > 10
+      slow.string.split("\n").each do |line|
+        text = line[/\A[^\r]*/]
+        expect(line.scan(/\r([^\r]*?) \d+(?:m\d\ds)?s\e\[K/).flatten.uniq - [text]).to eq([])
+      end
+    end
   end
 
-  it "stops its timer thread when a step fails, too" do
-    before = Thread.list.size
-    expect { progress(interval: 0.01).step("x", "x") { raise "boom" } }.to raise_error("boom")
-    expect(Thread.list.size).to eq(before)
-  end
+  it "prints no clock and no still-working lines when its io isn't a terminal, and starts no thread" do
+    now = [0.0]
+    threads = []
+    p = described_class.new(io:, total: 3, clock: -> { now.first }, interval: 0.005)
+    p.step("6a", "Asking the LLM for rewrites of the query") do
+      p.note("Asking the LLM (6a)")
+      threads << Thread.list.size
+      now[0] = 70.0
+      sleep(0.05)
+    end
 
-  it "prints nothing still working for a step shorter than the interval" do
-    progress(interval: 30).step("x", "x") { nil }
-    expect(io.string).not_to include("Still working")
+    expect(threads).to eq([Thread.list.size])
+    expect(io.string).to eq("quaack: [1/3] Asking the LLM for rewrites of the query (6a)\n" \
+                            "quaack: [1/3] Asking the LLM (6a)\n" \
+                            "quaack: [1/3] Done in 1m10s (6a)\n")
   end
 
   describe "#within" do

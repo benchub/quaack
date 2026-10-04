@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "io/console"
+
 module Quaack
   module Driver
     # Progress lines for `quaack run`, on stderr. Lines carry only step
@@ -8,8 +10,7 @@ module Quaack
     #
     #   progress = Progress.new(io: $stderr, total: 18)
     #   progress.step("5a-5", "Asking the LLM for index ideas") { ... }
-    #   # quaack: [2/18] Asking the LLM for index ideas (5a-5)
-    #   # quaack: [2/18] Still working, 30s so far (5a-5)   every interval
+    #   # quaack: [2/18] Asking the LLM for index ideas (5a-5) 41s   on a terminal
     #   # quaack: [2/18] Done in 42s (5a-5)                 or "Failed after 42s"
     #   progress.step("5a-5", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
     #   # quaack: [2/18] Got 4 index ideas in 42s (5a-5)
@@ -23,13 +24,23 @@ module Quaack
     #
     # note prints a line under the current step, such as an LLM ask, and
     # within(prefix) gives the same interface for a step's sub-steps, as
-    # notes. clock answers seconds and interval is the heartbeat's period,
-    # so specs pass a fake clock and a short interval.
+    # notes.
+    #
+    # When io is a terminal, the latest line printed while a step runs,
+    # the step's own or a note, carries the step's time, counting up in
+    # place: it's redrawn with \r and cleared to the end of the line about
+    # once a second. A new line leaves the one before at its final
+    # reading. Anywhere else, such as a log file, nothing is redrawn, and
+    # only the closing line gives the time. The clock is only a duration.
+    #
+    # clock answers seconds and interval is the redraw's period, so specs
+    # pass a fake clock and a short interval.
     class Progress
       MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
-      def initialize(io:, total:, clock: MONOTONIC, interval: 30)
+      def initialize(io:, total:, clock: MONOTONIC, interval: 1)
         @io = io
+        @tty = io.respond_to?(:tty?) && io.tty?
         @total = total
         @clock = clock
         @interval = interval
@@ -42,13 +53,12 @@ module Quaack
       # unless nil, closes the step in place of Done.
       def step(name, description, summary: nil, &)
         @number += 1
-        say("#{description} (#{name})")
         start = @clock.call
-        result = heartbeat(name, start, &)
-        say("#{summary&.call(result) || "Done"} in #{since(start)} (#{name})")
+        result = clocked(start, "#{description} (#{name})", &)
+        close("#{summary&.call(result) || "Done"} in", start, name)
         result
       rescue StandardError, Interrupt
-        say("Failed after #{since(start)} (#{name})")
+        close("Failed after", start, name)
         raise
       end
 
@@ -72,26 +82,113 @@ module Quaack
         "#{secs}s"
       end
 
-      def since(start) = self.class.duration(@clock.call - start)
-
+      # On a terminal, a line printed while a step runs is left open, so
+      # the clock can be drawn after it. A new line ends it first.
       def say(text)
-        @lock.synchronize { @io.print("quaack: [#{@number}/#{@total}] #{text}\n") }
+        @lock.synchronize do
+          finish(@line && @start && (@clock.call - @start))
+          line = "quaack: [#{@number}/#{@total}] #{text}"
+          next @io.print("#{line}\n") unless @tty && @start
+
+          @line = line
+          text, @cut = fit("")
+          @io.print(text)
+        end
       end
 
-      # Runs the block while a thread prints a still-working line every
-      # interval. The thread is stopped and joined however the block ends.
-      def heartbeat(name, start)
-        stop = Queue.new
-        timer = Thread.new do
-          say("Still working, #{since(start)} so far (#{name})") while stop.pop(timeout: @interval).nil?
+      # Ends the step: the open line takes the step's time as its final
+      # reading, then the closing line gives it.
+      def close(words, start, name)
+        @lock.synchronize do
+          elapsed = @clock.call - start
+          finish(elapsed)
+          @io.print("quaack: [#{@number}/#{@total}] #{words} #{self.class.duration(elapsed)} (#{name})\n")
         end
+      end
+
+      # Prints line, the step's own, and runs the block as the step that
+      # started at start. On a terminal, a thread redraws the clock every
+      # interval; it's stopped and joined however the block ends, before
+      # the closing line prints.
+      def clocked(start, line)
+        @lock.synchronize { @start = start }
+        say(line)
+        return yield unless @tty
+
+        timer = redrawing(start, stop = Queue.new)
         yield
       ensure
         stop&.push(:stop)
         timer&.join
+        @lock.synchronize { @start = nil }
       end
 
-      private :since, :say, :heartbeat
+      def redrawing(start, stop)
+        Thread.new do
+          @lock.synchronize { draw(@clock.call - start) if @line } while stop.pop(timeout: @interval).nil?
+        end
+      end
+
+      # Ends the open line, if any, at its final reading: elapsed, or none.
+      # A line that was cut to fit, or won't fit now, is printed whole, from
+      # the start of its one row, so it wraps only once it's done. Callers
+      # hold the lock.
+      def finish(elapsed)
+        return unless @line
+
+        suffix = elapsed && elapsed >= 1 ? " #{self.class.duration(elapsed)}" : ""
+        if @cut || fit(suffix).last
+          @io.print("\r#{@line}#{suffix}\e[K")
+        elsif elapsed
+          draw(elapsed)
+        end
+        @io.print("\n")
+        @line = @shown = @cut = nil
+      end
+
+      # Redraws the open line with elapsed after it, once there's a whole
+      # second to show and only when the reading changes. Callers hold the
+      # lock.
+      def draw(elapsed)
+        reading = self.class.duration(elapsed)
+        return if elapsed < 1 || reading == @shown
+
+        text, @cut = fit(" #{reading}")
+        @io.print("\r#{text}\e[K")
+        @shown = reading
+      end
+
+      # The open line with suffix after it, as Fit cuts it for the terminal
+      # now; and whether it was cut.
+      def fit(suffix) = Fit.call(@line, suffix, columns)
+
+      # The terminal's width now, or nil when it can't say.
+      def columns
+        width = @io.winsize[1] if @io.respond_to?(:winsize)
+        width if width&.positive?
+      rescue SystemCallError
+        nil
+      end
+
+      private :say, :close, :clocked, :redrawing, :finish, :draw, :fit, :columns
+
+      # Cuts a line, with suffix after it, short of width so it never
+      # wraps, since \r goes back only to the start of a row. It answers the
+      # text and whether it was cut. The suffix is dropped only when even a
+      # bit of the line won't fit beside it. A nil width cuts nothing.
+      module Fit
+        module_function
+
+        def call(line, suffix, width)
+          text = "#{line}#{suffix}"
+          return [text, false] if width.nil? || text.size < width
+
+          room = width - 1 - suffix.size
+          return ["#{line[0, room - 1]}…#{suffix}", true] if room >= 2
+
+          ["#{line[0, [width - 2, 0].max]}…"[0, width - 1], true]
+        end
+      end
 
       # A step's sub-steps, printed as notes under it, each after prefix,
       # such as "Rewrite 1".
