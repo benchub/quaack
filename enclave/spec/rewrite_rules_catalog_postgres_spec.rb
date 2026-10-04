@@ -74,6 +74,25 @@ RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
     end
   end
 
+  it "names a type as the column's type is named, with its modifiers, or nil when it can't", :aggregate_failures do
+    {
+      "int4" => "integer",
+      "pg_catalog.int4" => "integer",
+      "numeric(5, 1)" => "numeric(5,1)",
+      "numeric" => "numeric",
+      "varchar(10)" => "character varying(10)",
+      "public.mood" => "mood",
+      "public.missing" => nil,
+      "int4 junk(" => nil,
+      "int4, 1" => nil,
+      "int4 FROM public.t" => nil,
+      "int4; SELECT 1" => nil
+    }.each do |type, name|
+      expect(conn.transaction { catalog.type_name(type) }).to eq(name), type
+    end
+    expect(catalog.column_info("public", "t", "name").type).to eq(catalog.type_name("varchar(10)"))
+  end
+
   it "says whether a query calls a volatile function, refusing what it can't check", :aggregate_failures do
     {
       "SELECT t.id FROM public.t WHERE t.id < random()" => true,
