@@ -738,13 +738,14 @@ Build every non-empty scenario from these pools:
 - Each table also gets one **near-miss row** per atom. A near-miss row fails only that one atom.
 - Each scenario either creates or withholds join partners.
 - Every row satisfies every `VALID` constraint.
+- An atom no stored value can satisfy, such as `r.id IS NULL` on a `NOT NULL` key that an outer join reads, doesn't constrain the rows, so the groups the outer join leaves unmatched still get built.
 
 The scenarios are:
 
 - **S0:** All tables empty.
 - **S1:** Hit and near-miss rows only, FK-consistent, with no `NULL`s.
 - **S2:** `NULL`s in every nullable join key and every nullable predicate column.
-- **S3:** Duplicates on join keys that have no unique constraint, so joins fan out.
+- **S3:** Duplicates on join keys that have no unique constraint, so joins fan out. A duplicate takes its own value for a key its table holds unique, so a parent gets two children that a self-referencing foreign key tells apart. S3 also holds, for each foreign key to another table that shares no column with another of the table's foreign keys, a row whose foreign key points at the hit's parent rather than its own group's.
 - **S4:** Orphan rows on each side of every join that has no FK.
 - **S5:** Type boundary values substituted into the hit rows.
 - **S6:** One group with one row, one group with many rows, and one empty group.

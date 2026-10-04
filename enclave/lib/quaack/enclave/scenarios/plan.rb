@@ -15,7 +15,7 @@ module Quaack
         def scenarios
           hit = group(fresh_key)
           s1 = [hit] + near_misses
-          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + copies(hit) + crosses(hit),
+          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit),
             s4: s1 + orphans, s5: s1 + boundaries, s6: [hit] + many + [empty] }
         end
 
@@ -26,6 +26,8 @@ module Quaack
         def nulls = group(fresh_key, mode: :nulls)
 
         def empty = group(fresh_key, @topology.roots)
+
+        def fan_outs(hit) = copies(hit) + crosses(hit)
 
         def copies(hit) = order.map { |t| group(hit.key, [t], copy: 1) }
 
