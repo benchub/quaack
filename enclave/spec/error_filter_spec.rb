@@ -344,7 +344,8 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
 
       it "sends no tables for any other rule" do
-        expect(cycle_line(cycle, rule: "complex_check")).to eq(line(step: "counterexample-round", rule: "complex_check"))
+        expect(cycle_line(cycle, rule: "complex_check"))
+          .to eq(line(step: "counterexample-round", rule: "complex_check"))
       end
 
       sneaky = Class.new(Array) { def to_json(*) = ERROR_SENTINEL.to_json }

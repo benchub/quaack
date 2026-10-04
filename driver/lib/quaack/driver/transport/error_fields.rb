@@ -29,6 +29,11 @@ module Quaack
         COLUMN_KEYS = %w[table column type].freeze
         IDENTIFIER = /\A[a-z_][a-z0-9_$]{0,62}\z/
         TYPE = /\A[a-z_][a-z0-9_ $.,()\[\]]{0,127}\z/
+        # An fk_cycle refusal's tables (DESIGN.md, step 9), as the enclave's
+        # ErrorFilter shapes them: 3 to 64 plain schema.name Strings, the
+        # last the first again.
+        CYCLE_RULE = "fk_cycle"
+        CYCLE_SIZES = (3..64)
 
         module_function
 
@@ -37,11 +42,23 @@ module Quaack
           rule = shaped(error["rule"], RULE) || "unexpected_output"
           { rule:, step: shaped(error["step"], STEP), sqlstate: shaped(error["sqlstate"], SQLSTATE),
             reason: reason(rule, error["reason"]), function: shaped(error["function"], FUNCTION),
-            column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
-            clients: (clients(error["clients"]) if rule == CLIENTS_RULE) }
+            **named(rule, error) }
+        end
+
+        # The fields only one rule's error line has.
+        def named(rule, error)
+          { column: (column(error["column"]) if COLUMN_RULES.include?(rule)),
+            clients: (clients(error["clients"]) if rule == CLIENTS_RULE),
+            cycle: (cycle(error["cycle"]) if rule == CYCLE_RULE) }
         end
 
         def reason(rule, reason) = (reason if REASON_RULES.include?(rule) && REASONS.include?(reason))
+
+        def cycle(cycle)
+          return unless cycle.instance_of?(Array) && CYCLE_SIZES.cover?(cycle.size) && cycle.first == cycle.last
+
+          cycle if cycle.all? { shaped(it, FUNCTION) }
+        end
 
         def column(column)
           return unless column.instance_of?(Hash) && column.keys == COLUMN_KEYS

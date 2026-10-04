@@ -7,10 +7,11 @@ module Quaack
     # the driver asked for, the step, rule, and SQLSTATE from the enclave's
     # error line (each checked for shape, and nil if it's missing or not
     # shaped), a volatile_function refusal's function, a step 9 refusal's
-    # column (its table, name, and type), and a run_server_other_clients
-    # failure's clients (each pid and start time), likewise checked, and how
-    # the process ended. It never carries the process's
-    # output, and it's raised with no cause.
+    # column (its table, name, and type), an fk_cycle refusal's cycle (its
+    # tables, in the order their foreign keys point), and a
+    # run_server_other_clients failure's clients (each pid and start time),
+    # likewise checked, and how the process ended. It never carries the
+    # process's output, and it's raised with no cause.
     #
     # rule is the error line's rule, or one of the driver's own:
     #
@@ -34,16 +35,16 @@ module Quaack
       attr_reader :subcommand, :rule, :exit_status, :signal
 
       # The error line's fields beyond its rule.
-      LINE_FIELDS = %i[step sqlstate reason function column clients].freeze
+      LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, exit_status: nil, signal: nil)
+                     clients: nil, cycle: nil, exit_status: nil, signal: nil)
         @subcommand = subcommand
         @rule = rule
-        @line = { step:, sqlstate:, reason:, function:, column:, clients: }.freeze
+        @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle: }.freeze
         @exit_status = exit_status
         @signal = signal
         super(describe)
@@ -61,10 +62,11 @@ module Quaack
       # The rule, and for query_unparsable a fixed note naming pg_query's
       # grammar, which is older than production's Postgres. The enclave's
       # error line holds only the rule, so the driver adds the note. A step
-      # 9 refusal that names its column gets the table, column, and type.
+      # 9 refusal that names its column gets the table, column, and type,
+      # and an fk_cycle refusal that names its tables gets them.
       def rule_with_note
         return "#{rule}: #{reason_message(reason)}" if %w[query_unreadable plan_unreadable].include?(rule) && reason
-        return "#{rule}: #{described_column}" if column
+        return "#{rule}: #{named_schema}" if named_schema
 
         return rule unless rule == "query_unparsable"
 
@@ -77,21 +79,31 @@ module Quaack
       private
 
       def describe
-        details = (line_details + ending_details).compact
+        details = (line_details + named_details + ending_details).compact
         "quaacks #{subcommand} failed: #{rule}#{" (#{details.join(", ")})" unless details.empty?}"
       end
 
       # What the error line said beyond its rule.
       def line_details
         [("step #{step}" if step), ("SQLSTATE #{sqlstate}" if sqlstate),
-         ("reason #{reason_message(reason)}" if reason),
-         ("function #{function}" if function), ("column #{described_column}" if column),
-         ("clients #{described_clients}" if clients)]
+         ("reason #{reason_message(reason)}" if reason), ("function #{function}" if function)]
+      end
+
+      # The schema and clients the error line named.
+      def named_details
+        [("column #{described_column}" if column), ("clients #{described_clients}" if clients),
+         ("cycle #{described_cycle}" if cycle)]
       end
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
+      # The column or cycle a step 9 refusal named, or nil.
+      def named_schema = (described_column if column) || (described_cycle if cycle)
+
       def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"
+
+      # An fk_cycle's tables, in the order their foreign keys point.
+      def described_cycle = cycle.join(" -> ")
 
       def described_clients = clients.map { "pid #{it["pid"]} started #{it["backend_start"]}" }.join(", ")
 

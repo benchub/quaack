@@ -789,6 +789,43 @@ RSpec.describe Quaack::Driver::Transport do
       expect(error.column).to be_nil
     end
 
+    it "shows the tables of an fk_cycle refusal, in the order their foreign keys point" do
+      cycle = %w[public.accounts billing.courses public.accounts]
+      line = { type: "error", step: "counterexample-round", rule: "fk_cycle", cycle: }
+      error = refusal(JSON.generate(line))
+
+      expect(error.cycle).to eq(cycle)
+      expect(error.rule_with_note).to eq("fk_cycle: public.accounts -> billing.courses -> public.accounts")
+      expect(error.message).to eq("quaacks probe failed: fk_cycle (step counterexample-round, " \
+                                  "cycle public.accounts -> billing.courses -> public.accounts, exit 0)")
+    end
+
+    [
+      ["a sentinel table", %w[public.a SENTINEL public.a]],
+      ["a sentinel after a table", ["public.a SENTINEL", "public.b", "public.a SENTINEL"]],
+      ["an end that isn't its start", %w[public.a public.b SENTINEL.c]],
+      ["no second table", %w[public.a public.a]],
+      ["more than 64 tables", [*Array.new(64) { "public.t#{it}" }, "public.t0"]],
+      ["a table that isn't a String", [1, "public.b", 1]],
+      ["a String", "SENTINEL"]
+    ].each do |label, cycle|
+      it "drops a cycle with #{label}" do
+        error = refusal(%({"type":"error","rule":"fk_cycle","cycle":#{JSON.generate(cycle)}}))
+
+        expect(error.cycle).to be_nil
+        expect(error.rule_with_note).to eq("fk_cycle")
+        expect(error.message).to eq("quaacks probe failed: fk_cycle (exit 0)")
+        expect(error.full_message(highlight: false)).not_to include("SENTINEL")
+      end
+    end
+
+    it "drops a cycle on any rule but fk_cycle" do
+      error = refusal(%({"type":"error","rule":"complex_check","cycle":["public.a","public.b","public.a"]}))
+
+      expect(error.cycle).to be_nil
+      expect(error.message).to eq("quaacks probe failed: complex_check (exit 0)")
+    end
+
     it "shows the pids and start times of the other clients a run_server_other_clients failure names" do
       clients = %([{"pid":1234,"backend_start":"2026-09-29T16:01:02Z"},) +
                 %({"pid":5678,"backend_start":"2026-09-29T17:00:00Z"}])
