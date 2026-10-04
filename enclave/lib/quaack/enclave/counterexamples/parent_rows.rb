@@ -14,8 +14,9 @@ module Quaack
       # that's NULL or DEFAULT, or a column the insert leaves out, needs no
       # parent. A parent row takes the referenced values, and the step 9
       # rules for everything else: a DEFAULT, a distinct value for a unique
-      # column, NULL for a nullable foreign key, a new parent row for a NOT
-      # NULL one, and a type-typical or CHECK-satisfying value otherwise.
+      # column, NULL for a nullable foreign key, its own key for a NOT NULL
+      # one to its own table, a new parent row for another NOT NULL one,
+      # and a type-typical or CHECK-satisfying value otherwise.
       class ParentRows
         # Distinct values start here, clear of the small numbers the LLM
         # tends to use for keys.
@@ -86,17 +87,28 @@ module Quaack
         # Values for the row's foreign keys that fixed doesn't set.
         def foreign_keys(table, fixed)
           @schema.constraints(table).foreign_keys.each_with_object({}) do |fk, pairs|
-            next if fk.columns.any? { |c| fixed.key?(c) } || fk.parent == table
+            next if fk.columns.any? { |c| fixed.key?(c) }
 
-            pairs.merge!(fk.columns.zip(foreign_key(table, fk)).to_h)
+            pairs.merge!(fk.columns.zip(foreign_key(table, fk, fixed)).to_h)
           end
         end
 
-        # NULLs when a column is nullable, or else a new parent row's key.
-        def foreign_key(table, foreign)
+        # NULLs when a column is nullable, the row's own key for a NOT NULL
+        # foreign key to its own table, or else a new parent row's key.
+        def foreign_key(table, foreign, fixed)
           return foreign.columns.map { nil } if foreign.columns.any? { |c| @schema.column(table, c).nullable }
 
+          own = own_key(table, foreign, fixed)
+          return own if own
+
           parent_key(foreign).tap { need(foreign.parent, foreign.parent_columns.zip(it).to_h) }
+        end
+
+        # The row's own values of the columns a foreign key to its own table
+        # references, when the row sets them all.
+        def own_key(table, foreign, fixed)
+          own = fixed.values_at(*foreign.parent_columns)
+          own if foreign.parent == table && own.none?(&:nil?)
         end
 
         # A new parent row's key, a distinct value in each column.

@@ -73,6 +73,22 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       .to eq([["{}", "2"]])
   end
 
+  def customer_of_order(prepared)
+    load(prepared, "SELECT c.id, c.root_customer_id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id")
+  end
+
+  it "leaves a parent's nullable self-referencing foreign key NULL" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_customer_id integer REFERENCES fx.customers")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(customer_of_order(prepared)).to eq([["7", nil]])
+  end
+
+  it "points a parent's NOT NULL self-referencing foreign key at the parent itself" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_customer_id integer NOT NULL REFERENCES fx.customers")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(customer_of_order(prepared)).to eq([%w[7 7]])
+  end
+
   it "refuses a parent whose unique column step 9 can't fill, naming the parent's table, column, and type" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn NOT NULL UNIQUE")
     expect { prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $1)") }
