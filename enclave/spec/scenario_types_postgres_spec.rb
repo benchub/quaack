@@ -361,6 +361,27 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(values(s3, "users", "kind")).to all(eq("1"))
     end
 
+    it "varies one column of an expression unique index's keys, not every column it reads" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, kind integer NOT NULL CHECK (kind IN (1, 2)),
+          name text NOT NULL, flag boolean NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (kind, lower(name)) WHERE flag;
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "name").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "kind")).to all(eq("1"))
+      expect(values(s3, "users", "flag")).to all(eq("f"))
+    end
+
+    it "varies an expression unique index's bare key column over one inside an expression" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, created_at timestamp NOT NULL, login text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (date_trunc('month', created_at), login);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
+    end
+
     it "varies a column the query's predicate doesn't constrain" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.users (id bigint PRIMARY KEY, root_account_ids bigint[] NOT NULL, login text NOT NULL);

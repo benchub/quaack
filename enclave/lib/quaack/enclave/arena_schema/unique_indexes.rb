@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "pg_query"
 
 module Quaack
   module Enclave
@@ -44,7 +45,35 @@ module Quaack
 
         def expression(row)
           _, _, nnd, keys, reads, = row
-          ExpressionUnique.new(columns: JSON.parse(reads), keys: JSON.parse(keys), nulls_not_distinct: nnd == "t")
+          keys = JSON.parse(keys)
+          columns = JSON.parse(reads)
+          ExpressionUnique.new(columns:, keys:, nulls_not_distinct: nnd == "t",
+                               key_columns: key_columns(keys) || columns)
+        end
+
+        # The columns the keys read, those that are a key on their own
+        # first, then the rest, in key order.
+        def key_columns(keys)
+          bare, inner = keys.map { target(it) }.partition { it.res_target.val.column_ref }
+          (bare + inner).flat_map { column_refs(it) }.uniq
+        rescue PgQuery::ParseError
+          nil
+        end
+
+        def target(key) = PgQuery.parse("SELECT #{key}").tree.stmts[0].stmt.select_stmt.target_list[0]
+
+        def column_refs(node, found = [])
+          found << node.fields.last.string.sval if node.is_a?(PgQuery::ColumnRef) && node.fields.last&.string
+          children(node).each { column_refs(it, found) }
+          found
+        end
+
+        def children(node)
+          case node
+          when Google::Protobuf::RepeatedField then node.to_a
+          when Google::Protobuf::MessageExts then node.class.descriptor.map { |field| field.get(node) }
+          else []
+          end
         end
       end
     end
