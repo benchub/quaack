@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's key_in_self_join, on a real server: what it writes, that
+# DESIGN.md's rewrite-rules' key_in_self_join, on a real server: what it writes, that
 # its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves the
 # key unique and not null and the shape is one it can relocate.

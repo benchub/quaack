@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/literals"
 require "quaack/enclave/rewrite_rules/union_outer_filter_removal"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's union_outer_filter_removal, on a real server: a top-level
+# DESIGN.md's rewrite-rules' union_outer_filter_removal, on a real server: a top-level
 # WHERE conjunct on a UNION subquery's columns goes when every arm's WHERE
 # already applies it to the column the arm outputs there, and every rewrite
 # returns the original's rows.

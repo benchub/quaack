@@ -6,7 +6,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's not_in_to_not_exists, on a real server: what it writes,
+# DESIGN.md's rewrite-rules' not_in_to_not_exists, on a real server: what it writes,
 # that its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves both
 # columns not null and the shape is one where nothing else can go wrong.

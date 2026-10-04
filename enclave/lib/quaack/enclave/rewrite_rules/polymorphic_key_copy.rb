@@ -8,7 +8,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md's rewrite-rules's polymorphic_key_copy, a heuristic rule checked
+      # DESIGN.md's rewrite-rules' polymorphic_key_copy, a heuristic rule checked
       # against the data. Where a SELECT joins child.<x> = parent.id and
       # filters parent.<p>_type = $m and parent.<p>_id = $n, Rails's
       # polymorphic convention, and the child has its own column for that

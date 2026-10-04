@@ -26,7 +26,7 @@ module Quaack
     #   precision. 'now' as a time or timetz reads the clock too; the other
     #   words aren't valid times.
     # - A comparison with a column (col = $n, col < $n, BETWEEN, IN, as
-    #   literals's feeds find them) whose type, from statistics's clock_columns, is date,
+    #   literals' feeds find them) whose type, from statistics' clock_columns, is date,
     #   timestamp, or timestamptz. A placeholder redact shares isn't one.
     #
     # The replacement is the word's value from the anchor, cast to the
@@ -56,7 +56,7 @@ module Quaack
       # The clock words by placeholder number, and each one's implicit
       # type, from a column it's compared with, where it has one.
       #
-      # The block takes the column names by TableName, and returns literals's
+      # The block takes the column names by TableName, and returns literals'
       # feeds for the query (LiteralSet.feeds). It runs only when there are
       # words and statistics.
       def find(placeholder_map, statistics, &)

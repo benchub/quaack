@@ -3,7 +3,7 @@
 require "pg_query"
 require "quaack/enclave/rewrite_rules"
 
-# DESIGN.md's rewrite-rules's generator: it holds a list of rules and chains them, and
+# DESIGN.md's rewrite-rules' generator: it holds a list of rules and chains them, and
 # knows nothing about any one rule. These rules are fakes, given through the
 # generator's own list interface.
 RSpec.describe Quaack::Enclave::RewriteRules do

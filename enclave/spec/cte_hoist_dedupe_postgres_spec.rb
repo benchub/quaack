@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/cte_hoist_dedupe"
 require "quaack/enclave/rewrite_rules/literals"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's cte_hoist_dedupe, on a real server: CTEs whose bodies match,
+# DESIGN.md's rewrite-rules' cte_hoist_dedupe, on a real server: CTEs whose bodies match,
 # at any depth, become one CTE in the top-level WITH that every reference
 # reads, and every rewrite returns the original's rows.
 RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do

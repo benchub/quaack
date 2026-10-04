@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/literals"
 require "quaack/enclave/rewrite_rules/transitive_predicate_copy"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's transitive_predicate_copy, on a real server: a filter on
+# DESIGN.md's rewrite-rules' transitive_predicate_copy, on a real server: a filter on
 # one side of a column equality is copied to the other side, in the same
 # place, reusing its placeholders, and every rewrite returns the original's
 # rows.

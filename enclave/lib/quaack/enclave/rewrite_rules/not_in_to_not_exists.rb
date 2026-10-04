@@ -7,7 +7,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md's rewrite-rules's not_in_to_not_exists. An ORM that excludes the rows a
+      # DESIGN.md's rewrite-rules' not_in_to_not_exists. An ORM that excludes the rows a
       # subquery gives writes
       #
       #   SELECT ... FROM t WHERE t.x NOT IN (SELECT s.y FROM s WHERE s.z = $1)

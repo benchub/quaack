@@ -9,7 +9,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md's rewrite-rules's transitive_predicate_copy. Postgres carries a
+      # DESIGN.md's rewrite-rules' transitive_predicate_copy. Postgres carries a
       # constant equality across an equi-join, but not an IN list, a range,
       # or BETWEEN. So for each equality a.x = b.y in a top-level AND of a
       # WHERE or an inner join's ON, this copies such a filter on a.x to

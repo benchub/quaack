@@ -15,7 +15,7 @@ module Quaack
     #     "references_column" => "id", "type_column" => "context_type", "type_value" => "Course",
     #     "id_column" => "context_id" }
     #
-    # denormalized_equal is rewrite-rules's polymorphic_key_copy's: every table row
+    # denormalized_equal is rewrite-rules' polymorphic_key_copy's: every table row
     # joined to a references_table row on join_column = references_column,
     # where that row's type_column is type_value, has column equal to its
     # id_column. Only the data can say so, so assumption-check checks it there.

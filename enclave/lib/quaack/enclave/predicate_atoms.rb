@@ -55,7 +55,7 @@ module Quaack
     #   any operator SupportedSql allows for one, as one atom. <> is
     #   negated. Its column side is the row whose elements hold columns,
     #   and bare is true when each element is just a column. Nothing picks
-    #   values for it, so the value pools and literals's literal feeds skip it.
+    #   values for it, so the value pools and literals' literal feeds skip it.
     # - :other: the rest, such as a boolean column, a function call,
     #   EXISTS, x IN (SELECT ...), IS TRUE, other operators, or two
     #   columns of one relation.

@@ -35,14 +35,14 @@ module Quaack
       #
       # It writes one entry, index_search_<search>, only when all of that
       # succeeds:
-      #   "dedupe"   => the Dedupe, as IndexStore saves it, so llm-index-ideas's
+      #   "dedupe"   => the Dedupe, as IndexStore saves it, so llm-index-ideas'
       #                 index-test can go on with the same search
       #   "baseline" => { set name => a plan, as below, with no hypothetical
       #                 index }
       #   "results"  => one per tested candidate, in test order (the
       #                 Dedupe's proposals): { "candidate" (as IndexStore
       #                 saves it, sources merged), "partial_constant_only"
-      #                 (DESIGN.md's llm-index-ideas's tag: true for a partial index, which
+      #                 (DESIGN.md's llm-index-ideas' tag: true for a partial index, which
       #                 works only when the predicate's literal is a constant
       #                 in the application's SQL), "size", "refusal" (nil or
       #                 { "rule", "sqlstate" }), "plans" => { set name =>

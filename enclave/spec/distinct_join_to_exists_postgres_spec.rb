@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's distinct_join_to_exists, on a real server: what it writes,
+# DESIGN.md's rewrite-rules' distinct_join_to_exists, on a real server: what it writes,
 # that its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves a
 # selected column of the kept table unique and not null and the shape is one

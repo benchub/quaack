@@ -44,7 +44,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   Outcome = Data.define(:variant, :error, :report, :html, :entries, :log, :drift, :wrong, :rewrites_text, :store_left,
                         :teardown)
 
-  # A query DESIGN.md's rewrite-rules's key_in_self_join rule fires on (task 20261001-23):
+  # A query DESIGN.md's rewrite-rules' key_in_self_join rule fires on (task 20261001-23):
   # orders whose id is in a UNION ALL of two subqueries that each read orders
   # again by its primary key. The rule drops both subqueries and joins their
   # conditions with OR. The subquery has two arms on purpose: Postgres 18's

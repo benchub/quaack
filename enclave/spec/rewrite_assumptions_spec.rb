@@ -2,7 +2,7 @@
 
 require "quaack/enclave/rewrite_assumptions"
 
-# DESIGN.md's assumption-check's vocabulary: denormalized_equal, the kind rewrite-rules's
+# DESIGN.md's assumption-check's vocabulary: denormalized_equal, the kind rewrite-rules'
 # polymorphic_key_copy states, with every field present and nothing extra.
 RSpec.describe Quaack::Enclave::RewriteAssumptions do
   let(:denormalized) do

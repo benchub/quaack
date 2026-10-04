@@ -97,7 +97,7 @@ module Quaack
         end
 
         # For RuleBugs only, as it was before RewriteFate (20261002-5 covers
-        # RuleBugs' own logic): rewrite-test's or counterexamples's disproof of a rewrite.
+        # RuleBugs' own logic): rewrite-test's or counterexamples' disproof of a rewrite.
         # A rewrite rewrite-test refused to test (20261003-18) wasn't disproved.
         def disproved(store, search)
           number = search.delete_prefix("rewrite_")

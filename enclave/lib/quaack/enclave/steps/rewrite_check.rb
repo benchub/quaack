@@ -21,8 +21,8 @@ module Quaack
       # and false by default: each rewrite's SQL with the original's $n
       # placeholders, its transformation as a String, and its assumptions as
       # an Array (see RewriteAssumptions). Any other shape is refused with
-      # rewrite_check_bad_rewrites. For llm-rewrites's rewrites, only the first MAX
-      # are checked; the rest are rejected as too_many. operator-rewrites's operator
+      # rewrite_check_bad_rewrites. For llm-rewrites' rewrites, only the first MAX
+      # are checked; the rest are rejected as too_many. operator-rewrites' operator
       # rewrites come with "inferred": true: their transformation and
       # assumptions were inferred by the LLM, so they have no cap, and an
       # unmet assumption only adds a warning (DESIGN.md's operator-rewrites).
@@ -38,7 +38,7 @@ module Quaack
       #                    qualified, deparsed, with $n placeholders
       #   "transformation" the stated (or inferred) transformation, a String
       #   "assumptions"    the stated (or inferred) assumptions, as given
-      #   "inferred"       false for llm-rewrites's rewrites, true for operator-rewrites's
+      #   "inferred"       false for llm-rewrites' rewrites, true for operator-rewrites'
       #   "warnings"       [{ "assumption", "kind" }], one per unmet inferred
       #                    assumption (operator-rewrites): its 1-based position in
       #                    "assumptions" and its kind; always [] for llm-rewrites
@@ -59,9 +59,9 @@ module Quaack
       #
       # Each call adds its counts to the plan-pruning burndown (StructuralDiscard.
       # stage_record, search rewrites), with the inbound check's rejections
-      # as inbound_check. A call with llm-rewrites's rewrites (not inferred) also writes
+      # as inbound_check. A call with llm-rewrites' rewrites (not inferred) also writes
       # the rewrites_generated marker, so a resumed run skips llm-rewrites. A call
-      # with operator-rewrites's (inferred) writes operator_rewrites_checked instead.
+      # with operator-rewrites' (inferred) writes operator_rewrites_checked instead.
       #
       # It sends one rewrite_outcome per rewrite: index, outcome (accepted
       # or rejected), rule, rewrite (the entry name, or nil), and warnings.

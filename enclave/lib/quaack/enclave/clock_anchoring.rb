@@ -45,7 +45,7 @@ module Quaack
     #
     # Clock-reading literals ('now', 'today', 'yesterday', 'tomorrow') are
     # anchored too, when placeholder_map, redact's map, holds them and they're
-    # read as a date or timestamp; statistics, statistics's entry, gives the column
+    # read as a date or timestamp; statistics, statistics' entry, gives the column
     # types for that. See ClockLiterals. Their replacements record the
     # placeholder, as $1 or $1::date, so they're shape as well.
     #

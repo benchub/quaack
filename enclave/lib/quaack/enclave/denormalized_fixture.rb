@@ -6,7 +6,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # rewrite-test and counterexamples's fixtures for a rewrite from a rewrite-rules rule that rests on a
+    # rewrite-test and counterexamples' fixtures for a rewrite from a rewrite-rules rule that rests on a
     # denormalized_equal assumption, which assumption-check checked against the data
     # (DESIGN.md's rewrite-rules, rewrite-test, llm-counterexamples). Such a rewrite is only right on data that
     # keeps the copy, so the arena makes its fixtures keep it too:

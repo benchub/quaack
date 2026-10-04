@@ -10,7 +10,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md's rewrite-rules's cte_hoist_dedupe. Postgres runs each CTE on its own,
+      # DESIGN.md's rewrite-rules' cte_hoist_dedupe. Postgres runs each CTE on its own,
       # so the same CTE written in every arm of a UNION, and again in the
       # outer WHERE, runs once per copy:
       #

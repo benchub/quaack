@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules/catalog"
 require "quaack/enclave/rewrite_rules/or_to_union"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's or_to_union, on a real server: what it writes, that its
+# DESIGN.md's rewrite-rules' or_to_union, on a real server: what it writes, that its
 # output returns the rows its input does (as a multiset, and in order when
 # the query is ordered) on data that would show a wrong transformation, and
 # that it only fires when the catalog proves a key of every FROM table and

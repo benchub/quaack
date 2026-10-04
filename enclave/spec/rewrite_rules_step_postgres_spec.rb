@@ -150,7 +150,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
     end
 
-    it "still stores llm-rewrites's copy of a rule's rewrite as a rewrite of its own" do
+    it "still stores llm-rewrites' copy of a rule's rewrite as a rewrite of its own" do
       prepare
       rewrite_rules
       llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
@@ -160,7 +160,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(stored.read("rewrite_2")).to include("sql" => rewritten, "source" => "llm")
     end
 
-    it "still stores a rule's rewrite when only llm-rewrites's copy of it is stored" do
+    it "still stores a rule's rewrite when only llm-rewrites' copy of it is stored" do
       prepare
       llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
       quaacks.run("rewrite-check", "--run", store.run_id, stdin: JSON.generate(llm), env: libpq_env)
@@ -283,7 +283,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     end
   end
 
-  it "numbers llm-rewrites's rewrites after the rules', and says which source each came from" do
+  it "numbers llm-rewrites' rewrites after the rules', and says which source each came from" do
     prepare
     rewrite_rules
     llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }

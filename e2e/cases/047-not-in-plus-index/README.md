@@ -18,7 +18,7 @@ Gold APAC customers who never ordered, as in case 034.
 
 ## Notes.
 
-As in case 034, literals's top-MCV set (`tier = 'standard'`) would make the original run for many minutes, so it's left out.
+As in case 034, literals' top-MCV set (`tier = 'standard'`) would make the original run for many minutes, so it's left out.
 
 ## Proof.
 

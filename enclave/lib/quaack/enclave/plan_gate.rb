@@ -38,7 +38,7 @@ module Quaack
     # - plan_gate_mismatch_likely_stale_statistics: the plans differ. The
     #   rule names the likely cause, since only the rule leaves the
     #   enclave: the racetrack's statistics don't match production's, as
-    #   when the backup is older than statistics's statistics.
+    #   when the backup is older than statistics' statistics.
     #
     # Trust boundary: both plans hold real literals and stay here. An
     # Error's message is fixed text, its rule and an explanation, and it

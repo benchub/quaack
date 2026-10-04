@@ -11,7 +11,7 @@ require_relative "table_name"
 module Quaack
   module Enclave
     # DESIGN.md's literals: the slow, worst-case, and typical literal sets, from redact's
-    # placeholder map and statistics's statistics, kept in the governed store.
+    # placeholder map and statistics' statistics, kept in the governed store.
     #
     #   result = LiteralSet.run(store:, sql: redacted.query.sql)
     #   result.sets["worst_case"]   # => {"$1" => {"value" => "7", "type" => "integer"}, ...}
@@ -22,7 +22,7 @@ module Quaack
     # sql is the redacted query's SQL (Redaction::Redacted#query.sql),
     # passed in because redact doesn't store it. It must bind against the
     # stored placeholder map (see Redaction.binding), or Redaction::Error is
-    # raised. The statistics come from statistics's stored entry.
+    # raised. The statistics come from statistics' stored entry.
     #
     # Each set is a placeholder map, keyed by redact's numbers, in the form
     # Redaction.binding takes, so any set binds the way the slow one does.
@@ -138,7 +138,7 @@ module Quaack
         raise Error, "bad_literal_sets", cause: nil
       end
 
-      # statistics's stored tables, keyed by TableName.
+      # statistics' stored tables, keyed by TableName.
       class Tables
         def initialize(data)
           tables = data["tables"] if data.is_a?(Hash)

@@ -105,10 +105,10 @@ module Quaack
       #    no payload, and the enclave stores its survivors as rewrite_<n>.
       #    llm-rewrites: RewriteGeneration on rewrite-payload, unless the store says
       #    it ran (rewrites_generated). Its rewrite-check stores the
-      #    survivors after rewrite-rules's.
+      #    survivors after rewrite-rules'.
       #    operator-rewrites: OperatorCandidates on the same payload, for the operator's
       #    rewrites, unless there are none or the store says it ran
-      #    (operator_rewrites_checked). Its survivors are stored after llm-rewrites's.
+      #    (operator_rewrites_checked). Its survivors are stored after llm-rewrites'.
       #    If any of the three ran, status is asked again for them. The
       #    payload is fetched only if llm-rewrites or operator-rewrites has to run.
       # 2. plan-pruning, for each stored rewrite_<n> in order: index-search,

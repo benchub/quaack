@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/literals"
 require "quaack/enclave/rewrite_rules/polymorphic_key_copy"
 require_relative "support/production_server"
 
-# DESIGN.md's rewrite-rules's polymorphic_key_copy, on a real server, in Canvas's shape:
+# DESIGN.md's rewrite-rules' polymorphic_key_copy, on a real server, in Canvas's shape:
 # a submission joins its assignment, whose context is a Rails polymorphic
 # pair, and the submission keeps its own copy of the course id. The rule
 # adds that copy's filter, reusing the id's placeholder, and states the

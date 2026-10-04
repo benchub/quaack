@@ -9,7 +9,7 @@ require_relative "or_to_union/union"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md's rewrite-rules's or_to_union. The planner can't use an index for
+      # DESIGN.md's rewrite-rules' or_to_union. The planner can't use an index for
       # either arm of an OR whose arms are about different tables, or are
       # subqueries:
       #

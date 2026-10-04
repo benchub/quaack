@@ -29,9 +29,9 @@ The steps:
 - `llm-index-ideas`: index candidates (GeneratorThree). `llm-index-ideas-2` is the follow-up ask for replacements after a candidate was dropped.
 - `llm-index-refine`: the index refinement round (RefinementRound).
 - `llm-rewrites`: query rewrites (RewriteGeneration).
-- `step7`: inferring what the operator's own rewrites assume (OperatorCandidates).
+- `operator-rewrites`: inferring what the operator's own rewrites assume (OperatorCandidates).
 - `llm-counterexamples`: counterexample inserts (Counterexamples), up to three rounds per surviving rewrite, numbered on across rewrites (`llm-counterexamples-4` is the second rewrite's first round). Each rewrite keeps its block of three numbers even if an earlier one is disproved before its third round, so the pipeline replay finds each reply by rewrite and round.
-- `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`: rewrite-index-ideas's index asks for each rewrite that survived rewrite-test and counterexamples, the same prompts as llm-index-ideas and llm-index-refine but for the rewrite. They're numbered on across rewrites too, so with two survivors, `rewrite-llm-index-ideas-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
+- `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`: rewrite-index-ideas' index asks for each rewrite that survived rewrite-test and counterexamples, the same prompts as llm-index-ideas and llm-index-refine but for the rewrite. They're numbered on across rewrites too, so with two survivors, `rewrite-llm-index-ideas-1` and `-2` are the first rewrite's and `-3` and `-4` the second's.
 
 ## How to fill it
 
@@ -60,7 +60,7 @@ Every step asks for one JSON object and nothing else. The driver reads it with t
   - `{"kind": "unique", "table": "public.t", "columns": ["c", ...]}`
   - `{"kind": "foreign_key", "table": "public.t", "columns": [...], "references_table": "public.p", "references_columns": [...]}`
   - `{"kind": "check", "table": "public.t", "expression": "..."}`
-- `step7`: `{"rewrites": [{"transformation": "...", "assumptions": [...]}]}`, one entry per operator rewrite, in order, with the same assumption kinds (`OperatorCandidates::SCHEMA`).
+- `operator-rewrites`: `{"rewrites": [{"transformation": "...", "assumptions": [...]}]}`, one entry per operator rewrite, in order, with the same assumption kinds (`OperatorCandidates::SCHEMA`).
 - `llm-counterexamples`: `{"inserts": ["INSERT INTO public.t (cols) VALUES (...)", ...]}` (`Counterexamples::SCHEMA`).
 
 Every prompt's system section ends with "Reply with only the JSON object, with no code fences, commentary, or trailing text." (`LLM::Client::JSON_ONLY`, added to every ask with a schema). The real driver also asks the API for structured output with that schema, so the API holds the model to it. A pasted chat doesn't, so a reply may still wrap the JSON in a code fence or add prose. Save it anyway, as it is. The driver's client reads the JSON object out of such a reply: if the whole reply isn't JSON, it takes the longest span from the first `{` to a `}` that parses.
