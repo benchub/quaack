@@ -80,4 +80,44 @@ RSpec.describe Quaack::Enclave::StepNine do
     sql = "SELECT t.id FROM fx.tasks t JOIN fx.projects p ON p.tenant_id = t.tenant_id AND p.id = t.project_id"
     expect(verdicts(sql, sql)).to eq([[true, nil]])
   end
+
+  # tasks.id is a key, since parent_task_id references it, and tasks has
+  # no foreign key a row can point across groups (tenant_id is in two), so
+  # only a copy with its own id gives a project its second task.
+  it "disproves a JOIN on a composite key that returns a project once per task as EXISTS" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.tenants (id bigint PRIMARY KEY);
+      CREATE TABLE fx.projects (tenant_id bigint NOT NULL REFERENCES fx.tenants, id bigint,
+        PRIMARY KEY (tenant_id, id));
+      CREATE TABLE fx.tasks (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES fx.tenants,
+        project_id bigint NOT NULL, parent_task_id bigint REFERENCES fx.tasks,
+        FOREIGN KEY (tenant_id, project_id) REFERENCES fx.projects);
+    SQL
+    join = "SELECT p.id FROM fx.projects p JOIN fx.tasks t ON t.tenant_id = p.tenant_id AND t.project_id = p.id"
+    expect(verdicts(join, "SELECT p.id FROM fx.projects p, fx.tasks t WHERE t.tenant_id = p.tenant_id " \
+                          "AND t.project_id = p.id",
+                    "SELECT p.id FROM fx.projects p WHERE EXISTS (SELECT 1 FROM fx.tasks t " \
+                    "WHERE t.tenant_id = p.tenant_id AND t.project_id = p.id)"))
+      .to eq([[true, nil], [false, :s3]])
+  end
+
+  # list_items' key is its foreign key columns and position. A copy keeps
+  # the hit's tenant and list, and takes a position of its own, so the list
+  # gets a second item. tenant_id is in two foreign keys, so no row points
+  # across groups to give it one.
+  it "disproves a JOIN that returns a list once per item as EXISTS when the item's key holds its foreign key" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.tenants (id bigint PRIMARY KEY);
+      CREATE TABLE fx.lists (tenant_id bigint NOT NULL REFERENCES fx.tenants, id bigint, PRIMARY KEY (tenant_id, id));
+      CREATE TABLE fx.list_items (tenant_id bigint NOT NULL REFERENCES fx.tenants, list_id bigint NOT NULL,
+        position integer NOT NULL, PRIMARY KEY (tenant_id, list_id, position),
+        FOREIGN KEY (tenant_id, list_id) REFERENCES fx.lists);
+    SQL
+    join = "SELECT l.id FROM fx.lists l JOIN fx.list_items i ON i.tenant_id = l.tenant_id AND i.list_id = l.id"
+    expect(verdicts(join, "SELECT l.id FROM fx.lists l, fx.list_items i WHERE i.tenant_id = l.tenant_id " \
+                          "AND i.list_id = l.id",
+                    "SELECT l.id FROM fx.lists l WHERE EXISTS (SELECT 1 FROM fx.list_items i " \
+                    "WHERE i.tenant_id = l.tenant_id AND i.list_id = l.id)"))
+      .to eq([[true, nil], [false, :s3]])
+  end
 end
