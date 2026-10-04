@@ -13,7 +13,7 @@ module ScenarioRefusalRun
   CHECK = "ALTER TABLE public.orders ADD CONSTRAINT orders_updated_after_created CHECK (updated_at >= created_at)"
   QUERY = PipelineReplay::RULE_QUERY.with(name: "scenario_refusal")
 
-  Runs = Data.define(:first_error, :second_error, :report, :html, :entries, :stderr)
+  Runs = Data.define(:run_id, :first_error, :second_error, :report, :html, :entries, :stderr)
 
   module_function
 
@@ -61,7 +61,7 @@ module ScenarioRefusalRun
 
   def read_back(transport, run_id, out, first, second)
     errors = [first.first, second.first]
-    Runs.new(first_error: errors.first, second_error: errors.last, stderr: second.last,
+    Runs.new(run_id:, first_error: errors.first, second_error: errors.last, stderr: second.last,
              report: (PipelineReplay.report(transport, run_id) if errors.none?),
              html: (File.read(out) if File.exist?(out)), entries: Quaack::Driver::Pipeline.status(transport, run_id))
   end
@@ -109,9 +109,10 @@ RSpec.describe ScenarioRefusalRun do
                                    "tested this rewrite and won&#39;t recommend it.")
     end
 
-    it "skips the refused rewrite on resume instead of testing it again" do
-      expect(runs.stderr).to include("Rewrite 1: Already done, skipping: Testing the rewrite for wrong results " \
-                                     "(rewrite-correctness)")
+    it "skips the refused rewrite on resume instead of testing it again, under its name" do
+      name = Quaack::Driver::RewriteNames.name(runs.run_id, 1)
+      expect(runs.stderr).to include("Rewrite #{name}: Already done, skipping: Testing the rewrite for wrong " \
+                                     "results (rewrite-correctness)")
       expect(runs.stderr).not_to include("(rewrite-test)")
     end
   end

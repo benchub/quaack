@@ -191,7 +191,7 @@ module Quaack
       end
 
       # A step's sub-steps, printed as notes under it, each after prefix,
-      # such as "Rewrite 1".
+      # such as "Rewrite Silver Fox".
       class Within
         def initialize(progress, prefix)
           @progress = progress
