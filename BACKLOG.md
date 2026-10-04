@@ -1003,7 +1003,11 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
 - **Came from:** A hand-tuned query the user shared, 2026-10-02.
 - **Design:** 6b, 6c, 15.
 - **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
-- **Status:** todo
+- **Note (2026-10-03, set aside for a question):** Built on `task/20261002-15` (worktree kept). The first review found two blocking issues.
+  - **Trust boundary:** `rewrite-check` accepts `denormalized_equal` from any source, so an LLM or operator rewrite can probe production data. Fix: accept it only from `rule`.
+  - **Step 9:** the rule's rewrite never passes step 9 on the Canvas shape. S1's hit row gives `course_id` a value other than the parent's `context_id`, so the rewrite is disproved and never ranked.
+  - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
+- **Status:** todo (set aside, waiting on an answer)
 
 ### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
 
