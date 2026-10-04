@@ -12,7 +12,7 @@ module Quaack
       # however far up), all its child columns are nullable, and no atom
       # reads any of them. Fixture rows leave a cut foreign key's columns
       # NULL, and those columns join no key class. A cycle with no cut
-      # foreign key raises Error(:fk_cycle).
+      # foreign key raises Error(:fk_cycle), naming one such cycle's tables.
       class Topology
         attr_reader :order
 
@@ -46,6 +46,15 @@ module Quaack
           found = [table]
           found.each { |t| parents(t).each { |p| found << p unless found.include?(p) } }
           @order & found
+        end
+
+        # The tables a cross group on the table's foreign key needs: the
+        # table and the ancestors its other foreign keys lead to. The cross
+        # points the key at another group's parent, so the group holds its
+        # own only when another path reaches it.
+        def cross_tables(table, foreign)
+          others = (foreign_keys(table) - [foreign]).map(&:parent).uniq - [table]
+          @order & [table, *others.flat_map { |p| ancestors(p) }]
         end
 
         # The indexes of equality join atoms that no foreign key backs.
@@ -128,18 +137,7 @@ module Quaack
           end
         end
 
-        def load_order
-          order = []
-          pending = @schema.tables.dup
-          until pending.empty?
-            ready = pending.select { |t| (parents(t) - order).empty? }
-            raise Error, :fk_cycle if ready.empty?
-
-            order.concat(ready)
-            pending -= ready
-          end
-          order
-        end
+        def load_order = LoadOrder.new(@schema.tables) { parents(it) }.call
 
         def key_classes
           union = UnionFind.new
@@ -155,6 +153,40 @@ module Quaack
           @schema.tables.flat_map do |t|
             foreign_keys(t).flat_map { |fk| fk.columns.zip(fk.parent_columns).map { |c, p| [[t, c], [fk.parent, p]] } }
           end
+        end
+      end
+
+      # Tables in load order, parents first, given each table's parents.
+      # A cycle raises Error(:fk_cycle), naming one cycle's tables.
+      class LoadOrder
+        def initialize(tables, &parents)
+          @tables = tables
+          @parents = parents
+        end
+
+        def call
+          order = []
+          pending = @tables.dup
+          until pending.empty?
+            ready = pending.select { |t| (@parents.call(t) - order).empty? }
+            raise Error.new(:fk_cycle, cycle: cycle(pending)) if ready.empty?
+
+            order.concat(ready)
+            pending -= ready
+          end
+          order
+        end
+
+        private
+
+        # One cycle among pending, every one of which has a parent still
+        # pending: from the first, follow the first pending parent until a
+        # table comes round again. The tables from that one on, in the
+        # order their foreign keys point, end with it again.
+        def cycle(pending)
+          walk = [pending.first]
+          walk << @parents.call(walk.last).find { pending.include?(it) } until walk.count(walk.last) == 2
+          walk.drop(walk.index(walk.last))
         end
       end
 
