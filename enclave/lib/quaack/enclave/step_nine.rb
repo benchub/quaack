@@ -46,7 +46,7 @@ module Quaack
         runner = ArenaRunner.new(conn, statement_timeout_ms:)
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql)
-        results = candidates.map { |candidate| test(runner, guard.scenarios, sql, candidate) }
+        results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
                    dropped: builder.dropped, refused: nil)
       rescue Scenarios::Error => e
@@ -58,14 +58,18 @@ module Quaack
         Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule)
       end
 
-      def test(runner, scenarios, sql, candidate)
+      # A scenario's further fixtures (spills, see Scenarios::Parts) run
+      # after its first, under its name.
+      def test(runner, scenarios, spills, sql, candidate)
         Scenarios::NAMES.each do |name|
-          verdict = ResultComparison.compare_in_both_orders(runner, scenarios.fetch(name), original: sql, candidate:)
-          next if verdict.match?
+          [scenarios.fetch(name), *spills.fetch(name, [])].each do |rows|
+            verdict = ResultComparison.compare_in_both_orders(runner, rows, original: sql, candidate:)
+            next if verdict.match?
 
-          return Result.new(passed: false, scenario: name, rule: verdict.rule, load_order: verdict.load_order)
-        rescue ArenaRunner::Error => e
-          return Result.new(passed: false, scenario: name, rule: e.rule, load_order: nil)
+            return Result.new(passed: false, scenario: name, rule: verdict.rule, load_order: verdict.load_order)
+          rescue ArenaRunner::Error => e
+            return Result.new(passed: false, scenario: name, rule: e.rule, load_order: nil)
+          end
         end
         Result.new(passed: true, scenario: nil, rule: nil, load_order: nil)
       end

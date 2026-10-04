@@ -738,7 +738,7 @@ Build every non-empty scenario from these pools:
 - Each table also gets one **near-miss row** per atom. A near-miss row fails only that one atom.
 - Each scenario either creates or withholds join partners.
 - Every row satisfies every `VALID` constraint.
-- An atom no stored value can satisfy, such as `r.id IS NULL` on a `NOT NULL` key that an outer join reads, doesn't constrain the rows, so the groups the outer join leaves unmatched still get built.
+- An atom no stored value can satisfy, such as `r.id IS NULL` on a `NOT NULL` key that an outer join reads, doesn't constrain the rows, so the groups the outer join leaves unmatched still get built. A unique column it reads still takes a value per row.
 
 The scenarios are:
 
@@ -767,7 +767,7 @@ Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark a
 - Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
 - A join atom gets no near miss when a foreign key touches either of its columns.
 - A self-join's aliases share one row per group, so atoms on different aliases of the same table can't be failed one at a time.
-- A group whose row would collide with an earlier row on a unique key is left out. The step 9 report counts these as `dropped`.
+- A group whose row would collide with an earlier row on a unique key first tries the later pool values that still fit its atoms, so with `tg.name IN ('ruby', 'rails')` on a unique name, a second group takes `rails`. S3's cross rows come before its duplicates, so they get first pick. A cross row's group holds no parent of its own for the foreign key it points across, unless another of its foreign keys needs that parent. A group whose row points by foreign key at a parent row that isn't there, because that parent's group was left out, counts as colliding too. A group that still doesn't fit goes in a further fixture of the same scenario, with copies of the parent rows it points at: with `u.email = 'a@b'` on a unique email, S6's user with no profile can't share a fixture with the hit, so it gets its own. A group that fits no fixture as built tries, in a further fixture only, each pooled atom's near miss instead. Each fixture is loaded and compared, in both load orders, on its own, under its scenario's name, so a further fixture only adds comparisons. A group that fits nowhere is left out. The step 9 report counts as `dropped` the groups left out of their scenario's first fixture, and 9c checks the first fixture of S1 only.
 - The pools don't use 3e's literal sets or 3c's statistics.
 
 Run steps 9a through 9e for each scenario.
