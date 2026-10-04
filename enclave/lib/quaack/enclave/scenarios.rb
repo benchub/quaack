@@ -38,7 +38,7 @@ module Quaack
     # - copy: another row for one table, sharing another group's keys, but
     #   with its own value for a key its table holds unique.
     # - cross: a group whose row points one foreign key at the hit's parent
-    #   (see Topology#crossings).
+    #   (see Topology#crossings), with no parent of its own for it.
     # - orphan: one side of a join with no foreign key, alone (with the
     #   tables it references).
     # - boundary: the hit group, with type boundary values wherever they
@@ -46,7 +46,7 @@ module Quaack
     # - empty: only the tables that reference no other fixture table.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
-    # S3: S1, a copy of each table's hit row, and crosses; S4: S1 and orphans; S5: S1
+    # S3: S1, crosses, and a copy of each table's hit row; S4: S1 and orphans; S5: S1
     # and two boundary groups; S6: hit, a group with two more copies of each
     # table's row, and empty.
     #
@@ -55,7 +55,7 @@ module Quaack
     # other atom and CHECK on the column (see Picker). variants rotates an
     # atom's pool lists, by atom index, for 9c's retries. An atom no pool
     # value satisfies (r.id IS NULL on a NOT NULL key) is ignored, so
-    # it can't drop every group. A key column takes
+    # it can't drop every group, and a unique column it reads still varies. A key column takes
     # a generated value per group (an identity key too, when a key class
     # ties it to another column), and a unique column one per distinct
     # row, even with a DEFAULT. A unique index counts, a partial one as
@@ -70,9 +70,11 @@ module Quaack
     # those an atom needs (x IS NULL).
     #
     # Every row satisfies every validated constraint. A group whose row
-    # can't, because it collides with an earlier row on a unique key, or no
-    # value fails its near-miss atom, is left out, and 9c catches an atom
-    # left vacuous. CHECKs must be simple (see Checks), or the build raises
+    # collides with an earlier row on a unique key first tries its pooled
+    # columns' later fitting values (see RowSet#add_any?). A group that still
+    # collides, or for which no value fails its near-miss atom, is left
+    # out, along with every row that points at one of its rows (see
+    # RowSet), and 9c catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
     # Error(:complex_check). A foreign-key cycle between tables is broken
     # where it can be: a foreign key in the cycle whose columns are all
     # nullable, and that no atom reads, is cut (see Topology), and rows
@@ -97,11 +99,18 @@ module Quaack
       end
 
       NAMES = %i[s0 s1 s2 s3 s4 s5 s6].freeze
+      # The scenarios that build on S1's near misses, and so take the
+      # keyset tie rows too.
+      TIE_SCENARIOS = %i[s1 s2 s3 s4 s5].freeze
+      TIE_KEY = 50_000
+      # How many later values a colliding group tries.
+      SHIFTS = 3
 
       # copy tells rows apart that are alike in every other way. cross, when
       # set, points one foreign key of the group's row at another group's
-      # parent (see Cross).
-      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross) do
+      # parent (see Cross). shift moves each pooled column to a later value
+      # that fits (see Picker#pick), for a group that collides.
+      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross, :shift) do
         # The key a column of table takes in this group: the hit's where a
         # cross points it, the split table's own, and a copy's own where its
         # table's unique keys need one (own, see Topology#own_key?).
@@ -111,7 +120,7 @@ module Quaack
           (split == table ? key + SPLIT_KEY : key) + (own ? COPY_KEY * copy : 0)
         end
       end
-      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil }.freeze
+      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil, shift: 0 }.freeze
       SPLIT_KEY = 100_000
       COPY_KEY = 200_000
 
@@ -172,14 +181,9 @@ module Quaack
           @dropped = 0
           ties = tie_groups
           Plan.new(@topology, @atoms, @pools.keys).scenarios.to_h do |name, groups|
-            [name, fill(groups.filter_map { |g| build_group(g) } + (TIE_SCENARIOS.include?(name) ? ties : []))]
+            [name, fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])]
           end
         end
-
-        # The scenarios that build on S1's near misses, and so take the
-        # keyset tie rows too.
-        TIE_SCENARIOS = %i[s1 s2 s3 s4 s5].freeze
-        TIE_KEY = 50_000
 
         private
 
@@ -193,11 +197,18 @@ module Quaack
           end
         end
 
-        def fill(row_groups)
+        def fill(groups, tie_rows)
           set = RowSet.new(@schema, @conn)
-          row_groups.each { |rows| @dropped += 1 unless set.add?(rows) }
+          tries = groups.filter_map { |g| build_group(g)&.then { |rows| shifts(g, rows) } } + tie_rows.map { [it] }
+          tries.each { |rows| @dropped += 1 unless set.add_any?(rows) }
           set.in_order(order)
         end
+
+        # The group's rows, then lazily its rows with its pooled columns'
+        # later fitting values, for RowSet#add_any? to try when it collides:
+        # a second tag the filter takes, when the hit holds the first on a
+        # unique name.
+        def shifts(group, rows) = [rows].each + (1..SHIFTS).lazy.map { build_group(group.with(shift: it)) }
 
         # For each pooled keyset row comparison, groups whose row ties it on
         # its leading columns (see Ties): a hit on the keyset's table and its
@@ -253,7 +264,7 @@ module Quaack
         # or a free one.
         def bound_value(slot, atoms, group, table, col)
           near = atoms.include?(group.near) ? group.near : nil
-          return @picker.pick(atoms, slot_columns(slot), near, group.mode) if atoms.any?
+          return @picker.pick(atoms, slot_columns(slot), near, group.mode, group.shift) if atoms.any?
           return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
 
           free_values.value(table, col, group.mode)
@@ -261,8 +272,11 @@ module Quaack
 
         def free_values
           @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,
-                                          Reads.new(@parse, @schema.column_names)) { slot_atoms(it).any? }
+                                          Reads.new(@parse, @schema.column_names), &method(:pooled?))
         end
+
+        # Whether an atom some stored value satisfies fills the slot.
+        def pooled?(slot) = @picker.satisfiable(slot_atoms(slot)).any?
 
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
 

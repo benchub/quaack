@@ -738,7 +738,7 @@ Build every non-empty scenario from these pools:
 - Each table also gets one **near-miss row** per atom. A near-miss row fails only that one atom.
 - Each scenario either creates or withholds join partners.
 - Every row satisfies every `VALID` constraint.
-- An atom no stored value can satisfy, such as `r.id IS NULL` on a `NOT NULL` key that an outer join reads, doesn't constrain the rows, so the groups the outer join leaves unmatched still get built.
+- An atom no stored value can satisfy, such as `r.id IS NULL` on a `NOT NULL` key that an outer join reads, doesn't constrain the rows, so the groups the outer join leaves unmatched still get built. A unique column it reads still takes a value per row.
 
 The scenarios are:
 
@@ -765,7 +765,7 @@ Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark a
 - Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
 - A join atom gets no near miss when a foreign key touches either of its columns.
 - A self-join's aliases share one row per group, so atoms on different aliases of the same table can't be failed one at a time.
-- A group whose row would collide with an earlier row on a unique key is left out. The step 9 report counts these as `dropped`.
+- A group whose row would collide with an earlier row on a unique key first tries the later pool values that still fit its atoms, so with `tg.name IN ('ruby', 'rails')` on a unique name, a second group takes `rails`. S3's cross rows come before its duplicates, so they get first pick. A cross row's group holds no parent of its own for the foreign key it points across, unless another of its foreign keys needs that parent. A group that still collides is left out, and so is every row of another group whose foreign key points at one of its rows. The step 9 report counts the groups left out as `dropped`.
 - The pools don't use 3e's literal sets or 3c's statistics.
 
 Run steps 9a through 9e for each scenario.

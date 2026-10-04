@@ -31,6 +31,20 @@ module Quaack
           true
         end
 
+        # Adds the first of tries (a group's rows, then the same group with
+        # other values, or nil when it can't be built) that doesn't
+        # collide, stopping at a nil or a repeat. False when none does.
+        def add_any?(tries)
+          tried = []
+          tries.each do |rows|
+            break if rows.nil? || tried.include?(rows)
+            return true if add?(rows)
+
+            tried << rows
+          end
+          false
+        end
+
         # The rows, table by table, less every row whose foreign key points
         # at a parent row that isn't here (one a left-out group held), and
         # so on down.

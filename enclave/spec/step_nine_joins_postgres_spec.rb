@@ -27,6 +27,16 @@ RSpec.describe Quaack::Enclave::StepNine do
     described_class.run(conn, original, candidates).results.map { |r| [r.passed, r.scenario] }
   end
 
+  # tags.name is unique, and taggings' key is its two foreign keys.
+  def create_taggings
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.posts (id bigint PRIMARY KEY, title text NOT NULL);
+      CREATE TABLE fx.tags (id bigint PRIMARY KEY, name text NOT NULL UNIQUE);
+      CREATE TABLE fx.taggings (post_id bigint NOT NULL REFERENCES fx.posts, tag_id bigint NOT NULL REFERENCES fx.tags,
+        PRIMARY KEY (post_id, tag_id));
+    SQL
+  end
+
   it "disproves the JOIN form of an anti-join on a self-referencing foreign key" do
     original = "SELECT a.id FROM fx.accounts a LEFT JOIN fx.accounts r ON r.id = a.root_account_id " \
                "WHERE r.id IS NULL ORDER BY a.id"
@@ -125,18 +135,13 @@ RSpec.describe Quaack::Enclave::StepNine do
   # is left out. Its copies' rows that point at its post or tag must go
   # with it, or the load fails.
   it "passes a correct rewrite of a filter on a unique parent column joined through a child" do
-    conn.exec(<<~SQL)
-      CREATE TABLE fx.posts (id bigint PRIMARY KEY, title text NOT NULL);
-      CREATE TABLE fx.tags (id bigint PRIMARY KEY, name text NOT NULL UNIQUE);
-      CREATE TABLE fx.taggings (post_id bigint NOT NULL REFERENCES fx.posts, tag_id bigint NOT NULL REFERENCES fx.tags,
-        PRIMARY KEY (post_id, tag_id));
-    SQL
+    create_taggings
     original = "SELECT p.id, p.title FROM fx.posts p JOIN fx.taggings t ON t.post_id = p.id " \
                "JOIN fx.tags tg ON tg.id = t.tag_id WHERE tg.name = 'ruby' ORDER BY p.id"
     results = described_class.run(conn, original, [
-                                    "SELECT p.id, p.title FROM fx.posts p WHERE EXISTS (SELECT 1 FROM fx.taggings t " \
-                                    "JOIN fx.tags tg ON tg.id = t.tag_id WHERE t.post_id = p.id AND tg.name = 'ruby') " \
-                                    "ORDER BY p.id",
+                                    "SELECT p.id, p.title FROM fx.posts p WHERE EXISTS (SELECT 1 " \
+                                    "FROM fx.taggings t JOIN fx.tags tg ON tg.id = t.tag_id " \
+                                    "WHERE t.post_id = p.id AND tg.name = 'ruby') ORDER BY p.id",
                                     "SELECT p.id, p.title FROM fx.posts p JOIN fx.taggings t ON t.post_id = p.id " \
                                     "ORDER BY p.id"
                                   ]).results
@@ -146,17 +151,26 @@ RSpec.describe Quaack::Enclave::StepNine do
   # tags.name is unique, so a group that needs a second tag the filter
   # takes must give it the filter's other name, not repeat the hit's.
   it "disproves EXISTS for a JOIN that returns a post once per tag the filter takes" do
-    conn.exec(<<~SQL)
-      CREATE TABLE fx.posts (id bigint PRIMARY KEY, title text NOT NULL);
-      CREATE TABLE fx.tags (id bigint PRIMARY KEY, name text NOT NULL UNIQUE);
-      CREATE TABLE fx.taggings (post_id bigint NOT NULL REFERENCES fx.posts, tag_id bigint NOT NULL REFERENCES fx.tags,
-        PRIMARY KEY (post_id, tag_id));
-    SQL
+    create_taggings
     join = "SELECT p.id FROM fx.posts p JOIN fx.taggings t ON t.post_id = p.id " \
            "JOIN fx.tags tg ON tg.id = t.tag_id WHERE tg.name IN ('ruby', 'rails') ORDER BY p.id"
-    expect(verdicts(join, join.sub("JOIN fx.tags tg ON tg.id = t.tag_id WHERE", ", fx.tags tg WHERE tg.id = t.tag_id AND"),
+    expect(verdicts(join, "SELECT p.id FROM fx.posts p, fx.taggings t, fx.tags tg WHERE t.post_id = p.id " \
+                          "AND tg.id = t.tag_id AND tg.name IN ('ruby', 'rails') ORDER BY p.id",
                     "SELECT p.id FROM fx.posts p WHERE EXISTS (SELECT 1 FROM fx.taggings t JOIN fx.tags tg " \
                     "ON tg.id = t.tag_id WHERE t.post_id = p.id AND tg.name IN ('ruby', 'rails')) ORDER BY p.id"))
+      .to eq([[true, nil], [false, :s3]])
+  end
+
+  # The cross that gives the hit's tag a second post needs no tag of its
+  # own, so the filter's names, all taken, don't keep it out.
+  it "disproves EXISTS for a JOIN that returns a tag once per post when the tag's name is unique" do
+    create_taggings
+    join = "SELECT tg.id FROM fx.tags tg JOIN fx.taggings t ON t.tag_id = tg.id WHERE tg.name IN ('ruby', 'rails') " \
+           "ORDER BY tg.id"
+    expect(verdicts(join, "SELECT tg.id FROM fx.tags tg, fx.taggings t WHERE t.tag_id = tg.id " \
+                          "AND tg.name IN ('ruby', 'rails') ORDER BY tg.id",
+                    "SELECT tg.id FROM fx.tags tg WHERE EXISTS (SELECT 1 FROM fx.taggings t WHERE t.tag_id = tg.id) " \
+                    "AND tg.name IN ('ruby', 'rails') ORDER BY tg.id"))
       .to eq([[true, nil], [false, :s3]])
   end
 
