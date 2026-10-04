@@ -42,6 +42,9 @@ module Quaack
             raise(refusal || Error.new(:unsatisfiable_check))
         end
 
+        # Whether any CHECK constrains the column.
+        def checked?(table, col) = @nodes[[table, col.name]].any?
+
         private
 
         def probes(table, col)

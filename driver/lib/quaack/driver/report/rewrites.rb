@@ -27,6 +27,8 @@ module Quaack
           "step10_disproved" => "#{DIFFERENT} test data the LLM wrote to break it%<round>s, so it's wrong.",
           "step9_failed" => "A test on made-up data%<scenario>s #{UNCOMPARED}",
           "step10_failed" => "A test on data the LLM wrote to break it%<round>s #{UNCOMPARED}",
+          "step9_untested" => "QUAACK couldn't make up test data for your query%<refusal>s, so it never tested " \
+                              "this rewrite and won't recommend it. That says nothing about whether it's right.",
           "production_mismatch" => "#{PASSED} returned different results from your query on the real data, so " \
                                    "it's wrong.",
           "production_timed_out" => "#{PASSED} timed out when QUAACK compared its results with your query's on " \
@@ -64,12 +66,32 @@ module Quaack
 
           text = FATES[entry["fate"]] or return "#{Words::MISSING}."
           format(text, scenario: bracket(Words::SCENARIOS[entry["scenario"]]),
-                       round: bracket(entry["round"] && "round #{entry["round"]}"), why: why(entry["rule"]))
+                       round: bracket(entry["round"] && "round #{entry["round"]}"), **because(entry))
+        end
+
+        # An fk_cycle refusal's tables, in the order their foreign keys
+        # point, or nil.
+        def cycle(entry)
+          tables = entry["cycle"]
+          return unless entry["rule"] == "fk_cycle" && tables.is_a?(Array) && !tables.empty? && tables.all?(String)
+
+          tables.join(" -> ")
+        end
+
+        # A fate's rule, read as a failure or as step 9's refusal: its
+        # sentence uses whichever it names. A refusal names an fk_cycle's
+        # tables too.
+        def because(entry)
+          rule = entry["rule"]
+          { why: why(rule), refusal: refusal(rule) + bracket(cycle(entry)) }
         end
 
         def bracket(text) = text ? " (#{text})" : ""
 
         def why(rule) = rule ? ", because #{Words::FAILURES.fetch(rule, Words::FAILED)}" : ""
+
+        # Why step 9 couldn't make up test data, by its rule.
+        def refusal(rule) = rule ? ", because #{Words::REFUSALS.fetch(rule) { Words.plain(rule) }}" : ""
 
         # A rewrite's name, source, and fate on one line, for the negative
         # result's list.

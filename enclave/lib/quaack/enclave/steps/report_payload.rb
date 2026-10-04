@@ -38,8 +38,10 @@ module Quaack
       #   rewrites         one per stored rewrite, ranked or not: {
       #                    "rewrite" (rewrite_<n>), "sql", "source" (rule,
       #                    llm, or operator) and "rules" (RewriteSource),
-      #                    "fate" and its "scenario", "rule", "round", and
-      #                    "after" (RewriteFate), "plan" (its node shapes on
+      #                    "fate" and its "scenario", "rule", "round",
+      #                    "after", and "cycle" (RewriteFate; cycle is an
+      #                    fk_cycle refusal's tables, "schema.name" in
+      #                    foreign key order), "plan" (its node shapes on
       #                    the slow literal set, or nil), "untested_atoms"
       #                    (step 9's, or nil if it wasn't tested), and
       #                    "evidence" (whether a step 10 round compared it
@@ -73,7 +75,8 @@ module Quaack
       # Filter or Index Cond. Measurements are counts. Index names and
       # relations are schema. A source, a rule name, a fate, and a fate's
       # details are QUAACK's own constants: RewriteSource and RewriteFate
-      # send no other. Untested atoms are step 9's redacted shapes.
+      # send no other, but for an fk_cycle's tables, which are schema and
+      # each one the schema_subset entry holds. Untested atoms are step 9's redacted shapes.
       module ReportPayload
         module_function
 

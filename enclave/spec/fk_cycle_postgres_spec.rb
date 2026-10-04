@@ -27,8 +27,12 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
 
   def tables_in_order(rows) = rows.map { |r| r.table.name }.chunk_while { |x, y| x == y }.map(&:first)
 
-  def expect_fk_cycle(sql)
-    expect { build(sql) }.to raise_error(Quaack::Enclave::Scenarios::Error) { |e| expect(e.rule).to eq(:fk_cycle) }
+  # cycle is the table names the error must name, in the order the
+  # foreign keys point, back to the first.
+  def expect_fk_cycle(sql, cycle)
+    expect { build(sql) }.to raise_error(Quaack::Enclave::Scenarios::Error) do |e|
+      expect([e.rule, e.cycle]).to eq([:fk_cycle, cycle.map { tn(it) }])
+    end
   end
 
   describe "with two tables and one nullable edge" do
@@ -334,7 +338,45 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       CREATE TABLE fx.b (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES fx.a);
       ALTER TABLE fx.a ADD FOREIGN KEY (b_id) REFERENCES fx.b;
     SQL
-    expect_fk_cycle("SELECT a.id FROM fx.a a")
+    expect_fk_cycle("SELECT a.id FROM fx.a a", %w[a b a])
+  end
+
+  it "names a three-table cycle in the order its foreign keys point" do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA fx;
+      CREATE TABLE fx.a (id integer PRIMARY KEY, b_id integer NOT NULL);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, c_id integer NOT NULL);
+      CREATE TABLE fx.c (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES fx.a);
+      ALTER TABLE fx.a ADD FOREIGN KEY (b_id) REFERENCES fx.b;
+      ALTER TABLE fx.b ADD FOREIGN KEY (c_id) REFERENCES fx.c;
+    SQL
+    expect_fk_cycle("SELECT b.id FROM fx.b b", %w[b c a b])
+  end
+
+  # a's nullable aa_c, which nothing reads, is cut, so the cycle named
+  # isn't a -> c -> a, though aa_c's foreign key comes first by name.
+  it "names a cycle that's left once a nullable foreign key is cut" do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA fx;
+      CREATE TABLE fx.a (id integer PRIMARY KEY, aa_c integer, b_id integer NOT NULL);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, c_id integer NOT NULL);
+      CREATE TABLE fx.c (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES fx.a);
+      ALTER TABLE fx.a ADD FOREIGN KEY (aa_c) REFERENCES fx.c;
+      ALTER TABLE fx.a ADD FOREIGN KEY (b_id) REFERENCES fx.b;
+      ALTER TABLE fx.b ADD FOREIGN KEY (c_id) REFERENCES fx.c;
+    SQL
+    expect_fk_cycle("SELECT a.id FROM fx.a a", %w[a b c a])
+  end
+
+  it "names only the cycle, not a table outside it that references the cycle" do
+    conn.exec(<<~SQL)
+      CREATE SCHEMA fx;
+      CREATE TABLE fx.a (id integer PRIMARY KEY, b_id integer NOT NULL);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, a_id integer NOT NULL REFERENCES fx.a);
+      ALTER TABLE fx.a ADD FOREIGN KEY (b_id) REFERENCES fx.b;
+      CREATE TABLE fx.notes (id integer PRIMARY KEY, b_id integer NOT NULL REFERENCES fx.b);
+    SQL
+    expect_fk_cycle("SELECT n.id FROM fx.notes n", %w[b a b])
   end
 
   it "refuses a cycle whose nullable edge has a NOT NULL column too" do
@@ -345,7 +387,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         FOREIGN KEY (a_id, a_k) REFERENCES fx.a);
       ALTER TABLE fx.a ADD FOREIGN KEY (b_id, b_k) REFERENCES fx.b;
     SQL
-    expect_fk_cycle("SELECT a.id FROM fx.a a")
+    expect_fk_cycle("SELECT a.id FROM fx.a a", %w[a b a])
   end
 
   it "leaves a nullable foreign key outside any cycle tied to its parent's key, as before" do

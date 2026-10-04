@@ -45,6 +45,14 @@ module Quaack
           row.with(columns:, values: columns.zip(row.values).map { |name, v| overrides.fetch(name, v) })
         end
 
+        # Whether table's row may take the overrides: none sets a join key
+        # or generated column, or breaks a CHECK.
+        def allowed?(table, overrides, topology, checks, schema)
+          overrides.none? do |name, v|
+            topology.keyed?(table, name) || !checks.allows?(table, schema.column(table, name), v)
+          end
+        end
+
         def overrides(conn, parse, atom, schema)
           return [] unless eligible?(atom)
 

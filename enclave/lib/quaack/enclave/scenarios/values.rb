@@ -60,6 +60,14 @@ module Quaack
           candidates.find { |v| readable?(col, v) } || raise(refusal(col, table, candidates))
         end
 
+        # The nth value of the first of columns ([table, Column] pairs, such
+        # as a key slot's) that every one of them reads, so a smallint and
+        # an integer joined take a value both hold.
+        def shared_nth(columns, number)
+          values = columns.map { |table, col| nth(col, number, table:) }
+          values.find { |v| columns.all? { |_, col| readable?(col, v) } } || values.first
+        end
+
         # The error for a column of table whose type reads none of
         # candidates: domain_check for a domain whose base type reads one,
         # so the domain's CHECK rejected them, and unsupported_type
@@ -81,26 +89,33 @@ module Quaack
           FEW.include?(category(col)) ? 2 : 1
         end
 
-        # Whether the column's type reads value. Keyed by the type as
+        # Whether the column's type reads value as an insert of it does:
+        # the type's input function with its typmod, so a varchar(n) value
+        # that's too long fails rather than being cut short, as a CAST
+        # would. A domain's CHECKs apply too. Keyed by the type as
         # format_type prints it, typmod and all: bit(4) and bit(8) share an
         # oid but not their values.
         def readable?(col, value)
           @readable.fetch([col.type, value]) do
-            @conn.exec_params("SELECT CAST($1 AS #{col.type})", [value])
-            @readable[[col.type, value]] = true
+            @readable[[col.type, value]] =
+              @conn.exec_params("SELECT pg_input_is_valid($1, $2)", [value, col.type]).getvalue(0, 0) == "t"
           rescue PG::Error
             @readable[[col.type, value]] = false
           end
         end
 
-        private
+        # Whether the type takes NULL: no domain under it is NOT NULL.
+        def nullable_type?(col) = !info(col).not_null
 
+        # Whether the type has an nth value it reads.
         def distinct?(col)
           nth(col, 1)
           true
         rescue Error
           false
         end
+
+        private
 
         def typicals(col)
           return [Literals.bits(underlying(col).type, 0)] if category(col) == "V"

@@ -43,8 +43,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::CteHoistDedupe do
 
   def literals_for(sql)
     redacted = redacted(sql)
-    literals = Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map,
-                                                           redacted.placeholder_shapes)
+    literals = Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map)
     [redacted.sql, literals]
   end
 

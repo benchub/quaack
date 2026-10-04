@@ -38,8 +38,12 @@ module Quaack
       # { "table", "column", "type" } of the column step 9 can't fill, which
       # are schema names, a schema.name pair, a name, and a type as
       # format_type prints it, never a row value. The enclave's ErrorFilter
-      # sends it only if each is a plain unquoted name of that shape.
-      error: %i[step rule sqlstate reason function clients column].freeze,
+      # sends it only if each is a plain unquoted name of that shape. cycle
+      # is only on an fk_cycle refusal: the tables of a foreign key cycle,
+      # 3 to 64 schema.name Strings in the order their foreign keys point,
+      # the last the first again. They're schema names, each one checked to
+      # be a relation of the run's schema subset, and never a row value.
+      error: %i[step rule sqlstate reason function clients column cycle].freeze,
       # The enclave script's version, from `quaacks --version`. It's the
       # gem's VERSION constant, never anything read from a run.
       version: %i[version].freeze,
@@ -149,7 +153,9 @@ module Quaack
       # rewrites is every stored rewrite, ranked or not: its entry name,
       # its $n SQL, its source (rule, llm, or operator) and, if a 6c rule
       # made it, the rule names, its fate with the scenario, rule, round,
-      # or last stage that goes with it, its plan's node shapes, its
+      # or last stage that goes with it (and, for an fk_cycle refusal, the
+      # cycle's table names, each a relation of the run's schema subset),
+      # its plan's node shapes, its
       # untested atoms (step 9's redacted shapes), and its step 10
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each

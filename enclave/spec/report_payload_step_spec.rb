@@ -213,8 +213,8 @@ RSpec.describe "quaacks report-payload" do
         expect(report["rewrites"].map { it["rewrite"] }).to eq(%w[rewrite_1 rewrite_2])
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "fate" => "unfinished", "scenario" => nil, "rule" => nil,
-                                 "round" => nil, "after" => nil, "plan" => nil, "untested_atoms" => nil,
-                                 "evidence" => nil)
+                                 "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
+                                 "untested_atoms" => nil, "evidence" => nil)
       end
     end
   end
@@ -305,6 +305,11 @@ RSpec.describe "quaacks report-payload" do
         # If a store held both, the earlier step is the fate.
         measured(store, 23, "none" => "not_better")
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
+        # Step 9 couldn't build scenarios for the query, so it refused.
+        { 24 => "complex_check", 25 => "fk_cycle", 26 => REPORT_WORD_SENTINEL, 27 => "unsatisfiable_check",
+          28 => "expression_unique_index", 29 => "unsupported_type", 30 => "domain_check" }.each do |number, rule|
+          stored(store, number, tested: tested(false, nil, rule).merge("refused" => true), survived: false)
+        end
       end
     end
 
@@ -331,7 +336,14 @@ RSpec.describe "quaacks report-payload" do
       20 => { "fate" => "step10_disproved" },
       21 => { "fate" => "same_plans" },
       22 => { "fate" => "ranked" },
-      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" }
+      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" },
+      24 => { "fate" => "step9_untested", "rule" => "complex_check" },
+      25 => { "fate" => "step9_untested", "rule" => "fk_cycle" },
+      26 => { "fate" => "step9_untested" },
+      27 => { "fate" => "step9_untested", "rule" => "unsatisfiable_check" },
+      28 => { "fate" => "step9_untested", "rule" => "expression_unique_index" },
+      29 => { "fate" => "step9_untested", "rule" => "unsupported_type" },
+      30 => { "fate" => "step9_untested", "rule" => "domain_check" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
@@ -370,6 +382,43 @@ RSpec.describe "quaacks report-payload" do
            { "fate" => "not_better" }]
         )
         expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    # An fk_cycle refusal's tables are schema, and go out only if each is
+    # a relation the run's schema subset holds.
+    context "when step 9 refused for fk_cycle and stored the cycle's tables" do
+      def refused(rule, cycle) = tested(false, nil, rule).merge("refused" => true, "cycle" => cycle)
+
+      let(:cycle) { [%w[public orders], %w[billing accounts], %w[public orders]] }
+      let(:outcome) do
+        payload_of do |store|
+          store.write("schema_subset", "tables" => [%w[public orders], %w[billing accounts]], "ddl" => "")
+          stored(store, 2, tested: refused("fk_cycle", cycle), survived: false)
+          stored(store, 3, tested: refused("fk_cycle", [%w[public orders], ["public", sentinel], %w[public orders]]),
+                           survived: false)
+          stored(store, 4, tested: refused("fk_cycle", "public.orders -> #{sentinel} -> public.orders"),
+                           survived: false)
+          stored(store, 5, tested: refused("fk_cycle", [%w[public orders], %w[billing accounts], %w[billing accounts]]),
+                           survived: false)
+          stored(store, 6, tested: refused("complex_check", cycle), survived: false)
+          stored(store, 7, tested: refused("fk_cycle", [%w[public orders], [REPORT_WORD_SENTINEL, "orders"],
+                                                        %w[public orders]]), survived: false)
+        end
+      end
+
+      it "sends them schema-qualified, in the order their foreign keys point" do
+        expect(rewrite(2)).to include("fate" => "step9_untested", "rule" => "fk_cycle",
+                                      "cycle" => %w[public.orders billing.accounts public.orders])
+      end
+
+      it "sends no cycle that names a table the schema doesn't hold, isn't a list of tables, or doesn't close" do
+        expect([3, 4, 5, 7].map { rewrite(it).slice("rule", "cycle") }).to all(eq("rule" => "fk_cycle", "cycle" => nil))
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "sends no tables for any other rule" do
+        expect(rewrite(6)).to include("rule" => "complex_check", "cycle" => nil)
       end
     end
   end
@@ -530,6 +579,16 @@ RSpec.describe "quaacks report-payload" do
         let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, "discarded"), false) } }
 
         it "isn't a bug: a pruned rewrite was never disproved" do
+          expect(report["rule_bugs"]).to eq([])
+        end
+      end
+
+      context "with a rule-made rewrite step 9 refused to test, since it couldn't build scenarios" do
+        let(:outcome) do
+          with_rewrite { rule_made(it, 2, tested(false, "complex_check").merge("refused" => true), false) }
+        end
+
+        it "isn't a bug: a refused rewrite was never tested" do
           expect(report["rule_bugs"]).to eq([])
         end
       end

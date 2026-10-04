@@ -73,6 +73,38 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       .to eq([["{}", "2"]])
   end
 
+  def customer_of_order(prepared)
+    load(prepared, "SELECT c.id, c.root_customer_id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id")
+  end
+
+  it "leaves a parent's nullable self-referencing foreign key NULL" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_customer_id integer REFERENCES fx.customers")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(customer_of_order(prepared)).to eq([["7", nil]])
+  end
+
+  it "points a parent's NOT NULL self-referencing foreign key at the parent itself" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_customer_id integer NOT NULL REFERENCES fx.customers")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(customer_of_order(prepared)).to eq([%w[7 7]])
+  end
+
+  it "points a parent's NOT NULL self-referencing foreign key at the parent itself when the key it references " \
+     "isn't set" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN code integer NOT NULL UNIQUE,
+                 ADD COLUMN root_code integer NOT NULL REFERENCES fx.customers (code)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')")
+    expect(load(prepared, "SELECT id, code = root_code FROM fx.customers")).to eq([%w[7 t]])
+  end
+
+  it "varies a parent's unique-key column that has no CHECK over one whose CHECK allows few values" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN kind integer NOT NULL CHECK (kind IN (1, 2)),
+                 ADD COLUMN login text NOT NULL;
+               CREATE UNIQUE INDEX customers_kind_login ON fx.customers (kind, login)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b'), (3, 9, 'c')")
+    expect(load(prepared, "SELECT kind, count(DISTINCT login) FROM fx.customers GROUP BY 1")).to eq([%w[1 3]])
+  end
+
   it "refuses a parent whose unique column step 9 can't fill, naming the parent's table, column, and type" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn NOT NULL UNIQUE")
     expect { prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $1)") }
@@ -83,6 +115,39 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       }
   end
 
+  describe "a parent's nullable column of a type step 9 can't fill" do
+    let(:insert) { "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')" }
+    let(:joined) { "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id" }
+
+    before { conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn, ADD COLUMN ulsn pg_lsn UNIQUE") }
+
+    def prepare_for(*queries)
+      described_class.prepare(conn, [insert], placeholder_map: map, tables: %w[customers orders].map { tn(it) },
+                                              queries:)
+    end
+
+    def lsn_refusal
+      raise_error(Quaack::Enclave::Scenarios::Error) { |e| expect(e.rule).to eq(:unsupported_type) }
+    end
+
+    it "is left NULL, unique or not, when neither query reads it" do
+      prepared = prepare_for(joined, "#{joined} WHERE o.status = 'a'")
+      expect(load(prepared, "SELECT id, lsn, ulsn FROM fx.customers")).to eq([["7", nil, nil]])
+    end
+
+    it "is refused when either query reads it, or when no queries are given" do
+      expect { prepare_for(joined, "SELECT o.id, c.lsn FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id") }
+        .to lsn_refusal
+      expect { prepare_for("SELECT c.* FROM fx.customers c", joined) }.to lsn_refusal
+      expect { prepare(insert) }.to lsn_refusal
+    end
+
+    it "is refused when a CHECK rejects NULL" do
+      conn.exec("ALTER TABLE fx.customers DROP COLUMN ulsn, ADD CHECK (lsn IS NOT NULL)")
+      expect { prepare_for(joined) }.to lsn_refusal
+    end
+  end
+
   it "refuses an insert the inbound check refuses, or one with an unknown placeholder, by rule alone" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) SELECT 1, 2, 'x'",
                        "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $9)",
@@ -90,6 +155,58 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.refused).to eq([{ index: 0, rule: "insert_select" }, { index: 1, rule: "unknown_placeholder" }])
     expect(prepared.inserts.size).to eq(1)
     expect(prepared.refused.to_s).not_to include("SENTINEL_10a")
+  end
+
+  describe "an insert with a value Postgres can't evaluate (20261003-24)" do
+    # $1 binds to the sentinel, and casting it to integer fails with the
+    # value in Postgres's message.
+    let(:good) { "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')" }
+
+    # Everything prepare gives back, as one String: what it returns, real
+    # values included, or the error it raises, with its message, full
+    # message, and every cause's.
+    def everything_from
+      prepared = yield
+      [prepared.inspect, prepared.rows.map { [it.table.to_s, it.columns, it.values] }, prepared.inserts.map(&:to_s),
+       prepared.refused].to_s
+    rescue StandardError => e
+      error_chain(e)
+    end
+
+    def error_chain(error)
+      chain = []
+      while error
+        chain << [error.class.name, error.message, error.full_message(highlight: false)]
+        error = error.cause
+      end
+      chain.to_s
+    end
+
+    it "refuses it by rule alone, and loads the rest, when the value is a foreign key" do
+      sql = "INSERT INTO fx.orders (id, customer_id, status) VALUES (2, $1::integer, 'b')"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      prepared = prepare(good, sql)
+      expect(prepared.refused).to eq([{ index: 1, rule: "bad_value" }])
+      expect(prepared.inserts.size).to eq(1)
+      expect(load(prepared, "SELECT o.id, c.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id"))
+        .to eq([%w[1 7]])
+    end
+
+    it "refuses it by rule alone when the value is in a column with no foreign key" do
+      sql = "INSERT INTO fx.orders (id, customer_id, status, qty) VALUES (2, 7, 'b', $1::integer)"
+      expect(everything_from { prepare(good, sql) }).not_to include("SENTINEL_10a")
+      expect(prepare(good, sql).refused).to eq([{ index: 1, rule: "bad_value" }])
+    end
+
+    it "has a leak check that catches a planted sentinel, in what prepare returns or in an error's cause" do
+      planted = described_class::Prepared.new(rows: [], inserts: ["SENTINEL_10a"], refused: [])
+      expect(everything_from { planted }).to include("SENTINEL_10a")
+      expect(everything_from do
+        raise PG::Error, "SENTINEL_10a"
+      rescue PG::Error
+        raise ArgumentError, "no value here"
+      end).to include("SENTINEL_10a")
+    end
   end
 
   it "builds a parent whose domain column rejects the type-typical value, from the column's CHECK" do
