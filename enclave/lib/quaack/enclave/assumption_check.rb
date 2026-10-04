@@ -2,12 +2,14 @@
 
 require "json"
 require "pg_query"
+require_relative "assumption_check/denormalized_equal"
 
 module Quaack
   module Enclave
     # DESIGN.md 6b: checks one stated assumption (see RewriteAssumptions for
-    # the four kinds) mechanically against pg_constraint and pg_index.
-    # NOT VALID constraints count as absent.
+    # the five kinds) mechanically against pg_constraint and pg_index, or,
+    # for denormalized_equal, against the data. NOT VALID constraints count
+    # as absent.
     #
     #   AssumptionCheck.met?({ "kind" => "not_null", "table" => "public.orders", "column" => "id" }, connection)
     #   # => true
@@ -21,10 +23,17 @@ module Quaack
     # - check: a validated CHECK on the table whose expression, deparsed
     #   by pg_query, is identical to the stated one's. Implied constraints
     #   don't count in v1.
+    # - denormalized_equal: no row of table, joined to references_table on
+    #   join_column = references_column, whose parent's type_column is
+    #   type_value, has column IS DISTINCT FROM the parent's id_column. One
+    #   EXISTS query on the racetrack, the production clone, in a READ ONLY
+    #   transaction under a DenormalizedEqual::TIMEOUT_MS statement timeout. A timeout or
+    #   an error is unmet. Only the boolean comes back.
     #
     # A table that doesn't exist meets nothing. connection is read only,
-    # with plain SELECTs; the stated values go in as parameters, and a
-    # stated CHECK expression is only parsed, never run.
+    # with plain SELECTs; the stated values go in as parameters, the stated
+    # names as quoted identifiers, and a stated CHECK expression is only
+    # parsed, never run.
     module AssumptionCheck
       RELATION = <<~SQL
         (SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -79,6 +88,7 @@ module Quaack
         when "unique" then any?(connection, UNIQUE, [*table, text_array(assumption["columns"])])
         when "foreign_key" then foreign_key?(assumption, table, connection)
         when "check" then check?(assumption["expression"], table, connection)
+        when "denormalized_equal" then DenormalizedEqual.met?(assumption, connection)
         else false
         end
       end
