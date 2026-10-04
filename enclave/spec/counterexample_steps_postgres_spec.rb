@@ -15,24 +15,26 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
   after { production.server.admin.exec(%(DROP DATABASE IF EXISTS "#{arena_name}" WITH (FORCE))) }
 
-  def ready(sql, arena: true, setup: true, status_check: nil)
+  def ready(sql, arena: true, setup: true, status_check: nil, arena_sql: nil)
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
     store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
-    make_arena(status_check) if arena
+    make_arena(status_check, arena_sql) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
                              "inferred" => false, "warnings" => [], "result_types" => %w[text text])
   end
 
-  # status_check, if given, becomes a CHECK on status in the arena.
-  def make_arena(status_check = nil)
+  # status_check, if given, becomes a CHECK on status in the arena, and
+  # extra, if given, runs there after.
+  def make_arena(status_check = nil, extra = nil)
     production.server.admin.exec(%(CREATE DATABASE "#{arena_name}"))
     server = production.server
     conn = PG.connect(host: server.host, port: server.port, dbname: arena_name, user: TestPostgres::USER,
                       password: TestPostgres::PASSWORD)
     conn.exec("CREATE TABLE public.orders (id int PRIMARY KEY, note text, " \
               "status text#{" CHECK (#{status_check})" if status_check}, total int, created_at timestamptz)")
+    conn.exec(extra) if extra
   ensure
     conn&.close
   end
@@ -174,6 +176,17 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       # a candidate that failed to run (20261001-17).
       expect(stored.read("rewrite_round_1")).to eq("round" => 1, "evidence" => true, "rule" => "row_count")
       expect_no_leaks(sentinels, outcome)
+    end
+
+    it "builds a parent row that leaves NULL a nullable column step 9 can't fill, when neither query reads it" do
+      ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY, lsn pg_lsn);
+                              ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, status, customer_id) VALUES (1, $1, 'open', 7)")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
+      expect(lines(outcome).first).to include("match" => true, "load_failed" => false, "refused" => [])
     end
 
     it "decides survival only after a matching third round" do

@@ -104,6 +104,9 @@ module Quaack
           end
         end
 
+        # Whether the type takes NULL: no domain under it is NOT NULL.
+        def nullable_type?(col) = !info(col).not_null
+
         # Whether the type has an nth value it reads.
         def distinct?(col)
           nth(col, 1)
