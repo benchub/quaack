@@ -4018,3 +4018,36 @@ Minor findings from building and reviewing 20261003-27. Do the false-collision a
   - **Not done:** `bit(n)` past 2^n values, which is an inherent limit already in DESIGN.md.
   - **Tests:** each fix went red first. The builder's and reviewer's mutations all went red.
   - **Review:** one round, clean. Its minor findings went to 20261003-34.
+
+### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
+
+- **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
+- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
+- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
+
+A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
+
+```sql
+SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
+FROM users JOIN enrollments ON users.id = enrollments.user_id
+WHERE enrollments.course_id = 341535 AND ...
+ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC
+LIMIT 20 OFFSET 0;
+```
+
+This is `distinct_join_to_exists`'s case, but the rule must handle three things 20261001-26's entry doesn't mention. Check what 20261001-26 landed, and add whichever of these it lacks:
+
+- `t.*` in the select list. It holds the kept table's key.
+- Select-list expressions that read only the kept table's columns, such as `col COLLATE ...`, a cast, or a function call. A volatile function stays refused.
+- `ORDER BY`, `LIMIT`, and `OFFSET`, carried over unchanged. Their expressions read only the kept table, as `DISTINCT` already requires them to appear in the select list.
+
+Test it with this query's shape. Also test that the rule refuses when the select list reads a column of a table it would remove.
+
+- **Depends on:** 20261001-26.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-16.
+  - **Change:** `distinct_join_to_exists` now matches the shapes Rails sends: qualified select-list columns, ORDER BY and LIMIT in the forms Rails generates, and calls the catalog resolves by name (`catalog/calls.rb`). The select-list column checks moved to `distinct_join_to_exists/columns.rb`. The DESIGN.md 6c row was updated.
+  - **Tests:** real-Postgres specs in `enclave/spec/distinct_join_to_exists_postgres_spec.rb` went red first. Mutations went red.
+  - **Review:** one round, clean. Follow-ups went to 20261003-35. The pre-landing rake had one timing flake in `driver/spec/copilot_cli_adapter_spec.rb:204`, which -16 doesn't touch. It passed when rerun alone and went to 20261003-36.
