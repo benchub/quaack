@@ -221,6 +221,8 @@ module Quaack
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)
           return nil if nulled?(group, col, keyed || atoms.any?)
+
+          atoms = satisfiable(atoms)
           return atom_value(slot, atoms, group) if atoms.any?
           return key_value(slot, group, table) if keyed
 
@@ -246,6 +248,11 @@ module Quaack
           members = @topology.members(slot)
           @pools.keys.select { |i| members.include?([@pools[i].column.table, @pools[i].column.name]) }
         end
+
+        # An atom no stored value satisfies, such as r.id IS NULL on a NOT
+        # NULL key that an outer join reads, doesn't constrain the slot:
+        # every value already fails it, so its near miss needs none.
+        def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
 
         def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
 
