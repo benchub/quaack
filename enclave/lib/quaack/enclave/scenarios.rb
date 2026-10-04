@@ -47,8 +47,7 @@ module Quaack
     #   still satisfy the atoms and CHECKs.
     # - empty: only the tables that reference no other fixture table
     #   through a foreign key the load order keeps. A cut column there is
-    #   NULL, since its parent's table has no row in the group, as in a
-    #   copy of one table's row.
+    #   NULL, since its parent's table has no row in the group.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
     # S3: S1, crosses, and a copy of each table's hit row; S4: S1 and orphans; S5: S1
@@ -90,7 +89,9 @@ module Quaack
     # no atom reads. A cut column still gets its value, as without the
     # cycle, but its rows defer it (ArenaRunner::FixtureRow#deferred): it
     # loads as NULL and is set once every row has loaded. It's NULL in a
-    # group that leaves its parent's table out. A cycle with no nullable
+    # group that leaves its parent's table out, except a copy or a cross,
+    # which keeps its parent (RowSet drops a copy whose parent is
+    # missing). A cycle with no nullable
     # foreign key raises
     # Error(:fk_cycle). Rows come table by table, parents first, each
     # table's rows together, as 9d's reverse load needs.
