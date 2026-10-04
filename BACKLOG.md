@@ -1007,7 +1007,8 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
   - **Trust boundary:** `rewrite-check` accepts `denormalized_equal` from any source, so an LLM or operator rewrite can probe production data. Fix: accept it only from `rule`.
   - **Step 9:** the rule's rewrite never passes step 9 on the Canvas shape. S1's hit row gives `course_id` a value other than the parent's `context_id`, so the rewrite is disproved and never ranked.
   - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
-- **Status:** todo (set aside, waiting on an answer)
+- **Note (2026-10-04, answers):** Honour it. Step 9 and 10 fixtures for a rewrite that rests on `denormalized_equal` generate rows that keep the child column equal to the parent column wherever the type column holds the class. Also make the trust fix: accept `denormalized_equal` only from `rule`.
+- **Status:** todo
 
 ### 20261002-16. `distinct_join_to_exists`: handle what Rails sends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2061,7 +2062,8 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
     - In two cases main refuses with `fk_cycle`, and the branch passes a wrong rewrite: `where.missing(:course_template)` against "no courses", and a template lookup by `account_id`.
   - **A real fix** needs more varied scenarios: an account with courses and a NULL template, and a template pointing at another account's course.
   - **Question for the user:** keep pushing on that, or drop 20261003-23 and keep main's `fk_cycle` refusal for a query that joins on the cycle's nullable edge? Dropping it would make 20261003-18 (a refusal doesn't end the run) the way to keep such runs going.
-- **Status:** todo (set aside, waiting on an answer)
+- **Note (2026-10-04, answers):** Keep pushing. Build scenarios varied enough to break these cycles soundly, such as an account that has courses and a NULL template, and a template that points at another account's course.
+- **Status:** todo
 
 ### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
 
@@ -2205,4 +2207,20 @@ These are findings from building and reviewing 20261003-29:
 - **Depends on:** 20261003-29.
 - **Came from:** The build and review of 20261003-29, 2026-10-03.
 - **Design:** 6c, `existence_in_flip`.
+- **Status:** todo
+
+### 20261004-1. `quaack run` step summaries: counts and rule names from the enclave.
+
+20261003-15 gives each finished step a summary, but some steps can only say what they did, not how much. The enclave sends the driver nothing but `done` for index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison and selection. And rewrite-rules (6c) doesn't say which rules fired. So the lines read "Searched for indexes", not "Found 12 possible index definitions mechanically", and 6c gives counts only.
+
+The rule:
+
+- Add an allowlisted counts message, sent by each of those steps when it finishes. It carries only small integers with fixed key names, such as `{"type":"step_counts","found":12}`. The protocol whitelist checks every key and that every value is a non-negative integer.
+- rewrite-rules reports which rules fired, by name. The names must come from a constant list shared through the protocol gem, matching the enclave's RULES. The whitelist and the driver both refuse any name not on that list.
+- The driver's summaries use these counts and names.
+- Sentinel tests: a value planted in the data never reaches the counts or the names. A forged message carrying a string where a count belongs is refused.
+
+- **Depends on:** 20261003-15.
+- **Came from:** The build of 20261003-15. The user asked for it, 2026-10-04.
+- **Design:** Progress lines for `quaack run`, the protocol whitelist.
 - **Status:** todo
