@@ -48,4 +48,36 @@ RSpec.describe Quaack::Enclave::StepNine do
                     join))
       .to eq([[true, nil], [false, :s3]])
   end
+
+  # enrollments.root_account_id and courses.account_id both lead to
+  # accounts, and in each group to the same account.
+  it "disproves a rewrite that assumes a foreign key points at the parent the row's other keys lead to" do
+    expect(verdicts("SELECT e.id FROM fx.enrollments e JOIN fx.accounts a ON a.id = e.root_account_id ORDER BY e.id",
+                    "SELECT e.id FROM fx.enrollments e WHERE e.root_account_id IS NOT NULL ORDER BY e.id",
+                    "SELECT e.id FROM fx.enrollments e JOIN fx.courses c ON c.id = e.course_id " \
+                    "WHERE e.root_account_id = c.account_id ORDER BY e.id"))
+      .to eq([[true, nil], [false, :s3]])
+    expect(verdicts("SELECT a.id FROM fx.accounts a WHERE a.id IN (SELECT e.root_account_id FROM fx.enrollments e) " \
+                    "ORDER BY a.id",
+                    "SELECT a.id FROM fx.accounts a WHERE EXISTS (SELECT 1 FROM fx.enrollments e " \
+                    "WHERE e.root_account_id = a.id) ORDER BY a.id",
+                    "SELECT DISTINCT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id " \
+                    "JOIN fx.enrollments e ON e.course_id = c.id WHERE e.root_account_id IS NOT NULL ORDER BY a.id"))
+      .to eq([[true, nil], [false, :s3]])
+  end
+
+  # tasks.tenant_id is in two foreign keys. Pointing it at another group's
+  # tenant would break the composite one, so every scenario must still
+  # load and the query passes itself.
+  it "loads every scenario when a foreign key shares a column with a composite one" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.tenants (id bigint PRIMARY KEY);
+      CREATE TABLE fx.projects (tenant_id bigint NOT NULL REFERENCES fx.tenants, id bigint,
+        PRIMARY KEY (tenant_id, id));
+      CREATE TABLE fx.tasks (id bigint PRIMARY KEY, tenant_id bigint NOT NULL REFERENCES fx.tenants,
+        project_id bigint NOT NULL, FOREIGN KEY (tenant_id, project_id) REFERENCES fx.projects);
+    SQL
+    sql = "SELECT t.id FROM fx.tasks t JOIN fx.projects p ON p.tenant_id = t.tenant_id AND p.id = t.project_id"
+    expect(verdicts(sql, sql)).to eq([[true, nil]])
+  end
 end

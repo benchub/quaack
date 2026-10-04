@@ -57,6 +57,16 @@ module Quaack
 
         def keyed?(table, name) = @classes.key?([table, name])
 
+        # Each [table, foreign key] whose row can point at another group's
+        # parent: a foreign key to another table, not cut, that shares no
+        # column with another of the table's foreign keys.
+        def crossings
+          @order.flat_map do |t|
+            fks = foreign_keys(t).reject { |fk| fk.parent == t }
+            fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
+          end
+        end
+
         # The slot a column's value comes from: its key class's root, or
         # the column itself.
         def slot(table, name) = @classes.fetch([table, name], [table, name])

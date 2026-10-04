@@ -93,9 +93,17 @@ module Quaack
 
       NAMES = %i[s0 s1 s2 s3 s4 s5 s6].freeze
 
-      # copy tells rows apart that are alike in every other way.
-      Group = Data.define(:key, :tables, :near, :split, :mode, :copy)
-      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0 }.freeze
+      # copy tells rows apart that are alike in every other way. cross, when
+      # set, points one foreign key of the group's row at another group's
+      # parent (see Cross).
+      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross)
+      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil }.freeze
+
+      # A foreign key of table, on columns, whose row points at the parent
+      # row in the group with key (the hit, which S3 holds).
+      Cross = Data.define(:table, :columns, :key) do
+        def points?(table, name) = self.table == table && columns.include?(name)
+      end
 
       module_function
 
@@ -261,6 +269,8 @@ module Quaack
         # a key of its own where its table's unique keys need one (see
         # Topology#own_key?).
         def key_value(slot, group, table, name)
+          return @values.shared_nth(slot_columns(slot), group.cross.key) if group.cross&.points?(table, name)
+
           key = group.split == table ? group.key + 100_000 : group.key
           key += COPY_KEY * group.copy if @topology.own_key?(table, name)
           @values.shared_nth(slot_columns(slot), key)
