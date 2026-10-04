@@ -227,6 +227,61 @@ RSpec.describe Quaack::Enclave::Scenarios do
       end
     end
 
+    it "still refuses a nullable one the query reads only through a USING or NATURAL join" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (uid integer PRIMARY KEY, w text, lsn pg_lsn);
+      SQL
+      ["SELECT t.id FROM fx.t t JOIN fx.u u USING (lsn) WHERE t.v = 'x'",
+       "SELECT t.id FROM fx.t t LEFT JOIN fx.u u USING (lsn) WHERE t.v = 'x'",
+       "SELECT t.id FROM fx.t t NATURAL JOIN fx.u u WHERE t.v = 'x'"].each do |sql|
+        expect(refusal(sql).rule).to eq(:unsupported_type), sql
+      end
+    end
+
+    it "still refuses a nullable one whose CHECK or domain rejects NULL" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN fx.lsn AS pg_lsn NOT NULL;
+        CREATE DOMAIN fx.lsn2 AS fx.lsn;
+        CREATE TABLE fx.c (id integer PRIMARY KEY, v text, lsn pg_lsn CHECK (lsn IS NOT NULL));
+        CREATE TABLE fx.d (id integer PRIMARY KEY, v text, lsn fx.lsn);
+        CREATE TABLE fx.e (id integer PRIMARY KEY, v text, lsn fx.lsn2);
+        CREATE TABLE fx.f (id integer PRIMARY KEY, v text, lsn fx.lsn UNIQUE);
+      SQL
+      { "c" => "pg_lsn", "d" => "fx.lsn", "e" => "fx.lsn2", "f" => "fx.lsn" }.each do |table, type|
+        error = refusal("SELECT id FROM fx.#{table} WHERE v = 'x'")
+        expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.#{table}", "lsn", type)])
+      end
+    end
+
+    it "leaves NULL a nullable one when the query reads only another table's column of that name" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (id integer PRIMARY KEY, lsn text);
+      SQL
+      scenarios = builds_and_loads("SELECT t.id FROM fx.t t JOIN fx.u u ON u.id = t.id WHERE u.lsn = 'x'",
+                                   "fx.t,fx.u")
+      expect(values(scenarios[:s1], "t", "lsn")).to all(be_nil)
+      expect(values(scenarios[:s1], "u", "lsn")).not_to include(nil)
+      scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x' AND EXISTS " \
+                                   "(SELECT 1 FROM fx.u WHERE fx.u.lsn = 'x')", "fx.t,fx.u")
+      expect(values(scenarios[:s1], "t", "lsn")).to all(be_nil)
+    end
+
+    it "still refuses one whose name the query reads unqualified, or through an alias it can't pin to one table" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn);
+        CREATE TABLE fx.u (id integer PRIMARY KEY, lsn text);
+        CREATE TABLE fx.w (wid integer PRIMARY KEY);
+      SQL
+      ["SELECT t.id FROM fx.t t JOIN fx.u u ON u.id = t.id WHERE lsn = 'x'",
+       "SELECT a.id FROM fx.u a WHERE EXISTS (SELECT a.lsn FROM fx.t a)",
+       "SELECT id FROM fx.u WHERE EXISTS (SELECT u.lsn FROM fx.t u)",
+       "SELECT id FROM fx.u WHERE EXISTS (SELECT u.lsn FROM (fx.t a JOIN fx.w b ON a.id = b.wid) AS u)"].each do |sql|
+        expect { builder(sql).build }.to raise_error(described_class::Error, /fx\.t\.lsn/), sql
+      end
+    end
+
     it "still refuses a nullable unique one whose NULLs collide" do
       conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn UNIQUE NULLS NOT DISTINCT)")
       expect(refusal("SELECT id FROM fx.t WHERE v = 'x'").column).to eq(detail("fx.t", "lsn", "pg_lsn"))
@@ -266,6 +321,21 @@ RSpec.describe Quaack::Enclave::Scenarios do
       error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
       expect(error.rule).to eq(:unsupported_type)
       expect([detail("fx.t", "l", "fx.lsn"), detail("fx.t", "p", "fx.lsn")]).to include(error.column)
+    end
+
+    it "refuses a custom base type of the bit-string category as unsupported_type" do
+      conn.exec(<<~SQL)
+        SET client_min_messages = warning;
+        CREATE TYPE fx.vlsn;
+        CREATE FUNCTION fx.vlsn_in(cstring) RETURNS fx.vlsn AS 'pg_lsn_in' LANGUAGE internal IMMUTABLE STRICT;
+        CREATE FUNCTION fx.vlsn_out(fx.vlsn) RETURNS cstring AS 'pg_lsn_out' LANGUAGE internal IMMUTABLE STRICT;
+        CREATE TYPE fx.vlsn (INPUT = fx.vlsn_in, OUTPUT = fx.vlsn_out, INTERNALLENGTH = 8, PASSEDBYVALUE,
+          ALIGNMENT = double, CATEGORY = 'V');
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, l fx.vlsn NOT NULL);
+        RESET client_min_messages;
+      SQL
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.t", "l", "fx.vlsn")])
     end
 
     it "names schema only, never a value from the query, a default, or a CHECK" do

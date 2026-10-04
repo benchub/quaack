@@ -163,7 +163,7 @@ module Quaack
 
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
-            prepared = prepare(connection, store, inserts)
+            prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
             round = compare(connection, prepared, store, search, number)
             { match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
               refused: prepared.refused, load_failed: round.load_failed }
@@ -171,9 +171,9 @@ module Quaack
             connection&.close
           end
 
-          def prepare(connection, store, inserts)
+          def prepare(connection, store, inserts, queries)
             Enclave::Counterexamples.prepare(connection, inserts, placeholder_map: Redaction.placeholder_map(store),
-                                                                  tables: tables(store))
+                                                                  tables: tables(store), queries:)
           end
 
           def compare(connection, prepared, store, search, number)

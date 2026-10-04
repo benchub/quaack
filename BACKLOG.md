@@ -1009,34 +1009,7 @@ DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic ru
   - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
 - **Status:** todo (set aside, waiting on an answer)
 
-### 20261002-16. `distinct_join_to_exists`: handle what Rails sends.
-
-- **Note:** First filed as 20261002-4. Renumbered when merging another machine's work, which had already used -4.
-- **Note (2026-10-02):** Set aside by the user until 20261001-26 lands. It has since landed (merged from origin/main), with `t.*` support. Its minor findings went to 20261002-4, and they overlap with this task's select-list expressions.
-- **Note (2026-10-03):** Back in the rule queue, after 20261002-15 (the user).
-
-A hand-tuned Canvas query got much faster by removing a `DISTINCT` over a join:
-
-```sql
-SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
-FROM users JOIN enrollments ON users.id = enrollments.user_id
-WHERE enrollments.course_id = 341535 AND ...
-ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC
-LIMIT 20 OFFSET 0;
-```
-
-This is `distinct_join_to_exists`'s case, but the rule must handle three things 20261001-26's entry doesn't mention. Check what 20261001-26 landed, and add whichever of these it lacks:
-
-- `t.*` in the select list. It holds the kept table's key.
-- Select-list expressions that read only the kept table's columns, such as `col COLLATE ...`, a cast, or a function call. A volatile function stays refused.
-- `ORDER BY`, `LIMIT`, and `OFFSET`, carried over unchanged. Their expressions read only the kept table, as `DISTINCT` already requires them to appear in the select list.
-
-Test it with this query's shape. Also test that the rule refuses when the select list reads a column of a table it would remove.
-
-- **Depends on:** 20261001-26.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c.
-- **Status:** todo
+### 20261002-16. `distinct_join_to_exists`: handle what Rails sends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-17. 6c rule: `implied_predicate_removal`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2177,24 +2150,45 @@ These were found in the second review of 20261003-23, and they fail safe (the lo
 
 ### 20261003-33. Step 9 values: loose ends from 20261003-27. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-34. Step 9 values: loose ends from 20261003-33.
+### 20261003-34. Step 9 values: loose ends from 20261003-33. Done, see BACKLOG-COMPLETE.md.
 
-These are minor findings from building and reviewing 20261003-33. Do the first two first.
+### 20261003-35. `distinct_join_to_exists`: loose ends from 20261002-16.
 
-- **`Reads` misses `USING` and `NATURAL` joins** (`scenarios/reads.rb`). It only collects `ColumnRef`s, so a column read only through `JOIN ... USING (lsn)` looks unread and gets NULL.
-  - Every scenario then returns 0 rows, and a wrong rewrite passes step 9. 9c does list `USING (lsn)` as untested, so this isn't silent.
-  - Fix: count `using_clause` names as reads, and treat `is_natural` as reading every column.
-- **A NOT NULL CHECK or NOT NULL domain now fails the load instead of refusing.** Examples: `lsn pg_lsn CHECK (lsn IS NOT NULL)`, or a domain `AS pg_lsn NOT NULL`.
-  - `null?` in `free_values.rb` should check `@checks.allows?(table, col, nil)` and the domain's not-null flag before choosing NULL, as main's clean `unsupported_type` did.
-- **The NULL is chosen from the original query only.** A rewrite that adds `AND lsn IS NULL` passes. That's the same weakness every unmentioned column's constant has, so give it one line in DESIGN.md.
-- **`bit(n)` still repeats values past 2^n.**
-- **ParentRows still refuses a nullable column of an unsupported type.** Use `Reads` there too.
-- **`Reads` matches columns by name only**, so it sometimes refuses a column the query doesn't really read.
-- **`null?` ignores a domain's NOT NULL.** Overlaps with the second bullet.
-- **A NOT NULL self-FK whose referenced columns the row doesn't set** still gets a new parent row.
-- **`Literals.bits` dropped its `match&.` guard**, so a custom base type of category `V` would crash instead of refusing.
+These are minor findings from building and reviewing 20261002-16:
 
-- **Depends on:** 20261003-33.
-- **Came from:** The build and review of 20261003-33, 2026-10-03.
+- **`catalog/calls.rb` matches a function by name only, across schemas.** A user function in another schema with the same name as a known-safe one is treated as safe. Match on the schema too, or refuse when the name is ambiguous.
+- **A bare key column in ORDER BY under LIMIT is refused.** Rails often sends `ORDER BY id LIMIT n`. It's safe when the key is the outer table's unique key, so allow it.
+- **The rule's description string is stale.** It no longer says what the rule matches.
+- **The cache key test is weak.** Make it fail if the cache key drops an input.
+- **The `x.*` check needs a test** that goes red if the check is removed.
+- **A nondeterministic-collation key with a `COLLATE "C"` unique index** (pre-existing). `DISTINCT` folds `Ann` and `ann` together, but the unique index lets both rows exist, so dropping `DISTINCT` changes the result. Refuse when the key's collation is nondeterministic and differs from the unique index's.
+
+- **Depends on:** 20261002-16.
+- **Came from:** The build and review of 20261002-16, 2026-10-03.
+- **Design:** 6c, `distinct_join_to_exists`.
+- **Status:** todo
+
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
+
+`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
+
+- **Depends on:** none.
+- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
+- **Design:** none (test only).
+- **Status:** todo
+
+### 20261003-37. Step 9 values: loose ends from 20261003-34.
+
+These are minor findings from building and reviewing 20261003-34:
+
+- **A base table aliased with a column list** (`reads.rb` `Tables#add` and `qualifier`). In `FROM fx.customers c(id, name, status)`, `c.status` reads `customers.lsn`, but `Reads` treats `lsn` as unread and fills it with NULL. Fix: treat an alias with a column list as reading every column of its table.
+- **ParentRows' self-FK fix depends on foreign-key order** (`parent_rows.rb` `foreign_keys`). The `next if` skip looks only at `fixed`, not at `pairs`.
+  - Example: `code NOT NULL UNIQUE`, a self-FK `root_code → code`, and an FK `code → regions`. When the self-FK comes first, the second FK overwrites `code`, and the load fails.
+  - No test covers the other order, so the mutation `fixed.merge(pairs)` → `fixed` survives.
+  - The same skip lets a later FK overwrite a NULL that an earlier nullable FK set.
+- **Three-part column references resolve by their table part only** in `Reads`, ignoring the schema.
+
+- **Depends on:** 20261003-34.
+- **Came from:** The build and review of 20261003-34, 2026-10-03.
 - **Design:** Step 9.
 - **Status:** todo
