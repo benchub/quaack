@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** IS NOT TRUE includes NULL; NULL fixtures (step 9, S2).
+**Exercises:** IS NOT TRUE includes NULL; NULL fixtures (rewrite-test, S2).
 
 ## Setup.
 

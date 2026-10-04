@@ -14,7 +14,7 @@ The UI treats a NULL status as `'new'`, so the query wraps the column in `COALES
 
 ## Expected result.
 
-`status = 'blocked'`. Stated assumption: the literal isn't `'new'`, the `COALESCE` default. For `'new'` the original would also return the NULL rows. The literal is compared with an expression, so 3e keeps the slow literal in every set. The other sets here only prove equivalence, and step 9 or 10 should test the default value itself.
+`status = 'blocked'`. Stated assumption: the literal isn't `'new'`, the `COALESCE` default. For `'new'` the original would also return the NULL rows. The literal is compared with an expression, so literals keeps the slow literal in every set. The other sets here only prove equivalence, and rewrite-test or counterexamples should test the default value itself.
 
 ## Proof.
 

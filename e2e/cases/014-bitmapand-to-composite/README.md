@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** BitmapAnd of single-column indexes (5a-2); two equality columns ranked by selectivity (5a-1).
+**Exercises:** BitmapAnd of single-column indexes (index-from-plan); two equality columns ranked by selectivity (index-from-query).
 
 ## Setup.
 

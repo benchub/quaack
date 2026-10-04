@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** seq scan with a selective equality filter (5a-2); btree from an equality atom (5a-1); ORDER BY after the equality column.
+**Exercises:** seq scan with a selective equality filter (index-from-plan); btree from an equality atom (index-from-query); ORDER BY after the equality column.
 
 ## Setup.
 

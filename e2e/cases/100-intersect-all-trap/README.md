@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** INTERSECT ALL keeps multiplicities; duplicates fixture (step 9, S3).
+**Exercises:** INTERSECT ALL keeps multiplicities; duplicates fixture (rewrite-test, S3).
 
 ## Setup.
 

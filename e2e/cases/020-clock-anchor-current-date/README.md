@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** clock function anchored to quaack.clock_anchor() (3h); range predicate against an expression; report puts the original function back (3h).
+**Exercises:** clock function anchored to quaack.clock_anchor() (clock-anchor); range predicate against an expression; report puts the original function back (clock-anchor).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Yesterday's sessions per user. `current_date` is a clock function, and nothing i
 
 ## Expected result.
 
-`sessions (started_at)`. QUAACK must anchor `current_date` to `quaack.clock_anchor()` before planning (3h), and show `current_date` again in the report.
+`sessions (started_at)`. QUAACK must anchor `current_date` to `quaack.clock_anchor()` before planning (clock-anchor), and show `current_date` again in the report.
 
 ## Notes.
 

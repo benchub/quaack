@@ -3,8 +3,8 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "BitmapAnd of single-column indexes (5a-2)",
-    "two equality columns ranked by selectivity (5a-1)"
+    "BitmapAnd of single-column indexes (index-from-plan)",
+    "two equality columns ranked by selectivity (index-from-query)"
   ],
   "literal_sets": [
     {

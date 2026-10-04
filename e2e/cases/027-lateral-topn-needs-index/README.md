@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** LATERAL subquery; ORDER BY ... LIMIT inside a correlated subquery; Nested Loop inner side (5a-2).
+**Exercises:** LATERAL subquery; ORDER BY ... LIMIT inside a correlated subquery; Nested Loop inner side (index-from-plan).
 
 ## Setup.
 

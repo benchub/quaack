@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** = ANY(array) atom; relation qualification (step 1); CASE in the select list.
+**Exercises:** = ANY(array) atom; relation qualification (input); CASE in the select list.
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Orders for a few customers, passed as one array parameter, as many drivers do.
 
 ## Expected result.
 
-`orders (customer_id)`. Step 1 must qualify `orders` as `public.orders` first, using the plan's `search_path`.
+`orders (customer_id)`. input must qualify `orders` as `public.orders` first, using the plan's `search_path`.
 
 ## Proof.
 

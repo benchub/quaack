@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** UNION ALL keeps duplicates; overlapping branches; fixtures with a row that matches both (step 9, S1).
+**Exercises:** UNION ALL keeps duplicates; overlapping branches; fixtures with a row that matches both (rewrite-test, S1).
 
 ## Setup.
 

@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "IS NOT TRUE includes NULL",
-    "NULL fixtures (step 9, S2)"
+    "NULL fixtures (rewrite-test, S2)"
   ],
   "literal_sets": [
     {

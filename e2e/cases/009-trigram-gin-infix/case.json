@@ -3,10 +3,10 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "GIN candidate set aside untested by HypoPG (5a-3)",
-    "trigram operator class (5a-5)",
-    "built and measured anyway in step 12",
-    "leading-wildcard shape (3g)"
+    "GIN candidate set aside untested by HypoPG (index-dedupe)",
+    "trigram operator class (llm-index-ideas)",
+    "built and measured anyway in measurement-setup",
+    "leading-wildcard shape (redact)"
   ],
   "literal_sets": [
     {

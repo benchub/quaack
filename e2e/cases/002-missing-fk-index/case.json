@@ -3,8 +3,8 @@
   "category": "index",
   "compare": "ordered",
   "features": [
-    "seq scan with a selective equality filter (5a-2)",
-    "btree from an equality atom (5a-1)",
+    "seq scan with a selective equality filter (index-from-plan)",
+    "btree from an equality atom (index-from-query)",
     "ORDER BY after the equality column"
   ],
   "literal_sets": [

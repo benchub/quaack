@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** Nested Loop with an expensive inner side (5a-2); inner join key plus its filter column; low-cardinality filter.
+**Exercises:** Nested Loop with an expensive inner side (index-from-plan); inner join key plus its filter column; low-cardinality filter.
 
 ## Setup.
 

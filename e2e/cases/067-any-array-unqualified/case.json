@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "= ANY(array) atom",
-    "relation qualification (step 1)",
+    "relation qualification (input)",
     "CASE in the select list"
   ],
   "literal_sets": [

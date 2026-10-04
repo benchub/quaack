@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "now() anchored (3h)",
-    "current_timestamp anchored (3h)",
-    "localtimestamp anchored (3h)"
+    "now() anchored (clock-anchor)",
+    "current_timestamp anchored (clock-anchor)",
+    "localtimestamp anchored (clock-anchor)"
   ],
   "literal_sets": [
     {

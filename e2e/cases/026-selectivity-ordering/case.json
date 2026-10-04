@@ -3,8 +3,8 @@
   "category": "index",
   "compare": "ordered",
   "features": [
-    "equality columns ranked by selectivity (5a-1)",
-    "negative n_distinct converted to a count (5a-1)",
+    "equality columns ranked by selectivity (index-from-query)",
+    "negative n_distinct converted to a count (index-from-query)",
     "ORDER BY after the equality columns"
   ],
   "literal_sets": [

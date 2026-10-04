@@ -6,7 +6,7 @@
     "RIGHT JOIN",
     "JOIN ... USING",
     "outer-join rows with no match",
-    "a plainer index loses on the worst case and is rejected by minimax (14b)"
+    "a plainer index loses on the worst case and is rejected by minimax"
   ],
   "literal_sets": [
     {

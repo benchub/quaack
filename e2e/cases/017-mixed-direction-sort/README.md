@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** ORDER BY with mixed directions (5a-1 direction match); Sort under a Limit (5a-2); four-column key cap.
+**Exercises:** ORDER BY with mixed directions (index-from-query direction match); Sort under a Limit (index-from-plan); four-column key cap.
 
 ## Setup.
 

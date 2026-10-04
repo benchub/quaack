@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "limit_subset",
   "features": [
-    "LIMIT with no ORDER BY: subset comparison (9d)",
+    "LIMIT with no ORDER BY: subset comparison (fixture-compare)",
     "two equality columns",
-    "non-default planner setting from the plan's SETTINGS (steps 2 and 4)"
+    "non-default planner setting from the plan's SETTINGS (inventory and run-server)"
   ],
   "settings": {
     "max_parallel_workers_per_gather": "0"

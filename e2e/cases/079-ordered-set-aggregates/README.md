@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** aggregate with DISTINCT; aggregate with ORDER BY; ordered-set aggregate WITHIN GROUP; float result compared with a tolerance (9d).
+**Exercises:** aggregate with DISTINCT; aggregate with ORDER BY; ordered-set aggregate WITHIN GROUP; float result compared with a tolerance (fixture-compare).
 
 ## Setup.
 

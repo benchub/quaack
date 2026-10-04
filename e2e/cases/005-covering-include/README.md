@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** INCLUDE columns for an index-only scan (5a-1); aggregate over one account's rows.
+**Exercises:** INCLUDE columns for an index-only scan (index-from-query); aggregate over one account's rows.
 
 ## Setup.
 
@@ -14,7 +14,7 @@ A merchant's payment total. The index finds 2,500 rows, and each one costs a hea
 
 ## Expected result.
 
-`payments (merchant_id) INCLUDE (amount_cents)`, from 5a-1's rule that adds the other select-list columns as `INCLUDE`. It turns the query into an index-only scan.
+`payments (merchant_id) INCLUDE (amount_cents)`, from index-from-query's rule that adds the other select-list columns as `INCLUDE`. It turns the query into an index-only scan.
 
 ## Proof.
 

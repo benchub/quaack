@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** GIN candidate set aside untested by HypoPG (5a-3); trigram operator class (5a-5); built and measured anyway in step 12; leading-wildcard shape (3g).
+**Exercises:** GIN candidate set aside untested by HypoPG (index-dedupe); trigram operator class (llm-index-ideas); built and measured anyway in measurement-setup; leading-wildcard shape (redact).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Search box: names containing a fragment anywhere. No btree can serve an infix `I
 
 ## Expected result.
 
-A trigram GIN index on `full_name`. HypoPG can't model GIN, so 5a-3 sets it aside untested. Step 12 still builds it, and steps 13 and 14 measure it, and the report says it wasn't tested in 5a.
+A trigram GIN index on `full_name`. HypoPG can't model GIN, so index-dedupe sets it aside untested. measurement-setup still builds it, and baseline and candidate-runs measure it, and the report says it wasn't tested in index-search.
 
 ## Proof.
 

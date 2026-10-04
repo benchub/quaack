@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "arithmetic on the column",
-    "CHECK constraint as a stated assumption (6b)",
-    "simple CHECK accepted by fixtures (step 9)"
+    "CHECK constraint as a stated assumption (assumption-check)",
+    "simple CHECK accepted by fixtures (rewrite-test)"
   ],
   "literal_sets": [
     {

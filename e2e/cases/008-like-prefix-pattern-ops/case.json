@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "ordered",
   "features": [
-    "LIKE with a trailing wildcard (3g shape)",
-    "operator class text_pattern_ops (5a-5)",
-    "dedupe must count the operator class as part of the key (5a-3)"
+    "LIKE with a trailing wildcard (redact shape)",
+    "operator class text_pattern_ops (llm-index-ideas)",
+    "dedupe must count the operator class as part of the key (index-dedupe)"
   ],
   "literal_sets": [
     {

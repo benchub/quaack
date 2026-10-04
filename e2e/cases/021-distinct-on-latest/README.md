@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** DISTINCT ON with a matching ORDER BY; IN list; INCLUDE column for an index-only scan (5a-1).
+**Exercises:** DISTINCT ON with a matching ORDER BY; IN list; INCLUDE column for an index-only scan (index-from-query).
 
 ## Setup.
 

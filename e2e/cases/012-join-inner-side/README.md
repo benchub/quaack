@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** Hash Join with a large inner build (5a-2); join condition columns (5a-1); three tables.
+**Exercises:** Hash Join with a large inner build (index-from-plan); join condition columns (index-from-query); three tables.
 
 ## Setup.
 

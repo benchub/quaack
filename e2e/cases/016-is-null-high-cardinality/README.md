@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** IS NULL predicate atom; partial index dropped because its column isn't low-cardinality (5a-3); plain btree serves IS NULL.
+**Exercises:** IS NULL predicate atom; partial index dropped because its column isn't low-cardinality (index-dedupe); plain btree serves IS NULL.
 
 ## Setup.
 
@@ -14,7 +14,7 @@ The oldest unshipped orders. The whole table is read to find the NULLs.
 
 ## Expected result.
 
-A plain btree on `shipped_at`, which indexes NULLs. Postgres reads only the 2,500 NULL rows and sorts them. A partial index `WHERE shipped_at IS NULL` would be smaller, but 5a-3 must drop it: `shipped_at` has far more than 50 distinct values, so it isn't low-cardinality.
+A plain btree on `shipped_at`, which indexes NULLs. Postgres reads only the 2,500 NULL rows and sorts them. A partial index `WHERE shipped_at IS NULL` would be smaller, but index-dedupe must drop it: `shipped_at` has far more than 50 distinct values, so it isn't low-cardinality.
 
 ## Notes.
 

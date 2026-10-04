@@ -5,8 +5,8 @@
   "features": [
     "cast on the column",
     "expression index impossible: timestamptz to date isn't immutable",
-    "LLM expression-index DDL fails and feeds 5a-6",
-    "range rewrite depends on TimeZone (step 2)"
+    "LLM expression-index DDL fails and feeds llm-index-refine",
+    "range rewrite depends on TimeZone (inventory)"
   ],
   "literal_sets": [
     {

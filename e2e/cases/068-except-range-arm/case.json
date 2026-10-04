@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "EXCEPT set operation",
-    "range-only arm: generator one keys on the range column (5a-1)",
+    "range-only arm: generator one keys on the range column (index-from-query)",
     "INCLUDE column for an index-only scan"
   ],
   "literal_sets": [

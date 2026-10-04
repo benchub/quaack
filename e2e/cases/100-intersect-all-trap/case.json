@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "INTERSECT ALL keeps multiplicities",
-    "duplicates fixture (step 9, S3)"
+    "duplicates fixture (rewrite-test, S3)"
   ],
   "literal_sets": [
     {

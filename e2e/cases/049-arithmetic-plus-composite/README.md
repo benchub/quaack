@@ -2,7 +2,7 @@
 
 **Category:** `both`, rewrite + new index.
 
-**Exercises:** arithmetic on the column; CHECK constraint as a stated assumption (6b); equality then range in a composite key (5a-1).
+**Exercises:** arithmetic on the column; CHECK constraint as a stated assumption (assumption-check); equality then range in a composite key (index-from-query).
 
 ## Setup.
 

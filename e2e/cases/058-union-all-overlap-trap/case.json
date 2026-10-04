@@ -5,7 +5,7 @@
   "features": [
     "UNION ALL keeps duplicates",
     "overlapping branches",
-    "fixtures with a row that matches both (step 9, S1)"
+    "fixtures with a row that matches both (rewrite-test, S1)"
   ],
   "literal_sets": [
     {

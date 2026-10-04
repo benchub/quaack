@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** ALL subquery; ALL over an empty set is true; orphan fixtures (step 9, S4).
+**Exercises:** ALL subquery; ALL over an empty set is true; orphan fixtures (rewrite-test, S4).
 
 ## Setup.
 

@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** RIGHT JOIN; JOIN ... USING; outer-join rows with no match; a plainer index loses on the worst case and is rejected by minimax (14b).
+**Exercises:** RIGHT JOIN; JOIN ... USING; outer-join rows with no match; a plainer index loses on the worst case and is rejected by minimax.
 
 ## Setup.
 
@@ -16,7 +16,7 @@ Enterprise accounts with their sessions, keeping accounts that have none. The jo
 
 `sessions (account_id, started_at)`: the join key, then the `ORDER BY` column, as generator one builds it. It wins on both the slow literal and the worst case.
 
-The plainer `sessions (account_id)` is the trap. It cuts the slow literal's blocks by two-thirds, which passes 14a. But on the worst-case literal (`'free'`, the top MCV, 16,000 accounts), the planner switches to a nested loop over it and touches about 60 times more blocks than the original, when this case was measured. 14b must reject that one, and the report should say which literal set sank it.
+The plainer `sessions (account_id)` is the trap. It cuts the slow literal's blocks by two-thirds, which passes blocks-metric. But on the worst-case literal (`'free'`, the top MCV, 16,000 accounts), the planner switches to a nested loop over it and touches about 60 times more blocks than the original, when this case was measured. minimax must reject that one, and the report should say which literal set sank it.
 
 The four enterprise accounts with no sessions come back once each, with a NULL `started_at`, in every plan.
 

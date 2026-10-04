@@ -5,7 +5,7 @@
   "features": [
     "LATERAL subquery",
     "ORDER BY ... LIMIT inside a correlated subquery",
-    "Nested Loop inner side (5a-2)"
+    "Nested Loop inner side (index-from-plan)"
   ],
   "literal_sets": [
     {

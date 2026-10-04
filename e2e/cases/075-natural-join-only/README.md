@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** NATURAL JOIN; FROM ONLY on a table with no inheritance children. README 3c refuses a table with children (`inheritance_parent`), with or without `ONLY`, so the case has none.
+**Exercises:** NATURAL JOIN; FROM ONLY on a table with no inheritance children. README statistics refuses a table with children (`inheritance_parent`), with or without `ONLY`, so the case has none.
 
 ## Setup.
 

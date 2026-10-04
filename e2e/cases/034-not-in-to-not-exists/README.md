@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** NOT IN subquery; anti-join rewrite; NOT NULL assumption checked in 6b.
+**Exercises:** NOT IN subquery; anti-join rewrite; NOT NULL assumption checked in assumption-check.
 
 ## Setup.
 
@@ -18,7 +18,7 @@ Gold APAC customers who never ordered. `NOT IN` can't become an anti-join, so Po
 
 ## Notes.
 
-3e's worst-case set would use the top MCV, `tier = 'standard'` (48,000 customers). There the subquery is too big to hash in `work_mem`, so the original `NOT IN` rescans `orders` for every customer and runs for many minutes. QUAACK would meet that under 12b's `statement_timeout`. The set is left out here so the proof finishes.
+literals's worst-case set would use the top MCV, `tier = 'standard'` (48,000 customers). There the subquery is too big to hash in `work_mem`, so the original `NOT IN` rescans `orders` for every customer and runs for many minutes. QUAACK would meet that under run-discipline's `statement_timeout`. The set is left out here so the proof finishes.
 
 ## Proof.
 

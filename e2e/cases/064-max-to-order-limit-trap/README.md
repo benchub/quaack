@@ -2,7 +2,7 @@
 
 **Category:** `trap`, tempting rewrite that QUAACK must disprove.
 
-**Exercises:** NULLs sort first in DESC order; aggregate over nullable column; NULL fixtures (step 9, S2).
+**Exercises:** NULLs sort first in DESC order; aggregate over nullable column; NULL fixtures (rewrite-test, S2).
 
 ## Setup.
 

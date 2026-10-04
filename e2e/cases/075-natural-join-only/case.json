@@ -4,7 +4,7 @@
   "compare": "multiset",
   "features": [
     "NATURAL JOIN",
-    "FROM ONLY on a table with no inheritance children (a parent with children is refused, DESIGN.md 3c)"
+    "FROM ONLY on a table with no inheritance children (a parent with children is refused, DESIGN.md's statistics)"
   ],
   "literal_sets": [
     {

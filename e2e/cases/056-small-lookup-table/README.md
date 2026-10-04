@@ -2,7 +2,7 @@
 
 **Category:** `none`, nothing beats the original (negative result).
 
-**Exercises:** negative result (15a); sequential scan of a two-page table.
+**Exercises:** negative result (negative-result); sequential scan of a two-page table.
 
 ## Setup.
 

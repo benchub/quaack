@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** now() anchored (3h); current_timestamp anchored (3h); localtimestamp anchored (3h).
+**Exercises:** now() anchored (clock-anchor); current_timestamp anchored (clock-anchor); localtimestamp anchored (clock-anchor).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Today's reminders.
 
 ## Expected result.
 
-`reminders (due_at)`. QUAACK must anchor `now()`, `current_timestamp`, and `localtimestamp` to `quaack.clock_anchor()` (3h), and put them back in the report.
+`reminders (due_at)`. QUAACK must anchor `now()`, `current_timestamp`, and `localtimestamp` to `quaack.clock_anchor()` (clock-anchor), and put them back in the report.
 
 ## Notes.
 

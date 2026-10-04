@@ -3,8 +3,8 @@
   "category": "index",
   "compare": "ordered",
   "features": [
-    "ORDER BY with mixed directions (5a-1 direction match)",
-    "Sort under a Limit (5a-2)",
+    "ORDER BY with mixed directions (index-from-query direction match)",
+    "Sort under a Limit (index-from-plan)",
     "four-column key cap"
   ],
   "literal_sets": [

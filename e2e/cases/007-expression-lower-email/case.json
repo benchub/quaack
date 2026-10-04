@@ -3,9 +3,9 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "expression index (5a-5)",
+    "expression index (llm-index-ideas)",
     "unique index the planner can't use",
-    "PII column: MCVs withheld (3f)"
+    "PII column: MCVs withheld (classify)"
   ],
   "literal_sets": [
     {

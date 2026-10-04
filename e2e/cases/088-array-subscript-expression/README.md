@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** array subscript; array slice; expression index on an array element (5a-5); text[] column statistics (3f).
+**Exercises:** array subscript; array slice; expression index on an array element (llm-index-ideas); text[] column statistics (classify).
 
 ## Setup.
 

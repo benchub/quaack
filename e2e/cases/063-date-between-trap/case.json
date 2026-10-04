@@ -4,8 +4,8 @@
   "compare": "multiset",
   "features": [
     "BETWEEN ... 23:59:59 misses fractional seconds",
-    "boundary-value fixtures (step 9, S5)",
-    "one unit past the literal (step 9)"
+    "boundary-value fixtures (rewrite-test, S5)",
+    "one unit past the literal (rewrite-test)"
   ],
   "literal_sets": [
     {

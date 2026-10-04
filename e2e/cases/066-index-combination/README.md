@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** greedy combination of candidates (5a-7); range column plus a join key; Hash Join with a large inner build (5a-2).
+**Exercises:** greedy combination of candidates (index-rank); range column plus a join key; Hash Join with a large inner build (index-from-plan).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Units sold per category in the last day. Postgres scans all of `orders` for the 
 
 ## Expected result.
 
-Both `orders (created_at)` and `order_items (order_id)`. Each one alone fixes only half the plan, so 5a-7's greedy combination should keep the pair as its best combination.
+Both `orders (created_at)` and `order_items (order_id)`. Each one alone fixes only half the plan, so index-rank's greedy combination should keep the pair as its best combination.
 
 ## Notes.
 

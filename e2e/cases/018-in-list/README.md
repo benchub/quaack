@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** IN list atom; IN list keeps its length in the worst-case and typical literals (3e).
+**Exercises:** IN list atom; IN list keeps its length in the worst-case and typical literals (literals).
 
 ## Setup.
 

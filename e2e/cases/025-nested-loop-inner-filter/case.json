@@ -3,7 +3,7 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "Nested Loop with an expensive inner side (5a-2)",
+    "Nested Loop with an expensive inner side (index-from-plan)",
     "inner join key plus its filter column",
     "low-cardinality filter"
   ],

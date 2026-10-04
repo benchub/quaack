@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** Sort under a Limit (5a-2); ORDER BY columns after the equality column (5a-1); DESC sort direction.
+**Exercises:** Sort under a Limit (index-from-plan); ORDER BY columns after the equality column (index-from-query); DESC sort direction.
 
 ## Setup.
 

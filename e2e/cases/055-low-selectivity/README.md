@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** index the planner declines to use (5a-4); covering index turns it into an index-only scan; top-MCV literal.
+**Exercises:** index the planner declines to use (index-test); covering index turns it into an index-only scan; top-MCV literal.
 
 ## Setup.
 
@@ -14,12 +14,12 @@ The total of shipped orders. It reads 80% of the table, and a sequential scan re
 
 ## Expected result.
 
-`orders (status, total_cents)`: an index-only scan over an index much narrower than the table, so it wins even at 80% selectivity. It's the likely LLM proposal (5a-5), or generator one's candidate with `total_cents` moved from `INCLUDE` into the key.
+`orders (status, total_cents)`: an index-only scan over an index much narrower than the table, so it wins even at 80% selectivity. It's the likely LLM proposal (llm-index-ideas), or generator one's candidate with `total_cents` moved from `INCLUDE` into the key.
 
 When this case was measured, two neighbors behaved differently:
 - Generator one's own `orders (status) INCLUDE (total_cents)` went unused for `'shipped'`, although it would give the same scan.
 - A plain `orders (status)` also goes unused for a value this common.
-5a-4 should record both as unused. A partial index, `(total_cents) WHERE status = 'shipped'`, also wins on the slow literal (398 blocks), since `status` is low-cardinality. It doesn't help the rare-status set.
+index-test should record both as unused. A partial index, `(total_cents) WHERE status = 'shipped'`, also wins on the slow literal (398 blocks), since `status` is low-cardinality. It doesn't help the rare-status set.
 
 ## Proof.
 

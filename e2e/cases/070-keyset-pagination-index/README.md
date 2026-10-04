@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** row comparison for keyset pagination (SupportedSql); Sort under a Limit (5a-2); DESC sort direction.
+**Exercises:** row comparison for keyset pagination (SupportedSql); Sort under a Limit (index-from-plan); DESC sort direction.
 
 ## Setup.
 

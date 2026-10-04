@@ -18,7 +18,7 @@ Page three of a carrier's shipments, newest first, unshipped last. Postgres sort
 
 ## Notes.
 
-The deep page, near the unshipped rows at the end, only proves equivalence. It isn't a 3e set.
+The deep page, near the unshipped rows at the end, only proves equivalence. It isn't a literals set.
 
 ## Proof.
 

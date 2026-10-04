@@ -2,7 +2,7 @@
 
 **Category:** `both`, rewrite + new index.
 
-**Exercises:** NOT IN subquery; anti-join rewrite; NOT NULL assumption (6b); index on the anti-join key.
+**Exercises:** NOT IN subquery; anti-join rewrite; NOT NULL assumption (assumption-check); index on the anti-join key.
 
 ## Setup.
 
@@ -18,7 +18,7 @@ Gold APAC customers who never ordered, as in case 034.
 
 ## Notes.
 
-As in case 034, 3e's top-MCV set (`tier = 'standard'`) would make the original run for many minutes, so it's left out.
+As in case 034, literals's top-MCV set (`tier = 'standard'`) would make the original run for many minutes, so it's left out.
 
 ## Proof.
 

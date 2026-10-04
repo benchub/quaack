@@ -3,7 +3,7 @@
   "category": "index",
   "compare": "multiset",
   "features": [
-    "index the planner declines to use (5a-4)",
+    "index the planner declines to use (index-test)",
     "covering index turns it into an index-only scan",
     "top-MCV literal"
   ],

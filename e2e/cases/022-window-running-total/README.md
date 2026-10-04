@@ -2,7 +2,7 @@
 
 **Category:** `index`, new index only.
 
-**Exercises:** window function with ORDER BY; sort removed by the index (5a-2); equality then ORDER BY columns (5a-1).
+**Exercises:** window function with ORDER BY; sort removed by the index (index-from-plan); equality then ORDER BY columns (index-from-query).
 
 ## Setup.
 

@@ -16,7 +16,7 @@
 # - refused: intake must refuse with the rule results.md names
 # - index: the top-ranked fix must exist, and touch at most the case's bound
 #   of total blocks on the slow literals. One whose own index comes from
-#   the LLM (5a-5) and misses is LLM, not FAIL.
+#   the LLM (llm-index-ideas) and misses is LLM, not FAIL.
 # - rewrite, both, trap, none: these need the LLM, so the outcome is only
 #   recorded, but a crash or a stopped run still fails
 #
@@ -97,7 +97,7 @@ module E2ERun
     def results = read("results.md")
     def bound = results[/must touch at most (\d+) total blocks/, 1]&.to_i
     def refusal_rule = results[/must refuse the query with `([a-z_]+)`/, 1]
-    def llm_index? = meta.fetch("features").any? { it.match?(/5a-[56]|set aside untested/) }
+    def llm_index? = meta.fetch("features").any? { it.match?(/llm-index-ideas|llm-index-refine|set aside untested/) }
     def database = "e2e_#{name[0, 3]}"
   end
 
@@ -164,10 +164,10 @@ module E2ERun
     # CHECKPOINT flushes the WAL first, so the VACUUM after it always sets
     # the visibility map, as on production and verify.rb's server.
     psql(server, prod, "CHECKPOINT; VACUUM;")
-    # A case's settings are production's own (DESIGN.md step 2 records the
+    # A case's settings are production's own (DESIGN.md's inventory records the
     # server's value, not the plan session's), so they go on the databases,
     # and the racetrack gets them too, as a run server configured like
-    # production would (step 4 checks it).
+    # production would (run-server checks it).
     server.admin.exec(%(CREATE DATABASE "#{racetrack}" TEMPLATE "#{prod}"))
     kase.meta.fetch("settings", {}).each do |k, v|
       [prod, racetrack].each { server.admin.exec(%(ALTER DATABASE "#{it}" SET #{k} = #{v})) }
@@ -229,7 +229,7 @@ module E2ERun
              .messages.find { it["type"] == "run" }.fetch("run_id")
   end
 
-  # Steps 2 to 4a, as `quaack setup` does them.
+  # Setup, as `quaack setup` does them.
   def setup(transport, run_id, server, racetrack)
     Quaack::Driver::Setup.run(transport:, run_id:, entries: Quaack::Driver::Pipeline.status(transport, run_id),
                               server: { "host" => server.host, "port" => server.port.to_s,
@@ -267,7 +267,7 @@ module E2ERun
     top ? "top #{top["label"]} #{top["slow_blocks"]} blocks" : "no fix selected (#{why_none(report)})"
   end
 
-  # Why the report has no fix, from its negative section (DESIGN.md 15a)
+  # Why the report has no fix, from its negative section (DESIGN.md's negative-result)
   # and each rewrite's fate.
   def why_none(report)
     negative = report["negative"] || {}

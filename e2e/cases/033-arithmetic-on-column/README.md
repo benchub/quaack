@@ -2,7 +2,7 @@
 
 **Category:** `rewrite`, rewrite only.
 
-**Exercises:** arithmetic on the column; CHECK constraint as a stated assumption (6b); simple CHECK accepted by fixtures (step 9).
+**Exercises:** arithmetic on the column; CHECK constraint as a stated assumption (assumption-check); simple CHECK accepted by fixtures (rewrite-test).
 
 ## Setup.
 
@@ -14,7 +14,7 @@ Charges in one whole-dollar bucket. Dividing the column hides it from the index.
 
 ## Expected result.
 
-A half-open range on `amount_cents`. Stated assumption: `amount_cents >= 0`. Integer division truncates toward zero, so without it, -99 would land in bucket 0. 6b finds the `CHECK` in `pg_constraint`.
+A half-open range on `amount_cents`. Stated assumption: `amount_cents >= 0`. Integer division truncates toward zero, so without it, -99 would land in bucket 0. assumption-check finds the `CHECK` in `pg_constraint`.
 
 ## Proof.
 

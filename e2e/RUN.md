@@ -12,10 +12,10 @@ judged. Other categories are recorded as INFO.
 | 004-sort-under-limit | index | PASS | top original:top:1 4 blocks <= bound 23 | 12 |
 | 005-covering-include | index | PASS | top original:top:1 11 blocks <= bound 11 | 10 |
 | 006-partial-low-cardinality | index | PASS | top original:top:1 4 blocks <= bound 52 | 11 |
-| 007-expression-lower-email | index | LLM | no fix selected (no candidates), bound 4; the case's index comes from the LLM (5a-5) | 11 |
-| 008-like-prefix-pattern-ops | index | LLM | no fix selected (declined: unused 1; existing: covered 2), bound 8; the case's index comes from the LLM (5a-5) | 11 |
-| 009-trigram-gin-infix | index | LLM | no fix selected (no candidates), bound 28; the case's index comes from the LLM (5a-5) | 11 |
-| 010-jsonb-containment-gin | index | LLM | no fix selected (no candidates), bound 804; the case's index comes from the LLM (5a-5) | 10 |
+| 007-expression-lower-email | index | LLM | no fix selected (no candidates), bound 4; the case's index comes from the LLM (llm-index-ideas) | 11 |
+| 008-like-prefix-pattern-ops | index | LLM | no fix selected (declined: unused 1; existing: covered 2), bound 8; the case's index comes from the LLM (llm-index-ideas) | 11 |
+| 009-trigram-gin-infix | index | LLM | no fix selected (no candidates), bound 28; the case's index comes from the LLM (llm-index-ideas) | 11 |
+| 010-jsonb-containment-gin | index | LLM | no fix selected (no candidates), bound 804; the case's index comes from the LLM (llm-index-ideas) | 10 |
 | 011-brin-append-only | index | PASS | top original:top:3 11 blocks <= bound 136 | 11 |
 | 012-join-inner-side | index | PASS | top original:combination 97 blocks <= bound 146 | 25 |
 | 013-group-by-index-only | index | PASS | top original:top:2 6 blocks <= bound 6 | 11 |
@@ -93,7 +93,7 @@ judged. Other categories are recorded as INFO.
 | 085-is-distinct-from-trap | trap | INFO | no fix selected (no candidates); needs the LLM | 10 |
 | 086-between-forms-and-negations | index | PASS | top original:top:1 1007 blocks <= bound 1007 | 12 |
 | 087-all-to-min-trap | trap | INFO | no fix selected (existing: covered 2); needs the LLM | 10 |
-| 088-array-subscript-expression | index | LLM | no fix selected (no candidates), bound 603; the case's index comes from the LLM (5a-5) | 10 |
+| 088-array-subscript-expression | index | LLM | no fix selected (no candidates), bound 603; the case's index comes from the LLM (llm-index-ideas) | 10 |
 | 089-array-subquery | index | PASS | top original:top:1 14 blocks <= bound 22 | 17 |
 | 090-collate-c-prefix | index | PASS | top original:top:1 18 blocks <= bound 90 | 11 |
 | 091-substring-to-like | rewrite | INFO | no fix selected (no candidates); needs the LLM | 11 |
@@ -127,7 +127,7 @@ Verdicts:
 
 - PASS: a `refused` case refused with the expected rule, or an `index` case's top fix is within its bound.
 - FAIL: the claim doesn't hold, or the run stopped at an enclave error.
-- LLM: an `index` case whose own index comes from the LLM (its features name 5a-5 or 5a-6, or a GIN set aside untested), so the fake LLM's empty answers can't reach it. Not a failure.
+- LLM: an `index` case whose own index comes from the LLM (its features name llm-index-ideas or llm-index-refine, or a GIN set aside untested), so the fake LLM's empty answers can't reach it. Not a failure.
 - INFO: `rewrite`, `both`, `trap` and `none` cases, which need the LLM. The outcome is recorded, and a stopped run is still FAIL.
 - CRASH: the runner itself raised.
 
@@ -136,45 +136,45 @@ The fake LLM (`CaseLLM`) answers every ask with a valid empty answer. Its `repli
 Two things the runner does to stand in for production, both found by this run:
 
 - A second `VACUUM` after `schema.sql`. The harness server runs with `synchronous_commit=off`, and `schema.sql`'s own `VACUUM` then leaves `relallvisible` at 0, so every index-only scan is priced as a heap scan and covering candidates come back "unused" (cases 005, 006).
-- A case's `settings` go on the production and racetrack databases with `ALTER DATABASE`, not only on the EXPLAIN session. DESIGN.md step 2 records production's own value, not the plan session's, and step 4 checks the run server against it. With the setting only on the session, 023 stopped at the plan gate, which was right.
+- A case's `settings` go on the production and racetrack databases with `ALTER DATABASE`, not only on the EXPLAIN session. DESIGN.md's inventory records production's own value, not the plan session's, and run-server checks the run server against it. With the setting only on the session, 023 stopped at the plan gate, which was right.
 
 ## Failures and suspected QUAACK bugs.
 
 Diagnosed on the runs of 2026-09-26/27. Each is a candidate backlog task. None is fixed here.
 
-### A. Set operations crash generator one (5a-1).
+### A. Set operations crash generator one (index-from-query).
 
 - Cases: 029, 058, 068, 097, 098, 100.
 - Step: `index-search`, rule `internal_error`.
-- Cause: `GeneratorOne::Input.select` (enclave/lib/quaack/enclave/generator_one.rb:157) raises `ArgumentError: generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)`. Intake and every step 3 check accept a top-level `UNION`/`INTERSECT`/`EXCEPT` (with or without ALL, or a CTE over one), so the run gets as far as 5a and dies there.
+- Cause: `GeneratorOne::Input.select` (enclave/lib/quaack/enclave/generator_one.rb:157) raises `ArgumentError: generator one doesn't take a set operation (UNION, INTERSECT, EXCEPT)`. Intake and every schema step accept a top-level `UNION`/`INTERSECT`/`EXCEPT` (with or without ALL, or a CTE over one), so the run gets as far as index-search and dies there.
 - Repro: `ruby e2e/run.rb 097`, or any `SELECT id FROM t WHERE a = 1 INTERSECT SELECT id FROM t WHERE b = 2`.
-- Fix direction: run 5a-1 per arm, or refuse set operations cleanly at intake and list them as unsupported in v1.
+- Fix direction: run index-from-query per arm, or refuse set operations cleanly at intake and list them as unsupported in v1.
 - Later (20260927-8): after 20260927-1, 097's top fix measured 384 blocks against a bound of 118. The top fix was already the case's index, `orders (created_at) INCLUDE (customer_id)`. The extra blocks were heap fetches from an index-only scan with `relallvisible` at 0, the harness race that 20260927-6 fixed with a CHECKPOINT before VACUUM. With that fix, 097 passes at 118 blocks, both before and after 20260927-8.
 
-### B. 5a-4 prepares the query with untyped parameters.
+### B. index-test prepares the query with untyped parameters.
 
 - Cases: 020 (`prepare_failed`, SQLSTATE 42883), 048 (`prepare_failed`, 42883), 099 (`prepare_failed`, 42883), 031 (`explain_failed`, 22P02), and probably 091 (`plan_gate_mismatch_likely_stale_statistics`).
-- Step: `index-search` (the plan gate and 5a-4 share `SingleCandidateTest`).
+- Step: `index-search` (the plan gate and index-test share `SingleCandidateTest`).
 - Cause: `SingleCandidateTest::Session#explain` (single_candidate_test.rb:419) calls `@connection.prepare(STATEMENT, @query)` with no parameter types, so Postgres infers each `$n` from context rather than using the literal's type from `placeholder_shapes`/`literal_sets`. Where the context doesn't pin the type, it picks the wrong one:
   - 020: `quaack.clock_anchor()::date - $1` resolves as `date - date` (an integer), then `timestamptz >= integer` doesn't exist (42883). Repro: `PREPARE a AS SELECT 1 FROM public.sessions WHERE started_at >= (now()::date - $1)` fails; `PREPARE b(integer) AS ...` works.
   - 048: `$1 AS depth` in a recursive CTE's anchor, then `t.depth + $2`.
   - 099: `VALUES ($1, $2), ...` columns become text, then `price_cents * v.qty` is `integer * text` (42883).
   - 031: `customer_id = $1` infers bigint, then the slow literal `4242.0` (numeric) can't bind (22P02).
-  - 091: `substring(sku FROM $1 FOR $2)` likely resolves to the text (regex) form, so the racetrack's Filter differs from step 1's and the gate refuses.
+  - 091: `substring(sku FROM $1 FOR $2)` likely resolves to the text (regex) form, so the racetrack's Filter differs from input's and the gate refuses.
 - Fix direction: prepare with the placeholder types, as production typed the literals.
 
-### C. Grouping and ordering columns go to INCLUDE instead of the key (5a-1).
+### C. Grouping and ordering columns go to INCLUDE instead of the key (index-from-query).
 
 - Cases: 013 (top 13 blocks, bound 6), 073 (candidate unused, bound 257).
-- Proposals seen: 013 `tickets (tenant_id) INCLUDE (status)` for `WHERE tenant_id = $1 GROUP BY status`; 073 `sessions (account_id) INCLUDE (started_at)` for `... USING (account_id) ORDER BY account_id, s.started_at`. The cases' indexes are `(tenant_id, status)` and `(account_id, started_at)`, which give a sorted scan the plan can use for the GROUP BY or ORDER BY. The case features name this as 5a-1's job ("GROUP BY columns after the equality column (5a-1)").
-- Case 096 has the same query shape plus `GROUP BY DISTINCT`, and there 5a-2 adds `(tenant_id, status)` from the plan, so it can pass (see F on why it doesn't always).
+- Proposals seen: 013 `tickets (tenant_id) INCLUDE (status)` for `WHERE tenant_id = $1 GROUP BY status`; 073 `sessions (account_id) INCLUDE (started_at)` for `... USING (account_id) ORDER BY account_id, s.started_at`. The cases' indexes are `(tenant_id, status)` and `(account_id, started_at)`, which give a sorted scan the plan can use for the GROUP BY or ORDER BY. The case features name this as index-from-query's job ("GROUP BY columns after the equality column (index-from-query)").
+- Case 096 has the same query shape plus `GROUP BY DISTINCT`, and there index-from-plan adds `(tenant_id, status)` from the plan, so it can pass (see F on why it doesn't always).
 
-### D. No atoms from correlated subqueries (5a-1).
+### D. No atoms from correlated subqueries (index-from-query).
 
 - Cases: 027 (LATERAL top-N, bound 3635), 089 (`ARRAY(SELECT ... WHERE c.article_id = a.id)`, bound 22).
 - Neither run proposes an index leading with the correlated column (`orders (customer_id, ...)`, `comments (article_id)`). 027 only gets `orders (created_at, id)` from the plan; 089 gets nothing on `comments`. The correlation `o.customer_id = c.id` inside the subquery is an equality atom for the inner table, as for a join.
 
-### E. No candidates when an atom's other side isn't a constant, or for OR and COLLATE (5a-1, 5a-2).
+### E. No candidates when an atom's other side isn't a constant, or for OR and COLLATE (index-from-query, index-from-plan).
 
 - Cases, all "no candidates" (dedupe considered 0):
   - 015: `email = $1 OR phone = $2` (case index `accounts (phone)`, with email already indexed).
@@ -183,16 +183,16 @@ Diagnosed on the runs of 2026-09-26/27. Each is a candidate backlog task. None i
   - 093: `due_at >= date_trunc('day', now())` (anchored clock) and `< date_trunc(...) + interval`.
   - 094: `signed_up_at >= $1 - make_interval(days => 3)`.
   - 090: `name COLLATE "C" LIKE 'Acme 12%'` (case index `(name COLLATE "C")`).
-- A column compared with a stable expression that holds no column of the same table is still a sargable atom. 5a-2 also proposes nothing from these plans' Seq Scan filters.
+- A column compared with a stable expression that holds no column of the same table is still a sargable atom. index-from-plan also proposes nothing from these plans' Seq Scan filters.
 
 ### F. Selected candidate is worse than the case's, or the pick isn't stable across runs.
 
-- 066 (two-table index combination, bound 7153): the best single index measured 10324 to 11165 blocks, and no combination beat it. The case needs `orders (created_at)` plus `order_items (order_id)` together. 5a-1 proposed both (`order_items (order_id) INCLUDE (quantity)`); check whether 5a-7/12 ever built them as a combination.
-- 025 (bound 2618): 5a-1 proposed `orders (customer_id, status) INCLUDE (id, created_at)`, the case's index plus INCLUDE, but the top fix measured 4984 blocks.
-- 055 (bound 417): 5a-1 proposed `orders (status) INCLUDE (total_cents)`, which 5a-4 declined as unused for a low-selectivity `status = $1` aggregate. The case's `(status, total_cents)` is the same shape as a key.
-- Unstable picks: the same case gave very different top fixes on different runs with the same data. 024 measured 52 and then 8 blocks (bound 51). 096 measured 2511, then 11, then 2511 again (bound 12). 086 was 1013 against 1007 and 070 was 5 against 4 on every run, which may be a real small miss or the same noise. Suspect: which candidates survive 14a/14b, or index-only scans in the arena depending on its visibility map after the build. This needs a look before the index claims can gate anything.
+- 066 (two-table index combination, bound 7153): the best single index measured 10324 to 11165 blocks, and no combination beat it. The case needs `orders (created_at)` plus `order_items (order_id)` together. index-from-query proposed both (`order_items (order_id) INCLUDE (quantity)`); check whether index-rank or measurement-setup ever built them as a combination.
+- 025 (bound 2618): index-from-query proposed `orders (customer_id, status) INCLUDE (id, created_at)`, the case's index plus INCLUDE, but the top fix measured 4984 blocks.
+- 055 (bound 417): index-from-query proposed `orders (status) INCLUDE (total_cents)`, which index-test declined as unused for a low-selectivity `status = $1` aggregate. The case's `(status, total_cents)` is the same shape as a key.
+- Unstable picks: the same case gave very different top fixes on different runs with the same data. 024 measured 52 and then 8 blocks (bound 51). 096 measured 2511, then 11, then 2511 again (bound 12). 086 was 1013 against 1007 and 070 was 5 against 4 on every run, which may be a real small miss or the same noise. Suspect: which candidates survive blocks-metric or minimax, or index-only scans in the arena depending on its visibility map after the build. This needs a look before the index claims can gate anything.
 
 ### Corpus problems (not QUAACK bugs).
 
-- 075 `natural-join-only`: its table has an inheritance child, and DESIGN.md 3c refuses any table with inheritance children (`inheritance_parent`), with or without `ONLY`. The case should be `refused` with `inheritance_parent`, or drop the child table.
-- 010 `jsonb-containment-gin`: the GIN `jsonb_path_ops` index comes from 5a-5 (DESIGN.md 5a-5 lists operator-class choices), so it needs the LLM. Its features don't say 5a-5; the runner treats "set aside untested" as LLM too.
+- 075 `natural-join-only`: its table has an inheritance child, and DESIGN.md's statistics refuses any table with inheritance children (`inheritance_parent`), with or without `ONLY`. The case should be `refused` with `inheritance_parent`, or drop the child table.
+- 010 `jsonb-containment-gin`: the GIN `jsonb_path_ops` index comes from llm-index-ideas (DESIGN.md's llm-index-ideas lists operator-class choices), so it needs the LLM. Its features don't say llm-index-ideas; the runner treats "set aside untested" as LLM too.
