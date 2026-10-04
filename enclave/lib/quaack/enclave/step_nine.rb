@@ -29,15 +29,17 @@ module Quaack
     # such as fk_cycle or complex_check), no candidate is tested. The
     # report's refused is then the error's rule, and every candidate's
     # Result is not passed, with that rule and scenario nil. Otherwise
-    # refused is nil.
+    # refused is nil. For fk_cycle, cycle is the cycle's TableNames
+    # (Scenarios::Topology); otherwise it's nil.
     #
     # Trust boundary: the report holds booleans, symbols, counts, and 9c's
     # redacted shapes. The fixtures, with the real literals, stay here. A
-    # refusal keeps only its rule, never the column it names.
+    # refusal keeps only its rule, never the column it names, and for
+    # fk_cycle the cycle's table names, which are schema.
     module StepNine
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped).
-      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused)
+      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -47,15 +49,21 @@ module Quaack
         builder = Scenarios::Builder.new(conn, PgQuery.parse(sql))
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, builder.spills, sql, candidate) }
-        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
-                   dropped: builder.dropped, refused: nil)
+        tested(guard, builder, results)
       rescue Scenarios::Error => e
-        refused(candidates, e.rule)
+        refused(candidates, e.rule, cycle: e.cycle)
       end
 
-      def refused(candidates, rule)
+      # The report of candidates tested on the guard's scenarios.
+      def tested(guard, builder, results)
+        Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
+                   dropped: builder.dropped, refused: nil, cycle: nil)
+      end
+
+      def refused(candidates, rule, cycle: nil)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
-        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule)
+        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule,
+                   cycle: (cycle if rule == :fk_cycle))
       end
 
       # A scenario's further fixtures (spills, see Scenarios::Parts) run
