@@ -41,7 +41,8 @@ module Quaack
       # It fires only when all of this holds:
       #
       # - The query is one SELECT whose select list is all placeholders,
-      #   with LIMIT a placeholder the literal oracle says is 1, and no
+      #   each perhaps cast, with LIMIT a placeholder the literal oracle
+      #   says is 1, and no
       #   DISTINCT, GROUP BY, HAVING, WINDOW, or OFFSET. Aggregates and
       #   window functions can then appear nowhere at its level. It calls
       #   no volatile function anywhere. A locking clause never gets here:
@@ -90,8 +91,14 @@ module Quaack
         private
 
         def existence_check?(top, literals)
-          top.target_list.all? { it.res_target.val.node == :param_ref } && plain_level?(top) &&
+          top.target_list.all? { constant?(it.res_target.val) } && plain_level?(top) &&
             one?(top.limit_count, literals)
+        end
+
+        # Whether node is a placeholder, cast any number of times.
+        def constant?(node)
+          node = node.type_cast.arg while node.node == :type_cast
+          node.node == :param_ref
         end
 
         # Whether nothing at the query's level groups or skips rows. An

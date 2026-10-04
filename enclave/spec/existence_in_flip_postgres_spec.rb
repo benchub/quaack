@@ -306,6 +306,30 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  it "takes a cast constant in the select list as a constant" do
+    expect_rewrites(
+      canvas(10, select: "CAST(1 AS bigint)::text AS one"),
+      "SELECT $1::bigint::text AS one FROM public.tool_lookups WHERE tool_lookups.tool_product_code = $6 " \
+      "AND EXISTS (SELECT 1 FROM public.enrollments JOIN public.courses ON courses.id = enrollments.course_id " \
+      "JOIN public.assignments ON assignments.context_id = courses.id " \
+      "WHERE enrollments.user_id = $2 AND enrollments.workflow_state = $3 AND courses.workflow_state <> $4 " \
+      "AND assignments.workflow_state = $5 AND assignments.id = tool_lookups.assignment_id) LIMIT $7"
+    )
+    expect_flips(*[10, 11, 12, 13].map { canvas(it, select: "1::integer AS one, 'x'::text") })
+    expect_refusals(
+      [[canvas(10, select: "enrollments.id::text"), canvas(10, select: "1::text")],
+       [canvas(10, select: "(1 + 1)::text"), canvas(10, select: "1::text")]]
+    )
+  end
+
+  it "refuses an ORDER BY when Postgres can't sort the first output column, which ORDER BY 1 would" do
+    conn.exec("CREATE TYPE public.wrapped AS (body json)")
+    sql = canvas(10, select: "'(\"{}\")'::public.wrapped AS one", limit: "ORDER BY enrollments.id LIMIT 1")
+    expect(conn.exec(sql).values.size).to eq(1)
+    expect(rewritten(sql)).to eq([])
+    expect(rewritten(canvas(10, select: "'(\"{}\")'::public.wrapped AS one")).size).to eq(1)
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)
