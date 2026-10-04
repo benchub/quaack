@@ -50,6 +50,14 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
         (1, 101, 'hi'), (2, 101, 'hi'), (3, 201, 'no'), (4, 202, 'hi'), (5, 501, 'hi'), (6, 401, 'hi');
       INSERT INTO public.pairs VALUES (1, 1), (1, 2);
       INSERT INTO public."my a" VALUES (1, 'one');
+      CREATE FUNCTION public.upto(int, int) RETURNS SETOF int IMMUTABLE LANGUAGE sql
+        AS 'SELECT generate_series($1, $2)';
+      CREATE OPERATOR public.### (LEFTARG = int, RIGHTARG = int, FUNCTION = public.upto);
+      CREATE FUNCTION public.both(public.assignments) RETURNS SETOF text IMMUTABLE LANGUAGE sql
+        AS 'SELECT unnest(ARRAY[$1.title, $1.title])';
+      CREATE SCHEMA elsewhere;
+      CREATE FUNCTION public.shout(text) RETURNS text IMMUTABLE LANGUAGE sql AS 'SELECT upper($1)';
+      CREATE FUNCTION elsewhere.shout(text) RETURNS SETOF text IMMUTABLE LANGUAGE sql AS 'SELECT upper($1)';
     SQL
   end
 
@@ -263,6 +271,131 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     expect(same_ordered_rows(sql, rewrites).map(&:first)).to eq(%w[6 5])
   end
 
+  # Each fires, and is the twin of a refusal below.
+  {
+    "a function of the kept table" => ["a.id, lower(a.title)", ""],
+    "an expression of the key beside the key" => ["a.id + 0, a.id", ""],
+    "a COLLATE" => [%(a.id, a.title COLLATE "C"), ""],
+    "a cast" => ["a.id, a.ctx::text", ""],
+    "a constant" => ["a.id, 1", ""],
+    "an operator that returns one row" => ["a.id, a.id + 2", ""],
+    "a stable function" => ["a.id, a.title || now()::date::text", ""],
+    "a function named in its schema, when another schema has a set-returning one of the name" =>
+      ["a.id, public.shout(a.title)", ""],
+    "an unqualified column of the kept table alone" => ["a.id, title", ""],
+    "an unqualified key" => ["slug, a.title", ""],
+    "an unqualified column of the kept table, in an expression" => ["a.id, upper(title)", ""],
+    "an expression in the ORDER BY that's in the select list" =>
+      ["a.id, lower(a.title)", "ORDER BY lower(a.title) DESC, a.id"],
+    "an expression in the ORDER BY with the key, and a LIMIT" =>
+      ["a.id + 0, a.id", "ORDER BY a.id + 0, a.id LIMIT 2 OFFSET 1"],
+    "an output name in the ORDER BY with the key by name, and a LIMIT" =>
+      ["a.title AS slug, a.slug AS s2", "ORDER BY slug, a.slug LIMIT 2"]
+  }.each do |what, (list, order)|
+    it "takes #{what} in the select list, and the rows are the same" do
+      sql = "SELECT DISTINCT #{list} FROM public.assignments a JOIN public.submissions s ON s.a_id = a.id " \
+            "WHERE a.ctx = 10 AND s.state = 'done' #{order}".strip
+
+      rewrites = rewritten(sql)
+
+      expect(rewrites.size).to eq(1)
+      expect(rewrites.first).to start_with("SELECT #{list} FROM public.assignments a WHERE ")
+      expect(rewrites.first).to end_with(order)
+      if order.empty?
+        expect(same_rows(sql, rewrites).size).to be > 1
+      else
+        expect(same_ordered_rows(sql, rewrites).size).to be > 1
+      end
+    end
+  end
+
+  it "resolves an unqualified column in a condition to its one table, and moves it with that table" do
+    sql = "SELECT DISTINCT a.id FROM public.assignments a JOIN public.submissions s ON a_id = a.id " \
+          "WHERE ctx = 10 AND state = 'done'"
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq(
+      ["SELECT a.id FROM public.assignments a WHERE ctx = 10 AND " \
+       "EXISTS (SELECT 1 FROM public.submissions s WHERE a_id = a.id AND state = 'done')"]
+    )
+    expect(same_rows(sql, rewrites)).to eq([["1"], ["2"], ["5"], ["6"]])
+  end
+
+  # The hand-tuned Canvas query of 20261002-16, as Rails writes it.
+  describe "on Canvas's roster query" do
+    # Users 1, 2, 4, 5, 6, and 8 are in course 7; 1 has three enrollments
+    # there and 2 has two, so the join gives them more than once. 3 is
+    # only in course 9, and 7 has none. 4 and 5 share a sortable name, and
+    # 6 has none. Under the numeric collation, a2 sorts before a10.
+    before do
+      conn.exec(<<~SQL)
+        CREATE COLLATION public."und-u-kn-true" (provider = icu, locale = 'und-u-kn-true');
+        CREATE TABLE public.users (id bigint PRIMARY KEY, name text, sortable_name text, workflow_state text);
+        CREATE TABLE public.enrollments (id bigint PRIMARY KEY, user_id bigint, course_id bigint, type text,
+                                         workflow_state text);
+        INSERT INTO public.users VALUES
+          (1, 'A Ten', 'a10', 'registered'), (2, 'A Two', 'a2', 'registered'), (3, 'B', 'b', 'registered'),
+          (4, 'C One', 'c', 'registered'), (5, 'C Two', 'c', 'registered'), (6, 'Nameless', NULL, 'registered'),
+          (7, 'D', 'd', 'registered'), (8, 'E', 'E', 'pre_registered');
+        INSERT INTO public.enrollments VALUES
+          (1, 1, 7, 'StudentEnrollment', 'active'), (2, 1, 7, 'TeacherEnrollment', 'active'),
+          (3, 1, 7, 'StudentEnrollment', 'invited'), (4, 2, 7, 'StudentEnrollment', 'active'),
+          (5, 2, 7, 'StudentEnrollment', 'active'), (6, 3, 9, 'StudentEnrollment', 'active'),
+          (7, 4, 7, 'StudentEnrollment', 'active'), (8, 5, 7, 'StudentEnrollment', 'active'),
+          (9, 6, 7, 'StudentEnrollment', 'active'), (10, 8, 7, 'StudentEnrollment', 'active'),
+          (11, NULL, 7, 'StudentEnrollment', 'active');
+      SQL
+    end
+
+    let(:sql) do
+      qualified(<<~SQL.tr("\n", " ").strip)
+        SELECT DISTINCT users.*, sortable_name COLLATE public."und-u-kn-true"
+        FROM users INNER JOIN enrollments ON users.id = enrollments.user_id
+        WHERE enrollments.course_id = $1 AND enrollments.workflow_state <> 'deleted'
+          AND enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment')
+        ORDER BY sortable_name COLLATE public."und-u-kn-true" ASC, users.id ASC LIMIT $2 OFFSET $3
+      SQL
+    end
+
+    it "keeps users, moves enrollments into an EXISTS, and carries the ORDER BY, LIMIT, and OFFSET over" do
+      expect(rewritten(sql)).to eq(
+        ["SELECT users.*, sortable_name COLLATE public.\"und-u-kn-true\" FROM public.users WHERE " \
+         "EXISTS (SELECT 1 FROM public.enrollments WHERE users.id = enrollments.user_id AND " \
+         "enrollments.course_id = $1 AND enrollments.workflow_state <> 'deleted' AND " \
+         "enrollments.type IN ('StudentEnrollment', 'TeacherEnrollment')) " \
+         "ORDER BY sortable_name COLLATE public.\"und-u-kn-true\" ASC, users.id ASC LIMIT $2 OFFSET $3"]
+      )
+      expect(rule.rewrites(PgQuery.parse(sql), catalog).first.assumptions).to eq(
+        [{ "kind" => "unique", "table" => "public.users", "columns" => ["id"] },
+         { "kind" => "not_null", "table" => "public.users", "column" => "id" }]
+      )
+    end
+
+    it "gives the same rows in the same order on every page" do
+      rewrites = rewritten(sql)
+
+      expect(same_ordered_rows(sql, rewrites, [7, 20, 0]).map(&:first)).to eq(%w[2 1 4 5 8 6])
+      (0..6).each { |offset| same_ordered_rows(sql, rewrites, [7, 2, offset]) }
+    end
+
+    it "refuses when the select list reads a column of enrollments, qualified or not" do
+      reads_enrollment = sql.sub("SELECT DISTINCT users.*,", "SELECT DISTINCT users.*, enrollments.type,")
+      unqualified = sql.sub("SELECT DISTINCT users.*,", "SELECT DISTINCT users.*, course_id,")
+
+      expect(rewritten(sql).size).to eq(1)
+      expect(rewritten(reads_enrollment)).to eq([])
+      expect(rewritten(unqualified)).to eq([])
+    end
+
+    it "refuses an unqualified column both tables have" do
+      ambiguous = sql.sub(%(sortable_name COLLATE public."und-u-kn-true" FROM),
+                          %(sortable_name COLLATE public."und-u-kn-true", workflow_state FROM))
+
+      expect(rewritten(ambiguous)).to eq([])
+    end
+  end
+
   it "doesn't fire on its own output, so the generator gives the one rewrite" do
     generated = Quaack::Enclave::RewriteRules.generate(PgQuery.parse(fires), catalog, rules: [rule])
 
@@ -292,16 +425,41 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
     "the select list reads the other table's key too" => "SELECT DISTINCT s.id, a.title #{from} #{where}",
     "the select list has another table's star" => "SELECT DISTINCT a.id, s.* #{from} #{where}",
     "the select list is a bare star" => "SELECT DISTINCT * #{from} #{where}",
-    "the select list has an expression" => "SELECT DISTINCT a.id, lower(a.title) #{from} #{where}",
-    "the select list has an expression of the key" => "SELECT DISTINCT a.id + 0, a.id #{from} #{where}",
+    "the select list has an expression of the key and not the key" =>
+      "SELECT DISTINCT a.id + 0, a.title #{from} #{where}",
+    "the select list has an expression of another table" =>
+      "SELECT DISTINCT a.id, lower(s.state) #{from} #{where}",
+    "the select list has an expression of both tables" =>
+      "SELECT DISTINCT a.id, a.title || s.state #{from} #{where}",
     "the select list has a set-returning function" =>
       "SELECT DISTINCT a.id, unnest(ARRAY[a.title, a.title]) #{from} #{where}",
+    "the select list has a set-returning function of no column" =>
+      "SELECT DISTINCT a.id, generate_series(1, 2) #{from} #{where}",
+    "the select list has a set-returning operator" => "SELECT DISTINCT a.id, a.id ### 2 #{from} #{where}",
+    "the select list calls a set-returning function in attribute notation" =>
+      "SELECT DISTINCT a.id, a.both #{from} #{where}",
+    "the select list calls a function some schema has a set-returning one of, without naming the schema" =>
+      "SELECT DISTINCT a.id, shout(a.title) #{from} #{where}",
     "the select list has a window function" => "SELECT DISTINCT a.id, count(*) OVER () #{from} #{where}",
-    "the select list has a constant" => "SELECT DISTINCT a.id, 1 #{from} #{where}",
+    "the select list has a window function of the kept table" =>
+      "SELECT DISTINCT a.id, row_number() OVER (ORDER BY a.id) #{from} #{where}",
+    "the select list has a volatile function" => "SELECT DISTINCT a.id, random() #{from} #{where}",
+    "the select list has a volatile function of the kept table" =>
+      "SELECT DISTINCT a.id, a.title || random()::text #{from} #{where}",
+    "the select list has only constants" => "SELECT DISTINCT 1 #{from} #{where}",
     "the select list has a subquery" => "SELECT DISTINCT a.id, (SELECT 1) #{from} #{where}",
-    "the select list has an unqualified column" => "SELECT DISTINCT a.id, title #{from} #{where}",
+    "the select list has an unqualified column of another table" =>
+      "SELECT DISTINCT a.id, state #{from} #{where}",
+    "the select list has an unqualified column of both tables" => "SELECT DISTINCT id, a.title #{from} #{where}",
+    "the select list has an unqualified column of no table" =>
+      "SELECT DISTINCT a.id, missing #{from} #{where}",
+    "the select list has an unqualified column only a removed table has, in an expression" =>
+      "SELECT DISTINCT a.id, upper(state) #{from} #{where}",
+    "the select list has a table's whole row by its bare name" => "SELECT DISTINCT a.id, a #{from} #{where}",
     "the select list has a three-part column" => "SELECT DISTINCT a.id, public.a.title #{from} #{where}",
-    "a condition has an unqualified column" => "SELECT DISTINCT a.id, a.title #{from} WHERE ctx = 10",
+    "a condition has an unqualified column of both tables" => "SELECT DISTINCT a.id, a.title #{from} WHERE id = 1",
+    "a condition has an unqualified column of no table" =>
+      "SELECT DISTINCT a.id, a.title #{from} WHERE missing = 1",
     "a condition has a three-part column" =>
       "SELECT DISTINCT a.id, a.title #{from} WHERE public.s.state = 'done'",
     "a condition has a whole-row reference" => "SELECT DISTINCT a.id, a.title #{from} WHERE s.* IS NOT NULL",
@@ -313,8 +471,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
       "SELECT DISTINCT a.id, a.title FROM public.assignments a JOIN public.submissions s " \
       "ON s.a_id = a.id AND s.id IN (SELECT 101)",
     "the ORDER BY has an output name" => "SELECT DISTINCT a.id AS x, a.title #{from} #{where} ORDER BY x",
-    "the ORDER BY has an expression" => "SELECT DISTINCT a.id, a.title #{from} #{where} ORDER BY a.id + 0",
     "the ORDER BY reads another table" => "SELECT DISTINCT a.id, a.title #{from} #{where} ORDER BY s.id",
+    "the ORDER BY has a volatile function" =>
+      "SELECT DISTINCT a.id, a.title #{from} #{where} ORDER BY random()",
+    "it has a LIMIT and the key is sorted only in an expression" =>
+      "SELECT DISTINCT a.id + 0, a.id #{from} #{where} ORDER BY a.id + 0 LIMIT 2",
+    "it has a LIMIT and the key is sorted only by its unqualified name" =>
+      "SELECT DISTINCT a.title AS slug, a.slug AS s2 #{from} #{where} ORDER BY slug LIMIT 2",
     "it has a LIMIT and no ORDER BY" => "#{fires} LIMIT 2",
     "it has an OFFSET and no ORDER BY" => "#{fires} OFFSET 2",
     "it has a LIMIT and an ORDER BY with no key" => "#{fires} ORDER BY a.title LIMIT 2",
@@ -396,6 +559,11 @@ RSpec.describe Quaack::Enclave::RewriteRules::DistinctJoinToExists do
 
       expect(rows(distinct(list)).size).to eq(4)
       expect(rows(exists(list)).size).to eq(8)
+    end
+
+    it "with a set-returning function in attribute notation: likewise" do
+      expect(rows(distinct("a.id, a.both")).size).to eq(4)
+      expect(rows(exists("a.id, a.both")).size).to eq(8)
     end
 
     it "with a window function: it counts the join's rows, not the assignments" do
