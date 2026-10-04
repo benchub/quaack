@@ -253,6 +253,28 @@ RSpec.describe Quaack::Enclave::Scenarios do
       SQL
       s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
       expect(values(s3, "users", "ids").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "login")).to all(eq(""))
+    end
+
+    it "lets a wider key use the column a narrower key varies, whichever index came first" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, ids bigint[] NOT NULL, login text NOT NULL);
+        CREATE UNIQUE INDEX a_wide ON fx.users (ids, login);
+        CREATE UNIQUE INDEX b_narrow ON fx.users (ids);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "ids").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "login")).to all(eq(""))
+    end
+
+    it "varies a column whose type takes distinct values over one whose type can't" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, lsn pg_lsn NOT NULL DEFAULT '0/0',
+          login text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (lsn, login);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
     end
 
     it "varies a column the query's predicate doesn't constrain" do

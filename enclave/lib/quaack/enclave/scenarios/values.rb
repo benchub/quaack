@@ -72,8 +72,10 @@ module Quaack
 
         # How well the type takes distinct values, lowest best: numbers,
         # text, times, uuids, and network addresses first, then the rest,
-        # then booleans, enums, and bit strings, which have few.
+        # then booleans, enums, and bit strings, which have few, and last a
+        # type with no distinct value it reads, such as pg_lsn.
         def rank(col)
+          return 3 unless distinct?(col)
           return 0 if MANY.include?(category(col))
 
           FEW.include?(category(col)) ? 2 : 1
@@ -92,6 +94,13 @@ module Quaack
         end
 
         private
+
+        def distinct?(col)
+          nth(col, 1)
+          true
+        rescue Error
+          false
+        end
 
         def typicals(col)
           return [Literals.bits(underlying(col).type, 0)] if category(col) == "V"
