@@ -15,9 +15,9 @@ module Quaack
           # The subquery's selected column, qualified, with its table
           # renamed if the original's FROM has its name, or nil if it can't
           # be. It changes sub in place.
-          def selected(sub, from, tree)
+          def selected(sub, from, tree, catalog)
             node = sub.target_list.first.res_target.val
-            column = qualify!(node.column_ref, sub)
+            column = qualify!(node.column_ref, sub, catalog)
             names = Tree.from_items(from).map(&:name)
             return unless column && !names.include?(nil)
 
@@ -26,13 +26,14 @@ module Quaack
           end
 
           # The column as name.column, or nil: it was, or it was a bare
-          # column of the subquery's one table.
-          def qualify!(column, sub)
+          # column of the subquery's one table, or of just one of its plain
+          # tables, by the catalog.
+          def qualify!(column, sub, catalog)
             fields = column.fields
             return unless fields.all? { it.node == :string } && fields.size.between?(1, 2)
             return column if fields.size == 2
 
-            return unless (table = sole_table(sub))
+            return unless (table = sole_table(sub) || owner(fields.first.string.sval, sub, catalog))
 
             fields.unshift(PgQuery::Node.new(string: PgQuery::String.new(sval: Tree.refname(table))))
             column
@@ -40,6 +41,16 @@ module Quaack
 
           def sole_table(sub)
             sub.from_clause.first.range_var if sub.from_clause.size == 1 && sub.from_clause.first.node == :range_var
+          end
+
+          # The one plain table of sub's FROM with a column named name, or
+          # nil.
+          def owner(name, sub, catalog)
+            items = Tree.from_items(sub.from_clause)
+            return unless Tree.tables?(items)
+
+            owners = items.map(&:table).select { catalog.column_names(it.schemaname, it.relname).include?(name) }
+            owners.first if owners.one?
           end
 
           # Gives the subquery's table under name a fresh alias, renames

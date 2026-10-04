@@ -56,7 +56,8 @@ module Quaack
       #   HAVING, DISTINCT ON, or WITH, and no aggregate. A plain DISTINCT
       #   is dropped, since IN doesn't count rows. y is written
       #   name.column, or just column when the subquery's FROM is one
-      #   table, which then qualifies it.
+      #   table, or when the catalog says just one of its plain tables has
+      #   that column. Either way it's then qualified.
       # - Every top-level item of the original's FROM has a name Tree can
       #   read. If one has y's qualifier, that is a table of the subquery's
       #   FROM, which has no subquery of its own, so every reference to it
@@ -83,7 +84,7 @@ module Quaack
           return [] unless literals && top && existence_check?(top, literals) && Ordering.kept?(top, catalog)
           return [] if catalog.calls_volatile?(Deparse.faithfully(parse.tree))
 
-          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, literals) }.compact
+          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, catalog, literals) }.compact
         rescue Deparse::Error
           []
         end
@@ -112,22 +113,22 @@ module Quaack
 
         # A copy of the tree flipped on the WHERE's index-th condition, or
         # nil if this rule doesn't apply to it or Postgres can't prepare it.
-        def rewrite(original, index, literals)
-          tree = flipped(Deparse.copy(original), index)
+        def rewrite(original, index, catalog, literals)
+          tree = flipped(Deparse.copy(original), index, catalog)
           Rewrite.new(tree:, assumptions: []) if tree && literals.prepares?(Deparse.faithfully(tree))
         rescue Deparse::Error
           nil
         end
 
         # The tree, flipped in place, or nil.
-        def flipped(tree, index)
+        def flipped(tree, index, catalog)
           top = Tree.select(tree)
           conditions = Tree.conjuncts(top.where_clause)
           others = conditions.reject.with_index { |_, i| i == index }
           link = in_link(conditions[index])
           return if link.nil? || Scopes.captured?(top.from_clause, others, link)
 
-          selected = Selection.selected(link.subselect.select_stmt, top.from_clause, tree)
+          selected = Selection.selected(link.subselect.select_stmt, top.from_clause, tree, catalog)
           return unless selected
 
           flip!(top, others, link, selected)

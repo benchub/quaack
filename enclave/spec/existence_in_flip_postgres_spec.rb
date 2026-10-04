@@ -330,6 +330,35 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     expect(rewritten(canvas(10, select: "'(\"{}\")'::public.wrapped AS one")).size).to eq(1)
   end
 
+  it "qualifies an unqualified selected column with the one table of several that has it" do
+    expect_rewrites(
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = 10 AND submissions.assignment_id IN (" \
+      "SELECT assignment_id FROM public.tool_lookups JOIN public.courses ON courses.id = tool_lookups.id) LIMIT 1",
+      "SELECT $1 AS one FROM public.tool_lookups JOIN public.courses ON courses.id = tool_lookups.id " \
+      "WHERE EXISTS (SELECT 1 FROM public.submissions WHERE submissions.user_id = $2 " \
+      "AND submissions.assignment_id = tool_lookups.assignment_id) LIMIT $3"
+    )
+    expect_flips(*[10, 11, 12, 13].flat_map do |user|
+      ["SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = #{user} AND submissions.assignment_id " \
+       "IN (SELECT assignment_id FROM public.tool_lookups JOIN public.courses ON courses.id = tool_lookups.id) " \
+       "LIMIT 1",
+       "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = #{user} AND submissions.assignment_id " \
+       "IN (SELECT assignment_id FROM public.courses, public.tool_lookups " \
+       "WHERE courses.id = tool_lookups.id AND courses.workflow_state = 'available') LIMIT 1"]
+    end)
+  end
+
+  it "refuses an unqualified selected column that more than one or none of its tables has" do
+    expect_no_flip(
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id >= 6 AND assignments.id IN (" \
+      "SELECT id FROM public.submissions FULL JOIN public.tool_lookups USING (id)) LIMIT 1",
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.assignment_id IN (" \
+      "SELECT user_id FROM public.tool_lookups, public.courses) LIMIT 1",
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.assignment_id IN (" \
+      "SELECT assignment_id FROM public.tool_lookups, (SELECT 1 AS k) AS s) LIMIT 1"
+    )
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)
@@ -441,17 +470,8 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
   end
 
   it "refuses a selected column it can't qualify or rename safely" do
-    lookup = "SELECT 1 FROM public.submissions WHERE submissions.assignment_id IN "
     expect_refusals(
-      [["#{lookup}(SELECT assignment_id FROM public.tool_lookups JOIN public.courses " \
-        "ON courses.id = tool_lookups.id) LIMIT 1",
-        "#{lookup}(SELECT tool_lookups.assignment_id FROM public.tool_lookups JOIN public.courses " \
-        "ON courses.id = tool_lookups.id) LIMIT 1"],
-       ["#{lookup}(SELECT assignment_id FROM public.tool_lookups, public.courses " \
-        "WHERE courses.id = tool_lookups.id) LIMIT 1",
-        "#{lookup}(SELECT tool_lookups.assignment_id FROM public.tool_lookups, public.courses " \
-        "WHERE courses.id = tool_lookups.id) LIMIT 1"],
-       ["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
+      [["SELECT 1 FROM public.tool_lookups WHERE tool_lookups.id IN (SELECT tool_lookups.assignment_id " \
         "FROM public.tool_lookups WHERE EXISTS (SELECT 1 FROM public.assignments " \
         "WHERE assignments.id = tool_lookups.assignment_id)) LIMIT 1",
         "SELECT 1 FROM public.tool_lookups AS t WHERE t.id IN (SELECT tool_lookups.assignment_id " \
