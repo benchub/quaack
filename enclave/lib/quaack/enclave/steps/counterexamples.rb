@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "../rewrite_entry"
 require_relative "../arena_runner"
 require_relative "../counterexamples"
+require_relative "../denormalized_fixture"
 require_relative "../redaction"
 require_relative "../run_server"
 require_relative "../scenarios"
@@ -18,7 +19,9 @@ module Quaack
       # DESIGN.md steps 9 and 10 for one stored rewrite, on the arena. Each
       # takes --search rewrite_<n>. The original runs as anchored_query; the
       # candidate is the rewrite's SQL with each $n bound to its literal
-      # from placeholder_map (Enclave::Counterexamples.bind).
+      # from placeholder_map (Enclave::Counterexamples.bind). The arena's
+      # fixtures honour the rewrite's own denormalized_equal assumptions
+      # when a 6c rule wrote it (DenormalizedFixture).
       #
       # Store entries, which the driver resumes by and step 11 reads:
       #   rewrite_tested_<n>   { "passed", "scenario", "rule", "untested",
@@ -63,6 +66,10 @@ module Quaack
           [store.read("anchored_query"), RewriteEntry.run_sql(store.read(search))].map { Enclave::Counterexamples.bind(it, map) }
         end
 
+        # The rewrite's own denormalized_equal assumptions, from a 6c rule,
+        # that the arena's fixtures honour (DenormalizedFixture).
+        def honour(store, search) = DenormalizedFixture.copies(store.read(search))
+
         def survived(store, number, survived)
           store.write("rewrite_survived_#{number}", "survived" => survived)
         end
@@ -97,7 +104,7 @@ module Quaack
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            outcome(StepNine.run(connection, original, [candidate]))
+            outcome(StepNine.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
           ensure
             connection&.close
           end
@@ -191,7 +198,8 @@ module Quaack
             original, candidate = Counterexamples.queries(store, search)
             untested = store.read("rewrite_tested_#{number}")["untested_atoms"]
             atoms = Scenarios::Builder.new(connection, PgQuery.parse(original)).atoms
-            Enclave::Counterexamples.compare(ArenaRunner.new(connection), prepared,
+            runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search))
+            Enclave::Counterexamples.compare(runner, prepared,
                                              original:, candidate:, atoms:, untested:)
           end
 
