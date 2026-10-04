@@ -3,6 +3,9 @@
 require "pg_query"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "existence_in_flip/ordering"
+require_relative "existence_in_flip/scopes"
+require_relative "existence_in_flip/selection"
 
 module Quaack
   module Enclave
@@ -32,30 +35,42 @@ module Quaack
       # them that read the outer query no longer resolves, and Postgres
       # refuses to prepare the rewrite. That's how a correlated subquery is
       # refused. Only y moves to where the original's FROM could capture
-      # it, so it's qualified, and its table renamed if the original's FROM
-      # has its name.
+      # it, so its columns are qualified, and their tables renamed if the
+      # original's FROM has their names.
       #
       # It fires only when all of this holds:
       #
       # - The query is one SELECT whose select list is all placeholders,
-      #   with LIMIT a placeholder the literal oracle says is 1, and no
-      #   DISTINCT, GROUP BY, HAVING, WINDOW, ORDER BY, or OFFSET.
-      #   Aggregates and window functions can then appear nowhere at its
-      #   level. It calls no volatile function anywhere. A locking clause
-      #   never gets here: SupportedSql refuses it.
+      #   each perhaps cast, with LIMIT a placeholder the literal oracle
+      #   says is 1, and no
+      #   DISTINCT, GROUP BY, HAVING, WINDOW, or OFFSET. Aggregates and
+      #   window functions can then appear nowhere at its level. It calls
+      #   no volatile function anywhere. A locking clause never gets here:
+      #   SupportedSql refuses it. An ORDER BY becomes ORDER BY 1 (see
+      #   Ordering), when each of its keys is a position or a column that
+      #   can't fail to sort.
       # - The IN is one of the conditions its WHERE ANDs together, written
       #   x IN (SELECT y ...), not = ANY. SupportedSql refuses a row as x.
-      # - The subquery is one plain SELECT of one column (see
+      # - The subquery is one plain SELECT of one value (see
       #   Tree.plain_select?), so no set operation, LIMIT, OFFSET, GROUP BY,
       #   HAVING, DISTINCT ON, or WITH, and no aggregate. A plain DISTINCT
-      #   is dropped, since IN doesn't count rows. y is written
+      #   is dropped, since IN doesn't count rows. y is an expression with
+      #   no subquery, and not a bare placeholder, which IN reads as text
+      #   but = reads as x's type. Each column in it is written
       #   name.column, or just column when the subquery's FROM is one
-      #   table, which then qualifies it.
+      #   table, or when the catalog says just one of its plain tables has
+      #   that column. Either way it's then qualified.
       # - Every top-level item of the original's FROM has a name Tree can
-      #   read. If one has y's qualifier, that is a table of the subquery's
-      #   FROM, which has no subquery of its own, so every reference to it
-      #   can be renamed.
-      # - Postgres can prepare the rewrite.
+      #   read. If one has the qualifier of a column in y, that is a table
+      #   of the subquery's FROM, and nothing else anywhere in the subquery
+      #   has that name as a FROM item, so every reference to it can be
+      #   renamed.
+      # - No bare name on either side names a FROM item of that side, such
+      #   as posts in posts IS NULL. Postgres reads a bare name as a column
+      #   of any query in scope before it reads it as a whole row, and the
+      #   flip puts each side in the other's scope.
+      # - Postgres can prepare the rewrite, with each placeholder declared
+      #   its literal's type, as the original is.
       #
       # It gives one rewrite per IN that qualifies, and states no
       # assumptions.
@@ -69,10 +84,10 @@ module Quaack
 
         def rewrites(parse, catalog, literals)
           top = Tree.select(parse.tree)
-          return [] unless literals && top && existence_check?(top, literals)
+          return [] unless literals && top && existence_check?(top, literals) && Ordering.kept?(top, catalog)
           return [] if catalog.calls_volatile?(Deparse.faithfully(parse.tree))
 
-          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, catalog) }.compact
+          Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, catalog, literals) }.compact
         rescue Deparse::Error
           []
         end
@@ -80,36 +95,46 @@ module Quaack
         private
 
         def existence_check?(top, literals)
-          top.target_list.all? { it.res_target.val.node == :param_ref } && plain_level?(top) &&
+          top.target_list.all? { constant?(it.res_target.val) } && plain_level?(top) &&
             one?(top.limit_count, literals)
         end
 
-        # Whether nothing at the query's level groups, orders, or skips rows.
+        # Whether node is a placeholder, cast any number of times.
+        def constant?(node)
+          node = node.type_cast.arg while node.node == :type_cast
+          node.node == :param_ref
+        end
+
+        # Whether nothing at the query's level groups or skips rows. An
+        # ORDER BY is Ordering's.
         def plain_level?(top)
           top.distinct_clause.empty? && top.group_clause.empty? && top.having_clause.nil? &&
-            top.window_clause.empty? && top.sort_clause.empty? && top.limit_offset.nil?
+            top.window_clause.empty? && top.limit_offset.nil?
         end
 
         def one?(limit, literals) = limit&.node == :param_ref && literals.holds?("$#{limit.param_ref.number} = 1")
 
         # A copy of the tree flipped on the WHERE's index-th condition, or
-        # nil if this rule doesn't apply to it.
-        def rewrite(original, index, catalog)
-          tree = flipped(Deparse.copy(original), index)
-          Rewrite.new(tree:, assumptions: []) if tree && catalog.self_contained?(Deparse.faithfully(tree))
+        # nil if this rule doesn't apply to it or Postgres can't prepare it.
+        def rewrite(original, index, catalog, literals)
+          tree = flipped(Deparse.copy(original), index, catalog)
+          Rewrite.new(tree:, assumptions: []) if tree && literals.prepares?(Deparse.faithfully(tree))
         rescue Deparse::Error
           nil
         end
 
         # The tree, flipped in place, or nil.
-        def flipped(tree, index)
+        def flipped(tree, index, catalog)
           top = Tree.select(tree)
           conditions = Tree.conjuncts(top.where_clause)
+          others = conditions.reject.with_index { |_, i| i == index }
           link = in_link(conditions[index])
-          column = link && selected(link.subselect.select_stmt, top.from_clause, tree)
-          return unless column
+          return if link.nil? || Scopes.captured?(top.from_clause, others, link)
 
-          flip!(top, conditions.reject.with_index { |_, i| i == index }, link, column)
+          selected = Selection.selected(link.subselect.select_stmt, top.from_clause, tree, catalog)
+          return unless selected
+
+          flip!(top, others, link, selected)
           tree
         end
 
@@ -121,71 +146,18 @@ module Quaack
           link if link.subselect.node == :select_stmt && one_column?(link.subselect.select_stmt)
         end
 
-        # Whether the subquery is one plain SELECT of one column.
-        def one_column?(sub)
-          Tree.plain_select?(sub) && sub.target_list.size == 1 &&
-            sub.target_list.first.res_target.val.node == :column_ref
-        end
-
-        # The subquery's selected column, qualified, with its table renamed
-        # if the original's FROM has its name, or nil if it can't be.
-        def selected(sub, from, tree)
-          column = qualify!(sub.target_list.first.res_target.val.column_ref, sub)
-          names = Tree.from_items(from).map(&:name)
-          return unless column && !names.include?(nil)
-
-          name = Tree.qualified(column).first
-          column if !names.include?(name) || rename!(sub, name, tree)
-        end
-
-        # The column as name.column, or nil: it was, or it was a bare column
-        # of the subquery's one table.
-        def qualify!(column, sub)
-          fields = column.fields
-          return unless fields.all? { it.node == :string } && fields.size.between?(1, 2)
-          return column if fields.size == 2
-
-          return unless (table = sole_table(sub))
-
-          fields.unshift(string(Tree.refname(table)))
-          column
-        end
-
-        def sole_table(sub)
-          sub.from_clause.first.range_var if sub.from_clause.size == 1 && sub.from_clause.first.node == :range_var
-        end
-
-        # Gives the subquery's table under name a fresh alias, renames every
-        # column the subquery reads as name.something, and returns the
-        # alias. Refuses, with nil, when a subquery inside could have a name
-        # of its own that's the same.
-        def rename!(sub, name, tree)
-          table = renamable(sub, name)
-          return unless table
-
-          fresh = Tree::Names.new(tree).fresh(name)
-          Tree.find(sub, PgQuery::ColumnRef).each { rename_column!(it, name, fresh) }
-          table.alias ? table.alias.aliasname = fresh : table.alias = PgQuery::Alias.new(aliasname: fresh)
-          fresh
-        end
-
-        def renamable(sub, name)
-          table = Tree.from_items(sub.from_clause).find { it.name == name }&.table
-          table if [PgQuery::SubLink, PgQuery::RangeSubselect].all? { Tree.find(sub, it).empty? }
-        end
-
-        def rename_column!(column, name, fresh)
-          Tree.qualify!(column, fresh) if column.fields.size > 1 && column.fields.first.string&.sval == name
-        end
+        # Whether the subquery is one plain SELECT of one value.
+        def one_column?(sub) = Tree.plain_select?(sub) && sub.target_list.size == 1
 
         # Makes top read the subquery's FROM, filtered by its WHERE and an
         # EXISTS over the original's FROM and its other conditions, with x
         # = y.
-        def flip!(top, others, link, column)
+        def flip!(top, others, link, selected)
           sub = link.subselect.select_stmt
-          exists = exists_over(top, others + [equals(link.testexpr, column)])
+          exists = exists_over(top, others + [equals(link.testexpr, selected)])
           top.from_clause.replace(sub.from_clause.to_a)
           top.where_clause = Tree.all_of(Tree.conjuncts(sub.where_clause) + [exists])
+          Ordering.keep!(top)
         end
 
         # An EXISTS over top's FROM with conditions.
@@ -197,15 +169,13 @@ module Quaack
           exists
         end
 
-        # left = column, with the operator IN would use.
-        def equals(left, column)
+        # left = right, with the operator IN would use.
+        def equals(left, right)
           condition = Tree.where_of("SELECT WHERE 1 = 1")
           condition.a_expr.lexpr = left
-          condition.a_expr.rexpr = PgQuery::Node.new(column_ref: column)
+          condition.a_expr.rexpr = right
           condition
         end
-
-        def string(sval) = PgQuery::Node.new(string: PgQuery::String.new(sval:))
       end
     end
   end
