@@ -93,6 +93,22 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(values(scenarios[:s1], "t", "plain")).to all(eq("{}"))
   end
 
+  it "fills unique arrays of a domain over a domain, and domains over a domain over an array" do
+    conn.exec(<<~SQL)
+      CREATE DOMAIN fx.small AS smallint; CREATE DOMAIN fx.tiny AS fx.small CHECK (VALUE >= 0);
+      CREATE DOMAIN fx.codes AS varchar(3)[]; CREATE DOMAIN fx.labels AS fx.codes;
+      CREATE TABLE fx.t (id integer PRIMARY KEY, v text, ts fx.tiny[] NOT NULL UNIQUE,
+        ls fx.labels NOT NULL UNIQUE, plain fx.labels NOT NULL);
+    SQL
+    scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x'", "fx.t")
+    %w[ts ls].each do |name|
+      got = values(scenarios[:s3], "t", name)
+      expect(got.uniq.size).to eq(got.size)
+      expect(got).to all(match(/\A\{[^,]+\}\z/))
+    end
+    expect(values(scenarios[:s1], "t", "plain")).to all(eq("{}"))
+  end
+
   it "fills unique jsonb, uuid, and plain json columns" do
     conn.exec(<<~SQL)
       CREATE TABLE fx.t (id integer PRIMARY KEY, v text, j jsonb NOT NULL UNIQUE, js json NOT NULL,
@@ -123,7 +139,17 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(joined).to be < values(s1, "a", "k").size
   end
 
-  describe "Values#nth for narrow numerics" do
+  it "keeps a split group's join key inside the narrowest type of its slot" do
+    conn.exec(<<~SQL)
+      CREATE TABLE fx.a (id integer PRIMARY KEY, k integer NOT NULL, v text);
+      CREATE TABLE fx.b (id integer PRIMARY KEY, k smallint NOT NULL);
+      CREATE TABLE fx.c (id integer PRIMARY KEY, k integer NOT NULL);
+    SQL
+    builds_and_loads("SELECT a.id FROM fx.a a JOIN fx.b b ON a.k = b.k JOIN fx.c c ON b.k = c.k WHERE a.v = 'x'",
+                     "fx.a,fx.b,fx.c")
+  end
+
+  describe "Values#nth and #readable?" do
     let(:values_for) { described_class::Values.new(conn) }
 
     before do
@@ -149,6 +175,24 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect(values_for.readable?(column("t", "wide"), "99999999")).to be(true)
       expect(values_for.readable?(column("t", "sc"), "99999999")).to be(false)
     end
+
+    it "gives a bit varying with no length as many distinct values as it needs" do
+      conn.exec("CREATE TABLE fx.b (vb bit varying UNIQUE)")
+      nths = (1..10).map { values_for.nth(column("b", "vb"), it) }
+      expect(nths.uniq.size).to eq(10), nths.to_s
+      nths.each { conn.exec_params("INSERT INTO fx.b (vb) VALUES ($1)", [it]) }
+    end
+
+    it "reads a value as an insert does, so a varchar(n) or char(n) never truncates distinct values" do
+      conn.exec("CREATE TABLE fx.s (vc varchar(2) UNIQUE, ch char(2) UNIQUE)")
+      %w[vc ch].each do |name|
+        col = column("s", name)
+        expect(values_for.readable?(col, "k10")).to be(false)
+        nths = (1..12).map { values_for.nth(col, it) }
+        expect(nths.uniq.size).to eq(12), "#{name}: #{nths}"
+        nths.each { conn.exec_params("INSERT INTO fx.s (#{name}) VALUES ($1)", [it]) }
+      end
+    end
   end
 
   describe "a column step 9 can't fill" do
@@ -166,6 +210,26 @@ RSpec.describe Quaack::Enclave::Scenarios do
       error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
       expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.t", "lsn", "pg_lsn")])
       expect(error.message).to eq("unsupported_type: fx.t.lsn (pg_lsn)")
+    end
+
+    it "leaves a nullable one NULL when the query doesn't read it, unique or not" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn, ulsn pg_lsn UNIQUE)")
+      scenarios = builds_and_loads("SELECT id FROM fx.t WHERE v = 'x'", "fx.t")
+      expect(values(scenarios[:s3], "t", "lsn") + values(scenarios[:s3], "t", "ulsn")).to all(be_nil)
+    end
+
+    it "still refuses a nullable one the query reads, by name, with a star, or as a whole row" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn)")
+      ["SELECT id, lsn FROM fx.t WHERE v = 'x'", "SELECT * FROM fx.t WHERE v = 'x'",
+       "SELECT t.* FROM fx.t t WHERE v = 'x'", "SELECT t FROM fx.t t WHERE v = 'x'",
+       "SELECT id FROM fx.t WHERE v = 'x' ORDER BY lsn"].each do |sql|
+        expect(refusal(sql).column).to eq(detail("fx.t", "lsn", "pg_lsn")), sql
+      end
+    end
+
+    it "still refuses a nullable unique one whose NULLs collide" do
+      conn.exec("CREATE TABLE fx.t (id integer PRIMARY KEY, v text, lsn pg_lsn UNIQUE NULLS NOT DISTINCT)")
+      expect(refusal("SELECT id FROM fx.t WHERE v = 'x'").column).to eq(detail("fx.t", "lsn", "pg_lsn"))
     end
 
     it "refuses a unique one" do
@@ -223,15 +287,27 @@ RSpec.describe Quaack::Enclave::Scenarios do
 
     it "wraps a unique domain over a narrow numeric" do
       conn.exec(<<~SQL)
-        CREATE DOMAIN fx.points AS numeric(5,2);
-        CREATE TABLE fx.t (p fx.points);
+        CREATE DOMAIN fx.points AS numeric(5,2); CREATE DOMAIN fx.score AS fx.points;
+        CREATE TABLE fx.t (p fx.points, s fx.score);
       SQL
-      nth = described_class::Values.new(conn).nth(column("t", "p"), 100_005)
-      expect(conn.exec_params("SELECT $1::fx.points", [nth]).getvalue(0, 0)).to eq(nth)
+      %w[p s].each do |name|
+        nth = described_class::Values.new(conn).nth(column("t", name), 100_005)
+        expect(conn.exec_params("SELECT $1::fx.points", [nth]).getvalue(0, 0)).to eq(nth)
+      end
     end
   end
 
   describe "a multi-column unique index" do
+    it "varies a range over a boolean, which has too few values" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, active boolean NOT NULL, span int4range NOT NULL,
+          UNIQUE (active, span));
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(s3.size).to be > 2
+      expect(values(s3, "users", "span").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "active").uniq.size).to eq(1)
+    end
     it "varies one column that takes distinct values, and gives the rest their typical value" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, root_account_ids bigint[] NOT NULL,
@@ -297,6 +373,38 @@ RSpec.describe Quaack::Enclave::Scenarios do
         CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, lsn pg_lsn NOT NULL DEFAULT '0/0',
           login text NOT NULL);
         CREATE UNIQUE INDEX ON fx.users (lsn, login);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
+    end
+
+    it "varies a column with no CHECK over one whose CHECK allows few values" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, kind integer NOT NULL CHECK (kind IN (1, 2)),
+          login text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (kind, login);
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "kind")).to all(eq("1"))
+    end
+
+    it "varies one column of an expression unique index's keys, not every column it reads" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, kind integer NOT NULL CHECK (kind IN (1, 2)),
+          name text NOT NULL, flag boolean NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (kind, lower(name)) WHERE flag;
+      SQL
+      s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
+      expect(values(s3, "users", "name").uniq.size).to eq(s3.size)
+      expect(values(s3, "users", "kind")).to all(eq("1"))
+      expect(values(s3, "users", "flag")).to all(eq("f"))
+    end
+
+    it "varies an expression unique index's bare key column over one inside an expression" do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.users (id bigint PRIMARY KEY, v text, created_at timestamp NOT NULL, login text NOT NULL);
+        CREATE UNIQUE INDEX ON fx.users (date_trunc('month', created_at), login);
       SQL
       s3 = builds_and_loads("SELECT id FROM fx.users WHERE v = 'x'", "fx.users")[:s3]
       expect(values(s3, "users", "login").uniq.size).to eq(s3.size)
