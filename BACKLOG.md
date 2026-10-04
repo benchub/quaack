@@ -1812,33 +1812,7 @@ Tests check that both lists have 200 words, no duplicates, and the syllable coun
 - **Design:** Progress lines for `quaack run`, report.
 - **Status:** todo
 
-### 20261003-21. Give the design's steps descriptive names, and number them in order.
-
-The design's steps have IDs like `5a-6`, `6c`, `steps 9-10` and `14b`. They show up in `quaack run`'s output, such as `quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)`, and also in the code, the run store's keys, the report and the specs. They say nothing about what a step does. Some are lettered sub-steps of a number, and their order doesn't match the order the pipeline runs them in (6c runs before 6a).
-
-The rule:
-
-- Give every step a short descriptive slug, in lowercase words joined by hyphens, such as `index-search`, `llm-index-ideas`, `llm-index-refine`, `rewrite-rules`, `llm-rewrites`, `counterexamples`. Some steps have slugs already (`index-search`, `index-rank`, `rewrite-prune`, `rewrite-test`); keep those unless they're unclear.
-- Use the slug everywhere the old ID was used:
-  - DESIGN.md's headings and cross-references;
-  - the code, including `Pipeline::SAY`, the progress lines, and the protocol's step names;
-  - the run store's keys;
-  - the report payload and the readable report;
-  - specs and fixtures, including the recorded replay runs, which may need re-recording.
-  
-  Progress lines keep the slug in parentheses at the end, as now.
-- In DESIGN.md, also number the steps in the order the pipeline runs them. The numbers say order only, and the slug stays the name. The numbering has to show the pipeline's loops. Number a loop's body as sub-steps of the loop, such as `7. For each rewrite:` then `7.1 rewrite-index-search`, `7.2 rewrite-prune`. Say plainly where a loop repeats, such as the counterexample rounds: "repeat 9.2–9.4 until …". Put one ordered outline of the whole pipeline near the top of DESIGN.md, which is the only place the numbers appear. Code and output use slugs only, so renumbering never touches code.
-- Add a table to DESIGN.md mapping each old ID to its new slug. BACKLOG-COMPLETE.md is history and keeps the old IDs, and the table keeps those entries readable. Update BACKLOG.md's open entries to the new slugs.
-- Changing the store keys means a run started by an older version can't be resumed. That's fine with a version bump. Make sure `quaack run` refuses such a run with a clear message, rather than misreading it.
-
-This touches nearly every file, so build it when no other task is in flight, or merge carefully with whatever is. It may be worth splitting into DESIGN.md first (outline, slugs, mapping table), then code and store keys. If so, the builder should propose the split before starting.
-
-- **Depends on:** none. Best built after 20261003-15, -16 and -20, which change the same progress lines.
-- **Came from:** The user, 2026-10-03.
-- **Design:** All of it.
-- **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
-- **Note (2026-10-04, answers):** Build it all in one task: DESIGN.md, code, store keys, and the version bump. Number sections 1–4 (input, inventory, schema, run server) as steps in the outline too. The main session approves the slugs. This task absorbs the dropped 20261001-29: the outline must put the mechanical rules (old 6c) before candidate generation (old 6a), and the assumption check (old 6b) last of the three. It also says what a resumed run does with burndown records stored under the old stage names, which is to refuse the run like any other run from an older version.
-- **Status:** todo
+### 20261003-21. Give the design's steps descriptive names, and number them in order. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge. Done, see BACKLOG-COMPLETE.md.
 
@@ -2217,4 +2191,25 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-04.
 - **Design:** rewrite-rules, report.
+- **Status:** todo
+
+### 20261004-15. Step slugs: minor findings.
+
+Minor findings from the review of 20261003-21:
+
+- **Untested exemptions.** No test pins which subcommands the `run_from_older_version` check covers. Exempting `Steps::Status` in `enclave/lib/quaack/enclave/cli.rb` `dispatch` keeps every spec green. Add a test that walks the real `CLI::STEPS` table.
+- **Garbled text from the rename:**
+  - The header comment of `enclave/lib/quaack/enclave/burndown.rb` became a run-on line with stray `#` marks.
+  - Doubled words in `protocol/lib/quaack/protocol/burndown.rb` and `whitelist.rb` ("burndown burndown", "report report", "the redact redacted").
+  - Doubled words in BACKLOG.md: 20260924-25, -26 and -28's titles, and "vacuity-guard's vacuity guard" in 20261003-25.
+- **Stale comment.** `enclave/lib/quaack/enclave/error_filter.rb:28-29` says step names start with a digit.
+- **BACKLOG.md references:**
+  - `StepNine` and `step_nine.rb` (now `ScenarioTests` in `scenario_tests.rb`) appear in four open entries.
+  - Old "steps 2 through 4" became "inventory through run-server", which skips the schema steps.
+  - Old "steps 9 and 14" became "rewrite-test and candidate-runs", where 14 likely meant `result-comparison`.
+- **DESIGN.md:** seven outline slugs have no heading to link to: `rewrite-correctness` (also the mapping table's target for old 9 and 10), `rewrite-index-search`, `rewrite-index-rank`, `rewrite-index-rerank`, `rewrite-prune`, `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`. Give them headings or anchors.
+
+- **Depends on:** 20261003-21.
+- **Came from:** The review of 20261003-21.
+- **Design:** The outline, `burndown`.
 - **Status:** todo
