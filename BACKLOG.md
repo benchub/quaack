@@ -1036,29 +1036,7 @@ Test it with this query's shape. Also test that the rule refuses when the select
 
 ### 20261002-17. 6c rule: `implied_predicate_removal`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261002-6. 6c rule: `shared_scan_cte`.
-
-A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
-
-The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
-
-The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
-
-- A copy is on the nullable side of an outer join.
-- A shared conjunct calls a volatile function.
-- The query already has a CTE of that name.
-- A copy is in a subquery or CTE rather than the top-level `FROM`.
-
-It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
-
-Add it to 6c's table in DESIGN.md.
-
-- **Depends on:** 20261001-22.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6c, 8.
-- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
-- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
-- **Status:** todo
+### 20261002-6. 6c rule: `shared_scan_cte`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-7. 6c rule: `transitive_predicate_copy`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2162,4 +2140,19 @@ Minor findings from the build and review of 20260928-1:
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
 - **Design:** Steps 2 through 4.
+- **Status:** todo
+
+### 20261003-28. `shared_scan_cte`: widenings.
+
+Minor follow-ups from building 20261002-6. Each one widens what the rule covers; none is a correctness bug.
+
+- **Copies inside subqueries or CTE bodies aren't shared.** Only the top-level `FROM` is searched.
+- **One nullable copy refuses the whole group.** When another two or more copies are on inner joins, they could still share a CTE.
+- **A GROUP BY that relies on the primary key is refused.** Postgres can't prepare the rewrite, since a CTE has no primary key. The rule could add the select list's columns to the GROUP BY.
+- **`places()` descends into aliased joins.** Only the refusal of unnamed FROM items stops it. Make it stop there by itself, so later widenings can't trip on it.
+- **`ONLY` tables aren't shared.**
+
+- **Depends on:** 20261002-6.
+- **Came from:** The build of 20261002-6, 2026-10-03.
+- **Design:** 6c.
 - **Status:** todo

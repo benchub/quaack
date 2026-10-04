@@ -3878,3 +3878,35 @@ Add it to 6c's table in DESIGN.md. List it after `cte_hoist_dedupe`, so it sees 
     - The builder ran 34 mutations and the reviewer 14; every one went red.
   - **Review:** one round, clean. Probes covered `NOT IN` with NULLs, swapped columns, a varchar arm against a text one, and a Rails `users.*` query. The one minor, an untested name guard, can't be reached, since Postgres rejects an ambiguous name first.
   - **Follow-ups:** the builder's widenings, and duplicate candidates reached by different rule orders, went to 20261003-26.
+
+### 20261002-6. 6c rule: `shared_scan_cte`.
+
+A hand-tuned Canvas query got much faster by reading `submissions` once instead of twice. The original joins `submissions` and `submissions AS assessor_asset`, and each copy filters on the same `course_id IN (2883, 4906, ...)`. The tuned version moves the filtered table into a `WITH ... AS MATERIALIZED` CTE and reads it twice. The scan happens once, and the CTE stops the planner from choosing its bad join order.
+
+The hand-tuned version also moved `submissions.workflow_state <> 'deleted'` into the CTE, so it applied to `assessor_asset` as well, which the original never did. That isn't equivalent. The rule must move only the conjuncts every copy shares.
+
+The rule: when a table is read two or more times in one `FROM` tree, and the copies' top-level `WHERE` conjuncts (or inner-join `ON` conjuncts) share one or more items that each read only that copy, build `WITH <name> AS MATERIALIZED (SELECT * FROM t WHERE <shared conjuncts>)`. Point every copy at it under its old alias, and leave each copy's other conjuncts where they were. Compare conjuncts by their deparsed form, with the copy's alias replaced by a placeholder. Refuse when:
+
+- A copy is on the nullable side of an outer join.
+- A shared conjunct calls a volatile function.
+- The query already has a CTE of that name.
+- A copy is in a subquery or CTE rather than the top-level `FROM`.
+
+It needs no catalog facts, since every copy reads the same snapshot, so it states no assumptions. It isn't always faster: a join against a materialized CTE can't use the table's indexes. Steps 8 onward decide, as for any rewrite. Make sure step 8's index search and 12a treat the CTE correctly, by indexing the base table that the CTE's own scan reads.
+
+Add it to 6c's table in DESIGN.md.
+
+- **Depends on:** 20261001-22.
+- **Came from:** A hand-tuned query the user shared, 2026-10-02.
+- **Design:** 6c, 8.
+- **Note (2026-10-02, answers):** Match shared conjuncts with 20261002-17's `Literals#same?`, never by reading values.
+- **Note (2026-10-03, answers):** Name the CTE `quaack_scan_of_<table>`.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261002-6.
+  - **Change:** the new rule `rewrite_rules/shared_scan_cte.rb` (with `shared_scan_cte/copies.rb`) comes right after `transitive_predicate_copy` in RULES, since that rule can create the shared conjuncts. DESIGN.md's 6c table has its row.
+    - Conjuncts are compared with each alias replaced by a placeholder, and literals only through `Literals#same?`. An `ON` left empty becomes `ON true`.
+    - Beyond the listed refusals, it also refuses whole-row references other than `copy.*`, unnamed FROM items such as aliased joins, tables that aren't plain, copies that rename columns, and anything Postgres can't prepare, such as a GROUP BY relying on the primary key.
+  - **Tests:** 25 examples on real Postgres check the exact SQL and that rows match on data with NULLs and duplicates. Every refusal has a twin that fires. A step-8 test shows candidates land on the base table, never on the copies.
+    - The builder ran 19 mutations and the reviewer 15; every one went red.
+  - **Review:** one round, clean. The reviewer ran 21 Rails-style self-join queries (DISTINCT ON, aggregates, windows, LIMIT/OFFSET, `USING`, `SELECT *`, an inherited table) and every rewrite returned the same rows.
+  - **Follow-ups:** the builder's widenings went to 20261003-28.
