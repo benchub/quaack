@@ -26,6 +26,12 @@ FAKE_COPILOT_RECORD_SCRIPT = <<~'RUBY'
 RUBY
 
 RSpec.describe "the copilot_cli adapter" do
+  # Generous enough for a loaded machine, yet far below the fake grandchild's 60-second sleep, so a real
+  # hang on its stdout still trips it.
+  def hang_limit = 10.0
+  # Long enough for a fake command to start Ruby and spawn its grandchild before the adapter times it out.
+  def slow_start_timeout = 3.0
+
   let(:burndown) { Quaack::Driver::Burndown.new }
   let(:messages) { [{ role: "user", content: "Propose indexes." }] }
   let(:schema) do
@@ -76,7 +82,7 @@ RSpec.describe "the copilot_cli adapter" do
   end
 
   def process_alive_after_wait?(pid)
-    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + hang_limit
     sleep 0.05 while process_alive?(pid) && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
     process_alive?(pid)
   end
@@ -215,10 +221,10 @@ RSpec.describe "the copilot_cli adapter" do
       template = [command, "{prompt_file}", "{model}"]
 
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      result = Timeout.timeout(1.0) { ask(template: template, timeout: 5.0) }
+      result = Timeout.timeout(hang_limit) { ask(template: template, timeout: hang_limit * 3) }
 
       expect(result).to eq("ddl" => [])
-      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 1.0
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < hang_limit
     ensure
       grandchild_pid = Integer(File.read(grandchild)) if File.exist?(grandchild)
       Process.kill("KILL", grandchild_pid) if grandchild_pid && process_alive?(grandchild_pid)
@@ -241,14 +247,14 @@ RSpec.describe "the copilot_cli adapter" do
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
         expect do
-          Timeout.timeout(2.0) { ask(template: template, timeout: 1.0) }
+          Timeout.timeout(hang_limit) { ask(template: template, timeout: slow_start_timeout) }
         end.to raise_error(Quaack::Driver::LLM::Error) { |e|
           expect(e.rule).to eq("llm_unavailable")
           expect(sans_sizes(e.message)).to include("timed out")
         }
       end
 
-      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 2.0
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < hang_limit
       expect_recorded_cwd_removed
     ensure
       grandchild_pid = Integer(File.read(grandchild)) if File.exist?(grandchild)
@@ -269,7 +275,7 @@ RSpec.describe "the copilot_cli adapter" do
       template = [command, "{prompt_file}", "{model}"]
 
       with_env("QUAACK_FAKE_COPILOT_CWD" => recorded_cwd_path) do
-        expect { ask(template: template, timeout: 1.0) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
+        expect { ask(template: template, timeout: slow_start_timeout) }.to raise_error(Quaack::Driver::LLM::Error) { |e|
           expect(e.rule).to eq("llm_unavailable")
           expect(sans_sizes(e.message)).to include("timed out")
         }
