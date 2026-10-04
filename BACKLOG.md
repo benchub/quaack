@@ -1830,34 +1830,7 @@ Out-of-scope findings from the build of 20261002-8:
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261003-15. `quaack run`: say what each step did when it finishes.
-
-Today every finished step in `quaack run` prints the same line, such as `quaack: [1/18] Done in 15s (index-search)`. That says how long the step took but not what it found. A step that found 12 indexes looks just like one that found none. Instead, the closing line should give a short count of the step's output, such as:
-
-```
-quaack: [1/18] Checking the query plan and searching for indexes (index-search)
-quaack: [1/18] Found 12 possible index definitions mechanically in 15s (index-search)
-```
-
-The rule: `Progress#step` (`driver/lib/quaack/driver/progress.rb`) lets a step give a summary for its closing line, built from its result. When it gives one, the line says `<summary> in <duration>`. When it doesn't, or when the step was skipped or failed, the line stays as it is now. Give every step in `Pipeline::SAY` a summary that says what it produced, for example:
-
-- index-search: how many index definitions were found mechanically.
-- 5a-5 and 5a-6: how many index ideas the LLM gave, and how many were new.
-- 5a-7 and index-rank: how many ideas were kept, out of how many.
-- 6c: which rules fired, or "No rule applied".
-- 6a: how many rewrites the LLM gave.
-- rewrite-prune: whether the rewrite was kept or dropped.
-- steps 9-10 and 14b-14d: how many rewrites or choices are left.
-- 12a: how many indexes were built.
-- 13, 13a and 14: how many measurements were taken.
-- 15: where the report was written.
-
-Summaries carry only counts, step names, and rule names, which the progress lines already allow. They never carry data, SQL, or literal values from the enclave. A test plants a sentinel in a step's result and checks that it never shows up in the progress output.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-03.
-- **Design:** Progress lines for `quaack run`.
-- **Status:** todo
+### 20261003-15. `quaack run`: say what each step did when it finishes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-16. `quaack run`: a live clock instead of "Still working" lines.
 
@@ -2118,17 +2091,7 @@ These are minor findings from building and reviewing 20261003-34:
 - **Design:** Step 9.
 - **Status:** todo
 
-### 20261003-38. `bad_value`: loose ends from 20261003-24.
-
-These are minor findings from the review of 20261003-24:
-
-- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
-- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
-
-- **Depends on:** 20261003-24.
-- **Came from:** The review of 20261003-24, 2026-10-03.
-- **Design:** 10a.
-- **Status:** todo
+### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-39. Step 9: more variety in self-references and repeated parents.
 
@@ -2244,5 +2207,42 @@ Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK
 
 - **Depends on:** none.
 - **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
+
+The review of 20261003-38 found four minor issues:
+- Class 42 includes 42501, a permission error. It isn't caused by the value, so it probably shouldn't count as `bad_value`.
+- A value can cause a P0001 (raised by a trigger or function) or 54000 (program limit) error. These now fail the whole step as `internal_error`, when they should count as `bad_value`.
+- The re-raised PG::Error still carries the value in its message. Only ErrorFilter keeps it from leaving the enclave. Wrap it with `cause: nil` and a message that carries only the sqlstate.
+- The timeout and termination tests check weakly that the value is absent. Make them use a sentinel value and assert that it never appears in the output.
+
+- **Depends on:** 20261003-38.
+- **Came from:** The review of 20261003-38.
+- **Design:** Step 9, ErrorFilter.
+- **Status:** todo
+
+### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
+
+When no value in the pool satisfies both the atom and the column's CHECKs, the Picker falls back to the first value in the pool, even if that value breaks a CHECK. On Canvas-like schemas:
+- `workflow_state <> 'deleted'` picks `'DELETED'`, which isn't in the CHECK's IN list.
+- `role_state LIKE 'c%'` picks `'c%'`.
+
+S1 then fails to load with `fixture_load_failed` (23514), so every candidate is disproved. This was there before 20261004-2. It will likely hit the next Canvas run.
+
+The fix: add the CHECK's own values that satisfy the atom to the Picker's candidates. Test on real Postgres with a CHECK IN list and both atoms above.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-5. Build the original query's scenarios once, not once per rewrite.
+
+`steps/counterexamples.rb` calls `StepNine.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
 - **Design:** Step 9.
 - **Status:** todo

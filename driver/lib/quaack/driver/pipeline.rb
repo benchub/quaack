@@ -9,6 +9,7 @@ require_relative "refinement_round"
 require_relative "report"
 require_relative "rewrite_generation"
 require_relative "setup"
+require_relative "step_summary"
 
 module Quaack
   module Driver
@@ -54,30 +55,39 @@ module Quaack
         end
 
         # 5a-5 unless done[:generated], 5a-6, and 5a-7 unless done[:ranked],
-        # for search.
+        # for search. Returns 5a-6's result, from refine.
         def llm(transport, client, run_id, search, done, progress = Progress::NULL) # rubocop:disable Metrics/ParameterLists
           args = { run: run_id, search: }
-          fetched = nil
-          payload = lambda do
-            fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
-          end
+          payload = payload(transport, args)
           Pipeline.run_step(progress, done[:generated], "5a-5") do
             generate(transport, client, run_id, search, payload.call)
           end
-          Pipeline.step(progress, "5a-6") { refine(transport, client, run_id, search, payload) }
+          refined = Pipeline.step(progress, "5a-6") { refine(transport, client, run_id, search, payload) }
           Pipeline.run_step(progress, done[:ranked], "5a-7") { transport.call("index-rank", args:) }
+          refined
+        end
+
+        # index-payload's payload, fetched on the first call only.
+        def payload(transport, args)
+          fetched = nil
+          -> { fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" } }
         end
 
         def generate(transport, client, run_id, search, payload)
           index_test = GeneratorThree.index_test(transport, run_id:, search:)
           result = GeneratorThree.new(client:, index_test:).run(payload)
           index_test.call([]) if result.rounds.empty?
+          result
         end
 
+        # RefinementRound's result, or, when it skips the round, :refined if
+        # the round already ran, else nil.
         def refine(transport, client, run_id, search, payload)
-          index_feedback = RefinementRound.index_feedback(transport, run_id:, search:)
+          feedback = nil
+          fetch = RefinementRound.index_feedback(transport, run_id:, search:)
           index_test = RefinementRound.index_test(transport, run_id:, search:)
-          RefinementRound.new(client:, index_feedback:, index_test:).run(payload)
+          result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:).run(payload)
+          result || (:refined if feedback["refined"])
         end
       end
 
@@ -105,9 +115,9 @@ module Quaack
         def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
           entries = generated(transport, client, run_id, entries, rewrites, progress)
           Pipeline.step(progress, "step 8") do
-            (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
+            (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
               step8(transport, run_id, entries, number, progress.within("Rewrite #{number}"))
-            end
+            end.to_a
           end
         end
 
@@ -154,12 +164,16 @@ module Quaack
           end
         end
 
+        # Whether any of step 8's sub-steps ran for the rewrite, rather than
+        # all being stored already.
         def step8(transport, run_id, entries, number, progress)
+          ran = STEP8.values.any? { !entries["#{it}#{number}"] }
           STEP8.each do |subcommand, output|
             Pipeline.run_step(progress, entries["#{output}#{number}"], subcommand) do
               transport.call(subcommand, args: { run: run_id, search: "rewrite_#{number}" })
             end
           end
+          ran
         end
       end
 
@@ -168,33 +182,42 @@ module Quaack
       # (rewrite_survived_<n>): rewrite-test (step 9), unless it's stored
       # (rewrite_tested_<n>), and, if the rewrite passed, the three 10a to
       # 10c rounds (Counterexamples) on counterexample-payload, each round
-      # a numbered counterexample-round. The enclave records survival.
+      # a numbered counterexample-round. The enclave records survival. It
+      # returns whether each rewrite it tested passed both steps.
       module CounterexampleStage
         module_function
 
         def run(transport:, client:, run_id:, entries:, rewrites: nil, progress: Progress::NULL) # rubocop:disable Metrics/ParameterLists
           Pipeline.step(progress, "steps 9-10") do
             entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
-            (1..).lazy.take_while { entries["rewrite_#{it}"] }.each do |number|
-              sub = progress.within("Rewrite #{number}")
-              decided = entries["rewrite_survived_#{number}"]
-              next sub.skip("steps 9-10", Pipeline::SAY.fetch("rewrite-tested")) if decided
-
-              rewrite(transport, client, { run: run_id, search: "rewrite_#{number}" },
-                      entries["rewrite_tested_#{number}"], sub)
-            end
+            (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
+              undecided(transport, client, run_id, entries, number, progress.within("Rewrite #{number}"))
+            end.to_a.compact
           end
         end
 
+        # Whether rewrite number passed, or nil, printing the skip, if the
+        # store says it's decided.
+        def undecided(transport, client, run_id, entries, number, progress) # rubocop:disable Metrics/ParameterLists
+          if entries["rewrite_survived_#{number}"]
+            progress.skip("steps 9-10", Pipeline::SAY.fetch("rewrite-tested"))
+            return
+          end
+
+          rewrite(transport, client, { run: run_id, search: "rewrite_#{number}" },
+                  entries["rewrite_tested_#{number}"], progress)
+        end
+
+        # Whether the rewrite passed step 9 and steps 10a to 10c.
         def rewrite(transport, client, args, tested, progress)
           passed = Pipeline.run_step(progress, tested, "rewrite-test") do
             message(transport.call("rewrite-test", args:), "rewrite_test")["passed"]
           end
-          return unless tested || passed
+          return false unless tested || passed
 
           Pipeline.step(progress, "10a-10c") do
             payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-            Counterexamples.new(client:).run(payload, compare: compare(transport, args))
+            !Counterexamples.new(client:).run(payload, compare: compare(transport, args)).disproved
           end
         end
 
@@ -227,12 +250,19 @@ module Quaack
         def run(transport:, client:, run_id:, progress: Progress::NULL, **)
           Pipeline.step(progress, "step 11") do
             entries = Pipeline.status(transport, run_id)
-            (1..).lazy.take_while { entries["rewrite_#{it}"] }.select { entries["rewrite_step11_#{it}"] }.each do |n|
-              IndexStage.llm(transport, client, run_id, "rewrite_#{n}",
-                             { generated: entries["index_generated_rewrite_#{n}"],
-                               ranked: entries["index_llm_ranked_rewrite_#{n}"] }, progress.within("Rewrite #{n}"))
-            end
+            (1..).lazy.take_while { entries["rewrite_#{it}"] }.select { entries["rewrite_step11_#{it}"] }.map do |n|
+              asked?(transport, client, run_id, entries, n, progress.within("Rewrite #{n}"))
+            end.to_a
           end
+        end
+
+        # Runs IndexStage.llm for rewrite n, and returns whether any of 5a-5
+        # to 5a-7 did anything, rather than finding it already done.
+        def asked?(transport, client, run_id, entries, number, progress) # rubocop:disable Metrics/ParameterLists
+          done = { generated: entries["index_generated_rewrite_#{number}"],
+                   ranked: entries["index_llm_ranked_rewrite_#{number}"] }
+          refined = IndexStage.llm(transport, client, run_id, "rewrite_#{number}", done, progress)
+          !done[:generated] || !done[:ranked] || refined.is_a?(RefinementRound::Result)
         end
       end
 
@@ -265,10 +295,20 @@ module Quaack
         def run(transport:, run_id:, entries:, progress: Progress::NULL, **)
           STEPS.each_with_object(entries.dup) do |(subcommand, output), done|
             Pipeline.run_step(progress, done[output], NUMBERS.fetch(subcommand)) do
-              transport.call(subcommand, args: { run: run_id }) { progress.note(building(it)) }
-              done[output] = true
+              call(transport, subcommand, run_id, progress).tap { done[output] = true }
             end
           end
+        end
+
+        # Calls the step, printing each progress message it sends, and
+        # returns how many it sent: for 12a, how many indexes it built.
+        def call(transport, subcommand, run_id, progress)
+          lines = 0
+          transport.call(subcommand, args: { run: run_id }) do |message|
+            lines += 1
+            progress.note(building(message))
+          end
+          lines
         end
 
         # A 12a progress message as its line: which index is starting, and
@@ -314,8 +354,9 @@ module Quaack
         done ? skip(progress, name) : step(progress, name, &)
       end
 
-      # Runs the block as the step name, saying what it does.
-      def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), &)
+      # Runs the block as the step name, saying what it does, and then what
+      # it did, from StepSummary.
+      def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), summary: StepSummary::SUMMARY[name], &)
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
 

@@ -253,8 +253,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(lines(outcome).first).to include("match" => true, "load_failed" => false, "refused" => [])
     end
 
-    it "refuses by rule alone an insert whose bound value Postgres can't evaluate, and runs the round " \
-       "(20261003-24)" do
+    it "refuses by rule alone an insert whose bound value Postgres can't evaluate, and runs the round (20261003-24)" do
       ready(same, arena_sql: "CREATE TABLE public.customers (id int PRIMARY KEY);
                               ALTER TABLE public.orders ADD customer_id int REFERENCES public.customers")
       store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
@@ -264,6 +263,24 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0]), outcome.stdout
       expect(lines(outcome).first).to include("match" => true, "load_failed" => false,
                                               "refused" => [{ "index" => 1, "rule" => "bad_value" }])
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # public.slow sleeps, and claims IMMUTABLE so the inbound check lets
+    # the cast through; the arena's statement_timeout cuts it short.
+    it "reports a statement timeout while evaluating a value as the step's error, not as bad_value" do
+      ready(same, arena_sql: <<~SQL)
+        CREATE FUNCTION public.slow(int) RETURNS boolean LANGUAGE plpgsql IMMUTABLE
+          AS 'BEGIN PERFORM pg_sleep(5); RETURN true; END';
+        CREATE DOMAIN public.slow_int AS int CHECK (public.slow(VALUE));
+        ALTER DATABASE "#{arena_name}" SET statement_timeout = 300;
+      SQL
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      outcome = round(1, "INSERT INTO public.orders (id, note, total) VALUES (1, $1, 5::public.slow_int)")
+
+      expect(lines(outcome)).to eq([{ "type" => "error", "step" => "counterexample-round",
+                                      "rule" => "internal_error", "sqlstate" => "57014" }])
       expect_no_leaks(sentinels, outcome)
     end
 
