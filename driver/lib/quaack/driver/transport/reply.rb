@@ -4,6 +4,7 @@ require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require_relative "../enclave_error"
+require_relative "error_fields"
 require_relative "lexical"
 
 module Quaack
@@ -46,21 +47,6 @@ module Quaack
       # an unknown escape is refused, as is one with a Float that isn't
       # finite, on either version.
       module Reply
-        # The error line's fields, checked for the shapes the enclave's
-        # ErrorFilter gives them. The driver can't load the enclave, so the
-        # patterns are repeated here.
-        RULE = /\A[a-z][a-z0-9_]{0,62}\z/
-        STEP = /\A[a-z0-9][a-z0-9_-]{0,62}\z/
-        SQLSTATE = /\A[0-9A-Z]{5}\z/
-        FUNCTION = /\A[a-z_][a-z0-9_$]{0,62}\.[a-z_][a-z0-9_$]{0,62}\z/
-        # A run_server_other_clients failure's clients (DESIGN.md, step 4), as
-        # the enclave's ErrorFilter shapes them: 1 to MAX_CLIENTS entries, each
-        # exactly a positive Integer pid and a UTC backend_start.
-        CLIENTS_RULE = "run_server_other_clients"
-        CLIENT_KEYS = %w[pid backend_start].freeze
-        BACKEND_START = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/
-        MAX_CLIENTS = 20
-
         # The deepest a message may nest: the default of the JSON.generate
         # that the enclave's egress function writes each line with, so the
         # driver reads anything egress can send.
@@ -199,32 +185,9 @@ module Quaack
         end
 
         def failure(subcommand, status, error = nil, rule: "incomplete")
-          fields = error ? error_fields(error) : { rule: }
+          fields = error ? ErrorFields.call(error) : { rule: }
           EnclaveError.new(subcommand:, **fields, **ending(status))
         end
-
-        def error_fields(error)
-          rule = shaped(error["rule"], RULE) || "unexpected_output"
-          { rule:, step: shaped(error["step"], STEP), sqlstate: shaped(error["sqlstate"], SQLSTATE),
-            reason: (error["reason"] if %w[query_unreadable plan_unreadable].include?(rule) &&
-                                      %w[missing symlink not_regular_file permission_denied].include?(error["reason"])),
-            function: shaped(error["function"], FUNCTION),
-            clients: (clients(error["clients"]) if rule == CLIENTS_RULE) }
-        end
-
-        def clients(clients)
-          return unless clients.instance_of?(Array) && (1..MAX_CLIENTS).cover?(clients.size)
-
-          clients if clients.all? { client?(it) }
-        end
-
-        def client?(client)
-          client.instance_of?(Hash) && client.keys == CLIENT_KEYS &&
-            client["pid"].instance_of?(Integer) && client["pid"].positive? &&
-            shaped(client["backend_start"], BACKEND_START)
-        end
-
-        def shaped(value, pattern) = (value if value.instance_of?(String) && value.match?(pattern))
       end
     end
   end

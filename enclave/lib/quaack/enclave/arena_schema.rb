@@ -46,9 +46,29 @@ module Quaack
       # step 9 won't evaluate.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
                                 :user_function) do
-        # Whether a unique key or expression unique index reads the column,
-        # so it needs a distinct value per row.
-        def distinct?(name) = (uniques + expressions.map(&:columns)).any? { |u| u.include?(name) }
+        # The names of the columns of free (Columns a row may set freely)
+        # that need a distinct value per row. Every free column an
+        # expression unique index reads does. A unique key needs only one
+        # of its free columns to vary, since rows that differ in one column
+        # differ as a key: one that already varies for another key, or else
+        # the one with the lowest rank (from the block, such as a number or
+        # text before a range), in key order. Shorter keys go first, so a
+        # column a single-column key covers is the one its wider keys use.
+        def varying(free, &)
+          by_name = free.to_h { [it.name, it] }
+          chosen = expressions.flat_map(&:columns).select { by_name.key?(it) }
+          uniques.sort_by(&:size).each do |key|
+            options = by_name.values_at(*key).compact
+            chosen << pick(options, &) if needed?(options, chosen)
+          end
+          chosen.uniq
+        end
+
+        private
+
+        def needed?(options, chosen) = options.any? && options.none? { chosen.include?(it.name) }
+
+        def pick(options) = options.each_with_index.min_by { |col, i| [yield(col), i] }.first.name
       end
 
       CONSTRAINTS_SQL = <<~SQL

@@ -34,10 +34,12 @@ module Quaack
         end
 
         # The first of preferred, then each CHECK's own satisfying values,
-        # that passes every CHECK on the column.
-        def satisfying(table, col, preferred)
+        # that passes every CHECK on the column. With none, it raises
+        # refusal, if given, or unsatisfiable_check.
+        def satisfying(table, col, preferred, refusal = nil)
           extra = @nodes[[table, col.name]].flat_map { |n| ValuePools.sorted(@conn, n, col)[:satisfying] }
-          (preferred + extra).compact.find { |v| allows?(table, col, v) } || raise(Error, :unsatisfiable_check)
+          (preferred + extra).compact.find { |v| allows?(table, col, v) } ||
+            raise(refusal || Error.new(:unsatisfiable_check))
         end
 
         private

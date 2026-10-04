@@ -7,6 +7,7 @@ require_relative "predicate_atoms"
 require_relative "table_name"
 require_relative "value_pools"
 require_relative "scenarios/checks"
+require_relative "scenarios/free_values"
 require_relative "scenarios/picker"
 require_relative "scenarios/plan"
 require_relative "scenarios/row_set"
@@ -74,14 +75,18 @@ module Quaack
     # table's rows together, as 9d's reverse load needs.
     #
     # Trust boundary: the rows hold real values and stay in the enclave.
-    # Errors name only a rule.
+    # Errors name a rule, and for unsupported_type and domain_check the
+    # table, column, and type step 9 can't fill, which are schema, never a
+    # row value.
     module Scenarios
       class Error < StandardError
-        attr_reader :rule
+        attr_reader :rule, :column
 
-        def initialize(rule)
+        # column is { "table", "column", "type" }, as ErrorFilter sends it.
+        def initialize(rule, column: nil)
           @rule = rule
-          super(rule.to_s)
+          @column = column
+          super(column ? "#{rule}: #{column["table"]}.#{column["column"]} (#{column["type"]})" : rule.to_s)
         end
       end
 
@@ -121,7 +126,7 @@ module Quaack
         # collide on a unique key, over every scenario.
         attr_reader :atoms, :pools, :parse, :dropped
 
-        UNIQUE = Object.new.freeze
+        UNIQUE = FreeValues::UNIQUE
 
         def initialize(conn, parse)
           @conn = conn
@@ -221,19 +226,18 @@ module Quaack
           free_value(table, col, group.mode)
         end
 
+        def free_value(table, col, mode) = free_values.value(table, col, mode)
+
+        def free_values
+          @free_values ||= FreeValues.new(@schema, @topology, @checks, @values) { slot_atoms(it).any? }
+        end
+
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
 
         def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
 
         def atom_value(slot, atoms, group)
           @picker.pick(atoms, slot_columns(slot), atoms.include?(group.near) ? group.near : nil, group.mode)
-        end
-
-        def free_value(table, col, mode)
-          return UNIQUE if @schema.constraints(table).distinct?(col.name)
-          return :omit if col.default
-
-          @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col, strict: false)])
         end
 
         def slot_atoms(slot)
@@ -245,7 +249,8 @@ module Quaack
 
         def key_value(slot, group, table)
           key = group.split == table ? group.key + 100_000 : group.key
-          @values.nth(slot_columns(slot).first.last, key)
+          table_name, col = slot_columns(slot).first
+          @values.nth(col, key, table: table_name)
         end
 
         # Unique columns get a value per distinct row: rows alike in every
@@ -253,7 +258,9 @@ module Quaack
         def identify(table, group, pairs)
           identity = [table, pairs.reject { |_, v| v.equal?(UNIQUE) }, group.copy]
           n = (@identities[identity] ||= @identities.size + 1)
-          pairs.map { |name, v| v.equal?(UNIQUE) ? [name, @values.nth(@schema.column(table, name), n)] : [name, v] }
+          pairs.map do |name, v|
+            v.equal?(UNIQUE) ? [name, @values.nth(@schema.column(table, name), n, table:)] : [name, v]
+          end
         end
       end
     end
