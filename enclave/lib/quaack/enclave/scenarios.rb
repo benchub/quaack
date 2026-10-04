@@ -7,6 +7,7 @@ require_relative "predicate_atoms"
 require_relative "table_name"
 require_relative "value_pools"
 require_relative "scenarios/checks"
+require_relative "scenarios/free_values"
 require_relative "scenarios/picker"
 require_relative "scenarios/plan"
 require_relative "scenarios/row_set"
@@ -121,7 +122,7 @@ module Quaack
         # collide on a unique key, over every scenario.
         attr_reader :atoms, :pools, :parse, :dropped
 
-        UNIQUE = Object.new.freeze
+        UNIQUE = FreeValues::UNIQUE
 
         def initialize(conn, parse)
           @conn = conn
@@ -221,19 +222,18 @@ module Quaack
           free_value(table, col, group.mode)
         end
 
+        def free_value(table, col, mode) = free_values.value(table, col, mode)
+
+        def free_values
+          @free_values ||= FreeValues.new(@schema, @topology, @checks, @values) { slot_atoms(it).any? }
+        end
+
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
 
         def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
 
         def atom_value(slot, atoms, group)
           @picker.pick(atoms, slot_columns(slot), atoms.include?(group.near) ? group.near : nil, group.mode)
-        end
-
-        def free_value(table, col, mode)
-          return UNIQUE if @schema.constraints(table).distinct?(col.name)
-          return :omit if col.default
-
-          @checks.satisfying(table, col, Scenarios.boundaries(col.type, mode) + [@values.typical(col, strict: false)])
         end
 
         def slot_atoms(slot)

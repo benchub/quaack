@@ -65,6 +65,14 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(load(prepared, "SELECT count(DISTINCT c.email) FROM fx.customers c")).to eq([["2"]])
   end
 
+  it "varies one column of a parent's multi-column unique index, and gives the rest their typical value" do
+    conn.exec("ALTER TABLE fx.customers ADD COLUMN root_account_ids bigint[] NOT NULL, ADD COLUMN login text NOT NULL;
+               CREATE UNIQUE INDEX customers_login ON fx.customers (root_account_ids, login)")
+    prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a'), (2, 8, 'b')")
+    expect(load(prepared, "SELECT root_account_ids::text, count(DISTINCT login) FROM fx.customers GROUP BY 1"))
+      .to eq([["{}", "2"]])
+  end
+
   it "refuses an insert the inbound check refuses, or one with an unknown placeholder, by rule alone" do
     prepared = prepare("INSERT INTO fx.orders (id, customer_id, status) SELECT 1, 2, 'x'",
                        "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $9)",
