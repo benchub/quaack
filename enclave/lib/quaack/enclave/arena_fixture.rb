@@ -83,6 +83,31 @@ module Quaack
           ->(_, _, values) { values.all? { |v| v.nil? || v.is_a?(String) } }
       }.freeze
 
+      # An INSERT whose rows leave some columns NULL until every insert has
+      # loaded, for a foreign-key cycle (Counterexamples). sql is one
+      # INSERT. updates has one Hash per row it inserts, in VALUES order:
+      # each column to set afterward, with its value in Postgres text input
+      # form, or no columns. The runner keys each UPDATE to the exact row
+      # by the tableoid and ctid the INSERT returns.
+      DeferredInsert = Data.define(:sql, :updates) do
+        def self.updates?(updates)
+          updates.is_a?(Array) && updates.all? { |u| u.is_a?(Hash) && u.all? { |k, v| [k, v].all?(String) } }
+        end
+
+        def self.frozen(updates) = updates.map { |u| u.to_h { |k, v| [k.dup.freeze, v.dup.freeze] }.freeze }.freeze
+
+        def initialize(sql:, updates:)
+          raise ArgumentError, "a deferred insert's sql must be a String" unless sql.is_a?(String)
+          raise ArgumentError, "a deferred insert's updates must be String Hashes" unless self.class.updates?(updates)
+
+          super(sql: sql.dup.freeze, updates: self.class.frozen(updates))
+        end
+
+        def inspect = "#<data #{self.class} sql=<redacted> updates=<redacted>>"
+
+        alias_method :to_s, :inspect
+      end
+
       # One query's result, for the 9d comparator (task 20260922-47).
       # columns are the output column names. types are their type OIDs, from
       # ftype, so the comparator can find the float columns. rows are Arrays

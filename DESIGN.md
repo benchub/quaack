@@ -809,7 +809,7 @@ Each comparison runs twice, each time in its own transaction that rolls back. Th
 
 - **Index scans are off.** Both runs turn off index, index-only, and bitmap scans for the transaction. Arena has the production indexes, and an index on `(grp, id)` returns the `grp` ties in `id` order however the rows were loaded. 9d compares only results, so the plan doesn't matter.
 - **Rows reverse within each table.** Only each run of consecutive rows for one table is reversed. Rows of different tables keep their order, so parents still load before their children. A table whose foreign key references itself can't be reversed this way, and its reverse load fails with its own error, so the fixture isn't blamed for it.
-- **Step 10's raw inserts don't reverse.** One `INSERT` can hold many rows, and reordering them would mean rewriting it. They load in their own order, after the rows, in both runs.
+- **Step 10's raw inserts don't reverse.** One `INSERT` can hold many rows, and reordering them would mean rewriting it. They load in their own order, after the rows, in both runs. Any deferred `UPDATE`s for cut foreign-key columns (see 10a) run after all of them, in both runs.
 - **Gaps remain.** A pick that doesn't follow the order rows arrive in comes out the same both ways, so the reverse load can't catch it. Examples are a hash aggregate's or hash join's order, a top-N heapsort's pick, and the middle row of an odd-sized tie group (`OFFSET 1 LIMIT 1` over three ties).
 - **Both runs must match.** A mismatch in either run disproves the candidate, and the verdict says which load order did it. If either run refuses to compare, the whole comparison refuses.
 
@@ -833,6 +833,8 @@ Give the LLM:
 - Any atoms that 9c marked as untested. Ask the LLM to make sure its counterexamples exercise these, since step 9 couldn't.
 
 Ask it for inserts that satisfy every constraint but make the two queries return different results. The driver sends them to the enclave script, which loads them into arena inside a transaction. If there are FK gaps, fix them by adding parent rows. Never bypass constraints.
+
+Inserts load parents' tables first. When a foreign-key cycle leaves no such order, each nullable foreign key that closes a cycle is cut, as in step 9, but here every nullable one is cut, since no atom guards it. An insert that sets a value in a cut column loads with NULL there. Once every insert has loaded, an `UPDATE` keyed to the inserted row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value, so the final data is exactly the LLM's rows and every constraint is still checked. The UPDATEs run last in both 9d load orders. A `DEFAULT` in a cut column stays `DEFAULT`. If an inserted row can't be found again by its `tableoid` and `ctid` (a trigger skipped it or moved it, say), the load fails with `insert_failed`, and the round disproves nothing.
 
 ### 10b. Compare results.
 
