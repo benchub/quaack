@@ -8,9 +8,8 @@ QUAACK is a pipeline that optimizes one Postgres query. You provide it the query
 
 QUAACK has mechanical rules that propose both indexes and rewrites of the query, which need no LLM. Additionally, it uses an LLM to come up with crazy ideas that *just might work*. Of course, the LLM never sees your data. In fact, your data never leaves your production environment.
 
-> **Status.** QUAACK is at version 1 and ready for its first real runs. Two rough edges you'll hit right away:
+> **Status.** QUAACK is at version 1 and ready for its first real runs. A rough edge you'll hit right away:
 >
-> - Between `quaack start` and `quaack run`, you run eleven setup commands by hand on the **jump server**. A single `quaack setup` command is on the backlog (task 20260928-1). The walkthrough below shows the manual steps.
 > - QUAACK handles ordinary `SELECT` queries on plain tables. It refuses anything else. See [What QUAACK won't do](#what-quaack-wont-do).
 
 **Contents:**
@@ -349,7 +348,7 @@ It also tells you if `ruby` itself isn't on that `PATH`, if another `quaacks` or
 ssh jump1.prod.example.com quaacks --version
 ```
 #### Upgrading
-Re-run `quaack deploy` whenever you update your checkout. `quaack start` and `quaack run` refuse to talk to an out-of-date `quaacks`, and tell you to deploy.
+Re-run `quaack deploy` whenever you update your checkout. `quaack start`, `quaack setup`, and `quaack run` refuse to talk to an out-of-date `quaacks`, and tell you to deploy.
 
 ### 5. Configure the jump server (optional, but recommended).
 
@@ -368,7 +367,7 @@ Re-run `quaack deploy` whenever you update your checkout. `quaack start` and `qu
 | Key | What it does | Without it |
 | --- | --- | --- |
 | `memory_command` | Prints production's instance memory, such as `64GB`. `{host}` is production's host. | Memory is recorded as unknown. |
-| `run_server_command` | Builds or finds the run server, and prints `{"host": ..., "port": ..., "racetrack_db": ..., "arena_db": ...}`. `{server}` is the production server name and `{run}` the run ID. It gets an hour. | You pass the run server as flags to `quaacks run-server`. |
+| `run_server_command` | Builds or finds the run server, and prints `{"host": ..., "port": ..., "racetrack_db": ..., "arena_db": ...}`. `{server}` is the production server name and `{run}` the run ID. It gets an hour. | You pass the run server as flags to `quaack setup` or `quaack run`. |
 | `destroy_command` | Destroys the run server at the end of a run. It must succeed if the server is already gone. | QUAACK reminds you to destroy it yourself. |
 | `pii_columns` | `schema.table.column` patterns for columns that hold personal data. `*` matches within one part. Case is ignored. | Only the automatic rule applies: any text column with 50 or more distinct values counts as personal data. |
 | `cardinality_threshold` | Moves that line of 50. | 50. |
@@ -415,27 +414,22 @@ The paths are on the jump server. A relative path starts from your home director
 
 QUAACK runs every candidate as if `now()` and `current_date` were the moment you ran `quaack start`. If your query uses them, start the run soon after you capture the plan. (`quaacks intake` takes a `--captured-at` time, but `quaack start` can't pass it through yet. That's backlog task 20260928-2.)
 
-### Step 3. Set up the run on the jump server.
+### Step 3. Set up the run (optional).
 
-Until `quaack setup` exists, run these on the jump server, in this order. Each prints a line when it finishes, and stops with a rule name if it can't go on.
+`quaack run` sets the run up first if it hasn't been, so you can skip to step 4. Or set it up on its own, from your laptop, to see it through before the LLM steps start:
 
 ```sh
-RUN=20260928T201702Z-3f9a1c2e
-
-quaacks inventory --run $RUN        # production's version, settings, and memory
-
 # With run_server_command in your config:
-quaacks run-server --run $RUN
+quaack setup --run 20260928T201702Z-3f9a1c2e
 # ...or, name the run server yourself:
-quaacks run-server --run $RUN --host runsrv-7.prod.example.com --port 5432 \
+quaack setup --run 20260928T201702Z-3f9a1c2e --host runsrv-7.prod.example.com --port 5432 \
   --racetrack-db racetrack --arena-db quaack_arena
-
-for step in qualify schema-dump statistics volatility classify redact literals anchor racetrack-setup; do
-  quaacks $step --run $RUN || break
-done
+# 20260928T201702Z-3f9a1c2e set up
 ```
 
-What each one does:
+`quaack run` takes the same four run-server flags. Any you leave out come from `run_server_command`. They only matter the first time: once the run server has been checked, setup skips that step, flags and all.
+
+Setup runs these eleven `quaacks` commands on the jump server, in this order, over ssh. It shows a line on stderr as each starts and ends, such as `quaack: [3/11] Finding the tables the query reads (3a)`, and skips each one the run already has, so after a failure you fix the problem and run the same command again. A failure prints `quaack setup failed: <rule>` and keeps the run.
 
 | Command | What it does |
 | --- | --- |
@@ -463,7 +457,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that runs past 30 seconds prints `Still working` with its time every 30 seconds. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (6a)` and `quaack: [6/18] Done in 42s (6a)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. A step that runs past 30 seconds prints `Still working` with its time every 30 seconds. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
@@ -708,7 +702,7 @@ Only a test that found different results counts. A rule's rewrite that timed out
 
 ## When a run fails.
 
-QUAACK prints `quaack start failed: <rule>` or `quaack run failed: <rule>`, and exits with status 1. When an LLM call fails, `quaack run` adds the provider's error after the rule, as in `quaack run failed: llm_bad_request: <detail>`. The detail comes from the LLM provider, outside the privacy line. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
+QUAACK prints `quaack start failed: <rule>`, `quaack setup failed: <rule>`, or `quaack run failed: <rule>`, and exits with status 1. When an LLM call fails, `quaack run` adds the provider's error after the rule, as in `quaack run failed: llm_bad_request: <detail>`. The detail comes from the LLM provider, outside the privacy line. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
 
 Common rules:
 

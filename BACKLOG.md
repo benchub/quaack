@@ -575,17 +575,7 @@ Still open from the first review of 20260925-8:
 - **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the 5a-5 burndown record.
 - **Status:** todo
 
-### 20260928-1. `quaack setup`: one command for steps 2 through 4.
-
-`quaack start` runs only intake (step 1), and `quaack run` starts at step 5. Nothing in the driver runs the steps between them, so today the operator types eleven `quaacks` commands on the jump server by hand: `inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `anchor`, and `racetrack-setup`, in that order. `e2e/run.rb` runs the same list itself, which is why the e2e run never noticed. DESIGN.md sections 2 through 4 already say "the driver runs" each of these.
-
-Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --arena-db <name>]`. It runs those steps over ssh in order, passing any run-server flags through to `quaacks run-server` (which falls back to `run_server_command` for missing ones). It resumes like `quaack run`: a step whose output the store already holds is skipped, which may mean adding the setup entries to the enclave's `Status::ENTRIES`. A failure stops it and prints only the step's rule, as `start` and `run` do.
-
-- **Depends on:** None.
-- **Came from:** Writing the user-facing README (2026-09-28).
-- **Design:** Steps 2 through 4, "Where QUAACK runs."
-- **Status:** todo
-- **Open questions:** Should `quaack run` call setup itself when the run hasn't had it, so `start` then `run` is all an operator types? Should `quaack start` take the run-server flags and do setup too?
+### 20260928-1. `quaack setup`: one command for steps 2 through 4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-2. `quaack start --captured-at`.
 
@@ -2078,4 +2068,45 @@ Tests check that both lists have 200 words, no duplicates, and the syllable coun
 - **Depends on:** none. 20261003-15 and -16 also change the progress lines. Whichever lands later fits in with the others.
 - **Came from:** The user, 2026-10-03.
 - **Design:** Progress lines for `quaack run`, step 15.
+- **Status:** todo
+
+### 20261003-21. Give the design's steps descriptive names, and number them in order.
+
+The design's steps have IDs like `5a-6`, `6c`, `steps 9-10` and `14b`. They show up in `quaack run`'s output, such as `quaack: [5/18] Applying QUAACK's own rewrite rules to the query (6c)`, and also in the code, the run store's keys, the report and the specs. They say nothing about what a step does. Some are lettered sub-steps of a number, and their order doesn't match the order the pipeline runs them in (6c runs before 6a).
+
+The rule:
+
+- Give every step a short descriptive slug, in lowercase words joined by hyphens, such as `index-search`, `llm-index-ideas`, `llm-index-refine`, `rewrite-rules`, `llm-rewrites`, `counterexamples`. Some steps have slugs already (`index-search`, `index-rank`, `rewrite-prune`, `rewrite-test`); keep those unless they're unclear.
+- Use the slug everywhere the old ID was used:
+  - DESIGN.md's headings and cross-references;
+  - the code, including `Pipeline::SAY`, the progress lines, and the protocol's step names;
+  - the run store's keys;
+  - the report payload and the readable report;
+  - specs and fixtures, including the recorded replay runs, which may need re-recording.
+  
+  Progress lines keep the slug in parentheses at the end, as now.
+- In DESIGN.md, also number the steps in the order the pipeline runs them. The numbers say order only, and the slug stays the name. The numbering has to show the pipeline's loops. Number a loop's body as sub-steps of the loop, such as `7. For each rewrite:` then `7.1 rewrite-index-search`, `7.2 rewrite-prune`. Say plainly where a loop repeats, such as the counterexample rounds: "repeat 9.2–9.4 until …". Put one ordered outline of the whole pipeline near the top of DESIGN.md, which is the only place the numbers appear. Code and output use slugs only, so renumbering never touches code.
+- Add a table to DESIGN.md mapping each old ID to its new slug. BACKLOG-COMPLETE.md is history and keeps the old IDs, and the table keeps those entries readable. Update BACKLOG.md's open entries to the new slugs.
+- Changing the store keys means a run started by an older version can't be resumed. That's fine with a version bump. Make sure `quaack run` refuses such a run with a clear message, rather than misreading it.
+
+This touches nearly every file, so build it when no other task is in flight, or merge carefully with whatever is. It may be worth splitting into DESIGN.md first (outline, slugs, mapping table), then code and store keys. If so, the builder should propose the split before starting.
+
+- **Depends on:** none. Best built after 20261003-15, -16 and -20, which change the same progress lines.
+- **Came from:** The user, 2026-10-03.
+- **Design:** All of it.
+- **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
+- **Status:** todo
+
+### 20261003-22. `quaack setup`: loose ends.
+
+Minor findings from the build and review of 20260928-1:
+
+- **No run-server flags and no `run_server_command` fails as `usage`.** `quaacks run-server` refuses with `usage` (`run_server.rb:52`), so the operator sees `quaack setup failed: usage` and can't tell why. Under `quaack run` without `--keep`, the run, intake included, is then torn down. Give it its own rule, such as `run_server_unspecified`, add it to README's "Common rules" table, and say in README Step 4 that the flags or the config are required.
+- **Flags given after run-server has passed are silently ignored.** If the database given was wrong but passed the check, the only fix is a new run. Warn when flags are given and run-server is skipped.
+- **A setup failure under `quaack run` tears the run down, but under `quaack setup` it's kept.** Pick one behavior, probably keep, since nothing expensive has run yet and the operator may just need different flags.
+- **The driver's unit specs don't cover skipping a late step.** Only `spec/setup_postgres_spec.rb` catches a broken skip of `racetrack-setup`. Add a unit case.
+
+- **Depends on:** 20260928-1.
+- **Came from:** The build and review of 20260928-1, 2026-10-03.
+- **Design:** Steps 2 through 4.
 - **Status:** todo

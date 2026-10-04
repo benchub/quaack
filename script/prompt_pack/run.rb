@@ -309,18 +309,11 @@ module PromptPack
              .messages.find { it["type"] == "run" }.fetch("run_id")
   end
 
-  SETUP = %w[inventory run-server qualify schema-dump statistics volatility classify redact literals anchor
-             racetrack-setup].freeze
-
+  # Steps 2 to 4a, as `quaack setup` does them.
   def setup(transport, run_id, server, racetrack)
-    SETUP.each do |step|
-      args = { run: run_id }
-      if step == "run-server"
-        args.merge!("host" => server.host, "port" => server.port.to_s, "racetrack-db" => racetrack,
-                    "arena-db" => "#{racetrack}_arena")
-      end
-      transport.call(step, args:)
-    end
+    Quaack::Driver::Setup.run(transport:, run_id:, entries: Quaack::Driver::Pipeline.status(transport, run_id),
+                              server: { "host" => server.host, "port" => server.port.to_s,
+                                        "racetrack-db" => racetrack, "arena-db" => "#{racetrack}_arena" })
   end
 
   def write_pack(query, asks, error)

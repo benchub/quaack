@@ -3776,3 +3776,33 @@ Add it to 6c's table in DESIGN.md.
     - FOR UPDATE is refused upstream by SupportedSql.
   - **Known trade-off (accepted):** merging can make a plain CTE materialized. A body expression that can error, such as `1/x`, could then raise on rows the outer filter used to exclude. Result comparison catches that.
   - **Follow-ups:** the build's out-of-scope findings went to 20261003-14.
+
+### 20260928-1. `quaack setup`: one command for steps 2 through 4.
+
+`quaack start` runs only intake (step 1), and `quaack run` starts at step 5. Nothing in the driver runs the steps between them, so today the operator types eleven `quaacks` commands on the jump server by hand: `inventory`, `run-server`, `qualify`, `schema-dump`, `statistics`, `volatility`, `classify`, `redact`, `literals`, `anchor`, and `racetrack-setup`, in that order. `e2e/run.rb` runs the same list itself, which is why the e2e run never noticed. DESIGN.md sections 2 through 4 already say "the driver runs" each of these.
+
+Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --arena-db <name>]`. It runs those steps over ssh in order, passing any run-server flags through to `quaacks run-server` (which falls back to `run_server_command` for missing ones). It resumes like `quaack run`: a step whose output the store already holds is skipped, which may mean adding the setup entries to the enclave's `Status::ENTRIES`. A failure stops it and prints only the step's rule, as `start` and `run` do.
+
+- **Depends on:** None.
+- **Came from:** Writing the user-facing README (2026-09-28).
+- **Design:** Steps 2 through 4, "Where QUAACK runs."
+- **Open questions:** Should `quaack run` call setup itself when the run hasn't had it, so `start` then `run` is all an operator types? Should `quaack start` take the run-server flags and do setup too?
+- **Note (2026-10-03, answers):** Yes, `quaack run` runs setup first when the run hasn't had it, so it accepts the same run-server flags as `quaack setup` and passes them through. No, `quaack start` stays as it is and does no setup.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20260928-1.
+  - **Change:**
+    - `quaack setup --run <ID>` runs the eleven steps over ssh in order, with progress lines, and skips any step whose last entry is already in the store.
+    - `quaacks status` reports one entry per setup step, holding only entry names and true/false.
+    - The run-server flags go only to `run-server`, and only the ones given.
+    - `quaack run` takes the same flags and runs setup first when any step is missing. Setup then counts in the progress total, such as [1/29] through [11/29].
+    - `quaack start` is unchanged.
+    - `e2e/run.rb` and the prompt pack use the shared setup code.
+    - README and DESIGN.md say who runs these steps.
+  - **Tests:**
+    - driver unit specs for the step order, the flags, skipping, failures and the run total;
+    - a guard that `start` doesn't run setup;
+    - a real-Postgres spec of a full setup, a rerun with no calls, and a resume after a partial failure.
+  - **Review:** one round, clean.
+    - The reviewer checked that each step's marker is the last thing it writes, and that writes are atomic.
+    - Eight mutations, and each one went red.
+  - **Follow-ups:** minor findings went to 20261003-22.
