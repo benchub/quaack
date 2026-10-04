@@ -165,8 +165,6 @@ module Quaack
 
         private
 
-        def order = @topology.order
-
         def probes
           @probes ||= @pools.keys.to_h do |i|
             column = @atoms[i].columns[0]
@@ -178,7 +176,7 @@ module Quaack
         def fill(row_groups)
           set = RowSet.new(@schema, @conn)
           row_groups.each { |rows| @dropped += 1 unless set.add?(rows) }
-          set.in_order(order)
+          set.in_order(@topology.order)
         end
 
         # For each pooled keyset row comparison, groups whose row ties it on
@@ -204,7 +202,7 @@ module Quaack
 
         # The group's rows, or nil when a near miss has no value.
         def build_group(group)
-          rows = order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
+          rows = @topology.order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
           rows unless rows.include?(:skip)
         end
 
@@ -212,10 +210,9 @@ module Quaack
           pairs = @schema.columns(table).map { |col| [col.name, column_value(table, col, group)] }
           return :skip if pairs.any? { |_, v| v == :skip }
 
-          pairs = identify(table, group, pairs.reject { |_, v| v == :omit })
-          columns = pairs.map(&:first)
-          ArenaRunner::FixtureRow.new(table:, columns:, values: pairs.map(&:last),
-                                      deferred: columns & @topology.cut_columns(table))
+          pairs = identify(table, group, pairs.reject { |_, v| v == :omit }).to_h
+          ArenaRunner::FixtureRow.new(table:, columns: pairs.keys, values: pairs.values,
+                                      deferred: pairs.keys & @topology.cut_columns(table))
         end
 
         def column_value(table, col, group)
@@ -234,10 +231,9 @@ module Quaack
           free_value(table, col, group.mode)
         end
 
-        def free_value(table, col, mode) = free_values.value(table, col, mode)
-
-        def free_values
+        def free_value(table, col, mode)
           @free_values ||= FreeValues.new(@schema, @topology, @checks, @values) { slot_atoms(it).any? }
+          @free_values.value(table, col, mode)
         end
 
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
