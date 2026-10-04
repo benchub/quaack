@@ -25,20 +25,24 @@ module Quaack
             schema.constraints(table).checks.each { |definition| add(table, definition) }
           end
           @probes = {}
+          @own_values = {}
+          @shared = {}
+          @sorted = {}
         end
 
         # Whether value passes every CHECK on the column. NULL passes a
         # test that comes out NULL, as in Postgres.
         def allows?(table, col, value)
-          probes(table, col).none? { |p| %w[f].include?(p.call(value)) || p.call(value) == :unreadable }
+          probes(table, col).none? { |p| ["f", :unreadable].include?(p.call(value)) }
         end
 
         # The first of preferred, then each CHECK's own satisfying values,
         # that passes every CHECK on the column. With none, it raises
-        # refusal, if given, or unsatisfiable_check.
+        # refusal, if given, or unsatisfiable_check. The CHECKs' own values
+        # are sorted only when no preferred value passes.
         def satisfying(table, col, preferred, refusal = nil)
-          extra = @nodes[[table, col.name]].flat_map { |n| ValuePools.sorted(@conn, n, col)[:satisfying] }
-          (preferred + extra).compact.find { |v| allows?(table, col, v) } ||
+          found = ->(values) { values.compact.find { |v| allows?(table, col, v) } }
+          found.call(preferred) || found.call(own_values(table, col)) ||
             raise(refusal || Error.new(:unsatisfiable_check))
         end
 
@@ -47,8 +51,20 @@ module Quaack
 
         private
 
+        # A CHECK's answer for a value never changes, so each probe asks
+        # Postgres once per value. Columns of one type with the same CHECK,
+        # such as many tables' workflow_state, share a probe.
         def probes(table, col)
-          @probes[[table, col.name]] ||= @nodes[[table, col.name]].map { |n| ValuePools::Probe.new(@conn, n, col) }
+          @probes[[table, col.name]] ||= @nodes[[table, col.name]].map do |n|
+            probe = ValuePools::Probe.new(@conn, n, col)
+            @shared[probe.key] ||= ValuePools::CachedProbe.new(probe)
+          end
+        end
+
+        def own_values(table, col)
+          @own_values[[table, col.name]] ||= @nodes[[table, col.name]].zip(probes(table, col)).flat_map do |n, p|
+            @sorted[[p, col.nullable]] ||= ValuePools.sorted(@conn, n, col, p)[:satisfying]
+          end
         end
 
         def add(table, definition)
