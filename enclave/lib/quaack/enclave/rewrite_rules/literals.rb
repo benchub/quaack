@@ -29,6 +29,19 @@ module Quaack
           deallocate(name)
         end
 
+        # Whether Postgres can prepare sql, written with these placeholders,
+        # each declared its literal's type, as Redaction.binding declares
+        # them. It's prepared and deallocated, never run.
+        def prepares?(sql)
+          name = "quaack_literals_#{@next += 1}"
+          Redaction.binding(sql, @map).prepare(@connection, name)
+          prepared = true
+        rescue StandardError
+          false
+        ensure
+          deallocate(name) if prepared
+        end
+
         def inspect = "#<#{self.class} placeholders=#{@map.size}, placeholder_map=<redacted>>"
 
         alias to_s inspect

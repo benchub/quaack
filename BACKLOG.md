@@ -2032,20 +2032,7 @@ Minor follow-ups from building 20261002-6. Each one widens what the rule covers;
 - **Design:** 6c.
 - **Status:** todo
 
-### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
-
-From the build and review of 20261002-10.
-
-- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
-- **Widenings:**
-  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
-  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
-  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
-
-- **Depends on:** 20261002-10.
-- **Came from:** The build and review of 20261002-10, 2026-10-03.
-- **Design:** 6c.
-- **Status:** todo
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-30. Finish 20261003-23: a skipped group's cut-column key class.
 
@@ -2111,14 +2098,7 @@ These are minor findings from building and reviewing 20261002-16:
 - **Design:** 6c, `distinct_join_to_exists`.
 - **Status:** todo
 
-### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
-
-`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
-
-- **Depends on:** none.
-- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
-- **Design:** none (test only).
-- **Status:** todo
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-37. Step 9 values: loose ends from 20261003-34.
 
@@ -2207,4 +2187,22 @@ These are minor findings from building and reviewing 20261003-19:
 - **Depends on:** 20261003-19.
 - **Came from:** The build and reviews of 20261003-19, 2026-10-03.
 - **Design:** Step 9, step 15.
+- **Status:** todo
+
+### 20261003-44. `existence_in_flip`: loose ends from 20261003-29.
+
+These are findings from building and reviewing 20261003-29:
+
+- **A wrong result with a constant under COLLATE** (`selection.rb:35`). The bare-constant refusal for y only looks at a bare placeholder, so `users.code IN (SELECT 'a ' COLLATE "C" FROM groups)` on a `char(3)` column still flips. The original returns no rows and the rewrite returns one. Refuse a placeholder under COLLATE, or under any wrapper that keeps it a plain constant.
+- **Siblings may have the capture bug.** `cte_hoist_dedupe`, `shared_scan_cte` and `union_outer_filter_removal` check a hoisted body by preparing it on its own, so a bare name that used to read an outer column might prepare as a whole-row reference. Write a reproducer for each, and fix any that capture.
+- **Skipped widenings:** the flip inside an EXISTS body, and `x = ANY (SELECT ...)`.
+- **ORDER BY keys** from CTEs, subqueries or tables that aren't plain are refused. Widen this if real queries need it.
+- **The scope check** ignores the names of unaliased function calls in FROM.
+- **Errors (E):** a y expression that can raise, such as `1/(x-1)`, may raise on rows the original's plan never evaluated. Consider refusing a y that can raise.
+- **Originals that already error** still get rewrites: `ORDER BY 2` with one output column, and `y COLLATE "C"` against a nondeterministic collation. Refuse them, or leave them be.
+- **Test gaps:** the `ival` guard on constant ORDER BY keys (`ordering.rb:31`), and the `sole_table` path when S is a single CTE or a table that isn't plain (`selection.rb:46`).
+
+- **Depends on:** 20261003-29.
+- **Came from:** The build and review of 20261003-29, 2026-10-03.
+- **Design:** 6c, `existence_in_flip`.
 - **Status:** todo

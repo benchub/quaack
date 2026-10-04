@@ -4246,3 +4246,44 @@ Add a sentinel test: plant a row value in the cycle's tables, and check that it 
     - The fix round corrected both, and each was confirmed to go red when its check is removed.
     - Round 2 was clean. 13 of round 1's 15 mutations had already gone red, and the two survivors are the ones the fix round covered.
   - **Follow-ups:** filed as 20261003-43.
+
+### 20261003-29. `existence_in_flip`: a captured whole-row reference, and widenings.
+
+From the build and review of 20261002-10.
+
+- **A whole-row reference can be captured (correctness, rare).** When a moved condition names a table bare, as a whole row, and `S` has a column of that name, Postgres resolves the name to `S`'s column inside the `EXISTS`. Reproducer: `holders(id, posts)` with rows `(1, NULL), (2, 5)`, and `SELECT 1 AS one FROM posts WHERE posts.id IN (SELECT holders.id FROM holders) AND posts IS NULL LIMIT 1`. The original returns no rows; the rewrite returns one. Fix: refuse a bare one-field column reference in the moved conditions or in `x` that names an original FROM item, and list it in DESIGN.md as unsupported in v1. Do this one first.
+- **Widenings:**
+  - The prepare check treats every placeholder as unknown, so it refuses ambiguous calls such as `generate_series($2, $3)`.
+  - ORDER BY with a constant select list, a cast constant in the select list, a bare y when S has several tables, y as an expression, and renaming when S has subqueries are all refused today.
+  - Deferred by the task: the flip inside an `EXISTS` body, and `x = ANY (SELECT ...)`.
+
+- **Depends on:** 20261002-10.
+- **Came from:** The build and review of 20261002-10, 2026-10-03.
+- **Design:** 6c.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-29.
+  - **Change:**
+    - **The capture fix:** the rule refuses a bare one-field name in the moved conditions, or in x, when it names a FROM item on its own side. Qualified `t.*` still flips. DESIGN.md lists the bare form as unsupported in v1.
+    - **Widenings:**
+      - (A) The prepare check gives each placeholder its literal's type, through `Literals#prepares?`, which returns only true or false. So `generate_series($2,$3)` flips.
+      - (B) An ORDER BY whose keys are all safe becomes `ORDER BY 1`. A safe key is an output position, or a qualified column of a plain table whose type can be compared, with no USING.
+      - (C) A cast constant in the select list.
+      - (D) A bare y when S has several tables, qualified by the one plain table that has that column.
+      - (E) y as an expression. Its columns are qualified and renamed. A SubLink and a bare top-level constant are refused.
+      - (F) Renaming when S has subqueries, allowed when nothing else in S introduces that name.
+  - **Review:** one round, clean. The reviewer compared about 55 realistic queries in real Postgres, and 29 of 31 mutations went red.
+  - **Follow-ups:** filed as 20261003-44.
+
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
+
+`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
+
+- **Depends on:** none.
+- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
+- **Design:** none (test only).
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-36.
+  - **Change:** only `driver/spec/copilot_cli_adapter_spec.rb` changed.
+    - The grandchild-stdout test's outer limit went from 1s to 10s (`hang_limit`). The fake grandchild still sleeps 60s.
+    - The two sibling timeout and process-group tests had the same problem. They get a 3s adapter timeout (`slow_start_timeout`) and a 10s outer limit or poll.
+  - **Review:** one round, clean. Three deliberate breaks each turned the matching test red: the success path reading stdout to EOF, the timeout path reading to EOF, and killing only the child. The two timeout tests now take about 3s each.
