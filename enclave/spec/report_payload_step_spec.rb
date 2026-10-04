@@ -305,6 +305,11 @@ RSpec.describe "quaacks report-payload" do
         # If a store held both, the earlier step is the fate.
         measured(store, 23, "none" => "not_better")
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
+        # Step 9 couldn't build scenarios for the query, so it refused.
+        stored(store, 24, tested: tested(false, nil, "complex_check").merge("refused" => true), survived: false)
+        stored(store, 25, tested: tested(false, nil, "fk_cycle").merge("refused" => true), survived: false)
+        stored(store, 26, tested: tested(false, nil, REPORT_WORD_SENTINEL).merge("refused" => true),
+                          survived: false)
       end
     end
 
@@ -331,7 +336,10 @@ RSpec.describe "quaacks report-payload" do
       20 => { "fate" => "step10_disproved" },
       21 => { "fate" => "same_plans" },
       22 => { "fate" => "ranked" },
-      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" }
+      23 => { "fate" => "step9_disproved", "scenario" => "s1", "rule" => "value" },
+      24 => { "fate" => "step9_untested", "rule" => "complex_check" },
+      25 => { "fate" => "step9_untested", "rule" => "fk_cycle" },
+      26 => { "fate" => "step9_untested" }
     }.each do |number, expected|
       it "gives rewrite_#{number} the fate #{expected.values.join(", ")}" do
         expect(fate(number)).to eq(expected)
@@ -530,6 +538,16 @@ RSpec.describe "quaacks report-payload" do
         let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, "discarded"), false) } }
 
         it "isn't a bug: a pruned rewrite was never disproved" do
+          expect(report["rule_bugs"]).to eq([])
+        end
+      end
+
+      context "with a rule-made rewrite step 9 refused to test, since it couldn't build scenarios" do
+        let(:outcome) do
+          with_rewrite { rule_made(it, 2, tested(false, "complex_check").merge("refused" => true), false) }
+        end
+
+        it "isn't a bug: a refused rewrite was never tested" do
           expect(report["rule_bugs"]).to eq([])
         end
       end
