@@ -58,7 +58,7 @@ module Quaack
 
           tree = Deparse.copy(parse.tree)
           top = Tree.select(tree)
-          return [] unless top&.op == :SETOP_NONE
+          return [] unless top
 
           unions = Union.all(top, catalog)
           conditions = Tree.conjuncts(top.where_clause)
@@ -82,16 +82,9 @@ module Quaack
         # condition's outside its subqueries, or nil.
         def union_of(condition, unions)
           names = Conjuncts.columns(condition).map { Tree.qualified(it) }
-          qualifier = qualifier(names)
-          union = unions[qualifier] if qualifier
-          union if union && names.all? { union.position(it.last) }
-        end
-
-        # The one qualifier of names, when there are some, and each is
-        # written as name.column.
-        def qualifier(names)
           qualifiers = names.map { it&.first }.uniq
-          qualifiers.first if !names.empty? && !names.include?(nil) && qualifiers.size == 1
+          union = unions[qualifiers.first] if qualifiers.size == 1
+          union if union && names.all? { union.position(it.last) }
         end
 
         def stands?(condition, top, catalog)

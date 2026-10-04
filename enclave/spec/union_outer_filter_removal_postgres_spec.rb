@@ -319,7 +319,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
     expect(rule.rewrites(PgQuery.parse(sql.call("users.workflow_state")), catalog, literals).size).to eq(1)
   end
 
-  it "refuses INTERSECT and EXCEPT, even nested under a UNION" do
+  it "refuses a subquery that isn't all UNIONs of SELECTs: INTERSECT, EXCEPT, VALUES, or no set operation" do
     one = arm("users.id > 1")
     other = arm("users.id > 1 AND users.name = 'a'")
     expect_refusals(
@@ -327,7 +327,13 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
         ["SELECT u.id FROM (#{one} #{op} #{other}) u WHERE u.id > 1",
          "SELECT u.id FROM (#{one} UNION #{other}) u WHERE u.id > 1"]
       end + [["SELECT u.id FROM ((#{one} EXCEPT #{other}) UNION #{one}) u WHERE u.id > 1",
-              "SELECT u.id FROM ((#{one} UNION #{other}) UNION #{one}) u WHERE u.id > 1"]]
+              "SELECT u.id FROM ((#{one} UNION #{other}) UNION #{one}) u WHERE u.id > 1"],
+             ["SELECT u.column1 FROM (VALUES (2, 'active') UNION #{one}) u WHERE u.column1 > 1",
+              "SELECT u.id FROM (#{other} UNION #{one}) u WHERE u.id > 1"],
+             ["SELECT u.id FROM (#{one} UNION VALUES (2, 'active')) u WHERE u.id > 1",
+              "SELECT u.id FROM (#{one} UNION #{other}) u WHERE u.id > 1"],
+             ["SELECT u.id FROM (#{one}) u WHERE u.id > 1",
+              "SELECT u.id FROM (#{one} UNION ALL #{one}) u WHERE u.id > 1"]]
     )
   end
 
@@ -341,6 +347,10 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
       [["SELECT u.id FROM public.pseudonyms p JOIN #{union.call("users.id = p.user_id")} ON true " \
         "WHERE u.id = p.user_id",
         "SELECT u.id FROM public.pseudonyms p JOIN #{union.call("users.id > 1")} ON true WHERE u.id > 1"],
+       ["SELECT u.id FROM public.pseudonyms p JOIN #{union.call("users.id >= users.id")} ON u.id = p.user_id " \
+        "WHERE u.id >= p.id",
+        "SELECT u.id FROM public.pseudonyms p JOIN #{union.call("users.id >= users.id")} ON u.id = p.user_id " \
+        "WHERE u.id >= u.id"],
        ["SELECT u.id FROM public.pseudonyms p JOIN #{union.call(correlated)} ON u.id = p.user_id " \
         "WHERE #{outer.call(correlated)}",
         "SELECT u.id FROM public.pseudonyms p JOIN #{union.call(plain)} ON u.id = p.user_id " \
@@ -373,16 +383,17 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
 
   it "refuses a UNION on an outer join's nullable side, where dropping the conjunct would add rows" do
     union = "(#{arm("users.workflow_state <> 'deleted'")} UNION #{arm("users.workflow_state <> 'deleted'")}) u"
+    fires = "SELECT p.id FROM public.pseudonyms p JOIN #{union} ON u.id = p.user_id WHERE u.workflow_state <> 'deleted'"
     expect_refusals(
       %w[LEFT FULL].map do |join|
         ["SELECT p.id FROM public.pseudonyms p #{join} JOIN #{union} ON u.id = p.user_id " \
-         "WHERE u.workflow_state <> 'deleted'",
-         "SELECT p.id FROM public.pseudonyms p JOIN #{union} ON u.id = p.user_id WHERE u.workflow_state <> 'deleted'"]
-      end
+         "WHERE u.workflow_state <> 'deleted'", fires]
+      end + [["SELECT p.id FROM #{union} RIGHT JOIN public.pseudonyms p ON u.id = p.user_id " \
+              "WHERE u.workflow_state <> 'deleted'", fires]]
     )
   end
 
-  it "refuses a subquery CTE that a nearer WITH of the same name hides" do
+  it "refuses a subquery CTE that a nearer WITH of the same name hides, but not a table of that name" do
     inner = "WITH users_in_account AS (#{body(2)}) "
     filter = "users.id IN (SELECT user_id FROM users_in_account)"
     outer = "WITH users_in_account AS (#{body}) SELECT u.id FROM ("
@@ -393,31 +404,70 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnionOuterFilterRemoval do
        ["#{outer}(#{inner}#{arm(filter)}) UNION #{arm(filter)}#{tail}",
         "#{outer}(#{arm(filter)}) UNION #{arm(filter)}#{tail}"]]
     )
+    table = "users.id IN (SELECT a.user_id FROM public.user_account_associations a WHERE a.account_id = 1)"
+    sql = "SELECT u.id FROM (WITH user_account_associations AS (SELECT 1) #{arm(table)} UNION #{arm(table)}) u " \
+          "WHERE #{table.sub("users.id", "u.id")}"
+    rewrites = rewritten(sql)
+
+    expect(rewrites.size).to eq(1)
+    expect_same_rows(sql, rewrites.first)
   end
 
-  it "refuses a star it can't expand, and a table the catalog lacks" do
+  it "refuses a star it can't expand, an arm reading a CTE, and a table the catalog lacks" do
     from = "public.users JOIN public.pseudonyms p ON p.user_id = users.id"
     filter = "users.workflow_state <> 'deleted'"
     star = lambda do |columns|
       "SELECT u.workflow_state FROM (#{arm(filter, from:, columns:)} UNION #{arm(filter, from:, columns:)}) u " \
         "WHERE u.workflow_state <> 'deleted'"
     end
-    expect_refusals([[star.call("*"), star.call("users.*")]])
+    cte = lambda do |first, second|
+      "WITH c AS (SELECT * FROM public.users) SELECT u.id FROM (#{arm(filter, from: first)} " \
+        "UNION #{arm(filter, from: second)}) u WHERE u.workflow_state <> 'deleted'"
+    end
+    expect_refusals([[star.call("*"), star.call("users.*")],
+                     [cte.call("c users", "public.users"), cte.call("public.users", "public.users")],
+                     [cte.call("c users", "c users"), cte.call("public.users", "public.users")]])
     missing = "SELECT u.id FROM (#{arm(filter, from: "public.nosuch users")} UNION #{arm(filter)}) u " \
               "WHERE u.workflow_state <> 'deleted'"
+    nosuch = arm(filter, from: "public.nosuch n, public.users", columns: "n.*, users.id, users.workflow_state")
+    missing_star = "SELECT u.id FROM (#{arm(filter)} UNION #{nosuch}) u WHERE u.workflow_state <> 'deleted'"
 
-    expect(rewritten(missing)).to eq([])
+    expect([rewritten(missing), rewritten(missing_star)]).to eq([[], []])
     expect(rewritten(missing.sub("public.nosuch", "public.users")).size).to eq(1)
+    expect(rewritten(missing_star.sub("public.nosuch n, ", "").sub("n.*, ", "")).size).to eq(1)
   end
 
-  it "refuses column aliases on the UNION, and an outer column it can't place" do
+  it "refuses column aliases on the UNION or an arm's table, and an outer column it can't place" do
     union = "(#{arm("users.workflow_state <> 'deleted'")} UNION #{arm("users.workflow_state <> 'deleted'")})"
+    named = arm("users.name <> 'deleted'", columns: "users.name, users.workflow_state")
+    aliased = lambda do |columns, aliases|
+      "SELECT u.id FROM (#{arm("users.workflow_state <> 'deleted'", columns: columns.gsub("x.", "users."))} UNION " \
+        "#{arm("x.workflow_state <> 'deleted'", from: "public.users x#{aliases}", columns:)}) u " \
+        "WHERE u.workflow_state <> 'deleted'"
+    end
     expect_refusals(
       [["SELECT u.id FROM #{union} u (id, state) WHERE u.state <> 'deleted'",
         "SELECT u.id FROM #{union} u WHERE u.workflow_state <> 'deleted'"],
+       ["SELECT u.name FROM (#{named} UNION #{named}) u (workflow_state, name) WHERE u.name <> 'deleted'",
+        "SELECT u.name FROM (#{named} UNION #{named}) u WHERE u.name <> 'deleted'"],
+       [aliased.call("x.id, x.workflow_state", " (id, name, workflow_state)"),
+        aliased.call("x.id, x.workflow_state", "")],
+       [aliased.call("x.*", " (id, name, workflow_state)"), aliased.call("x.*", "")],
        ["SELECT u.id FROM #{union} u WHERE workflow_state <> 'deleted'",
         "SELECT u.id FROM #{union} u WHERE u.workflow_state <> 'deleted'"]]
     )
+  end
+
+  it "refuses a conjunct too deep to deparse" do
+    _, literals = literals_for("SELECT 1")
+    nested = ->(depth, column) { (1..depth).reduce("#{column} > $1") { |inner, _| "(#{inner} OR false) IS TRUE" } }
+    sql = lambda do |depth|
+      inner = arm(nested.call(depth, "users.id"))
+      "SELECT u.id FROM (#{inner} UNION #{inner}) u WHERE #{nested.call(depth, "u.id")}"
+    end
+
+    expect(rule.rewrites(PgQuery.parse(sql.call(150)), catalog, literals)).to eq([])
+    expect(rule.rewrites(PgQuery.parse(sql.call(2)), catalog, literals).size).to eq(1)
   end
 
   it "makes no rewrite without the literals oracle" do
