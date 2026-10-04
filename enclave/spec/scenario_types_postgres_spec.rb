@@ -323,6 +323,21 @@ RSpec.describe Quaack::Enclave::Scenarios do
       expect([detail("fx.t", "l", "fx.lsn"), detail("fx.t", "p", "fx.lsn")]).to include(error.column)
     end
 
+    it "refuses a custom base type of the bit-string category as unsupported_type" do
+      conn.exec(<<~SQL)
+        SET client_min_messages = warning;
+        CREATE TYPE fx.vlsn;
+        CREATE FUNCTION fx.vlsn_in(cstring) RETURNS fx.vlsn AS 'pg_lsn_in' LANGUAGE internal IMMUTABLE STRICT;
+        CREATE FUNCTION fx.vlsn_out(fx.vlsn) RETURNS cstring AS 'pg_lsn_out' LANGUAGE internal IMMUTABLE STRICT;
+        CREATE TYPE fx.vlsn (INPUT = fx.vlsn_in, OUTPUT = fx.vlsn_out, INTERNALLENGTH = 8, PASSEDBYVALUE,
+          ALIGNMENT = double, CATEGORY = 'V');
+        CREATE TABLE fx.t (id integer PRIMARY KEY, v text, l fx.vlsn NOT NULL);
+        RESET client_min_messages;
+      SQL
+      error = refusal("SELECT id FROM fx.t WHERE v = 'x'")
+      expect([error.rule, error.column]).to eq([:unsupported_type, detail("fx.t", "l", "fx.vlsn")])
+    end
+
     it "names schema only, never a value from the query, a default, or a CHECK" do
       conn.exec(<<~SQL)
         CREATE TABLE fx.t (id integer PRIMARY KEY, lsn pg_lsn NOT NULL,
