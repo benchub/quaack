@@ -35,8 +35,8 @@ module Quaack
       # them that read the outer query no longer resolves, and Postgres
       # refuses to prepare the rewrite. That's how a correlated subquery is
       # refused. Only y moves to where the original's FROM could capture
-      # it, so it's qualified, and its table renamed if the original's FROM
-      # has its name.
+      # it, so its columns are qualified, and their tables renamed if the
+      # original's FROM has their names.
       #
       # It fires only when all of this holds:
       #
@@ -51,17 +51,19 @@ module Quaack
       #   can't fail to sort.
       # - The IN is one of the conditions its WHERE ANDs together, written
       #   x IN (SELECT y ...), not = ANY. SupportedSql refuses a row as x.
-      # - The subquery is one plain SELECT of one column (see
+      # - The subquery is one plain SELECT of one value (see
       #   Tree.plain_select?), so no set operation, LIMIT, OFFSET, GROUP BY,
       #   HAVING, DISTINCT ON, or WITH, and no aggregate. A plain DISTINCT
-      #   is dropped, since IN doesn't count rows. y is written
+      #   is dropped, since IN doesn't count rows. y is an expression with
+      #   no subquery, and not a bare placeholder, which IN reads as text
+      #   but = reads as x's type. Each column in it is written
       #   name.column, or just column when the subquery's FROM is one
       #   table, or when the catalog says just one of its plain tables has
       #   that column. Either way it's then qualified.
       # - Every top-level item of the original's FROM has a name Tree can
-      #   read. If one has y's qualifier, that is a table of the subquery's
-      #   FROM, which has no subquery of its own, so every reference to it
-      #   can be renamed.
+      #   read. If one has the qualifier of a column in y, that is a table
+      #   of the subquery's FROM, which has no subquery of its own, so
+      #   every reference to it can be renamed.
       # - No bare name on either side names a FROM item of that side, such
       #   as posts in posts IS NULL. Postgres reads a bare name as a column
       #   of any query in scope before it reads it as a whole row, and the
@@ -143,11 +145,8 @@ module Quaack
           link if link.subselect.node == :select_stmt && one_column?(link.subselect.select_stmt)
         end
 
-        # Whether the subquery is one plain SELECT of one column.
-        def one_column?(sub)
-          Tree.plain_select?(sub) && sub.target_list.size == 1 &&
-            sub.target_list.first.res_target.val.node == :column_ref
-        end
+        # Whether the subquery is one plain SELECT of one value.
+        def one_column?(sub) = Tree.plain_select?(sub) && sub.target_list.size == 1
 
         # Makes top read the subquery's FROM, filtered by its WHERE and an
         # EXISTS over the original's FROM and its other conditions, with x

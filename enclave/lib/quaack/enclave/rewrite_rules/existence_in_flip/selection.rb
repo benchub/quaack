@@ -12,17 +12,28 @@ module Quaack
         module Selection
           module_function
 
-          # The subquery's selected column, qualified, with its table
-          # renamed if the original's FROM has its name, or nil if it can't
-          # be. It changes sub in place.
+          # The subquery's selected value, its columns qualified, and their
+          # tables renamed where the original's FROM has their names, or
+          # nil if it can't be. It changes sub in place. A value with a
+          # subquery is refused, since a bare name in that would see the
+          # original's FROM before the subquery's. So is a bare placeholder,
+          # which IN would read as text and = as x's type.
           def selected(sub, from, tree, catalog)
             node = sub.target_list.first.res_target.val
-            column = qualify!(node.column_ref, sub, catalog)
+            columns = movable(node, sub, catalog)
             names = Tree.from_items(from).map(&:name)
-            return unless column && !names.include?(nil)
+            return unless columns && !names.include?(nil)
 
-            name = Tree.qualified(column).first
-            node if !names.include?(name) || rename!(sub, name, tree)
+            clashes = columns.map { Tree.qualified(it).first }.uniq & names
+            node if clashes.all? { rename!(sub, it, tree) }
+          end
+
+          # The columns of node, each qualified, or nil if node can't move.
+          def movable(node, sub, catalog)
+            return if node.node == :param_ref || Tree.find(node, PgQuery::SubLink).any?
+
+            columns = Tree.find(node, PgQuery::ColumnRef)
+            columns if columns.all? { qualify!(it, sub, catalog) }
           end
 
           # The column as name.column, or nil: it was, or it was a bare

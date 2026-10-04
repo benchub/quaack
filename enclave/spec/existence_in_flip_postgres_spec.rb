@@ -359,6 +359,55 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  it "moves an expression the subquery selects, qualifying and renaming its columns" do
+    expect_rewrites(
+      "SELECT 1 AS one FROM public.tool_lookups WHERE tool_lookups.id + 0 IN (SELECT coalesce(assignment_id, " \
+      "tool_lookups.id) - 1 FROM public.tool_lookups JOIN public.courses ON courses.id = tool_lookups.id) LIMIT 1",
+      "SELECT $1 AS one FROM public.tool_lookups tool_lookups_1 JOIN public.courses " \
+      "ON courses.id = tool_lookups_1.id WHERE EXISTS (SELECT 1 FROM public.tool_lookups " \
+      "WHERE (tool_lookups.id + $2) = (COALESCE(tool_lookups_1.assignment_id, tool_lookups_1.id) - $3)) LIMIT $4"
+    )
+    expect_flips(*%w[turnitin other nothing].flat_map do |code|
+      ["SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT tool_lookups.assignment_id + 0 " \
+       "FROM public.tool_lookups WHERE tool_lookups.tool_product_code = '#{code}') LIMIT 1",
+       "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = 13 AND submissions.assignment_id IN (" \
+       "SELECT tool_lookups.id * 0 + assignment_id FROM public.tool_lookups " \
+       "WHERE tool_lookups.tool_product_code = '#{code}') LIMIT 1",
+       "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = 13 AND submissions.assignment_id IN (" \
+       "SELECT coalesce(assignment_id, 6) FROM public.tool_lookups " \
+       "JOIN public.courses ON courses.id = tool_lookups.id " \
+       "WHERE tool_lookups.tool_product_code = '#{code}') LIMIT 1"]
+    end)
+    expect_flips(*["courses.id", "courses.id + 4"].map do |x|
+      "SELECT 1 AS one FROM public.courses JOIN public.tool_lookups ON tool_lookups.id = courses.id " \
+        "WHERE courses.id = 2 AND #{x} IN (SELECT courses.id * 0 + tool_lookups.assignment_id " \
+        "FROM public.tool_lookups JOIN public.courses ON courses.id = tool_lookups.assignment_id) LIMIT 1"
+    end)
+  end
+
+  it "refuses a selected expression it can't move" do
+    conn.exec("CREATE TABLE public.codes (code char(3)); INSERT INTO public.codes VALUES ('a')")
+    expect_no_flip(
+      "SELECT 1 AS one FROM public.codes WHERE codes.code IN (SELECT 'a ' FROM public.courses) LIMIT 1",
+      "SELECT 1 AS one FROM public.codes WHERE codes.code IN (SELECT * FROM public.codes) LIMIT 1",
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT count(*) " \
+      "FROM public.tool_lookups) LIMIT 1",
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.user_id = 11 AND submissions.assignment_id IN (" \
+      "SELECT (SELECT courses.id FROM public.courses WHERE courses.id = assignment_id) FROM public.tool_lookups " \
+      "WHERE tool_lookups.tool_product_code = 'other') LIMIT 1",
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.assignment_id IN (SELECT (SELECT courses.id " \
+      "FROM public.courses WHERE id = 2) FROM public.tool_lookups WHERE tool_lookups.id = 5) LIMIT 1",
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT max(tool_lookups.assignment_id) " \
+      "FROM public.tool_lookups) LIMIT 1",
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT generate_series(1, " \
+      "tool_lookups.assignment_id) FROM public.tool_lookups) LIMIT 1",
+      "SELECT 1 AS one FROM public.assignments WHERE assignments.id IN (SELECT row_number() OVER () " \
+      "FROM public.tool_lookups) LIMIT 1",
+      "SELECT 1 AS one FROM public.submissions WHERE submissions.assignment_id IN (SELECT " \
+      "tool_lookups.assignment_id + user_id - user_id FROM public.tool_lookups, public.courses) LIMIT 1"
+    )
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)
@@ -463,9 +512,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
        ["SELECT 1 FROM public.assignments WHERE assignments.id = ANY (#{turnitin}) LIMIT 1", qualifying],
        ["SELECT 1 FROM public.assignments WHERE assignments.id NOT IN (#{turnitin}) LIMIT 1", qualifying],
        ["SELECT 1 FROM public.assignments WHERE assignments.id IN (#{turnitin}) OR assignments.id = 1 LIMIT 1",
-        qualifying],
-       ["SELECT 1 FROM public.assignments WHERE assignments.id IN (SELECT tool_lookups.assignment_id + 0 " \
-        "FROM public.tool_lookups) LIMIT 1", qualifying]]
+        qualifying]]
     )
   end
 
