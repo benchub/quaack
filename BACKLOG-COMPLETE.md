@@ -3806,3 +3806,36 @@ Add `quaack setup --run <ID> [--host <h> --port <p> --racetrack-db <name> --aren
     - The reviewer checked that each step's marker is the last thing it writes, and that writes are atomic.
     - Eight mutations, and each one went red.
   - **Follow-ups:** minor findings went to 20261003-22.
+
+### 20261003-17. Step 9: break foreign-key cycles through nullable columns.
+
+A user's `quaack run` failed at steps 9-10 with `fk_cycle`. Step 9 loads fixtures for the query's tables and their foreign-key closure (`ArenaSchema.load_closure`), parents first. `Scenarios::Topology#load_order` raises `:fk_cycle` when no order exists. Real schemas often have cycles, such as Canvas's `accounts.course_template_id → courses` alongside `courses.account_id → accounts`, so on such a schema step 9 can't test any rewrite.
+
+Most cycles have an edge whose child columns are nullable. The rule: when ordering the load, ignore a foreign key if all its child columns are nullable and no predicate atom reads any of them. Fixture rows set those columns to NULL rather than the type's typical value, and those columns join no key class. If a cycle remains with no such edge, still refuse with `fk_cycle`. A self-referencing foreign key is already ignored and stays that way.
+
+Also check the other users of `Topology`: `Counterexamples` orders the LLM's rows with it (`counterexamples.rb:110`). An LLM row that gives a value for an ignored column would break the load order. Set the column to NULL there too, or refuse the row with a rule, and say which in DESIGN.md.
+
+Update DESIGN.md's "Unsupported in v1" note for step 9. Test it against real Postgres with a two-table cycle (one nullable edge) and a three-table cycle, and check that a cycle with no nullable edge still refuses. A cycle through a column the query filters on must also still refuse.
+
+- **Depends on:** none.
+- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
+- **Design:** Step 9.
+- **Note (2026-10-03, answers):** When an LLM row from 10a-10c sets a value in an ignored foreign-key column, load the row with NULL there, then set the column to the LLM's value with an UPDATE once every table is loaded. That keeps the row as the LLM wrote it.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-17.
+  - **Change:**
+    - `Topology` cuts a nullable foreign key only if it's inside a cycle (a strongly connected component) and no predicate atom reads its columns.
+    - Step 9's fixture rows set cut columns to NULL, and those columns join no key class.
+    - A cycle with no such edge still refuses with `fk_cycle`.
+    - In 10a-10c, every nullable foreign key in a cycle is cut. An LLM row that sets a cut column is inserted with NULL there. Once every insert has loaded, an UPDATE keyed on the row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value. This happens in both load orders.
+    - A row that can't be found for its UPDATE fails the load with `insert_failed`.
+    - DESIGN.md's step 9, 9d and 10a text says so.
+  - **Tests:** cycles of two and three tables; still refusing with no nullable edge, with a NOT NULL column in a composite key, and when the query reads the column; acyclic schemas unchanged; LLM values present after forward and reverse loads; partitioned-table row targeting; a sentinel check on `DeferredInsert#inspect`.
+  - **Review:** one round, clean.
+    - All 15 tests went red against main's code.
+    - 11 mutations, and all but one went red. The survivor is a missing test, filed in 20261003-25.
+    - A wrong rewrite that joins the cut column is disproved.
+  - **Follow-ups:**
+    - 20261003-23: joining on the nullable edge still refuses, and a cut column's value isn't tested in step 9.
+    - 20261003-24: an older value leak in ParentRows.
+    - 20261003-25: loose ends.

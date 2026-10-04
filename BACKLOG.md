@@ -2011,21 +2011,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 - **Note (2026-10-03, answers):** The clock goes on the latest line printed, including notes. When the output isn't a terminal, there are no live updates and no "Still working" lines. The closing line gives the final time.
 - **Status:** todo
 
-### 20261003-17. Step 9: break foreign-key cycles through nullable columns.
-
-A user's `quaack run` failed at steps 9-10 with `fk_cycle`. Step 9 loads fixtures for the query's tables and their foreign-key closure (`ArenaSchema.load_closure`), parents first. `Scenarios::Topology#load_order` raises `:fk_cycle` when no order exists. Real schemas often have cycles, such as Canvas's `accounts.course_template_id → courses` alongside `courses.account_id → accounts`, so on such a schema step 9 can't test any rewrite.
-
-Most cycles have an edge whose child columns are nullable. The rule: when ordering the load, ignore a foreign key if all its child columns are nullable and no predicate atom reads any of them. Fixture rows set those columns to NULL rather than the type's typical value, and those columns join no key class. If a cycle remains with no such edge, still refuse with `fk_cycle`. A self-referencing foreign key is already ignored and stays that way.
-
-Also check the other users of `Topology`: `Counterexamples` orders the LLM's rows with it (`counterexamples.rb:110`). An LLM row that gives a value for an ignored column would break the load order. Set the column to NULL there too, or refuse the row with a rule, and say which in DESIGN.md.
-
-Update DESIGN.md's "Unsupported in v1" note for step 9. Test it against real Postgres with a two-table cycle (one nullable edge) and a three-table cycle, and check that a cycle with no nullable edge still refuses. A cycle through a column the query filters on must also still refuse.
-
-- **Depends on:** none.
-- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
-- **Design:** Step 9.
-- **Note (2026-10-03, answers):** When an LLM row from 10a-10c sets a value in an ignored foreign-key column, load the row with NULL there, then set the column to the LLM's value with an UPDATE once every table is loaded. That keeps the row as the LLM wrote it.
-- **Status:** todo
+### 20261003-17. Step 9: break foreign-key cycles through nullable columns. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-18. A scenario refusal shouldn't end the run.
 
@@ -2095,6 +2081,49 @@ This touches nearly every file, so build it when no other task is in flight, or 
 - **Came from:** The user, 2026-10-03.
 - **Design:** All of it.
 - **Note (2026-10-03, answers):** Rename every step to a descriptive slug across DESIGN.md, the code, the store keys and the report, and keep the slug in the progress lines. DESIGN.md also numbers the steps in run order, with a numbering that shows the pipeline's loops.
+- **Status:** todo
+
+### 20261003-23. Step 9: break a cycle when the query joins on its nullable edge.
+
+20261003-17 breaks a foreign-key cycle by cutting a nullable edge, but only when no predicate atom reads the edge's columns. A query that joins on that very edge, such as `JOIN courses c ON c.id = a.course_template_id` in Canvas, still refuses with `fk_cycle`. That's a common shape, so many real queries still can't be tested.
+
+Find a sound way to break such a cycle. Two options:
+
+- Cut a different edge in the cycle, one the query doesn't read, when there is one.
+- Load the rows with the read column as NULL, then UPDATE it to its parent's key once every table is loaded. The deferred UPDATE from 20261003-17's counterexample path already does this, keyed by `tableoid` and `ctid`. The column then joins its key class as usual.
+
+The second covers more cycles. It also fixes the minor finding from 20261003-17's review: a cut column is always NULL in step 9's fixtures, so a rewrite that depends on its value, such as adding `AND a.course_template_id IS NULL` or dropping a sort key on it, passes step 9 when it would fail on the same schema without the cycle.
+
+Test it on real Postgres with a Canvas-like `accounts`/`courses` cycle and a query that joins on the nullable edge. Also test that the two rewrites above are disproved.
+
+- **Depends on:** 20261003-17.
+- **Came from:** The build and review of 20261003-17, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-24. ParentRows can leak a value in a Postgres error.
+
+Found while building 20261003-17. This predates that task. In 10a-10c, `Counterexamples::ParentRows` runs `SELECT (value)::text` on an LLM row's values (`counterexamples/parent_rows.rb`). If Postgres raises there, such as on a bad cast, the error can escape `prepare` with the value in its message. Errors from the enclave must carry only a rule.
+
+Reproduce it with a sentinel value that makes the cast fail, and check that the sentinel shows up today. Then wrap the error in a rule (with `cause: nil`, as elsewhere), and check that the sentinel never shows up in any output.
+
+- **Depends on:** none.
+- **Came from:** The build of 20261003-17, 2026-10-03.
+- **Design:** 10a, trust boundary.
+- **Status:** todo
+
+### 20261003-25. FK-cycle breaking: loose ends.
+
+Minor findings from the build and review of 20261003-17:
+
+- **One code path has no test.** No test has a nullable foreign key from a table in a cycle to a table outside it. If "this edge is in a cycle" is changed to "this table is in any cycle", every test stays green (`topology.rb:73`). Add that case.
+- **A DEFAULT in a cut column stays DEFAULT.** If the default references a row that isn't loaded yet, the load fails. Load NULL there instead, or say in DESIGN.md that this case is unsupported.
+- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. Step 9c's vacuity guard keeps this safe, but check whether it ever refuses a query it shouldn't.
+- **Partitioned tables with foreign keys may not load through the counterexample path.** The builder's attempt failed with `fixture_load_failed`. Reproduce it, and fix it or list it as unsupported.
+
+- **Depends on:** 20261003-17.
+- **Came from:** The build and review of 20261003-17, 2026-10-03.
+- **Design:** Step 9, 10a.
 - **Status:** todo
 
 ### 20261003-22. `quaack setup`: loose ends.
