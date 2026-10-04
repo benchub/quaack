@@ -2,8 +2,8 @@
 
 require "quaack/enclave/scenario_tests"
 
-# Step 9 end to end: build the scenarios, run the 9c guard, and run every
-# scenario through the 9d comparison for each candidate.
+# rewrite-test end to end: build the scenarios, run the vacuity-guard guard, and run every
+# scenario through the fixture-compare comparison for each candidate.
 RSpec.describe Quaack::Enclave::ScenarioTests do
   let(:conn) { racetrack_and_arena.arena.connection }
 
@@ -32,7 +32,7 @@ RSpec.describe Quaack::Enclave::ScenarioTests do
     expect(report.results.map { |r| [r.passed, r.scenario, r.rule] }).to eq([[false, :s1, :query_failed]])
   end
 
-  it "skips a scenario that won't load in the 9c guard, marking its atoms untested, instead of crashing" do
+  it "skips a scenario that won't load in the vacuity-guard guard, marking its atoms untested, instead of crashing" do
     conn.exec(<<~SQL)
       CREATE FUNCTION fx.refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no'; END $$;
       CREATE TRIGGER refuse BEFORE INSERT ON fx.orders FOR EACH ROW EXECUTE FUNCTION fx.refuse();

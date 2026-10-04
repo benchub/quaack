@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/existence_in_flip"
 require "quaack/enclave/rewrite_rules/literals"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's existence_in_flip, on a real server: an existence check
+# DESIGN.md's rewrite-rules's existence_in_flip, on a real server: an existence check
 # under LIMIT 1 with an uncorrelated IN subquery is turned inside out, so
 # the subquery's table drives, and every rewrite returns the original's
 # rows.

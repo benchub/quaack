@@ -5,7 +5,7 @@ require "quaack/driver/enclave_error"
 require "quaack/driver/progress"
 require "quaack/driver/setup"
 
-# DESIGN.md steps 2 to 4a, as `quaack setup` and `quaack run` drive them:
+# DESIGN.md setup, as `quaack setup` and `quaack run` drive them:
 # the eleven quaacks subcommands in order, each skipped once the store
 # holds its output. ssh is the edge, so the transport is a fake that
 # records each call.

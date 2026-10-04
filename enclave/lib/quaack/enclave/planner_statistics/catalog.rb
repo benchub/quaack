@@ -23,7 +23,7 @@ module Quaack
         # a domain takes its base type's category.
         #
         # A column is a clock column when its type, or a domain's base type,
-        # is date, timestamp, or timestamptz: 3h anchors a clock literal
+        # is date, timestamp, or timestamptz: clock-anchor anchors a clock literal
         # compared with one (see ClockLiterals).
         COLUMNS_SQL = <<~SQL
           SELECT a.attname, t.typcategory = 'S',

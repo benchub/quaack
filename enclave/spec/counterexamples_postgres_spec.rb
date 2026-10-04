@@ -5,9 +5,9 @@ require "pg_query"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/predicate_atoms"
 
-# 10a, the enclave's half: bind the real literals into the LLM's
+# llm-counterexamples, the enclave's half: bind the real literals into the LLM's
 # shape-level inserts, send them through the inbound check, and fill
-# foreign-key gaps with parent rows built by the step 9 rules.
+# foreign-key gaps with parent rows built by the rewrite-test rules.
 RSpec.describe Quaack::Enclave::Counterexamples do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
@@ -105,7 +105,7 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(load(prepared, "SELECT kind, count(DISTINCT login) FROM fx.customers GROUP BY 1")).to eq([%w[1 3]])
   end
 
-  it "refuses a parent whose unique column step 9 can't fill, naming the parent's table, column, and type" do
+  it "refuses a parent whose unique column rewrite-test can't fill, naming the parent's table, column, and type" do
     conn.exec("ALTER TABLE fx.customers ADD COLUMN lsn pg_lsn NOT NULL UNIQUE")
     expect { prepare("INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, $1)") }
       .to raise_error(Quaack::Enclave::Scenarios::Error) { |e|
@@ -115,7 +115,7 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       }
   end
 
-  describe "a parent's nullable column of a type step 9 can't fill" do
+  describe "a parent's nullable column of a type rewrite-test can't fill" do
     let(:insert) { "INSERT INTO fx.orders (id, customer_id, status) VALUES (1, 7, 'a')" }
     let(:joined) { "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id" }
 

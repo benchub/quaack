@@ -3,7 +3,7 @@
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks racetrack-setup` (DESIGN.md 4a) the way the jump server runs it: the
+# `quaacks racetrack-setup` (DESIGN.md's racetrack-setup) the way the jump server runs it: the
 # installed quaacks in its own process, outside Bundler, connecting to the
 # run server recorded by run-server with the operator's libpq setup. The
 # stand-in production database from ProductionServer is the racetrack, as

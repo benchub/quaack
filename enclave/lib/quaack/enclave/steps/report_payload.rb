@@ -17,19 +17,19 @@ require_relative "rule_bugs"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks report-payload --run <run ID>` (DESIGN.md step 15): sends the
+      # `quaacks report-payload --run <run ID>` (DESIGN.md's report): sends the
       # shape-class data the driver renders the main report from, as one
       # report message. It reads the store only and connects to nothing.
       #
       #   original_sql     the original query, always: the redacted query
-      #                    (literals as $n) with the 3h clock functions put
+      #                    (literals as $n) with the clock-anchor clock functions put
       #                    back
-      #   original_plan    the redacted step 1 plan's node shapes
+      #   original_plan    the redacted input plan's node shapes
       #   original_measurements  { set => { "total_blocks", "hit", "read",
       #                    "stable", "timed_out" } }, the bare original's
       #                    baseline; hit and read are the run with the most
       #                    blocks
-      #   top, excluded, infinite_sets  the selection entry (14d)
+      #   top, excluded, infinite_sets  the selection entry
       #   labels           one per measured label, ranked or not
       #                    (MeasuredLabels): { "label", "search" (original
       #                    or rewrite_<n>), "indexes" (built names),
@@ -45,8 +45,8 @@ module Quaack
       #                    fk_cycle refusal's tables, "schema.name" in
       #                    foreign key order), "plan" (its node shapes on
       #                    the slow literal set, or nil), "untested_atoms"
-      #                    (step 9's, or nil if it wasn't tested), and
-      #                    "evidence" (whether a step 10 round compared it
+      #                    (rewrite-test's, or nil if it wasn't tested), and
+      #                    "evidence" (whether a counterexamples round compared it
       #                    on loaded inserts; nil unless it survived) }
       #   indexes          { built index name => { "ddl", "size",
       #                    "covered_by" (nil or an existing index),
@@ -54,24 +54,24 @@ module Quaack
       #                    existing index as { "name", "size_bytes" }
       #                    (ExistingIndexes)
       #   timed_out_count  candidate runs dropped for timing out
-      #   negative         nil unless top is empty (DESIGN.md 15a); then
+      #   negative         nil unless top is empty (DESIGN.md's negative-result); then
       #                    NegativeResult's { "declined", "existing" }, each
       #                    index once, with the searches it came up in
-      #   rule_bugs        [{ "rewrite", "rules", "step" (step9, step10, or
-      #                    14c) }]: each rule-made rewrite a test disproved
-      #                    (never a 14c timeout, which compares nothing,
-      #                    nor a step 9 or 10 disproof of one resting on
+      #   rule_bugs        [{ "rewrite", "rules", "step" (rewrite-test, counterexamples, or
+      #                    result-comparison) }]: each rule-made rewrite a test disproved
+      #                    (never a result-comparison timeout, which compares nothing,
+      #                    nor a rewrite-test or counterexamples disproof of one resting on
       #                    a denormalized_equal assumption),
-      #                    a bug in QUAACK (DESIGN.md 6c, RuleBugs), sent
+      #                    a bug in QUAACK (DESIGN.md's rewrite-rules, RuleBugs), sent
       #                    whether or not top is empty
-      #   burndown         { "stages", "totals" }, the 15b counts as
+      #   burndown         { "stages", "totals" }, the burndown counts as
       #                    Burndown.read checks them: names and counts only
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
       # sent for it. The burndown counts those.
       #
-      # Trust boundary. original_sql is the anchored query with the 3h
-      # functions put back (the 3g redacted query, literals as $n). A
+      # Trust boundary. original_sql is the anchored query with the clock-anchor
+      # functions put back (the redact redacted query, literals as $n). A
       # rewrite's sql is the stored rewrite's SQL, which holds only $n and
       # what the LLM, a rule, or the operator wrote, as the inbound check
       # accepted it. DDL goes through CandidateDdlRedaction. A plan node
@@ -80,7 +80,7 @@ module Quaack
       # relations are schema. A source, a rule name, a fate, and a fate's
       # details are QUAACK's own constants: RewriteSource and RewriteFate
       # send no other, but for an fk_cycle's tables, which are schema and
-      # each one the schema_subset entry holds. Untested atoms are step 9's redacted shapes.
+      # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
       module ReportPayload
         module_function
 
@@ -93,7 +93,7 @@ module Quaack
              **findings(store, selection["top"]) }]
         end
 
-        # 15a, 6c, and 15b: what the report says beyond the candidates.
+        # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.
         def findings(store, top)
           { negative: top.empty? ? NegativeResult.call(store) : nil, rule_bugs: RuleBugs.call(store),
             burndown: Burndown.read(store) }
@@ -119,8 +119,8 @@ module Quaack
           plan && nodes(plan, stats)
         end
 
-        # Step 9's untested atoms, and whether step 10 had evidence on
-        # them, which only a rewrite that survived step 10 has.
+        # rewrite-test's untested atoms, and whether counterexamples had evidence on
+        # them, which only a rewrite that survived counterexamples has.
         def checks(store, number)
           survived = NegativeResult.optional(store, "rewrite_survived_#{number}")
           { "untested_atoms" => NegativeResult.optional(store, "rewrite_tested_#{number}")&.fetch("untested_atoms"),

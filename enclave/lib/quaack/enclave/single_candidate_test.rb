@@ -8,8 +8,8 @@ require_relative "redaction"
 
 module Quaack
   module Enclave
-    # DESIGN.md 5a-4: test each index candidate on its own with HypoPG, on the
-    # racetrack. Step 8 and step 11 call it the same way for a rewrite
+    # DESIGN.md's index-test: test each index candidate on its own with HypoPG, on the
+    # racetrack. plan-pruning and rewrite-index-ideas call it the same way for a rewrite
     # candidate, with the rewrite's query in place of the original's.
     #
     #   SingleCandidateTest.run(connection,
@@ -25,11 +25,11 @@ module Quaack
     # them.
     #
     # session takes the same arguments but candidates, and yields a Session
-    # whose measure creates several hypothetical indexes at once. 5a-7's
+    # whose measure creates several hypothetical indexes at once. index-rank's
     # IndexRanking uses it to measure combinations. run is built on it, so
     # everything below holds for both.
     #
-    # Until 3e literal sets (20260922-21) and 3g redaction (20260922-23)
+    # Until literals literal sets (20260922-21) and redact redaction (20260922-23)
     # land, literal_sets is a stand-in: a Hash from each set's name to its
     # values, in parameter order. Each value is a String in a valid
     # encoding with no NUL, or nil for NULL. Anything else raises
@@ -299,7 +299,7 @@ module Quaack
         value.freeze
       end
 
-      # The safety core that run and 5a-7's IndexRanking share: one
+      # The safety core that run and index-rank's IndexRanking share: one
       # transaction with its SET LOCALs, the hidden-index check, notices
       # dropped, a fresh prepare for each EXPLAIN, refusals, and cleanup that
       # keeps the first error. See the comment at the top. session yields

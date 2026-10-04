@@ -10,7 +10,7 @@ module Quaack
     # Trust boundary. Each is built only from counts and QUAACK's own words,
     # never from text in the result, which can come from the enclave or the
     # LLM. The report's path is the operator's own --out. The driver has no
-    # list of 6c's rule names, and rewrite-rules sends none, so 6c's says
+    # list of rewrite-rules's rule names, and rewrite-rules sends none, so rewrite-rules's says
     # only how many rewrites the rules made. Sub-steps print no closing
     # line, so they have none.
     module StepSummary
@@ -32,7 +32,7 @@ module Quaack
         aside.zero? ? got : "#{got} and tested, #{aside} set aside untested"
       end
 
-      # 6c's, from rewrite-rules' reply.
+      # rewrite-rules's, from rewrite-rules' reply.
       def rules(reply)
         outcomes = reply.messages.select { it["type"] == "rewrite_outcome" }
         return "No rule applied" if outcomes.empty?
@@ -40,21 +40,21 @@ module Quaack
         "QUAACK's rules made #{count(outcomes.size, "rewrite")}, #{kept(outcomes)} kept"
       end
 
-      # 6a's, from RewriteGeneration's result.
+      # llm-rewrites's, from RewriteGeneration's result.
       def rewrites(result)
         return "Got no rewrites from the LLM" if result.rewrites.empty?
 
         "Got #{count(result.rewrites.size, "rewrite")} from the LLM, #{kept(result.outcomes)} kept"
       end
 
-      # Step 7's, from OperatorCandidates' result.
+      # operator-rewrites's, from OperatorCandidates' result.
       def operator(result)
         return "You gave no rewrites to check" if result.rewrites.empty?
 
         "Checked your #{count(result.rewrites.size, "rewrite")}, #{kept(result.outcomes)} kept"
       end
 
-      # Steps 9-10's, from whether each rewrite tested passed.
+      # rewrite-correctness's, from whether each rewrite tested passed.
       def tested(passed)
         return "No rewrites left to test" if passed.empty?
 
@@ -72,7 +72,7 @@ module Quaack
         "#{did} #{count(ran.count(true), "rewrite")}#{", #{done} already done" unless done.zero?}"
       end
 
-      # 5a-6's, from RefinementRound's result, or what Pipeline says it
+      # llm-index-refine's, from RefinementRound's result, or what Pipeline says it
       # skipped.
       def refined(result)
         return "No index ideas needed improving" if result.nil?

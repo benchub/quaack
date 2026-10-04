@@ -2,8 +2,8 @@
 
 require_relative "support/index_search_run"
 
-# DESIGN.md 3h: a rewrite candidate reads the anchored clock, as the original
-# does, so an equivalent candidate matches it in step 9 and 14c even when the
+# DESIGN.md's clock-anchor: a rewrite candidate reads the anchored clock, as the original
+# does, so an equivalent candidate matches it in rewrite-test and result-comparison even when the
 # anchor is far from the real clock.
 RSpec.describe "clock anchoring in rewrite candidates, against a real server" do
   include_context "an index search run"
@@ -42,7 +42,7 @@ RSpec.describe "clock anchoring in rewrite candidates, against a real server" do
         "AND o.created_at < now()"
     end
 
-    it "passes 14c for an equivalent candidate that calls now()" do
+    it "passes result-comparison for an equivalent candidate that calls now()" do
       check("SELECT o.note, o.status FROM public.orders o WHERE o.created_at < now() AND o.status = $2 AND o.note = $1")
       expect(compare).to eq(pass)
     end
@@ -72,7 +72,7 @@ RSpec.describe "clock anchoring in rewrite candidates, against a real server" do
         "AND o.created_at < 'now'"
     end
 
-    it "passes 14c for an equivalent candidate that keeps the placeholder" do
+    it "passes result-comparison for an equivalent candidate that keeps the placeholder" do
       check("SELECT o.note, o.status FROM public.orders o WHERE o.created_at < $3 AND o.status = $2 AND o.note = $1")
       expect(compare).to eq(pass)
     end

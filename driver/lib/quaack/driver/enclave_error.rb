@@ -6,7 +6,7 @@ module Quaack
     # only what the driver can trust to be shape-class data: the subcommand
     # the driver asked for, the step, rule, and SQLSTATE from the enclave's
     # error line (each checked for shape, and nil if it's missing or not
-    # shaped), a volatile_function refusal's function, a step 9 refusal's
+    # shaped), a volatile_function refusal's function, a rewrite-test refusal's
     # column (its table, name, and type), an fk_cycle refusal's cycle (its
     # tables, in the order their foreign keys point), and a
     # run_server_other_clients failure's clients (each pid and start time),
@@ -66,8 +66,8 @@ module Quaack
 
       # The rule, and for query_unparsable a fixed note naming pg_query's
       # grammar, which is older than production's Postgres. The enclave's
-      # error line holds only the rule, so the driver adds the note. A step
-      # 9 refusal that names its column gets the table, column, and type,
+      # error line holds only the rule, so the driver adds the note. A
+      # rewrite-test refusal that names its column gets the table, column, and type,
       # and an fk_cycle refusal that names its tables gets them. A run an
       # older version started gets what to do instead.
       def rule_with_note
@@ -110,7 +110,7 @@ module Quaack
 
       def ending_details = [("exit #{exit_status}" if exit_status), ("signal #{signal}" if signal)]
 
-      # The column or cycle a step 9 refusal named, or nil.
+      # The column or cycle a rewrite-test refusal named, or nil.
       def named_schema = (described_column if column) || (described_cycle if cycle)
 
       def described_column = "#{column["table"]}.#{column["column"]} (#{column["type"]})"

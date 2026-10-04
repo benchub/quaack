@@ -175,7 +175,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
 
     describe "type checks" do
-      it "refuses a stage that isn't one of the DESIGN.md 15b stages, without quoting it" do
+      it "refuses a stage that isn't one of the DESIGN.md's burndown stages, without quoting it" do
         expect_refused(/stage/) { record(BURNDOWN_SENTINEL, in: 0, out: 0) }
         expect_refused(/stage/) { record(:"index-dedupe", in: 0, out: 0) }
         expect_refused(/stage/) { record("index-dedupe\n", in: 0, out: 0) }
@@ -311,7 +311,7 @@ RSpec.describe Quaack::Enclave::Burndown do
                      candidate(["note"], access_method: :gin), candidate(["id"]), candidate(%w[status id])])
     end
 
-    it "records a search's drops by reason, what it set aside, and what went on to 5a-4" do
+    it "records a search's drops by reason, what it set aside, and what went on to index-test" do
       mechanical
       described_class.record_dedupe(store, dedupe, search: :original)
 
@@ -332,7 +332,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       expect(store.entry?("burndown")).to be(false)
     end
 
-    it "records only 5a-3, so it takes no stage and no since" do
+    it "records only index-dedupe, so it takes no stage and no since" do
       mechanical
       expect { described_class.record_dedupe(store, dedupe, search: :original, stage: "llm-index-ideas") }
         .to raise_error(ArgumentError, /unknown keyword: :stage/)
@@ -372,7 +372,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       )
     end
 
-    it "refuses any stage but 5a-5 or 5a-6" do
+    it "refuses any stage but llm-index-ideas or llm-index-refine" do
       round(stage: "llm-index-refine")
       %w[index-dedupe index-test
          rewrite-index-ideas].each do |stage|

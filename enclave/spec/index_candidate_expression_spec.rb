@@ -3,9 +3,9 @@
 require "pp"
 require "quaack/enclave/index_candidate"
 
-# Expression keys, operator classes, and collations (20260922-33). 5a-5
+# Expression keys, operator classes, and collations (20260922-33). llm-index-ideas
 # asks the LLM for them, and existing indexes use them, so the shape holds
-# them and 5a-3 can compare them.
+# them and index-dedupe can compare them.
 RSpec.describe Quaack::Enclave::IndexCandidate, "expression keys, opclasses, and collations" do
   let(:key_column) { Quaack::Enclave::IndexCandidate::KeyColumn }
   let(:orders) { Quaack::Enclave::TableName.new(schema: "public", name: "orders") }

@@ -268,7 +268,7 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
   end
 
-  # The 3d rule, with its conservative overload resolution.
+  # The volatility rule, with its conservative overload resolution.
   describe "volatile functions" do
     {
       "a key expression" => ["((random()))", "function pg_catalog.random is volatile"],

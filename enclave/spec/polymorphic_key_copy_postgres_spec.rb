@@ -9,11 +9,11 @@ require "quaack/enclave/rewrite_rules/literals"
 require "quaack/enclave/rewrite_rules/polymorphic_key_copy"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's polymorphic_key_copy, on a real server, in Canvas's shape:
+# DESIGN.md's rewrite-rules's polymorphic_key_copy, on a real server, in Canvas's shape:
 # a submission joins its assignment, whose context is a Rails polymorphic
 # pair, and the submission keeps its own copy of the course id. The rule
 # adds that copy's filter, reusing the id's placeholder, and states the
-# assumption 6b checks against the data.
+# assumption assumption-check checks against the data.
 RSpec.describe Quaack::Enclave::RewriteRules::PolymorphicKeyCopy do
   subject(:rule) { described_class.new }
 
@@ -118,7 +118,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::PolymorphicKeyCopy do
     )
   end
 
-  it "states the denormalized_equal assumption 6b checks against the data" do
+  it "states the denormalized_equal assumption assumption-check checks against the data" do
     expect(rewrites(canvas).map(&:assumptions)).to eq([[assumption("course_id", "Course")]])
   end
 

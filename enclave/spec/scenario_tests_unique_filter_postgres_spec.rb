@@ -2,7 +2,7 @@
 
 require "quaack/enclave/scenario_tests"
 
-# Step 9 on a filter that pins a unique parent column (email = 'a@b') with
+# rewrite-test on a filter that pins a unique parent column (email = 'a@b') with
 # a join to a child. Only one row can take the value, so the parent row
 # with no child that tells the join from its absence can't sit beside the
 # hit. It goes in another fixture of the same scenario, and a rewrite that

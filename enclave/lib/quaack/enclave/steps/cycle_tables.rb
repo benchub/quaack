@@ -12,7 +12,7 @@ module Quaack
       #
       # Trust boundary. Table names are schema, not data. check returns
       # only the strings of tables, the schema_subset entry's relations
-      # (3b, from the catalog), never a stored value as it is; anything
+      # (schema-dump, from the catalog), never a stored value as it is; anything
       # else, or a cycle that doesn't close, gives nil.
       module CycleTables
         # A cycle names at least two tables, and its first table again.

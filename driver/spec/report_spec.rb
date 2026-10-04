@@ -106,6 +106,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows no internal label, verdict name, or built index name" do
       expect(html).not_to match(/rewrite_1|original:top|not_better|no_worse|quaack_[ab]|step ?\d|5a-|6[abc]\b/)
+      expect(html).not_to match(/llm-index|llm-rewrites|rewrite-rules|plan-pruning/)
     end
   end
 
@@ -300,7 +301,7 @@ RSpec.describe Quaack::Driver::Report do
           .to include("ended without comparing results, because a statement failed on the test database, so")
       end
 
-      it "says a rewrite was never tested when step 9 couldn't build test data, and why, by rule" do
+      it "says a rewrite was never tested when rewrite-test couldn't build test data, and why, by rule" do
         expect(fate("rewrite_test_untested", rule: "complex_check"))
           .to eq(esc("QUAACK couldn't make up test data for your query, because a CHECK constraint on its tables " \
                      "is too complex for QUAACK to satisfy, so it never tested this rewrite and won't recommend " \
@@ -628,7 +629,7 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
-  describe "when nothing beat the original (15a)" do
+  describe "when nothing beat the original (negative-result)" do
     let(:rewrites) do
       [fated(2, "rewrite_test_disproved", scenario: "s3", rule: "multiset"),
        fated(3, "counterexamples_disproved", round: 2, rule: "row_count", source: "llm"),
@@ -860,7 +861,7 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
-  describe "the burndown (15b)" do
+  describe "the burndown" do
     def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
       { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
         "extra" => extra }

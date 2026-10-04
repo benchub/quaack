@@ -78,14 +78,14 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
 
   def outcomes(type, *kinds) = kinds.each_with_index.map { |kind, i| { "type" => type, "index" => i + 1, **kind } }
 
-  # A stored rewrite through step 8.
+  # A stored rewrite through plan-pruning.
   def rewrite(number, **more)
     { "rewrite_#{number}" => true, "index_search_rewrite_#{number}" => true,
       "index_ranking_rewrite_#{number}" => true, "rewrite_pruned_#{number}" => true,
       "rewrite_survived_#{number}" => true }.merge(more.transform_keys { "#{it}_#{number}" })
   end
 
-  it "says how many index ideas the LLM gave in 5a-5, and how many were new" do
+  it "says how many index ideas the LLM gave in llm-index-ideas, and how many were new" do
     entries.merge!("index_search_original" => false, "index_generated_original" => false,
                    "index_ranking_original" => false)
     fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)", "CREATE INDEX ON public.t (b)",
@@ -104,7 +104,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("index-rank")).to eq(["Ranked the index ideas"])
   end
 
-  it "says when the LLM gave no index ideas in 5a-5" do
+  it "says when the LLM gave no index ideas in llm-index-ideas" do
     entries["index_generated_original"] = false
     fake.reply("llm-index-ideas", { "indexes" => [] })
 
@@ -113,7 +113,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("llm-index-ideas")).to eq(["Got no index ideas from the LLM"])
   end
 
-  it "says how many revised index ideas the LLM gave in 5a-6, and how many were new" do
+  it "says how many revised index ideas the LLM gave in llm-index-refine, and how many were new" do
     replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
                                    "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
     fake.reply("llm-index-refine", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
@@ -124,7 +124,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("llm-index-refine")).to eq(["Got 1 revised index idea from the LLM, 1 of them new"])
   end
 
-  it "says when 5a-6 already improved the index ideas, on a resumed run" do
+  it "says when llm-index-refine already improved the index ideas, on a resumed run" do
     replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => true }]
 
     run
@@ -132,7 +132,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("llm-index-refine")).to eq(["Already improved the index ideas"])
   end
 
-  it "says how many rewrites QUAACK's rules made in 6c and how many were kept, or that none applied" do
+  it "says how many rewrites QUAACK's rules made in rewrite-rules and how many were kept, or that none applied" do
     entries["rewrite_rules_applied"] = false
     replies["rewrite-rules"] = outcomes("rewrite_outcome", { "outcome" => "accepted", "rewrite" => "rewrite_1" },
                                         { "outcome" => "rejected", "rule" => "plan_unchanged" },
@@ -144,7 +144,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("rewrite-rules")).to eq(["QUAACK's rules made 3 rewrites, 2 kept", "No rule applied"])
   end
 
-  it "says how many rewrites the LLM gave in 6a, and how many of the operator's step 7 checked, with how many kept" do
+  it "says how many rewrites llm-rewrites gave, and how many of the operator's operator-rewrites checked and kept" do
     entries.merge!("rewrites_generated" => false, "operator_rewrites_checked" => false)
     sql = ->(n) { { "sql" => "SELECT #{n}", "transformation" => "t", "assumptions" => [] } }
     fake.reply("llm-rewrites", { "rewrites" => [sql.call(1), sql.call(2), sql.call(3)] })
@@ -160,7 +160,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("operator-rewrites")).to eq(["Checked your 2 rewrites, 1 kept"])
   end
 
-  it "says when the operator gave no rewrites for step 7" do
+  it "says when the operator gave no rewrites for operator-rewrites" do
     entries.merge!("rewrites_generated" => false, "operator_rewrites_checked" => false)
     fake.reply("llm-rewrites", { "rewrites" => [] })
 
@@ -169,7 +169,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("operator-rewrites")).to eq(["You gave no rewrites to check"])
   end
 
-  it "says when the LLM gave no rewrites in 6a" do
+  it "says when the LLM gave no rewrites in llm-rewrites" do
     entries["rewrites_generated"] = false
     fake.reply("llm-rewrites", { "rewrites" => [] })
 
@@ -178,7 +178,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("llm-rewrites")).to eq(["Got no rewrites from the LLM"])
   end
 
-  it "says how many rewrites steps 8, 9-10, and 11 worked on, how many were already done, and how many passed" do
+  it "says how many rewrites plan-pruning, rewrite-correctness, and rewrite-index-ideas worked on, had, and passed" do
     entries.merge!(rewrite(1, index_search_rewrite: false, rewrite_survived: false, rewrite_index_ideas: true),
                    rewrite(2, rewrite_survived: false, rewrite_index_ideas: false),
                    rewrite(3, rewrite_index_ideas: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true))
@@ -193,7 +193,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("rewrite-index-ideas")).to eq(["Asked for index ideas for 1 rewrite, 1 already done"])
   end
 
-  it "counts a rewrite as asked in step 11 when any one of 5a-5, 5a-6, and 5a-7 still had work" do
+  it "counts a rewrite as asked in rewrite-index-ideas if llm-index-ideas, llm-index-refine, or index-rank had work" do
     entries.merge!(rewrite(1, rewrite_index_ideas: true, index_llm_ranked_rewrite: true),
                    rewrite(2, rewrite_index_ideas: true, index_generated_rewrite: true),
                    rewrite(3, rewrite_index_ideas: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true))
@@ -210,7 +210,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("rewrite-index-ideas")).to eq(["Asked for index ideas for 3 rewrites"])
   end
 
-  it "says when steps 8 and 11 had already done every rewrite, on a resumed run" do
+  it "says when plan-pruning and rewrite-index-ideas had already done every rewrite, on a resumed run" do
     entries.merge!(rewrite(1, rewrite_index_ideas: true, index_generated_rewrite: true, index_llm_ranked_rewrite: true),
                    rewrite(2))
     replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => true }]
@@ -221,7 +221,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
             closing("rewrite-index-ideas")]).to eq([["2 rewrites already done"], ["1 rewrite already done"]])
   end
 
-  it "says a rewrite steps llm-counterexamples-10c disproved didn't pass" do
+  it "says a rewrite counterexamples disproved didn't pass" do
     entries.merge!(rewrite(1, rewrite_survived: false))
     tests.push(true)
     fake.reply("llm-counterexamples", { "inserts" => [] })
@@ -233,14 +233,14 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("rewrite-correctness")).to eq(["Tested 1 rewrite, 0 passed"])
   end
 
-  it "says when there are no rewrites for steps 8, 9-10, and 11" do
+  it "says when there are no rewrites for plan-pruning, rewrite-correctness, and rewrite-index-ideas" do
     run
 
     expect([closing("plan-pruning"), closing("rewrite-correctness"), closing("rewrite-index-ideas")])
       .to eq([["No rewrites to search"], ["No rewrites left to test"], ["No rewrites needed index ideas"]])
   end
 
-  it "says how many indexes 12a built, what the measuring steps did, and where the report went" do
+  it "says how many indexes index-build built, what the measuring steps did, and where the report went" do
     entries.merge!(%w[arena_setup index_build baseline index_baseline candidate_runs minimax result_comparison
                       selection].to_h { [it, false] })
     streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => nil },
@@ -258,7 +258,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
               ["Wrote the report to #{out}"]])
   end
 
-  it "says when 12a had no index to build" do
+  it "says when index-build had no index to build" do
     entries["index_build"] = false
 
     run

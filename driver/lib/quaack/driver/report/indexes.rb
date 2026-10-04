@@ -3,9 +3,9 @@
 module Quaack
   module Driver
     module Report
-      # The report's index tables: the indexes QUAACK built (DESIGN.md 15),
+      # The report's index tables: the indexes QUAACK built (DESIGN.md's report),
       # and, in a negative result, the ones the planner declined and the
-      # ones that already existed (15a).
+      # ones that already existed (negative-result).
       #
       # Only a ranked candidate's indexes are proposed. The rest were built
       # and measured, and nothing came of them, so the report doesn't call

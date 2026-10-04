@@ -6,8 +6,8 @@ require_relative "column_statistics"
 
 module Quaack
   module Enclave
-    # The statistics input: what the index generators (DESIGN.md 5a-1 and 5a-2)
-    # and the filter (5a-3) read about each table. It holds names, derived
+    # The statistics input: what the index generators (DESIGN.md's index-from-query and index-from-plan)
+    # and the filter (index-dedupe) read about each table. It holds names, derived
     # scalars, existing index definitions, and each column's MCV list. It
     # never holds histogram_bounds. Two parts of it are value-class data: the
     # MCV values (see ColumnStatistics) and the partial-index predicates in
@@ -16,8 +16,8 @@ module Quaack
     # inspect and pp are built from their parts'.
     #
     # Later tasks fill it in: the column list and existing indexes come from
-    # the schema dump (DESIGN.md 3b), and the numbers and MCV lists from
-    # pg_stats and pg_class (3c).
+    # the schema dump (DESIGN.md's schema-dump), and the numbers and MCV lists from
+    # pg_stats and pg_class (statistics).
     #
     #   orders = TableName.new(schema: "public", name: "orders")
     #   stats = Statistics.new(tables: [
@@ -78,7 +78,7 @@ module Quaack
 
       # The estimated fraction of the table's rows that match `column = v` for
       # a typical v: (1 - null_frac) / distinct_count. Smaller is more
-      # selective. This is the "discount by null_frac" from DESIGN.md 5a-1 step 2.
+      # selective. This is the "discount by null_frac" from DESIGN.md's index-from-query inventory.
       # It's applied to the selectivity, not to the distinct count, because
       # the distinct count already leaves out nulls. It matches Postgres's
       # estimate for a value that isn't an MCV when there's no MCV list, and
@@ -93,7 +93,7 @@ module Quaack
 
       # The estimated fraction of the table's rows that match
       # `column = literal`, the way Postgres's var_eq_const (selfuncs.c)
-      # estimates it. 5a-2 uses it to tell whether a constant predicate
+      # estimates it. index-from-plan uses it to tell whether a constant predicate
       # removes most rows on its own. literal_text is the literal in the text
       # form pg_stats prints the column's values in.
       #

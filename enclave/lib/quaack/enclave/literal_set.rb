@@ -10,23 +10,23 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3e: the slow, worst-case, and typical literal sets, from 3g's
-    # placeholder map and 3c's statistics, kept in the governed store.
+    # DESIGN.md's literals: the slow, worst-case, and typical literal sets, from redact's
+    # placeholder map and statistics's statistics, kept in the governed store.
     #
     #   result = LiteralSet.run(store:, sql: redacted.query.sql)
     #   result.sets["worst_case"]   # => {"$1" => {"value" => "7", "type" => "integer"}, ...}
     #   result.fallbacks            # => {"worst_case" => {"$2" => "no_mcv"}, "typical" => {}}
     #   LiteralSet.load(store)      # => the same Result, from the store
-    #   Redaction.binding(sql, result.sets["typical"])   # binds a set as 3g binds the slow one
+    #   Redaction.binding(sql, result.sets["typical"])   # binds a set as redact binds the slow one
     #
     # sql is the redacted query's SQL (Redaction::Redacted#query.sql),
-    # passed in because 3g doesn't store it. It must bind against the
+    # passed in because redact doesn't store it. It must bind against the
     # stored placeholder map (see Redaction.binding), or Redaction::Error is
-    # raised. The statistics come from 3c's stored entry.
+    # raised. The statistics come from statistics's stored entry.
     #
-    # Each set is a placeholder map, keyed by 3g's numbers, in the form
+    # Each set is a placeholder map, keyed by redact's numbers, in the form
     # Redaction.binding takes, so any set binds the way the slow one does.
-    # slow is 3g's map itself. The other two start from it, and each
+    # slow is redact's map itself. The other two start from it, and each
     # placeholder that feeds a column predicate takes a value from that
     # column's pg_stats row, picked by the operator:
     # - col = $n: worst case, the top MCV (pg_stats lists the most common
@@ -57,7 +57,7 @@ module Quaack
     #   compared through a subquery, a LIMIT, or a literal in a keyset row
     #   comparison, (a, b) < ($1, $2). An array literal that
     #   isn't one-dimensional counts too.
-    # - shared_placeholder: 3g shares it between expressions Postgres
+    # - shared_placeholder: redact shares it between expressions Postgres
     #   requires to match, so it can feed more than one place.
     # - no_statistics: the column has no pg_stats row.
     # - no_mcv and no_histogram: the pick needs a value the column's
@@ -65,7 +65,7 @@ module Quaack
     #   an IN element past the end of the MCV list.
     # - type_mismatch: the value doesn't read as the placeholder's type.
     # - clock_literal: a clock-reading word, such as 'today', compared with
-    #   a date or timestamp column, which 3h anchors (see ClockLiterals).
+    #   a date or timestamp column, which clock-anchor anchors (see ClockLiterals).
     #
     # Types: a picked value is pg_stats's text for it, and keeps the
     # placeholder's declared type, so Binding declares it as it declares
@@ -122,7 +122,7 @@ module Quaack
       # for each placeholder in parse. ClockLiterals takes it too.
       def feeds(parse, column_names) = Feeds.new(parse, column_names).feeds
 
-      # The feeds, with each clock literal 3h anchors kept slow.
+      # The feeds, with each clock literal clock-anchor anchors kept slow.
       def feeds_for(parse, tables, map, statistics)
         feeds = feeds(parse, tables.column_names)
         clock = ClockLiterals.find(map, statistics) { feeds }.types.keys
@@ -138,7 +138,7 @@ module Quaack
         raise Error, "bad_literal_sets", cause: nil
       end
 
-      # 3c's stored tables, keyed by TableName.
+      # statistics's stored tables, keyed by TableName.
       class Tables
         def initialize(data)
           tables = data["tables"] if data.is_a?(Hash)

@@ -13,7 +13,7 @@ module Quaack
         SETS = { "slow" => "slow", "worst_case" => "worst case", "typical" => "typical" }.freeze
         VERDICTS = { "better" => "better", "no_worse" => "no worse", "worse" => "worse" }.freeze
 
-        # Step 9's scenarios, by the test data each one loads.
+        # rewrite-test's scenarios, by the test data each one loads.
         SCENARIOS = { "s0" => "empty tables", "s1" => "rows that just match and just miss", "s2" => "NULLs",
                       "s3" => "duplicate join keys", "s4" => "rows with no join partner",
                       "s5" => "extreme values", "s6" => "groups of one, many, and none" }.freeze
@@ -25,7 +25,7 @@ module Quaack
                      "statement_canceled" => "a statement was canceled" }.freeze
         FAILED = "a statement failed on the test database"
 
-        # Why step 9 couldn't make up test data for the query, by its rule.
+        # Why rewrite-test couldn't make up test data for the query, by its rule.
         REFUSALS = { "fk_cycle" => "its tables' foreign keys form a cycle QUAACK can't load",
                      "complex_check" => "a CHECK constraint on its tables is too complex for QUAACK to satisfy",
                      "unsatisfiable_check" => "no value QUAACK tried passes a CHECK constraint on its tables",
@@ -39,7 +39,7 @@ module Quaack
                       "counterexamples" => "on test data the LLM wrote to break it",
                       "result-comparison" => "on the real data" }.freeze
 
-        # DESIGN.md 15b's stages: the original query's index search.
+        # DESIGN.md's burndown's stages: the original query's index search.
         INDEX_STAGES = { "index-from-query" => "Ideas from the query's text",
                          "index-from-plan" => "Ideas from the query's plan",
                          "index-dedupe" => "Removing duplicates and indexes you already have",
@@ -82,7 +82,7 @@ module Quaack
                       "rewrite-llm-index-ideas" => "Index suggestions for the rewrites",
                       "rewrite-llm-index-refine" => "Revised index suggestions for the rewrites" }.freeze
 
-        # DESIGN.md 15b's work totals from the enclave, always listed.
+        # DESIGN.md's burndown's work totals from the enclave, always listed.
         TOTALS = { "hypothetical_explains" => "Plans tried with an index that wasn't built",
                    "indexes_built" => "Indexes really built", "measurement_runs" => "Measurement runs",
                    "fixture_loads" => "Loads of made-up test data" }.freeze

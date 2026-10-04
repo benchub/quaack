@@ -5,7 +5,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/result_comparison"
 
-# 10a on a schema whose foreign keys form a cycle. The LLM's inserts are
+# llm-counterexamples on a schema whose foreign keys form a cycle. The LLM's inserts are
 # ordered with the cycle's nullable foreign key cut, so an insert that sets
 # a cut column loads with NULL there, and once every insert has loaded, an
 # UPDATE sets the column to the LLM's value.

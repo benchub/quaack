@@ -4,7 +4,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/result_comparison"
 require "quaack/enclave/table_name"
 
-# Step 9d runs each comparison twice: with the fixture loaded forward, and
+# fixture-compare runs each comparison twice: with the fixture loaded forward, and
 # again loaded in reverse. A rewrite that drops a sort key below the top
 # level, or keeps a different representative of equal values, matches the
 # forward load only because the rows went in in that order.

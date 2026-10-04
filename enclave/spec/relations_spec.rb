@@ -331,7 +331,7 @@ RSpec.describe Quaack::Enclave::Relations do
     end
   end
 
-  # A user-defined function in FROM could read a view or foreign table 3a
+  # A user-defined function in FROM could read a view or foreign table qualify
   # never sees, so only pg_catalog's set-returning functions may go there.
   describe "a function in FROM" do
     before do

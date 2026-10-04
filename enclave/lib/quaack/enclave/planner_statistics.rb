@@ -8,7 +8,7 @@ require_relative "planner_statistics/catalog"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3c: the planner statistics for the query's tables and their
+    # DESIGN.md's statistics: the planner statistics for the query's tables and their
     # indexes, extended statistics included, and each index's definition
     # and size. It all goes into the governed store. MCV lists and histogram
     # bounds hold real values, so the entry is value-class data, and nothing
@@ -16,7 +16,7 @@ module Quaack
     #
     #   result = PlannerStatistics.run(store:, relations: Relations.check(sql, settings, conn).relations,
     #                                  connection: conn)
-    #   result.statistics            # => Statistics, for 5a-1, 5a-2, and 5a-3
+    #   result.statistics            # => Statistics, for index-from-query, index-from-plan, and index-dedupe
     #   store.read("statistics")     # => { "tables" => [{ "schema" => "public", "name" => "orders", ... }] }
     #   PlannerStatistics.load(store) # => the same Result, rebuilt from the store
     #
@@ -33,9 +33,9 @@ module Quaack
     #   attnum order.
     # - text_columns: the text-like columns, in attnum order: those whose
     #   type is in Postgres's string category (text, varchar, char, name,
-    #   citext, or a domain over one), for 3f's heuristic.
+    #   citext, or a domain over one), for classify's heuristic.
     # - clock_columns: each column whose type, or its domain's base type, is
-    #   date, timestamp, or timestamptz, mapped to that type, for 3h's
+    #   date, timestamp, or timestamptz, mapped to that type, for clock-anchor's
     #   clock literals.
     # - columns: each column's own pg_stats row (inherited = false), keyed by
     #   name, with null_frac, avg_width, n_distinct, most_common_vals,
@@ -48,7 +48,7 @@ module Quaack
     #   (pg_get_indexdef), size_bytes (pg_relation_size), and columns, the
     #   pg_stats rows Postgres keeps for an expression index's expressions,
     #   in the same form. An invalid index (indisvalid false), such as one
-    #   left by a failed CREATE INDEX CONCURRENTLY, is left out, so 5a-3
+    #   left by a failed CREATE INDEX CONCURRENTLY, is left out, so index-dedupe
     #   can't count it as covering.
     # - extended_statistics: each CREATE STATISTICS object on the table,
     #   sorted by schema and name, with its definition
@@ -61,7 +61,7 @@ module Quaack
     #
     # The Result's statistics is built from that entry, with each index as
     # IndexCandidate.from_ddl reads its definition, sources [:existing], or
-    # nil where it can't. DESIGN.md 3f (PiiClassification) reads the entry for
+    # nil where it can't. DESIGN.md's classify (PiiClassification) reads the entry for
     # the low-cardinality set that Dedupe takes.
     #
     # Refusals raise Error, with a rule and a message naming only tables:

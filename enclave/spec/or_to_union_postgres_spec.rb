@@ -7,7 +7,7 @@ require "quaack/enclave/rewrite_rules/catalog"
 require "quaack/enclave/rewrite_rules/or_to_union"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's or_to_union, on a real server: what it writes, that its
+# DESIGN.md's rewrite-rules's or_to_union, on a real server: what it writes, that its
 # output returns the rows its input does (as a multiset, and in order when
 # the query is ordered) on data that would show a wrong transformation, and
 # that it only fires when the catalog proves a key of every FROM table and
@@ -112,7 +112,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::OrToUnion do
         .to eq([%w[1 one], %w[1 one], %w[2 two], %w[3 same], %w[6 six], %w[6 six], %w[7 same]])
     end
 
-    it "states a key of every FROM table unique and not null, in 6b's vocabulary" do
+    it "states a key of every FROM table unique and not null, in assumption-check's vocabulary" do
       expect(rule.rewrites(PgQuery.parse(fires), catalog).map(&:assumptions)).to eq(
         [[{ "kind" => "unique", "table" => "public.a", "columns" => ["id"] },
           { "kind" => "not_null", "table" => "public.a", "column" => "id" },

@@ -2,7 +2,7 @@
 
 require "quaack/enclave/pii_classification"
 
-# DESIGN.md 3f, for index expressions and statistics objects whose definitions
+# DESIGN.md's classify, for index expressions and statistics objects whose definitions
 # fail closed: each is PII, so none of its MCV data leaves, even though the
 # columns it keys on are low-cardinality. The inputs are hand-built stored
 # statistics and column classes, as PiiClassification.run passes them.

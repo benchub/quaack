@@ -9,7 +9,7 @@ require "quaack/enclave/rewrite_rules/literals"
 require "quaack/enclave/rewrite_rules/shared_scan_cte"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's shared_scan_cte, on a real server: a table read more than
+# DESIGN.md's rewrite-rules's shared_scan_cte, on a real server: a table read more than
 # once in the top-level FROM is read once, by a MATERIALIZED CTE of the
 # conjuncts every copy shares, and every rewrite returns the original's rows.
 RSpec.describe Quaack::Enclave::RewriteRules::SharedScanCte do

@@ -7,8 +7,8 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # Step 9: the predicate atoms of a query, for the value pools and the
-    # 9c vacuity guard.
+    # rewrite-test: the predicate atoms of a query, for the value pools and the
+    # vacuity-guard vacuity guard.
     #
     #   parse = PgQuery.parse(sql)
     #   atoms = PredicateAtoms.extract(parse, column_names: { table_name => ["id", ...] })
@@ -55,7 +55,7 @@ module Quaack
     #   any operator SupportedSql allows for one, as one atom. <> is
     #   negated. Its column side is the row whose elements hold columns,
     #   and bare is true when each element is just a column. Nothing picks
-    #   values for it, so the value pools and 3e's literal feeds skip it.
+    #   values for it, so the value pools and literals's literal feeds skip it.
     # - :other: the rest, such as a boolean column, a function call,
     #   EXISTS, x IN (SELECT ...), IS TRUE, other operators, or two
     #   columns of one relation.
@@ -198,10 +198,10 @@ module Quaack
         end
       end
 
-      # Stands in for 3g (20260922-23) until it lands: each constant becomes
+      # Stands in for redact (20260922-23) until it lands: each constant becomes
       # a numbered placeholder, numbered in the order the constants appear in
       # the query's text, after the query's own parameters. That's often,
-      # but not always, how PgQuery.normalize numbers them. 3g's placeholder
+      # but not always, how PgQuery.normalize numbers them. redact's placeholder
       # map should take over the numbering here, so a shape names the same
       # $n as the redacted query the driver gets.
       #

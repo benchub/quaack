@@ -5,7 +5,7 @@ require_relative "redaction"
 
 module Quaack
   module Enclave
-    # DESIGN.md step 8's structural discards: drop the rewrite candidates that
+    # DESIGN.md's plan-pruning's structural discards: drop the rewrite candidates that
     # fail to plan on the racetrack, or whose output column count or types
     # differ from the original's.
     #
@@ -28,8 +28,8 @@ module Quaack
     # Column names don't matter. The original is described the same way,
     # and an error there raises, since nothing can be compared.
     #
-    # record adds the step 8 structural counts to the burndown under the
-    # search rewrites, with the inbound check's rejections (DESIGN.md step 8
+    # record adds the plan-pruning structural counts to the burndown under the
+    # search rewrites, with the inbound check's rejections (DESIGN.md's plan-pruning
     # counts them here) as inbound_check.
     #
     # Trust boundary. Result holds the candidates' own text, which has

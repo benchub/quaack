@@ -4,9 +4,9 @@ module Quaack
   module Enclave
     module Steps
       # The existing indexes' sizes, for ReportPayload and NegativeResult
-      # (DESIGN.md step 15): each existing index the report names goes out
+      # (DESIGN.md's report): each existing index the report names goes out
       # with the size the planner statistics hold for it (pg_relation_size,
-      # read in step 3c).
+      # read in statistics).
       #
       #   sizes = ExistingIndexes.new(store)
       #   sizes.named(table, "orders_created_at_idx")

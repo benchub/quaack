@@ -7,7 +7,7 @@ require "quaack/enclave/index_candidate"
 require "quaack/enclave/index_store"
 require "quaack/enclave/store"
 
-# `quaacks report-payload --run <run ID>` (DESIGN.md step 15): one report
+# `quaacks report-payload --run <run ID>` (DESIGN.md's report): one report
 # message of shape-class data, from the store, with no connection.
 # A sentinel that is a lowercase word, as a rule name is.
 REPORT_WORD_SENTINEL = "qsentinel_rule_name"
@@ -197,7 +197,7 @@ RSpec.describe "quaacks report-payload" do
   end
 
   describe "every stored rewrite" do
-    it "sends a ranked rewrite's SQL, plan, untested atoms, and step 10 evidence" do
+    it "sends a ranked rewrite's SQL, plan, untested atoms, and counterexamples evidence" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
         "untested_atoms" => [{ "shape" => "column = $n" }], "evidence" => false
@@ -236,8 +236,8 @@ RSpec.describe "quaacks report-payload" do
       store.write("rewrite_survived_#{number}", "survived" => survived) unless survived.nil?
     end
 
-    # A rewrite that passed steps 9 and 10, measured under each key
-    # (none, or a combination key), with 14d's reason for each label.
+    # A rewrite that passed rewrite-test and counterexamples, measured under each key
+    # (none, or a combination key), with selection's reason for each label.
     def measured(store, number, reasons)
       stored(store, number, tested: tested(true), round: { "round" => 3, "evidence" => true, "rule" => nil },
                             survived: true, pruned: false)
@@ -249,7 +249,7 @@ RSpec.describe "quaacks report-payload" do
       store.write("selection", selection.merge("excluded" => selection["excluded"].merge(labels)))
     end
 
-    # 14c's entry, as ResultComparison.entry writes it, from each
+    # result-comparison's entry, as ResultComparison.entry writes it, from each
     # rewrite's verdict rule by literal set (nil for a pass).
     def compared(store, rules)
       verdicts = rules.to_h do |number, sets|
@@ -295,17 +295,17 @@ RSpec.describe "quaacks report-payload" do
         # As a store written before rounds kept their rule holds them.
         stored(store, 19, tested: tested(true), round: { "round" => 3, "evidence" => true }, survived: false)
         stored(store, 20, tested: tested(true), survived: false)
-        # A rewrite step 8 pruned that rewrite-test never reached.
+        # A rewrite plan-pruning pruned that rewrite-test never reached.
         stored(store, 21, pruned: true)
         # A rewrite ranked under one label and excluded under another.
         measured(store, 22, "none" => "not_better", "rewrite_22:top:1" => nil)
         selection = store.read("selection")
         store.write("selection", selection.merge("top" => [*selection["top"], { "label" => "rewrite_22:top:1" }]))
-        # No run stores this: a rewrite step 9 disproved is never measured.
+        # No run stores this: a rewrite rewrite-test disproved is never measured.
         # If a store held both, the earlier step is the fate.
         measured(store, 23, "none" => "not_better")
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
-        # Step 9 couldn't build scenarios for the query, so it refused.
+        # rewrite-test couldn't build scenarios for the query, so it refused.
         { 24 => "complex_check", 25 => "fk_cycle", 26 => REPORT_WORD_SENTINEL, 27 => "unsatisfiable_check",
           28 => "expression_unique_index", 29 => "unsupported_type", 30 => "domain_check" }.each do |number, rule|
           stored(store, number, tested: tested(false, nil, rule).merge("refused" => true), survived: false)
@@ -350,12 +350,12 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
-    it "sends step 10 evidence only for a rewrite that survived step 10" do
+    it "sends counterexamples evidence only for a rewrite that survived counterexamples" do
       expect([3, 6, 16].map { rewrite(it)["evidence"] }).to eq([nil, nil, nil])
       expect(rewrite(17)["evidence"]).to be(true)
     end
 
-    it "never calls a rewrite step 8 pruned disproved, though rewrite-test stores it as not passed" do
+    it "never calls a rewrite plan-pruning pruned disproved, though rewrite-test stores it as not passed" do
       expect(report["rewrites"].select { it["fate"].include?("disproved") }.map { it["rewrite"] })
         .to eq(%w[rewrite_3 rewrite_6 rewrite_19 rewrite_20 rewrite_23])
     end
@@ -387,7 +387,7 @@ RSpec.describe "quaacks report-payload" do
 
     # An fk_cycle refusal's tables are schema, and go out only if each is
     # a relation the run's schema subset holds.
-    context "when step 9 refused for fk_cycle and stored the cycle's tables" do
+    context "when rewrite-test refused for fk_cycle and stored the cycle's tables" do
       def refused(rule, cycle) = tested(false, nil, rule).merge("refused" => true, "cycle" => cycle)
 
       let(:cycle) { [%w[public orders], %w[billing accounts], %w[public orders]] }
@@ -547,7 +547,7 @@ RSpec.describe "quaacks report-payload" do
         store.write("rewrite_survived_#{number}", "survived" => survived)
       end
 
-      # Writes 14c's entry as ResultComparison.entry does, from each
+      # Writes result-comparison's entry as ResultComparison.entry does, from each
       # rewrite's verdict rules by literal set (nil for a pass).
       def compared(store, **rules)
         verdicts = rules.to_h do |number, sets|
@@ -563,7 +563,7 @@ RSpec.describe "quaacks report-payload" do
         expect(report["rule_bugs"]).to eq([])
       end
 
-      context "with rule-made rewrites that steps 9, 10, and 14c disproved, though a candidate won" do
+      context "with rule-made rewrites rewrite-test, counterexamples, and result-comparison disproved, with a winner" do
         let(:outcome) do
           with_rewrite do |store|
             rule_made(store, 2, tested(false, "multiset", "s3"), false)
@@ -584,10 +584,10 @@ RSpec.describe "quaacks report-payload" do
         end
       end
 
-      # 14c drops a candidate for any failing verdict, but only a result
+      # result-comparison drops a candidate for any failing verdict, but only a result
       # mismatch disproves it.
       %w[timed_out unsupported_order].each do |rule|
-        context "with a rule-made rewrite that 14c dropped only as #{rule}" do
+        context "with a rule-made rewrite that result-comparison dropped only as #{rule}" do
           let(:outcome) do
             with_rewrite do |store|
               rule_made(store, 2, tested(true), true)
@@ -595,14 +595,14 @@ RSpec.describe "quaacks report-payload" do
             end
           end
 
-          it "isn't a bug: 14c never compared its results" do
+          it "isn't a bug: result-comparison never compared its results" do
             expect(report["rule_bugs"]).to eq([])
           end
         end
       end
 
       %w[column_count column_types row_count value multiset subset candidate_unordered].each do |rule|
-        context "with a rule-made rewrite whose 14c results differed, rule #{rule}, on one literal set" do
+        context "with a rule-made rewrite whose result-comparison results differed, rule #{rule}, on one literal set" do
           let(:outcome) do
             with_rewrite do |store|
               rule_made(store, 2, tested(true), true)
@@ -610,7 +610,7 @@ RSpec.describe "quaacks report-payload" do
             end
           end
 
-          it "is a bug, though 14c timed out on another set" do
+          it "is a bug, though result-comparison timed out on another set" do
             expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "step" => "result-comparison",
                                                  "rules" => %w[key_in_self_join key_in_self_join] }])
           end
@@ -632,9 +632,9 @@ RSpec.describe "quaacks report-payload" do
         end
       end
 
-      # Steps 9 and 10 make up their data, which needn't hold an assumption
-      # 6b found the real data holds; 14c runs on the racetrack's.
-      context "with rule-made rewrites resting on a denormalized_equal assumption, disproved by 9, 10, and 14c" do
+      # rewrite-test and counterexamples make up their data, which needn't hold an assumption
+      # assumption-check found the real data holds; result-comparison runs on the racetrack's.
+      context "with rule-made rewrites resting on a denormalized_equal assumption, disproved by every check" do
         let(:outcome) do
           assumptions = [{ "kind" => "denormalized_equal", "table" => "public.submissions" }]
           with_rewrite do |store|
@@ -645,13 +645,13 @@ RSpec.describe "quaacks report-payload" do
           end
         end
 
-        it "calls only the 14c disproof a bug" do
+        it "calls only the result-comparison disproof a bug" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
                                                "step" => "result-comparison" }])
         end
       end
 
-      context "with a rule-made rewrite that step 8 pruned for planning as the original does" do
+      context "with a rule-made rewrite that plan-pruning pruned for planning as the original does" do
         let(:outcome) { with_rewrite { rule_made(it, 2, tested(false, "discarded"), false) } }
 
         it "isn't a bug: a pruned rewrite was never disproved" do
@@ -659,7 +659,7 @@ RSpec.describe "quaacks report-payload" do
         end
       end
 
-      context "with a rule-made rewrite step 9 refused to test, since it couldn't build scenarios" do
+      context "with a rule-made rewrite rewrite-test refused to test, since it couldn't build scenarios" do
         let(:outcome) do
           with_rewrite { rule_made(it, 2, tested(false, "complex_check").merge("refused" => true), false) }
         end
@@ -714,7 +714,7 @@ RSpec.describe "quaacks report-payload" do
     end
   end
 
-  it "sends the recorded burndown counts (15b)" do
+  it "sends the recorded burndown counts (burndown)" do
     expect(report["burndown"]).to eq(
       "stages" => { "index-dedupe" => { "original" => { "in" => 4, "added" => {}, "dropped" => { "duplicate" => 1 },
                                                         "set_aside" => 0, "out" => 3, "extra" => {} } } },
@@ -732,7 +732,7 @@ RSpec.describe "quaacks report-payload" do
     expect_no_leaks(sentinels, outcome)
   end
 
-  describe "when nothing beats the original (15a)" do
+  describe "when nothing beats the original (negative-result)" do
     def plain(ddl)
       candidate = Quaack::Enclave::IndexCandidate.from_ddl(ddl, sources: [:generator_one])
       Quaack::Enclave::IndexStore.candidate_plain(candidate)
@@ -758,7 +758,7 @@ RSpec.describe "quaacks report-payload" do
       populate(store)
       store.write("selection", "top" => [], "infinite_sets" => [],
                                "excluded" => { "rewrite_1:none" => "not_better", "rewrite_1:top:1" => "not_better" })
-      # btree (status) is unused but set aside for 12a (20260927-11), so it
+      # btree (status) is unused but set aside for index-build (20260927-11), so it
       # isn't declined. The partial index comes up three times in the
       # original's search: from the generators, again from the LLM, and
       # once more as a plan prints it, with a cast on its constant.

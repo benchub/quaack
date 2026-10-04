@@ -2,12 +2,12 @@
 
 require_relative "support/index_search_run"
 
-# `quaacks index-payload` (DESIGN.md 5a-5): the shape-only payload for the LLM,
+# `quaacks index-payload` (DESIGN.md's llm-index-ideas): the shape-only payload for the LLM,
 # the way the jump server runs it, after a real index-search.
 RSpec.describe "quaacks index-payload, against a real server" do
   include_context "an index search run"
 
-  # The query's table and its FK parent, as 3b stores them.
+  # The query's table and its FK parent, as schema-dump stores them.
   let(:schema_subset) do
     { "tables" => [%w[public orders], %w[public customers]],
       "ddl" => "SET statement_timeout = 0;\nCREATE TABLE public.customers (id integer);\n\n" \
@@ -24,7 +24,7 @@ RSpec.describe "quaacks index-payload, against a real server" do
   end
 
   # A stored result for a partial candidate, as generator two could make
-  # from the unredacted step 1 plan, with the sentinel in its predicate.
+  # from the unredacted input plan, with the sentinel in its predicate.
   def plant(predicate:, key: [{ "name" => "created_at", "expression" => nil, "direction" => "asc",
                                 "nulls" => "last", "opclass" => nil, "collation" => nil }])
     entry = stored.read("index_search_original")
@@ -78,7 +78,7 @@ RSpec.describe "quaacks index-payload, against a real server" do
       expect(types).to eq("$1" => "text", "$2" => "timestamp with time zone", "$3" => "timestamp with time zone")
     end
 
-    it "falls back to each placeholder's 3g type class when the query didn't prepare" do
+    it "falls back to each placeholder's redact type class when the query didn't prepare" do
       searched
       entry = stored.read("index_search_original")
       stored.write("index_search_original", entry.merge("parameter_types" => {}))
@@ -153,7 +153,7 @@ RSpec.describe "quaacks index-payload, against a real server" do
     sent = payload(outcome)
 
     # The stand-in production server's search_path names a schema with the
-    # sentinel, and the step 1 plan's Settings hold it, but they don't go out.
+    # sentinel, and the input plan's Settings hold it, but they don't go out.
     expect(JSON.generate(stored.read("redacted_plan"))).to include(sentinels.text)
     expect_no_leaks(sentinels, outcome)
     expect(sent["mechanical_results"]["set_aside"].last(2).map { it["ddl"] }).to eq(

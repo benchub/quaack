@@ -4,7 +4,7 @@ require "json"
 
 module Quaack
   module Driver
-    # The driver's half of DESIGN.md 10a: asks the LLM for inserts that should
+    # The driver's half of DESIGN.md's llm-counterexamples: asks the LLM for inserts that should
     # make one candidate and the original return different results.
     #
     #   Counterexamples.new(client:).ask(payload)  # => ["INSERT INTO ...", ...]
@@ -12,7 +12,7 @@ module Quaack
     # payload is the shape-only payload the enclave sent: original (the
     # redacted query), candidate (its SQL, transformation, and
     # assumptions), placeholders (each $n's shape), schema (the subset
-    # schema), constraints, and untested_atoms (9c's shapes). It goes to
+    # schema), constraints, and untested_atoms (vacuity-guard's shapes). It goes to
     # the LLM as it is. The LLM writes $n where it wants one of the query's
     # literals, and the enclave binds the real value and fills any
     # foreign-key gaps (Enclave::Counterexamples).
@@ -54,8 +54,8 @@ module Quaack
       Round = Data.define(:inserts, :outcome)
       Result = Data.define(:rounds, :disproved, :covered)
 
-      # DESIGN.md 10a to 10c, up to three rounds. compare stands for the
-      # enclave's 10b and 10c over the transport: it takes a round's
+      # DESIGN.md's llm-counterexamples to counterexample-rollback, up to three rounds. compare stands for the
+      # enclave's counterexample-compare and counterexample-rollback over the transport: it takes a round's
       # inserts and returns its outcome, a Hash with match, rule, covered
       # (untested atom shapes the round exercised), and refused (each
       # refused insert's index and rule). Every round runs, even a clean

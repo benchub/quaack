@@ -6,7 +6,7 @@ module Quaack
   module Enclave
     module RewriteRules
       # The literal oracle for rules that need to compare placeholders
-      # (DESIGN.md 6c). It reads the governed-store placeholder map inside
+      # (DESIGN.md's rewrite-rules). It reads the governed-store placeholder map inside
       # the enclave, but answers only booleans to rule code, and inspect
       # never shows the map.
       class Literals

@@ -34,7 +34,7 @@ RSpec.describe Quaack::Enclave::Selection do
     expect(result["top"].map { it["label"] }).to eq(%w[b:none a:none])
   end
 
-  it "removes every combination of a rewrite that 14c discarded, but not index-only candidates" do
+  it "removes every combination of a rewrite that result-comparison discarded, but not index-only candidates" do
     result = pick(minimax([s("rewrite_1:none", 1, 1), s("rewrite_1:top:1", 2, 2), s("rewrite_10:none", 3, 3),
                            s("original:top:1", 4, 4)]), ["rewrite_1"])
     expect(result["top"].map { it["label"] }).to eq(%w[rewrite_10:none original:top:1])

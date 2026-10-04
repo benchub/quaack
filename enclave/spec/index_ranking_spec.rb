@@ -18,7 +18,7 @@ RSpec.describe Quaack::Enclave::IndexRanking::Cost do
   end
 end
 
-# DESIGN.md 5a-7: an addition must lower some literal set's cost and raise none.
+# DESIGN.md's index-rank: an addition must lower some literal set's cost and raise none.
 RSpec.describe Quaack::Enclave::IndexRanking, ".lower?" do
   def entry(**afters)
     costs = afters.transform_values { |after| Quaack::Enclave::IndexRanking::Cost.new(before: 100.0, after:) }

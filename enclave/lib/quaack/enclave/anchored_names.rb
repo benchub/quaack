@@ -6,7 +6,7 @@ require_relative "node_rewrite"
 
 module Quaack
   module Enclave
-    # Clock anchoring (3h) changes the names Postgres makes up. It names an
+    # Clock anchoring (clock-anchor) changes the names Postgres makes up. It names an
     # output column that has no AS after the function it calls, so now()
     # is "now", and so is now()::date, but quaack.clock_anchor() is
     # "clock_anchor". A function in FROM with no alias names its table and

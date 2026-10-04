@@ -5,8 +5,8 @@ require_relative "generator_three"
 
 module Quaack
   module Driver
-    # The driver's half of DESIGN.md 5a-6: one revision round for the LLM's
-    # index candidates that fell short in 5a-4.
+    # The driver's half of DESIGN.md's llm-index-refine: one revision round for the LLM's
+    # index candidates that fell short in index-test.
     #
     #   RefinementRound.new(client:, index_feedback:, index_test:).run(payload)
     #   # => nil (skipped) or Result(ddls: [...], outcomes: [...])
@@ -14,7 +14,7 @@ module Quaack
     # index_feedback stands for `quaacks index-feedback` and returns its
     # index_feedback message. If it says nothing fell short (revise false),
     # or the round already ran (refined true), the round is skipped. Else
-    # the LLM gets the 5a-5 payload and the feedback, and is asked for up to
+    # the LLM gets the llm-index-ideas payload and the feedback, and is asked for up to
     # as many revised candidates as fell short. index_test, as in
     # GeneratorThree but called with round: "refinement", filters and tests
     # them, even an empty list, which records that the round ran. Only one

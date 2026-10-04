@@ -11,7 +11,7 @@ module Quaack
       # accepted are Evaluated inserts, so a foreign-key value is the
       # insert's value as evaluated in arena. A value that's NULL or
       # DEFAULT, or a column the insert leaves out, needs no parent. A
-      # parent row takes the referenced values, and the step 9
+      # parent row takes the referenced values, and the rewrite-test
       # rules for everything else: a DEFAULT, a distinct value for a unique
       # column, NULL for a nullable foreign key, its own key for a NOT NULL
       # one to its own table, a new parent row for another NOT NULL one,

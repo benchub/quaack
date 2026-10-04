@@ -2,9 +2,9 @@
 
 require_relative "spec_helper"
 
-# Task 20261003-18: when step 9 can't build scenarios for the query, the run
+# Task 20261003-18: when rewrite-test can't build scenarios for the query, the run
 # still finishes. A two-column CHECK on orders is a complex_check refusal
-# (DESIGN.md step 9), so the key_in_self_join rule's rewrite, the run's only
+# (DESIGN.md's rewrite-test), so the key_in_self_join rule's rewrite, the run's only
 # one, is never tested: it's marked untested, never recommended, and the
 # report says why, by rule. The index steps still run, and a resumed run
 # skips the refused rewrite rather than trying it again. The run happens

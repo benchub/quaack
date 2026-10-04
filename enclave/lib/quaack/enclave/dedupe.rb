@@ -7,31 +7,31 @@ require_relative "statistics"
 
 module Quaack
   module Enclave
-    # The 5a-3 filter (DESIGN.md 5a-3): dedupes one index search's candidates
+    # The index-dedupe filter (DESIGN.md's index-dedupe): dedupes one index search's candidates
     # and drops the ones not worth testing. One Dedupe is one search: the
-    # original query's in 5a, or one rewrite's in steps 8 and 11. Make a new
+    # original query's in index-search, or one rewrite's in plan-pruning and rewrite-index-ideas. Make a new
     # one for each search, so no search sees another's proposals.
     #
     #   search = Dedupe.new(statistics:, low_cardinality: [[orders, "status"]])
-    #   survivors = search.filter(GeneratorOne.candidates(parse, statistics))  # to 5a-4
+    #   survivors = search.filter(GeneratorOne.candidates(parse, statistics))  # to index-test
     #   survivors = search.filter(GeneratorTwo.candidates(explain, statistics:))
     #   search.proposals  # every survivor so far, with sources merged
-    #   search.set_aside  # GIN, GiST, and SP-GiST survivors, untested, for step 12
+    #   search.set_aside  # GIN, GiST, and SP-GiST survivors, untested, for measurement-setup
     #   search.drops      # a Drop for each candidate dropped, in order
     #   search.considered # how many candidates filter has considered
     #
     # Call filter on each generator's output as soon as it's produced. It
-    # returns the candidates from that call worth testing in 5a-4, in order,
+    # returns the candidates from that call worth testing in index-test, in order,
     # as a frozen array.
     #
     # statistics is a Statistics. Each table's indexes are the existing
-    # indexes. DESIGN.md 3b and 3c fill them in (20260922-19). A table with no
+    # indexes. DESIGN.md's schema-dump and statistics fill them in (20260922-19). A table with no
     # statistics raises KeyError, as the generators do.
     #
-    # low_cardinality is the columns that DESIGN.md 3f classes as
+    # low_cardinality is the columns that DESIGN.md's classify classes as
     # low-cardinality, as [TableName, column name] pairs: fewer than 50
     # distinct values and not PII. PiiClassification#low_cardinality gives
-    # them. This class doesn't apply 3f's rule itself.
+    # them. This class doesn't apply classify's rule itself.
     #
     # Normalizing. IndexCandidate normalizes each definition when it's built:
     # the nulls ordering each direction defaults to, the method's case, and
@@ -61,7 +61,7 @@ module Quaack
     #    as deleted_at IS NULL), passes on any column: it holds no values. Every stored
     #    predicate parses again, since IndexCandidate refuses one that
     #    pg_query can't deparse faithfully (see Deparse). This comes first,
-    #    because it's the trust-boundary check (DESIGN.md 5a-3): until a
+    #    because it's the trust-boundary check (DESIGN.md's index-dedupe): until a
     #    partial passes it, its predicate may hold PII.
     # 2. A candidate covered by an existing index is dropped
     #    (:covered_by_existing), recording the index as an ExistingIndex.
@@ -74,29 +74,29 @@ module Quaack
     #    count, and a btree with every direction and nulls ordering flipped
     #    is the same index read backward. A prefix of an earlier proposal
     #    isn't dropped, because generator one proposes every leading prefix
-    #    on purpose, and 5a-4 tests each.
-    # 4. A GIN, GiST, or SP-GiST candidate is set aside, untested, for step
-    #    12. HypoPG can't model those methods. DESIGN.md names GIN and GiST.
+    #    on purpose, and index-test tests each.
+    # 4. A GIN, GiST, or SP-GiST candidate is set aside, untested, for
+    #    measurement. HypoPG can't model those methods. DESIGN.md names GIN and GiST.
     #    The HypoPG in the test image (Postgres 18) refuses SP-GiST as well,
     #    so it goes too.
-    #    A set-aside candidate counts as a proposal for step 3.
+    #    A set-aside candidate counts as a proposal for item 3.
     # 5. Anything else survives.
     #
     # Trust boundary. A dropped partial candidate's predicate can hold a
-    # real literal, and so can a survivor's until 5a-4 runs it. Drop's
+    # real literal, and so can a survivor's until index-test runs it. Drop's
     # inspect, to_s, and pp, and this class's, show candidates through
     # IndexCandidate#inspect, which redacts the predicate and every key
     # expression. Pattern matching on a Drop can't reach either, since
     # IndexCandidate's and KeyColumn's deconstruct_keys leave them out. No
     # error here includes a predicate or an expression. Rule 1 doesn't look
-    # at key expressions. The DESIGN.md (5a-3) scopes the low-cardinality rule
+    # at key expressions. The DESIGN.md (index-dedupe) scopes the low-cardinality rule
     # to partial predicates. An expression key comes from an existing
     # index, which DESIGN.md treats as schema, so shape data, or from the
     # LLM, which only ever saw shape data.
     # to_h and the readers still give the raw candidate, so keep them inside
     # the enclave.
     class Dedupe
-      # The methods HypoPG can't model, so their candidates skip 5a-4.
+      # The methods HypoPG can't model, so their candidates skip index-test.
       UNTESTABLE_METHODS = %i[gin gist spgist].freeze
 
       # An existing index: its name from the catalog and its definition.
@@ -105,7 +105,7 @@ module Quaack
       # One dropped candidate. reason is :partial_not_low_cardinality,
       # :covered_by_existing, or :duplicate. covered_by is the ExistingIndex
       # for :covered_by_existing, the earlier proposal for :duplicate, and
-      # nil for :partial_not_low_cardinality. Steps 15a and 15b read these.
+      # nil for :partial_not_low_cardinality. negative-result and burndown read these.
       Drop = Data.define(:candidate, :reason, :covered_by)
 
       def initialize(statistics:, low_cardinality:)
@@ -138,7 +138,7 @@ module Quaack
 
       # Every candidate filter has considered. Each one is dropped, set
       # aside, or kept as a proposal, so it should equal their sum. The
-      # 15b burndown records it as the count that came in, and checks that.
+      # burndown burndown records it as the count that came in, and checks that.
       # A candidate is counted once it's been considered, so a filter call
       # that raises partway counts only the candidates it got through.
       attr_reader :considered
@@ -157,7 +157,7 @@ module Quaack
         kept.map { |candidate| @proposals.find { |p| p == candidate } }.freeze
       end
 
-      # Whether an existing index covers a candidate: whether 5a-4 would
+      # Whether an existing index covers a candidate: whether index-test would
       # learn nothing new from testing it. All of these must hold:
       #
       # - Same table and same method. A btree doesn't cover a BRIN candidate,
@@ -217,7 +217,7 @@ module Quaack
         end
       end
 
-      # A survivor is a proposal. It's returned for 5a-4, unless HypoPG
+      # A survivor is a proposal. It's returned for index-test, unless HypoPG
       # can't model it, so it's set aside.
       def keep(candidate)
         if UNTESTABLE_METHODS.include?(candidate.access_method)

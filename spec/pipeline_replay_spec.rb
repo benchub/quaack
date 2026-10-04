@@ -44,7 +44,7 @@ RSpec.describe PipelineReplay do
           end
 
           it "never reports the subtly wrong rewrite as a winning fix" do
-            # Disproved at step 9 or 10: never marked for step 11, and so
+            # Disproved at rewrite-test or counterexamples: never marked for rewrite-index-ideas, and so
             # never measured or ranked. The report sends it with that fate.
             labels = outcome.report ? (outcome.report["top"] + outcome.report["labels"]).map { it["label"] } : []
             fates = outcome.report ? outcome.report["rewrites"].to_h { [it["rewrite"], it["fate"]] } : {}
@@ -57,7 +57,7 @@ RSpec.describe PipelineReplay do
             end
           end
 
-          it "finds the wrong rewrite whenever the 6a reply holds the wrong condition" do
+          it "finds the wrong rewrite whenever the llm-rewrites reply holds the wrong condition" do
             wrong_condition = outcome.rewrites_text.to_s.include?(described_class.condition(query))
             expect(outcome.wrong).not_to be_empty if wrong_condition
           end
@@ -65,14 +65,14 @@ RSpec.describe PipelineReplay do
       end
     end
 
-    # Task 20261001-23: DESIGN.md 6c end to end. The rule's rewrite is the
+    # Task 20261001-23: DESIGN.md's rewrite-rules end to end. The rule's rewrite is the
     # run's only one, since every LLM ask gets an empty answer.
     describe "a query the key_in_self_join rule fires on" do
       let(:outcome) { described_class.cached(TestPostgres.server, described_class::RULE_QUERY, described_class::EMPTY) }
       let(:rewrite) { outcome.report["rewrites"].find { it["rewrite"] == "rewrite_1" } }
       let(:ranked) { outcome.report["top"].map { it["label"] }.grep(/\Arewrite_1:/) }
 
-      it "applies the rules before 6a, storing the rule's rewrite, and ends in a report" do
+      it "applies the rules before llm-rewrites, storing the rule's rewrite, and ends in a report" do
         expect(outcome.error).to be_nil
         expect(outcome.entries).to include("rewrite_rules_applied" => true, "rewrite_1" => true,
                                            "rewrites_generated" => true, "rewrite_index_ideas_1" => true)
@@ -103,13 +103,13 @@ RSpec.describe PipelineReplay do
         expect(labels.flat_map { it["indexes"] } - built).to be_empty
       end
 
-      it "records the 6c burndown, and flags no rule bug, since no test disproved the rewrite" do
+      it "records the rewrite-rules burndown, and flags no rule bug, since no test disproved the rewrite" do
         expect(outcome.report["burndown"]["stages"]["rewrite-rules"]["rewrites"])
           .to include("added" => { "key_in_self_join" => 1 }, "out" => 1)
         expect(outcome.report["rule_bugs"]).to eq([])
       end
 
-      it "shows the source and the 6c row in the report file `quaack run` writes" do
+      it "shows the source and the rewrite-rules row in the report file `quaack run` writes" do
         expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
         expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
                                         '<td class="num">0</td><td>by the rule key_in_self_join: 1</td>')
@@ -180,7 +180,7 @@ RSpec.describe PipelineReplay do
 
     let(:variant) { PipelineReplay::Variant.new(llm: "t", k: 1) }
 
-    it "names 10a asks by rewrite and round, three numbers per rewrite, so an early disproof shifts nothing" do
+    it "names llm-counterexamples asks by rewrite and round, three per rewrite, so an early disproof shifts nothing" do
       replies = PipelineReplay::Replies.new("q", variant, roots: [])
       replies.for("llm-rewrites", body("x"))
       # Rewrite 1 runs all three rounds, rewrite 2 is disproved in round
@@ -217,7 +217,7 @@ RSpec.describe PipelineReplay do
       expect(described_class.wrong(query, text)).to eq([2])
     end
 
-    it "finds nothing when there's no 6a reply, or it doesn't parse" do
+    it "finds nothing when there's no llm-rewrites reply, or it doesn't parse" do
       expect([described_class.wrong(query, nil), described_class.wrong(query, "no json")]).to eq([[], []])
     end
   end

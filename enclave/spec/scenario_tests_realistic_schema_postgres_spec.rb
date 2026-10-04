@@ -2,7 +2,7 @@
 
 require "quaack/enclave/scenario_tests"
 
-# Step 9 on the prompt pack's schema (users, products, orders, line_items):
+# rewrite-test on the prompt pack's schema (users, products, orders, line_items):
 # unique indexes made with CREATE UNIQUE INDEX, identity keys, and foreign
 # keys to tables the query doesn't name. Every fixture must load, so a
 # candidate identical to the original passes.

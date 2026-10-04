@@ -3,9 +3,9 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/measurement"
 
-# DESIGN.md 13 and 12b: `quaacks baseline` hides every built index and runs the
+# DESIGN.md's baseline and run-discipline: `quaacks baseline` hides every built index and runs the
 # original three times per literal set under RunDiscipline, recording total
-# blocks and the hit/read split. Measurement is the helper 13a and 14 reuse.
+# blocks and the hit/read split. Measurement is the helper index-baseline and candidate-runs reuse.
 RSpec.describe "quaacks baseline, against a real server" do
   include_context "an index search run"
 

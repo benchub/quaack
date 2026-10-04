@@ -8,7 +8,7 @@ require_relative "node_rewrite"
 
 module Quaack
   module Enclave
-    # An index candidate as the report tells two apart (DESIGN.md 15a): the
+    # An index candidate as the report tells two apart (DESIGN.md's negative-result): the
     # same candidate, with every cast on a constant or on a bare column
     # taken out of its predicate.
     #
@@ -17,7 +17,7 @@ module Quaack
     # IndexCandidate keeps casts, since only the catalog can say what one
     # changes. So a partial index read from a plan, which prints
     # (status)::text = 'deleted'::text, and the same index from the query's
-    # own text, status = 'deleted', are two candidates, and 5a tests both.
+    # own text, status = 'deleted', are two candidates, and index-search tests both.
     # A reader of the report sees one index, so its lists send it once.
     # Sources don't count, as in IndexCandidate#==.
     #

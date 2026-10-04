@@ -18,7 +18,7 @@ RSpec.describe "quaack run" do
   let(:stdout) { StringIO.new }
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
-  # Steps 2 to 4a's outputs, all stored: the run has had setup.
+  # Setup's outputs, all stored: the run has had setup.
   let(:setup_done) do
     %w[inventory run_server qualified_query schema_subset statistics volatility classification redacted_plan
        literal_sets clock_replacements racetrack_setup].to_h { [it, true] }
@@ -102,7 +102,7 @@ RSpec.describe "quaack run" do
     expect(transport.calls[1].last[:args]).to eq(run: run_id)
   end
 
-  it "sends the --rewrites file's rewrites through step 7 inside the pipeline, before step 8" do
+  it "sends the --rewrites file's rewrites through operator-rewrites inside the pipeline, before plan-pruning" do
     file = File.join(home, "rewrites.sql")
     File.write(file, "SELECT 2 WHERE $1;\n")
     fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
@@ -163,7 +163,7 @@ RSpec.describe "quaack run" do
       expect(stdout.string).to eq("#{out}\n#{run_id} done\n")
     end
 
-    it "counts step 7, and prints each LLM ask and retry, when there's a rewrites file" do
+    it "counts operator-rewrites, and prints each LLM ask and retry, when there's a rewrites file" do
       reply = { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] }
       fake.error("operator-rewrites", status: 529).reply("operator-rewrites", reply)
       entries["rewrites_generated"] = false
@@ -198,7 +198,7 @@ RSpec.describe "quaack run" do
       )
     end
 
-    it "prints each index 12a builds as the enclave reports it, with its redacted DDL" do
+    it "prints each index index-build builds as the enclave reports it, with its redacted DDL" do
       entries["index_build"] = false
       ddl = "CREATE INDEX quaack_505c95b84989bfd37136 ON public.orders USING btree (id, status) WHERE note = ?"
       streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => ddl },
@@ -271,7 +271,7 @@ RSpec.describe "quaack run" do
     )
   end
 
-  it "names the table, column, and type when step 9 can't fill a column" do
+  it "names the table, column, and type when rewrite-test can't fill a column" do
     column = { "table" => "public.courses", "column" => "tags", "type" => "int4range" }
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "unsupported_type",
                                                                  column:)
@@ -287,7 +287,7 @@ RSpec.describe "quaack run" do
     expect(transport.calls.last).to eq(["teardown", { args: { run: run_id } }])
   end
 
-  describe "setup, steps 2 to 4a" do
+  describe "setup, setup" do
     let(:setup) do
       %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
          racetrack-setup]

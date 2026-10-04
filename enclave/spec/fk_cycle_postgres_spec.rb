@@ -5,7 +5,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
 require "quaack/enclave/scenario_tests"
 
-# Step 9 on a schema whose foreign keys form a cycle. Enough foreign keys
+# rewrite-test on a schema whose foreign keys form a cycle. Enough foreign keys
 # in the cycle whose child columns are all nullable are cut from the load
 # order to break it, preferring ones no predicate atom reads. A cut column
 # still takes its scenario value, as without the cycle: fixture rows load
@@ -54,7 +54,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
 
     def expected_templates(rows) = rows_of(rows, "accounts").map { |r| [r.values[0], r.values[2]] }.sort_by(&:to_s)
 
-    # Loads rows in both of 9d's load orders and returns what accounts
+    # Loads rows in both of fixture-compare's load orders and returns what accounts
     # holds each time.
     def loaded_templates(rows)
       [rows, Quaack::Enclave::ResultComparison.reverse_load(rows)].map { |loaded| run(loaded, templates_sql).sort_by(&:to_s) }
@@ -81,7 +81,7 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
       expect(values(s1, "courses", "account_id") - values(s1, "accounts", "id")).to eq([])
     end
 
-    it "runs step 9 end to end, passing an equivalent candidate and disproving another" do
+    it "runs rewrite-test end to end, passing an equivalent candidate and disproving another" do
       report = Quaack::Enclave::ScenarioTests.run(
         conn, join_sql,
         ["SELECT c.id, a.name FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.title = 'x'",

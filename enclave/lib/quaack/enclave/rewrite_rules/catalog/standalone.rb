@@ -24,7 +24,7 @@ module Quaack
             @self_contained.fetch(sql) { @self_contained[sql] = prepares?(sql) }
           end
 
-          # Whether sql might call a volatile function, by step 3d's
+          # Whether sql might call a volatile function, by volatility's
           # VolatilityCheck with the connection's search path. SQL it can't
           # check counts as volatile.
           def calls_volatile?(sql)

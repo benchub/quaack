@@ -6,12 +6,12 @@ require_relative "../relations"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks qualify --run <run ID>` (DESIGN.md, steps 1 and 3a): fully
+      # `quaacks qualify --run <run ID>` (DESIGN.md, input and qualify): fully
       # qualifies the run's query against its production server, and checks
       # that every relation it uses is a plain table (see Relations).
       #
       # It reads the run's query, plan, and server entries. It connects to
-      # the server with the operator's libpq setup, as step 2 does
+      # the server with the operator's libpq setup, as inventory does
       # (Inventory::Production.connect), and resolves names through the
       # search_path in the plan's SETTINGS, or the default path without one.
       # Only the catalog is read, with plain SELECTs.
@@ -25,7 +25,7 @@ module Quaack
       #
       # Anything that fails writes nothing. Its only line is DONE: the
       # query and its literals stay in the store, and the driver sees the
-      # schema only as 3b's subset. A refusal names only its rule.
+      # schema only as schema-dump's subset. A refusal names only its rule.
       module Qualify
         module_function
 

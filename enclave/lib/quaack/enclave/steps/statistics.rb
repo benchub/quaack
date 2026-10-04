@@ -7,20 +7,20 @@ require_relative "../table_name"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks statistics --run <run ID>` (DESIGN.md 3c): the planner
+      # `quaacks statistics --run <run ID>` (DESIGN.md's statistics): the planner
       # statistics, existing indexes, and extended statistics for the
       # query's tables (see Enclave::PlannerStatistics).
       #
       # It reads the run's server and relations entries, the latter written
-      # by `quaacks qualify`: the query's own tables, not 3b's subset, whose
+      # by `quaacks qualify`: the query's own tables, not schema-dump's subset, whose
       # FK parents no generator reads statistics for. It connects to the
-      # server as step 2 does (Inventory::Production.connect), and
+      # server as inventory does (Inventory::Production.connect), and
       # PlannerStatistics.run reads everything inside one
       # Production.read_only transaction.
       #
       # It writes one entry, statistics (see PlannerStatistics for its
-      # form), for generators one and two (5a-1, 5a-2), Dedupe (5a-3), and
-      # 3f. PlannerStatistics.load rebuilds the Statistics from it. The
+      # form), for generators one and two (index-from-query, index-from-plan), Dedupe (index-dedupe), and
+      # classify. PlannerStatistics.load rebuilds the Statistics from it. The
       # entry holds MCV lists, histogram bounds, and partial-index
       # predicates, all value-class, so nothing of it is sent.
       #

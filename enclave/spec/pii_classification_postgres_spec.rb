@@ -6,7 +6,7 @@ require "quaack/enclave/planner_statistics"
 require "quaack/enclave/config"
 require "quaack/enclave/store"
 
-# DESIGN.md 3f against real pg_stats: 3c (PlannerStatistics.run) stores the
+# DESIGN.md's classify against real pg_stats: statistics (PlannerStatistics.run) stores the
 # statistics, and this classifies every column of the query's tables and
 # works out what of them may leave.
 #
@@ -75,12 +75,12 @@ RSpec.describe Quaack::Enclave::PiiClassification do
 
     # 49 and 50 distinct values: n_distinct is the count itself. 40 rows,
     # each different: n_distinct is -1, a fraction of the rows, so the count
-    # is 40, as 5a-1 counts. That's under 50, so it isn't PII, but a negative
+    # is 40, as index-from-query counts. That's under 50, so it isn't PII, but a negative
     # n_distinct means the values don't repeat much, so it isn't
     # low-cardinality either. A column of only NULLs has n_distinct 0, and a
     # table never analyzed has no pg_stats rows, so neither has a count: a
     # text column is PII, and a number column is neither.
-    it "draws the line at 50 distinct values, counting them the way 5a-1 does" do
+    it "draws the line at 50 distinct values, counting them the way index-from-query does" do
       conn.exec(<<~SQL)
         CREATE TABLE edges (under text, at text, under_n int, at_n int, nothing text);
         INSERT INTO edges SELECT 'v' || i % 49, 'v' || i % 50, i % 49, i % 50, NULL FROM generate_series(1, 5000) AS i;
@@ -233,7 +233,7 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     end
   end
 
-  # DESIGN.md 3f: an expression index's pg_stats rows and a CREATE STATISTICS
+  # DESIGN.md's classify: an expression index's pg_stats rows and a CREATE STATISTICS
   # object's MCV list are classified by the base columns they read. One that
   # reads any PII column is PII, so none of its MCV data leaves. Its values
   # leave only when every base column is low-cardinality.

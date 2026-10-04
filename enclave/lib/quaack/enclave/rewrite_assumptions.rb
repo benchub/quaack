@@ -2,7 +2,7 @@
 
 module Quaack
   module Enclave
-    # The structured assumptions a rewrite states (DESIGN.md 6a), and their
+    # The structured assumptions a rewrite states (DESIGN.md's llm-rewrites), and their
     # vocabulary, which is exactly these five kinds:
     #
     #   { "kind" => "not_null", "table" => "public.orders", "column" => "id" }
@@ -15,10 +15,10 @@ module Quaack
     #     "references_column" => "id", "type_column" => "context_type", "type_value" => "Course",
     #     "id_column" => "context_id" }
     #
-    # denormalized_equal is 6c's polymorphic_key_copy's: every table row
+    # denormalized_equal is rewrite-rules's polymorphic_key_copy's: every table row
     # joined to a references_table row on join_column = references_column,
     # where that row's type_column is type_value, has column equal to its
-    # id_column. Only the data can say so, so 6b checks it there.
+    # id_column. Only the data can say so, so assumption-check checks it there.
     #
     # A table is always "schema.name". An assumption that isn't exactly one
     # of these, with nothing missing or extra, makes RewriteAssumptions.valid?

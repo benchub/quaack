@@ -11,14 +11,14 @@ module Quaack
       #
       # Rewrites. The payload gives every stored rewrite a source and a
       # fate, so the outcome columns are always counts. How many each source
-      # proposed is what its burndown stage added (6c, 6a, step 7), over
+      # proposed is what its burndown stage added (rewrite-rules, llm-rewrites, operator-rewrites), over
       # every search. Those refused on arrival are the proposals that
       # weren't stored. Both are nil until the stage is recorded.
       #
       # Indexes. The payload doesn't say which source proposed a built,
       # declined, or existing index, so most cells by source are nil. What
-      # each source proposed is what 5a-1, 5a-2, and the LLM rounds (5a-5,
-      # 5a-6) added. An LLM round's record also holds its own drops. The
+      # each source proposed is what index-from-query, index-from-plan, and the LLM rounds (llm-index-ideas,
+      # llm-index-refine) added. An LLM round's record also holds its own drops. The
       # last row counts what the payload does carry, whatever the source.
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
@@ -72,11 +72,11 @@ module Quaack
         end
 
         # The built indexes that were not better: at least one measured
-        # label ran with it, and 14d excluded every one of them as
+        # label ran with it, and selection excluded every one of them as
         # not_better. One label that did anything else keeps the index out,
         # so an index with mixed labels (one not better, one that beat the
         # original and tied) isn't counted here. Neither is one whose label
-        # tied, fell below the top three, was dropped in 14c, or timed out,
+        # tied, fell below the top three, was dropped in result-comparison, or timed out,
         # nor one no label ran with. Those count only as built.
         def not_better_indexes
           indexes.keys.select do |name|

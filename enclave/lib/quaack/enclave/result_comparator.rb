@@ -4,7 +4,7 @@ require_relative "arena_fixture"
 
 module Quaack
   module Enclave
-    # Step 9d's comparator, reused by 10b and 14c: says whether a candidate's
+    # fixture-compare's comparator, reused by counterexample-compare and result-comparison: says whether a candidate's
     # result matches the original's. This part is pure. It takes two
     # ArenaRunner::Results and a mode, and runs nothing. ResultComparison
     # (result_comparison.rb) picks the mode from the original query and
@@ -24,7 +24,7 @@ module Quaack
     #
     # Columns. The counts and then the type OIDs must be equal, column by
     # column, before any value is compared. int4 against int8 is a
-    # column_types mismatch: step 8 already discards a candidate whose
+    # column_types mismatch: plan-pruning already discards a candidate whose
     # output types differ. Column names are ignored.
     #
     # Values are Postgres text output, with nil for NULL, and NULL equals

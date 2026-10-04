@@ -37,7 +37,7 @@ module FilterFakes
     def error_field(code) = code == 67 ? sqlstate : ERROR_SENTINEL
   end
 
-  # A 3d refusal, which names the function that caused it.
+  # A volatility refusal, which names the function that caused it.
   class FunctionError < StandardError
     attr_reader :rule, :function
 
@@ -60,7 +60,7 @@ module FilterFakes
     end
   end
 
-  # A step 9 refusal, which names the column it can't fill.
+  # A rewrite-test refusal, which names the column it can't fill.
   class ColumnError < StandardError
     attr_reader :rule, :column
 
@@ -268,7 +268,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       end
     end
 
-    describe "a step 9 refusal's column" do
+    describe "a rewrite-test refusal's column" do
       let(:column) { { "table" => "fx.users", "column" => "root_account_ids", "type" => "bigint[]" } }
 
       def column_line(column, rule: "unsupported_type")
@@ -382,7 +382,7 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
       held = LeakCheck.findings(sentinels, objects: { error: }).map(&:sentinel).uniq
       expect(held).to match_array(LeakCheck::Sentinels::KINDS)
 
-      expect_no_leaks(sentinels, stdout: filter.to_egress(error, step: "9b"))
+      expect_no_leaks(sentinels, stdout: filter.to_egress(error, step: "fixture-load"))
     end
 
     it "takes a rule given as a Symbol" do
@@ -391,15 +391,15 @@ RSpec.describe Quaack::Enclave::ErrorFilter do
     end
 
     it "takes steps named the way DESIGN.md and the subcommands name them" do
-      ["classify", "index-from-query", "10b", "intake", "qualify_relations", "a" * 63].each do |step|
+      ["classify", "index-from-query", "counterexample-compare", "intake", "qualify_relations", "a" * 63].each do |step|
         expect(filter.to_egress(RuntimeError.new, step:)).to eq(line(step:, rule: "internal_error"))
       end
     end
 
     it "sends internal_error, and no SQLSTATE, for an error with neither" do
-      out = filter.to_egress(RuntimeError.new("Key (email)=(#{ERROR_SENTINEL}) already exists."), step: "9b")
+      out = filter.to_egress(RuntimeError.new("Key (email)=(#{ERROR_SENTINEL}) already exists."), step: "fixture-load")
 
-      expect(out).to eq(line(step: "9b", rule: "internal_error"))
+      expect(out).to eq(line(step: "fixture-load", rule: "internal_error"))
     end
 
     it "never sends the cause chain, even when a cause has a rule and a SQLSTATE" do

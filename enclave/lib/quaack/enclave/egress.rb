@@ -12,9 +12,9 @@ module Quaack
     # fields Quaack::Protocol::WHITELIST lists for that type, and drops
     # everything else outright rather than scrubbing it.
     #
-    #   Egress.serialize(type: :error, step: "3f", rule: "unique_violation",
+    #   Egress.serialize(type: :error, step: "classify", rule: "unique_violation",
     #                    sqlstate: "23505", message: "Key (email)=(...)")
-    #   # => '{"type":"error","step":"3f","rule":"unique_violation","sqlstate":"23505"}'
+    #   # => '{"type":"error","step":"classify","rule":"unique_violation","sqlstate":"23505"}'
     #
     # A message is a Hash. Its keys, and the value of its type key, may be
     # Symbols or Strings. The result is one line of JSON, with no newline:

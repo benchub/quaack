@@ -6,7 +6,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/scenarios"
 require "quaack/enclave/vacuity_guard"
 
-# 9c: on S1, each atom must change the original's result when it's replaced
+# vacuity-guard: on S1, each atom must change the original's result when it's replaced
 # by TRUE. One that doesn't is retried with other pool values, up to three
 # times, and then reported as untested by its redacted shape.
 RSpec.describe Quaack::Enclave::VacuityGuard do

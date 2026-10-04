@@ -10,7 +10,7 @@ require_relative "existence_in_flip/selection"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's existence_in_flip. An existence check, such as
+      # DESIGN.md's rewrite-rules's existence_in_flip. An existence check, such as
       # Rails's exists?, with an IN subquery
       #
       #   SELECT $1 AS one FROM enrollments JOIN ... WHERE enrollments.user_id = $2 AND ...

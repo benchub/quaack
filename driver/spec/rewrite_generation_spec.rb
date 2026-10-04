@@ -42,7 +42,7 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     expect(result).to eq(described_class::Result.new(rewrites: [rewrite], outcomes: [outcome]))
   end
 
-  it "records that 6a ran, with an empty rewrite-check, when the LLM proposes nothing" do
+  it "records that llm-rewrites ran, with an empty rewrite-check, when the LLM proposes nothing" do
     fake = FakeLLM.new
     fake.reply("llm-rewrites", { "rewrites" => [] })
 

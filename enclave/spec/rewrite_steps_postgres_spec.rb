@@ -4,12 +4,12 @@ require "quaack/enclave/assumption_check"
 require "quaack/enclave/steps/index_payload"
 require_relative "support/index_search_run"
 
-# `quaacks rewrite-payload` and `quaacks rewrite-check` (DESIGN.md 6a and 6b,
-# with step 8's structural discards), the way the jump server runs them.
+# `quaacks rewrite-payload` and `quaacks rewrite-check` (DESIGN.md's llm-rewrites and assumption-check,
+# with plan-pruning's structural discards), the way the jump server runs them.
 RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server" do
   include_context "an index search run"
 
-  # The query's table and its FK parent, as 3b stores them.
+  # The query's table and its FK parent, as schema-dump stores them.
   let(:schema_subset) do
     { "tables" => [%w[public orders], %w[public customers]],
       "ddl" => "CREATE TABLE public.customers (id integer);\nCREATE TABLE public.orders (id integer);\n" }
@@ -93,7 +93,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
                "warnings" => [], "result_types" => %w[text text], "source" => "llm")
     end
 
-    it "records that 6a ran when the LLM proposed no rewrites" do
+    it "records that llm-rewrites ran when the LLM proposed no rewrites" do
       ready
 
       outcome = rewrite_check(rewrites)
@@ -110,7 +110,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(rewrite_check(rewrites(rewrite(same)))).first).to eq(outcome_line(1, "accepted", nil, "rewrite_2"))
     end
 
-    it "rejects by the inbound check's rule, an unknown assumption kind, and step 8's structural discards" do
+    it "rejects by the inbound check's rule, an unknown assumption kind, and plan-pruning's structural discards" do
       ready
       outcome = rewrite_check(rewrites(
                                 rewrite("SELECT o.note, o.status FROM public.orders o WHERE o.note = $3"),
@@ -153,10 +153,10 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
         .to eq("inferred" => true, "warnings" => warning, "source" => "operator")
     end
 
-    # denormalized_equal is checked against the data (6b), which only a 6c
+    # denormalized_equal is checked against the data (assumption-check), which only a rewrite-rules
     # rule may ask for: the LLM or the operator could otherwise make the
     # enclave probe any table it names.
-    context "with a denormalized_equal assumption, which only a 6c rule may state" do
+    context "with a denormalized_equal assumption, which only a rewrite-rules rule may state" do
       let(:denormalized) do
         { "kind" => "denormalized_equal", "table" => "public.probe_children", "column" => "parent_copy",
           "join_column" => "parent_id", "references_table" => "public.probe_parents", "references_column" => "id",
@@ -225,7 +225,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(lines(outcome).first).to eq(outcome_line(1, "rejected", "output_mismatch"))
     end
 
-    it "records that step 7 ran for an inferred call, and 6a only for a stated one" do
+    it "records that operator-rewrites ran for an inferred call, and llm-rewrites only for a stated one" do
       ready
 
       rewrite_check(rewrites(inferred: true))

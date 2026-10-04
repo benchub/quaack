@@ -14,9 +14,9 @@ module Quaack
     # only if every value it can ever hold is shape-class data, and treat each
     # change to this file as a change to the trust boundary.
     WHITELIST = {
-      # Derived statistics for one column, from step 3f. mcv_freqs are the
+      # Derived statistics for one column, from classify. mcv_freqs are the
       # MCV frequencies without their values. low_card_values are the MCV
-      # values themselves, and 3f sets them only for low-cardinality columns.
+      # values themselves, and classify sets them only for low-cardinality columns.
       column_stats: %i[table column n_distinct null_frac correlation mcv_freqs low_card_values].freeze,
       # A failed step: which step, which rule it broke, and the Postgres
       # SQLSTATE if there was one. Never the error's message text, which can
@@ -24,18 +24,18 @@ module Quaack
       # plan_unreadable refusal from intake: one of the enclave's fixed cause
       # names, such as missing or permission_denied. It never comes from the
       # path or the OS message. function is only on a volatile_function refusal
-      # (DESIGN.md 3d): the volatile function's schema-qualified name, which
+      # (DESIGN.md's volatility): the volatile function's schema-qualified name, which
       # is schema and so shape. The enclave's ErrorFilter sends it only if
       # it's one plain schema.name identifier pair. clients is only on a
-      # run_server_other_clients failure (DESIGN.md, step 4): an Array of
+      # run_server_other_clients failure (DESIGN.md's run-server): an Array of
       # { "pid", "backend_start" }, one per other client backend on the run
       # server, oldest first, at most 20. A pid is a positive Integer and a
       # start time a UTC YYYY-MM-DDTHH:MM:SSZ, so both are shape: a process
       # number and a clock time, neither configuration nor free text. No
       # other pg_stat_activity column goes out. The enclave's ErrorFilter
       # sends clients only if every entry has exactly that shape. column is
-      # only on an unsupported_type or domain_check refusal from step 9: the
-      # { "table", "column", "type" } of the column step 9 can't fill, which
+      # only on an unsupported_type or domain_check refusal from rewrite-test: the
+      # { "table", "column", "type" } of the column rewrite-test can't fill, which
       # are schema names, a schema.name pair, a name, and a type as
       # format_type prints it, never a row value. The enclave's ErrorFilter
       # sends it only if each is a plain unquoted name of that shape. cycle
@@ -67,7 +67,7 @@ module Quaack
       # command gave the instance memory. The inventory itself, its settings,
       # locale names, and extensions, stays in the store.
       inventory: %i[major_version memory_known].freeze,
-      # The DESIGN.md 15b burndown. Its values are nested Hashes, so unlike
+      # The DESIGN.md's burndown burndown. Its values are nested Hashes, so unlike
       # every other field, they're checked on the way out: the egress
       # function sends them only if Protocol::Burndown.valid? passes, so
       # every count is an Integer and every key is a stage from
@@ -76,7 +76,7 @@ module Quaack
       # stages maps each stage to its searches and each search to its
       # counts. totals maps each work total to its count.
       burndown: %i[stages totals].freeze,
-      # What 5a-5 made of one index the LLM proposed (see the enclave's
+      # What llm-index-ideas made of one index the LLM proposed (see the enclave's
       # GeneratorThree), never its DDL. index is its 1-based position in
       # the LLM's list. outcome is accepted, set_aside, or dropped. rule is
       # nil or why it was dropped, one of the enclave's own rule constants,
@@ -86,13 +86,13 @@ module Quaack
       # false: whether it's a partial index, which only works when the
       # predicate's literal is a constant in the application's SQL.
       index_outcome: %i[index outcome rule covered_by partial_constant_only].freeze,
-      # The DESIGN.md 5a-5 payload for the LLM, from `quaacks index-payload`,
-      # built only from shape-class store entries: query is the 3g redacted
-      # query; placeholders each placeholder's 3g shape and the step 1 row
-      # counts; plan the 3g redacted step 1 plan; schema the 3b subset;
-      # stats the 3f outbound statistics, whose only values are the MCV
-      # values of low-cardinality columns; and mechanical_results the 5a-4
-      # results, with plans redacted through 3g and each candidate's DDL
+      # The DESIGN.md's llm-index-ideas payload for the LLM, from `quaacks index-payload`,
+      # built only from shape-class store entries: query is the redact redacted
+      # query; placeholders each placeholder's redact shape and the input row
+      # counts; plan the redact redacted input plan; schema the schema-dump subset;
+      # stats the classify outbound statistics, whose only values are the MCV
+      # values of low-cardinality columns; and mechanical_results the index-test
+      # results, with plans redacted through redact and each candidate's DDL
       # passed through the enclave's CandidateDdlRedaction, which masks
       # every constant but a low-cardinality value compared directly with
       # its own column in the predicate. The plan goes without its Settings.
@@ -100,75 +100,75 @@ module Quaack
       # nested and go out unchecked, so the enclave's IndexPayload step is
       # where this is reviewed.
       index_payload: %i[query placeholders plan schema mechanical_results stats].freeze,
-      # DESIGN.md 5a-6 feedback for the LLM, from `quaacks index-feedback`:
-      # the 5a-4 results for its own candidates, built like index_payload
-      # (plans redacted through 3g, DDL through CandidateDdlRedaction), with
+      # DESIGN.md's llm-index-refine feedback for the LLM, from `quaacks index-feedback`:
+      # the index-test results for its own candidates, built like index_payload
+      # (plans redacted through redact, DDL through CandidateDdlRedaction), with
       # each one's shortfall. Its values are nested and go out unchecked,
       # so the enclave's IndexFeedback step is where this is reviewed.
       index_feedback: %i[revise refined baseline candidates].freeze,
       # Which step outputs a run's store holds, from `quaacks status`:
       # entries maps each of a fixed list of entry names to true or false.
       status: %i[entries].freeze,
-      # The DESIGN.md 6a payload, from `quaacks rewrite-payload`: the same
+      # The DESIGN.md's llm-rewrites payload, from `quaacks rewrite-payload`: the same
       # shape-class fields as index_payload, without mechanical_results.
       rewrite_payload: %i[query placeholders plan schema stats].freeze,
-      # What `quaacks rewrite-check` made of one rewrite (6a or step 7), or
-      # `quaacks rewrite-rules` of one rule-made rewrite (6c), never its SQL
+      # What `quaacks rewrite-check` made of one rewrite (llm-rewrites or operator-rewrites), or
+      # `quaacks rewrite-rules` of one rule-made rewrite (rewrite-rules), never its SQL
       # or its statements. index is its 1-based position in
       # the input. outcome is accepted or rejected. rule is nil or one of
       # the enclave's rule constants. rewrite is nil or the store entry it
       # was saved as, such as rewrite_2. warnings is an Array of
-      # { "assumption", "kind" }, one per unmet inferred assumption (step
-      # 7): its 1-based position and its kind, from the fixed vocabulary.
+      # { "assumption", "kind" }, one per unmet inferred assumption
+      # (operator-rewrites): its 1-based position and its kind, from the fixed vocabulary.
       rewrite_outcome: %i[index outcome rule rewrite warnings].freeze,
-      # Step 9's verdict on one stored rewrite, from `quaacks rewrite-test`.
+      # rewrite-test's verdict on one stored rewrite, from `quaacks rewrite-test`.
       # rewrite is the entry name, such as rewrite_2. passed is true or
       # false. scenario is nil or a scenario name (s0 to s6), and rule nil
       # or one of the enclave's rule constants, such as row_count or
       # discarded. Never SQL or a row.
       rewrite_test: %i[rewrite passed scenario rule].freeze,
-      # The DESIGN.md 10a payload, from `quaacks counterexample-payload`:
-      # original is the 3g redacted query, candidate { "sql" } the stored
+      # The DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
+      # original is the redact redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
       # check accepted it), placeholders and schema as in index_payload,
-      # and untested_atoms step 9's redacted atom shapes. Its values are
+      # and untested_atoms rewrite-test's redacted atom shapes. Its values are
       # nested and go out unchecked, so the enclave's Counterexamples step
       # is where this is reviewed.
       counterexample_payload: %i[original candidate placeholders schema untested_atoms].freeze,
-      # One 10b/10c round, from `quaacks counterexample-round`: match is
+      # One counterexample-compare and counterexample-rollback round, from `quaacks counterexample-round`: match is
       # true, false, or nil; rule and load_order nil or enclave constants;
       # covered the redacted shapes of the untested atoms the round
       # exercised; refused [{ index, rule }], each refused insert's 0-based
       # index and rule constant; load_failed true or false.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
-      # The DESIGN.md step 15 report, from `quaacks report-payload`.
+      # The DESIGN.md's report report, from `quaacks report-payload`.
       # original_sql is the original query, always sent: its $n SQL with
-      # the 3h functions put back. original_plan is its plan's node shapes
+      # the clock-anchor functions put back. original_plan is its plan's node shapes
       # (type, relation, index, rows, selectivity; never a condition), and
       # original_measurements its block counts with hit/read and stability
-      # per literal set. top, excluded, and infinite_sets are the 14d
+      # per literal set. top, excluded, and infinite_sets are the selection
       # selection. labels is every measured label, ranked or not: its
       # search, the built names of the indexes it ran with, its block
       # counts, minimax's per-literal verdicts, and whether it timed out.
       # rewrites is every stored rewrite, ranked or not: its entry name,
-      # its $n SQL, its source (rule, llm, or operator) and, if a 6c rule
+      # its $n SQL, its source (rule, llm, or operator) and, if a rewrite-rules rule
       # made it, the rule names and the tables and columns of the
       # denormalized_equal assumptions it rests on (only names its SQL
       # already holds, never the type value), its fate with the scenario,
       # rule, round, or last stage that goes with it (and, for an fk_cycle
       # refusal, the cycle's table names, each a relation of the run's
       # schema subset), its plan's node shapes, its
-      # untested atoms (step 9's redacted shapes), and its step 10
+      # untested atoms (rewrite-test's redacted shapes), and its counterexamples
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each
-      # existing index as its name and size in bytes. negative is the 15a
+      # existing index as its name and size in bytes. negative is the negative-result
       # negative result: each declined or already existing index once, as
       # redacted DDL, with a reason, a SQLSTATE, the existing index's name
-      # and size, and the searches it came up in. burndown is the 15b
+      # and size, and the searches it came up in. burndown is the burndown
       # burndown's stages and totals, as the burndown message carries
       # them. rule_bugs is the rule-made rewrites a test disproved
-      # (DESIGN.md 6c): each one's entry name, rule names, and the step that
-      # disproved it (step9, step10, or 14c). Its values are nested and go
+      # (DESIGN.md's rewrite-rules): each one's entry name, rule names, and the step that
+      # disproved it (rewrite-test, counterexamples, or result-comparison). Its values are nested and go
       # out unchecked, so the enclave's ReportPayload step is where this is
       # reviewed. Sources, rule names, fates, scenarios, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
@@ -176,7 +176,7 @@ module Quaack
       # as it is.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
                  indexes timed_out_count negative rule_bugs burndown].freeze,
-      # One line of 12a's progress, sent while `quaacks index-build` works,
+      # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's
       # CandidateDdlRedaction, as report carries it, with the index's

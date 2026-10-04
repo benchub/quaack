@@ -4,7 +4,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/result_comparison"
 require "quaack/enclave/table_name"
 
-# Step 9d against a real arena: load a fixture with ArenaRunner, run the
+# fixture-compare against a real arena: load a fixture with ArenaRunner, run the
 # original and a candidate, and compare them under each ordering rule.
 RSpec.describe Quaack::Enclave::ResultComparison do
   let(:conn) { racetrack_and_arena.arena.connection }

@@ -5,7 +5,7 @@ require_relative "index_sql"
 
 module Quaack
   module Enclave
-    # What the 5a-3 filter (Dedupe) reads from a partial index predicate:
+    # What the index-dedupe filter (Dedupe) reads from a partial index predicate:
     # the columns it uses, and whether its constants are only ever compared
     # with a column. It's private to the enclave namespace. No error raised
     # here includes the predicate, which can hold real literals. Each

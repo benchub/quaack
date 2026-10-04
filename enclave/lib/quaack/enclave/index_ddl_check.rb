@@ -11,7 +11,7 @@ require_relative "volatility_check"
 module Quaack
   module Enclave
     # The inbound check for index DDL (DESIGN.md, "What goes into the
-    # enclave"). The DDL comes from the LLM in 5a-5 and 5a-6, or from later
+    # enclave"). The DDL comes from the LLM in llm-index-ideas and llm-index-refine, or from later
     # steps, so it's untrusted. This check runs on it before anything else
     # does.
     #
@@ -23,8 +23,8 @@ module Quaack
     # The inputs:
     # - sql, the DDL's text.
     # - tables, the TableNames of the tables the query uses: the original's
-    #   3a Relations, or a rewrite candidate's own relations when the index
-    #   is for that candidate. 3a already makes sure they're plain tables,
+    #   qualify Relations, or a rewrite candidate's own relations when the index
+    #   is for that candidate. qualify already makes sure they're plain tables,
     #   so this check doesn't look them up.
     # - settings, the Settings hash from the input plan's EXPLAIN
     #   (SETTINGS), or nil, as RelationQualifier takes it. Its search_path
@@ -61,7 +61,7 @@ module Quaack
     #    on, is only right for what SupportedSql lists. A row comparison,
     #    which SupportedSql allows for keyset pagination, is refused here
     #    too as RowExpr: no index predicate needs one.
-    # 8. volatile_function (or bad_search_path): the 3d VolatilityCheck, run
+    # 8. volatile_function (or bad_search_path): the volatility VolatilityCheck, run
     #    on that SELECT, finds a volatile function, operator, or cast. Its
     #    conservative rule holds here too: a call is refused if any
     #    function it could resolve to is volatile.

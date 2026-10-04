@@ -5,7 +5,7 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/dedupe"
 require "quaack/enclave/single_candidate_test"
 
-# The 5a-4 burndown record from a real SingleCandidateTest report, run
+# The index-test burndown record from a real SingleCandidateTest report, run
 # against HypoPG on the test harness.
 RSpec.describe Quaack::Enclave::Burndown do
   let(:conn) { test_database.connection }
@@ -69,7 +69,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     expect(described_class.read(store).dig("stages", "index-test", "original", "dropped")).to eq("never_used" => 1)
   end
 
-  it "counts an unused candidate set aside for 12a as set aside, not dropped (20260927-11)" do
+  it "counts an unused candidate set aside for index-build as set aside, not dropped (20260927-11)" do
     unused = candidate(key: ["c"])
     tested = Quaack::Enclave::SingleCandidateTest.run(conn, query: "SELECT * FROM t WHERE a = $1",
                                                             literal_sets: { slow: ["5"] },
@@ -80,7 +80,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       .to include("in" => 2, "dropped" => {}, "set_aside" => 1, "out" => 1)
   end
 
-  it "records only 5a-4, so it takes no stage" do
+  it "records only index-test, so it takes no stage" do
     expect { described_class.record_single_candidate_test(store, report, search: :original, stage: "llm-index-ideas") }
       .to raise_error(ArgumentError, /unknown keyword: :stage/)
   end
@@ -100,7 +100,7 @@ RSpec.describe Quaack::Enclave::Burndown do
 
     def llm(**) = Quaack::Enclave::IndexCandidate.new(table: t, sources: [:llm], **)
 
-    # 5a-3 and 5a-4 on two mechanical candidates, which the planner uses.
+    # index-dedupe and index-test on two mechanical candidates, which the planner uses.
     def mechanical
       survivors = dedupe.filter([candidate(key: ["a"]), candidate(key: %w[a c])])
       since = described_class.record_dedupe(store, dedupe, search: :original)
@@ -113,7 +113,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     # planner never uses.
     def llm_candidates = [llm(key: ["a"]), llm(key: ["c"], access_method: :gin), llm(key: ["c"])]
 
-    it "records 5a-3 and 5a-4 on the LLM's candidates as one 5a-5 record that adds them" do
+    it "records index-dedupe and index-test on the LLM's candidates as one llm-index-ideas record that adds them" do
       since, = mechanical
       survivors = dedupe.filter(llm_candidates)
       llm_report = test(survivors)
@@ -132,7 +132,7 @@ RSpec.describe Quaack::Enclave::Burndown do
       expect(burndown["totals"]).to eq("hypothetical_explains" => 6 + 3)
     end
 
-    it "records the 5a-6 round from what the 5a-5 round returned" do
+    it "records the llm-index-refine round from what the llm-index-ideas round returned" do
       since, = mechanical
       after_5a5 = described_class.record_llm_round(store, stage: "llm-index-ideas", search: :original, dedupe:, since:,
                                                           report: test(dedupe.filter(llm_candidates)))

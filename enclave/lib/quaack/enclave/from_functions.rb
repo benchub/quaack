@@ -5,7 +5,7 @@ require_relative "relation_qualifier"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3a: every function in a FROM item must be pg_catalog's, such
+    # DESIGN.md's qualify: every function in a FROM item must be pg_catalog's, such
     # as generate_series or unnest. A user-defined one could read a view or
     # foreign table the relation check never sees.
     #

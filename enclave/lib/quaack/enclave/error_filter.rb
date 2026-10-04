@@ -10,8 +10,8 @@ module Quaack
     # SQLSTATE if there was one, plus, for some rules, the shape-class detail
     #   below (reason, function, clients, and column).
     #
-    #   ErrorFilter.to_egress(unique_violation, step: "9b")
-    #   # => '{"type":"error","step":"9b","rule":"internal_error","sqlstate":"23505"}'
+    #   ErrorFilter.to_egress(unique_violation, step: "fixture-load")
+    #   # => '{"type":"error","step":"fixture-load","rule":"internal_error","sqlstate":"23505"}'
     #
     # It never reads an error's message, backtrace, class name, or cause,
     # since any of them can hold a real value, such as the key in a unique
@@ -25,33 +25,33 @@ module Quaack
     #   letters. Otherwise it's left out. It duck types the result, so this
     #   file doesn't need the pg gem.
     # - The step comes from the caller, and must be a lowercase name of up to
-    #   63 characters, such as 3f, 5a-1, or intake. Otherwise it's left out.
+    #   63 characters, such as classify, index-from-query, or intake. Otherwise it's left out.
     #   Step names start with a digit and hold hyphens, so they get their own
     #   pattern rather than the rule's.
     # - The function comes from the error's function method, and is sent
-    #   only when the rule is volatile_function (DESIGN.md 3d). It must be one
+    #   only when the rule is volatile_function (DESIGN.md's volatility). It must be one
     #   plain, unquoted, schema-qualified name, such as pg_catalog.random.
     #   Otherwise it's left out, so a quoted name is never sent.
     # - The reason comes from the error's reason method, and is sent only
     #   when the rule is query_unreadable or plan_unreadable. It must be one
     #   of the fixed intake causes, never a path or OS message.
     # - The clients come from the error's clients method, and are sent only
-    #   when the rule is run_server_other_clients (DESIGN.md, step 4). They must
+    #   when the rule is run_server_other_clients (DESIGN.md's run-server). They must
     #   be a non-empty Array of at most MAX_CLIENTS Hashes, each with exactly
     #   two String keys, which must come in this order: pid, a positive
     #   Integer, then backend_start, a UTC time such as
     #   2026-09-29T16:01:02Z. Otherwise the whole field is
     #   left out, so no other detail of a client is ever sent.
     # - The column comes from the error's column method, and is sent only
-    #   when the rule is unsupported_type or domain_check (DESIGN.md, step
-    #   9): the table, column, and type that step 9 can't fill, which are
+    #   when the rule is unsupported_type or domain_check (DESIGN.md's
+    #   rewrite-test): the table, column, and type that rewrite-test can't fill, which are
     #   schema, never a row value. It must be a Hash with exactly three
     #   String keys, in this order: table, one plain schema.name pair like
     #   the function; column, one plain name; and type, as format_type
     #   prints it, unquoted, such as numeric(5,2) or bigint[]. Otherwise the
     #   whole field is left out.
     # - The cycle comes from the error's cycle method, and is sent only
-    #   when the rule is fk_cycle (DESIGN.md, step 9): the tables of a
+    #   when the rule is fk_cycle (DESIGN.md's rewrite-test): the tables of a
     #   foreign key cycle, in the order their foreign keys point, which are
     #   schema, never a row value. It must be an Array of 3 to 64 plain
     #   schema.name Strings, like the function, whose last is its first.

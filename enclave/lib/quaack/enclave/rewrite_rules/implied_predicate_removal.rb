@@ -11,7 +11,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's implied_predicate_removal. ORMs often stack scopes
+      # DESIGN.md's rewrite-rules's implied_predicate_removal. ORMs often stack scopes
       # that say both `col = $1` and a broader predicate on the same column,
       # such as `col <> $2`, `col IN (...)`, or a range. When Postgres
       # underestimates by multiplying their selectivities, this rule removes

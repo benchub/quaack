@@ -2,7 +2,7 @@
 
 require "quaack/enclave/steps/result_comparison"
 
-# DESIGN.md 14c: the stored entry counts partial verdicts for the report.
+# DESIGN.md's result-comparison: the stored entry counts partial verdicts for the report.
 RSpec.describe Quaack::Enclave::Steps::ResultComparison do
   it "counts partial verdicts across candidates and sets, and discards only failures" do
     partial = { "result" => "partial", "rule" => "subset_timed_out" }

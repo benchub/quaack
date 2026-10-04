@@ -7,7 +7,7 @@ require "quaack/enclave/redaction"
 # Each replacement has to keep the original's type, precision, and value,
 # or the anchored query means something else. These run both on real
 # Postgres. The test database gets a stand-in quaack.clock_anchor(), since
-# creating the real one is 4a's and 4b's job.
+# creating the real one is racetrack-setup's and arena-setup's job.
 RSpec.describe Quaack::Enclave::ClockAnchoring do
   let(:conn) { test_database.connection }
 
@@ -201,7 +201,7 @@ RSpec.describe Quaack::Enclave::ClockAnchoring do
     end
   end
 
-  # 20260926-48: 'now', 'today', 'yesterday', and 'tomorrow', after 3g has
+  # 20260926-48: 'now', 'today', 'yesterday', and 'tomorrow', after redact has
   # made them placeholders, must anchor to what Postgres reads them as.
   describe "the clock-reading literals" do
     before do

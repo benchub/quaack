@@ -5,7 +5,7 @@ require "quaack/enclave/arena_schema"
 require "quaack/enclave/predicate_atoms"
 require "quaack/enclave/value_pools"
 
-# Step 9: each atom's pool of interesting values, sorted by Postgres itself
+# rewrite-test: each atom's pool of interesting values, sorted by Postgres itself
 # into the values that satisfy the atom and the ones that fail it.
 RSpec.describe Quaack::Enclave::ValuePools do
   let(:conn) { racetrack_and_arena.arena.connection }

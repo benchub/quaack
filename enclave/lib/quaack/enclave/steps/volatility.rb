@@ -6,17 +6,17 @@ require_relative "../volatility_check"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks volatility --run <run ID>` (DESIGN.md 3d): refuses the run's
+      # `quaacks volatility --run <run ID>` (DESIGN.md's volatility): refuses the run's
       # query if it calls a volatile function anywhere (see VolatilityCheck).
       #
       # It reads the run's server, plan, and qualified_query entries, the
-      # last written by `quaacks qualify`. It connects to the server as step
-      # 2 does (Inventory::Production.connect), and VolatilityCheck reads
+      # last written by `quaacks qualify`. It connects to the server as
+      # inventory does (Inventory::Production.connect), and VolatilityCheck reads
       # the catalog inside one Production.read_only transaction, resolving
       # unqualified function names through the search_path in the plan's
       # SETTINGS, or the default path without one.
       #
-      # 3d is a gate, so the only thing to store is that it passed: the
+      # volatility is a gate, so the only thing to store is that it passed: the
       # entry volatility, {"passed" => true}, which later steps can require
       # before they run the query. It's written only after the transaction
       # has closed, so a refusal or a failed read stores nothing. Its only

@@ -11,7 +11,7 @@ module Quaack
   module Enclave
     module Redaction
       # Replaces each constant in the query's parse with a numbered $n
-      # placeholder (DESIGN.md 3g), and says what each one stood for. See
+      # placeholder (DESIGN.md's redact), and says what each one stood for. See
       # Redaction.query.
       class Query
         # EXTRACT's fields that Postgres documents. PredicateAtoms keeps the

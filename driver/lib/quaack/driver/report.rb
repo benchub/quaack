@@ -4,7 +4,7 @@ require_relative "report/view"
 
 module Quaack
   module Driver
-    # DESIGN.md step 15: the main report, as HTML, from the enclave's report
+    # DESIGN.md's report: the main report, as HTML, from the enclave's report
     # message (`quaacks report-payload`). It's templated from the payload,
     # never written by an LLM, and every value is HTML-escaped. It's one
     # file: plain CSS, no scripts, and nothing loaded from the network.
@@ -15,23 +15,23 @@ module Quaack
     # It's written for a reader who hasn't read DESIGN.md, so it shows no
     # internal label, stage number, or verdict name where it has words: a
     # candidate is the query it ran and the indexes it ran with, not
-    # original:top:1. The exception is a 6c rewrite rule's name, which
-    # DESIGN.md 15 says to give, and which a bug report needs.
+    # original:top:1. The exception is a rewrite-rules rewrite rule's name, which
+    # DESIGN.md's report says to give, and which a bug report needs.
     #
     # In order, it shows:
     #
     # - A QUAACK bug, only if the payload's rule_bugs lists a rule-made
-    #   rewrite that a test disproved (DESIGN.md 6c).
+    #   rewrite that a test disproved (DESIGN.md's rewrite-rules).
     # - The verdict.
     # - The original query, then every stored rewrite, pretty-printed, each
     #   rewrite with its source and what became of it (Rewrites).
     # - The ranking, every measured label that isn't ranked and why
     #   (Candidates), and each ranked candidate's measurements.
     # - Why the winner reads fewer blocks, or, when the payload carries
-    #   negative, why nothing beat the original (15a).
+    #   negative, why nothing beat the original (negative-result).
     # - The built indexes (Indexes).
     # - Who proposed what (Accountability).
-    # - The burndown (15b, Stages), with llm_calls, the driver's own
+    # - The burndown (burndown, Stages), with llm_calls, the driver's own
     #   Burndown#llm_calls.
     #
     # Where the payload doesn't carry a count, the report says "not

@@ -4,7 +4,7 @@ require_relative "progress"
 
 module Quaack
   module Driver
-    # DESIGN.md steps 2 to 4a, which `quaack setup` runs, and `quaack run`
+    # DESIGN.md setup, which `quaack setup` runs, and `quaack run`
     # runs first when the run hasn't had them:
     #
     #   Setup.run(transport:, run_id:, entries:, server: { "host" => "rs-1" }, progress:)

@@ -9,8 +9,8 @@ require_relative "run_discipline"
 
 module Quaack
   module Enclave
-    # DESIGN.md 14c: compares the original's result with a candidate's on the
-    # racetrack, with 9d's rules (ResultComparison, ResultComparator), but
+    # DESIGN.md's result-comparison: compares the original's result with a candidate's on the
+    # racetrack, with fixture-compare's rules (ResultComparison, ResultComparator), but
     # without holding rows. Each query runs as a plain query, alone, in a
     # READ ONLY transaction under statement_timeout (RunDiscipline's lock),
     # with params bound, and its rows stream in single-row mode.
@@ -20,15 +20,15 @@ module Quaack
     #
     # Each row is hashed (SHA-256) from ResultComparator::Values.key, which
     # rounds float columns to eight significant digits (and to zero below
-    # 1e-12) and is exact for every other type. So float noise within 9d's
+    # 1e-12) and is exact for every other type. So float noise within fixture-compare's
     # tolerance hashes the same, except across a rounding boundary, which
     # says mismatch. A result's digest hashes its row count together with
     # its row hashes: sorted, for a multiset, or in order, for an ordered
     # comparison.
     #
-    # Modes, as 9d picks them from the original's top level:
+    # Modes, as fixture-compare picks them from the original's top level:
     # - multiset: the column types, row counts, and sorted digests match.
-    # - ordered: 9d's tiebreaker runs, T and T', on both queries, and the
+    # - ordered: fixture-compare's tiebreaker runs, T and T', on both queries, and the
     #   same refusals apply (unsupported_order): the original's T and T'
     #   sorted digests must match, and when a column is left out of the
     #   tiebreaker, no two of the original's rows may agree on every

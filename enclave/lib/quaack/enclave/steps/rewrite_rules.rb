@@ -9,25 +9,25 @@ require_relative "rewrite_check"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks rewrite-rules --run <run ID>` (DESIGN.md 6c): runs the
+      # `quaacks rewrite-rules --run <run ID>` (DESIGN.md's rewrite-rules): runs the
       # mechanical rewrite rules on the redacted query and stores the
       # rewrites that pass rewrite-check's checks. It takes no input and
       # needs no LLM.
       #
       # The generator (Enclave::RewriteRules) reads the catalog on the
-      # racetrack connection, where 6b's AssumptionCheck reads it too. Each
+      # racetrack connection, where assumption-check's AssumptionCheck reads it too. Each
       # rewrite it gives then goes through RewriteCheck.check, the code
       # `quaacks rewrite-check` runs, so in the same order: the inbound
-      # check, 6b, step 8's structural discards, and clock anchoring. A
+      # check, assumption-check, plan-pruning's structural discards, and clock anchoring. A
       # rule's rewrite gets no pass for being QUAACK's own.
       #
       # A survivor is stored as rewrite_<n>, in RewriteCheck's store format,
       # with "source" => "rule" and "rules" => the names of the rules
       # applied, in order. Its "transformation" is those rules' descriptions,
       # in order, and its "assumptions" are the ones the rules stated. Its
-      # counts go to the step 8 burndown as rewrite-check's do.
+      # counts go to the plan-pruning burndown as rewrite-check's do.
       #
-      # It records the 6c burndown stage (DESIGN.md 15b), search rewrites:
+      # It records the rewrite-rules burndown stage (DESIGN.md's burndown), search rewrites:
       # added is every result the generator counted, by the name of the last
       # rule applied; dropped is duplicate, over_cap, and failed_checks, the
       # ones any of the checks above rejected; out is the survivors. A rule's
@@ -39,10 +39,10 @@ module Quaack
       #
       # Running it again changes nothing, so a call that died before its
       # marker can be repeated. The writes go in this order: each survivor,
-      # then the 6c and step 8 burndown records in one write, then the
+      # then the rewrite-rules and plan-pruning burndown records in one write, then the
       # marker. A survivor an earlier call stored is found again by its SQL
       # and kept, not stored twice (stored, and RewriteCheck.check). The
-      # burndown is recorded only if it holds no 6c record yet.
+      # burndown is recorded only if it holds no rewrite-rules record yet.
       #
       # Its only output is one rewrite_outcome per rewrite, as rewrite-check
       # sends: index, outcome, rule (why it was rejected, one of the check's
@@ -77,7 +77,7 @@ module Quaack
           end
         end
 
-        # The 6c burndown record's counts.
+        # The rewrite-rules burndown record's counts.
         def counts(generated, outcomes)
           accepted = outcomes.count { it[:outcome] == :accepted }
           { in: 0, added: generated.made.transform_keys(&:to_sym), out: accepted,

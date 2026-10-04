@@ -6,7 +6,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/steps/rewrite_rules"
 require_relative "support/index_search_run"
 
-# `quaacks rewrite-rules` (DESIGN.md 6c), the way the jump server runs it: the
+# `quaacks rewrite-rules` (DESIGN.md's rewrite-rules), the way the jump server runs it: the
 # rules' rewrites go through rewrite-check's checks, the survivors are stored
 # as rewrite-check stores them, and only rewrite_outcome fields go out.
 RSpec.describe "quaacks rewrite-rules, against a real server" do
@@ -73,7 +73,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 0)
   end
 
-  it "adds its rewrites to the step 8 burndown, as rewrite-check does" do
+  it "adds its rewrites to the plan-pruning burndown, as rewrite-check does" do
     prepare
 
     rewrite_rules
@@ -90,7 +90,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       "dropped" => { "duplicate" => 0, "over_cap" => 0, "failed_checks" => 0 }.merge(dropped.transform_keys(&:to_s)) }
   end
 
-  it "records the 6c burndown: its rewrites, counted by the last rule applied" do
+  it "records the rewrite-rules burndown: its rewrites, counted by the last rule applied" do
     prepare
 
     rewrite_rules
@@ -99,7 +99,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
   end
 
   # A crash between storing the rewrites and writing the marker leaves a run
-  # the driver sends here again (DESIGN.md 6c). Each example puts the store
+  # the driver sends here again (DESIGN.md's rewrite-rules). Each example puts the store
   # in the state such a crash leaves.
   describe "run again after a call that died before writing its marker" do
     def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
@@ -150,7 +150,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
     end
 
-    it "still stores 6a's copy of a rule's rewrite as a rewrite of its own" do
+    it "still stores llm-rewrites's copy of a rule's rewrite as a rewrite of its own" do
       prepare
       rewrite_rules
       llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
@@ -160,7 +160,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(stored.read("rewrite_2")).to include("sql" => rewritten, "source" => "llm")
     end
 
-    it "still stores a rule's rewrite when only 6a's copy of it is stored" do
+    it "still stores a rule's rewrite when only llm-rewrites's copy of it is stored" do
       prepare
       llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }
       quaacks.run("rewrite-check", "--run", store.run_id, stdin: JSON.generate(llm), env: libpq_env)
@@ -213,7 +213,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
 
     def call_step(rules) = with_env(libpq_env) { Quaack::Enclave::Steps::RewriteRules.call(store:, rules:) }
 
-    it "puts each rewrite through the inbound check, 6b, and the structural discards, by rewrite-check's rules" do
+    it "puts each rewrite through inbound-check, assumption-check, and structural-discard, as rewrite-check says" do
       prepare
 
       outcomes = call_step(rules)
@@ -259,7 +259,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(burndown("rewrite-rules")).to eq(six_c({ "first" => 2, "second" => 1 }, 2, duplicate: 1))
     end
 
-    it "counts the rewrites over the cap in the marker and the 6c burndown" do
+    it "counts the rewrites over the cap in the marker and the rewrite-rules burndown" do
       prepare
       select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
       eleven = (1..11).map { fake_rule.new(name: "rule#{it}", sql: "#{select} AND #{it} = #{it}", assumptions: []) }
@@ -283,7 +283,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     end
   end
 
-  it "numbers 6a's rewrites after the rules', and says which source each came from" do
+  it "numbers llm-rewrites's rewrites after the rules', and says which source each came from" do
     prepare
     rewrite_rules
     llm = { "rewrites" => [{ "sql" => rewritten, "transformation" => "t", "assumptions" => [] }] }

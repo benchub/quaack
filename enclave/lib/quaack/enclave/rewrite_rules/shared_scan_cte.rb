@@ -10,7 +10,7 @@ require_relative "tree"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's shared_scan_cte. A query that reads one table twice,
+      # DESIGN.md's rewrite-rules's shared_scan_cte. A query that reads one table twice,
       # each copy filtered the same way, scans it twice:
       #
       #   SELECT ... FROM public.submissions JOIN public.submissions AS assessor_asset ON ...

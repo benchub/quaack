@@ -10,7 +10,7 @@ require_relative "store_format"
 module Quaack
   module Enclave
     # The governed store (DESIGN.md, "Where QUAACK runs"): one directory per
-    # run on the jump server, holding the step 1 inputs and every
+    # run on the jump server, holding input's inputs and every
     # intermediate result between calls to the enclave script. Everything
     # in it can be value-class data, so it never leaves the enclave.
     #

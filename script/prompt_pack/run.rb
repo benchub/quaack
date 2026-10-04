@@ -8,7 +8,7 @@
 # starts from a throwaway harness Postgres (spec/support/test_postgres.rb),
 # makes a stand-in production database, a copy of one that schema.sql and
 # data.sql are loaded into once per server (TEMPLATE), captures the query's
-# EXPLAIN ANALYZE, and runs the real enclave steps 1 to 4a, then the
+# EXPLAIN ANALYZE, and runs the real enclave input to racetrack-setup, then the
 # driver's Pipeline, over Transport::Local. The LLM
 # client's transport is CapturingLLM: it writes down every prompt the driver
 # sends, and answers with a small placeholder so the pipeline reaches its
@@ -53,7 +53,7 @@ module PromptPack
   # comes out the same on every run. Each is long enough for LeakCheck
   # (Sentinels::MIN_EXTRA). The date alone is checked too. The queries'
   # other literals, such as 'US' and 'shipped', are values of low-cardinality
-  # columns that aren't on the PII list, which DESIGN.md 3f sends to the LLM
+  # columns that aren't on the PII list, which DESIGN.md's classify sends to the LLM
   # as most_common_vals by design, so they aren't sentinels.
   SINCE = "2024-03-17 08:00:00+00"
   UNTIL = "2024-05-29 20:00:00+00"
@@ -64,10 +64,10 @@ module PromptPack
   STAMPS = { since: SINCE, until: UNTIL, before: BEFORE, min_quantity_since: MIN_QUANTITY_SINCE }.freeze
   SENTINELS = STAMPS.merge(STAMPS.to_h { |k, v| [:"#{k}_date", v[0, 10]] }, before_id: BEFORE_ID).freeze
 
-  # order is the query's ORDER BY over its output columns, for the 6a
+  # order is the query's ORDER BY over its output columns, for the llm-rewrites
   # placeholder rewrite (Placeholder.wrapped). bug is a [from, to] edit to
-  # the 6a prompt's query text that makes the second, subtly wrong 6a
-  # placeholder rewrite (Placeholder.buggy), so 10a has a real
+  # the llm-rewrites prompt's query text that makes the second, subtly wrong llm-rewrites
+  # placeholder rewrite (Placeholder.buggy), so llm-counterexamples has a real
   # counterexample to find.
   Query = Data.define(:name, :sql, :rewrites, :indexes, :order, :bug)
 
@@ -138,8 +138,8 @@ module PromptPack
   module Placeholder
     module_function
 
-    # A first 5a-5 ask gets the query's indexes: one the planner won't use,
-    # so 5a-6 gets asked, and one with an unqualified table, which is
+    # A first llm-index-ideas ask gets the query's indexes: one the planner won't use,
+    # so llm-index-refine gets asked, and one with an unqualified table, which is
     # dropped, so the replacement ask happens.
     def for(step, body, query)
       messages = body[:messages]
@@ -155,21 +155,21 @@ module PromptPack
     end
 
     # The query itself in a materialized CTE, so its plan differs from the
-    # original's, and step 8 doesn't prune it. The outer query keeps the
-    # order, so step 9 passes it, and 10a and step 11 get asked.
+    # original's, and plan-pruning doesn't prune it. The outer query keeps the
+    # order, so rewrite-test passes it, and llm-counterexamples and rewrite-index-ideas get asked.
     def wrapped(content, query) = in_cte(json_in(content).fetch("query"), query)
 
     # The same wrapper around the query with query.bug applied: an extra
     # condition that looks harmless but drops rows real data can hold, the
     # kind of slip an LLM makes. It tests a column the original never
-    # mentions, so step 9's fixtures, which give such columns a typical
-    # value that passes it, don't catch it, and 10a gets asked to disprove
+    # mentions, so rewrite-test's fixtures, which give such columns a typical
+    # value that passes it, don't catch it, and llm-counterexamples gets asked to disprove
     # it. (A changed bound or a dropped condition on the original's own
-    # atoms is caught at step 9.) The wrapper keeps step 8 from pruning it.
+    # atoms is caught at rewrite-test.) The wrapper keeps plan-pruning from pruning it.
     def buggy(content, query)
       sql = json_in(content).fetch("query")
       from, to = query.bug
-      raise "#{query.name}: #{from} isn't in the 6a query" unless sql.include?(from)
+      raise "#{query.name}: #{from} isn't in the llm-rewrites query" unless sql.include?(from)
 
       in_cte(sql.sub(from, to), query)
     end
@@ -277,7 +277,7 @@ module PromptPack
     conn&.close
   end
 
-  # Runs the query through the enclave's steps 1 to 4a and the driver's
+  # Runs the query through the enclave's input to racetrack-setup and the driver's
   # Pipeline. Returns the LLM asks, and nil or the EnclaveError that
   # stopped the run.
   def pipeline(home, server, query, prod, racetrack)
@@ -309,7 +309,7 @@ module PromptPack
              .messages.find { it["type"] == "run" }.fetch("run_id")
   end
 
-  # Steps 2 to 4a, as `quaack setup` does them.
+  # Setup, as `quaack setup` does them.
   def setup(transport, run_id, server, racetrack)
     Quaack::Driver::Setup.run(transport:, run_id:, entries: Quaack::Driver::Pipeline.status(transport, run_id),
                               server: { "host" => server.host, "port" => server.port.to_s,

@@ -27,7 +27,7 @@ RSpec.describe Quaack::Driver::RefinementRound do
 
   def run = described_class.new(client:, index_feedback: -> { feedback }, index_test:).run(payload)
 
-  it "sends the payload and the LLM's own 5a-4 results, and tests its revisions as the refinement round" do
+  it "sends the payload and the LLM's own index-test results, and tests its revisions as the refinement round" do
     fake.reply("llm-index-refine",
                { "indexes" => ["CREATE INDEX ON public.orders (created_at) WHERE status <> 'open'"] })
 

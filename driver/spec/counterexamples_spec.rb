@@ -4,7 +4,7 @@ require "quaack/driver/burndown"
 require "quaack/driver/counterexamples"
 require_relative "support/fake_llm"
 
-# 10a, the driver's half: ask the LLM for shape-level inserts that should
+# llm-counterexamples, the driver's half: ask the LLM for shape-level inserts that should
 # make a candidate and the original disagree.
 RSpec.describe Quaack::Driver::Counterexamples do
   let(:fake) { FakeLLM.new }

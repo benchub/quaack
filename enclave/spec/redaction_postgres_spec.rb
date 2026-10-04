@@ -6,7 +6,7 @@ require "tmpdir"
 require "quaack/enclave/redaction"
 require "quaack/enclave/store"
 
-# 3g against real plans from the test harness's Postgres: the production
+# redact against real plans from the test harness's Postgres: the production
 # plan from EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS), and a racetrack
 # plan from a plain EXPLAIN.
 REDACTION_PRODUCTION = "EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS, FORMAT JSON)"

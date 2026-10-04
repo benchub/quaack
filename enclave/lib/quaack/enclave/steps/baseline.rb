@@ -7,16 +7,16 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks baseline --run <run ID>` (DESIGN.md 13, 12b): on the racetrack,
+      # `quaacks baseline --run <run ID>` (DESIGN.md's baseline, run-discipline): on the racetrack,
       # with every index index-build built hidden, measures anchored_query
-      # for each 3e literal set (Measurement, combination nil).
+      # for each literals literal set (Measurement, combination nil).
       #
       # The original gets up to 15 minutes per run (ORIGINAL_TIMEOUT_MS), not
-      # the 3x clamp; a set that still times out counts as infinite in 14b.
+      # the 3x clamp; a set that still times out counts as infinite in minimax.
       # It writes baseline:
       #   "sets"       { set name => measurement, as Measurement gives it }
       #   "timed_out"  the set names whose runs timed out
-      #   "timeout_ms" for 13a and 14: RunDiscipline.timeout_ms of the
+      #   "timeout_ms" for index-baseline and candidate-runs: RunDiscipline.timeout_ms of the
       #                slowest racetrack baseline run (or MAX_MS, if every
       #                set timed out)
       # Its only line is DONE.

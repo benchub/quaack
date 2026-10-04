@@ -3,7 +3,7 @@
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# The columns the 6c rules' Catalog lists for a table, and which of them a
+# The columns the rewrite-rules rules' Catalog lists for a table, and which of them a
 # UNION can compare, on a real server.
 RSpec.describe Quaack::Enclave::RewriteRules::Catalog do
   subject(:catalog) { described_class.new(conn) }

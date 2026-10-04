@@ -9,7 +9,7 @@ require_relative "plan_expression"
 
 module Quaack
   module Enclave
-    # The canonical plan form (DESIGN.md step 1), which steps 5, 5a-4, and 8 use
+    # The canonical plan form (DESIGN.md's input), which index-search, index-test, and plan-pruning use
     # to compare plans:
     #
     #   CanonicalPlan.new(explain).matches?(CanonicalPlan.new(other))
@@ -40,13 +40,13 @@ module Quaack
     # the bare ones plain EXPLAIN prints. Two aliases of one relation, as in
     # a self-join, can't be told apart.
     #
-    # A clock function 3h anchors (ClockFunctions), such as now() or
+    # A clock function clock-anchor anchors (ClockFunctions), such as now() or
     # CURRENT_DATE, is compared as the anchored expression that replaces it,
     # and the type in a cast of quaack.clock_anchor() is compared without a
     # pg_catalog in front, since Postgres prints it without one. So the
-    # step 1 plan's "(created_at > (CURRENT_DATE - 7))" matches the
+    # input plan's "(created_at > (CURRENT_DATE - 7))" matches the
     # racetrack's "(created_at > ((quaack.clock_anchor())::date - 7))", as
-    # step 5 needs, but not a cast to another type.
+    # index-search needs, but not a cast to another type.
     #
     # Postgres prints references to InitPlans and SubPlans in forms that
     # aren't SQL, such as "(InitPlan 1).col1" and

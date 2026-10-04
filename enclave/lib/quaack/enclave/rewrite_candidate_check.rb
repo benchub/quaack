@@ -11,8 +11,8 @@ require_relative "volatility_check"
 module Quaack
   module Enclave
     # The inbound check for rewrite candidates (DESIGN.md, "What goes into the
-    # enclave"). A candidate comes from the LLM in step 6a or from an
-    # operator in step 7, so it's untrusted. This check runs on it before
+    # enclave"). A candidate comes from the LLM in llm-rewrites or from an
+    # operator in operator-rewrites, so it's untrusted. This check runs on it before
     # anything else does.
     #
     #   RewriteCandidateCheck.check(sql, original, settings, connection)
@@ -23,7 +23,7 @@ module Quaack
     # - sql, the candidate's text, written with the original's $n
     #   placeholders in place of literals.
     # - original, what the check needs to know about the original query.
-    #   Until 3a (20260922-17) and 3g (20260922-23) land, it's the stand-in
+    #   Until qualify (20260922-17) and redact (20260922-23) land, it's the stand-in
     #   Original: the relations the original uses, as TableNames, and how
     #   many placeholders its redacted form has.
     # - settings, the Settings hash from the input plan's EXPLAIN
@@ -55,7 +55,7 @@ module Quaack
     #    it, doesn't parse back to the tree it came from (see Deparse). So
     #    Accepted's parse is the candidate's own parse with schemas added,
     #    and checks 2 and 3 hold for it without being run again.
-    # 5. volatile_function (or bad_search_path): the 3d VolatilityCheck
+    # 5. volatile_function (or bad_search_path): the volatility VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.
@@ -87,7 +87,7 @@ module Quaack
         def self.from(error) = new(error.rule, error.message.delete_prefix("#{error.rule}: "))
       end
 
-      # A stand-in for what 3a and 3g will give: the TableNames the original
+      # A stand-in for what qualify and redact will give: the TableNames the original
       # uses, and the number of placeholders in its redacted form.
       Original = Data.define(:relations, :placeholders)
 

@@ -7,7 +7,7 @@ require "quaack/enclave/scenario_tests"
 require "quaack/enclave/table_name"
 
 # Arena fixtures that honour a rule's denormalized_equal assumption (DESIGN.md
-# 6c, 9, 10a), in Canvas's shape: a submission of an assignment whose
+# rewrite-rules, rewrite-test, llm-counterexamples), in Canvas's shape: a submission of an assignment whose
 # context is a Course keeps a copy of the course id, which a foreign key
 # checks.
 RSpec.describe "Arena fixtures honouring a denormalized_equal assumption" do

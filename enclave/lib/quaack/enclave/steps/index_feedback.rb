@@ -9,7 +9,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks index-feedback --run <run ID> [--search original]` (DESIGN.md
-      # 5a-6): sends the 5a-4 results for the LLM's own 5a-5 candidates, and
+      # llm-index-refine): sends the index-test results for the LLM's own llm-index-ideas candidates, and
       # which of them fell short (see Refinement), as one index_feedback
       # message. It doesn't connect to anything.
       #
@@ -17,9 +17,9 @@ module Quaack
       # refuses an unknown search (index_feedback_unknown_search) and a run
       # with no index search for it (index_feedback_no_index_search). The
       # fields:
-      #   revise     true if any candidate fell short, so 5a-6 should run
+      #   revise     true if any candidate fell short, so llm-index-refine should run
       #   refined    true if `quaacks index-test --round refinement` already
-      #              ran for this search, so 5a-6 is done
+      #              ran for this search, so llm-index-refine is done
       #   baseline   { set => total cost with no hypothetical index }
       #   candidates one per first-round LLM result, in order: { "ddl",
       #              "partial_constant_only", "size", "refusal" (nil or
@@ -29,7 +29,7 @@ module Quaack
       #              candidate's DDL, or nil) }
       #
       # Trust boundary. As in IndexPayload: the plans are the stored ones,
-      # redacted through 3g, and every DDL goes through
+      # redacted through redact, and every DDL goes through
       # CandidateDdlRedaction.
       module IndexFeedback
         OPTIONS = { "search" => :value }.freeze

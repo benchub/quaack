@@ -9,7 +9,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks index-payload --run <run ID> [--search original|rewrite_<n>]` (DESIGN.md
-      # 5a-5): sends the shape-only payload the driver gives the LLM, as one
+      # llm-index-ideas): sends the shape-only payload the driver gives the LLM, as one
       # index_payload message. It doesn't connect to anything.
       #
       # It reads the run's redacted_query, placeholder_shapes, redacted_plan,
@@ -17,13 +17,13 @@ module Quaack
       # which `quaacks index-search` wrote. It refuses an unknown search
       # (index_payload_unknown_search) and a run with no index search for it
       # (index_payload_no_index_search). The fields:
-      #   query        the redacted query (3g)
+      #   query        the redacted query (redact)
       #   placeholders $n => { "type", "pattern", "elements", "est_rows",
-      #                "actual_rows" }: the 3g shape, and the rows of the
-      #                step 1 plan node that consumes it (nil unless exactly one does)
-      #   plan         the redacted step 1 plan's explain (3g), without its
-      #                Settings, such as search_path, which 5a-5 doesn't need
-      #   schema       the schema_subset entry (3b), trimmed by SchemaPayload
+      #                "actual_rows" }: the redact shape, and the rows of the
+      #                input plan node that consumes it (nil unless exactly one does)
+      #   plan         the redacted input plan's explain (redact), without its
+      #                Settings, such as search_path, which llm-index-ideas doesn't need
+      #   schema       the schema_subset entry (schema-dump), trimmed by SchemaPayload
       #   mechanical_results
       #                { "baseline" => { set => { "total_cost", "plan" } },
       #                  "candidates" => one per tested candidate, in test
@@ -31,15 +31,15 @@ module Quaack
       #                  "size", "refusal", "plans" => { set => { "used",
       #                  "total_cost", "plan" } } },
       #                  "set_aside" => [{ "ddl", "sources" }] }
-      #                The plans are the stored ones, redacted through 3g. Only the
+      #                The plans are the stored ones, redacted through redact. Only the
       #                best candidate (see best) keeps each set's "plan".
-      #   stats        the classification's outbound_statistics (3f)
+      #   stats        the classification's outbound_statistics (classify)
       #
       # Trust boundary. Every field is shape-class except the candidates'
       # DDL: generator two reads the unredacted plan, so a stored predicate
       # or key expression can hold a real literal. Each DDL goes through
       # CandidateDdlRedaction, which masks every constant but a predicate value compared directly with its
-      # own low-cardinality column, one of its MCV values (DESIGN.md 3f),
+      # own low-cardinality column, one of its MCV values (DESIGN.md's classify),
       # the values stats already carries.
       module IndexPayload
         OPTIONS = { "search" => :value }.freeze
@@ -56,10 +56,10 @@ module Quaack
           [message(store, search, store.read("index_search_#{search}"))]
         end
 
-        # For a rewrite (DESIGN.md step 11), query is the rewrite's SQL, which
+        # For a rewrite (DESIGN.md's rewrite-index-ideas), query is the rewrite's SQL, which
         # holds only the original's $n and literals the LLM wrote, and plan
         # is its slow-literal plan as index-search stored it, redacted
-        # through 3g. placeholders stay the original's shapes and rows.
+        # through redact. placeholders stay the original's shapes and rows.
         def message(store, search, entry)
           stats = store.read("classification")["outbound_statistics"]
           query, plan = query_and_plan(store, search, entry)
@@ -77,7 +77,7 @@ module Quaack
 
         # Each placeholder's shape, typed as Postgres infers it for the
         # original query (index_search_original's parameter_types), or by
-        # its 3g type class when that's missing.
+        # its redact type class when that's missing.
         def placeholders(store)
           inferred = store.entry?("index_search_original") && store.read("index_search_original")["parameter_types"]
           store.read("placeholder_shapes").to_h do |n, shape|

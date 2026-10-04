@@ -3,8 +3,8 @@
 module Quaack
   module Driver
     module Report
-      # A rewrite in words: where it came from (DESIGN.md 6c) and what
-      # became of it, from the one fate the payload gives it (DESIGN.md 15).
+      # A rewrite in words: where it came from (DESIGN.md's rewrite-rules) and what
+      # became of it, from the one fate the payload gives it (DESIGN.md's report).
       #
       # Only the disproved fates and production_mismatch say a rewrite is
       # wrong. A test that failed, timed out, or never ran compared
@@ -62,7 +62,7 @@ module Quaack
         end
 
         # What a rule-made rewrite rests on that the data holds and the
-        # schema doesn't enforce (DESIGN.md 6b's denormalized_equal), as a
+        # schema doesn't enforce (DESIGN.md's assumption-check's denormalized_equal), as a
         # sentence, or nil if nothing.
         def empirical(entry)
           said = Array(entry["empirical"]).grep(Hash).map do |a|
@@ -93,7 +93,7 @@ module Quaack
           tables.join(" -> ")
         end
 
-        # A fate's rule, read as a failure or as step 9's refusal: its
+        # A fate's rule, read as a failure or as rewrite-test's refusal: its
         # sentence uses whichever it names. A refusal names an fk_cycle's
         # tables too.
         def because(entry)
@@ -105,7 +105,7 @@ module Quaack
 
         def why(rule) = rule ? ", because #{Words::FAILURES.fetch(rule, Words::FAILED)}" : ""
 
-        # Why step 9 couldn't make up test data, by its rule.
+        # Why rewrite-test couldn't make up test data, by its rule.
         def refusal(rule) = rule ? ", because #{Words::REFUSALS.fetch(rule) { Words.plain(rule) }}" : ""
 
         # A rewrite's name, source, and fate on one line, for the negative
@@ -114,18 +114,18 @@ module Quaack
           "#{Words.rewrite(entry["rewrite"])} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        # The conditions step 9's test data never exercised.
+        # The conditions rewrite-test's test data never exercised.
         def atoms(entry) = Array(entry["untested_atoms"]).map { it.is_a?(Hash) ? it.values.join(" ") : it }
 
-        # Whether step 10 exercised them, which only a rewrite that survived
-        # step 10 says.
+        # Whether counterexamples exercised them, which only a rewrite that survived
+        # counterexamples says.
         def atoms_note(entry)
           return "No later test exercised them either." if entry["evidence"] == false
 
           "The LLM-written test data exercised them afterwards." if entry["evidence"] == true
         end
 
-        # DESIGN.md 6c: the rule-made rewrites a test disproved.
+        # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.
         def rule_bugs = @payload["rule_bugs"] || []
 
         def bug(entry)

@@ -5,7 +5,7 @@ require_relative "inventory/production"
 
 module Quaack
   module Enclave
-    # Step 4's run server checks (DESIGN.md, step 4): does the run server match
+    # run-server's run server checks (DESIGN.md's run-server): does the run server match
     # production's inventory (see Inventory), and is QUAACK alone on it?
     #
     #   RunServerCheck.run(store:, connection:)  # nil, or raises an Error
@@ -24,7 +24,7 @@ module Quaack
     # 3. run_server_extension_missing and run_server_extension_version: an
     #    extension production has isn't installed, or is at another version.
     # 4. run_server_hypopg_missing: HypoPG is neither installed nor
-    #    available. 4a creates it, so available is enough.
+    #    available. racetrack-setup creates it, so available is enough.
     # 5. run_server_locale_mismatch: pg_database's datcollate, datctype,
     #    datlocprovider, datlocale, or datcollversion, or
     #    default_text_search_config, isn't production's. The database's
@@ -156,7 +156,7 @@ module Quaack
       # built-in default: SETTINGS lists only settings that differ from it,
       # and the plan's didn't list this one. A setting SETTINGS never lists,
       # and the inventory didn't record, can't be known, so it fails.
-      # Settings step 2 recorded that don't change plans, such as
+      # Settings inventory recorded that don't change plans, such as
       # shared_buffers and max_worker_processes, aren't compared.
       def check_planner_settings(connection, inventory)
         unlisted_ok = connection.exec(PLANNER_SQL).values.to_h
@@ -170,7 +170,7 @@ module Quaack
         names.find { recorded.key?(it) ? recorded[it] != current[it] : unlisted_ok[it] != "t" }
       end
 
-      # Every setting value step 2 recorded, by name.
+      # Every setting value inventory recorded, by name.
       def recorded_settings(inventory)
         %w[parallel_settings settings plan_settings].map { inventory.fetch(it) }.reduce(:merge)
       end

@@ -4,9 +4,9 @@ require "quaack/enclave/burndown"
 require "quaack/enclave/steps/rewrite_prune"
 require_relative "support/index_search_run"
 
-# DESIGN.md step 8, wired: index-search and index-rank for a rewrite search,
-# rewrite-prune against the original's top three, and the step 8 burndown.
-RSpec.describe "quaacks step 8, against a real server" do
+# DESIGN.md's plan-pruning, wired: index-search and index-rank for a rewrite search,
+# rewrite-prune against the original's top three, and the plan-pruning burndown.
+RSpec.describe "quaacks plan-pruning, against a real server" do
   include_context "an index search run"
 
   let(:schema_subset) { { "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);" } }
@@ -36,7 +36,7 @@ RSpec.describe "quaacks step 8, against a real server" do
     run("index-rank", "--search", search)
   end
 
-  it "records the step 8 burndown with the inbound check's rejections, not 6a's or 6b's" do
+  it "records the plan-pruning burndown with inbound-check's rejections, not llm-rewrites' or assumption-check's" do
     bad_assumption = rewrite(same).merge("assumptions" => [{ "kind" => "sorted" }])
     ready("SELECT o.note, o.status FROM public.orders o WHERE o.note = $3", same,
           "SELECT o.note FROM public.orders o WHERE o.note = $1", bad_assumption)
@@ -125,7 +125,7 @@ RSpec.describe "quaacks step 8, against a real server" do
       .to eq(%({"type":"error","step":"rewrite-prune","rule":"rewrite_prune_no_ranking"}\n))
   end
 
-  it "reports each stored rewrite's step 8 progress in status" do
+  it "reports each stored rewrite's plan-pruning progress in status" do
     ready(same)
     search_and_rank("rewrite_1")
 

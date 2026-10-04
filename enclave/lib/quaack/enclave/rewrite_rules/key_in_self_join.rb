@@ -8,7 +8,7 @@ require_relative "key_in_self_join/arm"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's key_in_self_join. An ORM that filters a table by a
+      # DESIGN.md's rewrite-rules's key_in_self_join. An ORM that filters a table by a
       # subquery on the same table writes
       #
       #   SELECT ... FROM t WHERE t.k IN (SELECT t2.k FROM t t2 JOIN r ON r.t_id = t2.id WHERE t2.x = $1)

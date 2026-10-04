@@ -6,7 +6,7 @@ require_relative "assumption_check/denormalized_equal"
 
 module Quaack
   module Enclave
-    # DESIGN.md 6b: checks one stated assumption (see RewriteAssumptions for
+    # DESIGN.md's assumption-check: checks one stated assumption (see RewriteAssumptions for
     # the five kinds) mechanically against pg_constraint and pg_index, or,
     # for denormalized_equal, against the data. NOT VALID constraints count
     # as absent.

@@ -5,7 +5,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # What step 9 needs to know about the tables it builds fixtures for,
+    # What rewrite-test needs to know about the tables it builds fixtures for,
     # read from arena's pg_catalog: each column's type, nullability, and
     # default.
     #
@@ -44,7 +44,7 @@ module Quaack
       # collide (NULLS NOT DISTINCT). A partial unique index counts as
       # always unique, which is conservative. user_function is whether an
       # expression unique index calls a function outside pg_catalog, which
-      # step 9 won't evaluate.
+      # rewrite-test won't evaluate.
       Constraints = Data.define(:uniques, :foreign_keys, :checks, :expressions, :nulls_not_distinct,
                                 :user_function) do
         # The names of the columns of free (Columns a row may set freely)

@@ -9,15 +9,15 @@ require_relative "vacuity_guard"
 
 module Quaack
   module Enclave
-    # Step 9, end to end, for one query and its candidates.
+    # rewrite-test, end to end, for one query and its candidates.
     #
     #   report = ScenarioTests.run(arena_connection, original_sql, [candidate_sql, ...])
     #   report.results  # => [Result(passed: true, scenario: nil, ...), Result(passed: false, scenario: :s2, ...)]
-    #   report.untested # => 9c's untested atoms, by redacted shape
+    #   report.untested # => vacuity-guard's untested atoms, by redacted shape
     #
-    # It builds the scenarios (Scenarios), runs the 9c guard on S1
+    # It builds the scenarios (Scenarios), runs the vacuity-guard guard on S1
     # (VacuityGuard), and then, for each candidate in order, runs S0
-    # through S6 through 9d's comparison (ResultComparison.
+    # through S6 through fixture-compare's comparison (ResultComparison.
     # compare_in_both_orders), each in its own arena transactions that roll
     # back. The first scenario that doesn't match disproves the candidate,
     # and the rest don't run. Its Result names the scenario, the verdict's
@@ -28,7 +28,7 @@ module Quaack
     #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under
     # test. Every fixture, the guard's included, then keeps each copy on
-    # the class's rows. Steps 9 and 10 test one rewrite at a time, so the
+    # the class's rows. rewrite-test and counterexamples test one rewrite at a time, so the
     # copies are its own.
     #
     # When the scenarios can't be built for the query (a Scenarios::Error,
@@ -38,7 +38,7 @@ module Quaack
     # refused is nil. For fk_cycle, cycle is the cycle's TableNames
     # (Scenarios::Topology); otherwise it's nil.
     #
-    # Trust boundary: the report holds booleans, symbols, counts, and 9c's
+    # Trust boundary: the report holds booleans, symbols, counts, and vacuity-guard's
     # redacted shapes. The fixtures, with the real literals, stay here. A
     # refusal keeps only its rule, never the column it names, and for
     # fk_cycle the cycle's table names, which are schema.

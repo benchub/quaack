@@ -8,9 +8,9 @@ require_relative "existing_indexes"
 module Quaack
   module Enclave
     module Steps
-      # DESIGN.md 15a, for ReportPayload's negative field when the selection is
-      # empty: which index candidates 5a-4 found the planner never used or
-      # HypoPG refused, and which the 5a-3 Dedupe dropped as covered by an
+      # DESIGN.md's negative-result, for ReportPayload's negative field when the selection is
+      # empty: which index candidates index-test found the planner never used or
+      # HypoPG refused, and which the index-dedupe Dedupe dropped as covered by an
       # existing index. What became of each rewrite is in ReportPayload's
       # rewrites field (RewriteFate), whether or not the selection is empty.
       #
@@ -36,7 +36,7 @@ module Quaack
         REWRITE = /\Arewrite_[1-9]\d*\z/
         SQLSTATE = /\A[0-9A-Z]{5}\z/
 
-        # Why 5a-4 declined a candidate: the planner never used it, or the
+        # Why index-test declined a candidate: the planner never used it, or the
         # refusal rule SingleCandidateTest stores.
         REASONS = %w[unused hypopg_refused unrenderable].freeze
 
@@ -81,7 +81,7 @@ module Quaack
             "sqlstate" => refusal && refusal["sqlstate"].to_s[SQLSTATE] }
         end
 
-        # A tested candidate the planner used, or one set aside for 12a to
+        # A tested candidate the planner used, or one set aside for index-build to
         # build for real (20260927-11). Neither was declined.
         def kept?(result, set_aside)
           result["plans"].values.any? { it["used"] } || set_aside.include?(IndexStore.candidate(result["candidate"]))
@@ -97,8 +97,8 @@ module Quaack
         end
 
         # For RuleBugs only, as it was before RewriteFate (20261002-5 covers
-        # RuleBugs' own logic): step 9's or step 10's disproof of a rewrite.
-        # A rewrite step 9 refused to test (20261003-18) wasn't disproved.
+        # RuleBugs' own logic): rewrite-test's or counterexamples's disproof of a rewrite.
+        # A rewrite rewrite-test refused to test (20261003-18) wasn't disproved.
         def disproved(store, search)
           number = search.delete_prefix("rewrite_")
           tested = optional(store, "rewrite_tested_#{number}") or return

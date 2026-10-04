@@ -20,7 +20,7 @@ require_relative "scenarios/values"
 
 module Quaack
   module Enclave
-    # Step 9: scenarios S0 through S6, built from the value pools.
+    # rewrite-test: scenarios S0 through S6, built from the value pools.
     #
     #   Scenarios.build(arena_connection, parse)                  # => { s0: [FixtureRow, ...], ..., s6: [...] }
     #   Scenarios.build(arena_connection, parse, variants: { 2 => 1 })
@@ -57,7 +57,7 @@ module Quaack
     # Column values. A pooled atom's column takes the first pool value that
     # satisfies (or for its near miss, fails) the atom and satisfies every
     # other atom and CHECK on the column (see Picker). variants rotates an
-    # atom's pool lists, by atom index, for 9c's retries. An atom no pool
+    # atom's pool lists, by atom index, for vacuity-guard's retries. An atom no pool
     # value satisfies (r.id IS NULL on a NOT NULL key) is ignored, so
     # it can't drop every group, and a unique column it reads still varies. A key column takes
     # a generated value per group (an identity key too, when a key class
@@ -81,7 +81,7 @@ module Quaack
     # fixture of its scenario, with the parent rows it points at, or as a
     # near miss there (see Parts): a parent with no child, when the filter
     # pins a unique value the hit's parent holds. A group that fits none,
-    # or for which no value fails its near-miss atom, is left out, and 9c
+    # or for which no value fails its near-miss atom, is left out, and vacuity-guard
     # catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
     # Error(:complex_check). A foreign-key cycle between tables is broken
     # where it can be: foreign keys in the cycle whose columns are all
@@ -94,11 +94,11 @@ module Quaack
     # missing). A cycle with no nullable
     # foreign key raises
     # Error(:fk_cycle). Rows come table by table, parents first, each
-    # table's rows together, as 9d's reverse load needs.
+    # table's rows together, as fixture-compare's reverse load needs.
     #
     # Trust boundary: the rows hold real values and stay in the enclave.
     # Errors name a rule, and for unsupported_type and domain_check the
-    # table, column, and type step 9 can't fill, which are schema, never a
+    # table, column, and type rewrite-test can't fill, which are schema, never a
     # row value.
     module Scenarios
       class Error < StandardError

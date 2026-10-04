@@ -7,7 +7,7 @@ require_relative "predicate_atoms"
 
 module Quaack
   module Enclave
-    # Step 9: each atom's pool of interesting values.
+    # rewrite-test: each atom's pool of interesting values.
     #
     #   pools = ValuePools.build(arena_connection, parse, atoms, schema)
     #   pools[2]  # => Pool for atoms[2], or no key when it has no pool

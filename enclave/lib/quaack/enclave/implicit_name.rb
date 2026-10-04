@@ -21,7 +21,7 @@ module Quaack
     # so it can differ from Postgres, which reads the analyzed columns.
     # Anchoring stays sound, because inner slots keep their own names.
     #
-    # It covers what SupportedSql lists. Clock anchoring (3h) uses it only
+    # It covers what SupportedSql lists. Clock anchoring (clock-anchor) uses it only
     # to see whether anchoring changed a name, and Postgres itself checks
     # it in clock_anchoring_postgres_spec.rb.
     module ImplicitName

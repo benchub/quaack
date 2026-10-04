@@ -6,28 +6,28 @@ require_relative "single_candidate_test"
 
 module Quaack
   module Enclave
-    # DESIGN.md 5: the plan gate. EXPLAIN the original query on the racetrack
+    # DESIGN.md's index-search: the plan gate. EXPLAIN the original query on the racetrack
     # with the slow literals, and abort unless its canonical form matches
-    # the step 1 plan's.
+    # the input plan's.
     #
     #   PlanGate.check(store:, connection:, sql: anchored_sql)  # nil, or raises an Error
     #
-    # sql is the query step 5 runs: the redacted query (3g, with $n where
-    # the literals were) after 3h anchored it, so it calls
+    # sql is the query index-search runs: the redacted query (redact, with $n where
+    # the literals were) after clock-anchor anchored it, so it calls
     # quaack.clock_anchor() where production called now(). It must bind
     # against the stored placeholder map (see Redaction.binding), or
     # Redaction::Error is raised. The slow literals are that map's values,
-    # which are the slow set of 3e. connection is a racetrack connection
+    # which are the slow set of literals. connection is a racetrack connection
     # after Racetrack.setup, not inside a transaction.
     #
     # The EXPLAIN is SingleCandidateTest's baseline, with no candidate: a
     # custom plan for the slow literals, prepared afresh, inside a
     # transaction that's rolled back, with notices dropped. So it's the
-    # same plan 5a-4 starts from. Its errors (SingleCandidateTest::Error)
+    # same plan index-test starts from. Its errors (SingleCandidateTest::Error)
     # pass through.
     #
-    # The step 1 plan is the stored plan entry. CanonicalPlan compares a
-    # clock function in it as 3h's anchor, so the anchored query's plan
+    # The input plan is the stored plan entry. CanonicalPlan compares a
+    # clock function in it as clock-anchor's anchor, so the anchored query's plan
     # can match it.
     #
     # Errors, by rule. Each fails closed:
@@ -38,7 +38,7 @@ module Quaack
     # - plan_gate_mismatch_likely_stale_statistics: the plans differ. The
     #   rule names the likely cause, since only the rule leaves the
     #   enclave: the racetrack's statistics don't match production's, as
-    #   when the backup is older than 3c's statistics.
+    #   when the backup is older than statistics's statistics.
     #
     # Trust boundary: both plans hold real literals and stay here. An
     # Error's message is fixed text, its rule and an explanation, and it
@@ -55,9 +55,10 @@ module Quaack
 
       MISMATCH = "plan_gate_mismatch_likely_stale_statistics"
 
-      MISMATCH_DETAIL = "the racetrack's plan for the slow literals doesn't match the step 1 plan. The likely " \
+      MISMATCH_DETAIL = "the racetrack's plan for the slow literals doesn't match production's plan. The likely " \
                         "cause is that the racetrack's statistics don't match production's, such as a backup " \
-                        "older than the statistics from 3c. Restore a fresh backup, or ANALYZE, and run again."
+                        "older than the statistics QUAACK read from production. " \
+                        "Restore a fresh backup, or ANALYZE, and run again."
 
       NOT_COMPARABLE_DETAIL = "a plan has a condition the canonical form can't compare, so the gate can't " \
                               "tell whether the racetrack plans like production"

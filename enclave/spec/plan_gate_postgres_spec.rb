@@ -9,9 +9,9 @@ require "quaack/enclave/racetrack"
 require "quaack/enclave/redaction"
 require "quaack/enclave/store"
 
-# DESIGN.md 5: the racetrack's plan for the original query with the slow
-# literals must match the step 1 plan. The racetrack here is also the
-# "production" server the step 1 plan comes from, so the two match until an
+# DESIGN.md's index-search: the racetrack's plan for the original query with the slow
+# literals must match the input plan. The racetrack here is also the
+# "production" server the input plan comes from, so the two match until an
 # example changes the racetrack's statistics after the capture.
 RSpec.describe Quaack::Enclave::PlanGate do
   let(:conn) { racetrack_and_arena.racetrack.connection }
@@ -31,8 +31,8 @@ RSpec.describe Quaack::Enclave::PlanGate do
       "WHERE o.status = 'failed' AND o.created_at > now() - interval '400 days'"
   end
 
-  # Step 1, 3g, 3h, and 4a, the way the run does them. Returns the SQL
-  # step 5 explains: redacted and anchored.
+  # input, redact, clock-anchor, and racetrack-setup, the way the run does them. Returns the SQL
+  # index-search explains: redacted and anchored.
   def prepare_run(sql = query)
     explain = explain_json("EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON) #{sql}")
     store.write("plan", explain)
@@ -68,7 +68,7 @@ RSpec.describe Quaack::Enclave::PlanGate do
     walk.call(explain.first["Plan"])
   end
 
-  it "passes when the racetrack plans the anchored query the way step 1 did" do
+  it "passes when the racetrack plans the anchored query the way input did" do
     sql = prepare_run
 
     expect(sql).to include("quaack.clock_anchor()")
@@ -113,7 +113,7 @@ RSpec.describe Quaack::Enclave::PlanGate do
     conn.exec("UPDATE public.orders SET status = 'held' WHERE id % 10 = 0")
     conn.exec("ANALYZE public.orders")
     # 'failed' is now common and 'held' rare, so only the slow literal,
-    # 'failed', gives step 1's new plan, a seq scan.
+    # 'failed', gives input's new plan, a seq scan.
     store.write("plan", JSON.parse(conn.exec("EXPLAIN (FORMAT JSON) SELECT o.id FROM public.orders o " \
                                              "WHERE o.status = 'failed'").getvalue(0, 0)))
     held = JSON.parse(conn.exec("EXPLAIN (FORMAT JSON) SELECT o.id FROM public.orders o " \

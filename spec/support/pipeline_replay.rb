@@ -37,19 +37,19 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   # What one replayed run did. log has one line per ask: its directory and
   # whether it was replayed or fell back. drift names replayed asks whose
   # prompt doesn't match the saved prompt.md.
-  # wrong holds the numbers n of the replayed 6a rewrites, stored as
+  # wrong holds the numbers n of the replayed llm-rewrites rewrites, stored as
   # rewrite_<n>, whose SQL carries the query's subtly wrong condition, and
-  # rewrites_text the replayed 6a reply's text, or nil. html is the report
+  # rewrites_text the replayed llm-rewrites reply's text, or nil. html is the report
   # file the run wrote, or nil.
   Outcome = Data.define(:variant, :error, :report, :html, :entries, :log, :drift, :wrong, :rewrites_text, :store_left,
                         :teardown)
 
-  # A query DESIGN.md 6c's key_in_self_join rule fires on (task 20261001-23):
+  # A query DESIGN.md's rewrite-rules's key_in_self_join rule fires on (task 20261001-23):
   # orders whose id is in a UNION ALL of two subqueries that each read orders
   # again by its primary key. The rule drops both subqueries and joins their
   # conditions with OR. The subquery has two arms on purpose: Postgres 18's
   # planner removes a single self-join on a key by itself, so the rule's
-  # rewrite of a one-arm IN plans as the original does, and step 8 prunes
+  # rewrite of a one-arm IN plans as the original does, and plan-pruning prunes
   # it before it reaches the report.
   #
   # It isn't one of PromptPack::QUERIES, so it has no prompts in the corpus,
@@ -89,7 +89,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
 
   # The directory the prompt pack gives each ask, in order: its step, and
   # a per-query count of that step. A
-  # 10a ask is named by rewrite and round instead (task 20260927-24): each
+  # llm-counterexamples ask is named by rewrite and round instead (task 20260927-24): each
   # rewrite gets a block of Counterexamples::ROUNDS numbers, in rewrite
   # order, so one disproved early doesn't shift the next rewrite's asks.
   # The pack's per-step count gives the same names, since its placeholder
@@ -208,7 +208,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     { log: replies.log, drift: replies.drift, wrong: wrong(query, text), rewrites_text: text }
   end
 
-  # The 6a rewrites become rewrite_1, rewrite_2, and so on, in reply order.
+  # The llm-rewrites rewrites become rewrite_1, rewrite_2, and so on, in reply order.
   # Their SQL is read out of the reply text, with the client's own
   # tolerant parse, only to tell which are wrong.
   def wrong(query, text)

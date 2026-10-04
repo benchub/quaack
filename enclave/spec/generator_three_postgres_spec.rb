@@ -37,7 +37,7 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
     result.outcomes.map { [it.index, it.status, it.rule, it.covered_by, it.partial_constant_only] }
   end
 
-  it "accepts a candidate the mechanical generators missed, as an LLM candidate for 5a-4" do
+  it "accepts a candidate the mechanical generators missed, as an LLM candidate for index-test" do
     result = filter(["CREATE INDEX ON public.customers (email text_pattern_ops)"])
 
     expect(outcome_fields(result)).to eq([[1, :accepted, nil, nil, false]])

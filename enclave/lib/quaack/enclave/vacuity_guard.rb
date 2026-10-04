@@ -7,12 +7,12 @@ require_relative "scenarios"
 
 module Quaack
   module Enclave
-    # 9c: checks that S1 exercises every atom.
+    # vacuity-guard: checks that S1 exercises every atom.
     #
     #   builder = Scenarios::Builder.new(arena_connection, PgQuery.parse(sql))
     #   result = VacuityGuard.run(ArenaRunner.new(arena_connection), builder, sql)
     #   result.untested   # => ["o.kind = $1"], redacted shapes, for the driver
-    #   result.scenarios  # => the scenarios built with the final variants, for 9d
+    #   result.scenarios  # => the scenarios built with the final variants, for fixture-compare
     #
     # In one arena transaction with S1 loaded, it runs the original, and the
     # original with each atom replaced by TRUE (PredicateAtoms.with_true).
@@ -25,7 +25,7 @@ module Quaack
     # retry.
     #
     # retries counts the rebuilds of each vacuous atom. untested_atoms are
-    # the untested atoms' indexes, for step 10.
+    # the untested atoms' indexes, for counterexamples.
     #
     # Trust boundary: untested holds only the atoms' shapes, which have every
     # literal redacted. scenarios hold real values and stay in the enclave.
@@ -66,7 +66,7 @@ module Quaack
       # The atoms not yet exercised that this fixture doesn't exercise
       # either. A fixture that won't load (a trigger or constraint QUAACK
       # doesn't model, say) exercises nothing, so its atoms stay vacuous,
-      # are retried, and end untested. Scenarios never crash step 9.
+      # are retried, and end untested. Scenarios never crash rewrite-test.
       def vacuous_atoms(runner, rows, sql, loosened, state)
         pending = loosened.keys - state[:exercised]
         state[:exercised] += loaded_exercised_atoms(runner, rows, sql, loosened.slice(*pending))
@@ -97,7 +97,7 @@ module Quaack
       end
 
       # The atoms, of those loosened maps to their loosened queries, whose
-      # loosened query changes the original's result on this fixture. 10b
+      # loosened query changes the original's result on this fixture. counterexample-compare
       # reuses it on its counterexamples.
       def exercised_atoms(runner, rows, sql, loosened, inserts: [])
         runner.with_fixture(rows, inserts:) do |tx|

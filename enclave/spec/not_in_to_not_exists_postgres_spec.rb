@@ -6,7 +6,7 @@ require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/rewrite_rules/catalog"
 require_relative "support/production_server"
 
-# DESIGN.md 6c's not_in_to_not_exists, on a real server: what it writes,
+# DESIGN.md's rewrite-rules's not_in_to_not_exists, on a real server: what it writes,
 # that its output returns the rows its input does on data that would show a
 # wrong transformation, and that it only fires when the catalog proves both
 # columns not null and the shape is one where nothing else can go wrong.
@@ -89,7 +89,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::NotInToNotExists do
     expect(same_rows(fires, rewrites, [2, 8]).map(&:first)).to eq(%w[4])
   end
 
-  it "states both columns not null, in 6b's vocabulary" do
+  it "states both columns not null, in assumption-check's vocabulary" do
     expect(rule.rewrites(PgQuery.parse(fires), catalog).map(&:assumptions)).to eq(
       [[{ "kind" => "not_null", "table" => "public.users", "column" => "id" },
         { "kind" => "not_null", "table" => "public.memberships", "column" => "user_id" }]]

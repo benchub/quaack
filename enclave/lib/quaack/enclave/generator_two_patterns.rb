@@ -6,7 +6,7 @@ require_relative "plan_expression"
 
 module Quaack
   module Enclave
-    # The DESIGN.md 5a-2 patterns, for GeneratorTwo's walk. It's private to the
+    # The DESIGN.md's index-from-plan patterns, for GeneratorTwo's walk. It's private to the
     # enclave namespace. Each pattern takes one PlanNode and returns the
     # candidates it proposes there. Each checks what the IndexCandidate
     # constructor would refuse before it builds. The walk supplies columns (a PlanColumns) and the
@@ -29,7 +29,7 @@ module Quaack
         # an MCV, and the estimate for other values otherwise. A literal
         # value_frequency can't estimate (nil) gets no partial index. The
         # literal is looked up as pg_stats text, so see value_frequency for
-        # the spellings that miss. 5a-3 drops partials on columns that aren't
+        # the spellings that miss. index-dedupe drops partials on columns that aren't
         # low-cardinality, such as one on a unique column's value.
         # Each one gets a partial index WHERE that conjunct, keyed on the
         # Filter's other columns, constant equality columns first. With no

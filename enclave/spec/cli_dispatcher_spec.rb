@@ -179,7 +179,7 @@ RSpec.describe Quaack::Enclave::CLI do
     end
 
     # A run an older quaacks started has no store_format entry, and its
-    # burndown names stages by the old step IDs, such as 5a-3.
+    # burndown names stages by the old step IDs, such as index-dedupe.
     it "refuses a run an older version started as run_from_older_version, before the step runs" do
       old = Quaack::Enclave::Store.create(base:)
       FileUtils.rm_f(File.join(old.path, "store_format.json"))

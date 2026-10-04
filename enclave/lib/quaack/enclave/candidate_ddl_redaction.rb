@@ -7,18 +7,18 @@ require_relative "pg_array"
 module Quaack
   module Enclave
     # A stored index candidate's DDL, made fit to leave the enclave for the
-    # 5a-5 payload (DESIGN.md 5a-3, 5a-5, and the 20260925-4 note).
+    # llm-index-ideas payload (DESIGN.md's index-dedupe, llm-index-ideas, and the 20260925-4 note).
     #
     #   CandidateDdlRedaction.new(outbound_statistics).ddl(candidate)
     #   # => "CREATE INDEX ON public.orders USING btree (created_at) WHERE status = 'held' AND note = ?"
     #
-    # Generator two reads the unredacted step 1 plan, so a candidate's
+    # Generator two reads the unredacted input plan, so a candidate's
     # partial predicate or key expression can hold a real literal. Every
     # constant in the DDL is masked as ? unless it's in the predicate,
     # compared directly (col = const, const <> col, col IN (...), col = ANY
     # (ARRAY[...]), col = ANY ('{...}') with every element allowed, casts
     # allowed) with a low-cardinality column of the candidate's table, and
-    # its text is one of that column's MCV values: the values DESIGN.md 3f
+    # its text is one of that column's MCV values: the values DESIGN.md's classify
     # lets out, which the payload's stats already carry. Key expressions
     # and function arguments are masked whole. NULL has no value and stays.
     #

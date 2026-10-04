@@ -7,7 +7,7 @@ require_relative "index_store"
 
 module Quaack
   module Enclave
-    # DESIGN.md 12a: builds every distinct index QUAACK proposed and ranked,
+    # DESIGN.md's index-build: builds every distinct index QUAACK proposed and ranked,
     # records its size, and hides it.
     #
     #   IndexBuild.build(store, connection)  # writes index_build
@@ -16,8 +16,8 @@ module Quaack
     #
     # The indexes come from each index_ranking_<search> ("original" and each
     # rewrite_<n>): its top entries and its combination, plus the GIN, GiST,
-    # and SP-GiST candidates 5a-3 set aside in index_search_<search>, and the
-    # unused low-cardinality B-tree candidates 5a-4 set aside there. Unique
+    # and SP-GiST candidates index-dedupe set aside in index_search_<search>, and the
+    # unused low-cardinality B-tree candidates index-test set aside there. Unique
     # candidates are never built, so only proposed non-unique indexes are
     # ever hidden. index_build is:
     #   "indexes"      { name => { "ddl", "size" } }
@@ -72,8 +72,8 @@ module Quaack
         (["original"] + rewrites).select { store.entry?("index_ranking_#{it}") }
       end
 
-      # 5a-3's GIN, GiST, and SP-GiST candidates, then the unused
-      # low-cardinality B-tree ones 5a-4 set aside (index_search's
+      # index-dedupe's GIN, GiST, and SP-GiST candidates, then the unused
+      # low-cardinality B-tree ones index-test set aside (index_search's
       # "set_aside", absent from entries written before 20260927-11).
       def set_aside(store, search)
         entry = store.read("index_search_#{search}")

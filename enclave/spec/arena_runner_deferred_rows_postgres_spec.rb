@@ -4,7 +4,7 @@ require "quaack/enclave/arena_runner"
 require "quaack/enclave/result_comparison"
 require "quaack/enclave/table_name"
 
-# A fixture row's deferred columns, for a foreign-key cycle step 9 cuts:
+# A fixture row's deferred columns, for a foreign-key cycle rewrite-test cuts:
 # the row loads with NULL there, and once every row has loaded, an UPDATE
 # keyed to its tableoid and ctid sets the row's own values.
 RSpec.describe Quaack::Enclave::ArenaRunner do

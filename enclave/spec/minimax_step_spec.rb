@@ -3,7 +3,7 @@
 require "quaack/enclave/store"
 require "quaack/enclave/steps/baseline"
 
-# `quaacks minimax --run <run ID>` (DESIGN.md 14a, 14b) the way the jump server
+# `quaacks minimax --run <run ID>` (DESIGN.md's blocks-metric, minimax) the way the jump server
 # runs it. It reads baseline, index_baseline, candidate_runs, and index_build,
 # needs no connection, and prints only DONE.
 RSpec.describe "quaacks minimax" do

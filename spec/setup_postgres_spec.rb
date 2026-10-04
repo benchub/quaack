@@ -60,7 +60,7 @@ RSpec.describe Quaack::Driver::Setup do
     end
   end
 
-  it "does steps 2 to 4a in order, so the store holds each one's output, and a rerun calls none of them" do
+  it "does setup in order, so the store holds each one's output, and a rerun calls none of them" do
     with_run do |run_id, racetrack|
       first = recording
       set_up(first, run_id, racetrack)

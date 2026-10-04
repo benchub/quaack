@@ -6,15 +6,15 @@ require_relative "../redaction"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks redact --run <run ID>` (DESIGN.md 3g): redacts the run's query
-      # and step 1 plan (see Redaction).
+      # `quaacks redact --run <run ID>` (DESIGN.md's redact): redacts the run's query
+      # and input plan (see Redaction).
       #
       # It reads the run's qualified_query entry, which `quaacks qualify`
       # wrote, and plan. It doesn't touch production. It writes four
       # entries: placeholder_map, which holds the literals and never leaves;
       # placeholder_shapes; redacted_query, the SQL with $n in place of each
       # literal; and redacted_plan, {"explain", "masked", "dropped"}. The
-      # 5a-5 payload step sends the last three. Everything is computed
+      # llm-index-ideas payload step sends the last three. Everything is computed
       # before the first write, so a refusal stores nothing. The entries are
       # written one at a time, though, so a crash partway through the writes
       # can leave some stored. A rerun overwrites them all.

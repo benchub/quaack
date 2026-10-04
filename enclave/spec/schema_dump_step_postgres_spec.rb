@@ -5,7 +5,7 @@ require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
 
-# `quaacks schema-dump --run <run ID>` (DESIGN.md 3b) the way the jump server
+# `quaacks schema-dump --run <run ID>` (DESIGN.md's schema-dump) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler, with
 # the operator's libpq setup in a temporary HOME, as `quaacks qualify` does.
 # It reads the run's server and relations entries, which qualify wrote.

@@ -6,7 +6,7 @@ require "tempfile"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/table_name"
 
-# Steps 9a, 9b, and 9e against a real arena database: open a transaction
+# fixture-open, fixture-load, and fixture-rollback against a real arena database: open a transaction
 # with statement_timeout, load a fixture, run queries, and always roll back.
 RSpec.describe Quaack::Enclave::ArenaRunner do
   let(:arena) { racetrack_and_arena.arena }

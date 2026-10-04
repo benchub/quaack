@@ -332,7 +332,7 @@ RSpec.describe Quaack::Enclave::SchemaDump do
                           pg_dump:)
     end
 
-    # What arena's load (4a) makes of ddl, in a fresh template0 database.
+    # What arena's load (racetrack-setup) makes of ddl, in a fresh template0 database.
     def arena_extensions(ddl)
       admin.exec(%(CREATE DATABASE "#{target}" TEMPLATE template0))
       arena = PG.connect(**db.connection_params, dbname: target)

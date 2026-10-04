@@ -4,7 +4,7 @@ require "json"
 
 module Quaack
   module Driver
-    # The driver's half of DESIGN.md 6a: it asks the LLM for rewrites of the
+    # The driver's half of DESIGN.md's llm-rewrites: it asks the LLM for rewrites of the
     # redacted query and has the enclave check them.
     #
     #   RewriteGeneration.new(client:, rewrite_check:).run(payload)
@@ -17,7 +17,7 @@ module Quaack
     # rewrite_check stands for `quaacks rewrite-check` over the transport.
     # It's called with the LLM's rewrites, in its order, and returns the
     # enclave's rewrite_outcome messages, one per rewrite. It's called even
-    # with none, so the enclave records that 6a ran.
+    # with none, so the enclave records that llm-rewrites ran.
     class RewriteGeneration
       STEP = "llm-rewrites"
       MAX_TOKENS = 8000

@@ -6,7 +6,7 @@ require_relative "error"
 module Quaack
   module Enclave
     module Intake
-      # The run's clock anchor (DESIGN.md, 3h): the time the production plan
+      # The run's clock anchor (DESIGN.md's clock-anchor): the time the production plan
       # ran, which quaack.clock_anchor() returns in place of now() and its
       # kin. It's --captured-at if the operator gives it, and the time of
       # intake if not. The run stores it in UTC, to the microsecond, as

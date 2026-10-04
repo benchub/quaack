@@ -14,8 +14,8 @@ require_relative "counterexamples/deferral"
 
 module Quaack
   module Enclave
-    # 10a, the enclave's half: turns the LLM's counterexample inserts into
-    # a fixture for 10b.
+    # llm-counterexamples, the enclave's half: turns the LLM's counterexample inserts into
+    # a fixture for counterexample-compare.
     #
     #   prepared = Counterexamples.prepare(arena_connection, inserts,
     #                                      placeholder_map: map, tables: subset_tables,
@@ -25,7 +25,7 @@ module Quaack
     #   prepared.refused  # => [{ index: 0, rule: "insert_select" }, ...]
     #
     # The LLM sees only shapes, so it writes $n where it wants one of the
-    # query's literals, numbered as in 3g's redacted query. Each $n is
+    # query's literals, numbered as in redact's redacted query. Each $n is
     # bound to its real value from the placeholder map (Redaction's form),
     # as a string constant the column's type reads, or NULL for a NULL
     # literal. A $n the map doesn't have refuses the insert with
@@ -35,20 +35,20 @@ module Quaack
     # Postgres can't evaluate, such as a bad cast, refuses the insert with
     # bad_value, and Postgres's message, which can quote the value, is
     # dropped. Any other error there, such as a statement timeout, goes up.
-    # tables are the 3b subset schema's tables. The connection is
+    # tables are the schema-dump subset schema's tables. The connection is
     # arena's: the check reads its catalog, which matches production's
     # schema.
     #
     # Accepted inserts are ordered so each table's inserts come after
     # those of the tables it references, keeping the LLM's order
     # otherwise. Any foreign-key value that no insert supplies gets a
-    # parent row, built by the step 9 rules (see ParentRows), and so do
+    # parent row, built by the rewrite-test rules (see ParentRows), and so do
     # that row's own NOT NULL foreign keys, however far up. queries are the
     # SQL the fixture runs: a parent row leaves NULL a nullable column
-    # step 9 can't fill only when none of them reads it. Constraints are
+    # rewrite-test can't fill only when none of them reads it. Constraints are
     # never bypassed.
     #
-    # A foreign-key cycle can leave no parents-first order. Step 9's
+    # A foreign-key cycle can leave no parents-first order. rewrite-test's
     # Topology, given no atoms, cuts nullable foreign keys, one at a time
     # while each still closes a cycle (see Deferral). An insert that sets a
     # cut column becomes an
@@ -90,16 +90,13 @@ module Quaack
 
       module_function
 
-      # 10b and 10c. Runs 9d's comparison on the prepared fixture, in both
-      # load orders (ResultComparison.compare_in_both_orders: the parent
-      # rows reverse, the inserts keep their order), then 9c's test for each
-      # untested atom (indexes into atoms, the original's PredicateAtoms),
-      # each in its own arena transaction that rolls back. A fixture that
-      # fails to load disproves nothing: the round reports the runner's
-      # rule, with match nil, load_failed true, and nothing covered. Any
-      # other runner failure, such as the candidate failing to run
-      # (query_failed), disproves it, with match false. Untested atoms
-      # with_true can't replace are skipped.
+      # counterexample-compare and counterexample-rollback. Runs fixture-compare's comparison on the prepared fixture,
+      # in both load orders (ResultComparison.compare_in_both_orders: the parent rows reverse, the inserts keep their
+      # order), then vacuity-guard's test for each untested atom (indexes into atoms, the original's PredicateAtoms),
+      # each in its own arena transaction that rolls back. A fixture that fails to load disproves nothing: the round
+      # reports the runner's rule, with match nil, load_failed true, and nothing covered. Any other runner failure,
+      # such as the candidate failing to run (query_failed), disproves it, with match false. Untested atoms with_true
+      # can't replace are skipped.
       def compare(runner, prepared, original:, candidate:, atoms:, untested:) # rubocop:disable Metrics/ParameterLists
         verdict = ResultComparison.compare_in_both_orders(runner, prepared.rows, original:, candidate:,
                                                                                  inserts: prepared.inserts)

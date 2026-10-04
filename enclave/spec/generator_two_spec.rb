@@ -117,7 +117,7 @@ RSpec.describe Quaack::Enclave::GeneratorTwo do
       )
     end
 
-    it "still proposes a partial on a unique column's value, leaving 5a-3 to drop it" do
+    it "still proposes a partial on a unique column's value, leaving index-dedupe to drop it" do
       # total_cents has no MCV list, so its frequency is 1/20,000.
       expect(ddl("seq_scan_most_rows")).to include(btree("orders", "status, created_at", " WHERE total_cents = 5100"))
     end

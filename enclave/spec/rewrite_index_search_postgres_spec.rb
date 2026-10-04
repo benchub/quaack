@@ -4,7 +4,7 @@ require_relative "support/index_search_run"
 require "quaack/enclave/run_server"
 require "quaack/enclave/steps/index_search"
 
-# DESIGN.md step 8: the mechanical index search (5a-1 to 5a-4) for one rewrite
+# DESIGN.md's plan-pruning: the mechanical index search (index-from-query to index-test) for one rewrite
 # candidate, on its own parse and its plain racetrack plan, run in-process.
 RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
   include_context "an index search run"
@@ -30,12 +30,12 @@ RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
     saved.each { |k, v| ENV[k] = v }
   end
 
-  it "runs 5a-1 on the rewrite's parse, 5a-2 on its plain racetrack plan, 5a-3, and 5a-4 with the rewrite" do
+  it "runs index-from-query on the rewrite's parse, index-from-plan on its plan, index-dedupe, and index-test" do
     prepare
     entry = rewrite_entry
     candidates = entry["results"].map { Quaack::Enclave::IndexStore.candidate(it["candidate"]) }
     ddls = candidates.map(&:to_ddl)
-    # The rewrite's ORDER BY total: 5a-1 on the rewrite's parse and 5a-2 on
+    # The rewrite's ORDER BY total: index-from-query on the rewrite's parse and index-from-plan on
     # its plan's Sort both propose an index ending in total. The original has
     # no ORDER BY and its plan no Sort.
     sorted = candidates.find { it.sources.include?(:plan) }
@@ -43,7 +43,7 @@ RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
     expect(sorted.sources.to_a.sort).to eq(%i[parse plan])
     expect(ddls).to include(a_string_matching(/\(note, status\)|\(note\)/))
     expect(candidates.flat_map { it.sources.to_a }.uniq).to include(:parse, :plan)
-    # 5a-4 ran the rewrite, not the original: its baseline sorts.
+    # index-test ran the rewrite, not the original: its baseline sorts.
     expect(JSON.generate(entry["baseline"]["slow"]["plan"])).to include("Sort")
     expect(entry["dedupe"]["proposals"].size).to eq(candidates.size)
   end
@@ -57,7 +57,7 @@ RSpec.describe "Steps::IndexSearch.rewrite_entry, against a real server" do
     )
     candidates = entry["results"].map { Quaack::Enclave::IndexStore.candidate(it["candidate"]) }
     # The CTE's own scan reads public.orders, filtered on status: that's
-    # the index that helps, and 5a-1 finds it in the CTE's body. Each copy
+    # the index that helps, and index-from-query finds it in the CTE's body. Each copy
     # reads the CTE, which no index can serve, so note, which only the
     # copies filter on, keys nothing.
     expect(candidates.map(&:table).uniq).to eq([orders])

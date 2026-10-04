@@ -7,7 +7,7 @@ require "quaack/driver/cli"
 require "quaack/driver/enclave_error"
 require "quaack/driver/runs"
 
-# `quaack setup --run <ID>`: DESIGN.md steps 2 to 4a over ssh to the run's
+# `quaack setup --run <ID>`: DESIGN.md setup over ssh to the run's
 # jump server. ssh is the edge, so the transport is a fake that records
 # each call.
 RSpec.describe "quaack setup" do
@@ -55,7 +55,7 @@ RSpec.describe "quaack setup" do
   def progress = stderr.string.lines.grep(%r{\Aquaack: \[\d+/\d+\] })
   def errors = stderr.string.lines.grep_v(%r{\Aquaack: \[\d+/\d+\] }).join
 
-  it "runs steps 2 to 4a in order on the run's jump host, then says the run is set up" do
+  it "runs setup in order on the run's jump host, then says the run is set up" do
     expect(cli.run(["setup", "--run", run_id])).to eq(0)
 
     expect(hosts).to eq(["jump-1"])

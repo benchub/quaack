@@ -10,7 +10,7 @@ require "quaack/enclave/store"
 require_relative "support/production_server"
 require_relative "support/catalog_shadow"
 
-# Step 4's run server checks (DESIGN.md, step 4). The stand-in production
+# run-server's run server checks (DESIGN.md's run-server). The stand-in production
 # database from ProductionServer is production and the run server both:
 # its inventory is read from it, then the check runs on a new connection
 # to it, which matches until an example changes one thing.
@@ -34,7 +34,7 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
   def connect = production.connect.tap { connections << it }
   def run_server = @run_server ||= connect
 
-  # Reads production's inventory the way step 2 does and stores it, after
+  # Reads production's inventory the way inventory does and stores it, after
   # the block, if any, changes it.
   def record_inventory(plan_settings: RUN_SERVER_PLAN_SETTINGS)
     conn = production.connect
@@ -111,7 +111,7 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect_failure("run_server_extension_version", "hypopg")
     end
 
-    # Production needn't have HypoPG, and 4a creates it, so it's enough
+    # Production needn't have HypoPG, and racetrack-setup creates it, so it's enough
     # that the run server can.
     it "passes HypoPG that isn't installed but is available" do
       record_inventory { it["extensions"].delete("hypopg") }
@@ -188,7 +188,7 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect_failure("run_server_guc_mismatch", "quaack.planner_knob")
     end
 
-    # effective_cache_size is one of step 2's settings, and
+    # effective_cache_size is one of inventory's settings, and
     # max_parallel_workers_per_gather one of its parallel settings.
     {
       "effective_cache_size" => %w[1GB 4GB], "max_parallel_workers_per_gather" => %w[4 2]
@@ -394,8 +394,8 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect(run_check(own_connections: [TestPostgres.server.admin, other])).to be_nil
     end
 
-    # PgBouncer in session mode in front of the run server (DESIGN.md, step
-    # 4): the pid libpq reports for a connection through it is one PgBouncer
+    # PgBouncer in session mode in front of the run server (DESIGN.md's
+    # run-server): the pid libpq reports for a connection through it is one PgBouncer
     # made up, not the server backend's.
     describe "behind PgBouncer in session mode" do
       def through_pgbouncer = production.connect(port: TestPostgres.server.pgbouncer_port).tap { connections << it }

@@ -5,7 +5,7 @@ require_relative "arena"
 
 module Quaack
   module Enclave
-    # The schema that the 5a-5 and 6a payloads send (DESIGN.md 5a-5): 3b's
+    # The schema that the llm-index-ideas and llm-rewrites payloads send (DESIGN.md's llm-index-ideas): schema-dump's
     # subset trimmed to the query's own tables, not their FK parents, with
     # pg_dump's noise left out.
     #

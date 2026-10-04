@@ -9,7 +9,7 @@ require_relative "or_to_union/union"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's or_to_union. The planner can't use an index for
+      # DESIGN.md's rewrite-rules's or_to_union. The planner can't use an index for
       # either arm of an OR whose arms are about different tables, or are
       # subqueries:
       #
@@ -60,7 +60,7 @@ module Quaack
       #   call, or an operator, or it has no column in it. A cast of a
       #   column, say, is named for the column, which the UNION renames.
       #
-      # A volatile function would run once per arm, but step 3d refuses a
+      # A volatile function would run once per arm, but volatility refuses a
       # query that calls one, so none gets here.
       class OrToUnion
         # A select-list entry of one of these is named for itself, not for

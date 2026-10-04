@@ -10,7 +10,7 @@ require_relative "table_name"
 
 module Quaack
   module Enclave
-    # DESIGN.md 3a: list the relations the query uses, and abort unless every
+    # DESIGN.md's qualify: list the relations the query uses, and abort unless every
     # one is a plain table (relkind r).
     #
     #   Relations.check(sql, settings, connection)

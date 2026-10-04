@@ -13,13 +13,13 @@ module Quaack
       # provider's adapter makes the calls.
       #
       #   client = Client.new(burndown: burndown)
-      #   client.ask(step: "5a-5", system: "...", messages: [{ role: "user", content: "..." }],
+      #   client.ask(step: "llm-index-ideas", system: "...", messages: [{ role: "user", content: "..." }],
       #              max_tokens: 4000)                          # => "CREATE INDEX ..."
-      #   client.ask(step: "6a", ..., schema: { type: "object", ... })   # => { "rewrites" => [...] }
+      #   client.ask(step: "llm-rewrites", ..., schema: { type: "object", ... })   # => { "rewrites" => [...] }
       #
       # The front owns what's the same for every provider: the JSON_ONLY
       # line, parsing and checking JSON replies (ReplyJSON), counting every
-      # attempt in the burndown under its step (15b), the error rules (see
+      # attempt in the burndown under its step (burndown), the error rules (see
       # Error), and the guard below.
       #
       # An adapter is built as `new(settings:, transport:, **options)`, and
@@ -63,7 +63,7 @@ module Quaack
         # What progress hears an ask is for, unless the caller says.
         ASKING = "Asking the LLM"
 
-        # The Burndown each call is counted in, for the report (15b).
+        # The Burndown each call is counted in, for the report (burndown).
         attr_reader :burndown
 
         # Told, with note, when each ask starts and at each attempt after the

@@ -10,8 +10,8 @@ require_relative "../run_server"
 module Quaack
   module Enclave
     module Steps
-      # `quaacks result-comparison --run <run ID>` (DESIGN.md 14c): on the
-      # racetrack, for each 3e literal set, compares anchored_query's result
+      # `quaacks result-comparison --run <run ID>` (DESIGN.md's result-comparison): on the
+      # racetrack, for each literals literal set, compares anchored_query's result
       # with each candidate's that candidate_runs measured, with
       # ProductionComparison, binding the set's literals as Measurement
       # does, under the baseline's timeout_ms. Results don't depend on which
@@ -20,7 +20,7 @@ module Quaack
       #   "verdicts"      { "rewrite_<n>" => { set name => { "result" =>
       #                   "pass" | "fail" | "partial", "rule" => name or nil } } }
       #   "discarded"     the candidates with any failing verdict: a real
-      #                   divergence on production data, which 14d drops
+      #                   divergence on production data, which selection drops
       #                   and the report shows prominently
       #   "partial_count" how many verdicts were partial, for the report
       # Rows never leave the enclave, and nothing but DONE goes out.

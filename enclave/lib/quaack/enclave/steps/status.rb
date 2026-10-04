@@ -12,7 +12,7 @@ module Quaack
       # the names and booleans go out, never an entry's data. Each
       # orchestration task adds the entries its stage needs.
       module Status
-        # For `quaack setup`, the entry each step from 2 to 4a stores last, so
+        # For `quaack setup`, the entry each step from 2 to racetrack-setup stores last, so
         # one that's there means its step finished: inventory, run-server,
         # qualify, schema-dump, statistics, volatility, classify, redact,
         # literals, anchor, and racetrack-setup.
@@ -31,7 +31,7 @@ module Quaack
         end
 
         # For each stored rewrite_<n>, counting up from 1: its name and the
-        # names of its step 8, 9, and 10 outputs. Only names of this fixed form go out.
+        # names of its plan-pruning, rewrite-test, and counterexamples outputs. Only names of this fixed form go out.
         def rewrite_entries(store)
           (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.flat_map do |n|
             ["rewrite_#{n}", "index_search_rewrite_#{n}", "index_ranking_rewrite_#{n}", "rewrite_pruned_#{n}",
@@ -39,9 +39,9 @@ module Quaack
           end.to_a
         end
 
-        # DESIGN.md step 11, for each stored rewrite_<n>: rewrite_step11_<n>,
-        # whether IndexSearch.llm_search? takes it, and whether its 5a-5 ran
-        # (index_generated_) and its 5a-7 ran after that (index_llm_ranked_).
+        # DESIGN.md's rewrite-index-ideas, for each stored rewrite_<n>: rewrite_index_ideas_<n>,
+        # whether IndexSearch.llm_search? takes it, and whether its llm-index-ideas ran
+        # (index_generated_) and its index-rank ran after that (index_llm_ranked_).
         def index_ideas_entries(store)
           (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.flat_map do |n|
             names = ["index_generated_rewrite_#{n}", "index_llm_ranked_rewrite_#{n}"]

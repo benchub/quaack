@@ -10,7 +10,7 @@ require_relative "union_outer_filter_removal/union"
 module Quaack
   module Enclave
     module RewriteRules
-      # DESIGN.md 6c's union_outer_filter_removal. An ORM that builds a
+      # DESIGN.md's rewrite-rules's union_outer_filter_removal. An ORM that builds a
       # search as a UNION of arms often filters the UNION's result with the
       # same conjuncts every arm already has:
       #

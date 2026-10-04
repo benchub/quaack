@@ -3,8 +3,8 @@
 module Quaack
   module Enclave
     module Steps
-      # Every label steps 13a and 14 measured, for ReportPayload's labels
-      # field (DESIGN.md step 15): the original under each of its index
+      # Every label index-baseline and candidate-runs measured, for ReportPayload's labels
+      # field (DESIGN.md's report): the original under each of its index
       # combinations (index_baseline), then each rewrite's runs
       # (candidate_runs), then the rewrite runs candidate-runs dropped for
       # timing out. Ranked or not, each one goes out, so the report can say

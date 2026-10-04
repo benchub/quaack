@@ -2,7 +2,7 @@
 
 require "quaack/enclave/minimax"
 
-# DESIGN.md 14a and 14b: total blocks, a 5% threshold, minimax, footprint ties.
+# DESIGN.md's blocks-metric and minimax: total blocks, a 5% threshold, minimax, footprint ties.
 RSpec.describe Quaack::Enclave::Minimax do
   def m(blocks) = { "timed_out" => false, "total_blocks" => blocks }
   def sets(slow, worst = 100, typical = 100) = { "slow" => m(slow), "worst_case" => m(worst), "typical" => m(typical) }

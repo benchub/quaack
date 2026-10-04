@@ -4,7 +4,7 @@ require "tmpdir"
 require "quaack/enclave/structural_discard"
 require "quaack/enclave/burndown"
 
-# DESIGN.md step 8's structural discards, against real Postgres.
+# DESIGN.md's plan-pruning's structural discards, against real Postgres.
 RSpec.describe Quaack::Enclave::StructuralDiscard do
   let(:conn) { test_database.connection }
   let(:sentinel) { "SENTINEL-step8-9d1e" }
@@ -87,7 +87,7 @@ RSpec.describe Quaack::Enclave::StructuralDiscard do
     expect(result.with(kept: [sentinel]).inspect).to include(sentinel)
   end
 
-  it "records the step 8 burndown, inbound-check rejections included" do
+  it "records the plan-pruning burndown, inbound-check rejections included" do
     Dir.mktmpdir do |base|
       store = Quaack::Enclave::Store.create(base:)
       result = check(["SELECT id, name FROM public.t WHERE name = $1", "SELECT id FROM public.t WHERE name = $1",

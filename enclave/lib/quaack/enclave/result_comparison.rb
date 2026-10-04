@@ -9,7 +9,7 @@ require_relative "result_comparison/load_orders"
 
 module Quaack
   module Enclave
-    # Step 9d's query shaping, reused by 10b and 14c. It reads the original
+    # fixture-compare's query shaping, reused by counterexample-compare and result-comparison. It reads the original
     # query with pg_query to pick the comparison mode, builds the queries
     # to run, runs them in an ArenaRunner transaction, and hands the results
     # to ResultComparator (result_comparator.rb).
@@ -18,7 +18,7 @@ module Quaack
     #     ResultComparison.compare(tx, original:, candidate:)
     #   end
     #
-    # Step 9 calls compare_in_both_orders (result_comparison/load_orders.rb)
+    # rewrite-test calls compare_in_both_orders (result_comparison/load_orders.rb)
     # instead, which runs compare twice, with the fixture loaded forward and
     # then in reverse, and matches only if both runs match. That covers much
     # of the first gap below.

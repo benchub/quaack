@@ -9,7 +9,7 @@ require_relative "../error_filter"
 module Quaack
   module Enclave
     module Inventory
-      # The production server's side of step 2 (DESIGN.md): connect to it, and
+      # The production server's side of inventory (DESIGN.md): connect to it, and
       # read what the inventory records, inside one read-only transaction.
       #
       # It connects with the operator's own libpq setup on the jump server.
@@ -25,9 +25,9 @@ module Quaack
       module Production
         # Postgres 17 added pg_database.datlocale.
         OLDEST_MAJOR = 17
-        # DESIGN.md, step 2, in its order. The last four change plans, or how
+        # DESIGN.md's inventory, in its order. The last four change plans, or how
         # a literal is read, but EXPLAIN's SETTINGS never lists them, so
-        # step 4 (RunServerCheck) needs production's values from here.
+        # run-server (RunServerCheck) needs production's values from here.
         SETTINGS = %w[shared_buffers effective_cache_size work_mem random_page_cost jit
                       TimeZone DateStyle IntervalStyle default_statistics_target].freeze
 
