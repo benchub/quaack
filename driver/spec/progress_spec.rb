@@ -21,6 +21,44 @@ RSpec.describe Quaack::Driver::Progress do
     expect(io.string).to eq("quaack: [1/3] Asking the LLM for index ideas (5a-5)\nquaack: [1/3] Done in 42s (5a-5)\n")
   end
 
+  describe "a step's summary" do
+    let(:summary) { ->(result) { "Found #{result.size} possible index definitions mechanically" } }
+
+    it "closes the step with its summary of the step's result, then its time" do
+      times.replace([0.0, 15.0])
+      result = progress.step("index-search", "Searching for indexes", summary:) { %w[a b c] }
+
+      expect(result).to eq(%w[a b c])
+      expect(io.string.lines.last)
+        .to eq("quaack: [1/3] Found 3 possible index definitions mechanically in 15s (index-search)\n")
+    end
+
+    it "closes with Done when the summary gives none" do
+      times.replace([0.0, 2.0])
+      progress.step("5a-7", "Ranking", summary: ->(_) {}) { :ranked }
+
+      expect(io.string.lines.last).to eq("quaack: [1/3] Done in 2s (5a-7)\n")
+    end
+
+    it "closes a failed step with its failed line, without a summary" do
+      times.replace([0.0, 3.0])
+      expect { progress.step("6a", "Asking", summary:) { raise "boom" } }.to raise_error("boom")
+
+      expect(io.string.lines.last).to eq("quaack: [1/3] Failed after 3s (6a)\n")
+    end
+
+    it "is taken, and ignored, by sub-steps and NULL, which print no closing line" do
+      p = progress
+      p.step("step 8", "Searching") do
+        expect(p.within("Rewrite 1").step("index-search", "Searching", summary:) { :ran }).to eq(:ran)
+      end
+      expect(described_class::NULL.step("a", "b", summary:) { 7 }).to eq(7)
+
+      expect(io.string.lines.size).to eq(3)
+      expect(io.string).not_to include("Found")
+    end
+  end
+
   it "numbers each step and skip in turn, and prints a skip line that says what's skipped" do
     p = progress
     p.skip("index-search", "Searching for indexes")
