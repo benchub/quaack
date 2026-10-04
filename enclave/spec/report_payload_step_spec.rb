@@ -212,8 +212,8 @@ RSpec.describe "quaacks report-payload" do
       it "sends its SQL and source all the same, with nothing it doesn't have" do
         expect(report["rewrites"].map { it["rewrite"] }).to eq(%w[rewrite_1 rewrite_2])
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
-                                 "rules" => nil, "fate" => "unfinished", "scenario" => nil, "rule" => nil,
-                                 "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
+                                 "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
+                                 "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
                                  "untested_atoms" => nil, "evidence" => nil)
       end
     end
@@ -479,13 +479,70 @@ RSpec.describe "quaacks report-payload" do
       end
     end
 
+    describe "empirical: what a rule-made rewrite assumes of the data and the schema doesn't enforce" do
+      let(:copy_sql) do
+        "SELECT s.id FROM public.submissions s JOIN public.assignments a ON a.id = s.assignment_id " \
+          "WHERE a.context_type = $1 AND a.context_id = $2 AND s.course_id = $2"
+      end
+      let(:empirical) do
+        { "table" => "public.submissions", "column" => "course_id", "references_table" => "public.assignments",
+          "type_column" => "context_type", "id_column" => "context_id" }
+      end
+
+      def denormalized(**fields)
+        { "kind" => "denormalized_equal", "table" => "public.submissions", "column" => "course_id",
+          "join_column" => "assignment_id", "references_table" => "public.assignments", "references_column" => "id",
+          "type_column" => "context_type", "type_value" => sentinel, "id_column" => "context_id" }
+          .merge(fields.transform_keys(&:to_s))
+      end
+
+      context "with a denormalized_equal assumption whose names are the rewrite's own" do
+        let(:outcome) do
+          with_rewrite(sql: copy_sql, rules: ["polymorphic_key_copy"],
+                       assumptions: [{ "kind" => "not_null", "table" => "public.orders", "column" => "id" },
+                                     denormalized])
+        end
+
+        it "sends the tables and columns it rests on, and never the type value" do
+          expect_no_leaks(sentinels, outcome)
+          expect(rewrite_candidate).to include("source" => "rule", "rules" => ["polymorphic_key_copy"],
+                                               "empirical" => [empirical])
+        end
+      end
+
+      context "with a denormalized_equal assumption naming what the rewrite's SQL doesn't" do
+        let(:outcome) do
+          with_rewrite(sql: copy_sql, assumptions: [denormalized(column: REPORT_WORD_SENTINEL),
+                                                    denormalized(references_table: "public.#{REPORT_WORD_SENTINEL}")])
+        end
+
+        it "sends none of it" do
+          expect_no_leaks(sentinels, outcome)
+          expect(rewrite_candidate).to include("empirical" => [])
+        end
+      end
+
+      it "sends no empirical assumption for a rule-made rewrite that rests on none" do
+        expect(rewrite_candidate).to include("empirical" => [])
+      end
+
+      context "for a rewrite of another source" do
+        let(:outcome) { with_rewrite(sql: copy_sql, source: "llm", rules: nil, assumptions: [denormalized]) }
+
+        it "sends none" do
+          expect(rewrite_candidate).to include("source" => "llm", "empirical" => nil)
+        end
+      end
+    end
+
     describe "rule_bugs: rule-made rewrites that a test disproved" do
       def tested(passed, rule = nil, scenario = nil)
         { "passed" => passed, "scenario" => scenario, "rule" => rule, "untested" => 0, "untested_atoms" => [] }
       end
 
-      def rule_made(store, number, tested, survived, rules: %w[key_in_self_join key_in_self_join])
-        store.write("rewrite_#{number}", "sql" => "SELECT #{number}", "source" => "rule", "rules" => rules)
+      def rule_made(store, number, tested, survived, rules: %w[key_in_self_join key_in_self_join], assumptions: nil) # rubocop:disable Metrics/ParameterLists
+        store.write("rewrite_#{number}", { "sql" => "SELECT #{number}", "source" => "rule", "rules" => rules,
+                                           "assumptions" => assumptions }.compact)
         store.write("rewrite_tested_#{number}", tested)
         store.write("rewrite_survived_#{number}", "survived" => survived)
       end
@@ -572,6 +629,25 @@ RSpec.describe "quaacks report-payload" do
           expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_2", "rules" => ["key_in_self_join"],
                                                "step" => "step9" }])
           expect_no_leaks(sentinels, outcome)
+        end
+      end
+
+      # Steps 9 and 10 make up their data, which needn't hold an assumption
+      # 6b found the real data holds; 14c runs on the racetrack's.
+      context "with rule-made rewrites resting on a denormalized_equal assumption, disproved by 9, 10, and 14c" do
+        let(:outcome) do
+          assumptions = [{ "kind" => "denormalized_equal", "table" => "public.submissions" }]
+          with_rewrite do |store|
+            rule_made(store, 2, tested(false, "multiset", "s3"), false, rules: ["polymorphic_key_copy"], assumptions:)
+            rule_made(store, 3, tested(true), false, rules: ["polymorphic_key_copy"], assumptions:)
+            rule_made(store, 4, tested(true), true, rules: ["polymorphic_key_copy"], assumptions:)
+            compared(store, "4": { slow: "multiset" })
+          end
+        end
+
+        it "calls only the 14c disproof a bug" do
+          expect(report["rule_bugs"]).to eq([{ "rewrite" => "rewrite_4", "rules" => ["polymorphic_key_copy"],
+                                               "step" => "14c" }])
         end
       end
 

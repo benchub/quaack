@@ -94,4 +94,60 @@ RSpec.describe Quaack::Enclave::AssumptionCheck do
   it "doesn't meet an assumption about a table that doesn't exist" do
     expect(met?(not_null("id").merge("table" => "public.nowhere"))).to be(false)
   end
+
+  # Canvas's shape: a submission copies its assignment's course into
+  # course_id, which only Rails keeps equal to context_id when
+  # context_type is 'Course'. The schema can't say so; the data can.
+  describe "denormalized_equal, checked against the data" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.assignments (id bigint PRIMARY KEY, context_type varchar(255), context_id bigint);
+        CREATE TABLE public.submissions (id bigint PRIMARY KEY, assignment_id bigint, course_id bigint);
+        INSERT INTO public.assignments VALUES (1, 'Course', 10), (2, 'Course', 20), (3, 'Group', 30);
+        INSERT INTO public.submissions VALUES (1, 1, 10), (2, 1, 10), (3, 2, 20), (4, 3, 99), (5, NULL, 77);
+      SQL
+    end
+
+    let(:assumption) do
+      { "kind" => "denormalized_equal", "table" => "public.submissions", "column" => "course_id",
+        "join_column" => "assignment_id", "references_table" => "public.assignments", "references_column" => "id",
+        "type_column" => "context_type", "type_value" => "Course", "id_column" => "context_id" }
+    end
+
+    it "is met when every joined row of that type has the copy equal to the id" do
+      expect(met?(assumption)).to be(true)
+    end
+
+    it "isn't met when one joined row of that type has a different copy, or a NULL one" do
+      conn.exec("UPDATE public.submissions SET course_id = 21 WHERE id = 3")
+      differs = met?(assumption)
+      conn.exec("UPDATE public.submissions SET course_id = NULL WHERE id = 3")
+
+      expect([differs, met?(assumption)]).to eq([false, false])
+    end
+
+    it "checks only rows of the stated type" do
+      expect(met?(assumption.merge("type_value" => "Group"))).to be(false)
+    end
+
+    it "runs under a 300000 ms statement timeout, and a timeout is unmet" do
+      expect(described_class::DenormalizedEqual::TIMEOUT_MS).to eq(300_000)
+      stub_const("#{described_class}::DenormalizedEqual::TIMEOUT_MS", 200)
+      locker = production.connect
+      locker.exec("BEGIN")
+      locker.exec("LOCK TABLE public.submissions IN ACCESS EXCLUSIVE MODE")
+
+      expect(met?(assumption)).to be(false)
+      locker.exec("ROLLBACK")
+      expect(met?(assumption)).to be(true)
+    ensure
+      locker&.close
+    end
+
+    it "is unmet when the check fails, and leaves the connection usable" do
+      expect([met?(assumption.merge("type_column" => "context_id")),
+              met?(assumption.merge("table" => "public.nowhere"))]).to eq([false, false])
+      expect([conn.transaction_status, met?(assumption)]).to eq([PG::PQTRANS_IDLE, true])
+    end
+  end
 end

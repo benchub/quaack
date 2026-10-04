@@ -37,7 +37,9 @@ module Quaack
       #                    literal set), "timed_out" }
       #   rewrites         one per stored rewrite, ranked or not: {
       #                    "rewrite" (rewrite_<n>), "sql", "source" (rule,
-      #                    llm, or operator) and "rules" (RewriteSource),
+      #                    llm, or operator), "rules", and "empirical"
+      #                    (the denormalized_equal assumptions it rests
+      #                    on) (RewriteSource),
       #                    "fate" and its "scenario", "rule", "round",
       #                    "after", and "cycle" (RewriteFate; cycle is an
       #                    fk_cycle refusal's tables, "schema.name" in
@@ -57,7 +59,9 @@ module Quaack
       #                    index once, with the searches it came up in
       #   rule_bugs        [{ "rewrite", "rules", "step" (step9, step10, or
       #                    14c) }]: each rule-made rewrite a test disproved
-      #                    (never a 14c timeout, which compares nothing),
+      #                    (never a 14c timeout, which compares nothing,
+      #                    nor a step 9 or 10 disproof of one resting on
+      #                    a denormalized_equal assumption),
       #                    a bug in QUAACK (DESIGN.md 6c, RuleBugs), sent
       #                    whether or not top is empty
       #   burndown         { "stages", "totals" }, the 15b counts as

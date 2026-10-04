@@ -57,11 +57,23 @@ module Quaack
 
       module_function
 
-      def build(conn, parse, atoms, schema)
+      # probes, by atom index, are the probes to sort with (see probes).
+      def build(conn, parse, atoms, schema, probes = {})
         atoms.each_with_index.filter_map do |atom, i|
           next unless pooled?(atom)
 
-          [i, pool(conn, parse, atom, schema)]
+          [i, pool(conn, parse, atom, schema, probes[i])]
+        end.to_h
+      end
+
+      # Each pooled atom's probe, by index, asking Postgres once per value
+      # (CachedProbe).
+      def probes(conn, parse, atoms, schema)
+        atoms.each_with_index.filter_map do |atom, i|
+          next unless pooled?(atom)
+
+          column = atom.columns[0]
+          [i, CachedProbe.new(probe(conn, parse, atom, schema.column(column.table, column.name)))]
         end.to_h
       end
 
@@ -111,16 +123,15 @@ module Quaack
         BOUNDARIES.find { |pattern, _| pattern.match?(type) }&.last || []
       end
 
-      def pool(conn, parse, atom, schema)
+      def pool(conn, parse, atom, schema, probe = nil)
         column = atom.columns[0]
         col = schema.column(column.table, column.name)
         node = node(parse, atom)
-        sorted(conn, node, col) => { satisfying:, failing:, boundaries: }
+        sorted(conn, node, col, probe || Probe.new(conn, node, col)) => { satisfying:, failing:, boundaries: }
         Pool.new(column:, type: col.type, oid: col.oid, nullable: col.nullable, satisfying:, failing:, boundaries:)
       end
 
-      def sorted(conn, node, col)
-        probe = Probe.new(conn, node, col)
+      def sorted(conn, node, col, probe = Probe.new(conn, node, col))
         groups = candidates(conn, node, col).uniq.group_by { |v| probe.call(v) }
         { satisfying: groups.fetch("t", []), failing: groups.fetch("f", []),
           boundaries: boundaries(col.type).select { |v| probe.readable?(v) } }
@@ -184,6 +195,22 @@ module Quaack
         rescue PG::Error
           false
         end
+
+        # Probes with the same key give the same answers.
+        def key = [@sql, @col.oid, @col.type]
+      end
+
+      # A Probe that asks Postgres once per value. The answers hold real
+      # values, so they stay in the enclave.
+      class CachedProbe
+        def initialize(probe)
+          @probe = probe
+          @answers = {}
+          @readable = {}
+        end
+
+        def call(value) = @answers.fetch(value) { @answers[value] = @probe.call(value) }
+        def readable?(value) = @readable.fetch(value) { @readable[value] = @probe.readable?(value) }
       end
 
       # Tree helpers.

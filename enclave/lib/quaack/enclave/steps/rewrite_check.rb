@@ -29,7 +29,9 @@ module Quaack
       # unmet assumption only adds a warning (DESIGN.md step 7).
       #
       # On one racetrack connection, each rewrite goes through, in order:
-      # its assumptions' vocabulary (bad_assumption), RewriteCandidateCheck
+      # its assumptions' vocabulary (bad_assumption, which a
+      # denormalized_equal from anything but a 6c rule is too),
+      # RewriteCandidateCheck
       # (its rules), 6b's AssumptionCheck (unmet_assumption), and step 8's StructuralDiscard, with the
       # slow literals (failed_to_plan, output_mismatch).
       #
@@ -71,6 +73,7 @@ module Quaack
         FIELDS = %w[assumptions sql transformation].freeze
         STRUCTURAL = %w[failed_to_plan output_mismatch].freeze
         OWN = %w[too_many bad_assumption unmet_assumption].freeze
+        DATA_KINDS = %w[denormalized_equal].freeze
 
         class Error < IndexSearch::Error; end
         # A rewrite this step rejects by a rule of its own.
@@ -148,13 +151,23 @@ module Quaack
 
         def outcome(index, rewrite, context)
           return rejected(index, "too_many") if index > MAX && context[:source] == "llm"
-          return rejected(index, "bad_assumption") unless RewriteAssumptions.valid?(rewrite["assumptions"])
+          return rejected(index, "bad_assumption") unless assumptions?(rewrite["assumptions"], context[:source])
 
           sql, types, warnings = checked(rewrite, context)
           name = context[:stored].delete(sql) || save(context, rewrite, sql, types, warnings)
           { type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }
         rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
           rejected(index, e.rule)
+        end
+
+        # Whether the assumptions are in 6b's vocabulary, with
+        # denormalized_equal, which 6b checks against the data, only from a
+        # 6c rule (DATA_KINDS). From anyone else it's refused here, before
+        # anything is checked, so the LLM or the operator can't make 6b
+        # probe the tables it names.
+        def assumptions?(assumptions, source)
+          RewriteAssumptions.valid?(assumptions) &&
+            (source == "rule" || assumptions.none? { DATA_KINDS.include?(it["kind"]) })
         end
 
         # The accepted SQL, its output column types, and its warnings, or raises.

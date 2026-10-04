@@ -43,6 +43,9 @@
 <% rewrites.each do |r| %>
 <article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><h3><%= h Words.rewrite(r["rewrite"]) %></h3>
 <p class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</p>
+<% if (assumed = empirical(r)) %>
+<p class="empirical"><%= h assumed %></p>
+<% end %>
 <p class="fate">What became of it: <%= h fate(r) %></p>
 <%= sql(r["sql"]) %>
 <% unless atoms(r).empty? %>

@@ -973,42 +973,7 @@ Minor findings from the build and both reviews of 20261001-23:
 - **Design:** 6c, step 9, step 10, 15, 15b.
 - **Status:** todo
 
-### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data.
-
-- **Note:** First filed as 20261002-3. Renumbered when merging another machine's work, which had already used -3.
-
-A hand-tuned Canvas query got much faster by repeating a predicate across a join. The original read:
-
-```sql
-FROM submissions JOIN assignments ON assignments.id = submissions.assignment_id ...
-WHERE assignments.context_type = 'Course' AND assignments.context_id = 2588916 AND submissions.user_id = 2418270 ...
-```
-
-The tuned version keeps every predicate and adds `submissions.course_id = 2588916`, which lets Postgres narrow `submissions` before the join. The planner doesn't do this itself, because the query never states `submissions.course_id = assignments.context_id`.
-
-The rule: when a query joins `s.<x>_id = a.id` and filters `a.<p>_type = '<Klass>'` and `a.<p>_id = <const>` (Rails's polymorphic convention), and `s` has a column named Rails's way for `<Klass>` (`Course` becomes `course_id`, and `Foo::Bar` becomes `foo_bar_id`), add `s.<klass>_id = <const>` and keep the original predicates. If a foreign key from that column exists, it must point at `<Klass>`'s table, and the rule doesn't fire otherwise.
-
-The rewrite only adds a predicate, so it can drop rows but never add them. It's sound only if every joined row has `s.<klass>_id = a.<p>_id` when `a.<p>_type = '<Klass>'`. The catalog can't prove that from naming alone, so this rule is a heuristic, unlike the sound rules 6c describes. It's checked against the data instead:
-
-- The rule states a new assumption kind, such as `denormalized_equal` (child column, parent column, type column, and type value).
-- 6b checks it with one query on the real database, in the enclave: `EXISTS` a joined row where `a.<p>_type = '<Klass>'` and `s.<klass>_id IS DISTINCT FROM a.<p>_id`. Only the boolean leaves the jump server. If any such row exists, the assumption is unmet and the rewrite is dropped.
-- The report marks the rewrite as resting on an empirical assumption, one the data holds today but the schema doesn't enforce, and names the columns.
-- Steps 9 and 10 test it like any other rewrite. If they disprove it, the report doesn't call that a rule bug, since the assumption was empirical.
-
-Open questions to settle before building: the cost of the `EXISTS` check on large tables (a statement timeout, and treat a timeout as unmet?), what to do when two candidate columns could match, and which Rails inflections to support (STI, namespaced classes, irregular plurals for the table check).
-
-DESIGN.md 6c says every rule is sound by design. Update it to allow heuristic rules whose assumptions are checked against the data, and list the new assumption kind in 6b.
-
-- **Depends on:** 20261001-22, 20261001-23.
-- **Came from:** A hand-tuned query the user shared, 2026-10-02.
-- **Design:** 6b, 6c, 15.
-- **Note (2026-10-02, answers):** The data check runs on the racetrack with a 300000 ms statement timeout, and a timeout or error is unmet. Refuse when two columns could match. Naming: CamelCase to snake_case, `::` to `_`. If an FK exists, its target table must be the snake name plus `s` or `es`, or the rule doesn't fire. The rule never reads the type literal: it turns each candidate `<x>_id` column into its class name and asks `Literals#holds?` whether the placeholder equals it.
-- **Note (2026-10-03, set aside for a question):** Built on `task/20261002-15` (worktree kept). The first review found two blocking issues.
-  - **Trust boundary:** `rewrite-check` accepts `denormalized_equal` from any source, so an LLM or operator rewrite can probe production data. Fix: accept it only from `rule`.
-  - **Step 9:** the rule's rewrite never passes step 9 on the Canvas shape. S1's hit row gives `course_id` a value other than the parent's `context_id`, so the rewrite is disproved and never ranked.
-  - **Waiting on the user:** should step 9/10 fixtures honour `denormalized_equal`, or should a step 9/10 disproof of such a rewrite count as untested, leaving 14c's check on real data to decide?
-- **Note (2026-10-04, answers):** Honour it. Step 9 and 10 fixtures for a rewrite that rests on `denormalized_equal` generate rows that keep the child column equal to the parent column wherever the type column holds the class. Also make the trust fix: accept `denormalized_equal` only from `rule`.
-- **Status:** todo
+### 20261002-15. 6c rule: `polymorphic_key_copy`, checked against the data. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-16. `distinct_join_to_exists`: handle what Rails sends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2091,17 +2056,7 @@ These are minor findings from building and reviewing 20261003-34:
 - **Design:** Step 9.
 - **Status:** todo
 
-### 20261003-38. `bad_value`: loose ends from 20261003-24.
-
-These are minor findings from the review of 20261003-24:
-
-- **`Counterexamples::Evaluated` catches every `PG::Error`** (`evaluated.rb:23`). A dropped connection or a statement timeout gets reported as `bad_value`. No value leaks, and the next query still fails loudly, but the refusal reason is misleading. Catch only data errors (SQLSTATE class 22, and 23 if it applies). Let connection and timeout errors go up as the usual rule-only error.
-- **Wrapped test description** (`counterexample_steps_postgres_spec.rb:192`). The description wraps onto a second line, so `rspec file:192` runs a different test. Put it on one line.
-
-- **Depends on:** 20261003-24.
-- **Came from:** The review of 20261003-24, 2026-10-03.
-- **Design:** 10a.
-- **Status:** todo
+### 20261003-38. `bad_value`: loose ends from 20261003-24. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-39. Step 9: more variety in self-references and repeated parents.
 
@@ -2198,24 +2153,114 @@ The rule:
 - **Design:** Progress lines for `quaack run`, the protocol whitelist.
 - **Status:** todo
 
-### 20261004-2. Step 9 re-probes CHECK constraints thousands of times.
+### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
 
-On a real Canvas run, rewrite-test spent over 10 minutes on one rewrite. It sent the same query again and again: `SELECT $1::text = ANY(ARRAY['complete'::varchar::text, 'processing'::varchar::text, …])`, a CHECK on a `workflow_state`-like column.
+### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
 
-The cause is in `scenarios/checks.rb`:
-- `Checks#satisfying` eagerly runs `ValuePools.sorted` for every CHECK on the column, about 35 probe queries, on every call. It does this even when the first preferred value passes.
-- `allows?` calls each probe twice per value.
-- Nothing is cached, and `FreeValues#plain_value` calls `satisfying` for every free column of every row, in every group, retry, further fixture, scenario and rewrite.
+The review of 20261003-38 found four minor issues:
+- Class 42 includes 42501, a permission error. It isn't caused by the value, so it probably shouldn't count as `bad_value`.
+- A value can cause a P0001 (raised by a trigger or function) or 54000 (program limit) error. These now fail the whole step as `internal_error`, when they should count as `bad_value`.
+- The re-raised PG::Error still carries the value in its message. Only ErrorFilter keeps it from leaving the enclave. Wrap it with `cause: nil` and a message that carries only the sqlstate.
+- The timeout and termination tests check weakly that the value is absent. Make them use a sentinel value and assert that it never appears in the output.
 
-The fix:
-- Cache the probe results per CHECK node and value, and the sorted values per node, within a run's `Checks`. A CHECK's answer for a value never changes during a run.
-- Compute a CHECK's own satisfying values lazily, only when no preferred value passes.
-- Call each probe once per value.
-- Look for other hot paths with the same pattern, such as `ValuePools.sorted` for atom pools and `Values#readable?`, and cache them too if they repeat.
+- **Depends on:** 20261003-38.
+- **Came from:** The review of 20261003-38.
+- **Design:** Step 9, ErrorFilter.
+- **Status:** todo
 
-Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK IN list of 8 values and several such columns. Count the queries the connection sends during scenario building, using a thin counting wrapper around the real connection. Assert that a second scenario build sends no new probe queries for the same column and value, and that the total stays below a small bound. The results, the fixtures and the step 9 outcomes must not change.
+### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
+
+When no value in the pool satisfies both the atom and the column's CHECKs, the Picker falls back to the first value in the pool, even if that value breaks a CHECK. On Canvas-like schemas:
+- `workflow_state <> 'deleted'` picks `'DELETED'`, which isn't in the CHECK's IN list.
+- `role_state LIKE 'c%'` picks `'c%'`.
+
+S1 then fails to load with `fixture_load_failed` (23514), so every candidate is disproved. This was there before 20261004-2. It will likely hit the next Canvas run.
+
+The fix: add the CHECK's own values that satisfy the atom to the Picker's candidates. Test on real Postgres with a CHECK IN list and both atoms above.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-5. Build the original query's scenarios once, not once per rewrite.
+
+`steps/counterexamples.rb` calls `StepNine.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-6. Pin the type part of step 9's probe cache key.
+
+`ValuePools::Probe#key` is `[sql, oid, format_type]` (`value_pools.rb:200`). If it drops the type, entries are shared wrongly across types and fixtures change, yet every committed spec still passes. Add a spec where the same CHECK sits on columns of different types, for example `integer` and `numeric`, or `varchar(8)` and `varchar(255)`. Assert each fixture's value, and confirm the spec goes red when the key drops `oid` and the type.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The review of 20261004-2.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-7. Harden the live clock's timer thread.
+
+The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/progress.rb`:
+- No spec pins `timer&.join`, so removing it keeps every spec green. An old timer that wakes as a step closes could draw a stale time on the next step's line. Test this with a redraw held mid-draw by a slow io.
+- A Ctrl-C during `timer.join` skips the rest of the cleanup, so `@start` stays set.
+- A write error such as EPIPE inside the timer thread is raised again from `join` and replaces the step's own result.
+
+- **Depends on:** 20261003-16.
+- **Came from:** The review of 20261003-16.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-8. Step 9 gaps found by the FK-cycle review.
+
+The review of 20261003-23 and -30 found these minor gaps on the Canvas `accounts` ↔ `courses` schema:
+- `IS [NOT] NULL` on the cut column of an FK cycle fails to load with `fixture_load_failed` for every candidate, including the correct ones. It fails safe, but no rewrite of such a query can pass. Check whether 20261003-32 covers this first.
+- `Topology#roots` uses `load_parents`, and no spec pins that. Switching it back to `parents` stays green.
+- These wrong rewrites pass on acyclic schemas too, so they're general step 9 variety gaps:
+  - "own template" rewritten as "has template and has courses";
+  - a `<>` foreign template;
+  - its mirror, "has template and own courses" rewritten as "own template";
+  - a dropped plain ascending `ORDER BY course_template_id`;
+  - a dropped `ORDER BY t.name`.
+
+  No scenario has an account that has courses plus a template from another account.
+
+- **Depends on:** 20261003-23, 20261003-30.
+- **Came from:** The review of 20261003-23 and -30.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261004-9. Report `polymorphic_key_copy` disproofs in steps 9 and 10 as rule bugs.
+
+`rule_bugs.rb:58` still skips every step 9 or 10 disproof of a rewrite that rests on `denormalized_equal`. That made sense before 20261002-15's fix round, when fixtures didn't keep the copy. Now they do, so a wrong rule, such as one copying the wrong constant, gets disproved but isn't reported as a QUAACK bug. Remove the exemption, with a test showing that a broken rule's disproof shows up in the rule bugs.
+
+Also, a twin that drops the type filter is caught only if step 10's LLM writes a row of another class with the copy set. Consider making step 9's fixtures add such a row themselves.
+
+- **Depends on:** 20261002-15.
+- **Came from:** The second review of 20261002-15.
+- **Design:** Steps 9, 10 and 15.
+- **Status:** todo
+
+### 20261004-10. Make the enclave call timeout configurable.
+
+The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, 12a (index-build) failed after exactly 1h00m00s.
+
+Add a driver config setting for this timeout, with a `quaack run` flag to override it, and pass it to every `Transport::Ssh.new` that runs pipeline steps. Validate it as a positive number. Say in the failure message which setting to raise when a call hits the limit, for example: "the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds`". Document it in the README.
 
 - **Depends on:** none.
 - **Came from:** The user's Canvas run, 2026-10-04.
-- **Design:** Step 9.
+- **Design:** Transport, config.
+- **Status:** todo
+
+### 20261004-11. Build each candidate index in its own enclave call.
+
+Step 12a builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
+
+Check how a resumed run treats indexes that already exist on the racetrack. They should be skipped, not built again, and not counted as failures.
+
+- **Depends on:** 20261004-10.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Step 12a.
 - **Status:** todo

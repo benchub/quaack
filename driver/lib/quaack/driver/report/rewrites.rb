@@ -60,6 +60,20 @@ module Quaack
           "#{RULES} #{rules.size == 1 ? "rule" : "rules"} #{rules.join(", then ")}"
         end
 
+        # What a rule-made rewrite rests on that the data holds and the
+        # schema doesn't enforce (DESIGN.md 6b's denormalized_equal), as a
+        # sentence, or nil if nothing.
+        def empirical(entry)
+          said = Array(entry["empirical"]).grep(Hash).map do |a|
+            "#{a["table"]}.#{a["column"]} equals #{a["references_table"]}.#{a["id_column"]} wherever " \
+              "#{a["references_table"]}.#{a["type_column"]} names the type in your query"
+          end
+          return if said.empty?
+
+          "It rests on something your data holds today but your schema doesn't enforce: #{said.join("; ")}. " \
+            "QUAACK checked it on the real data."
+        end
+
         # What became of a rewrite, as a sentence.
         def fate(entry)
           return UNFINISHED.fetch(entry["after"], UNFINISHED[nil]) if entry["fate"] == "unfinished"
