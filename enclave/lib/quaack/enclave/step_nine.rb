@@ -29,15 +29,17 @@ module Quaack
     # such as fk_cycle or complex_check), no candidate is tested. The
     # report's refused is then the error's rule, and every candidate's
     # Result is not passed, with that rule and scenario nil. Otherwise
-    # refused is nil.
+    # refused is nil. For fk_cycle, cycle is the cycle's TableNames
+    # (Scenarios::Topology); otherwise it's nil.
     #
     # Trust boundary: the report holds booleans, symbols, counts, and 9c's
     # redacted shapes. The fixtures, with the real literals, stay here. A
-    # refusal keeps only its rule, never the column it names.
+    # refusal keeps only its rule, never the column it names, and for
+    # fk_cycle the cycle's table names, which are schema.
     module StepNine
       # dropped counts the scenario groups left out because they collide on
       # a unique key (Scenarios::Builder#dropped).
-      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused)
+      Report = Data.define(:results, :untested, :untested_atoms, :retries, :dropped, :refused, :cycle)
       Result = Data.define(:passed, :scenario, :rule, :load_order)
 
       module_function
@@ -48,14 +50,14 @@ module Quaack
         guard = VacuityGuard.run(runner, builder, sql)
         results = candidates.map { |candidate| test(runner, guard.scenarios, sql, candidate) }
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
-                   dropped: builder.dropped, refused: nil)
+                   dropped: builder.dropped, refused: nil, cycle: nil)
       rescue Scenarios::Error => e
-        refused(candidates, e.rule)
+        refused(candidates, e.rule, cycle: (e.cycle if e.rule == :fk_cycle))
       end
 
-      def refused(candidates, rule)
+      def refused(candidates, rule, cycle: nil)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
-        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule)
+        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule, cycle:)
       end
 
       def test(runner, scenarios, sql, candidate)

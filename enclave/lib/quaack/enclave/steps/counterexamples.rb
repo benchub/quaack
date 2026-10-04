@@ -69,7 +69,9 @@ module Quaack
 
         # `quaacks rewrite-test` (step 9). A rewrite whose
         # rewrite_pruned_<n> says discarded is skipped, with rule discarded.
-        # Sends one rewrite_test: rewrite, passed, scenario, rule.
+        # Sends one rewrite_test: rewrite, passed, scenario, rule. An
+        # fk_cycle refusal also stores cycle, the cycle's [schema, name]
+        # pairs, for the report; it isn't sent here.
         module RewriteTest
           module_function
 
@@ -99,6 +101,7 @@ module Quaack
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
               **({ "refused" => true } if report.refused),
+              **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms }
           ensure
             connection&.close

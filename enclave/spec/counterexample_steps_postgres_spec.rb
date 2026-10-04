@@ -102,6 +102,32 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(tested).to include("rule" => "domain_check")
     end
 
+    # An fk_cycle refusal keeps the cycle's tables, which are schema, in the
+    # store for the report: never a row of theirs, on stdout or in the store.
+    it "stores the tables of an fk_cycle refusal, in the order their foreign keys point, and no row value" do
+      rows = LeakCheck::Sentinels.new
+      ready(same, arena_sql: <<~SQL)
+        CREATE TABLE public.accounts (id int PRIMARY KEY, order_id int NOT NULL, label text);
+        INSERT INTO public.orders (id, note, status) VALUES (#{rows.number}, '#{rows.text}', '#{rows.word}');
+        INSERT INTO public.accounts VALUES (#{rows.number}, #{rows.number}, '#{rows.text}');
+        ALTER TABLE public.orders ADD COLUMN account_id int;
+        UPDATE public.orders SET account_id = #{rows.number};
+        ALTER TABLE public.orders ALTER COLUMN account_id SET NOT NULL;
+        ALTER TABLE public.orders ADD FOREIGN KEY (account_id) REFERENCES public.accounts;
+        ALTER TABLE public.accounts ADD FOREIGN KEY (order_id) REFERENCES public.orders;
+      SQL
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
+                                      "scenario" => nil, "rule" => "fk_cycle" }, { "type" => "done" }])
+      tested = stored.read("rewrite_tested_1")
+      expect(tested).to include("refused" => true, "rule" => "fk_cycle",
+                                "cycle" => [%w[public orders], %w[public accounts], %w[public orders]])
+      expect_no_leaks(rows, outcome, objects: { tested: })
+      expect_no_leaks(sentinels, outcome, objects: { tested: })
+    end
+
     it "skips a rewrite step 8 discarded, without connecting to the arena" do
       ready(same, arena: false)
       store.write("rewrite_pruned_1", "discarded" => true)
