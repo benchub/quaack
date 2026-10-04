@@ -147,12 +147,18 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(run(s6, anti_sql)).to eq(lonely.sort_by(&:to_i).map { |id| [id] })
       end
 
-      # c.id IS NULL has no value, so courses.id's key class never builds;
-      # the cut column stays out of it, NULL, and accounts rows still build.
-      it "keeps the cut column out of a key class with no value, NULL in every scenario" do
+      # c.id IS NULL has no value, so the hit and the copy of its courses row
+      # never build. The near miss builds a course, and its account points
+      # at it; the copy of the hit's account leaves courses out, so its cut
+      # column is NULL, and it loads.
+      it "gives the cut column its parent's key where the parent builds, NULL in a copy" do
         scenarios = build(anti_sql)
-        expect(scenarios.values.flat_map { |rows| values(rows, "accounts", "course_template_id") }.uniq).to eq([nil])
-        expect(rows_of(scenarios[:s3], "accounts")).not_to be_empty
+        expect(values(scenarios[:s1], "accounts", "course_template_id").compact).not_to be_empty
+        expect(values(scenarios[:s3], "accounts", "course_template_id")).to include(nil)
+        scenarios.each_value do |rows|
+          expect(values(rows, "accounts", "course_template_id").compact - values(rows, "courses", "id")).to eq([])
+          expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2)
+        end
       end
 
       it "passes NOT EXISTS and disproves an inner join" do
@@ -167,14 +173,17 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         expect(report.untested).to eq(["c.account_id = a.id"])
       end
 
-      # c.title IS NULL has no value, so courses rows never build, though
-      # courses.id's key class has a value; the cut column is NULL anyway.
-      it "keeps the cut column NULL when another of its parent's columns has no value" do
+      # c.title IS NULL has no value, so the hit's courses row and its copy
+      # never build, though courses.id's key class has a value.
+      it "loads every scenario when another of its parent's columns has no value" do
         title_sql = "SELECT a.id, a.course_template_id FROM fx.accounts a LEFT JOIN fx.courses c " \
                     "ON c.account_id = a.id WHERE c.title IS NULL ORDER BY a.id"
         scenarios = build(title_sql)
-        expect(scenarios.values.flat_map { |rows| values(rows, "accounts", "course_template_id") }.uniq).to eq([nil])
-        scenarios.each_value { |rows| expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2) }
+        expect(values(scenarios[:s1], "accounts", "course_template_id").compact).not_to be_empty
+        scenarios.each_value do |rows|
+          expect(values(rows, "accounts", "course_template_id").compact - values(rows, "courses", "id")).to eq([])
+          expect(loaded_templates(rows)).to eq([expected_templates(rows)] * 2)
+        end
         expect(run(scenarios[:s3], title_sql)).not_to be_empty
       end
     end
@@ -250,8 +259,9 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
     end
 
     # c.id IS NULL can't hold for a primary key, so the cut column's key
-    # class has no value. The cut column is NULL instead, so the accounts
-    # rows the other tables' copies reference still load.
+    # class has no value, and the hit never builds. The copy of the hit's
+    # account leaves courses out, so its cut column is NULL and it loads
+    # for the enrollment_terms copy to reference.
     it "loads every scenario of an anti join on the kept edge" do
       scenarios = build(anti_sql)
       expect(rows_of(scenarios[:s3], "accounts")).not_to be_empty
@@ -267,11 +277,35 @@ RSpec.describe Quaack::Enclave::Scenarios::Topology do
         conn, anti_sql,
         ["SELECT a.id FROM fx.accounts a WHERE NOT EXISTS " \
          "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
-         "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id",
-         "SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NULL ORDER BY a.id"]
+         "SELECT a.id FROM fx.accounts a JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id"]
       )
-      expect(report.results.map(&:passed)).to eq([true, false, false])
+      expect(report.results.map(&:passed)).to eq([true, false])
       expect(report.results.map(&:rule)).not_to include(:fixture_load_failed)
+    end
+
+    # A near miss builds a course, so an account there points at it.
+    it "disproves dropping an anti join on the cut edge itself (Rails where.missing)" do
+      report = Quaack::Enclave::StepNine.run(
+        conn,
+        "SELECT a.id, a.name FROM fx.accounts a LEFT JOIN fx.courses c ON c.id = a.course_template_id " \
+        "WHERE c.id IS NULL ORDER BY a.id",
+        ["SELECT a.id, a.name FROM fx.accounts a WHERE NOT EXISTS " \
+         "(SELECT 1 FROM fx.courses c WHERE c.id = a.course_template_id) ORDER BY a.id",
+         "SELECT a.id, a.name FROM fx.accounts a ORDER BY a.id"]
+      )
+      expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
+    end
+
+    it "disproves dropping the anti join from accounts with a template but no courses" do
+      report = Quaack::Enclave::StepNine.run(
+        conn,
+        "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id " \
+        "LEFT JOIN fx.courses c ON c.account_id = a.id WHERE c.id IS NULL ORDER BY a.id",
+        ["SELECT a.id FROM fx.accounts a WHERE a.course_template_id IS NOT NULL AND NOT EXISTS " \
+         "(SELECT 1 FROM fx.courses c WHERE c.account_id = a.id) ORDER BY a.id",
+         "SELECT a.id FROM fx.accounts a JOIN fx.courses t ON t.id = a.course_template_id ORDER BY a.id"]
+      )
+      expect(report.results.map { |r| [r.passed, r.rule] }).to eq([[true, nil], [false, :row_count]])
     end
   end
 

@@ -75,10 +75,9 @@ module Quaack
     # nullable are cut from the load order (see Topology), preferring ones
     # no atom reads. A cut column still gets its value, as without the
     # cycle, but its rows defer it (ArenaRunner::FixtureRow#deferred): it
-    # loads as NULL and is set once every row has loaded. It's NULL when its
-    # parent's rows never build, because an atom no value satisfies (c.id
-    # IS NULL on a NOT NULL key) reads a column in the key class of one of
-    # its parent's columns. A cycle with no nullable foreign key raises
+    # loads as NULL and is set once every row has loaded. It's NULL in a
+    # group that leaves its parent's table out. A cycle with no nullable
+    # foreign key raises
     # Error(:fk_cycle). Rows come table by table, parents first, each
     # table's rows together, as 9d's reverse load needs.
     #
@@ -144,7 +143,7 @@ module Quaack
 
           @atoms = PredicateAtoms.extract(parse, column_names: @schema.column_names)
           @pools = ValuePools.build(conn, parse, @atoms, @schema)
-          @topology = Topology.new(@schema, @atoms, @pools)
+          @topology = Topology.new(@schema, @atoms)
           @checks = Checks.new(conn, @schema)
           @values = Values.new(conn)
         end
