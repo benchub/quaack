@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "existence_in_flip/ordering"
 require_relative "existence_in_flip/scopes"
 require_relative "existence_in_flip/selection"
 
@@ -41,10 +42,12 @@ module Quaack
       #
       # - The query is one SELECT whose select list is all placeholders,
       #   with LIMIT a placeholder the literal oracle says is 1, and no
-      #   DISTINCT, GROUP BY, HAVING, WINDOW, ORDER BY, or OFFSET.
-      #   Aggregates and window functions can then appear nowhere at its
-      #   level. It calls no volatile function anywhere. A locking clause
-      #   never gets here: SupportedSql refuses it.
+      #   DISTINCT, GROUP BY, HAVING, WINDOW, or OFFSET. Aggregates and
+      #   window functions can then appear nowhere at its level. It calls
+      #   no volatile function anywhere. A locking clause never gets here:
+      #   SupportedSql refuses it. An ORDER BY becomes ORDER BY 1 (see
+      #   Ordering), when each of its keys is a position or a column that
+      #   can't fail to sort.
       # - The IN is one of the conditions its WHERE ANDs together, written
       #   x IN (SELECT y ...), not = ANY. SupportedSql refuses a row as x.
       # - The subquery is one plain SELECT of one column (see
@@ -76,7 +79,7 @@ module Quaack
 
         def rewrites(parse, catalog, literals)
           top = Tree.select(parse.tree)
-          return [] unless literals && top && existence_check?(top, literals)
+          return [] unless literals && top && existence_check?(top, literals) && Ordering.kept?(top, catalog)
           return [] if catalog.calls_volatile?(Deparse.faithfully(parse.tree))
 
           Array.new(Tree.conjuncts(top.where_clause).size) { rewrite(parse.tree, it, literals) }.compact
@@ -91,10 +94,11 @@ module Quaack
             one?(top.limit_count, literals)
         end
 
-        # Whether nothing at the query's level groups, orders, or skips rows.
+        # Whether nothing at the query's level groups or skips rows. An
+        # ORDER BY is Ordering's.
         def plain_level?(top)
           top.distinct_clause.empty? && top.group_clause.empty? && top.having_clause.nil? &&
-            top.window_clause.empty? && top.sort_clause.empty? && top.limit_offset.nil?
+            top.window_clause.empty? && top.limit_offset.nil?
         end
 
         def one?(limit, literals) = limit&.node == :param_ref && literals.holds?("$#{limit.param_ref.number} = 1")
@@ -145,6 +149,7 @@ module Quaack
           exists = exists_over(top, others + [equals(link.testexpr, selected)])
           top.from_clause.replace(sub.from_clause.to_a)
           top.where_clause = Tree.all_of(Tree.conjuncts(sub.where_clause) + [exists])
+          Ordering.keep!(top)
         end
 
         # An EXISTS over top's FROM with conditions.

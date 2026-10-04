@@ -267,6 +267,45 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     expect_flips(sql.call(1, 3), sql.call(2, 3), sql.call(4, 9), sql.call(5, 9))
   end
 
+  it "keeps an ORDER BY of columns or positions as ORDER BY 1, since every row is the same constants" do
+    expect_rewrites(
+      canvas(10, limit: "ORDER BY enrollments.id DESC, 1 LIMIT 1"),
+      "SELECT $1 AS one FROM public.tool_lookups WHERE tool_lookups.tool_product_code = $6 AND EXISTS (" \
+      "SELECT 1 FROM public.enrollments JOIN public.courses ON courses.id = enrollments.course_id " \
+      "JOIN public.assignments ON assignments.context_id = courses.id " \
+      "WHERE enrollments.user_id = $2 AND enrollments.workflow_state = $3 AND courses.workflow_state <> $4 " \
+      "AND assignments.workflow_state = $5 AND assignments.id = tool_lookups.assignment_id) ORDER BY 1 LIMIT $7"
+    )
+    %w[enrollments.id 1].each do |key|
+      expect_flips(*[10, 11, 12, 13].map { canvas(it, limit: "ORDER BY #{key} LIMIT 1") })
+    end
+    expect_flips(*%w[turnitin other nothing].map do |code|
+      "SELECT 1 AS one FROM public.assignments AS a WHERE a.id IN (#{turnitin(code)}) " \
+        "ORDER BY a.workflow_state, a.id DESC LIMIT 1"
+    end)
+  end
+
+  it "refuses an ORDER BY that could fail on the original's rows, which the rewrite wouldn't sort" do
+    sql = canvas(10, limit: "ORDER BY 1 / (enrollments.id - enrollments.id) LIMIT 1")
+    expect { conn.exec(sql) }.to raise_error(PG::DivisionByZero)
+    expect(rewritten(sql)).to eq([])
+    conn.exec("CREATE TABLE public.docs (id int, body json, bodies json[]); " \
+              "INSERT INTO public.docs VALUES (1, '{}', '{}'), (1, '[]', '{[]}')")
+    %w[docs docs.bodies d.id].each do |key|
+      whole = "SELECT 1 AS one FROM public.docs#{" AS d(x, y, id)" if key.start_with?("d.")} WHERE " \
+              "#{key.start_with?("d.") ? "d.x" : "docs.id"} IN (SELECT courses.id FROM public.courses) " \
+              "ORDER BY #{key} LIMIT 1"
+      expect { conn.exec(whole) }.to raise_error(PG::UndefinedFunction)
+      expect(rewritten(whole)).to eq([])
+    end
+    expect_refusals(
+      [[canvas(10, limit: "ORDER BY enrollments.id + 0 LIMIT 1"), canvas(10, limit: "ORDER BY enrollments.id LIMIT 1")],
+       [canvas(10, limit: "ORDER BY enrollments.id USING < LIMIT 1"),
+        canvas(10, limit: "ORDER BY enrollments.id LIMIT 1")],
+       [canvas(10, limit: "ORDER BY enrollments.id LIMIT 1", select: ""), canvas(10, select: "")]]
+    )
+  end
+
   # Each of sqls makes no rewrite, and any it did make would return its
   # rows.
   def expect_no_flip(*sqls)
@@ -328,7 +367,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
        [canvas(10, limit: ""), canvas(10)],
        [canvas(10, limit: "LIMIT NULL"), canvas(10)],
        [canvas(10, limit: "LIMIT 1 OFFSET 0"), canvas(10)],
-       [canvas(10, limit: "ORDER BY enrollments.id LIMIT 1"), canvas(10)],
        [canvas(10, select: "enrollments.id"), canvas(10, select: "1")],
        [canvas(10, select: "1, enrollments.id"), canvas(10, select: "1, 2")],
        [canvas(10, select: "count(*)"), canvas(10, select: "1")],
@@ -336,7 +374,6 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
        [canvas(10, limit: "GROUP BY enrollments.id LIMIT 1"), canvas(10)],
        [canvas(10, limit: "HAVING count(*) > 0 LIMIT 1"), canvas(10)],
        [canvas(10, limit: "WINDOW w AS (ORDER BY enrollments.id) LIMIT 1"), canvas(10)],
-       [canvas(10, limit: "ORDER BY 1 LIMIT 1"), canvas(10)],
        [canvas(10, limit: "GROUP BY 1 LIMIT 1"), canvas(10)],
        [canvas(10, limit: "WINDOW w AS () LIMIT 1"), canvas(10)]]
     )
