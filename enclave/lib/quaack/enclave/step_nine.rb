@@ -52,12 +52,13 @@ module Quaack
         Report.new(results:, untested: guard.untested, untested_atoms: guard.untested_atoms, retries: guard.retries,
                    dropped: builder.dropped, refused: nil, cycle: nil)
       rescue Scenarios::Error => e
-        refused(candidates, e.rule, cycle: (e.cycle if e.rule == :fk_cycle))
+        refused(candidates, e.rule, cycle: e.cycle)
       end
 
       def refused(candidates, rule, cycle: nil)
         results = candidates.map { Result.new(passed: false, scenario: nil, rule:, load_order: nil) }
-        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule, cycle:)
+        Report.new(results:, untested: [], untested_atoms: [], retries: 0, dropped: 0, refused: rule,
+                   cycle: (cycle if rule == :fk_cycle))
       end
 
       def test(runner, scenarios, sql, candidate)

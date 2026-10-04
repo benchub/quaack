@@ -2,6 +2,7 @@
 
 require_relative "../result_comparator"
 require_relative "../scenarios"
+require_relative "cycle_tables"
 
 module Quaack
   module Enclave
@@ -104,9 +105,6 @@ module Quaack
         BLANK = { "fate" => nil, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil,
                   "cycle" => nil }.freeze
 
-        # A cycle names at least two tables, and its first table again.
-        MIN_CYCLE = 3
-
         # What every rewrite's fate reads from steps 14 on, read once.
         # tables is the schema subset's relations (3b), as "schema.name".
         Context = Data.define(:top, :excluded, :measured, :timed_out, :verdicts, :tables)
@@ -119,13 +117,7 @@ module Quaack
           compared = store.read("result_comparison") if store.entry?("result_comparison")
           Context.new(top: selection["top"].map { it["label"] }, excluded: selection["excluded"],
                       measured: runs["candidates"].keys, timed_out: runs["timed_out"],
-                      verdicts: compared ? compared["verdicts"] : {}, tables: tables(store))
-        end
-
-        def tables(store)
-          return [] unless store.entry?("schema_subset")
-
-          store.read("schema_subset")["tables"].map { |schema, name| "#{schema}.#{name}" }.uniq.freeze
+                      verdicts: compared ? compared["verdicts"] : {}, tables: CycleTables.tables(store))
         end
 
         def call(store, rewrite, context)
@@ -175,18 +167,8 @@ module Quaack
 
         def untested(tested, context)
           rule = known(REFUSALS, tested["rule"])
-          fate("step9_untested", rule:, cycle: (cycle(tested["cycle"], context) if rule == "fk_cycle"))
-        end
-
-        # The stored cycle's tables, each as the schema subset's own
-        # "schema.name", or nil unless every one is a relation the subset
-        # holds and the cycle closes.
-        def cycle(stored, context)
-          return unless stored.is_a?(Array) && stored.size >= MIN_CYCLE && stored.first == stored.last
-          return unless stored.all? { it.is_a?(Array) && it.size == 2 && it.all?(String) }
-
-          names = stored.map { |schema, name| known(context.tables, "#{schema}.#{name}") }
-          names unless names.include?(nil)
+          cycle = CycleTables.check(tested["cycle"], context.tables) if rule == "fk_cycle"
+          fate("step9_untested", rule:, cycle:)
         end
 
         # A round entry with no rule was written before rounds kept theirs

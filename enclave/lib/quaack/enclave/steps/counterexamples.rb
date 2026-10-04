@@ -97,14 +97,17 @@ module Quaack
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            report = StepNine.run(connection, original, [candidate])
+            outcome(StepNine.run(connection, original, [candidate]))
+          ensure
+            connection&.close
+          end
+
+          def outcome(report)
             result = report.results.first
             { "passed" => result.passed, "scenario" => result.scenario&.to_s, "rule" => result.rule&.to_s,
               **({ "refused" => true } if report.refused),
               **({ "cycle" => report.cycle.map { [it.schema, it.name] } } if report.cycle),
               "untested" => report.untested, "untested_atoms" => report.untested_atoms }
-          ensure
-            connection&.close
           end
         end
 
