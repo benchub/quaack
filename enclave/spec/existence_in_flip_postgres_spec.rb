@@ -259,6 +259,61 @@ RSpec.describe Quaack::Enclave::RewriteRules::ExistenceInFlip do
     )
   end
 
+  # Each of sqls makes no rewrite, and any it did make would return its
+  # rows.
+  def expect_no_flip(*sqls)
+    aggregate_failures do
+      sqls.each do |sql|
+        want = runs(sql)
+        map = redacted(sql).placeholder_map
+        rewritten(sql).each { expect([sql, rows(it, map)]).to eq([sql, want]) }
+        expect(rewritten(sql)).to eq([]), sql
+      end
+    end
+  end
+
+  describe "a bare name that could be read as a whole row" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.posts (id int PRIMARY KEY, body text);
+        CREATE TABLE public.holders (id int PRIMARY KEY, posts int);
+        INSERT INTO public.posts VALUES (1, 'a'), (2, 'b');
+        INSERT INTO public.holders VALUES (1, NULL), (2, 5);
+      SQL
+    end
+
+    it "refuses one in the original's conditions, which the subquery's column of that name would capture" do
+      expect_no_flip(
+        "SELECT 1 AS one FROM public.posts WHERE posts.id IN (SELECT holders.id FROM public.holders) " \
+        "AND posts IS NULL LIMIT 1",
+        "SELECT 1 AS one FROM public.courses AS posts WHERE posts.id IN (SELECT holders.id FROM public.holders) " \
+        "AND posts IS NULL LIMIT 1",
+        "SELECT 1 AS one FROM public.posts WHERE posts.id IN (SELECT holders.id FROM public.holders) " \
+        "AND EXISTS (SELECT 1 FROM public.courses WHERE posts IS NULL) LIMIT 1",
+        "SELECT 1 AS one FROM public.posts JOIN public.courses ON posts IS NULL " \
+        "WHERE posts.id IN (SELECT holders.id FROM public.holders) LIMIT 1",
+        "SELECT 1 AS one FROM public.posts WHERE CASE WHEN posts IS NULL THEN posts.id END " \
+        "IN (SELECT holders.id FROM public.holders) LIMIT 1"
+      )
+    end
+
+    it "refuses one in the subquery, which the original's column of that name had read" do
+      expect_no_flip(
+        "SELECT 1 AS one FROM public.holders WHERE holders.id IN (SELECT posts.id FROM public.posts " \
+        "WHERE posts IS NULL) LIMIT 1"
+      )
+    end
+
+    it "still flips when a whole row is written qualified" do
+      expect_flips(
+        "SELECT 1 AS one FROM public.posts WHERE posts.id IN (SELECT holders.id FROM public.holders) " \
+        "AND posts.* IS NULL LIMIT 1",
+        "SELECT 1 AS one FROM public.posts WHERE posts.id IN (SELECT holders.id FROM public.holders) " \
+        "AND posts.* IS NOT NULL LIMIT 1"
+      )
+    end
+  end
+
   it "refuses a query that isn't an existence check under LIMIT 1" do
     expect_refusals(
       [[canvas(10, limit: "LIMIT 2"), canvas(10)],

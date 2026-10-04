@@ -3,6 +3,8 @@
 require "pg_query"
 require_relative "../deparse"
 require_relative "tree"
+require_relative "existence_in_flip/scopes"
+require_relative "existence_in_flip/selection"
 
 module Quaack
   module Enclave
@@ -55,6 +57,10 @@ module Quaack
       #   read. If one has y's qualifier, that is a table of the subquery's
       #   FROM, which has no subquery of its own, so every reference to it
       #   can be renamed.
+      # - No bare name on either side names a FROM item of that side, such
+      #   as posts in posts IS NULL. Postgres reads a bare name as a column
+      #   of any query in scope before it reads it as a whole row, and the
+      #   flip puts each side in the other's scope.
       # - Postgres can prepare the rewrite.
       #
       # It gives one rewrite per IN that qualifies, and states no
@@ -105,11 +111,14 @@ module Quaack
         def flipped(tree, index)
           top = Tree.select(tree)
           conditions = Tree.conjuncts(top.where_clause)
+          others = conditions.reject.with_index { |_, i| i == index }
           link = in_link(conditions[index])
-          column = link && selected(link.subselect.select_stmt, top.from_clause, tree)
-          return unless column
+          return if link.nil? || Scopes.captured?(top.from_clause, others, link)
 
-          flip!(top, conditions.reject.with_index { |_, i| i == index }, link, column)
+          selected = Selection.selected(link.subselect.select_stmt, top.from_clause, tree)
+          return unless selected
+
+          flip!(top, others, link, selected)
           tree
         end
 
@@ -127,63 +136,12 @@ module Quaack
             sub.target_list.first.res_target.val.node == :column_ref
         end
 
-        # The subquery's selected column, qualified, with its table renamed
-        # if the original's FROM has its name, or nil if it can't be.
-        def selected(sub, from, tree)
-          column = qualify!(sub.target_list.first.res_target.val.column_ref, sub)
-          names = Tree.from_items(from).map(&:name)
-          return unless column && !names.include?(nil)
-
-          name = Tree.qualified(column).first
-          column if !names.include?(name) || rename!(sub, name, tree)
-        end
-
-        # The column as name.column, or nil: it was, or it was a bare column
-        # of the subquery's one table.
-        def qualify!(column, sub)
-          fields = column.fields
-          return unless fields.all? { it.node == :string } && fields.size.between?(1, 2)
-          return column if fields.size == 2
-
-          return unless (table = sole_table(sub))
-
-          fields.unshift(string(Tree.refname(table)))
-          column
-        end
-
-        def sole_table(sub)
-          sub.from_clause.first.range_var if sub.from_clause.size == 1 && sub.from_clause.first.node == :range_var
-        end
-
-        # Gives the subquery's table under name a fresh alias, renames every
-        # column the subquery reads as name.something, and returns the
-        # alias. Refuses, with nil, when a subquery inside could have a name
-        # of its own that's the same.
-        def rename!(sub, name, tree)
-          table = renamable(sub, name)
-          return unless table
-
-          fresh = Tree::Names.new(tree).fresh(name)
-          Tree.find(sub, PgQuery::ColumnRef).each { rename_column!(it, name, fresh) }
-          table.alias ? table.alias.aliasname = fresh : table.alias = PgQuery::Alias.new(aliasname: fresh)
-          fresh
-        end
-
-        def renamable(sub, name)
-          table = Tree.from_items(sub.from_clause).find { it.name == name }&.table
-          table if [PgQuery::SubLink, PgQuery::RangeSubselect].all? { Tree.find(sub, it).empty? }
-        end
-
-        def rename_column!(column, name, fresh)
-          Tree.qualify!(column, fresh) if column.fields.size > 1 && column.fields.first.string&.sval == name
-        end
-
         # Makes top read the subquery's FROM, filtered by its WHERE and an
         # EXISTS over the original's FROM and its other conditions, with x
         # = y.
-        def flip!(top, others, link, column)
+        def flip!(top, others, link, selected)
           sub = link.subselect.select_stmt
-          exists = exists_over(top, others + [equals(link.testexpr, column)])
+          exists = exists_over(top, others + [equals(link.testexpr, selected)])
           top.from_clause.replace(sub.from_clause.to_a)
           top.where_clause = Tree.all_of(Tree.conjuncts(sub.where_clause) + [exists])
         end
@@ -197,15 +155,13 @@ module Quaack
           exists
         end
 
-        # left = column, with the operator IN would use.
-        def equals(left, column)
+        # left = right, with the operator IN would use.
+        def equals(left, right)
           condition = Tree.where_of("SELECT WHERE 1 = 1")
           condition.a_expr.lexpr = left
-          condition.a_expr.rexpr = PgQuery::Node.new(column_ref: column)
+          condition.a_expr.rexpr = right
           condition
         end
-
-        def string(sval) = PgQuery::Node.new(string: PgQuery::String.new(sval:))
       end
     end
   end
