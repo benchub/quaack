@@ -4,11 +4,13 @@ require "pg_query"
 require_relative "deparse"
 require_relative "rewrite_rules/cte_hoist_dedupe"
 require_relative "rewrite_rules/distinct_join_to_exists"
+require_relative "rewrite_rules/existence_in_flip"
 require_relative "rewrite_rules/implied_predicate_removal"
 require_relative "rewrite_rules/key_in_self_join"
 require_relative "rewrite_rules/literals"
 require_relative "rewrite_rules/not_in_to_not_exists"
 require_relative "rewrite_rules/or_to_union"
+require_relative "rewrite_rules/shared_scan_cte"
 require_relative "rewrite_rules/transitive_predicate_copy"
 require_relative "rewrite_rules/union_outer_filter_removal"
 
@@ -63,9 +65,11 @@ module Quaack
       RULES = [
         ImpliedPredicateRemoval.new,
         TransitivePredicateCopy.new,
+        SharedScanCte.new,
         KeyInSelfJoin.new,
         OrToUnion.new,
         NotInToNotExists.new,
+        ExistenceInFlip.new,
         DistinctJoinToExists.new,
         CteHoistDedupe.new,
         UnionOuterFilterRemoval.new
