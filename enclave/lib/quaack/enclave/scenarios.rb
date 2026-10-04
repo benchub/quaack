@@ -156,6 +156,7 @@ module Quaack
         # keyset tie rows too.
         TIE_SCENARIOS = %i[s1 s2 s3 s4 s5].freeze
         TIE_KEY = 50_000
+        COPY_KEY = 200_000
 
         private
 
@@ -224,7 +225,7 @@ module Quaack
 
           atoms = satisfiable(atoms)
           return atom_value(slot, atoms, group) if atoms.any?
-          return key_value(slot, group, table) if keyed
+          return key_value(slot, group, table, col.name) if keyed
 
           free_value(table, col, group.mode)
         end
@@ -256,9 +257,12 @@ module Quaack
 
         def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
 
-        # The key's value, one every column of the slot reads.
-        def key_value(slot, group, table)
+        # The key's value, one every column of the slot reads. A copy takes
+        # a key of its own where its table's unique keys need one (see
+        # Topology#own_key?).
+        def key_value(slot, group, table, name)
           key = group.split == table ? group.key + 100_000 : group.key
+          key += COPY_KEY * group.copy if @topology.own_key?(table, name)
           @values.shared_nth(slot_columns(slot), key)
         end
 

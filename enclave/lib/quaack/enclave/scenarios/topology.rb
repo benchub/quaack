@@ -63,9 +63,27 @@ module Quaack
 
         def members(slot) = @classes.value?(slot) ? @classes.select { |_, root| root == slot }.keys : [slot]
 
+        # Whether a copy of the table's row takes a key of its own for the
+        # column, rather than the row's. A copy can't repeat a value that a
+        # unique key of its table holds, so the slots of those columns get
+        # the copy's key, and a self-reference follows its row. The table's
+        # foreign keys to other tables still point at the row's parents, so
+        # the parents get a second child.
+        def own_key?(table, name)
+          keyed?(table, name) && own_slots(table).include?(slot(table, name))
+        end
+
         private
 
         def all_foreign_keys(table) = @schema.constraints(table).foreign_keys
+
+        # The columns of the table's foreign keys to other tables.
+        def outward(table) = foreign_keys(table).reject { |fk| fk.parent == table }.flat_map(&:columns)
+
+        def own_slots(table)
+          (@schema.constraints(table).uniques.flatten.uniq - outward(table))
+            .select { |c| keyed?(table, c) }.map { |c| slot(table, c) }
+        end
 
         def foreign_keys(table) = all_foreign_keys(table) - @cut.fetch(table, [])
 
