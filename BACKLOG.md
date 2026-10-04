@@ -2172,20 +2172,7 @@ Each needs a wrong rewrite that's disproved and a correct twin that passes, on r
 - **Design:** Step 9.
 - **Status:** todo
 
-### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents.
-
-Found while fixing 20261003-31. It happens on main too. It fails safe, but it rejects correct rewrites of an ordinary query shape.
-
-- **An equality filter on a unique parent column, joined to a child,** fails to load at S6. Example: `posts JOIN taggings JOIN tags tg … WHERE tg.name = 'ruby'`. The S6 "many" group collides with the hit on the unique `name`, so the whole group is dropped. The group's single-table copies stay, though, and the taggings copy points at a post and tag that were never loaded, so the load fails with `fixture_load_failed`.
-- **The S3 cross rows assume the hit group is never dropped.** If it were, they'd point at a missing parent in the same way.
-- Fix: when a group is dropped, also drop every row that points at its rows, and the rows built only for it. Or pick the colliding group's unique values so they can't collide. Check whether this also clears 20261003-32's "a group that skips leaves orphaned copies".
-
-Test with the taggings query: the correct rewrite must pass, and a wrong twin must still be disproved.
-
-- **Depends on:** 20261003-31.
-- **Came from:** The fix round of 20261003-31, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-41. Step 9 refusals and results: loose ends from 20261003-18.
 
@@ -2198,4 +2185,21 @@ These are minor findings from building and reviewing 20261003-18:
 - **Depends on:** 20261003-18.
 - **Came from:** The build and review of 20261003-18, 2026-10-03.
 - **Design:** Steps 9-10.
+- **Status:** todo
+
+### 20261003-42. Step 9 further fixtures: loose ends from 20261003-40.
+
+These are minor findings from building and reviewing 20261003-40:
+
+- **A self-join regression, from a refusal to an untested pass.** Take `messages m JOIN users s ON s.id = m.sender_id JOIN users r ON r.id = m.recipient_id WHERE s.email = 'a@b' AND r.email = 'c@d'`. The rewrite with the emails swapped now passes with every atom marked untested; main refused it. DESIGN's self-join limit covers it, but it should be disproved.
+- **Two FKs into one table, with a non-unique filter column** (also on main). The rewrite that filters on `recipient_id` instead of `sender_id` passes with no untested atoms, because the S3 cross users all share the hit's email. This overlaps 20261003-39's "two FKs into the same parent".
+- **The untested-atom check (9c) looks only at S1's first fixture.** An S1 near miss that moved to a further fixture is marked untested, which is cautious. Have it look at further fixtures too.
+- **Further fixtures copy the parents but not the hit's sibling rows** that create fan-out. Also, no step-9-level test needs `parents_of` to recurse; only a unit test guards that.
+- **The picker can repeat candidates on a retry,** and a retry shifts every pooled column, not just the one that collided.
+- **S6 has less variety under a single-value unique filter.**
+- **Further fixtures add runtime.** Measure it on a realistic query.
+
+- **Depends on:** 20261003-40.
+- **Came from:** The build and reviews of 20261003-40, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo

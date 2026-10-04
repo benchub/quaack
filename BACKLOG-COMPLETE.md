@@ -4192,3 +4192,33 @@ Minor findings from the second review of 20261002-17:
   - **Not done (builder's notes, not filed):**
     - An unusual type that doesn't deparse as `NULL::<type>` is refused, which is conservative.
     - Outer equalities are never used inside a correlated subquery, by design.
+
+### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents.
+
+Found while fixing 20261003-31. It happens on main too. It fails safe, but it rejects correct rewrites of an ordinary query shape.
+
+- **An equality filter on a unique parent column, joined to a child,** fails to load at S6. Example: `posts JOIN taggings JOIN tags tg … WHERE tg.name = 'ruby'`. The S6 "many" group collides with the hit on the unique `name`, so the whole group is dropped. The group's single-table copies stay, though, and the taggings copy points at a post and tag that were never loaded, so the load fails with `fixture_load_failed`.
+- **The S3 cross rows assume the hit group is never dropped.** If it were, they'd point at a missing parent in the same way.
+- Fix: when a group is dropped, also drop every row that points at its rows, and the rows built only for it. Or pick the colliding group's unique values so they can't collide. Check whether this also clears 20261003-32's "a group that skips leaves orphaned copies".
+
+Test with the taggings query: the correct rewrite must pass, and a wrong twin must still be disproved.
+
+- **Depends on:** 20261003-31.
+- **Came from:** The fix round of 20261003-31, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-40.
+  - **Change:**
+    - The scenario builder retries a colliding group with later values from the pool (a new `Retries` class).
+    - Cross rows go first and are trimmed.
+    - A unique column that an ignored atom reads now gets varied values.
+    - A row whose parent isn't loaded counts as a collision, and a group that collides partway rolls back its earlier rows.
+    - A group that doesn't fit beside the hit goes into a further fixture of the same scenario, with copies of its parent rows (`RowSet#parents_of`). If it fits nowhere, it tries its near-miss version.
+    - Step 9 loads and compares every further fixture, in both load orders.
+    - `Ties.allowed?` was pulled out of the scenario code. DESIGN.md's step 9 notes are updated.
+  - **Tests:** a new `step_nine_unique_filter_postgres_spec.rb` covers has_one, LEFT JOIN, DISTINCT has_many, a three-level chain, tags with `=` and `IN`, and sender/recipient. The RowSet tests cover a three-level chain, a partly-NULL composite FK, a parent in the same group, and `parents_of`.
+  - **Review:**
+    - Round 1 was blocking. The first version pruned orphaned rows, which turned safe refusals into false passes (for example, dropping a has_one join under a unique email filter).
+    - The fix round replaced the prune with further fixtures.
+    - Round 2 was clean. Every round-1 reproducer and 7 more realistic queries came out right: correct rewrites pass and wrong ones are disproved. All 11 mutations went red.
+  - **Follow-ups:** filed as 20261003-42.
