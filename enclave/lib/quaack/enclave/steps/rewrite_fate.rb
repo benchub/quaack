@@ -23,6 +23,10 @@ module Quaack
       #                            does, so it was never tested
       #   step9_disproved          a step 9 scenario got different results;
       #                            with the scenario and the rule
+      #   step9_untested           step 9 couldn't build scenarios for the
+      #                            query (rewrite_tested_<n> says refused),
+      #                            so the rewrite was never tested; with the
+      #                            refusal's rule
       #   step9_failed             a step 9 scenario ended without comparing
       #                            results (the original's order can't be
       #                            checked, or a statement failed in arena);
@@ -59,12 +63,12 @@ module Quaack
       # none of its labels counts.
       #
       # Trust boundary. Everything this returns is one of this module's own
-      # constants: a fate from FATES, a rule from MISMATCHES, FAILURES, or
-      # PRODUCTION_FAILURES, a scenario from Scenarios::NAMES, a round from
-      # ROUNDS, and an after from AFTER. A stored value that isn't on its
-      # list goes out as nil, never as it is.
+      # constants: a fate from FATES, a rule from MISMATCHES, FAILURES,
+      # REFUSALS, or PRODUCTION_FAILURES, a scenario from Scenarios::NAMES,
+      # a round from ROUNDS, and an after from AFTER. A stored value that
+      # isn't on its list goes out as nil, never as it is.
       module RewriteFate
-        FATES = %w[ranked same_plans step9_disproved step9_failed step10_disproved step10_failed
+        FATES = %w[ranked same_plans step9_disproved step9_untested step9_failed step10_disproved step10_failed
                    production_mismatch production_timed_out production_not_compared below_top_three
                    footprint_tie not_better measurement_timed_out unfinished].freeze
 
@@ -78,6 +82,10 @@ module Quaack
                       already_in_transaction connection_unusable fixture_load_failed reverse_load_failed
                       insert_failed query_failed transaction_ended rollback_failed statement_timeout
                       statement_canceled].freeze
+
+        # Scenarios::Error's rules: why step 9 couldn't build scenarios.
+        REFUSALS = %w[fk_cycle complex_check unsatisfiable_check expression_unique_index unsupported_type
+                      domain_check].freeze
 
         # 14c's failing rules that compare nothing.
         PRODUCTION_FAILURES = %w[timed_out unsupported_order].freeze
@@ -141,6 +149,8 @@ module Quaack
         end
 
         def step9(tested)
+          return fate("step9_untested", rule: known(REFUSALS, tested["rule"])) if tested["refused"] == true
+
           scenario = known(SCENARIOS, tested["scenario"])
           mismatch = known(MISMATCHES, tested["rule"])
           return fate("step9_disproved", scenario:, rule: mismatch) if mismatch

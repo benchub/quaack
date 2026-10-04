@@ -1687,26 +1687,7 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps.
-
-Minor findings from the second review of 20261002-17:
-
-- **Casts on a literal.** `columns.rb`'s `value()` strips the cast before comparing. So `grade = 2.7::int AND grade < 2.8` on a numeric column, or `created_at = '2020-01-01 10:00'::date AND created_at > '2020-01-01 05:00'`, drops a predicate the equality doesn't imply. Refuse when the literal has a cast, unless it's the column's own type.
-- **Volatile exact duplicates.** `random() < 0.5 AND random() < 0.5` loses a copy, which changes the results. Never drop a duplicate that calls a volatile function.
-- **Subquery WHEREs and UNION arms are never reached.** `Tree.find` stops at the first `SelectStmt`, but the task asked for each `AND` of a subquery's `WHERE`. Reach them, or say in DESIGN.md that v1 only does the top level.
-- **Mutations that survive:**
-  - dropping the column's `COLLATE` in `typed`;
-  - dropping the shape half of `Literals#same?`. The test's title claims to cover it. Pin it or remove it.
-- **Missing tests:**
-  - an inner join's ON equality dropping a WHERE `<>` or range predicate;
-  - a positive `NOT IN` case;
-  - an ON clause that dropping empties.
-- **`Literals` has no redacting `inspect`,** unlike `Binding`. Inspecting one would print the placeholder map, values included.
-
-- **Depends on:** 20261002-17.
-- **Came from:** The second review of 20261002-17, 2026-10-03.
-- **Design:** 6c.
-- **Status:** todo
+### 20261003-6. `implied_predicate_removal`: refuse casts and volatile duplicates, reach subqueries, close test gaps. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-7. Intake unreadable causes: minor findings.
 
@@ -1917,18 +1898,7 @@ Specs use a fake clock and a fake terminal `io`. They check the exact bytes in b
 
 ### 20261003-17. Step 9: break foreign-key cycles through nullable columns. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-18. A scenario refusal shouldn't end the run.
-
-When step 9 can't build scenarios for a query, because of `fk_cycle`, `complex_check`, `expression_unique_index` or `unsupported_type`, the `Scenarios::Error` escapes `StepNine.run` (from `VacuityGuard`) and `quaack run` fails with just the rule. The index work done so far is lost, even though the index search doesn't need step 9.
-
-The rule: a scenario refusal marks every rewrite untested, with the refusal's rule. Untested rewrites are never recommended. The run carries on through the index steps (12a, 13, 13a) and writes the report. The report says rewrites were skipped and why, by rule. A resumed run must not retry the refused step forever, so record the refusal in the run's store like any other step result.
-
-Test it end to end against real Postgres with a schema that refuses (a complex `CHECK` is the easiest). The run should finish, the report should name the rule, and no rewrite should be recommended.
-
-- **Depends on:** none.
-- **Came from:** A failed `quaack run` the user hit, 2026-10-03.
-- **Design:** Steps 9-10, step 15.
-- **Status:** todo
+### 20261003-18. A scenario refusal shouldn't end the run. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-19. Name the tables in an `fk_cycle` refusal.
 
@@ -2215,4 +2185,17 @@ Test with the taggings query: the correct rewrite must pass, and a wrong twin mu
 - **Depends on:** 20261003-31.
 - **Came from:** The fix round of 20261003-31, 2026-10-03.
 - **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-41. Step 9 refusals and results: loose ends from 20261003-18.
+
+These are minor findings from building and reviewing 20261003-18:
+
+- **A crash between two stored results.** If the enclave crashes after writing `rewrite_tested_<n>` but before `rewrite_survived_<n>`, a resumed run goes on to 10a, and `counterexample-round` fails with `counterexample_round_untested`. This predates the task, and it affects rewrites that fail step 9 too. Store both results together, or have resume rebuild `survived` from `tested`.
+- **Scenarios are rebuilt for every rewrite.** A refusal comes from the query, not the rewrite, so every rewrite is refused the same way. Record the refusal once per run, and reuse it.
+- **The rule-bug check counts `step9_failed` results that compared nothing.** This predates the task. Count only failures that compared rows.
+
+- **Depends on:** 20261003-18.
+- **Came from:** The build and review of 20261003-18, 2026-10-03.
+- **Design:** Steps 9-10.
 - **Status:** todo

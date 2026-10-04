@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg_query"
+require "pp"
 require "quaack/enclave/deparse"
 require "quaack/enclave/redaction"
 require "quaack/enclave/rewrite_rules"
@@ -48,11 +49,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
 
   def literals_for(sql)
     redacted = Quaack::Enclave::Redaction.query(PgQuery.parse(sql))
-    literals = Quaack::Enclave::RewriteRules::Literals.new(
-      conn,
-      redacted.placeholder_map,
-      redacted.placeholder_shapes
-    )
+    literals = Quaack::Enclave::RewriteRules::Literals.new(conn, redacted.placeholder_map)
     [redacted.sql, literals]
   end
 
@@ -89,15 +86,28 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
       expect(literals.holds?("$1::integer > 10")).to be(false)
     end
 
-    it "compares placeholder text and shape without treating different values as equal" do
+    it "compares placeholder value and type without treating different values as equal" do
       _redacted, literals = literals_for(
         "SELECT enrollments.id FROM public.enrollments WHERE " \
         "enrollments.score = 1 AND enrollments.score = 2 AND " \
-        "enrollments.type = 'active' AND enrollments.workflow_state = 'active'"
+        "enrollments.type = 'active' AND enrollments.workflow_state = 'active' AND " \
+        "enrollments.score = 5 AND enrollments.type = '5'"
       )
 
       expect(literals.same?("$1", "$2")).to be(false)
       expect(literals.same?("$3", "$4")).to be(true)
+      expect(literals.same?("$5", "$6")).to be(false)
+    end
+
+    it "never shows a placeholder value when inspected" do
+      sentinel = "quaack-sentinel-literals-inspect"
+      _redacted, literals = literals_for(
+        "SELECT enrollments.id FROM public.enrollments WHERE enrollments.type = '#{sentinel}'"
+      )
+
+      expect(literals.instance_variable_get(:@map).inspect).to include(sentinel)
+      expect([literals.inspect, literals.to_s, literals.pretty_inspect].join).not_to include(sentinel)
+      expect(literals.inspect).to include("<redacted>")
     end
   end
 
@@ -233,6 +243,120 @@ RSpec.describe Quaack::Enclave::RewriteRules::ImpliedPredicateRemoval do
       "SELECT enrollments.id FROM public.enrollments WHERE enrollments.workflow_state = $3"
     )
     same_rows(sql, rewrite)
+  end
+
+  it "refuses an equality whose literal is cast to a type other than the column's", :aggregate_failures do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.grades (id int PRIMARY KEY, grade numeric, created_at timestamp);
+      INSERT INTO public.grades VALUES (1, 3, '2020-01-01 00:00'), (2, 2.7, '2020-01-01 10:00');
+    SQL
+
+    ["grades.grade = 2.7::int AND grades.grade < 2.8",
+     "grades.created_at = '2020-01-01 10:00'::date AND grades.created_at > '2020-01-01 05:00'"].each do |where|
+      expect(rewritten("SELECT grades.id FROM public.grades WHERE #{where}")).to eq([])
+    end
+  end
+
+  it "uses an equality whose literal is cast to the column's own type" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE " \
+          "enrollments.score > 10 AND enrollments.score = 15::int4"
+
+    rewrites = rewritten(sql)
+    expect(rewrites).to eq(["SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = $2::int4"])
+    same_rows(sql, rewrites.first)
+  end
+
+  it "refuses a cast whose type modifier differs from the column's" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.prices (id int PRIMARY KEY, price numeric(5,2));
+      INSERT INTO public.prices VALUES (1, 2.60), (2, 2.55);
+    SQL
+    sql = "SELECT prices.id FROM public.prices WHERE prices.price = 2.55::numeric(5,1) AND prices.price < 2.58"
+
+    expect(rewritten(sql)).to eq([])
+  end
+
+  it "never drops a duplicate that calls a volatile function" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE random() < 0.5 AND random() < 0.5"
+
+    expect(rewritten(sql)).to eq([])
+  end
+
+  it "compares a substituted value under the column's own collation" do
+    conn.exec(<<~SQL)
+      CREATE COLLATION public.und (provider = icu, locale = 'und');
+      CREATE TABLE public.names (id int PRIMARY KEY, c text COLLATE "C", u text COLLATE public.und);
+      INSERT INTO public.names VALUES (1, 'a', 'a'), (2, 'B', 'B');
+    SQL
+
+    expect(rewritten("SELECT names.id FROM public.names WHERE names.c = 'a' AND names.c < 'B'")).to eq([])
+    expect(rewritten("SELECT names.id FROM public.names WHERE names.u = 'a' AND names.u < 'B'"))
+      .to eq(["SELECT names.id FROM public.names WHERE names.u = $1"])
+  end
+
+  it "drops a WHERE inequality or range that an inner join's ON equality proves", :aggregate_failures do
+    {
+      "assignments.type = 'Assignment' WHERE assignments.type <> 'Other'" =>
+        "assignments.type = $1",
+      "submissions.assignment_id = 1 WHERE submissions.assignment_id >= 1" =>
+        "submissions.assignment_id = $1"
+    }.each do |rest, proof|
+      sql = "SELECT submissions.id FROM public.submissions JOIN public.assignments " \
+            "ON assignments.id = submissions.assignment_id AND #{rest}"
+
+      rewrites = rewritten(sql)
+      expect(rewrites).to eq(
+        ["SELECT submissions.id FROM public.submissions JOIN public.assignments " \
+         "ON assignments.id = submissions.assignment_id AND #{proof}"]
+      )
+      same_rows(sql, rewrites.first)
+    end
+  end
+
+  it "turns a join whose every ON conjunct is dropped into a cross join" do
+    sql = "SELECT submissions.id FROM public.submissions JOIN public.assignments " \
+          "ON assignments.type <> 'Other' WHERE assignments.type = 'Assignment'"
+
+    rewrites = rewritten(sql)
+    expect(rewrites).to eq(
+      ["SELECT submissions.id FROM public.submissions CROSS JOIN public.assignments " \
+       "WHERE assignments.type = $2"]
+    )
+    same_rows(sql, rewrites.first)
+  end
+
+  it "simplifies a subquery's WHERE with its own equalities" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.id IN " \
+          "(SELECT assignments.id FROM public.assignments WHERE " \
+          "assignments.type <> 'Other' AND assignments.type = 'Assignment')"
+
+    rewrites = rewritten(sql)
+    expect(rewrites).to eq(
+      ["SELECT enrollments.id FROM public.enrollments WHERE enrollments.id IN " \
+       "(SELECT assignments.id FROM public.assignments WHERE assignments.type = $2)"]
+    )
+    same_rows(sql, rewrites.first)
+  end
+
+  it "simplifies each arm of a UNION" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.score > 10 AND enrollments.score = 15 " \
+          "UNION SELECT assignments.id FROM public.assignments WHERE " \
+          "assignments.type <> 'Other' AND assignments.type = 'Assignment'"
+
+    rewrites = rewritten(sql)
+    expect(rewrites).to eq(
+      ["SELECT enrollments.id FROM public.enrollments WHERE enrollments.score = $2 " \
+       "UNION SELECT assignments.id FROM public.assignments WHERE assignments.type = $4"]
+    )
+    same_rows(sql, rewrites.first)
+  end
+
+  it "never lets a subquery's equality prove a predicate of the query around it" do
+    sql = "SELECT enrollments.id FROM public.enrollments WHERE enrollments.type <> 'StudentEnrollment' AND " \
+          "NOT EXISTS (SELECT 1 FROM public.assignments WHERE assignments.id = enrollments.id AND " \
+          "enrollments.type = 'TeacherEnrollment')"
+
+    expect(rewritten(sql)).to eq([])
   end
 
   it "doesn't change the parse it was given" do

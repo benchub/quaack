@@ -650,7 +650,7 @@ The rules in version 1, each one something Postgres's planner doesn't do for its
 
 | Rule | Transformation | Needs |
 | --- | --- | --- |
-| `implied_predicate_removal` | In each top-level `AND` of a `WHERE`, and in inner-join `ON` conjuncts at the same level, `col = c` drops another conjunct on the same column that it proves: `col <> d`, `col IN (...)`, `col NOT IN (...)`, ranges, `BETWEEN`, and duplicate conjuncts. A duplicate in both an inner join's `ON` and the `WHERE` is dropped from the `WHERE`. Outer-join `ON` conjuncts are never moved and never used as proof. It refuses a column with a nondeterministic collation. Literal comparison stays inside Postgres, with placeholders bound as parameters and cast to the column type. | None. |
+| `implied_predicate_removal` | Within each `SELECT` on its own (the top level, and each subquery, CTE, and set-operation arm), `col = c` in the top-level `AND` of its `WHERE` or an inner join's `ON` drops another such conjunct on the same column that it proves: `col <> d`, `col IN (...)`, `col NOT IN (...)`, ranges, `BETWEEN`, and duplicate conjuncts. An equality proves only what's in its own `SELECT`, and its column must belong to one of that `SELECT`'s own tables. A duplicate in both an inner join's `ON` and the `WHERE` is dropped from the `WHERE`, and an `ON` left empty makes a cross join. Outer-join `ON` conjuncts are never moved and never used as proof. It refuses a column with a nondeterministic collation, an equality whose constant is cast to any type but the column's own, modifiers included, and a duplicate that might call a volatile function (`Catalog#calls_volatile?`). Literal comparison stays inside Postgres, with placeholders bound as parameters and cast to the column type and collation. | None. |
 | `transitive_predicate_copy` | For each column equality `a.x = b.y` in a top-level `AND` of a `WHERE` or an inner join's `ON`, a filter on `a.x` is copied to `b.y`. Postgres already carries `a.x = c` across the join, but not these. The filters copied are an `IN` list of constants, a `<`, `<=`, `>`, or `>=` comparison with a constant, and a `BETWEEN` of two constants. `IS NOT NULL` isn't copied. The copy goes in the same place as its source, the `WHERE` or that `ON`, and reuses the source's placeholders, so it adds no literal values. A copy isn't added when the same conjunct is already in the `WHERE` or an inner join's `ON`, which the literal oracle decides. Copies chain along `a.x = b.y = c.z`. It refuses a constant with a cast or a `COLLATE`, and a filter that calls a function. It refuses an equality whose columns differ in type or collation, a column with a nondeterministic collation, and a type whose `=`, `<`, `<=`, `>`, and `>=` aren't its default btree operators. It never uses or copies to a column on an outer join's nullable side. | None. |
 | `shared_scan_cte` | A table read more than once in the top-level `FROM`, each copy with the same filter, is read once: `WITH quaack_scan_of_<table> AS MATERIALIZED (SELECT * FROM <schema>.<table> WHERE <shared conjuncts>)`, and each copy reads that CTE under its old alias. A copy's conjuncts are the top-level conjuncts of the `WHERE` and of each inner join's `ON` that read only that copy's columns, qualified by its alias, with no subquery. A conjunct is shared when every copy has it with its own alias in place of the others'. The literal oracle decides whether two placeholders match; no value is read. Shared conjuncts leave every copy and go in the CTE, with the first copy's placeholders. Every other conjunct stays where it was, and an `ON` left empty becomes `ON true`. It runs after `transitive_predicate_copy`, which can give the copies the conjuncts they share. It works only on plain tables in the top-level `FROM`, and only when every top-level `FROM` item has a name, so an aliased join can't hide a copy. It refuses a table with a copy on an outer join's nullable side, a query that already has a CTE of that name at any depth, a CTE body that calls a volatile function, and a query that reads a copy's whole row, other than as `copy.*` in the select list, since the CTE's row type isn't the table's. A name longer than Postgres keeps fails the faithful deparse. Postgres must be able to prepare the rewrite, so a query that names a copy's system column, such as `ctid`, or whose `GROUP BY` relied on the table's primary key, is refused. Reading once isn't always faster, since the CTE hides the table's indexes from the copies' own filters and join conditions; steps 8 onward decide. Step 8's index search covers the CTE's own scan of the base table, as 5a-1 does any CTE body. | None. |
 | `key_in_self_join` | `t.k IN (SELECT t2.k FROM t t2 ... WHERE P)`, where the subquery reads the outer table again by a key: drop the inner `t2`, move its predicates to the outer `t`, and leave an `EXISTS` on what's left of the subquery, correlated on `t.k`. With nothing left, only the predicates remain. Each arm of a `UNION ALL` in the subquery is handled on its own, and the arms are joined with `OR`. | `k` unique and not null. |
@@ -760,6 +760,8 @@ Unsupported in v1: a fixture table with a `CHECK` that isn't simple is refused w
 
 A domain's `CHECK` counts as a `CHECK` on each column of that domain, with the same rule for what's simple.
 
+A refusal (`fk_cycle`, `complex_check`, `unsatisfiable_check`, `expression_unique_index`, `unsupported_type`, or `domain_check`) doesn't end the run. Step 9 can't build scenarios for the query, so it tests no rewrite. Each rewrite is stored as untested, with the refusal's rule and nothing else: not the column an `unsupported_type` or `domain_check` error names. An untested rewrite goes to neither step 10 nor step 11, and it's never measured or recommended. The run goes on to the index steps (12a, 13, 13a, 14) and the report, which says why, by the rule (step 15's `step9_untested`). A resumed run reads the stored refusal and doesn't test the rewrite again.
+
 Also unsupported in v1, these limit what the fixtures exercise, so 9c may mark an atom untested, but they never make a fixture break a constraint:
 
 - Only a join on plain equality between two columns ties the two sides' keys together. Any other join condition gets no shared keys.
@@ -831,7 +833,7 @@ Roll back the transaction.
 
 ## 10. Adversarial fixtures.
 
-Run up to three rounds of 10a through 10c for each surviving candidate.
+Run up to three rounds of 10a through 10c for each surviving candidate. A rewrite step 9 refused to test (step 9's refusals) never survived it, so it never gets here.
 
 ### 10a. Generate counterexamples.
 
@@ -950,6 +952,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `ranked` | 14d ranked one of its labels. | |
 | `same_plans` | Step 8 found it can't run any differently from the original, so it was never tested. | |
 | `step9_disproved` | A step 9 scenario got different results. | Scenario, rule. |
+| `step9_untested` | Step 9 couldn't build scenarios for the query, so it never tested the rewrite. It's never recommended. | The refusal's rule. |
 | `step9_failed` | A step 9 scenario ended without comparing results: the original's order can't be checked, or a statement failed or timed out in arena. | Scenario, rule. |
 | `step10_disproved` | A step 10 round got different results. | Round, rule. |
 | `step10_failed` | A step 10 round ended without comparing results. | Round, rule. |
@@ -962,7 +965,7 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `measurement_timed_out` | Every one of its step 14 runs timed out. | |
 | `unfinished` | The run took it no further. | The last stage it finished. |
 
-Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. Fates, rules, and scenarios are fixed words in the code, so they're shape.
+Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `step9_untested` rewrite isn't wrong either, and it's no 6c bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words. Fates, rules, and scenarios are fixed words in the code, so they're shape.
 
 Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that 9c marked as untested, and say whether step 10 exercised them. Say where each rewrite came from: the 6c rules that made it, the LLM, or the operator.
 

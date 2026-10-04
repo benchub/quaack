@@ -71,6 +71,37 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    it "marks the rewrite untested when step 9 can't build scenarios, by the refusal's rule, and goes on" do
+      ready(same, status_check: "status = 'open' OR status = 'closed'")
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      expect(lines(outcome)).to eq([{ "type" => "rewrite_test", "rewrite" => "rewrite_1", "passed" => false,
+                                      "scenario" => nil, "rule" => "complex_check" }, { "type" => "done" }])
+      expect(stored.read("rewrite_tested_1"))
+        .to eq("passed" => false, "scenario" => nil, "rule" => "complex_check", "refused" => true,
+               "untested" => [], "untested_atoms" => [])
+      expect(stored.read("rewrite_survived_1")).to eq("survived" => false)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # The refusal's error names the column and its type; only the rule may
+    # leave step 9, on stdout or into the store that report-payload reads.
+    it "keeps the column and type a refusal names out of its output and the store" do
+      column = LeakCheck::Sentinels.new
+      domain = LeakCheck::Sentinels.new
+      ready(same, arena_sql: "CREATE DOMAIN public.#{domain.word} AS int CHECK (VALUE > 5 AND VALUE < 3); " \
+                             "ALTER TABLE public.orders ADD COLUMN #{column.word} public.#{domain.word} NOT NULL")
+
+      outcome = step("rewrite-test", "--search", "rewrite_1")
+
+      tested = stored.read("rewrite_tested_1")
+      expect(tested).to include("refused" => true)
+      [column, domain].each { expect_no_leaks(it, outcome, objects: { tested: }) }
+      expect(tested).to include("rule" => "domain_check")
+    end
+
     it "skips a rewrite step 8 discarded, without connecting to the arena" do
       ready(same, arena: false)
       store.write("rewrite_pruned_1", "discarded" => true)
