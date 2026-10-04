@@ -4273,3 +4273,17 @@ From the build and review of 20261002-10.
       - (F) Renaming when S has subqueries, allowed when nothing else in S introduces that name.
   - **Review:** one round, clean. The reviewer compared about 55 realistic queries in real Postgres, and 29 of 31 mutations went red.
   - **Follow-ups:** filed as 20261003-44.
+
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
+
+`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
+
+- **Depends on:** none.
+- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
+- **Design:** none (test only).
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-36.
+  - **Change:** only `driver/spec/copilot_cli_adapter_spec.rb` changed.
+    - The grandchild-stdout test's outer limit went from 1s to 10s (`hang_limit`). The fake grandchild still sleeps 60s.
+    - The two sibling timeout and process-group tests had the same problem. They get a 3s adapter timeout (`slow_start_timeout`) and a 10s outer limit or poll.
+  - **Review:** one round, clean. Three deliberate breaks each turned the matching test red: the success path reading stdout to EOF, the timeout path reading to EOF, and killing only the child. The two timeout tests now take about 3s each.

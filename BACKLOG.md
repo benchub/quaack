@@ -2098,14 +2098,7 @@ These are minor findings from building and reviewing 20261002-16:
 - **Design:** 6c, `distinct_join_to_exists`.
 - **Status:** todo
 
-### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test.
-
-`driver/spec/copilot_cli_adapter_spec.rb:204` ("does not hang after a successful command leaks stdout from a detached grandchild") wraps the call in `Timeout.timeout(1.0)`. It failed once in a full rake while other agents were running Docker-heavy suites. It passed when rerun alone. Give it enough slack to stay green on a loaded machine, without letting it pass when the adapter really hangs. For example, make the fake grandchild sleep much longer than the new limit.
-
-- **Depends on:** none.
-- **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
-- **Design:** none (test only).
-- **Status:** todo
+### 20261003-36. Flaky driver spec: copilot_cli adapter grandchild-stdout test. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-37. Step 9 values: loose ends from 20261003-34.
 
