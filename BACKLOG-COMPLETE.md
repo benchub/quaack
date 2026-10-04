@@ -4342,3 +4342,30 @@ These are minor findings from the review of 20261003-24:
 - **Landed:** 2026-10-04, as a merge of task/20261003-38.
   - **Change:** `counterexamples/evaluated.rb` reports `bad_value` only for SQLSTATE classes 22, 23 and 42. Any other PG error is re-raised as `internal_error`, carrying only the sqlstate.
   - **Review:** one round, clean. The minors went to 20261004-3.
+
+### 20261004-2. Step 9 re-probes CHECK constraints thousands of times.
+
+On a real Canvas run, rewrite-test spent over 10 minutes on one rewrite. It sent the same query again and again: `SELECT $1::text = ANY(ARRAY['complete'::varchar::text, 'processing'::varchar::text, …])`, a CHECK on a `workflow_state`-like column.
+
+The cause is in `scenarios/checks.rb`:
+- `Checks#satisfying` eagerly runs `ValuePools.sorted` for every CHECK on the column, about 35 probe queries, on every call. It does this even when the first preferred value passes.
+- `allows?` calls each probe twice per value.
+- Nothing is cached, and `FreeValues#plain_value` calls `satisfying` for every free column of every row, in every group, retry, further fixture, scenario and rewrite.
+
+The fix:
+- Cache the probe results per CHECK node and value, and the sorted values per node, within a run's `Checks`. A CHECK's answer for a value never changes during a run.
+- Compute a CHECK's own satisfying values lazily, only when no preferred value passes.
+- Call each probe once per value.
+- Look for other hot paths with the same pattern, such as `ValuePools.sorted` for atom pools and `Values#readable?`, and cache them too if they repeat.
+
+Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK IN list of 8 values and several such columns. Count the queries the connection sends during scenario building, using a thin counting wrapper around the real connection. Assert that a second scenario build sends no new probe queries for the same column and value, and that the total stays below a small bound. The results, the fixtures and the step 9 outcomes must not change.
+
+- **Depends on:** none.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261004-2.
+  - **Change:** a new `ValuePools::CachedProbe` asks each CHECK and atom probe once per value. Columns of the same type with the same CHECK share one cache. A CHECK's own values are sorted only when no preferred value passes. The value pools and the Picker share their atom probes.
+  - **Effect:** on a Canvas-like join, one step 9 run went from 60,968 queries to 274, and from 39–171s to 0.75s. Fixtures are byte-identical to before.
+  - **Tests:** `enclave/spec/scenarios_query_count_postgres_spec.rb` counts the queries through a thin wrapper around the real connection.
+  - **Review:** one round, clean. The minor went to 20261004-6, and the builder's candidates went to 20261004-4 and -5.

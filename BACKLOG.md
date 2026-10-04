@@ -2188,27 +2188,7 @@ The rule:
 - **Design:** Progress lines for `quaack run`, the protocol whitelist.
 - **Status:** todo
 
-### 20261004-2. Step 9 re-probes CHECK constraints thousands of times.
-
-On a real Canvas run, rewrite-test spent over 10 minutes on one rewrite. It sent the same query again and again: `SELECT $1::text = ANY(ARRAY['complete'::varchar::text, 'processing'::varchar::text, …])`, a CHECK on a `workflow_state`-like column.
-
-The cause is in `scenarios/checks.rb`:
-- `Checks#satisfying` eagerly runs `ValuePools.sorted` for every CHECK on the column, about 35 probe queries, on every call. It does this even when the first preferred value passes.
-- `allows?` calls each probe twice per value.
-- Nothing is cached, and `FreeValues#plain_value` calls `satisfying` for every free column of every row, in every group, retry, further fixture, scenario and rewrite.
-
-The fix:
-- Cache the probe results per CHECK node and value, and the sorted values per node, within a run's `Checks`. A CHECK's answer for a value never changes during a run.
-- Compute a CHECK's own satisfying values lazily, only when no preferred value passes.
-- Call each probe once per value.
-- Look for other hot paths with the same pattern, such as `ValuePools.sorted` for atom pools and `Values#readable?`, and cache them too if they repeat.
-
-Test on real Postgres with a Canvas-like table that has a `workflow_state` CHECK IN list of 8 values and several such columns. Count the queries the connection sends during scenario building, using a thin counting wrapper around the real connection. Assert that a second scenario build sends no new probe queries for the same column and value, and that the total stays below a small bound. The results, the fixtures and the step 9 outcomes must not change.
-
-- **Depends on:** none.
-- **Came from:** The user's Canvas run, 2026-10-04.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-3. Tighten 20261003-38's SQLSTATE filtering.
 
