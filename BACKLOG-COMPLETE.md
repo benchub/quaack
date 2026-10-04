@@ -3983,3 +3983,38 @@ Until then, the user can find the column with a catalog query over the query's t
   - **Tests:** `scenario_types_postgres_spec.rb` on real Postgres, including the Canvas case (a `bigint[]` in a multi-column unique key), plus sentinel tests on both sides of the boundary.
   - **Review:** three rounds. Round 1: the varying logic's `needed?` and sort order were untested; fixed, along with the rank of unreadable types. Round 2: the join-key exclusion and the FEW tier were untested; the builder's tests-only round added them. Round 3 checked those two tests, and both went red under two mutations each.
   - **Follow-ups:** 20261003-33.
+
+### 20261003-33. Step 9 values: loose ends from 20261003-27.
+
+Minor findings from building and reviewing 20261003-27. Do the false-collision and load-failure items first.
+
+- **`readable?` tests a value with an explicit CAST, which is laxer than inserting it.** CAST quietly truncates `varchar(n)` and `char(n)`, so distinct values can collide after truncation or fail on insert. Check readability with an assignment coercion, as an INSERT does, rather than an explicit CAST.
+- **ParentRows gives a nullable self-FK the value 0.** For example, `accounts.root_account_id`; the parent row then fails to load. This reproduces on main.
+- **The varying pick ignores CHECKs.** With `kind int CHECK (kind IN (1,2))` and `UNIQUE (kind, login)`, it varies `kind`, so the third row fails to load. Prefer a column with no CHECK.
+- **A split group's key takes the type of the slot's first column** (`scenarios.rb`, around lines 251-253). A smallint FK and an integer parent in the same slot can still overflow on the smallint side.
+- **`bit varying` with no length gets only 2 distinct values**, since `Literals.bits` falls back to length 1. `bit(n)` also repeats values when it needs more than 2^n.
+- **A nullable column of an unsupported type could take NULL** instead of refusing, when the query doesn't read it.
+- **Expression unique indexes still vary every column they read.**
+- **ValuePools' boundary regex may match array types** such as `bigint[]`.
+- **Arrays over a domain over a domain** may not find their element type.
+- **No test checks that FEW ranks below the middle tier** in `Values#rank`.
+
+- **Depends on:** 20261003-27.
+- **Came from:** The build and reviews of 20261003-27, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-33.
+  - **Change, by item:**
+    1. `readable?` uses `pg_input_is_valid`, which checks a value as an INSERT does. DESIGN.md requires Postgres 17 or later.
+    2. ParentRows sets a nullable self-FK to NULL, and points a NOT NULL one at the row itself.
+    3. `Checks#checked?` breaks ties toward unchecked columns, in FreeValues and ParentRows.
+    4. `Values#shared_nth` picks a split slot's value that every column in the slot accepts.
+    5. `bit varying` with no length gets unlimited distinct values.
+    6. `Scenarios::Reads`: a nullable column of an unsupported type that the query doesn't read becomes NULL instead of refusing.
+    7. `ExpressionUnique#key_columns` lets an expression index vary one column.
+    8. The boundary regex skips array types.
+    9. Arrays over nested domains get a regression test.
+    10. The FEW tier gets a rank test.
+  - **Not done:** `bit(n)` past 2^n values, which is an inherent limit already in DESIGN.md.
+  - **Tests:** each fix went red first. The builder's and reviewer's mutations all went red.
+  - **Review:** one round, clean. Its minor findings went to 20261003-34.
