@@ -12,8 +12,9 @@ module Quaack
       # whole. A key with a NULL collides with nothing, unless its index is
       # NULLS NOT DISTINCT. An expression unique index's keys are evaluated
       # in Postgres (conn) on the row's values, against a VALUES list; a row
-      # whose keys can't be evaluated counts as colliding. A row whose
-      # parent was left out goes too.
+      # whose keys can't be evaluated counts as colliding. So is a group
+      # with a row whose foreign key points at a parent row neither here nor
+      # in the group (one a left-out group held).
       class RowSet
         def initialize(schema, conn)
           @schema = schema
@@ -22,12 +23,16 @@ module Quaack
           @evaluated = {}
         end
 
-        # False when the group collides and is left out.
+        # False when the group collides or lacks a parent, and is left out.
+        # Its rows are checked one at a time, each against the ones before.
         def add?(group_rows)
-          fresh = group_rows.reject { |r| @rows[r.table].include?(r) }
-          return false if fresh.any? { |r| collides?(r) }
+          fresh = group_rows.reject { |r| @rows[r.table].include?(r) }.uniq
+          fresh.each_with_index do |r, i|
+            next @rows[r.table] << r unless collides?(r) || orphan?(r, group_rows)
 
-          fresh.each { |r| @rows[r.table] << r }
+            fresh.first(i).each { @rows[it.table].delete(it) }
+            return false
+          end
           true
         end
 
@@ -45,21 +50,40 @@ module Quaack
           false
         end
 
-        # The rows, table by table, less every row whose foreign key points
-        # at a parent row that isn't here (one a left-out group held), and
-        # so on down.
-        def in_order(tables)
-          nil while @rows.values.any? { |rows| rows.reject! { |r| dangling?(r) } }
-          tables.flat_map { |t| @rows[t] }
+        # The rows here that rows point at by foreign key, and theirs, on up,
+        # less rows themselves.
+        def parents_of(rows)
+          found = []
+          queue = rows.dup
+          while (row = queue.shift)
+            parents(row).each do |parent|
+              next if found.include?(parent) || rows.include?(parent)
+
+              found << parent
+              queue << parent
+            end
+          end
+          found
         end
+
+        # The rows, table by table.
+        def in_order(tables) = tables.flat_map { |t| @rows[t] }
 
         private
 
+        def parents(row) = @schema.constraints(row.table).foreign_keys.filter_map { parent(row, it) }
+
+        def parent(row, key)
+          wanted = values(row, key.columns)
+          @rows[key.parent].find { values(it, key.parent_columns) == wanted } unless wanted.any?(&:nil?)
+        end
+
         # A foreign key with a NULL column checks nothing (MATCH SIMPLE).
-        def dangling?(row)
+        def orphan?(row, group_rows)
           @schema.constraints(row.table).foreign_keys.any? do |fk|
             key = values(row, fk.columns)
-            key.none?(&:nil?) && @rows[fk.parent].none? { |parent| values(parent, fk.parent_columns) == key }
+            key.none?(&:nil?) && parent(row, fk).nil? &&
+              group_rows.none? { |r| r.table == fk.parent && values(r, fk.parent_columns) == key }
           end
         end
 

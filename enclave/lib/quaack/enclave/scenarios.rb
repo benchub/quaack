@@ -8,9 +8,11 @@ require_relative "table_name"
 require_relative "value_pools"
 require_relative "scenarios/checks"
 require_relative "scenarios/free_values"
+require_relative "scenarios/parts"
 require_relative "scenarios/picker"
 require_relative "scenarios/plan"
 require_relative "scenarios/reads"
+require_relative "scenarios/retries"
 require_relative "scenarios/row_set"
 require_relative "scenarios/ties"
 require_relative "scenarios/topology"
@@ -71,10 +73,14 @@ module Quaack
     #
     # Every row satisfies every validated constraint. A group whose row
     # collides with an earlier row on a unique key first tries its pooled
-    # columns' later fitting values (see RowSet#add_any?). A group that still
-    # collides, or for which no value fails its near-miss atom, is left
-    # out, along with every row that points at one of its rows (see
-    # RowSet), and 9c catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
+    # columns' later fitting values (see Retries and RowSet#add_any?). So
+    # does a group with a row whose foreign key points at a parent row
+    # that isn't there. A group that still doesn't fit goes in a further
+    # fixture of its scenario, with the parent rows it points at, or as a
+    # near miss there (see Parts): a parent with no child, when the filter
+    # pins a unique value the hit's parent holds. A group that fits none,
+    # or for which no value fails its near-miss atom, is left out, and 9c
+    # catches an atom left vacuous. CHECKs must be simple (see Checks), or the build raises
     # Error(:complex_check). A foreign-key cycle between tables is broken
     # where it can be: a foreign key in the cycle whose columns are all
     # nullable, and that no atom reads, is cut (see Topology), and rows
@@ -156,9 +162,11 @@ module Quaack
 
       # Builds the scenarios for one query.
       class Builder
-        # dropped counts the groups the last build left out because they
-        # collide on a unique key, over every scenario.
-        attr_reader :atoms, :pools, :parse, :dropped
+        # dropped counts the groups the last build left out of their
+        # scenario's first fixture, over every scenario. spills holds, by
+        # scenario, the last build's further fixtures (see Parts): rows the
+        # first can't hold beside its own.
+        attr_reader :atoms, :pools, :parse, :dropped, :spills
 
         UNIQUE = FreeValues::UNIQUE
 
@@ -179,9 +187,12 @@ module Quaack
           @picker = Picker.new(@pools, probes, @checks, variants)
           @identities = {}
           @dropped = 0
+          @spills = {}
           ties = tie_groups
           Plan.new(@topology, @atoms, @pools.keys).scenarios.to_h do |name, groups|
-            [name, fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])]
+            first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
+            @spills[name] = rest unless rest.empty?
+            [name, first]
           end
         end
 
@@ -198,17 +209,13 @@ module Quaack
         end
 
         def fill(groups, tie_rows)
-          set = RowSet.new(@schema, @conn)
-          tries = groups.filter_map { |g| build_group(g)&.then { |rows| shifts(g, rows) } } + tie_rows.map { [it] }
-          tries.each { |rows| @dropped += 1 unless set.add_any?(rows) }
-          set.in_order(order)
+          parts = Parts.new(@schema, @conn)
+          (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
+          @dropped += parts.dropped
+          parts.in_order(order)
         end
 
-        # The group's rows, then lazily its rows with its pooled columns'
-        # later fitting values, for RowSet#add_any? to try when it collides:
-        # a second tag the filter takes, when the hit holds the first on a
-        # unique name.
-        def shifts(group, rows) = [rows].each + (1..SHIFTS).lazy.map { build_group(group.with(shift: it)) }
+        def retries = @retries ||= Retries.new(@pools.keys) { build_group(it) }
 
         # For each pooled keyset row comparison, groups whose row ties it on
         # its leading columns (see Ties): a hit on the keyset's table and its
@@ -217,17 +224,11 @@ module Quaack
         def tie_groups
           keysets = @atoms.values_at(*@pools.keys)
           Ties.all(@conn, @parse, keysets, @schema).each_with_index.filter_map do |(table, set), n|
-            next unless tie_allowed?(table, set)
+            next unless Ties.allowed?(table, set, @topology, @checks, @schema)
 
             build_group(Scenarios.group(TIE_KEY + n, @topology.ancestors(table)))&.then do |rows|
               Ties.apply(rows, table, set, @schema)
             end
-          end
-        end
-
-        def tie_allowed?(table, overrides)
-          overrides.none? do |name, v|
-            @topology.keyed?(table, name) || !@checks.allows?(table, @schema.column(table, name), v)
           end
         end
 
