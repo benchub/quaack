@@ -2264,3 +2264,25 @@ Check how a resumed run treats indexes that already exist on the racetrack. They
 - **Came from:** The user's Canvas run, 2026-10-04.
 - **Design:** Step 12a.
 - **Status:** todo
+
+### 20261004-12. Build step 12a's indexes in table order.
+
+Step 12a builds the candidate indexes on the run server in whatever order they arrive. That can build one on a large table, then one on another large table, then go back to the first, so the first table's pages have already left the cache. Group the builds by table, so every index on one table is built before moving to the next, while that table is still in cache. Within a table, keep the current order.
+
+Test that the build order is grouped by table, and that every index still gets built and reported. If 20261004-11 has landed by then, keep its one-call-per-index structure and order those calls by table.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** Step 12a.
+- **Status:** todo
+
+### 20261004-13. Two live-clock edge cases.
+
+The second review of 20261003-16 found these minors in `driver/lib/quaack/driver/progress.rb`:
+- At line 156, nothing tests that `draw` sets `@cut`. If the window widens within the last second before a line ends, after a redraw cut it, the line must still be reprinted whole. Reproduce it at 36 columns, with the clock at 1.2s, then widen to 80 before the step ends.
+- At line 144, when a finished line plus its clock is exactly as wide as the terminal, the trailing `\e[K` runs while the cursor waits to wrap, and on xterm it erases the last character, so `1m02s` shows as `1m02`. Print `\e[K` before the text instead.
+
+- **Depends on:** 20261003-16.
+- **Came from:** The second review of 20261003-16.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
