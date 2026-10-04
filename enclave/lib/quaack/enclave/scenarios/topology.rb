@@ -6,6 +6,13 @@ module Quaack
       # How the fixture tables hang together: their load order (parents
       # first), and the key classes, sets of [table, column] tied together
       # by an equality join atom or a foreign key, which share one value.
+      #
+      # A foreign key that references its own table is left out. So is one
+      # that's cut: it's part of a cycle (its parent references its table,
+      # however far up), all its child columns are nullable, and no atom
+      # reads any of them. Fixture rows leave a cut foreign key's columns
+      # NULL, and those columns join no key class. A cycle with no cut
+      # foreign key raises Error(:fk_cycle).
       class Topology
         attr_reader :order
 
@@ -17,9 +24,16 @@ module Quaack
         def initialize(schema, atoms)
           @schema = schema
           @atoms = atoms
+          @cut = cut_foreign_keys
           @order = load_order
           @classes = key_classes
         end
+
+        # The table's columns that belong to a cut foreign key, which
+        # fixture rows leave NULL.
+        def cut_columns(table) = @cut.fetch(table, []).flat_map(&:columns).uniq
+
+        def cut?(table, name) = cut_columns(table).include?(name)
 
         def parents(table) = foreign_keys(table).map(&:parent).uniq - [table]
 
@@ -51,7 +65,32 @@ module Quaack
 
         private
 
-        def foreign_keys(table) = @schema.constraints(table).foreign_keys
+        def all_foreign_keys(table) = @schema.constraints(table).foreign_keys
+
+        def foreign_keys(table) = all_foreign_keys(table) - @cut.fetch(table, [])
+
+        def cut_foreign_keys
+          @schema.tables.to_h do |t|
+            [t, all_foreign_keys(t).select { |fk| fk.parent != t && reaches?(fk.parent, t) && cuttable?(t, fk) }]
+          end
+        end
+
+        def cuttable?(table, foreign)
+          foreign.columns.all? { |c| @schema.column(table, c).nullable && !read?(table, c) }
+        end
+
+        def read?(table, name) = @atoms.any? { |a| a.columns.any? { |c| c.table == table && c.name == name } }
+
+        # Whether to is from, or a table from references, however far up.
+        def reaches?(from, to)
+          @reach ||= {}
+          @reach[from] ||= begin
+            found = [from]
+            found.each { |t| all_foreign_keys(t).each { |fk| found << fk.parent unless found.include?(fk.parent) } }
+            found
+          end
+          @reach[from].include?(to)
+        end
 
         def fk_column?(table, name)
           @schema.tables.any? do |t|
