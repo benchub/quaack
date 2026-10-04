@@ -89,10 +89,9 @@ RSpec.describe "quaack run" do
   after { FileUtils.rm_rf(home) }
 
   it "runs the pipeline over ssh to the run's jump host, from arena-setup through the report" do
-    entries.transform_values! { false }.merge!(setup_done, "index_search_original" => true,
-                                               "index_generated_original" => true,
-                                               "index_ranking_original" => true, "rewrite_rules_applied" => true,
-                                               "rewrites_generated" => true)
+    entries.transform_values! { false }.merge!(setup_done)
+    entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                   "index_ranking_original" => true, "rewrite_rules_applied" => true, "rewrites_generated" => true)
     status = cli.run(["run", "--run", run_id, "--out", out])
 
     expect([status, errors]).to eq([0, torn])
@@ -125,9 +124,9 @@ RSpec.describe "quaack run" do
 
   describe "progress on stderr" do
     it "says in plain English what each step does as it starts and ends, numbered, and each skip" do
-      entries.transform_values! { false }.merge!(setup_done, "index_search_original" => true,
-                                                 "index_generated_original" => true,
-                                                 "index_ranking_original" => true, "rewrites_generated" => true)
+      entries.transform_values! { false }.merge!(setup_done)
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, "rewrites_generated" => true)
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
       steps = [["4b", "Setting up the arena, a second database for test rows"],

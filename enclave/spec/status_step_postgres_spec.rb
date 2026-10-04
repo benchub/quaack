@@ -25,14 +25,14 @@ RSpec.describe "quaacks status, against a real server" do
   it "says which step 5 outputs are in the store, with 5a-5 done only after a first-round index-test" do
     prepare
     expect(later).to eq("type" => "status", "entries" => {
-                           "index_search_original" => false, "index_generated_original" => false,
-                           "index_ranking_original" => false, "rewrite_rules_applied" => false,
-                           "rewrites_generated" => false,
-                           "operator_rewrites_checked" => false, "arena_setup" => false,
-                           "index_build" => false, "baseline" => false, "index_baseline" => false,
-                           "candidate_runs" => false, "minimax" => false, "result_comparison" => false,
-                           "selection" => false
-                         })
+                          "index_search_original" => false, "index_generated_original" => false,
+                          "index_ranking_original" => false, "rewrite_rules_applied" => false,
+                          "rewrites_generated" => false,
+                          "operator_rewrites_checked" => false, "arena_setup" => false,
+                          "index_build" => false, "baseline" => false, "index_baseline" => false,
+                          "candidate_runs" => false, "minimax" => false, "result_comparison" => false,
+                          "selection" => false
+                        })
 
     index_search
     index_test(JSON.generate("ddls" => []), "--round", "refinement")

@@ -1,22 +1,20 @@
 # frozen_string_literal: true
 
 require_relative "version"
+require_relative "setup_command"
 
 module Quaack
   module Driver
     # The quaack command line, run by an engineer on their laptop.
     class CLI
-      SERVER_USAGE = "[--host <host>] [--port <port>] [--racetrack-db <name>] [--arena-db <name>]"
       USAGE = "Usage: quaack --version\n       " \
               "quaack start --server <name> --query <file> --plan <file>\n       " \
               "quaack deploy --host <jump server>\n       " \
-              "quaack setup --run <ID> #{SERVER_USAGE}\n       " \
-              "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] #{SERVER_USAGE}\n".freeze
+              "quaack setup --run <ID> #{SetupCommand::USAGE}\n       " \
+              "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] #{SetupCommand::USAGE}\n".freeze
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
-      # The run-server flags setup and run pass to `quaacks run-server`.
-      SERVER_OPTIONS = %w[--host --port --racetrack-db --arena-db].freeze
-      RUN_OPTIONAL = (%w[--rewrites --out] + SERVER_OPTIONS).freeze
+      RUN_OPTIONAL = (%w[--rewrites --out] + SetupCommand::OPTIONS).freeze
       # What setup and run load, only once they run.
       RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress runs
                      setup teardown transport/ssh].freeze
@@ -53,7 +51,7 @@ module Quaack
       def subcommand(argv)
         case argv.first
         when "start" then (options = start_options(argv.drop(1))) && start(options)
-        when "setup" then (options = setup_options(argv.drop(1))) && setup_command(**options)
+        when "setup" then setup(argv.drop(1))
         when "run" then (options = run_options(argv.drop(1))) && run_command(**options)
         when "deploy" then deploy(argv.drop(1))
         end
@@ -88,6 +86,9 @@ module Quaack
         Deploy.main(argv, stdout: @stdout, stderr: @stderr)
       end
 
+      # The exit status of a well-formed `setup`, or nil.
+      def setup(argv) = require_run && SetupCommand.new(@home, @transport, @stdout, @stderr).call(argv)
+
       # { run:, rewrites:, out:, keep:, server: } from `--run ID [--rewrites
       # <file>] [--out <path>] [--keep]` and the run-server flags, the
       # optional ones in any order, or nil. out defaults to
@@ -98,44 +99,9 @@ module Quaack
         argv -= ["--keep"]
         return unless keep <= 1 && argv.size.even? && argv[0] == "--run"
 
-        options = optional(argv.drop(2), RUN_OPTIONAL) or return
+        options = SetupCommand.optional(argv.drop(2), RUN_OPTIONAL) or return
         { run: argv[1], rewrites: options["--rewrites"], out: options["--out"] || "./quaack-#{argv[1]}.html",
-          keep: keep == 1, server: server(options) }
-      end
-
-      # { run:, server: } from `--run ID` and the run-server flags, in any
-      # order after it, or nil.
-      def setup_options(argv)
-        return unless argv.size.even? && argv[0] == "--run"
-
-        options = optional(argv.drop(2), SERVER_OPTIONS) or return
-        { run: argv[1], server: server(options) }
-      end
-
-      def server(options) = options.slice(*SERVER_OPTIONS).transform_keys { it.delete_prefix("--") }
-
-      # The optional options as a Hash, or nil if one repeats or isn't
-      # allowed.
-      def optional(argv, allowed)
-        pairs = argv.each_slice(2).to_a
-        pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { allowed.include?(it.first) }
-      end
-
-      # Steps 2 to 4a (Setup), each skipped when the store says it's done,
-      # then prints the run ID and "set up". A failure prints only its rule,
-      # as for start, and keeps the run, so setup can be run again.
-      def setup_command(run:, server:)
-        require_run
-        host = Runs.new(@home).host(run) or return usage_error("unknown run ID", command: "setup")
-        transport = @transport.call(host)
-        EnclaveVersion.check!(transport, host)
-        Setup.run(transport:, run_id: run, entries: Pipeline.status(transport, run), server:,
-                  progress: Progress.new(io: @stderr, total: Setup::STEPS.size))
-        @stdout.print "#{run} set up\n"
-        0
-      rescue EnclaveError, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack setup failed: #{e.is_a?(EnclaveError) ? e.rule : e.message}\n"
-        1
+          keep: keep == 1, server: SetupCommand.server(options) }
       end
 
       # DESIGN.md steps 2 to 4a first, as Setup, unless the store says the
@@ -193,7 +159,7 @@ module Quaack
         nil
       end
 
-      def usage_error(message, command: "run") = @stderr.print("quaack #{command}: #{message}\n") || EX_USAGE
+      def usage_error(message) = @stderr.print("quaack run: #{message}\n") || EX_USAGE
     end
   end
 end
