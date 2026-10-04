@@ -2150,27 +2150,7 @@ These were found in the second review of 20261003-23, and they fail safe (the lo
 
 ### 20261003-33. Step 9 values: loose ends from 20261003-27. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-34. Step 9 values: loose ends from 20261003-33.
-
-These are minor findings from building and reviewing 20261003-33. Do the first two first.
-
-- **`Reads` misses `USING` and `NATURAL` joins** (`scenarios/reads.rb`). It only collects `ColumnRef`s, so a column read only through `JOIN ... USING (lsn)` looks unread and gets NULL.
-  - Every scenario then returns 0 rows, and a wrong rewrite passes step 9. 9c does list `USING (lsn)` as untested, so this isn't silent.
-  - Fix: count `using_clause` names as reads, and treat `is_natural` as reading every column.
-- **A NOT NULL CHECK or NOT NULL domain now fails the load instead of refusing.** Examples: `lsn pg_lsn CHECK (lsn IS NOT NULL)`, or a domain `AS pg_lsn NOT NULL`.
-  - `null?` in `free_values.rb` should check `@checks.allows?(table, col, nil)` and the domain's not-null flag before choosing NULL, as main's clean `unsupported_type` did.
-- **The NULL is chosen from the original query only.** A rewrite that adds `AND lsn IS NULL` passes. That's the same weakness every unmentioned column's constant has, so give it one line in DESIGN.md.
-- **`bit(n)` still repeats values past 2^n.**
-- **ParentRows still refuses a nullable column of an unsupported type.** Use `Reads` there too.
-- **`Reads` matches columns by name only**, so it sometimes refuses a column the query doesn't really read.
-- **`null?` ignores a domain's NOT NULL.** Overlaps with the second bullet.
-- **A NOT NULL self-FK whose referenced columns the row doesn't set** still gets a new parent row.
-- **`Literals.bits` dropped its `match&.` guard**, so a custom base type of category `V` would crash instead of refusing.
-
-- **Depends on:** 20261003-33.
-- **Came from:** The build and review of 20261003-33, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-34. Step 9 values: loose ends from 20261003-33. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-35. `distinct_join_to_exists`: loose ends from 20261002-16.
 
@@ -2195,4 +2175,20 @@ These are minor findings from building and reviewing 20261002-16:
 - **Depends on:** none.
 - **Came from:** The pre-landing rake of 20261002-16, 2026-10-03.
 - **Design:** none (test only).
+- **Status:** todo
+
+### 20261003-37. Step 9 values: loose ends from 20261003-34.
+
+These are minor findings from building and reviewing 20261003-34:
+
+- **A base table aliased with a column list** (`reads.rb` `Tables#add` and `qualifier`). In `FROM fx.customers c(id, name, status)`, `c.status` reads `customers.lsn`, but `Reads` treats `lsn` as unread and fills it with NULL. Fix: treat an alias with a column list as reading every column of its table.
+- **ParentRows' self-FK fix depends on foreign-key order** (`parent_rows.rb` `foreign_keys`). The `next if` skip looks only at `fixed`, not at `pairs`.
+  - Example: `code NOT NULL UNIQUE`, a self-FK `root_code → code`, and an FK `code → regions`. When the self-FK comes first, the second FK overwrites `code`, and the load fails.
+  - No test covers the other order, so the mutation `fixed.merge(pairs)` → `fixed` survives.
+  - The same skip lets a later FK overwrite a NULL that an earlier nullable FK set.
+- **Three-part column references resolve by their table part only** in `Reads`, ignoring the schema.
+
+- **Depends on:** 20261003-34.
+- **Came from:** The build and review of 20261003-34, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo
