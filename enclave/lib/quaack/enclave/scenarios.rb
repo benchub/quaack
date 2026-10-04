@@ -35,7 +35,10 @@ module Quaack
     #   the column still satisfied. And one per equality join atom that no
     #   foreign key backs: the right side's table gets a key of its own.
     # - nulls: every nullable join key and predicate column NULL.
-    # - copy: another row for one table, sharing another group's keys.
+    # - copy: another row for one table, sharing another group's keys, but
+    #   with its own value for a key its table holds unique.
+    # - cross: a group whose row points one foreign key at the hit's parent
+    #   (see Topology#crossings).
     # - orphan: one side of a join with no foreign key, alone (with the
     #   tables it references).
     # - boundary: the hit group, with type boundary values wherever they
@@ -43,14 +46,16 @@ module Quaack
     # - empty: only the tables that reference no other fixture table.
     #
     # The scenarios are S0: none; S1: hit and near misses; S2: S1 and nulls;
-    # S3: S1 and a copy of each table's hit row; S4: S1 and orphans; S5: S1
+    # S3: S1, a copy of each table's hit row, and crosses; S4: S1 and orphans; S5: S1
     # and two boundary groups; S6: hit, a group with two more copies of each
     # table's row, and empty.
     #
     # Column values. A pooled atom's column takes the first pool value that
     # satisfies (or for its near miss, fails) the atom and satisfies every
     # other atom and CHECK on the column (see Picker). variants rotates an
-    # atom's pool lists, by atom index, for 9c's retries. A key column takes
+    # atom's pool lists, by atom index, for 9c's retries. An atom no pool
+    # value satisfies (r.id IS NULL on a NOT NULL key) is ignored, so
+    # it can't drop every group. A key column takes
     # a generated value per group (an identity key too, when a key class
     # ties it to another column), and a unique column one per distinct
     # row, even with a DEFAULT. A unique index counts, a partial one as
@@ -93,9 +98,28 @@ module Quaack
 
       NAMES = %i[s0 s1 s2 s3 s4 s5 s6].freeze
 
-      # copy tells rows apart that are alike in every other way.
-      Group = Data.define(:key, :tables, :near, :split, :mode, :copy)
-      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0 }.freeze
+      # copy tells rows apart that are alike in every other way. cross, when
+      # set, points one foreign key of the group's row at another group's
+      # parent (see Cross).
+      Group = Data.define(:key, :tables, :near, :split, :mode, :copy, :cross) do
+        # The key a column of table takes in this group: the hit's where a
+        # cross points it, the split table's own, and a copy's own where its
+        # table's unique keys need one (own, see Topology#own_key?).
+        def key_for(table, name, own:)
+          return cross.key if cross&.points?(table, name)
+
+          (split == table ? key + SPLIT_KEY : key) + (own ? COPY_KEY * copy : 0)
+        end
+      end
+      GROUP_DEFAULTS = { near: nil, split: nil, mode: :plain, copy: 0, cross: nil }.freeze
+      SPLIT_KEY = 100_000
+      COPY_KEY = 200_000
+
+      # A foreign key of table, on columns, whose row points at the parent
+      # row in the group with key (the hit, which S3 holds).
+      Cross = Data.define(:table, :columns, :key) do
+        def points?(table, name) = self.table == table && columns.include?(name)
+      end
 
       module_function
 
@@ -221,13 +245,19 @@ module Quaack
           slot = @topology.slot(table, col.name)
           atoms = slot_atoms(slot)
           return nil if nulled?(group, col, keyed || atoms.any?)
-          return atom_value(slot, atoms, group) if atoms.any?
-          return key_value(slot, group, table) if keyed
 
-          free_value(table, col, group.mode)
+          bound_value(slot, @picker.satisfiable(atoms), group, table, col)
         end
 
-        def free_value(table, col, mode) = free_values.value(table, col, mode)
+        # The value of a column no rule above settles: an atom's, a key's,
+        # or a free one.
+        def bound_value(slot, atoms, group, table, col)
+          near = atoms.include?(group.near) ? group.near : nil
+          return @picker.pick(atoms, slot_columns(slot), near, group.mode) if atoms.any?
+          return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
+
+          free_values.value(table, col, group.mode)
+        end
 
         def free_values
           @free_values ||= FreeValues.new(@schema, @topology, @checks, @values,
@@ -238,10 +268,6 @@ module Quaack
 
         def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
 
-        def atom_value(slot, atoms, group)
-          @picker.pick(atoms, slot_columns(slot), atoms.include?(group.near) ? group.near : nil, group.mode)
-        end
-
         def slot_atoms(slot)
           members = @topology.members(slot)
           @pools.keys.select { |i| members.include?([@pools[i].column.table, @pools[i].column.name]) }
@@ -249,10 +275,10 @@ module Quaack
 
         def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
 
-        # The key's value, one every column of the slot reads.
-        def key_value(slot, group, table)
-          key = group.split == table ? group.key + 100_000 : group.key
-          @values.shared_nth(slot_columns(slot), key)
+        # The key's value (see Group#key_for), one every column of the slot
+        # reads.
+        def key_value(slot, group, table, name)
+          @values.shared_nth(slot_columns(slot), group.key_for(table, name, own: @topology.own_key?(table, name)))
         end
 
         # Unique columns get a value per distinct row: rows alike in every

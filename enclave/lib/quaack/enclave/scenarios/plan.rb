@@ -15,7 +15,7 @@ module Quaack
         def scenarios
           hit = group(fresh_key)
           s1 = [hit] + near_misses
-          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + copies(hit),
+          { s0: [], s1:, s2: s1 + [nulls], s3: s1 + fan_outs(hit),
             s4: s1 + orphans, s5: s1 + boundaries, s6: [hit] + many + [empty] }
         end
 
@@ -27,7 +27,18 @@ module Quaack
 
         def empty = group(fresh_key, @topology.roots)
 
+        def fan_outs(hit) = copies(hit) + crosses(hit)
+
         def copies(hit) = order.map { |t| group(hit.key, [t], copy: 1) }
+
+        # For each foreign key a row can point across groups (see
+        # Topology#crossings), a group whose row points it at the hit's
+        # parent, not its own.
+        def crosses(hit)
+          @topology.crossings.map do |table, fk|
+            group(fresh_key, @topology.ancestors(table), cross: Cross.new(table:, columns: fk.columns, key: hit.key))
+          end
+        end
 
         def boundaries = %i[boundary boundary_reversed].map { |mode| group(fresh_key, mode:) }
 

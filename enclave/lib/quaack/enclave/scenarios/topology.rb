@@ -57,15 +57,43 @@ module Quaack
 
         def keyed?(table, name) = @classes.key?([table, name])
 
+        # Each [table, foreign key] whose row can point at another group's
+        # parent: a foreign key to another table, not cut, that shares no
+        # column with another of the table's foreign keys.
+        def crossings
+          @order.flat_map do |t|
+            fks = foreign_keys(t).reject { |fk| fk.parent == t }
+            fks.select { |fk| (fks - [fk]).none? { |o| o.columns.intersect?(fk.columns) } }.map { |fk| [t, fk] }
+          end
+        end
+
         # The slot a column's value comes from: its key class's root, or
         # the column itself.
         def slot(table, name) = @classes.fetch([table, name], [table, name])
 
         def members(slot) = @classes.value?(slot) ? @classes.select { |_, root| root == slot }.keys : [slot]
 
+        # Whether a copy of the table's row takes a key of its own for the
+        # column, rather than the row's. A copy can't repeat a value that a
+        # unique key of its table holds, so the slots of those columns get
+        # the copy's key, and a self-reference follows its row. The table's
+        # foreign keys to other tables still point at the row's parents, so
+        # the parents get a second child.
+        def own_key?(table, name)
+          keyed?(table, name) && own_slots(table).include?(slot(table, name))
+        end
+
         private
 
         def all_foreign_keys(table) = @schema.constraints(table).foreign_keys
+
+        # The columns of the table's foreign keys to other tables.
+        def outward(table) = foreign_keys(table).reject { |fk| fk.parent == table }.flat_map(&:columns)
+
+        def own_slots(table)
+          (@schema.constraints(table).uniques.flatten.uniq - outward(table))
+            .select { |c| keyed?(table, c) }.map { |c| slot(table, c) }
+        end
 
         def foreign_keys(table) = all_foreign_keys(table) - @cut.fetch(table, [])
 

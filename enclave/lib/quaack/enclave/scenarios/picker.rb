@@ -18,6 +18,12 @@ module Quaack
           @picks = {}
         end
 
+        # The atoms some stored value satisfies. One no stored value can,
+        # such as r.id IS NULL on a NOT NULL key that an outer join reads,
+        # doesn't constrain the slot: every value already fails it, so its
+        # near miss needs none.
+        def satisfiable(atoms) = atoms.reject { |i| @pools[i].satisfying.empty? }
+
         # :skip when a near miss has no value.
         def pick(atoms, columns, near, mode)
           @picks[[atoms, columns, near, mode]] ||= begin

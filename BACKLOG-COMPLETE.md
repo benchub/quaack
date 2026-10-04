@@ -4105,3 +4105,27 @@ Reproduce it with a sentinel value that makes the cast fail, and check that the 
     - DESIGN.md 10a describes `bad_value`.
   - **Tests:** sentinel tests for a bad FK value, a plain value, a cut column and a full step run went red on main. A meta-test proves the leak check catches a planted sentinel. The reviewer tried enum, date, jsonb, out-of-range, division by zero and multi-row cases, and nothing leaked. Mutations went red.
   - **Review:** one round, clean. Its minor findings went to 20261003-38.
+
+### 20261003-31. Step 9: two false passes on ordinary joins.
+
+The second review of 20261003-23 found two cases where step 9 passes a wrong rewrite. Both are on main and both are realistic, so this goes ahead of widenings.
+
+- **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
+- **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
+- **A nullable FK always points at the group's own parent.** On the Canvas `accounts.course_template_id` cycle, "courses that are some account's template" passes as equal to "courses whose account has a template", on main too (review of 20261003-30, case C6). Some group must hold a row whose nullable FK points at a parent from another group. Note: on a cycle this interacts with 20261003-23/-30, which are set aside. Do the acyclic form here, and leave the cyclic form for them.
+
+Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261003-23, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** done
+- **Landed:** 2026-10-03, as a merge of task/20261003-31.
+  - **Change:**
+    - An atom no stored value can satisfy, such as `r.id IS NULL` on a NOT NULL key, no longer drops every group. That fixes the self-referencing anti-join false pass.
+    - A copy row gets its own value for a key its table holds unique (`topology.rb` `own_key?`/`own_slots`). Before, it collided with the original and was dropped, so a parent never had two children. That fixes EXISTS vs JOIN.
+    - S3 adds rows whose foreign key points at another group's parent. This is the acyclic form only; cycle-cutting is untouched.
+    - DESIGN.md step 9 notes.
+  - **Tests:** `enclave/spec/step_nine_joins_postgres_spec.rb`, on real Postgres. Each wrong rewrite was red on main and is now disproved, and each correct twin passes. In the fix round, tests were added that pin `own_key?` and the outward guard in `own_slots`; each goes red under its mutation.
+  - **Review:** two rounds. The first found `own_key?` and the outward guard untested (blocking), and the fix round added tests for both. The second review was clean, with 26 Rails-style cases: no new load failures, no new false passes, and two more wrong rewrites now disproved. Minor findings went to 20261003-39 and 20261003-40.
+  - **Not done:** the cyclic form (Canvas `accounts.course_template_id` ↔ `courses`), which belongs to 20261003-23 and -30.

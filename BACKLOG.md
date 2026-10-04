@@ -2097,6 +2097,10 @@ From the build and review of 20261002-10.
   - When a group skips, also drop the copy and "many" rows that depend on it.
 - **Test** with a third table under `accounts`. Reviewer reproducer, in the review scratch dir: `canvas_spec.rb`, case 7.
 - **Also:** in `arena_runner/deferred.rb` (`load_rows`/`update_rows`), a row that RETURNING doesn't give back raises a bare `ArgumentError`. That happens, for example, with a BEFORE INSERT trigger that returns NULL. Raise `fixture_load_failed` instead, as DESIGN.md says.
+- **Also (from 20261003-31's build, still open on main):** these are cases in the Canvas reproducer.
+  - **Case 4:** `ORDER BY … NULLS FIRST` on a column that was cut to break a cycle still passes a wrong rewrite.
+  - **Case 7:** the correct candidate's fixture fails to load at S6 because of the cycle.
+  - **The cyclic form of 20261003-31's C6** isn't covered: a nullable FK in a cycle always points at its own group's parent. 20261003-31 fixed only the acyclic form.
 
 - **Depends on:** 20261003-23 (its branch).
 - **Came from:** The second review of 20261003-23, 2026-10-03.
@@ -2111,20 +2115,7 @@ From the build and review of 20261002-10.
   - **Question for the user:** keep pushing on that, or drop 20261003-23 and keep main's `fk_cycle` refusal for a query that joins on the cycle's nullable edge? Dropping it would make 20261003-18 (a refusal doesn't end the run) the way to keep such runs going.
 - **Status:** todo (set aside, waiting on an answer)
 
-### 20261003-31. Step 9: two false passes on ordinary joins.
-
-The second review of 20261003-23 found two cases where step 9 passes a wrong rewrite. Both are on main and both are realistic, so this goes ahead of widenings.
-
-- **Self-referencing anti-join.** `SELECT a.id FROM accounts a LEFT JOIN accounts r ON r.id = a.root_account_id WHERE r.id IS NULL` is treated as equal to its JOIN form. The scenarios never hold an account whose `root_account_id` points at nothing, or is NULL. It happens on an acyclic schema too.
-- **EXISTS vs JOIN.** Duplicate children are never generated, so a JOIN that returns a parent once per child passes as equal to `EXISTS`. Some group must hold a parent with two matching children.
-- **A nullable FK always points at the group's own parent.** On the Canvas `accounts.course_template_id` cycle, "courses that are some account's template" passes as equal to "courses whose account has a template", on main too (review of 20261003-30, case C6). Some group must hold a row whose nullable FK points at a parent from another group. Note: on a cycle this interacts with 20261003-23/-30, which are set aside. Do the acyclic form here, and leave the cyclic form for them.
-
-Test both on real Postgres, with the wrong rewrite disproved and the right one passing.
-
-- **Depends on:** none.
-- **Came from:** The second review of 20261003-23, 2026-10-03.
-- **Design:** Step 9.
-- **Status:** todo
+### 20261003-31. Step 9: two false passes on ordinary joins. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-32. Step 9: loads that fail on `IS NULL` and skipped groups.
 
@@ -2194,4 +2185,34 @@ These are minor findings from the review of 20261003-24:
 - **Depends on:** 20261003-24.
 - **Came from:** The review of 20261003-24, 2026-10-03.
 - **Design:** 10a.
+- **Status:** todo
+
+### 20261003-39. Step 9: more variety in self-references and repeated parents.
+
+These are false passes found in the reviews of 20261003-31. They also happen on main. All are realistic:
+
+- **A self-referencing FK always points at its own row.** So `comments c JOIN comments p ON p.id = c.parent_id WHERE p.user_id = 3` passes as equal to `... WHERE c.user_id = 3`. Likewise `categories p JOIN categories c ON c.parent_id = p.id` passes as equal to its EXISTS form. Comment trees, category trees and manager chains are common. A cheap fix: point the S3 copy's self-reference at the hit row, so some row's parent is a different row.
+- **Two FKs into the same parent get the same free values.** In `messages(sender_id → users, recipient_id → users)`, both users always get the same `name`. So `SELECT s.name, r.name …` passes as equal to `SELECT s.name, s.name …`. Give each parent row reached through a different FK its own free values.
+- **has_one crosses collide.** On a unique FK, such as `profiles.user_id UNIQUE`, the S3 cross row collides with the hit's row, and `RowSet` drops it without saying so. It fails safe, but that case loses the cross row. Pick a parent the unique FK hasn't used yet.
+
+Each needs a wrong rewrite that's disproved and a correct twin that passes, on real Postgres.
+
+- **Depends on:** 20261003-31.
+- **Came from:** The reviews of 20261003-31, 2026-10-03.
+- **Design:** Step 9.
+- **Status:** todo
+
+### 20261003-40. Step 9: a dropped group leaves rows pointing at missing parents.
+
+Found while fixing 20261003-31. It happens on main too. It fails safe, but it rejects correct rewrites of an ordinary query shape.
+
+- **An equality filter on a unique parent column, joined to a child,** fails to load at S6. Example: `posts JOIN taggings JOIN tags tg … WHERE tg.name = 'ruby'`. The S6 "many" group collides with the hit on the unique `name`, so the whole group is dropped. The group's single-table copies stay, though, and the taggings copy points at a post and tag that were never loaded, so the load fails with `fixture_load_failed`.
+- **The S3 cross rows assume the hit group is never dropped.** If it were, they'd point at a missing parent in the same way.
+- Fix: when a group is dropped, also drop every row that points at its rows, and the rows built only for it. Or pick the colliding group's unique values so they can't collide. Check whether this also clears 20261003-32's "a group that skips leaves orphaned copies".
+
+Test with the taggings query: the correct rewrite must pass, and a wrong twin must still be disproved.
+
+- **Depends on:** 20261003-31.
+- **Came from:** The fix round of 20261003-31, 2026-10-03.
+- **Design:** Step 9.
 - **Status:** todo
