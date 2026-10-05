@@ -76,6 +76,14 @@ RSpec.describe Quaack::Driver::Progress do
     expect(io.string.lines[1]).to eq("quaack: [1/3] Asking the LLM (llm-rewrites)\n")
   end
 
+  it "prints a step's note with the step's ID in parentheses, unnumbered" do
+    p = progress
+    p.step("llm-rewrites", "Asking the LLM for rewrites") { p.step_note("llm-rewrites", "Checking the LLM's rewrites") }
+
+    expect(io.string.lines[1]).to eq("quaack: [1/3] Checking the LLM's rewrites (llm-rewrites)\n")
+    expect(io.string.lines.last).to start_with("quaack: [1/3] Done")
+  end
+
   it "prints minutes and hours in times" do
     times.replace([0.0, 90.0])
     p = progress
@@ -463,12 +471,22 @@ RSpec.describe Quaack::Driver::Progress do
                                            "Ranking the index ideas (index-rank)\n"])
       expect(io.string.lines.last).to start_with("quaack: [1/3] Done")
     end
+
+    it "prints a sub-step's note after the prefix, with the sub-step's ID" do
+      p = progress
+      p.step("rewrite-correctness", "Testing each rewrite") do
+        p.within("Rewrite 1").within("again").step_note("counterexamples", "Loading the LLM's rows")
+      end
+
+      expect(io.string.lines[1]).to eq("quaack: [1/3] Rewrite 1, again: Loading the LLM's rows (counterexamples)\n")
+    end
   end
 
   describe "NULL" do
     it "runs steps and prints nothing" do
       expect(described_class::NULL.step("a", "b") { 7 }).to eq(7)
       expect(described_class::NULL.within("x").step("a", "b") { 8 }).to eq(8)
+      expect(described_class::NULL.step_note("a", "b")).to be_nil
     end
   end
 end

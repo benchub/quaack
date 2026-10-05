@@ -63,39 +63,50 @@ module Quaack
         # for search. Returns llm-index-refine's result, from refine.
         def llm(transport, client, run_id, search, done, progress = Progress::NULL) # rubocop:disable Metrics/ParameterLists
           args = { run: run_id, search: }
-          payload = payload(transport, args)
+          payload = payload(transport, args, progress)
           names = search == SEARCH ? NAMES : REWRITE_NAMES
           Pipeline.run_step(progress, done[:generated], names[0]) do
-            generate(transport, client, run_id, search, payload.call)
+            generate(transport, client, run_id, search, payload.call(names[0]), progress)
           end
-          refined = Pipeline.step(progress, names[1]) { refine(transport, client, run_id, search, payload) }
+          refined = Pipeline.step(progress, names[1]) { refine(transport, client, run_id, search, payload, progress) }
           Pipeline.run_step(progress, done[:ranked], names[2]) { transport.call("index-rank", args:) }
           refined
         end
 
-        # index-payload's payload, fetched on the first call only.
-        def payload(transport, args)
+        # index-payload's payload, fetched on the first call only, with a
+        # note under the step it's called with.
+        def payload(transport, args, progress)
           fetched = nil
-          -> { fetched ||= transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" } }
+          shape = "Reading the #{args[:search] == SEARCH ? "query" : "rewrite"}'s shape for the LLM"
+          lambda do |step|
+            fetched ||= begin
+              progress.step_note(step, shape)
+              transport.call("index-payload", args:).messages.find { it["type"] == "index_payload" }
+            end
+          end
         end
 
-        def generate(transport, client, run_id, search, payload)
-          index_test = GeneratorThree.index_test(transport, run_id:, search:)
+        def generate(transport, client, run_id, search, payload, progress) # rubocop:disable Metrics/ParameterLists
           step = search == SEARCH ? GeneratorThree::STEP : GeneratorThree::REWRITE_STEP
+          test = GeneratorThree.index_test(transport, run_id:, search:)
+          index_test = Pipeline.noting(progress, step, "Testing the LLM's index ideas", test)
           result = GeneratorThree.new(client:, index_test:, step:).run(payload)
-          index_test.call([]) if result.rounds.empty?
+          none = Pipeline.noting(progress, step, "Recording that the LLM gave no index ideas", test)
+          none.call([]) if result.rounds.empty?
           result
         end
 
         # RefinementRound's result, or, when it skips the round, :refined if
         # the round already ran, else nil.
-        def refine(transport, client, run_id, search, payload)
+        def refine(transport, client, run_id, search, payload, progress) # rubocop:disable Metrics/ParameterLists
           feedback = nil
-          fetch = RefinementRound.index_feedback(transport, run_id:, search:)
-          index_test = RefinementRound.index_test(transport, run_id:, search:)
           step = search == SEARCH ? RefinementRound::STEP : RefinementRound::REWRITE_STEP
+          fetch = Pipeline.noting(progress, step, "Reading how the LLM's index ideas did",
+                                  RefinementRound.index_feedback(transport, run_id:, search:))
+          index_test = Pipeline.noting(progress, step, "Testing the LLM's revised index ideas",
+                                       RefinementRound.index_test(transport, run_id:, search:))
           result = RefinementRound.new(client:, index_feedback: -> { feedback = fetch.call }, index_test:, step:)
-                                  .run(payload)
+                                  .run(-> { payload.call(step) })
           result || (:refined if feedback["refined"])
         end
       end
@@ -121,6 +132,9 @@ module Quaack
         PRUNING = { "rewrite-index-search" => %w[index-search index_search_rewrite_],
                     "rewrite-index-rank" => %w[index-rank index_ranking_rewrite_],
                     "rewrite-prune" => %w[rewrite-prune rewrite_pruned_] }.freeze
+
+        # operator-rewrites' note for its rewrite-check.
+        OPERATOR_CHECK = "Checking your rewrites against what the LLM says they assume"
 
         module_function
 
@@ -161,8 +175,9 @@ module Quaack
           payload = transport.call("rewrite-payload", args: { run: run_id }).messages
                              .find { it["type"] == "rewrite_payload" }
           Pipeline.run_step(progress, entries["rewrites_generated"], "llm-rewrites") do
-            RewriteGeneration.new(client:, rewrite_check: RewriteGeneration.rewrite_check(transport, run_id:))
-                             .run(payload)
+            rewrite_check = Pipeline.noting(progress, RewriteGeneration::STEP, "Checking the LLM's rewrites",
+                                            RewriteGeneration.rewrite_check(transport, run_id:))
+            RewriteGeneration.new(client:, rewrite_check:).run(payload)
           end
           operator(transport, client, run_id, entries, rewrites, payload, progress) unless rewrites.nil?
         end
@@ -172,8 +187,9 @@ module Quaack
           Pipeline.run_step(progress, entries["operator_rewrites_checked"], "operator-rewrites") do
             raise OperatorCandidates::Error, "no_rewrite_payload" unless payload
 
-            OperatorCandidates.new(client:, rewrite_check: OperatorCandidates.rewrite_check(transport, run_id:))
-                              .run(payload, rewrites)
+            rewrite_check = Pipeline.noting(progress, OperatorCandidates::STEP, OPERATOR_CHECK,
+                                            OperatorCandidates.rewrite_check(transport, run_id:))
+            OperatorCandidates.new(client:, rewrite_check:).run(payload, rewrites)
           end
         end
 
@@ -227,10 +243,18 @@ module Quaack
           end
           return false unless tested || passed
 
-          Pipeline.step(progress, "counterexamples") do
-            payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
-            !Counterexamples.new(client:).run(payload, compare: compare(transport, args)).disproved
-          end
+          Pipeline.step(progress, "counterexamples") { survives_counterexamples?(transport, client, args, progress) }
+        end
+
+        # Whether no round of counterexamples disproved the rewrite. Each
+        # enclave call gets a note of its own, so the LLM's line isn't left
+        # open over it.
+        def survives_counterexamples?(transport, client, args, progress)
+          progress.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
+          payload = message(transport.call("counterexample-payload", args:), "counterexample_payload")
+          rounds = Pipeline.noting(progress, "counterexamples", "Loading the LLM's rows and comparing results",
+                                   compare(transport, args))
+          !Counterexamples.new(client:).run(payload, compare: rounds).disproved
         end
 
         def compare(transport, args)
@@ -369,6 +393,16 @@ module Quaack
       def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), summary: StepSummary::SUMMARY[name], &)
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
+
+      # call, an enclave call that runs under an LLM step's lines, such as
+      # its index-test, with a note of its own under the step name first
+      # each time, so the LLM's line isn't left open over it.
+      def self.noting(progress, name, text, call)
+        lambda do |*args, **options|
+          progress.step_note(name, text)
+          call.call(*args, **options)
+        end
+      end
 
       # Progress for rewrite number's sub-steps, under its name, such as
       # "Rewrite Silver Fox" (RewriteNames).

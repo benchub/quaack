@@ -75,7 +75,9 @@ RSpec.describe Quaack::Driver::DeployDiagnosis do
     before = Dir.glob("**/*", File::FNM_DOTMATCH, base: home).sort
     diagnose(path: [stubs, tools, ruby_dir])
 
-    expect(File.read(File.join(dir, "ssh-args"))).to eq("-T -o BatchMode=yes -- jump-1 sh -s\n")
+    expect(File.read(File.join(dir, "ssh-args")))
+      .to eq("-T -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 -o ConnectTimeout=30 " \
+             "-- jump-1 sh -s\n")
     expect(Dir.glob("**/*", File::FNM_DOTMATCH, base: home).sort).to eq(before)
   end
 

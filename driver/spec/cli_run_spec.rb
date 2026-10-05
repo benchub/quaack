@@ -149,6 +149,7 @@ RSpec.describe "quaack run" do
          "quaack: [2/18] Already done, skipping: " \
          "Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)\n",
          "quaack: [3/18] Asking the LLM to improve its index ideas (llm-index-refine)\n",
+         "quaack: [3/18] Reading how the LLM's index ideas did (llm-index-refine)\n",
          "quaack: [3/18] No index ideas needed improving in Ns (llm-index-refine)\n",
          "quaack: [4/18] Already done, skipping: Ranking the index ideas (index-rank)\n",
          "quaack: [5/18] Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
@@ -271,6 +272,42 @@ RSpec.describe "quaack run" do
     expect([status, stdout.string, errors]).to eq(
       [1, "", "#{torn}quaack run failed: run_from_older_version: an older version of QUAACK started this run, " \
               "and this version can't resume it. Start a new run with quaack start.\n"]
+    )
+  end
+
+  it "says when ssh couldn't reach the jump server, and the command that resumes the run" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "ssh_failed",
+                                                                 exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "#{torn}quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
+          "then resume with `quaack run --run #{run_id}`\n"]
+    )
+  end
+
+  it "says when ssh couldn't reach the jump server for the version check, not that quaacks is missing" do
+    failing["version"] = Quaack::Driver::EnclaveError.new(subcommand: "version", rule: "ssh_failed", exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
+          "then resume with `quaack run --run #{run_id}`\n"]
+    )
+  end
+
+  it "names the call that died, and how, when an enclave call is incomplete" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "incomplete",
+                                                                 exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "#{torn}quaack run failed: incomplete: quaacks index-feedback ended with exit 255. The ssh " \
+          "session failed or ended, or the remote process was killed: check your ssh login, the network, and " \
+          "the jump server's kernel log (for the OOM killer) and sshd log\n"]
     )
   end
 

@@ -39,8 +39,11 @@ RSpec.describe Quaack::Driver::Deploy do
   # user gem bin dir on PATH, as DESIGN.md says to set up. It logs each
   # remote command, one per line, to dir/remote. The login shell is bash:
   # getent is a stub that can't answer, so SHELL decides. With probe: false,
-  # the diagnosis probe (`sh -s`) fails, as it would if ssh dropped.
-  def fake_ssh(path: true, probe: true)
+  # the diagnosis probe (`sh -s`) fails, as it would if ssh dropped. With
+  # expired: true, every call after gem install, the version check and
+  # the transport's `true` probe, exits 255, as when the ssh login expires
+  # during the install.
+  def fake_ssh(path: true, probe: true, expired: false)
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
     File.write(script, <<~SH)
@@ -51,6 +54,7 @@ RSpec.describe Quaack::Driver::Deploy do
       export PATH='#{bin}#{stubs}:#{RbConfig::CONFIG["bindir"]}':/usr/bin:/bin SHELL=/bin/bash
       printf '%s\\n' "$*" >> '#{dir}/remote'
       #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
+      #{"case \"$*\" in quaacks*|true) exit 255 ;; esac" if expired}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
@@ -124,6 +128,22 @@ RSpec.describe Quaack::Driver::Deploy do
                               "PATH for non-interactive ssh, put the user gem bin dir on PATH there (DESIGN.md, " \
                               "\"Deploying the enclave\").")
     }
+  end
+
+  it "fails cleanly, saying to check ssh and deploy again, when ssh fails at the version check" do
+    out = StringIO.new
+    err = StringIO.new
+    fake_ssh(expired: true)
+    status = with_env("PATH" => "#{dir}:#{ENV.fetch("PATH")}") do
+      described_class.main(["--host", "jump-1"], stdout: out, stderr: err)
+    end
+
+    expect([status, err.string]).to eq(
+      [1, "quaack deploy failed: installed quaacks #{Quaack::Driver::ENCLAVE_VERSION} on jump-1, but ssh_failed: " \
+          "couldn't ssh to the jump server; check your ssh login or network, then run " \
+          "`quaack deploy --host jump-1` again\n"]
+    )
+    expect(File.read(File.join(dir, "remote")).lines.last(2)).to eq(["quaacks version\n", "true\n"])
   end
 
   it "fails, naming the host, when gem install fails there" do

@@ -49,9 +49,12 @@ module Quaack
         @stdout.print "#{run_id} set up\n"
         0
       rescue EnclaveError, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack setup failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
+        @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id))}\n"
         1
       end
+
+      # What to do after ssh_failed.
+      def resume(run_id) = "resume with `quaack setup --run #{run_id}`"
     end
   end
 end

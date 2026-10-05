@@ -29,7 +29,9 @@ module Quaack
 
       def remote(transport, host)
         transport.call("version").messages.find { it["type"] == "version" }&.fetch("version", nil)
-      rescue EnclaveError
+      rescue EnclaveError => e
+        raise e if e.rule == "ssh_failed"
+
         raise Mismatch, "quaacks isn't installed on #{host}, or isn't on PATH for non-interactive ssh there. " \
                         "#{deploy(host)}", cause: nil
       end

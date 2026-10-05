@@ -128,6 +128,9 @@ module Quaack
         found = "installed quaacks #{ENCLAVE_VERSION} on #{@host}, but #{e.message.split(". ").first}."
         advice = DeployDiagnosis.new(host: @host, ssh: @ssh).call
         raise Error, advice ? "#{found}\n#{advice}" : "#{found} #{GENERAL_ADVICE}", cause: nil
+      rescue EnclaveError => e
+        again = e.rule_with_note(next_step: "run `quaack deploy --host #{@host}` again")
+        raise Error, "installed quaacks #{ENCLAVE_VERSION} on #{@host}, but #{again}", cause: nil
       end
 
       # Prints the line for a step as it starts. Each step starts a child
