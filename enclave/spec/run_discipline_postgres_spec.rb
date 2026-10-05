@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/run_discipline"
+require_relative "support/server_clock"
 
 # DESIGN.md's run-discipline: every measurement statement runs alone, in a READ ONLY
 # transaction, with statement_timeout at 3x the baseline, clamped to 5s..5min.
@@ -60,6 +61,13 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  it "reports a statement that hits the timeout as timed out, even if the enclave's clock runs slower than the server's" do
+    slow_enclave_clock
+    result = run("SELECT pg_sleep(2)", timeout_ms: 500)
+    expect([result.timed_out, result.result]).to eq([true, nil])
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "reports a timeout as timed out even when server messages aren't in English" do
     conn.exec("SET lc_messages = 'de_DE.UTF-8'")
     result = run("SELECT pg_sleep(2)", timeout_ms: 100)
@@ -69,17 +77,10 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
   end
 
   it "raises an operator's cancel instead of counting it as timed out" do
-    other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
-    pid = conn.backend_pid
-    canceller = Thread.new do
-      sleep 0.3
-      other.exec_params("SELECT pg_cancel_backend($1)", [pid])
+    cancel_when_sleeping(conn) do
+      expect { run("SELECT pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
     end
-    expect { run("SELECT pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
-  ensure
-    canceller&.join
-    other&.close
   end
 
   it "refuses SQL holding more than one statement, so a COMMIT can't end the READ ONLY transaction" do

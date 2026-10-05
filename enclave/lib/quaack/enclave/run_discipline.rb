@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg"
+require_relative "server_clock"
 
 module Quaack
   module Enclave
@@ -21,9 +22,9 @@ module Quaack
     # such as an operator's pg_cancel_backend, is raised. Both share
     # SQLSTATE 57014 and the message text depends on lc_messages, so a
     # cancel counts as the timeout only if it came at least timeout_ms
-    # after the statement started; any earlier one can't be the timeout.
-    # sql goes through
-    # the extended protocol, so SQL holding more than one statement (a
+    # after the statement started, by the run server's clock (ServerClock);
+    # any earlier one can't be the timeout. sql goes through the extended
+    # protocol, so SQL holding more than one statement (a
     # COMMIT that would end READ ONLY) is refused. Any other error is
     # raised, after the transaction is rolled back.
     module RunDiscipline
@@ -52,11 +53,10 @@ module Quaack
       end
 
       def timed(connection, sql, timeout_ms, params)
-        connection.exec("SET LOCAL statement_timeout = #{Integer(timeout_ms)}")
-        started = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
+        started = ServerClock.mark(connection, "SET LOCAL statement_timeout = #{Integer(timeout_ms)};")
         Run.new(result: connection.exec_params(sql, params), timed_out: false)
       rescue PG::QueryCanceled
-        raise if Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond) - started < timeout_ms
+        raise unless started && ServerClock.timed_out?(connection, started, timeout_ms)
 
         Run.new(result: nil, timed_out: true)
       end
