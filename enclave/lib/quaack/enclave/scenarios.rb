@@ -191,6 +191,7 @@ module Quaack
           @topology = Topology.new(@schema, @atoms)
           @checks = Checks.new(conn, @schema)
           @values = Values.new(conn)
+          @evaluated = {}
         end
 
         def build(variants = {})
@@ -216,7 +217,7 @@ module Quaack
         def probes = @probes ||= ValuePools.probes(@conn, @parse, @atoms, @schema)
 
         def fill(groups, tie_rows)
-          parts = Parts.new(@schema, @conn)
+          parts = Parts.new(@schema, @conn, @evaluated)
           (groups.filter_map { retries.for(it) } + tie_rows.map { [[it]] }).each { parts.add(it) }
           @dropped += parts.dropped
           parts.in_order(@topology.order)

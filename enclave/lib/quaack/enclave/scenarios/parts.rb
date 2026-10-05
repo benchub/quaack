@@ -19,10 +19,12 @@ module Quaack
         # How many groups didn't fit the first fixture.
         attr_reader :dropped
 
-        def initialize(schema, conn)
+        # evaluated is shared by every RowSet (see RowSet).
+        def initialize(schema, conn, evaluated = {})
           @schema = schema
           @conn = conn
-          @sets = [RowSet.new(schema, conn)]
+          @evaluated = evaluated
+          @sets = [RowSet.new(schema, conn, evaluated)]
           @dropped = 0
         end
 
@@ -44,7 +46,7 @@ module Quaack
           lifted = tries.lazy.map { it&.then { |rows| @sets.flat_map { |set| set.parents_of(rows) }.uniq + rows } }
           return true if @sets.drop(1).any? { it.add_any?(lifted) }
 
-          spare = RowSet.new(@schema, @conn)
+          spare = RowSet.new(@schema, @conn, @evaluated)
           spare.add_any?(lifted) && (@sets << spare)
         end
       end
