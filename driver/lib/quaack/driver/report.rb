@@ -15,7 +15,7 @@ module Quaack
     # It's written for a reader who hasn't read DESIGN.md, so it shows no
     # internal label, stage number, or verdict name where it has words: a
     # candidate is the query it ran and the indexes it ran with, not
-    # original:top:1. The exception is a rewrite-rules rewrite rule's name, which
+    # original:top:1. The exception is a rewrite rule's name (rewrite-rules), which
     # DESIGN.md's report says to give, and which a bug report needs.
     #
     # It calls each rewrite by its name (RewriteNames), such as "Rewrite
