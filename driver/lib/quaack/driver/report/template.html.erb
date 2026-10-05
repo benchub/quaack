@@ -18,6 +18,10 @@
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.missing { color: #6d7785; font-style: italic; }
   tr.baseline td { background: #f7f8fa; font-style: italic; }
+  table.plan td.step { white-space: nowrap; }
+  table.plan .arrow { color: #6d7785; }
+  table.plan tr.differs td { background: #fff4d6; }
+  table.plan .mark { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: #8a5a00; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
   code.sql { background: #f3f5f8; border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
              overflow-wrap: break-word; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
@@ -111,11 +115,15 @@
 <% if winner %>
 <section id="explanation"><h2>Why the winner reads fewer blocks</h2>
 <p><%= h describe(winner["label"]) %> <%= h compared %> <%= h CACHE %></p>
+<% winner_plan = (r = rewrite_of(winner["label"])) && r["plan"] %>
+<% if winner_plan && plans_differ?(original_plan, winner_plan) %>
+<p class="note"><%= h Plans::MARKED %></p>
+<% end %>
 <p>How Postgres runs your query now:</p>
-<ul><% original_plan.each do |n| %><li><%= h node(n) %></li><% end %></ul>
-<% if (r = rewrite_of(winner["label"])) && r["plan"] %>
+<%= plan_table(original_plan, winner_plan) %>
+<% if winner_plan %>
 <p>How it runs <%= h Words.lower(called(r)) %> with no new indexes:</p>
-<ul><% r["plan"].each do |n| %><li><%= h node(n) %></li><% end %></ul>
+<%= plan_table(winner_plan, original_plan) %>
 <% end %>
 <% unless (measured(winner["label"]) || {}).fetch("indexes", []).empty? %>
 <p>The plan with the new indexes: <%= h Words::MISSING %>.</p>

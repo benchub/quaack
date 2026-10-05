@@ -32,8 +32,9 @@ module Quaack
     #   rewrite with its source and what became of it (Rewrites).
     # - The ranking, every measured label that isn't ranked and why
     #   (Candidates), and each ranked candidate's measurements.
-    # - Why the winner reads fewer blocks, or, when the payload carries
-    #   negative, why nothing beat the original (negative-result).
+    # - Why the winner reads fewer blocks, with each plan as a table of
+    #   its steps (Plans), or, when the payload carries negative, why
+    #   nothing beat the original (negative-result).
     # - The built indexes (Indexes).
     # - Who proposed what (Accountability).
     # - The burndown (burndown, Stages), with llm_calls, the driver's own

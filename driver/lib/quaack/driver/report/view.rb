@@ -7,6 +7,7 @@ require_relative "candidates"
 require_relative "rewrites"
 require_relative "indexes"
 require_relative "accountability"
+require_relative "plans"
 require_relative "stages"
 
 module Quaack
@@ -21,6 +22,7 @@ module Quaack
         include Rewrites
         include Indexes
         include Accountability
+        include Plans
         include Stages
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze
@@ -85,22 +87,6 @@ module Quaack
         def rewrite_of(label) = rewrites.find { it["rewrite"] == label.to_s.split(":").first }
 
         def anchor(rewrite) = rewrite.to_s.tr("_", "-")
-
-        def node(node)
-          text = node["node"].to_s
-          text += " on #{Format.sql_span(node["relation"])}" if node["relation"]
-          text += " using #{Format.sql_span(node["index"])}" if node["index"]
-          rows = Words.count(node["actual_rows"] || node["est_rows"], "row")
-          "#{text} (#{[rows, share(node["selectivity"])].compact.join(", ")})"
-        end
-
-        # A selectivity as a share of the table, or nil if there's none.
-        def share(selectivity)
-          return unless selectivity
-          return "under 0.1% of the table" if selectivity.positive? && selectivity < 0.0005
-
-          format("%.1f%% of the table", selectivity * 100)
-        end
 
         def sql(text) = %(<pre class="sql"><code>#{h Format.sql(text)}</code></pre>)
 
