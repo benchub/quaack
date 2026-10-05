@@ -5111,3 +5111,21 @@ These are review minors from 20261004-31.
 - **Design:** teardown.
 - **Status:** done
 - **Landed:** Landed in 76c5932.
+
+### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably.
+
+Under some rewrites the report says: "The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. The LLM-written test data exercised them afterwards." A bullet list follows, sometimes ending in a bullet that's a lone number. The user couldn't tell what it meant.
+
+- Reword the note so a reader who doesn't know rewrite-test or counterexamples understands it. It should say:
+  - the rewrite's conditions (WHERE and JOIN predicates) that QUAACK's generated rows never made both true and false;
+  - why that matters: a rewrite that changed one of them could still have passed;
+  - whether a later test covered them.
+- Render each condition as a readable predicate, such as `t.col = $1`, styled as SQL (see 20261004-53). Today `Rewrites#atoms` joins a Hash's values with spaces.
+- Find out where the lone-number bullet comes from, such as a value or position field joined in by `atoms`, and fix it.
+- When the later test did cover them, consider collapsing the list, since nothing is left to worry about.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed in 73a0586. The lone numbers were vacuity-guard atom positions: the payload read untested_atoms instead of untested. Counterexample rounds now record covered conditions.

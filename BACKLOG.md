@@ -2312,22 +2312,7 @@ These are review minors from 20261004-44.
 
 ### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably.
-
-Under some rewrites the report says: "The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. The LLM-written test data exercised them afterwards." A bullet list follows, sometimes ending in a bullet that's a lone number. The user couldn't tell what it meant.
-
-- Reword the note so a reader who doesn't know rewrite-test or counterexamples understands it. It should say:
-  - the rewrite's conditions (WHERE and JOIN predicates) that QUAACK's generated rows never made both true and false;
-  - why that matters: a rewrite that changed one of them could still have passed;
-  - whether a later test covered them.
-- Render each condition as a readable predicate, such as `t.col = $1`, styled as SQL (see 20261004-53). Today `Rewrites#atoms` joins a Hash's values with spaces.
-- Find out where the lone-number bullet comes from, such as a value or position field joined in by `atoms`, and fix it.
-- When the later test did cover them, consider collapsing the list, since nothing is left to worry about.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report.
-- **Status:** todo
+### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse".
 
@@ -2418,4 +2403,18 @@ These are review minors from 20261004-32.
 - **Depends on:** 20261004-32.
 - **Came from:** The review of 20261004-32, 2026-10-05.
 - **Design:** teardown.
+- **Status:** todo
+
+### 20261004-61. Untested conditions: loose ends from 20261004-51.
+
+From the build and review of 20261004-51:
+
+1. **Singular wording.** When one condition is covered and the list folds, the summary reads "The 1 conditions".
+2. **Runs recorded before `covered` existed.** A run whose rounds were recorded before 20261004-51 and then reported says "No later test checked them", even though rounds ran. Say "not recorded" instead when rounds exist but carry no `covered`.
+3. **Sentinel test.** No committed test sends planted WHERE literals, such as a text and a number, through rewrite-test and a counterexample round to a non-empty `covered` and the report payload, then asserts the sentinels never appear. The review's probe showed no leak. Lock that in with a spec, plus a planted-sentinel control.
+4. **`$n` numbering.** The conditions' `$n` placeholders come from a stand-in redaction inside `PredicateAtoms`, so they may not match the `$n` in the query text the report shows (`$69`, `$70` in the user's run). Number them the same way the shown query does, or render them without numbers.
+
+- **Depends on:** 20261004-51.
+- **Came from:** The build and review of 20261004-51, 2026-10-05.
+- **Design:** report, vacuity-guard.
 - **Status:** todo
