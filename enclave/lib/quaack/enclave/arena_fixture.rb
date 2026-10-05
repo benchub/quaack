@@ -34,7 +34,7 @@ module Quaack
 
       RULES = {
         already_in_transaction: "the arena connection is already inside a transaction",
-        connection_unusable: "the arena connection can't start a transaction",
+        connection_unusable: "the arena connection can't be used",
         statement_not_allowed: "a statement isn't one the arena transaction allows",
         statement_unparsable: "a statement for the arena transaction couldn't be parsed",
         begin_failed: "the arena transaction couldn't start",

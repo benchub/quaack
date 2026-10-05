@@ -32,9 +32,10 @@ module Quaack
     # error becomes an ArenaRunner::Error that keeps none of Postgres's text.
     class ArenaRunner
       # From libpq. The runner needs the connection idle before it starts,
-      # and inside its transaction after every statement. A connection
-      # that's ACTIVE (1, busy with a query) or UNKNOWN (4, gone bad) can't
-      # start one.
+      # and inside its transaction both before and after every statement.
+      # Before, INERROR is allowed too: an aborted transaction is still the
+      # runner's. After, only INTRANS is. A connection that's ACTIVE (1,
+      # busy with a query) or UNKNOWN (4, gone bad) can't start one.
       PQTRANS_IDLE = 0
       PQTRANS_INTRANS = 2
       PQTRANS_INERROR = 3

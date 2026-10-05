@@ -15,11 +15,17 @@ module Quaack
         raise Error.new(rule, step: :transaction), cause: nil
       end
 
-      # Raises transaction_ended for step's statement at index unless the
-      # status is one of open.
+      # Raises for step's statement at index unless the status is one of
+      # open: transaction_ended if the connection is idle or in another
+      # transaction state, and connection_unusable if it's busy or has gone
+      # bad, as when it died under an earlier statement whose error the
+      # caller caught.
       def refuse_outside_transaction(rule, step, index, open)
         status = database(rule, step, index) { @connection.transaction_status }
-        raise Error.new(:transaction_ended, step:, index:), cause: nil unless open.include?(status)
+        return if open.include?(status)
+
+        settled = [PQTRANS_IDLE, PQTRANS_INTRANS, PQTRANS_INERROR].include?(status)
+        raise Error.new(settled ? :transaction_ended : :connection_unusable, step:, index:), cause: nil
       end
     end
   end

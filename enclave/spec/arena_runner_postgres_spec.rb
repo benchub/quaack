@@ -260,21 +260,67 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
     # Telling the cancel apart rolls the transaction back, so a block that
     # catches the error and goes on would otherwise run its next query in
-    # autocommit, without statement_timeout, and keep what it wrote.
-    it "refuses any statement after a cancel has rolled the transaction back, so nothing it writes persists" do
-      write = 'WITH d AS (INSERT INTO "Fixture Space".counters DEFAULT VALUES RETURNING id) SELECT count(*) FROM d'
-      errors = []
-      runner.with_fixture([parent(1, "a")]) do |tx|
-        ["SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)", write].each do |sql|
-          tx.query(sql)
-        rescue described_class::Error => e
-          errors << e
+    # autocommit, without statement_timeout, and keep what it wrote. The
+    # refusal must come before anything is sent: a read-only query in
+    # autocommit leaves the transaction status as it was, so only a count of
+    # what went to the server shows it wasn't run.
+    describe "after a cancel has rolled the transaction back" do
+      let(:sending_class) do
+        Class.new(SimpleDelegator) do
+          def initialize(conn)
+            super
+            @sends = []
+          end
+
+          def mark! = @mark = @sends.size
+
+          def since_mark = @sends.drop(@mark)
+
+          %i[exec exec_params send_query send_query_params pipeline_sync].each do |name|
+            define_method(name) do |*args, &block|
+              @sends << name
+              __getobj__.public_send(name, *args, &block)
+            end
+          end
         end
       end
 
-      expect(errors.map { [it.rule, it.step, it.index, it.sqlstate, it.cause] })
-        .to eq([[:statement_canceled, :query, 0, "57014", nil], [:transaction_ended, :query, 1, nil, nil]])
-      expect_nothing_persisted
+      def query_error(transaction, sql)
+        transaction.query(sql)
+        nil
+      rescue described_class::Error => e
+        [e.rule, e.step, e.index, e.sqlstate, e.cause]
+      end
+
+      # Each statement's error, or nil, and what was sent after the cancel,
+      # up to the closing ROLLBACK.
+      def after_cancel(statements)
+        sending = sending_class.new(conn)
+        described_class.new(sending).with_fixture([parent(1, "a")]) do |tx|
+          canceled = query_error(tx, "SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+          sending.mark!
+          [[canceled, *statements.map { query_error(tx, it) }], sending.since_mark]
+        end
+      end
+
+      it "refuses a write before sending it, so nothing it writes persists" do
+        write = 'WITH d AS (INSERT INTO "Fixture Space".counters DEFAULT VALUES RETURNING id) SELECT count(*) FROM d'
+
+        errors, sends = after_cancel([write])
+
+        expect(errors).to eq([[:statement_canceled, :query, 0, "57014", nil],
+                              [:transaction_ended, :query, 1, nil, nil]])
+        expect(sends).to eq([])
+        expect_nothing_persisted
+      end
+
+      it "refuses a read-only query before sending it too" do
+        errors, sends = after_cancel(["SELECT 1", "SELECT 2"])
+
+        expect(errors).to eq([[:statement_canceled, :query, 0, "57014", nil],
+                              [:transaction_ended, :query, 1, nil, nil], [:transaction_ended, :query, 2, nil, nil]])
+        expect(sends).to eq([])
+      end
     end
 
     # The time is measured from the start of each statement, not of the
@@ -629,6 +675,25 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       # the runner refuses it before sending anything.
       expect([conn.pipeline_status, conn.transaction_status]).to eq([2, 4])
       expect([run_error.rule, run_error.step]).to eq(%i[connection_unusable transaction])
+    end
+
+    # A caller that catches the error and goes on finds the connection
+    # dead, not the transaction ended by a statement.
+    it "reports a query after the connection died as connection_unusable" do
+      errors = []
+      rollback = run_error(runner, [parent(1, "a")]) do |tx|
+        terminate(conn)
+        2.times do
+          tx.query("SELECT 1")
+        rescue described_class::Error => e
+          errors << e
+        end
+      end
+
+      expect(errors.map { [it.rule, it.step, it.index, it.sqlstate, it.cause] })
+        .to eq([[:query_failed, :query, 0, nil, nil], [:connection_unusable, :query, 1, nil, nil]])
+      expect(errors.last.message).to eq("the arena connection can't be used")
+      expect(rollback.rule).to eq(:rollback_failed)
     end
 
     it "refuses a query through the transaction after the block has returned" do
