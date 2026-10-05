@@ -2406,3 +2406,14 @@ The review of 20261004-34 found:
 - **Came from:** The review of 20261004-34, 2026-10-05.
 - **Design:** run discipline.
 - **Status:** todo
+
+### 20261004-68. Inline SQL: minors from 20261004-53.
+
+The review of 20261004-53 found:
+1. `Report.named` names rewrites from the raw run ID, but `View` uses the scrubbed one for `Words.rewrite` and `Words.search`. A run ID containing `\u0001` or `\u0002` would get mismatched rewrite names. Real run IDs are generated, so either use one source for both or refuse such a run ID.
+2. An index method other than btree, such as "(gin)", sits outside the SQL span. Decide whether it belongs inside.
+
+- **Depends on:** 20261004-53.
+- **Came from:** The review of 20261004-53, 2026-10-05.
+- **Design:** report.
+- **Status:** todo
