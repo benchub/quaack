@@ -31,10 +31,13 @@ module Quaack
     #
     # When io is a terminal, the latest line printed while a step runs,
     # the step's own or a note, carries the step's time, counting up in
-    # place: it's redrawn with \r and cleared to the end of the line about
-    # once a second. A new line leaves the one before at its final
-    # reading. Anywhere else, such as a log file, nothing is redrawn, and
-    # only the closing line gives the time. The clock is only a duration.
+    # place: about once a second, it goes back with \r, clears the row
+    # with \e[K, and is drawn again. Clearing first matters when a line
+    # fills the row: the cursor then waits on the last column, and a
+    # clear there would erase the last character. A new line leaves the
+    # one before at its final reading. Anywhere else, such as a log file,
+    # nothing is redrawn, and only the closing line gives the time. The
+    # clock is only a duration.
     #
     # On a terminal, it leaves out what the clock makes redundant. A step
     # that would close with a bare Done prints no closing line: its last
@@ -176,7 +179,7 @@ module Quaack
 
         reading = final_reading(elapsed, final)
         suffix = " #{reading}" if reading
-        @io.print("\r#{@line}#{suffix}\e[K") if @cut || fit(suffix.to_s).last || (reading && reading != @shown)
+        @io.print("\r\e[K#{@line}#{suffix}") if @cut || fit(suffix.to_s).last || (reading && reading != @shown)
         @io.print("\n")
         @line = @shown = @cut = nil
       end
@@ -192,7 +195,7 @@ module Quaack
         return if elapsed < 1 || reading == @shown
 
         text, @cut = fit(" #{reading}")
-        @io.print("\r#{text}\e[K")
+        @io.print("\r\e[K#{text}")
         @shown = reading
       end
 
