@@ -170,7 +170,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows the original query first, pretty-printed, with its placeholders and clock functions" do
       expect(queries).to include(
-        "<h3>Your query</h3>\n<pre class=\"sql\"><code>SELECT id\nFROM t\nWHERE\n  created_at &gt; (now() - $1)\n  " \
+        "<h3>Your query</h3></summary>\n<pre class=\"sql\"><code>SELECT id\nFROM t\nWHERE\n  " \
+        "created_at &gt; (now() - $1)\n  " \
         "AND b IN (\n    SELECT b\n    FROM u\n    WHERE c = $2\n  )</code></pre>"
       )
       expect(queries.index("<h3>Your query</h3>")).to be < queries.index("<h3>Rewrite Vivid Cove</h3>")
@@ -178,10 +179,30 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows every rewrite, ranked or not, pretty-printed, in order" do
       payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5")
-      expect(queries.scan(%r{<article class="rewrite" id="rewrite-(\d+)"><h3>([^<]+)</h3>}))
+      opening = %(<details class="query">\n<summary>)
+      expect(queries.scan(%r{<article class="rewrite" id="rewrite-(\d+)">#{opening}<h3>([^<]+)</h3>}))
         .to eq([["1", "Rewrite Vivid Cove"], ["2", "Rewrite Smooth Kayak"]])
       expect(queries).to include("<code>SELECT id\nFROM t\nWHERE a &lt; $1\nORDER BY id</code>")
       expect(queries).to include("<code>SELECT id\nFROM t\nWHERE b = $1\nLIMIT 5</code>")
+    end
+
+    it "keeps each query's SQL behind its own collapsed section, with the rewrite's name, source, and fate on top" do
+      payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5", source: "llm")
+      same_plans = esc("Postgres plans it exactly as it plans your query, so it can't run any differently. " \
+                       "QUAACK didn't test it further.")
+      blocks = queries.scan(%r{<details class="query">\s*<summary>(.*?)</summary>(.*?)</details>}m)
+      expect(blocks.map(&:first)).to eq(
+        ["<h3>Your query</h3>",
+         "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
+         "rule key_in_self_join.</span> <span class=\"fate\">What became of it: It beat your query and is ranked " \
+         "below.</span>",
+         "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM.</span> " \
+         "<span class=\"fate\">What became of it: #{same_plans}</span>"]
+      )
+      expect(blocks.map { it.last.scan('<pre class="sql">').size }).to eq([1, 1, 1])
+      expect(blocks[1].last).to include("<li><code>a &lt; $n</code></li>")
+      expect(queries.scan('<pre class="sql">').size).to eq(3)
+      expect(queries).not_to match(/<details[^>]*\bopen\b/)
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
@@ -205,12 +226,12 @@ RSpec.describe Quaack::Driver::Report do
     describe "where a rewrite came from (rewrite-rules)" do
       def source(**fields)
         payload["rewrites"].first.merge!(fields.transform_keys(&:to_s))
-        section(render(payload), "queries")[%r{<p class="source">.*?</p>}m]
+        section(render(payload), "queries")[%r{<span class="source">.*?</span>}m]
       end
 
       it "says which of QUAACK's rules made a rule-made rewrite" do
-        expect(source).to eq(esc(%(<p class="source">Where it came from: made by QUAACK's own rewrite rule ) +
-                                 %(key_in_self_join.</p>)))
+        expect(source).to eq(esc(%(<span class="source">Where it came from: made by QUAACK's own rewrite rule ) +
+                                 %(key_in_self_join.</span>)))
       end
 
       it "names every rule of a chained rewrite, in order" do
@@ -219,8 +240,8 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "names no rule, and leaves no dangling words, when the payload has none" do
-        expect(source(rules: [])).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</p>"))
-        expect(source(rules: nil)).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</p>"))
+        expect(source(rules: [])).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</span>"))
+        expect(source(rules: nil)).to include(esc("Where it came from: made by QUAACK's own rewrite rules.</span>"))
       end
 
       it "says when the LLM suggested it, or it's the operator's own" do
@@ -277,7 +298,7 @@ RSpec.describe Quaack::Driver::Report do
     describe "what became of a rewrite" do
       def fate(name, **details)
         payload["rewrites"] = [fated(2, name, **details)]
-        section(render(payload), "queries")[%r{<p class="fate">What became of it: (.*?)</p>}m, 1]
+        section(render(payload), "queries")[%r{<span class="fate">What became of it: (.*?)</span>}m, 1]
       end
 
       it "says a ranked rewrite is ranked" do
@@ -439,12 +460,52 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     describe "what was measured and not ranked" do
-      let(:unranked) { ranking[%r{<ul id="not-ranked">.*?</ul>}m] }
+      let(:unranked) { ranking[%r{<table id="not-ranked">.*?</table>}m] }
+
+      def rows(html = unranked) = html.to_s.scan(%r{<tr>(.*?)</tr>}m).flatten.drop(1)
+
+      def rule = "Made by QUAACK&#39;s own rewrite rule key_in_self_join"
+
+      # A row of the table: what it was, who proposed it, and why it wasn't ranked.
+      def row(what, why, who: rule)
+        "<tr><td>#{what}</td>#{who ? "<td>#{who}</td>" : '<td class="missing">not recorded</td>'}<td>#{why}</td></tr>"
+      end
+
+      it "is a table behind a collapsed section, with a row each for what it was, who proposed it, and why" do
+        collapsed = ranking[%r{<details class="not-ranked">\s*<summary>(.*?)</summary>(.*?)</details>}m, 0]
+        expect(collapsed).to include("<summary>Show the 1 thing QUAACK tried that didn't pan out</summary>")
+        expect(collapsed).to include(unranked)
+        expect(ranking).not_to match(/<details[^>]*\bopen\b/)
+        expect(unranked).to include(%(<thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th>) +
+                                    %(<th scope="col">Why it didn't make the cut</th></tr></thead>))
+        expect(rows).to eq(
+          ["<td>Rewrite Vivid Cove with a new index on public.t (a, b)</td><td>Made by QUAACK&#39;s own rewrite rule " \
+           "key_in_self_join</td><td>Read 7,777 blocks on the slow values, against 1,000 for your query as it is, " \
+           "which isn&#39;t more than 5% fewer.</td>"]
+        )
+      end
+
+      it "names the source of a rewrite, and says who thought of your query's indexes isn't recorded" do
+        payload["rewrites"].first["source"] = "llm"
+        payload["excluded"]["original:top:1"] = "footprint_tie"
+        payload["top"].pop
+        expect(rows.map { it.scan(%r{<td[^>]*>(.*?)</td>}).flatten[1] })
+          .to eq(["Suggested by the LLM", "not recorded"])
+        expect(unranked).to include('<td class="missing">not recorded</td>')
+        expect(section(render(payload), "ranking")).to include(
+          "Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index"
+        )
+        payload["excluded"] = { "rewrite_1:top:1" => "not_better", "rewrite_1:none" => "below_top_three" }
+        payload["top"] = [payload["top"].first.merge("label" => "original:top:1")]
+        expect(section(render(payload), "ranking"))
+          .to include("<summary>Show the 2 things QUAACK tried that didn't pan out</summary>")
+      end
 
       it "says in words, with the numbers, that a candidate wasn't enough better on the slow values" do
         expect(unranked).to include(
-          "<li>Rewrite Vivid Cove with a new index on public.t (a, b) read 7,777 blocks on the slow values, " \
-          "against 1,000 for your query as it is, which isn&#39;t more than 5% fewer.</li>"
+          row("Rewrite Vivid Cove with a new index on public.t (a, b)",
+              "Read 7,777 blocks on the slow values, against 1,000 for your query as it is, which isn&#39;t more " \
+              "than 5% fewer.")
         )
       end
 
@@ -452,42 +513,42 @@ RSpec.describe Quaack::Driver::Report do
         payload["labels"][2].merge!("measurements" => { "slow" => m(500, 1), "typical" => m(900, 1) },
                                     "verdicts" => { "slow" => "better", "typical" => "worse" })
         expect(unranked).to include(
-          "<li>Rewrite Vivid Cove with a new index on public.t (a, b) read fewer blocks on the slow values " \
-          "(500, against 1,000), but read 900 on the typical values, against 200 for your query as it is, which " \
-          "is more than 5% more.</li>"
+          row("Rewrite Vivid Cove with a new index on public.t (a, b)",
+              "Read fewer blocks on the slow values (500, against 1,000), but read 900 on the typical values, " \
+              "against 200 for your query as it is, which is more than 5% more.")
         )
       end
 
       it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
         payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
-        expect(unranked).to include("(a, b) beat your query as it is, but tied with a candidate whose new indexes " \
-                                    "take less disk space.</li>")
+        expect(unranked).to include("(a, b)</td><td>#{rule}</td><td>Beat your query as it is, but tied with a " \
+                                    "candidate whose new indexes take less disk space.</td></tr>")
         payload["excluded"] = { "rewrite_1:top:1" => "below_top_three" }
-        expect(section(render(payload), "ranking")).to include("(a, b) beat your query as it is, but three other " \
-                                                               "candidates did better.</li>")
+        expect(section(render(payload), "ranking")).to include("<td>Beat your query as it is, but three other " \
+                                                               "candidates did better.</td></tr>")
         payload["excluded"] = { "rewrite_1:top:1" => "result_mismatch" }
         expect(section(render(payload), "ranking"))
-          .to include("(a, b) was dropped when QUAACK compared the rewrite&#39;s results with your query&#39;s on " \
-                      "the real data. See rewrite Vivid Cove under the queries.</li>")
+          .to include("<td>Was dropped when QUAACK compared the rewrite&#39;s results with your query&#39;s on " \
+                      "the real data. See rewrite Vivid Cove under the queries.</td></tr>")
       end
 
       it "says a candidate's measurement timed out" do
         payload["labels"] << { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"],
                                "timed_out" => true, "measurements" => nil, "verdicts" => nil }
-        expect(unranked).to include("<li>Rewrite Vivid Cove with a new index on public.t (created_at) timed out " \
-                                    "while QUAACK measured it.</li>")
+        expect(unranked).to include(row("Rewrite Vivid Cove with a new index on public.t (created_at)",
+                                        "Timed out while QUAACK measured it."))
       end
 
       it "lists a label once, by why it was left out, when one of its sets also timed out" do
         payload["labels"][2]["timed_out"] = true
-        expect(unranked.scan("<li>").size).to eq(1)
-        expect(unranked).not_to include("timed out while")
+        expect(rows.size).to eq(1)
+        expect(unranked).not_to include("imed out while")
       end
 
       it "gives no numbers it doesn't have" do
         payload["labels"].delete_at(2)
         expect(unranked)
-          .to include("<li>Rewrite Vivid Cove with new indexes was no better than your query as it is.</li>")
+          .to include(row("Rewrite Vivid Cove with new indexes", "Was no better than your query as it is."))
       end
 
       it "is left out when everything measured is ranked" do
@@ -499,10 +560,11 @@ RSpec.describe Quaack::Driver::Report do
     it "says there's no ranking when nothing beat the original, and still says how each candidate measured" do
       ranking = section(render(negative_payload), "ranking")
       expect(ranking).to include("Nothing beat your query as it is, so there is no ranking.")
-      expect(ranking).not_to include("<tr")
-      expect(ranking).to include("<li>Your query with a new index on public.t (created_at) read 990 blocks on the " \
+      expect(ranking.sub(%r{<details class="not-ranked">.*?</details>}m, "")).not_to include("<tr")
+      expect(ranking).to include("<tr><td>Your query with a new index on public.t (created_at)</td>" \
+                                 '<td class="missing">not recorded</td><td>Read 990 blocks on the ' \
                                  "slow values, against 1,000 for your query as it is, which isn&#39;t more than " \
-                                 "5% fewer.</li>")
+                                 "5% fewer.</td></tr>")
     end
 
     describe "each ranked candidate" do
@@ -1108,8 +1170,8 @@ RSpec.describe Quaack::Driver::Report do
     it "prints, escaped, every value a winning report shows" do
       expect_escaped(rendered(sentinels),
                      "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
-                     %(<article class="rewrite" id="#{escaped}"><h3>), "QUAACK found something better than your " \
-                                                                       "query as it is: ",
+                     %(<article class="rewrite" id="#{escaped}"><details class="query">\n<summary><h3>),
+                     "QUAACK found something better than your query as it is: ",
                      "<code>SELECT ", "rewrite rules ", "<li><code>", '<tr class="rank"><td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
@@ -1120,7 +1182,8 @@ RSpec.describe Quaack::Driver::Report do
     it "prints, escaped, every value a negative report shows" do
       expect_escaped(rendered(negative_sentinels),
                      '<ul id="negative-rewrites"><li>', "<tr><td><code>", "</code></td><td>", ", rewrite_",
-                     "(Postgres error code ", %(#{escaped}</td><td>), '<ul id="not-ranked"><li>')
+                     "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
+                     "</td><td>Made by QUAACK&#39;s own rewrite rules ")
     end
 
     it "escapes what the payload carries in the first report too" do

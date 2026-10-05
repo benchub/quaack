@@ -52,11 +52,18 @@ module Quaack
 
         def list(items) = items.size < 3 ? items.join(" and ") : "#{items[0..-2].join(", ")}, and #{items.last}"
 
-        # One sentence for each measured label that isn't ranked: selection's
-        # excluded ones, then the ones whose measurement timed out.
+        # A row for each measured label that isn't ranked: selection's
+        # excluded ones, then the ones whose measurement timed out. A row is
+        # what the label was, who proposed its rewrite (nil for your query,
+        # or when the payload doesn't say), and why it wasn't ranked.
         def unranked
-          excluded.map { |label, reason| "#{describe(label)} #{lost(label, reason)}" } +
-            timed_out_labels.map { "#{describe(it)} timed out while QUAACK measured it." }
+          excluded.map { |label, reason| unranked_row(label, lost(label, reason)) } +
+            timed_out_labels.map { unranked_row(it, "timed out while QUAACK measured it.") }
+        end
+
+        def unranked_row(label, why)
+          who = (r = rewrite_of(label)) && source(r)
+          [describe(label), who && Words.upper(who), Words.upper(why)]
         end
 
         # The labels that timed out, which selection neither ranks nor excludes.

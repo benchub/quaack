@@ -22,6 +22,11 @@
             overflow-x: auto; line-height: 1.4; }
   article { margin: 1rem 0 1.75rem; }
   .note { color: #515b69; font-size: 0.92rem; }
+  details { margin: 0.5rem 0; }
+  summary { cursor: pointer; }
+  summary h3 { display: inline; margin: 0; }
+  summary .source, summary .fate { display: block; margin-left: 1.1rem; }
+  details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }
 </style>
 </head><body>
 <h1>QUAACK report <%= h run_id %></h1>
@@ -38,21 +43,22 @@
 </section>
 <section id="queries"><h2>The queries</h2>
 <p class="note">Each <code>$1</code>, <code>$2</code>, and so on stands for a value from your query. The values themselves never leave your jump server.</p>
-<h3>Your query</h3>
+<details class="query">
+<summary><h3>Your query</h3></summary>
 <%= sql(original_sql) %>
+</details>
 <% rewrites.each do |r| %>
-<article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><h3><%= h called(r) %></h3>
-<p class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</p>
+<article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><details class="query">
+<summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span></summary>
 <% if (assumed = empirical(r)) %>
 <p class="empirical"><%= h assumed %></p>
 <% end %>
-<p class="fate">What became of it: <%= h fate(r) %></p>
 <%= sql(r["sql"]) %>
 <% unless atoms(r).empty? %>
 <p>The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. <%= h atoms_note(r) %></p>
 <ul><% atoms(r).each do |a| %><li><%= code(a) %></li><% end %></ul>
 <% end %>
-</article>
+</details></article>
 <% end %>
 </section>
 <section id="ranking"><h2>Ranking</h2>
@@ -69,7 +75,16 @@
 <% end %>
 <% unless unranked.empty? %>
 <h3>Measured, and not ranked</h3>
-<ul id="not-ranked"><% unranked.each do |sentence| %><li><%= h sentence %></li><% end %></ul>
+<details class="not-ranked">
+<summary>Show the <%= h Words.count(unranked.size, "thing") %> QUAACK tried that didn't pan out</summary>
+<table id="not-ranked"><thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th><th scope="col">Why it didn't make the cut</th></tr></thead>
+<tbody>
+<% unranked.each do |what, who, why| %>
+<tr><td><%= h what %></td><%= who ? "<td>#{h who}</td>" : MISSING %><td><%= h why %></td></tr>
+<% end %>
+</tbody></table>
+<p class="note">Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index, so for your query with new indexes it says <%= h Words::MISSING %>.</p>
+</details>
 <% end %>
 <% top.each_with_index do |t, i| %>
 <article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>

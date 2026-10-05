@@ -581,7 +581,7 @@ It also says here if any measurement runs timed out, and if your query itself ti
 
 ### The queries.
 
-Your query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
+Your query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each query's SQL starts collapsed, so you can scan the rewrites and what became of them, and click a rewrite's line to open it. The report needs no JavaScript for this. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
 
 ```sql
 SELECT id, kind, created_at
@@ -595,7 +595,7 @@ ORDER BY created_at, id
 
 Each `$1`, `$2`, and so on stands for a value from your query. Put your real values or bind parameters back in the same spots. QUAACK lays the SQL out again for reading, so spacing, brackets, and the case of keywords can differ from what you wrote.
 
-Under each rewrite's name are two lines:
+Next to each rewrite's name, on the line you click, are two lines:
 
 - **Where it came from:** `made by QUAACK's own rewrite rule key_in_self_join` for one of QUAACK's own rules (two rules applied in a row are both named, in order), `suggested by the LLM`, or `your own rewrite`. Every rewrite goes through the same tests, whatever its source.
 - **What became of it,** as a sentence. For example:
@@ -627,13 +627,18 @@ The winner is first. Each **candidate** is your query, or a rewrite, run with a 
 
 Only candidates that pass the **minimax rule** are ranked. A candidate must be *better* on the slow values, meaning more than 5% fewer blocks, and *no worse* on every other value set, meaning no more than 5% more blocks.
 
-**Measured, and not ranked** lists every other candidate QUAACK measured, each with the reason, and the numbers behind it:
+**Measured, and not ranked** lists every other candidate QUAACK measured. It starts collapsed, behind a line such as "Show the 4 things QUAACK tried that didn't pan out". Open it for a table with a row per candidate: what it was, who proposed its rewrite, and why it didn't make the cut, with the numbers behind it:
 
-> Your query with a new index on public.events (kind) read 498 blocks on the slow values, against 509 for your query as it is, which isn't more than 5% fewer.
+| What it was | Who proposed it | Why it didn't make the cut |
+| --- | --- | --- |
+| Your query with a new index on public.events (kind) | not recorded | Read 498 blocks on the slow values, against 509 for your query as it is, which isn't more than 5% fewer. |
+| Rewrite Silver Fox with a new index on public.events (account_id) | Suggested by the LLM | Beat your query as it is, but three other candidates did better. |
+
+Who proposed it means who proposed the rewrite. QUAACK doesn't record who thought of each index, so for your query with new indexes it says not recorded.
 
 A candidate can also be left out because it tied with one whose indexes take less space, because three others did better, because its measurement timed out, or because the rewrite was dropped on the real data.
 
-When nothing beat your query, there's no ranking table, and this list is the whole section.
+When nothing beat your query, there's no ranking table, and this table is the whole section.
 
 Each ranked candidate then gets its own table:
 

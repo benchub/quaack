@@ -110,6 +110,8 @@ module Quaack
 
         def lower(text) = text.sub(/\A[A-Z]/, &:downcase)
 
+        def upper(text) = text.sub(/\A[a-z]/, &:upcase)
+
         # "1 call", "2 calls".
         def count(number, one, many = "#{one}s") = "#{Format.number(number)} #{number == 1 ? one : many}"
       end
