@@ -2346,18 +2346,7 @@ Keep the existing burndown table under it, for exact numbers and for readers wit
 
 ### 20261004-57. Rename artifacts left in comments, and a dangling colon in DESIGN.md. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default.
-
-These come from the build and review of 20261004-43.
-
-- **`clocked` keeps the statement's own error, but nothing tests it.** Changing the guard to `failed?(reset) ? reset : outcome` leaves the suite green. Now that the reset is last, a late cancel on the Sync replaces the reset's result, not the statement's. Test it: a late cancel on the Sync after `SELECT 1/0` must give `[:query_failed, "22012"]`, not `[:statement_canceled, "57014"]`.
-- **The disarm in `load` is only pinned by the phase-count test.** Add a test with a nonzero session `statement_timeout`, such as 100 ms. An empty fixture's slow ROLLBACK must still succeed; with `DISARM_SQL` removed from `load`, it fails.
-- **A nonzero server default.** After a cancel, `Cancel.rule` runs a clock read once the rollback has put the setting back to the session's value. A nonzero server or role default would apply to that read. Decide whether the arena connection should set `statement_timeout` to 0 at connect, and test it.
-
-- **Depends on:** 20261004-43.
-- **Came from:** The build and review of 20261004-43, 2026-10-05.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-59. Collapsed report sections: hidden warnings and links into closed sections.
 
@@ -2415,4 +2404,15 @@ From the review of 20261004-48. When a run's record has no `port`, as for runs s
 - **Depends on:** 20261004-17, -37.
 - **Came from:** The review of 20261004-48, 2026-10-05.
 - **Design:** inventory.
+- **Status:** todo
+
+### 20261004-64. Arena timeout: minors from 20261004-58.
+
+The review of 20261004-58 found these minors in `enclave/lib/quaack/enclave/arena_runner/cancel.rb`:
+1. Nothing pins the `ensure ROLLBACK` on a failed clock read in `Cancel.rule`. If the `ensure` became an ordinary statement after the read, a raising read would leave the connection aborted (`INERROR`), and a block that caught the cancel would get 25P02 on its next statement instead of a `transaction_ended` refusal. Add a test that plants a raising second clock read and asserts the connection is idle afterwards.
+2. `Cancel.rule`'s first `ROLLBACK` (in `"ROLLBACK; BEGIN; SET LOCAL statement_timeout = 0"`) still runs under the aborted transaction's `statement_timeout`. If the server takes longer than the timeout to reach it, the cancel there reads as `statement_canceled`. It's rare. Either run that ROLLBACK untimed or document the edge.
+
+- **Depends on:** 20261004-58.
+- **Came from:** The review of 20261004-58, 2026-10-05.
+- **Design:** arena-runner.
 - **Status:** todo

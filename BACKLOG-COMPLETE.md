@@ -5155,3 +5155,17 @@ These are review minors from 20261004-44.
 - **Design:** none (docs only).
 - **Status:** done
 - **Landed:** Landed in 7f97f53.
+
+### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default.
+
+These come from the build and review of 20261004-43.
+
+- **`clocked` keeps the statement's own error, but nothing tests it.** Changing the guard to `failed?(reset) ? reset : outcome` leaves the suite green. Now that the reset is last, a late cancel on the Sync replaces the reset's result, not the statement's. Test it: a late cancel on the Sync after `SELECT 1/0` must give `[:query_failed, "22012"]`, not `[:statement_canceled, "57014"]`.
+- **The disarm in `load` is only pinned by the phase-count test.** Add a test with a nonzero session `statement_timeout`, such as 100 ms. An empty fixture's slow ROLLBACK must still succeed; with `DISARM_SQL` removed from `load`, it fails.
+- **A nonzero server default.** After a cancel, `Cancel.rule` runs a clock read once the rollback has put the setting back to the session's value. A nonzero server or role default would apply to that read. Decide whether the arena connection should set `statement_timeout` to 0 at connect, and test it.
+
+- **Depends on:** 20261004-43.
+- **Came from:** The build and review of 20261004-43, 2026-10-05.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** Landed: Cancel.rule reads the clock in its own short transaction with statement_timeout 0; clocked guard and load disarm pinned.
