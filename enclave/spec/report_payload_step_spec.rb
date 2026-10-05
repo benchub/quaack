@@ -730,7 +730,56 @@ RSpec.describe "quaacks report-payload" do
 
   it "sends plan node shapes with selectivities" do
     expect(report["original_plan"]).to eq([{ "node" => "Seq Scan", "relation" => "public.orders", "index" => nil,
-                                             "est_rows" => 50, "actual_rows" => 50, "selectivity" => 0.05 }])
+                                             "est_rows" => 50, "actual_rows" => 50, "selectivity" => 0.05,
+                                             "depth" => 0 }])
+  end
+
+  context "with a nested plan whose nodes carry more than their shapes" do
+    # Every field a plan node holds that isn't its shape, with a sentinel.
+    let(:noise) do
+      ["Alias", "Parent Relationship", "Subplan Name", "Join Filter", "Hash Cond", "Recheck Cond", "Startup Cost",
+       "Total Cost", "Shared Hit Blocks", "Shared Read Blocks", "Actual Loops", "Strategy", "Join Type",
+       "Function Name", "CTE Name", "Workers Planned"].to_h { [it, sentinel] }.merge(
+         "Output" => [sentinel], "Index Cond" => "(id = '#{sentinel}')", "Sort Key" => [sentinel],
+         "Group Key" => [sentinel]
+       )
+    end
+
+    def noisy(type, rows, **) = node(type, rows, **).merge(noise)
+
+    let(:plan) do
+      noisy("Limit", 10, plans: [
+              noisy("Nested Loop", 10, plans: [
+                      noisy("Seq Scan", 50, relation: "orders"),
+                      noisy("Index Scan", 1, relation: "orders", index: "orders_created_at_id_idx")
+                    ]),
+              noisy("Result", 1)
+            ])
+    end
+
+    let(:outcome) { payload_of { it.write("redacted_plan", "explain" => [{ "Plan" => plan }]) } }
+
+    it "sends each node's depth, as an Integer, in the plan's order" do
+      expect(report["original_plan"].map { [it["node"], it["depth"]] })
+        .to eq([["Limit", 0], ["Nested Loop", 1], ["Seq Scan", 2], ["Index Scan", 2], ["Result", 1]])
+      expect(report["original_plan"].map { it["depth"] }).to all(be_an(Integer))
+    end
+
+    it "sends a node's type, relation, index name, row counts, selectivity, and depth, and nothing else" do
+      expect(report["original_plan"].map(&:keys).uniq)
+        .to eq([%w[node relation index est_rows actual_rows selectivity depth]])
+      expect(report["original_plan"][3]).to eq("node" => "Index Scan", "relation" => "public.orders",
+                                               "index" => "orders_created_at_id_idx", "est_rows" => 1,
+                                               "actual_rows" => 1, "selectivity" => 0.001, "depth" => 2)
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    it "would catch a sentinel planted in a node's shape" do
+      leaky = payload_of do |store|
+        store.write("redacted_plan", "explain" => [{ "Plan" => plan.merge("Node Type" => sentinel) }])
+      end
+      expect { expect_no_leaks(sentinels, leaky) }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+    end
   end
 
   it "never sends a literal value or a row value" do

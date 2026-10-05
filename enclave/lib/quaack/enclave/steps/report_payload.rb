@@ -24,7 +24,10 @@ module Quaack
       #   original_sql     the original query, always: the redacted query
       #                    (literals as $n) with clock-anchor's clock functions put
       #                    back
-      #   original_plan    the redacted input plan's node shapes
+      #   original_plan    the redacted input plan's node shapes, depth
+      #                    first: { "node", "relation", "index",
+      #                    "est_rows", "actual_rows", "selectivity",
+      #                    "depth" (an Integer, 0 for the top node) }
       #   original_measurements  { set => { "total_blocks", "hit", "read",
       #                    "stable", "timed_out" } }, the bare original's
       #                    baseline; hit and read are the run with the most
@@ -166,12 +169,15 @@ module Quaack
           proposed && stats.table?(proposed.table) ? stats.table(proposed.table).indexes.compact : {}
         end
 
+        # A plan's nodes in depth-first order, each as its type, relation,
+        # index name, row counts, selectivity, and its depth (0 for the
+        # top node), which the enclave counts, so it's always an Integer.
         def nodes(explain, stats)
-          flatten(explain.first["Plan"]).map do |plan|
+          flatten(explain.first["Plan"]).map do |plan, depth|
             table = table(plan, stats)
             { "node" => plan["Node Type"], "relation" => table && "#{table.schema}.#{table.name}",
               "index" => plan["Index Name"], "est_rows" => plan["Plan Rows"], "actual_rows" => plan["Actual Rows"],
-              "selectivity" => selectivity(plan, table, stats) }
+              "selectivity" => selectivity(plan, table, stats), "depth" => depth }
           end
         end
 
@@ -193,7 +199,7 @@ module Quaack
           ((plan["Actual Rows"] || plan["Plan Rows"]).to_f / tuples).round(6)
         end
 
-        def flatten(plan) = [plan, *plan.fetch("Plans", []).flat_map { flatten(it) }]
+        def flatten(plan, depth = 0) = [[plan, depth], *plan.fetch("Plans", []).flat_map { flatten(it, depth + 1) }]
       end
     end
   end
