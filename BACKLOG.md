@@ -2222,24 +2222,7 @@ It must never carry libpq's message, which can name the user or the database. Do
 
 ### 20261004-20. Rewrite names: ambiguous words and borderline pairs. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-21. Make `incomplete` failures diagnosable.
-
-A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 19m39s rewrite-test on the same rewrite, with nothing but `quaack run failed: incomplete` (the user, 2026-10-04). The operator can't tell which `quaacks` call died or how.
-
-- **Say what died.** For `incomplete`, `rule_with_note` adds the subcommand and how it ended: the exit status, or the signal. `EnclaveError` already has these, and they're the driver's own data, not the enclave's. Say that exit 255 means the ssh session ended or failed to connect, or the remote process was killed, and point at the jump server's kernel log (OOM killer) and sshd log.
-- **ssh keepalive and connect timeout.** Add `ServerAliveInterval`, `ServerAliveCountMax` and `ConnectTimeout` to `Transport::Ssh::DEFAULT_OPTIONS`.
-  - The keepalive stops an idle firewall or NAT dropping a quiet, long call, and notices a dead link rather than hanging until the transport's timeout.
-  - The connect timeout makes a failed connect fail in seconds, not the ~3 minutes TCP takes.
-  - Document it in README's ssh section, including the risk of a stale `ControlMaster` socket after a long, quiet call.
-- **Retrying a failed connect.** In the user's run, the call after a 19m39s `rewrite-test` (`counterexample-payload`) never reached the jump server: `quaacks` never ran. Consider retrying a call once when ssh exits 255 with no stdout at all. Only do it if that can be told apart from a remote process killed before it printed anything, or if every subcommand it would retry is safe to run twice. Say which.
-- **Give enclave calls their own progress line.** The counterexamples step's line, "Asking the LLM for rows that could break the rewrite", prints before `quaacks counterexample-payload` runs, and each round's `counterexample-round` prints nothing either. So the clock under an LLM line covered enclave calls, which made the failure look like the LLM's, when an LLM failure is always an `llm_*` rule. Give the enclave calls their own notes, and check the other steps for enclave calls hidden under an LLM line the same way.
-- **Find the cause** once the user reports what the jump server's logs show. If the OOM killer or a slow fixture load in rewrite-test or counterexample-compare is at fault, open a task for it.
-- **Name ssh failures.** The user's failure was most likely their ssh authentication expiring mid-run, which `BatchMode=yes` turns into exit 255 with no output. When a call ends that way, the driver should run a probe, `ssh <options> -- <host> true`, which runs no `quaacks` and so carries no enclave data. If the probe fails too, report a rule of its own, such as `ssh_failed`, with a note: "couldn't ssh to the jump server; check your ssh login or network, then resume with `quaack run --run <ID>`." Keep `incomplete` for a remote process that died.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-04.
-- **Design:** Where QUAACK runs, Transport.
-- **Status:** todo
+### 20261004-21. Make `incomplete` failures diagnosable. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-22. Port check: minor findings.
 
@@ -2313,4 +2296,19 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 - **Came from:** The review of 20261004-19.
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo (needs user input on 1 and 3)
+
+### 20261004-26. ssh_failed and incomplete: resume advice after teardown, and the ControlMaster note.
+
+Minor findings from the first review of 20261004-21:
+
+1. **Resume advice without `--keep`.** README's `incomplete` row (`README.md`, the errors table) says "then resume the run". But `quaack run` without `--keep` tears down on failure (`cli.rb`, `Teardown.around`). When the probe succeeded, ssh works, so teardown has likely deleted the store and there's nothing to resume.
+   - For `ssh_failed`, the teardown that follows fails too. The operator then gets both "Run this on the jump server: quaacks teardown" and "resume with `quaack run --run`", which contradict each other.
+   - Each failed teardown also probes again, adding up to 30 s.
+   - Make the advice match what's left: say "resume" only when the store was kept (or teardown failed), and skip the probe or teardown once ssh is known down.
+2. **ControlMaster note.** README's note says "If calls start failing with `ssh_failed` while plain `ssh <host>` works". But plain `ssh <host>` goes through the same `ControlPath` socket and fails the same way, and the `-o ServerAlive*` options don't reach an existing master. Rewrite it: suggest `ssh -O exit <host>`, or `ssh -o ControlMaster=no -o ControlPath=none <host>` to test.
+
+- **Depends on:** 20261004-21.
+- **Came from:** The first review of 20261004-21.
+- **Design:** Transport, Where QUAACK runs.
+- **Status:** todo
 

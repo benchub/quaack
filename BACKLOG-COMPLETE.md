@@ -4675,3 +4675,23 @@ Specs use the fake clock and the fake terminal `io` that progress_spec.rb alread
 - **Design:** Progress lines for `quaack run`.
 - **Status:** done
 - **Landed:** merge 08cfe07. On a terminal, steps with no summary print no `Done in` line, and an LLM ask line that repeats its step (first line after the step, same ID, words a prefix of the description) is dropped. Summaries and `Failed after` still print. The review had no blocking findings; its minors are 20261004-25.
+
+### 20261004-21. Make `incomplete` failures diagnosable.
+
+A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 19m39s rewrite-test on the same rewrite, with nothing but `quaack run failed: incomplete` (the user, 2026-10-04). The operator can't tell which `quaacks` call died or how.
+
+- **Say what died.** For `incomplete`, `rule_with_note` adds the subcommand and how it ended: the exit status, or the signal. `EnclaveError` already has these, and they're the driver's own data, not the enclave's. Say that exit 255 means the ssh session ended or failed to connect, or the remote process was killed, and point at the jump server's kernel log (OOM killer) and sshd log.
+- **ssh keepalive and connect timeout.** Add `ServerAliveInterval`, `ServerAliveCountMax` and `ConnectTimeout` to `Transport::Ssh::DEFAULT_OPTIONS`.
+  - The keepalive stops an idle firewall or NAT dropping a quiet, long call, and notices a dead link rather than hanging until the transport's timeout.
+  - The connect timeout makes a failed connect fail in seconds, not the ~3 minutes TCP takes.
+  - Document it in README's ssh section, including the risk of a stale `ControlMaster` socket after a long, quiet call.
+- **Retrying a failed connect.** In the user's run, the call after a 19m39s `rewrite-test` (`counterexample-payload`) never reached the jump server: `quaacks` never ran. Consider retrying a call once when ssh exits 255 with no stdout at all. Only do it if that can be told apart from a remote process killed before it printed anything, or if every subcommand it would retry is safe to run twice. Say which.
+- **Give enclave calls their own progress line.** The counterexamples step's line, "Asking the LLM for rows that could break the rewrite", prints before `quaacks counterexample-payload` runs, and each round's `counterexample-round` prints nothing either. So the clock under an LLM line covered enclave calls, which made the failure look like the LLM's, when an LLM failure is always an `llm_*` rule. Give the enclave calls their own notes, and check the other steps for enclave calls hidden under an LLM line the same way.
+- **Find the cause** once the user reports what the jump server's logs show. If the OOM killer or a slow fixture load in rewrite-test or counterexample-compare is at fault, open a task for it.
+- **Name ssh failures.** The user's failure was most likely their ssh authentication expiring mid-run, which `BatchMode=yes` turns into exit 255 with no output. When a call ends that way, the driver should run a probe, `ssh <options> -- <host> true`, which runs no `quaacks` and so carries no enclave data. If the probe fails too, report a rule of its own, such as `ssh_failed`, with a note: "couldn't ssh to the jump server; check your ssh login or network, then resume with `quaack run --run <ID>`." Keep `incomplete` for a remote process that died.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** Where QUAACK runs, Transport.
+- **Status:** done
+- **Landed:** merge b402978, plus a follow-up refactor that moves the terminal-width read into Fit to keep Progress under RuboCop ClassLength. `incomplete` names the subcommand and exit status or signal; exit 255 with no stdout probes `ssh … true`, and a failed probe gives `ssh_failed` with a resume hint for each command; ssh keepalive and ConnectTimeout defaults; progress notes for enclave calls under LLM lines; deploy fails cleanly on ssh_failed at its version check. No retry, no version bump. Round 1 found one blocking issue (deploy crash), now fixed; round 2 was clean. Minors are 20261004-26.
