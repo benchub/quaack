@@ -2238,19 +2238,7 @@ Minor findings from the review of 20261004-18:
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-24. Flaky ProductionComparison timeout spec under load.
-
-`enclave/spec/production_comparison_postgres_spec.rb:116` ("LIMIT without ORDER BY is partial when the full original times out and the count matches") failed once. It hit a `PG::QueryCanceled` raised from `ProductionComparison.take`, through `Run#digest` and `#read`, instead of returning `partial subset_timed_out`. That run had several spec suites sharing Docker; the spec passed 3 of 3 times on its own.
-
-Under load, a 1 s statement timeout can fire during the LIMIT run itself, not only the full run, and that path raises instead of giving a verdict.
-
-1. Find out whether a production run can hit the same path. If a slow server can make the LIMIT run time out, `take` should give a verdict (`timed_out`, or whatever DESIGN.md's result-comparison says), not raise. Fix that with a test first.
-2. Make the spec robust to load, for example with a larger gap between the LIMIT run's cost and the timeout.
-
-- **Depends on:** none.
-- **Came from:** The per-commit check on main after landing 20261004-19, 2026-10-04.
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261004-24. Flaky ProductionComparison timeout spec under load. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-25. Progress lines: summaries that only repeat the step, and asks after notes.
 
@@ -2309,6 +2297,10 @@ Minor findings from the first review of 20261004-21:
 20261004-24 found that `ProductionComparison::Run#stream` decided whether a `QueryCanceled` was a statement timeout by checking the enclave's own clock against `timeout_ms`, with no margin. Postgres fires `statement_timeout` by the server's clock. Measured at 1 s, the enclave saw the cancel after as little as 1001.3 ms, so a slightly fast clock, from load or NTP drift between the jump server and the run server, turns a timeout into an uncaught error. `RunDiscipline.timed` and `ArenaRunner::Cancel` use the same zero-margin check.
 
 Fix them the way 20261004-24 fixed `Run`, or with a shared helper. Write a test first that simulates a slow enclave clock.
+
+Also, from the review of 20261004-24:
+- Update DESIGN.md's run-discipline wording to match the fix.
+- The operator-cancel spec in `enclave/spec/production_comparison_postgres_spec.rb` cancels after a fixed `sleep 0.3`. Under load the cancel can land while the backend is idle and get dropped. Wait for `pg_stat_activity` to show `pg_sleep` before cancelling.
 
 - **Depends on:** 20261004-24.
 - **Came from:** The builder of 20261004-24.

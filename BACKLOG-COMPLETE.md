@@ -4727,3 +4727,18 @@ In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Status:** done
 - **Landed:** merge e57a7fe. The profile showed `Topology#members` comparing `[TableName, name]` pairs, which matches the gdb stacks; fixed with `Slots`. Also memoized result-comparison Shapes and their queries (cleared at 64), each build's rows in `Parts#spill?`, and shared expression-index keys (484 queries become 5). CPU on a 19-table Rails-style fixture went from about 25 s to about 3 s, with byte-identical outputs. Added `QUAACKS_PROFILE`, a stdlib sampling profiler, and a 12 s timing guard. The review had no blocking findings. Confirming on the user's schema, RowSet scans and the minors are 20261004-27.
+
+### 20261004-24. Flaky ProductionComparison timeout spec under load.
+
+`enclave/spec/production_comparison_postgres_spec.rb:116` ("LIMIT without ORDER BY is partial when the full original times out and the count matches") failed once. It hit a `PG::QueryCanceled` raised from `ProductionComparison.take`, through `Run#digest` and `#read`, instead of returning `partial subset_timed_out`. That run had several spec suites sharing Docker; the spec passed 3 of 3 times on its own.
+
+Under load, a 1 s statement timeout can fire during the LIMIT run itself, not only the full run, and that path raises instead of giving a verdict.
+
+1. Find out whether a production run can hit the same path. If a slow server can make the LIMIT run time out, `take` should give a verdict (`timed_out`, or whatever DESIGN.md's result-comparison says), not raise. Fix that with a test first.
+2. Make the spec robust to load, for example with a larger gap between the LIMIT run's cost and the timeout.
+
+- **Depends on:** none.
+- **Came from:** The per-commit check on main after landing 20261004-19, 2026-10-04.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** merge into main after 6dc795f. The cause was `Run#stream` judging a cancel against the enclave's own clock with no margin. `Run` now reads the server's `clock_timestamp()` before each query and sets a savepoint; after a cancel it rolls back to the savepoint and compares server clock readings. The subset specs sleep only on rows past the LIMIT. The review had no blocking findings. Its minors went to 20261004-28. Accepted as is: a backwards server clock step still raises.
