@@ -18,18 +18,40 @@ module ServerClockHelpers
 
   # Cancels conn's statement from a second session once pg_stat_activity
   # shows it in pg_sleep, so the cancel can't land while conn is idle and
-  # get dropped. Runs the block meanwhile and returns its value.
+  # get dropped. Runs the block meanwhile and returns its value. If the
+  # block fails, its failure is the one reported: the canceller is stopped,
+  # and whatever it raised, such as its own wait running out because the
+  # code under test never slept, is dropped.
   def cancel_when_sleeping(conn)
     other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
-    pid = conn.backend_pid
-    canceller = Thread.new do
+    canceller = start_canceller(other, conn.backend_pid)
+    yielded = false
+    value = yield
+    yielded = true
+    canceller.join
+    value
+  ensure
+    stop_canceller(canceller) unless yielded
+    other&.close
+  end
+
+  def start_canceller(other, pid)
+    Thread.new do
+      Thread.current.report_on_exception = false
       wait_until_sleeping(other, pid)
       other.exec_params("SELECT pg_cancel_backend($1)", [pid])
     end
-    yield
-  ensure
-    canceller&.join
-    other&.close
+  end
+
+  def stop_canceller(canceller)
+    return unless canceller
+
+    canceller.kill
+    begin
+      canceller.join
+    rescue StandardError
+      nil
+    end
   end
 
   def wait_until_sleeping(other, pid)
