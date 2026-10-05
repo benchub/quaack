@@ -2207,3 +2207,20 @@ Also minor: `RewriteNames.name` replays every draw up to n on each call. That's 
 - **Came from:** The review of 20261003-20.
 - **Design:** Progress lines for `quaack run`, report.
 - **Status:** todo
+
+### 20261004-17. Explain `production_connection_failed`.
+
+`quaack setup` failing with a bare `production_connection_failed` (the user, 2026-10-04) leaves the operator guessing. The enclave connects to production with `PG.connect(host:)`, where the host is the `server` that `quaack start` recorded. The port, user, database and password come only from libpq's own setup on the jump server, in the non-interactive ssh session QUAACK runs in. The setup's own `--host` and `--port` are for the run server, and don't apply.
+
+Add a fixed note to `EnclaveError#rule_with_note` for this rule, the way `run_from_older_version` has one. It should say:
+
+- which host was tried (the driver knows the run's `server`, so it doesn't have to come from the enclave);
+- that the port, user, database and password come from `PG*` variables, `~/.pg_service.conf` with `PGSERVICE`, and `~/.pgpass` on the jump server, and that a non-interactive ssh session may not load the shell rc file that sets them;
+- how to test it: `ssh <jump> 'psql -h <server> -c "select 1"'`.
+
+It must never carry libpq's message, which can name the user or the database. Do the same for the run server's connection failure, if it has its own rule. Check README's setup section says this too.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** inventory, Where QUAACK runs.
+- **Status:** todo
