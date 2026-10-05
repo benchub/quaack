@@ -63,6 +63,19 @@ module Quaack
         "resume with `quaack run --run #{run_id}`"
       end
 
+      # What `quaack run --run <run_id>` prints after its name when it
+      # failed: EnclaveError.shown, with next_step. When only teardown
+      # failed, a rule whose note has no next step of its own, such as
+      # teardown_failed, still gets one, so it doesn't read as the run's
+      # own failure.
+      def self.failure(error, teardown, run_id, **where)
+        step = next_step(teardown, run_id)
+        shown = EnclaveError.shown(error, step, **where)
+        return shown unless teardown&.only_teardown_left? && !error.to_go_on?
+
+        "#{shown}. To go on, #{step}"
+      end
+
       def self.kept(run_id)
         "quaack: kept run #{run_id}. To tear it down later, run this on the jump server: #{command(run_id)}\n"
       end

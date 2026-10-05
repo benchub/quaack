@@ -418,13 +418,27 @@ RSpec.describe "quaack run" do
                            "To go on, #{teardown_left}\n")
     end
 
-    it "prints the report's path and only the by-hand hint when the store must be removed by hand" do
-      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed")
+    # Task 20261004-32: a rule with no note of its own still points to
+    # teardown's line, so the failure doesn't read as the run's own.
+    %w[bad_run bad_store_base teardown_failed].each do |rule|
+      it "prints the report's path, the by-hand hint, and a pointer to it when teardown fails as #{rule}" do
+        failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule:)
+
+        expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+        expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
+        expect(errors).to eq("quaack: couldn't tear down run #{run_id} (#{rule}). Check or remove " \
+                             "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
+                             "quaack run failed: #{rule}. To go on, #{teardown_left}\n")
+      end
+    end
+
+    it "prints the report's path, the command, and a pointer to it when destroy_command fails" do
+      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "destroy_command_failed")
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
       expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
-      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
-                           "~/.quaack/runs/#{run_id} on the jump server by hand.\nquaack run failed: teardown_failed\n")
+      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_failed). #{later}" \
+                           "quaack run failed: destroy_command_failed. To go on, #{teardown_left}\n")
     end
   end
 
@@ -510,6 +524,7 @@ RSpec.describe "quaack run" do
       expect(cli.run(["run", "--run", run_id, *options])).to eq(0)
     end
     expect(transport.calls.map(&:first)).not_to include("teardown")
+    expect(stdout.string).to eq("#{out}\n#{run_id} done\n" * 2)
     expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
                          "quaacks teardown --run #{run_id}\n" * 2)
   end

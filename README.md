@@ -467,7 +467,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 # 20260928T201702Z-3f9a1c2e done
 ```
 
-It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
+It prints the report's path, then `<run ID> done`. Open the HTML file in a browser. If the run finishes but its teardown fails, it still prints the report's path, but not `done`, and exits 1. On stderr, teardown's own line says what failed and how to finish the cleanup, and the last line names the rule and says to tear the run down as that line says, since the run itself finished. See [step 5](#step-5-clean-up).
 
 While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Got 3 rewrites from the LLM, 3 kept in 51s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. Work on the jump server that a step does between LLM asks gets its own line under that step, such as `quaack: [9/18] Rewrite Silver Fox: Loading the LLM's rows and comparing results (counterexamples)`, so a slow or failed call there isn't mistaken for the LLM. A step that works on each rewrite in turn starts its lines for a rewrite with the rewrite's name, such as `quaack: [7/18] Rewrite Silver Fox: Ranking the index ideas (rewrite-index-rank)`. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. There, a step that has nothing to say as it ends, such as setup's `quaack: [1/29] Reading production's version, settings, and extensions (inventory) 2s`, prints no closing `Done in 2s` line, since its last line already shows its time, and a step's only LLM ask gets no line of its own when it would just repeat the step's line. A step that fails still prints `Failed after` its time. Piped to a file, the lines carry no clock, every line prints, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
 
@@ -489,7 +489,7 @@ If you used `--keep`, or the run failed as `ssh_failed` or failed to tear itself
 ssh jump1.prod.example.com quaacks teardown --run 20260928T201702Z-3f9a1c2e
 ```
 
-That deletes the run's files on the jump server, and runs `destroy_command` if you set one. Otherwise, destroy the run server yourself. If teardown failed as `bad_run`, `bad_store_base`, or `teardown_failed`, QUAACK says instead to check or remove `~/.quaack/runs/<ID>` on the jump server by hand, since `quaacks teardown` wouldn't or couldn't delete it. Then destroy the run server yourself too. Every copy of production data from the run lives in one of those two places.
+That deletes the run's files on the jump server, and runs `destroy_command` if you set one. Otherwise, destroy the run server yourself. If teardown failed as `bad_run`, `bad_store_base`, or `teardown_failed`, QUAACK says instead to check or remove `~/.quaack/runs/<ID>` on the jump server by hand, since `quaacks teardown` wouldn't or couldn't delete it. After `teardown_failed`, `destroy_command`, if you set one, has already destroyed the run server. After `bad_run` or `bad_store_base` it doesn't run, so destroy the run server yourself, as you would without `destroy_command`. Every copy of production data from the run lives in one of those two places.
 
 ## More examples.
 
