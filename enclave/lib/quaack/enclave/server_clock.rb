@@ -20,9 +20,11 @@ module Quaack
     # part of the statement, so neither adds to its timing.
     #
     # It uses only the connection's exec and names no PG constant, as
-    # ArenaRunner needs.
+    # ArenaRunner needs. ArenaRunner reads NOW_SQL itself, in each
+    # statement's own round trip, rather than set a savepoint per statement.
     module ServerClock
       SAVEPOINT = "quaack_server_clock"
+      NOW_SQL = "SELECT extract(epoch FROM clock_timestamp()) * 1000"
 
       module_function
 
@@ -41,7 +43,7 @@ module Quaack
       end
 
       def ms(connection, prefix)
-        Float(connection.exec("#{prefix} SELECT extract(epoch FROM clock_timestamp()) * 1000").getvalue(0, 0))
+        Float(connection.exec("#{prefix} #{NOW_SQL}").getvalue(0, 0))
       end
     end
   end

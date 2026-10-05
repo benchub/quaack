@@ -276,21 +276,48 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
-    # Each statement's clock mark sets a savepoint, and releases the one
-    # before it, so they don't pile up: only the last is left to release.
-    it "keeps one clock savepoint at a time, however many statements ran" do
-      released = runner.with_fixture([parent(1, "a"), parent(2, "b")]) do |tx|
-        3.times { tx.query("SELECT 1") }
-        2.times.map do
-          conn.exec("RELEASE SAVEPOINT #{Quaack::Enclave::ServerClock::SAVEPOINT}")
-          :released
-        rescue PG::SEInvalidSpecification
-          :none_left
+    # Telling a timeout by the server's clock mustn't slow fixture loads:
+    # each statement's clock read goes in the statement's own round trip,
+    # and nothing gives a statement a transaction ID of its own.
+    describe "cost per statement" do
+      let(:counting_class) do
+        Class.new(SimpleDelegator) do
+          attr_reader :round_trips
+
+          def initialize(conn)
+            super
+            @round_trips = 0
+          end
+
+          %i[exec exec_params pipeline_sync].each do |name|
+            define_method(name) do |*args, &block|
+              @round_trips += 1
+              __getobj__.public_send(name, *args, &block)
+            end
+          end
         end
       end
 
-      expect(released).to eq(%i[released none_left])
-      expect_nothing_persisted
+      def rows(count) = (1..count).map { parent(it, "c#{it}") }
+
+      def round_trips(count)
+        counting = counting_class.new(conn)
+        described_class.new(counting).with_fixture(rows(count)) { |tx| 2.times { tx.query("SELECT 1") } }
+        counting.round_trips
+      end
+
+      def next_xid = Integer(conn.exec("SELECT pg_snapshot_xmax(pg_current_snapshot())").getvalue(0, 0))
+
+      it "takes one round trip per statement" do
+        expect(round_trips(20) - round_trips(10)).to eq(10)
+      end
+
+      it "uses one transaction ID for the whole fixture" do
+        before = next_xid
+        runner.with_fixture(rows(10)) { |tx| 2.times { tx.query("SELECT 1") } }
+
+        expect(next_xid - before).to eq(1)
+      end
     end
 
     def canceler_name = "operator-canceler"
@@ -1023,7 +1050,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
           @calls = Hash.new(0)
         end
 
-        %i[exec exec_params transaction_status set_notice_receiver].each do |name|
+        %i[exec send_query_params transaction_status set_notice_receiver].each do |name|
           define_method(name) do |*args, &block|
             @calls[name] += 1
             raise IOError, @message if @fail == [name, @calls[name]]
@@ -1045,7 +1072,9 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [:set_notice_receiver, 1] => [:connection_unusable, :transaction, nil],
         [:exec, 1] => [:begin_failed, :begin, nil],
         [:exec, 2] => [:begin_failed, :begin, nil],
-        [:exec_params, 4] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        # Each statement sends the server's clock and then itself.
+        [:send_query_params, 7] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        [:send_query_params, 8] => [:fixture_load_failed, :load, 1],
         [:transaction_status, 4] => [:fixture_load_failed, :load, 0]
       }
 
@@ -1070,7 +1099,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         end
 
         def exec(sql, *, &)
-          raise IOError, @message if sql.include?("ROLLBACK TO SAVEPOINT")
+          raise IOError, @message if sql.include?("clock_timestamp")
 
           __getobj__.exec(sql, *, &)
         end

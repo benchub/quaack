@@ -168,9 +168,8 @@ module Quaack
       end
 
       # SET LOCAL, so the timeout ends with the transaction however it ends.
-      # Cancel.timeout_sql also sets the savepoint the first Cancel.mark releases.
       def load(rows, inserts, settings)
-        settings = [Cancel.timeout_sql(@statement_timeout_ms), *settings]
+        settings = ["SET LOCAL statement_timeout = #{@statement_timeout_ms}", *settings]
         settings.each { |sql| database(:begin_failed, :begin) { @connection.exec(sql) } }
         # Advance sequences past the explicit values first, so ids the
         # database generates for other rows never collide with them.
@@ -186,10 +185,12 @@ module Quaack
 
       # Runs one statement and checks that the transaction is still open. The
       # statement check should make that impossible, so this is a backstop.
-      # A mark on the server's clock comes first, for Cancel.rule.
+      # The server's clock is read first, for Cancel.rule, in the same
+      # round trip (Pipeline), with no savepoint, so a statement costs no
+      # more round trips or transaction IDs than it would on its own.
       def statement(sql, params, step:, rule:, index:)
-        started = database(rule, step, index) { Cancel.mark(@connection) }
-        result = database(rule, step, index, started) { @connection.exec_params(sql, params) }
+        started, outcome = database(rule, step, index) { Pipeline.clocked(@connection, sql, params) }
+        result = database(rule, step, index, started) { outcome.check }
         ended = database(rule, step, index) { @connection.transaction_status } != PQTRANS_INTRANS
         raise Error.new(:transaction_ended, step:, index:), cause: nil if ended
 
@@ -223,9 +224,9 @@ module Quaack
       # Runs a connection call and turns anything it raises into an Error
       # that keeps only the SQLSTATE. A cancel (SQLSTATE 57014) becomes its
       # own rule, whatever the step: statement_timeout if it came at least
-      # the timeout after started, a mark on the server's clock, and
+      # the timeout after started, a reading of the server's clock, and
       # statement_canceled if it came sooner, such as a self-cancel or an
-      # operator's pg_cancel_backend, or if the call had no mark. The two
+      # operator's pg_cancel_backend, or if the call had no reading. The two
       # share the SQLSTATE and the message text depends on lc_messages, so
       # the server's clock tells them apart, as in RunDiscipline.
       def database(rule, step, index = nil, started = nil)
@@ -247,4 +248,5 @@ end
 
 require_relative "arena_runner/sequences"
 require_relative "arena_runner/cancel"
+require_relative "arena_runner/pipeline"
 require_relative "arena_runner/deferred"
