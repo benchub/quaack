@@ -7,13 +7,39 @@ module Quaack
   module Driver
     module Report
       # How the report writes a number, a size, and a query.
+      #
+      # SQL inside a sentence, such as an index's columns or a table's name,
+      # is marked with sql_span, so the words around it can stay plain text.
+      # h escapes the text, then sets each marked piece in a <code
+      # class="sql">. The marks are control characters, and View drops them
+      # from the payload with unmarked before it says anything, so a value
+      # can't open or close a piece of its own.
+      #
+      #   h("on #{sql_span("public.t (a < 1)")}")  # => %(on <code class="sql">public.t (a &lt; 1)</code>)
       module Format
         UNITS = %w[kB MB GB].freeze
         PRETTY = { pretty_print: true, indent_size: 2, max_line_length: 80, trailing_newline: false }.freeze
+        OPEN = "\u0001"
+        CLOSE = "\u0002"
+        MARKS = "#{OPEN}#{CLOSE}".freeze
+        MARKED = /#{OPEN}([^#{MARKS}]*)#{CLOSE}/
 
         module_function
 
-        def h(value) = ERB::Util.html_escape(value.to_s)
+        def h(value) = ERB::Util.html_escape(value.to_s).gsub(MARKED, '<code class="sql">\\1</code>')
+
+        # SQL, marked to be set apart wherever h prints it.
+        def sql_span(text) = "#{OPEN}#{text}#{CLOSE}"
+
+        # A value with no marks in any String it holds, keys included.
+        def unmarked(value)
+          case value
+          when String then value.delete(MARKS)
+          when Hash then value.to_h { |k, v| [unmarked(k), unmarked(v)] }
+          when Array then value.map { unmarked(it) }
+          else value
+          end
+        end
 
         # An Integer with thousands separators. Anything else as it is.
         def number(value)

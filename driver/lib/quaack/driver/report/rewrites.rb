@@ -70,14 +70,16 @@ module Quaack
         # sentence, or nil if nothing.
         def empirical(entry)
           said = Array(entry["empirical"]).grep(Hash).map do |a|
-            "#{a["table"]}.#{a["column"]} equals #{a["references_table"]}.#{a["id_column"]} wherever " \
-              "#{a["references_table"]}.#{a["type_column"]} names the type in your query"
+            "#{column(a["table"], a["column"])} equals #{column(a["references_table"], a["id_column"])} " \
+              "wherever #{column(a["references_table"], a["type_column"])} names the type in your query"
           end
           return if said.empty?
 
           "It rests on something your data holds today but your schema doesn't enforce: #{said.join("; ")}. " \
             "QUAACK checked it on the real data."
         end
+
+        def column(table, name) = Format.sql_span("#{table}.#{name}")
 
         # What became of a rewrite, as a sentence.
         def fate(entry)
@@ -94,7 +96,7 @@ module Quaack
           tables = entry["cycle"]
           return unless entry["rule"] == "fk_cycle" && tables.is_a?(Array) && !tables.empty? && tables.all?(String)
 
-          tables.join(" -> ")
+          tables.map { Format.sql_span(it) }.join(" -> ")
         end
 
         # A fate's rule, read as a failure or as rewrite-test's refusal: its

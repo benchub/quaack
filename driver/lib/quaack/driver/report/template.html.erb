@@ -19,7 +19,8 @@
   td.missing { color: #6d7785; font-style: italic; }
   tr.baseline td { background: #f7f8fa; font-style: italic; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
-  code.sql { white-space: pre-wrap; }
+  code.sql { background: #f3f5f8; border-radius: 3px; padding: 0.05em 0.3em; white-space: pre-wrap;
+             overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   pre.sql { background: #f3f5f8; border: 1px solid #d5dbe3; border-radius: 4px; padding: 0.75rem 1rem;
             overflow-x: auto; line-height: 1.4; }
   article { margin: 1rem 0 1.75rem; }
@@ -44,7 +45,7 @@
 <% end %>
 </section>
 <section id="queries"><h2>The queries</h2>
-<p class="note">Each <code>$1</code>, <code>$2</code>, and so on stands for a value from your query. The values themselves never leave your jump server.</p>
+<p class="note">Each <code class="sql">$1</code>, <code class="sql">$2</code>, and so on stands for a value from your query. The values themselves never leave your jump server.</p>
 <details class="query">
 <summary><h3>Your query</h3></summary>
 <%= sql(original_sql) %>
@@ -96,7 +97,7 @@
 <% end %>
 <% unless (measured(t["label"]) || {}).fetch("indexes", []).empty? %>
 <p>Its new indexes:</p>
-<ul><% measured(t["label"])["indexes"].each do |name| %><li><%= code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
+<ul><% measured(t["label"])["indexes"].each do |name| %><li><%= sql_code(indexes.dig(name, "ddl") || name) %></li><% end %></ul>
 <% end %>
 <table><thead><tr><th scope="col">Values</th><th scope="col" class="num">Blocks read</th><th scope="col" class="num">Your query as it is</th><th scope="col" class="num">Already in memory</th><th scope="col" class="num">Read from disk</th><th scope="col">Against your query</th><th scope="col">Note</th></tr></thead>
 <tbody>
@@ -137,7 +138,7 @@
 <table id="declined-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Why not</th></tr></thead>
 <tbody>
 <% negative["declined"].each do |d| %>
-<tr><td><%= d["ddl"] ? code(d["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(d) %></td><td><%= h declined(d) %></td></tr>
+<tr><td><%= d["ddl"] ? sql_code(d["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(d) %></td><td><%= h declined(d) %></td></tr>
 <% end %>
 </tbody></table>
 <% end %>
@@ -149,7 +150,7 @@
 <table id="existing-indexes"><thead><tr><th scope="col">Index</th><th scope="col">Tried for</th><th scope="col">Your index that covers it</th><th scope="col" class="num">Its size</th></tr></thead>
 <tbody>
 <% negative["existing"].each do |e| %>
-<tr><td><%= e["ddl"] ? code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(e) %></td><td><%= h e.dig("covered_by", "name") %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
+<tr><td><%= e["ddl"] ? sql_code(e["ddl"]) : h("an index QUAACK couldn't write out") %></td><td><%= h searches(e) %></td><td><%= (by = e.dig("covered_by", "name")) ? sql_code(by) : "" %></td><%= num(Format.size(e.dig("covered_by", "size_bytes"))) %></tr>
 <% end %>
 </tbody></table>
 <% end %>
