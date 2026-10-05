@@ -2280,3 +2280,16 @@ Each list keeps 100 one-syllable and 100 two-syllable words. Update the names pi
 - **Came from:** Both reviews of 20261004-16.
 - **Design:** Progress lines for `quaack run`, report.
 - **Status:** todo
+
+### 20261004-21. Make `incomplete` failures diagnosable.
+
+A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 19m39s rewrite-test on the same rewrite, with nothing but `quaack run failed: incomplete` (the user, 2026-10-04). The operator can't tell which `quaacks` call died or how.
+
+- **Say what died.** For `incomplete`, `rule_with_note` adds the subcommand and how it ended: the exit status, or the signal. `EnclaveError` already has these, and they're the driver's own data, not the enclave's. Say that exit 255 means the ssh session ended or failed to connect, or the remote process was killed, and point at the jump server's kernel log (OOM killer) and sshd log.
+- **ssh keepalive.** Add `ServerAliveInterval` and `ServerAliveCountMax` to `Transport::Ssh::DEFAULT_OPTIONS`, so a quiet, long call isn't dropped by an idle firewall or NAT, and a dead link is noticed rather than hanging until the transport's timeout. Document it in README's ssh section.
+- **Find the cause** once the user reports what the jump server's logs show. If the OOM killer or a slow fixture load in rewrite-test or counterexample-compare is at fault, open a task for it.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** Where QUAACK runs, Transport.
+- **Status:** todo
