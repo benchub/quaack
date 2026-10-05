@@ -114,7 +114,7 @@ module Quaack
       # message, rule and detail, since the detail is the provider's own
       # error text. Any other failure prints only its rule, as for start.
       # What to do next says to resume the run only while its store is left
-      # (Teardown.next_step).
+      # (Teardown.failure).
       def run_command(run:, rewrites:, out:, keep:, server:)
         require_run
         where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
@@ -123,7 +123,7 @@ module Quaack
         teardown = Teardown.new(checked(where[:jump]), run, @stderr)
         drive(teardown, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{EnclaveError.shown(e, Teardown.next_step(teardown, run), **where)}\n"
+        @stderr.print "quaack run failed: #{Teardown.failure(e, teardown, run, **where)}\n"
         1
       end
 

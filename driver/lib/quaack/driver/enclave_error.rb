@@ -123,10 +123,10 @@ module Quaack
           "Postgres #{major + 1}-only syntax isn't supported yet)"
       end
 
-      private
-
       # The rules whose note ends with what to do next.
       def to_go_on? = %w[ssh_failed incomplete production_connection_failed run_server_connection_failed].include?(rule)
+
+      private
 
       def to_go_on(next_step, jump, server, port)
         case rule
