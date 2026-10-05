@@ -2346,14 +2346,7 @@ Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_post
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-44. README: the connection note when no server is recorded.
-
-This is a review minor from 20261004-40. README says the `production_connection_failed` message "names the production server it tried". For runs with no recorded server (started before 20261004-17), it says "the production server you gave quaack start" instead. Make README say so.
-
-- **Depends on:** 20261004-40.
-- **Came from:** The review of 20261004-40.
-- **Design:** inventory.
-- **Status:** todo
+### 20261004-44. README: the connection note when no server is recorded. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-45. Flaky transport spec: a run that outlasts its timeout.
 
@@ -2384,4 +2377,16 @@ These are review minors from 20261004-38.
 - **Depends on:** 20261004-38.
 - **Came from:** The review of 20261004-38.
 - **Design:** intake.
+- **Status:** todo
+
+### 20261004-48. README: polish the connection-note wording.
+
+These are review minors from 20261004-44.
+
+1. "For a run started before QUAACK recorded the server" doesn't say where it was recorded. Say "started by a driver before 0.1.6, which didn't record the server in `~/.quaack/runs/`", or similar.
+2. The `production_connection_failed` cell in the error table is long, and the new parenthetical in the middle makes it hard to follow. Move it to the end, or shorten it.
+
+- **Depends on:** 20261004-44.
+- **Came from:** The review of 20261004-44.
+- **Design:** none (docs only).
 - **Status:** todo

@@ -4938,3 +4938,13 @@ In each case the operator gets a backtrace instead of a usage error. Check every
 - **Design:** intake.
 - **Status:** done
 - **Landed:** Landed in 10dfd89. Review minors went to 20261004-47.
+
+### 20261004-44. README: the connection note when no server is recorded.
+
+This is a review minor from 20261004-40. README says the `production_connection_failed` message "names the production server it tried". For runs with no recorded server (started before 20261004-17), it says "the production server you gave quaack start" instead. Make README say so.
+
+- **Depends on:** 20261004-40.
+- **Came from:** The review of 20261004-40.
+- **Design:** inventory.
+- **Status:** done
+- **Landed:** Landed in 02fd140. Review minors went to 20261004-48.
