@@ -184,6 +184,8 @@ Create `~/.quaack/driver.json`:
 { "jump_command": "case {server} in eu-*) echo jump-eu ;; *) echo jump-us ;; esac" }
 ```
 
+The driver runs every call as `ssh -T -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 -o ConnectTimeout=30 -- <host> quaacks ...`. BatchMode means ssh never prompts: if your login has expired, the call fails instead of waiting for a password. The keepalives end a session whose network went away after about two minutes, and ConnectTimeout gives up on a host that doesn't answer after 30 seconds. Everything else comes from your `~/.ssh/config`. If you use `ControlMaster`, a master connection can go stale during a long quiet call, such as a 20-minute `rewrite-test`, and the next call through its socket then fails at once. If calls start failing with `ssh_failed` while plain `ssh <host>` works, remove the socket (see `ControlPath`), or set `ControlPersist` to a shorter time.
+
 ### 3. Give the driver access to an LLM.
 
 The driver makes every LLM call from your laptop. By default it asks Claude, and finds Anthropic credentials the way Anthropic's own tools do, taking the first of these that's set:
@@ -465,7 +467,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Done in 42s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that works on each rewrite in turn starts its lines for a rewrite with the rewrite's name, such as `quaack: [7/18] Rewrite Silver Fox: Ranking the index ideas (rewrite-index-rank)`. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Done in 42s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. Work on the jump server that a step does between LLM asks gets its own line under that step, such as `quaack: [9/18] Rewrite Silver Fox: Loading the LLM's rows and comparing results (counterexamples)`, so a slow or failed call there isn't mistaken for the LLM. A step that works on each rewrite in turn starts its lines for a rewrite with the rewrite's name, such as `quaack: [7/18] Rewrite Silver Fox: Ranking the index ideas (rewrite-index-rank)`. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
@@ -544,6 +546,8 @@ quaack run --run $RUN --keep
 # ... fix the network ...
 quaack run --run $RUN --keep
 ```
+
+QUAACK never retries a call to the jump server by itself. A call that died over ssh can't be told apart from one the jump server killed before it answered, and not every step is safe to run twice. When ssh fails, it says so, and you resume once ssh works again.
 
 ### Use a different model.
 
@@ -724,6 +728,8 @@ Common rules:
 | `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. If production listens on another port than that setup gives, start a new run with `quaack start --port <n>`. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
 | `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, the AWS credential chain found nothing (for `bedrock`), or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. For Bedrock, check your AWS credentials, for example with `aws sts get-caller-identity`, or run `aws sso login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
+| `ssh_failed` | A call to the jump server failed, and so did a plain `ssh <host> true` right after it. The message says how to go on: resume with `quaack run --run <ID>` or `quaack setup --run <ID>`, or run `quaack start` again. | Check your ssh login (for example, renew an expired certificate or SSO session) and the network, then resume. See the `ControlMaster` note in [setup step 2](#2-tell-the-driver-how-to-find-your-jump-server). Add `--keep` when you resume, so a second failure keeps the run's work. |
+| `incomplete` | `quaacks` stopped without saying why. The message names the subcommand and how it ended, such as `quaacks counterexample-payload ended with exit 255`. Exit 255 means the ssh session failed or ended, or the jump server killed `quaacks`. | Check your ssh login, the network, and the jump server's kernel log (for the OOM killer) and sshd log, then resume the run. |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |
 | `bad_config` | `~/.quaack/config.json` on the jump server isn't valid, or is a symlink. | Fix it. |
 | `run_from_older_version` | An older version of QUAACK started this run, and its store means something else to this version. | Start a new run with `quaack start`. `quaack teardown` still works on the old run. |
