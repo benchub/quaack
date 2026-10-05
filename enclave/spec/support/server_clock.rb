@@ -54,6 +54,18 @@ module ServerClockHelpers
     end
   end
 
+  # Models a connection whose read of the server's clock after a cancel
+  # fails, raising an error that carries message.
+  def clockless_after_cancel(conn, message)
+    Class.new(SimpleDelegator) do
+      define_method(:exec) do |sql, *args, &block|
+        raise IOError, message if sql.include?("ROLLBACK TO SAVEPOINT")
+
+        __getobj__.exec(sql, *args, &block)
+      end
+    end.new(conn)
+  end
+
   def wait_until_sleeping(other, pid)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
     until other.exec_params(
