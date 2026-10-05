@@ -15,6 +15,9 @@ RSpec.describe Quaack::Driver::Report do
 
   def section(html, id) = html[%r{<section id="#{id}">.*?</section>}m]
 
+  # SQL as the report sets it apart from the words around it.
+  def sq(text) = %(<code class="sql">#{text}</code>)
+
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
       "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
@@ -92,6 +95,17 @@ RSpec.describe Quaack::Driver::Report do
 
     it "loads nothing from the network in a negative report either" do
       expect(render(negative_payload)).not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
+    end
+
+    it "sets inline SQL apart in monospace on a subtle background, wrapping long DDL inside the page" do
+      rule = html[/^\s*code\.sql\s*\{[^}]*\}/]
+      expect(rule).to match(/background:\s*#f3f5f8/).and match(/overflow-wrap:\s*break-word/)
+        .and match(/white-space:\s*pre-wrap/)
+      expect(html).to match(/^\s*code, pre \{ font-family: ui-monospace, Menlo, Consolas, monospace;/)
+    end
+
+    it "marks the placeholders in the queries' note as SQL" do
+      expect(section(html, "queries")).to include("Each #{sq("$1")}, #{sq("$2")}, and so on stands for")
     end
 
     it "right-aligns numbers, and puts SQL in code blocks" do
@@ -313,15 +327,16 @@ RSpec.describe Quaack::Driver::Report do
       it "says the rewrite rests on what the data holds today, not on the schema, naming the columns" do
         expect(empirical(copy)).to eq(esc(
                                         '<p class="empirical">It rests on something your data holds today but ' \
-                                        "your schema doesn't enforce: public.submissions.course_id equals " \
-                                        "public.assignments.context_id wherever public.assignments.context_type " \
+                                        "your schema doesn't enforce: #{sq("public.submissions.course_id")} equals " \
+                                        "#{sq("public.assignments.context_id")} wherever " \
+                                        "#{sq("public.assignments.context_type")} " \
                                         "names the type in your query. QUAACK checked it on the real data.</p>"
                                       ))
       end
 
       it "names each assumption when there are several" do
-        expect(empirical(copy, copy(column: "account_id"))).to include(esc("public.submissions.course_id equals"))
-          .and include(esc("; public.submissions.account_id equals"))
+        expect(empirical(copy, copy(column: "account_id"))).to include("#{sq("public.submissions.course_id")} equals")
+          .and include("; #{sq("public.submissions.account_id")} equals")
       end
 
       it "says nothing when the rewrite rests on none" do
@@ -331,7 +346,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "escapes a name" do
-        expect(empirical(copy(column: "<b>"))).to include("public.submissions.&lt;b&gt; equals")
+        expect(empirical(copy(column: "<b>"))).to include("#{sq("public.submissions.&lt;b&gt;")} equals")
           .and(satisfy { !it.include?("<b>") })
       end
     end
@@ -411,10 +426,11 @@ RSpec.describe Quaack::Driver::Report do
         expect(fate("rewrite_test_untested", rule: "fk_cycle",
                                              cycle: %w[public.accounts public.courses public.accounts]))
           .to eq(esc("QUAACK couldn't make up test data for your query, because its tables' foreign keys form a " \
-                     "cycle QUAACK can't load (public.accounts -&gt; public.courses -&gt; public.accounts), so it " \
+                     "cycle QUAACK can't load (#{sq("public.accounts")} -&gt; #{sq("public.courses")} -&gt; " \
+                     "#{sq("public.accounts")}), so it " \
                      "never tested this rewrite and won't recommend it. That says nothing about whether it's right."))
         expect(fate("rewrite_test_untested", rule: "fk_cycle", cycle: %w[public.<b> public.a public.<b>]))
-          .to include("(public.&lt;b&gt; -&gt; public.a -&gt; public.&lt;b&gt;)")
+          .to include("(#{sq("public.&lt;b&gt;")} -&gt; #{sq("public.a")} -&gt; #{sq("public.&lt;b&gt;")})")
       end
 
       it "names no tables for another rule, or a cycle that isn't a list of names" do
@@ -474,9 +490,9 @@ RSpec.describe Quaack::Driver::Report do
     let(:ranking) { section(html, "ranking") }
 
     it "ranks the candidates overall, winner first, each described in words" do
-      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>([^<]+)</td>}))
+      expect(ranking.scan(%r{<tr class="rank"><td class="num">(\d)</td><td>(.*?)</td>}))
         .to eq([["1", "Rewrite Vivid Cove with no new indexes"],
-                ["2", "Your query with a new index on public.t (created_at)"]])
+                ["2", "Your query with a new index on #{sq("public.t (created_at)")}"]])
     end
 
     it "shows each candidate's blocks and index footprint, right-aligned, with separators and a fitting unit" do
@@ -520,16 +536,23 @@ RSpec.describe Quaack::Driver::Report do
 
     it "describes a candidate with several indexes, and one whose index definition is missing" do
       payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
-      expect(ranking).to include("<td>Your query with new indexes on public.t (created_at) and public.t (a, b)</td>")
+      expect(ranking)
+        .to include("<td>Your query with new indexes on #{sq("public.t (created_at)")} and " \
+                    "#{sq("public.t (a, b)")}</td>")
       payload["indexes"]["quaack_a"]["ddl"] = nil
       payload["labels"][0]["indexes"] = %w[quaack_a]
       expect(section(render(payload), "ranking"))
-        .to include("<td>Your query with a new index QUAACK couldn&#39;t describe (quaack_a)</td>")
+        .to include("<td>Your query with a new index QUAACK couldn&#39;t describe (#{sq("quaack_a")})</td>")
+    end
+
+    it "sets apart the whole definition of an index it can't take apart" do
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE UNIQUE INDEX ON public.t (created_at)"
+      expect(ranking).to include("Your query with a new index on #{sq("CREATE UNIQUE INDEX ON public.t (created_at)")}")
     end
 
     it "names an index's method when it isn't a btree, and keeps its predicate" do
       payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING brin (created_at) WHERE a < ?"
-      expect(ranking).to include("Your query with a new index on public.t (created_at) WHERE a &lt; ? (brin)")
+      expect(ranking).to include("Your query with a new index on #{sq("public.t (created_at) WHERE a &lt; ?")} (brin)")
     end
 
     describe "what was measured and not ranked" do
@@ -552,7 +575,8 @@ RSpec.describe Quaack::Driver::Report do
         expect(unranked).to include(%(<thead><tr><th scope="col">What it was</th><th scope="col">Who proposed it</th>) +
                                     %(<th scope="col">Why it didn't make the cut</th></tr></thead>))
         expect(rows).to eq(
-          ["<td>Rewrite Vivid Cove with a new index on public.t (a, b)</td><td>Made by QUAACK&#39;s own rewrite rule " \
+          ["<td>Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}</td>" \
+           "<td>Made by QUAACK&#39;s own rewrite rule " \
            "key_in_self_join</td><td>Read 7,777 blocks on the slow values, against 1,000 for your query as it is, " \
            "which isn&#39;t more than 5% fewer.</td>"]
         )
@@ -576,7 +600,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "says in words, with the numbers, that a candidate wasn't enough better on the slow values" do
         expect(unranked).to include(
-          row("Rewrite Vivid Cove with a new index on public.t (a, b)",
+          row("Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}",
               "Read 7,777 blocks on the slow values, against 1,000 for your query as it is, which isn&#39;t more " \
               "than 5% fewer.")
         )
@@ -586,7 +610,7 @@ RSpec.describe Quaack::Driver::Report do
         payload["labels"][2].merge!("measurements" => { "slow" => m(500, 1), "typical" => m(900, 1) },
                                     "verdicts" => { "slow" => "better", "typical" => "worse" })
         expect(unranked).to include(
-          row("Rewrite Vivid Cove with a new index on public.t (a, b)",
+          row("Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}",
               "Read fewer blocks on the slow values (500, against 1,000), but read 900 on the typical values, " \
               "against 200 for your query as it is, which is more than 5% more.")
         )
@@ -594,7 +618,7 @@ RSpec.describe Quaack::Driver::Report do
 
       it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
         payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
-        expect(unranked).to include("(a, b)</td><td>#{rule}</td><td>Beat your query as it is, but tied with a " \
+        expect(unranked).to include("(a, b)</code></td><td>#{rule}</td><td>Beat your query as it is, but tied with a " \
                                     "candidate whose new indexes take less disk space.</td></tr>")
         payload["excluded"] = { "rewrite_1:top:1" => "below_top_three" }
         expect(section(render(payload), "ranking")).to include("<td>Beat your query as it is, but three other " \
@@ -608,7 +632,7 @@ RSpec.describe Quaack::Driver::Report do
       it "says a candidate's measurement timed out" do
         payload["labels"] << { "label" => "rewrite_1:top:2", "search" => "rewrite_1", "indexes" => ["quaack_a"],
                                "timed_out" => true, "measurements" => nil, "verdicts" => nil }
-        expect(unranked).to include(row("Rewrite Vivid Cove with a new index on public.t (created_at)",
+        expect(unranked).to include(row("Rewrite Vivid Cove with a new index on #{sq("public.t (created_at)")}",
                                         "Timed out while QUAACK measured it."))
       end
 
@@ -634,7 +658,7 @@ RSpec.describe Quaack::Driver::Report do
       ranking = section(render(negative_payload), "ranking")
       expect(ranking).to include("Nothing beat your query as it is, so there is no ranking.")
       expect(ranking.sub(%r{<details class="not-ranked">.*?</details>}m, "")).not_to include("<tr")
-      expect(ranking).to include("<tr><td>Your query with a new index on public.t (created_at)</td>" \
+      expect(ranking).to include("<tr><td>Your query with a new index on #{sq("public.t (created_at)")}</td>" \
                                  '<td class="missing">not recorded</td><td>Read 990 blocks on the ' \
                                  "slow values, against 1,000 for your query as it is, which isn&#39;t more than " \
                                  "5% fewer.</td></tr>")
@@ -644,9 +668,9 @@ RSpec.describe Quaack::Driver::Report do
       def candidate(rank) = ranking.scan(%r{<article class="candidate">.*?</article>}m)[rank - 1]
 
       it "has its own block, in rank order, and no unranked candidate has one" do
-        expect(ranking.scan(%r{<article class="candidate"><h3>([^<]+)</h3>}))
+        expect(ranking.scan(%r{<article class="candidate"><h3>(.*?)</h3>}))
           .to eq([["1. Rewrite Vivid Cove with no new indexes"],
-                  ["2. Your query with a new index on public.t (created_at)"]])
+                  ["2. Your query with a new index on #{sq("public.t (created_at)")}"]])
         expect(ranking.scan("<article").size).to eq(2)
       end
 
@@ -712,7 +736,7 @@ RSpec.describe Quaack::Driver::Report do
       end
 
       it "lists the indexes it ran with, as DDL, and points a rewrite at its SQL" do
-        expect(candidate(2)).to include("<code>CREATE INDEX ON public.t USING btree (created_at)</code>")
+        expect(candidate(2)).to include("<li>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</li>")
         expect(candidate(1)).not_to include("CREATE INDEX")
         expect(candidate(1)).to include('Its SQL is under <a href="#rewrite-1">rewrite Vivid Cove</a>, above.')
         expect(candidate(2)).not_to include("<a ")
@@ -727,8 +751,9 @@ RSpec.describe Quaack::Driver::Report do
       expect(explanation).to include("Rewrite Vivid Cove with no new indexes read 300 blocks on the slow values, " \
                                      "against 1,000 for your query as it is (70% fewer).")
       expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indexes:</p>")
-      expect(explanation).to include("<li>Index Scan on public.t using t_a_idx (5 rows, 0.5% of the table)</li>")
-      expect(explanation).to include("<li>Seq Scan on public.t (50 rows, 5.0% of the table)</li>")
+      expect(explanation)
+        .to include("<li>Index Scan on #{sq("public.t")} using #{sq("t_a_idx")} (5 rows, 0.5% of the table)</li>")
+      expect(explanation).to include("<li>Seq Scan on #{sq("public.t")} (50 rows, 5.0% of the table)</li>")
     end
 
     it "says one row, and a share too small to round, in words" do
@@ -736,7 +761,8 @@ RSpec.describe Quaack::Driver::Report do
                                     "est_rows" => 1, "actual_rows" => 1, "selectivity" => 0.000001 },
                                   { "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 12_345,
                                     "actual_rows" => nil, "selectivity" => nil }]
-      expect(explanation).to include("<li>Index Scan on public.t using t_pkey (1 row, under 0.1% of the table)</li>")
+      expect(explanation)
+        .to include("<li>Index Scan on #{sq("public.t")} using #{sq("t_pkey")} (1 row, under 0.1% of the table)</li>")
       expect(explanation).to include("<li>Limit (12,345 rows)</li>")
     end
 
@@ -762,11 +788,11 @@ RSpec.describe Quaack::Driver::Report do
 
     it "gives each index its size, and each existing index it overlaps with its size, in the last two columns" do
       expect(indexes).to include(
-        '<tr><td><code>CREATE INDEX ON public.t USING btree (created_at)</code></td><td class="num">8 kB</td>' \
-        "<td>t_created_at_id_idx (40 kB)</td><td>none</td></tr>"
+        "<tr><td>#{sq("CREATE INDEX ON public.t USING btree (created_at)")}</td><td class=\"num\">8 kB</td>" \
+        "<td>#{sq("t_created_at_id_idx")} (40 kB)</td><td>none</td></tr>"
       )
       expect(indexes).to include('<td class="num">16 kB</td><td>none</td>' \
-                                 "<td>t_a_idx (8 kB)<br>t_a_b_idx (size not recorded)</td></tr>")
+                                 "<td>#{sq("t_a_idx")} (8 kB)<br>#{sq("t_a_b_idx")} (size not recorded)</td></tr>")
     end
 
     it "uses the unit that fits, with thousands separators" do
@@ -791,7 +817,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says so when the enclave couldn't parse a built index's DDL" do
       payload["indexes"]["quaack_b"]["ddl"] = nil
-      expect(indexes).to include(esc("<tr><td>quaack_b (QUAACK couldn't read this index's definition back)</td>" \
+      expect(indexes).to include(esc("<tr><td>#{sq("quaack_b")} (QUAACK couldn't read this index's definition " \
+                                     "back)</td>" \
                                      '<td class="num">16 kB</td>'))
     end
 
@@ -875,9 +902,9 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says which indexes the planner wouldn't use, and why, once each, with the queries they were tried for" do
       table = why[%r{<table id="declined-indexes">.*?</table>}m]
-      expect(table).to include("<tr><td><code>CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?</code></td>" \
+      expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (a) WHERE a &lt; ?")}</td>" \
                                "<td>your query, rewrite Vivid Cove</td><td>The planner never chose it.</td></tr>")
-      expect(table).to include(esc("<tr><td><code>CREATE INDEX ON public.t USING gin (b)</code></td>" \
+      expect(table).to include(esc("<tr><td>#{sq("CREATE INDEX ON public.t USING gin (b)")}</td>" \
                                    "<td>rewrite Vivid Cove</td><td>HypoPG, which QUAACK uses to try an index " \
                                    "without building it, couldn't create it (Postgres error code 0A000).</td></tr>"))
       expect(table).to include(esc("<tr><td>an index QUAACK couldn't write out</td><td>your query</td>" \
@@ -897,8 +924,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says which suggested indexes already existed, with the existing index and its size" do
       table = why[%r{<table id="existing-indexes">.*?</table>}m]
-      expect(table).to include("<tr><td><code>CREATE INDEX ON public.t USING btree (c)</code></td>" \
-                               "<td>your query, rewrite Smooth Kayak</td><td>t_c_d_idx</td>" \
+      expect(table).to include("<tr><td>#{sq("CREATE INDEX ON public.t USING btree (c)")}</td>" \
+                               "<td>your query, rewrite Smooth Kayak</td><td>#{sq("t_c_d_idx")}</td>" \
                                '<td class="num">3.0 MB</td></tr>')
     end
 
@@ -1289,19 +1316,20 @@ RSpec.describe Quaack::Driver::Report do
                      "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
                      %(<article class="rewrite" id="#{escaped}"><details class="query">\n<summary><h3>),
                      "QUAACK found something better than your query as it is: ",
-                     "<code>SELECT ", "rewrite rules ", "<li><code>", '<li><code class="sql">',
+                     "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
                      '<tr class="rank"><td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
-                     "<ul><li>", " on ", " using ", "<td>", "<td>by the rule ")
+                     "<ul><li>", %( on <code class="sql">), %( using <code class="sql">), "<td>",
+                     "<td>by the rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
     end
 
     it "prints, escaped, every value a negative report shows" do
       expect_escaped(rendered(negative_sentinels),
-                     '<ul id="negative-rewrites"><li>', "<tr><td><code>", "</code></td><td>", ", rewrite_",
+                     '<ul id="negative-rewrites"><li>', %(<tr><td><code class="sql">), "</code></td><td>", ", rewrite_",
                      "(Postgres error code ", %(#{escaped}</td><td>), "<tbody>\n<tr><td>",
-                     "</td><td>Made by QUAACK&#39;s own rewrite rules ")
+                     "</td><td>Made by QUAACK&#39;s own rewrite rules ", %(<td><code class="sql">))
     end
 
     it "escapes what the payload carries in the first report too" do
@@ -1316,6 +1344,38 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).not_to include("<b>")
       expect(out).to include("&lt;b&gt;RUN&lt;/b&gt;").and include("&lt;b&gt;orig&lt;/b&gt;")
       expect(out).to include("&lt;b&gt;idx&lt;/b&gt;").and include("&lt;b&gt;rel&lt;/b&gt;")
+    end
+
+    it "keeps escaping inside the code that sets SQL apart" do
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING btree (a) WHERE b < '<b>'"
+      expect(section(render(payload), "ranking"))
+        .to include("Your query with a new index on #{sq("public.t (a) WHERE b &lt; &#39;&lt;b&gt;&#39;")}")
+    end
+
+    # The value with no \u0001 or \u0002 in any String it holds.
+    def scrub(value)
+      case value
+      when String then value.delete("\u0001\u0002")
+      when Hash then value.to_h { |k, v| [scrub(k), scrub(v)] }
+      when Array then value.map { scrub(it) }
+      else value
+      end
+    end
+
+    it "lets no control character in a value open, close, or mark SQL the report didn't" do
+      payload["rewrites"].first["rules"] = ["\u0001x\u0002"]
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING btree (a\u0002) WHERE \u0001b"
+      payload["original_plan"].first["relation"] = "\u0002\u0001"
+      payload["excluded"] = { "\u0001rewrite_1:top:1\u0002" => "not_better" }
+      run_id = "R\u0001x\u0002"
+      out = described_class.render(payload, run_id:, llm_calls: { "\u0001s\u0002" => 1 })
+      expect(out).to eq(described_class.render(scrub(payload), run_id:, llm_calls: { "s" => 1 }))
+      expect(out).not_to match(/[\u0001\u0002]/)
+      expect(out).to include("<title>QUAACK report Rx</title>").and include("<h1>QUAACK report Rx</h1>")
+      expect(section(out, "queries")).to include("rewrite rule x.").and(satisfy { !it.include?('class="sql">x') })
+      expect(section(out, "ranking")).to include("a new index on #{sq("public.t (a) WHERE b")}")
+      expect(section(out, "explanation")).to include("<li>Seq Scan on #{sq("")} (50 rows")
+      expect(out.scan("<code").size).to eq(out.scan("</code>").size)
     end
   end
 

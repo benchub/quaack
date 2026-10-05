@@ -29,9 +29,9 @@ module Quaack
                 "every other query shares."
 
         def initialize(payload, run_id, llm_calls = {})
-          @payload = payload
-          @run_id = run_id
-          @llm_calls = llm_calls
+          @payload = Format.unmarked(payload)
+          @run_id = Format.unmarked(run_id)
+          @llm_calls = Format.unmarked(llm_calls)
         end
 
         attr_reader :run_id
@@ -88,8 +88,8 @@ module Quaack
 
         def node(node)
           text = node["node"].to_s
-          text += " on #{node["relation"]}" if node["relation"]
-          text += " using #{node["index"]}" if node["index"]
+          text += " on #{Format.sql_span(node["relation"])}" if node["relation"]
+          text += " using #{Format.sql_span(node["index"])}" if node["index"]
           rows = Words.count(node["actual_rows"] || node["est_rows"], "row")
           "#{text} (#{[rows, share(node["selectivity"])].compact.join(", ")})"
         end
@@ -104,9 +104,7 @@ module Quaack
 
         def sql(text) = %(<pre class="sql"><code>#{h Format.sql(text)}</code></pre>)
 
-        def code(text) = "<code>#{h text}</code>"
-
-        def sql_code(text) = %(<code class="sql">#{h text}</code>)
+        def sql_code(text) = h(Format.sql_span(text))
 
         def num(value) = %(<td class="num">#{h(value.is_a?(Integer) ? Format.number(value) : value)}</td>)
 
@@ -126,7 +124,8 @@ module Quaack
         # covers it, and the existing ones it makes redundant, with sizes.
         def built_row(name)
           index = indexes.fetch(name)
-          ddl = index["ddl"] ? code(index["ddl"]) : h("#{name} (QUAACK couldn't read this index's definition back)")
+          unread = "#{Format.sql_span(name)} (QUAACK couldn't read this index's definition back)"
+          ddl = index["ddl"] ? sql_code(index["ddl"]) : h(unread)
           "<tr><td>#{ddl}</td>#{num(Format.size(index["size"]))}<td>#{overlap([index["covered_by"]].compact)}</td>" \
             "<td>#{overlap(index["makes_redundant"])}</td></tr>"
         end

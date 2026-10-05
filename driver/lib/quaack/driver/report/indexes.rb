@@ -23,7 +23,7 @@ module Quaack
         # An existing index with its size from the planner statistics.
         def existing(index)
           size = index["size_bytes"] ? Format.size(index["size_bytes"]) : "size #{Words::MISSING}"
-          "#{index["name"]} (#{size})"
+          "#{Format.sql_span(index["name"])} (#{size})"
         end
 
         def searches(entry) = entry["searches"].map { Words.search(it, run_id) }.join(", ")

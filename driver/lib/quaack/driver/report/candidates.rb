@@ -43,11 +43,11 @@ module Quaack
         # A built index by what it's on, such as "on public.t (a, b)", from
         # its DDL. A method other than btree is named after it.
         def target(name)
-          ddl = indexes.dig(name, "ddl") or return "QUAACK couldn't describe (#{name})"
+          ddl = indexes.dig(name, "ddl") or return "QUAACK couldn't describe (#{Format.sql_span(name)})"
           table, method, rest = DDL.match(ddl)&.captures
-          return "on #{ddl}" unless table
+          return "on #{Format.sql_span(ddl)}" unless table
 
-          "on #{table} #{rest}#{" (#{method})" unless method == "btree"}"
+          "on #{Format.sql_span("#{table} #{rest}")}#{" (#{method})" unless method == "btree"}"
         end
 
         def list(items) = items.size < 3 ? items.join(" and ") : "#{items[0..-2].join(", ")}, and #{items.last}"
