@@ -295,6 +295,62 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    # The timeout can fire just as a statement finishes. Postgres has then
+    # sent the statement's result, and it reports the cancel on the next
+    # message it handles, which is the pipeline's Sync, so the error comes
+    # after the statement's result, in the Sync's place. That's a race, so
+    # this plants the same shape: just before the runner's Sync, it sends
+    # one more statement that gets canceled.
+    describe "a cancel that arrives after the statement's result, before the Sync" do
+      let(:late_cancel_class) do
+        Class.new(SimpleDelegator) do
+          def initialize(conn, sql)
+            super(conn)
+            @sql = sql
+          end
+
+          def arm! = @armed = true
+
+          def pipeline_sync
+            __getobj__.send_query_params(@sql, []) if @armed
+            @armed = false
+            __getobj__.pipeline_sync
+          end
+        end
+      end
+
+      def late_cancel_error(sql, statement_timeout_ms:)
+        late = late_cancel_class.new(conn, sql)
+        short = described_class.new(late, statement_timeout_ms:)
+        error = run_error(short, [parent(1, "a")]) do |tx|
+          late.arm!
+          tx.query("SELECT 1")
+        end
+        [error, short]
+      end
+
+      def expect_usable_after(short)
+        expect(conn.pipeline_status).to eq(0)
+        expect_nothing_persisted
+        expect(short.with_fixture([parent(2, "b")]) { |tx| tx.query("SELECT 7").rows }).to eq([["7"]])
+      end
+
+      it "reports the timeout, leaves pipeline mode, and leaves the connection usable" do
+        error, short = late_cancel_error("SELECT pg_sleep(5)", statement_timeout_ms: 100)
+
+        expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
+        expect_usable_after(short)
+      end
+
+      it "reports another cancel as statement_canceled, and leaves the connection usable" do
+        error, short = late_cancel_error("SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)",
+                                         statement_timeout_ms: 5000)
+
+        expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 0])
+        expect_usable_after(short)
+      end
+    end
+
     # Telling a timeout by the server's clock mustn't slow fixture loads:
     # each statement's clock read goes in the statement's own round trip,
     # and nothing gives a statement a transaction ID of its own.
