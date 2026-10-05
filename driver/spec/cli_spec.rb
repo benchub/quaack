@@ -115,6 +115,18 @@ RSpec.describe "quaack executable" do
                     "network, then run `quaack start` again\n", 1])
     end
 
+    # Task 20261004-26: incomplete says how to go on, too.
+    it "names the call that died when intake is incomplete, and says to run start again" do
+      e = env
+      File.write(File.join(dir, "bin", "ssh"), "#!/bin/sh\n#{version_answer}\nexit 3\n")
+      out, err, status = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start failed: incomplete: quaacks intake ended with exit 3. " \
+                    "To go on, run `quaack start` again\n", 1])
+    end
+
     it "passes --port, given anywhere among the options, to intake" do
       out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--port", "6543", "--server", "prod-1",
                                         "--query", "/q", "--plan", "/p")

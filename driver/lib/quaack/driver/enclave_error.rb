@@ -85,10 +85,12 @@ module Quaack
       #
       # incomplete gets the subcommand and how it ended, and ssh_failed what
       # to check, then next_step, the caller's words for what to do after,
-      # such as the command that resumes the run. Both are the driver's own
-      # facts, not the enclave's.
+      # such as the command that resumes the run, or starting a new one when
+      # teardown deleted the run's store. Both are the driver's own facts,
+      # not the enclave's.
       def rule_with_note(next_step: "resume the run")
         return "#{rule}: #{SSH_FAILED}, then #{next_step}" if rule == "ssh_failed"
+        return "#{rule}: #{ended}. To go on, #{next_step}" if rule == "incomplete"
         return "#{rule}: #{note}" if note
 
         return rule unless rule == "query_unparsable"
@@ -104,7 +106,6 @@ module Quaack
       # What rule_with_note adds after the rule, or nil.
       def note
         return OLDER_VERSION if rule == "run_from_older_version"
-        return ended if rule == "incomplete"
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 
         named_schema

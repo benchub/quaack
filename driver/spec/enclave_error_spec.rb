@@ -10,23 +10,32 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
 
   it "names the subcommand and its exit status for an incomplete call" do
     expect(error("incomplete", exit_status: 1).rule_with_note)
-      .to eq("incomplete: quaacks counterexample-payload ended with exit 1")
+      .to eq("incomplete: quaacks counterexample-payload ended with exit 1. To go on, resume the run")
   end
 
   it "names the subcommand and its signal for an incomplete call a signal ended" do
     expect(error("incomplete", signal: "KILL").rule_with_note)
-      .to eq("incomplete: quaacks counterexample-payload ended with signal KILL")
+      .to eq("incomplete: quaacks counterexample-payload ended with signal KILL. To go on, resume the run")
   end
 
   it "says what exit 255 means for an incomplete call, and where to look" do
     expect(error("incomplete", exit_status: 255).rule_with_note)
       .to eq("incomplete: quaacks counterexample-payload ended with exit 255. The ssh session failed or ended, " \
              "or the remote process was killed: check your ssh login, the network, and the jump server's " \
-             "kernel log (for the OOM killer) and sshd log")
+             "kernel log (for the OOM killer) and sshd log. To go on, resume the run")
   end
 
   it "names only the subcommand for an incomplete call with no ending" do
-    expect(error("incomplete").rule_with_note).to eq("incomplete: quaacks counterexample-payload didn't finish")
+    expect(error("incomplete").rule_with_note)
+      .to eq("incomplete: quaacks counterexample-payload didn't finish. To go on, resume the run")
+  end
+
+  # Task 20261004-26: the caller knows whether the run's store is still
+  # there to resume.
+  it "says what to do next for incomplete in the caller's words, such as starting a new run" do
+    expect(error("incomplete", exit_status: 1).rule_with_note(next_step: "start a new run with `quaack start`"))
+      .to eq("incomplete: quaacks counterexample-payload ended with exit 1. " \
+             "To go on, start a new run with `quaack start`")
   end
 
   it "says ssh couldn't reach the jump server, and to resume the run" do
