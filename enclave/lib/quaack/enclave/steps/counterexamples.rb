@@ -6,6 +6,7 @@ require_relative "../arena_runner"
 require_relative "../counterexamples"
 require_relative "../denormalized_fixture"
 require_relative "../redaction"
+require_relative "../rewrite_burndown"
 require_relative "../run_server"
 require_relative "../scenarios"
 require_relative "../scenario_tests"
@@ -101,11 +102,13 @@ module Quaack
             { "passed" => false, "scenario" => nil, "rule" => "discarded", "untested" => [], "untested_atoms" => [] }
           end
 
+          # The result, once its burndown is recorded (RewriteBurndown.record_test).
           def test(store, search)
             Counterexamples.arena!(store, "rewrite_test")
             connection = Enclave::RunServer.connect(store, :arena)
             original, candidate = Counterexamples.queries(store, search)
-            outcome(ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search)))
+            report = ScenarioTests.run(connection, original, [candidate], honour: Counterexamples.honour(store, search))
+            outcome(report).tap { RewriteBurndown.record_test(store, search, it, report) }
           ensure
             connection&.close
           end
@@ -157,8 +160,8 @@ module Quaack
             search = options.fetch("search")
             number = Counterexamples.search!(store, search, "counterexample_round")
             inserts = check(store, number, options.fetch("round"), input)
-            outcome = named_cycle(store) { run(store, search, number, inserts) }
-            finish(store, number, options.fetch("round"), outcome)
+            outcome, loads = named_cycle(store) { run(store, search, number, inserts) }
+            finish(store, number, options.fetch("round"), outcome, loads)
             [{ type: :counterexample_round, **outcome }]
           end
 
@@ -180,12 +183,14 @@ module Quaack
             inserts
           end
 
+          # The round's outcome, and how many fixtures it loaded.
           def run(store, search, number, inserts)
             connection = Enclave::RunServer.connect(store, :arena)
             prepared = prepare(connection, store, inserts, Counterexamples.queries(store, search))
-            round = compare(connection, prepared, store, search, number)
-            { match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
-              refused: prepared.refused, load_failed: round.load_failed }
+            runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search))
+            round = compare(runner, connection, prepared, store, search, number)
+            [{ match: round.match, rule: round.rule&.to_s, load_order: round.load_order&.to_s, covered: round.covered,
+               refused: prepared.refused, load_failed: round.load_failed }, runner.loads]
           ensure
             connection&.close
           end
@@ -195,11 +200,10 @@ module Quaack
                                                                   tables: tables(store), queries:)
           end
 
-          def compare(connection, prepared, store, search, number)
+          def compare(runner, connection, prepared, store, search, number) # rubocop:disable Metrics/ParameterLists
             original, candidate = Counterexamples.queries(store, search)
             untested = store.read("rewrite_tested_#{number}")["untested_atoms"]
             atoms = Scenarios::Builder.new(connection, PgQuery.parse(original)).atoms
-            runner = DenormalizedFixture::Runner.new(connection, Counterexamples.honour(store, search))
             Enclave::Counterexamples.compare(runner, prepared,
                                              original:, candidate:, atoms:, untested:)
           end
@@ -236,16 +240,26 @@ module Quaack
           # holds this round's "rule": nil for a match, the comparison's
           # rule for a mismatch, or the arena runner's when a statement
           # failed. RewriteFate reads it to tell a disproof from a
-          # candidate that failed to run.
-          def finish(store, number, round, outcome)
+          # candidate that failed to run. "fixture_loads" counts the
+          # fixtures the rounds so far loaded, for the burndown, which is
+          # recorded once survival is decided, before rewrite_survived_<n>
+          # (RewriteBurndown.record_round).
+          def finish(store, number, round, outcome, loads)
             last = round == "1" ? { "evidence" => false, "covered" => [] } : store.read("rewrite_round_#{number}")
-            evidence = !outcome[:match].nil? || last["evidence"]
-            store.write("rewrite_round_#{number}", "round" => Integer(round), "evidence" => evidence,
-                                                   "rule" => outcome[:rule], "covered" => covered(last, outcome))
-            return Counterexamples.survived(store, number, false) if outcome[:match] == false
-            return unless round == ROUNDS.last
+            entry = { "round" => Integer(round), "evidence" => !outcome[:match].nil? || last["evidence"],
+                      "rule" => outcome[:rule], "covered" => covered(last, outcome),
+                      "fixture_loads" => last.fetch("fixture_loads", 0) + loads }
+            store.write("rewrite_round_#{number}", entry)
+            decide(store, number, entry, outcome[:match] != false)
+          end
 
-            store.write("rewrite_survived_#{number}", "survived" => true, "evidence" => evidence)
+          def decide(store, number, entry, survived)
+            return unless !survived || entry["round"] == ROUNDS.last.to_i
+
+            RewriteBurndown.record_round(store, "rewrite_#{number}", entry, survived:)
+            return Counterexamples.survived(store, number, false) unless survived
+
+            store.write("rewrite_survived_#{number}", "survived" => true, "evidence" => entry["evidence"])
           end
 
           def covered(last, outcome) = (Array(last["covered"]) + outcome[:covered]).uniq

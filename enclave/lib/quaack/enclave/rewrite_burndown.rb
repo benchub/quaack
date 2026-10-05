@@ -3,6 +3,7 @@
 require "quaack/protocol/burndown"
 require_relative "burndown"
 require_relative "rewrite_candidate_check"
+require_relative "steps/rewrite_fate"
 
 module Quaack
   module Enclave
@@ -59,6 +60,48 @@ module Quaack
          ["assumption-check", :rewrites, { in: arrived, dropped: { unmet_assumption: assumption },
                                            out: arrived - assumption, extra: warnings(source, tagged) }],
          ["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }]]
+      end
+
+      # Records rewrite-test's burndown for search, rewrite_<n>, once: in 1,
+      # out 1 if it passed, or dropped by why it didn't (test_drop), with
+      # extra untested_atoms and vacuity_guard_retries, and the fixtures it
+      # loaded as the total fixture_loads. result is the rewrite_tested_<n>
+      # entry, and report the ScenarioTests::Report.
+      def record_test(store, search, result, report)
+        passed = result["passed"]
+        Burndown.record_once(
+          store, [["rewrite-test", search.to_sym,
+                   { in: 1, dropped: passed ? {} : { test_drop(result) => 1 }, out: passed ? 1 : 0,
+                     extra: { untested_atoms: report.untested_atoms.size, vacuity_guard_retries: report.retries } }]],
+          totals: { fixture_loads: report.loads }
+        )
+      end
+
+      # Why rewrite-test dropped a rewrite: the scenario that got different
+      # results, s0 to s6, or the rule of a scenario that compared nothing or
+      # of a refusal to build scenarios, each a constant of RewriteFate's.
+      # Anything else is failed.
+      def test_drop(result)
+        scenario, rule = result.values_at("scenario", "rule")
+        return scenario.to_sym if Steps::RewriteFate::MISMATCHES.include?(rule) &&
+                                  Steps::RewriteFate::SCENARIOS.include?(scenario)
+        return rule.to_sym if (Steps::RewriteFate::FAILURES + Steps::RewriteFate::REFUSALS).include?(rule)
+
+        :failed
+      end
+
+      # Records counterexamples' burndown for search, rewrite_<n>, once
+      # survival is decided: in 1, and out 1 for a survivor of the last
+      # round, or dropped round_<k> for a mismatch in round k. entry is the
+      # last rewrite_round_<n>: the untested atoms its rounds covered are
+      # extra atoms_covered, and its fixture loads the total fixture_loads.
+      def record_round(store, search, entry, survived:)
+        dropped = survived ? {} : { "round_#{Integer(entry["round"])}": 1 }
+        Burndown.record_once(
+          store, [["counterexamples", search.to_sym,
+                   { in: 1, dropped:, out: survived ? 1 : 0, extra: { atoms_covered: entry["covered"].size } }]],
+          totals: { fixture_loads: entry["fixture_loads"] }
+        )
       end
 
       def by_rule(tagged, stage, fallback)

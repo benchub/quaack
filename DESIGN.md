@@ -1230,7 +1230,7 @@ For each stage, show how many items came in, how many the stage added, how many 
 | llm-rewrites and operator-rewrites | LLM rewrites and operator rewrites, counted separately. operator-rewrites has no record when the run had no `--rewrites` file. | Refused on arrival, by rule: over the cap of five, an assumption outside the vocabulary, or failed the input checks under "What goes into the enclave." |
 | assumption-check | None. | Unmet assumption. Also count the operator-rewrites warnings, which don't drop anything. |
 | plan-pruning | None. | Failed to plan, output columns didn't match, the clock couldn't be anchored, or couldn't run any differently from the original. |
-| rewrite-test | None. | Disproved, broken down by scenario, S0 through S6. Also count untested atoms and vacuity-guard retries. |
+| rewrite-test | None. | Disproved, broken down by scenario, S0 through S6, or never tested, by the refusal's rule or the rule of a scenario that couldn't compare. Also count untested atoms and vacuity-guard retries. |
 | counterexamples | None. | Disproved, broken down by round. Also count untested atoms that counterexamples covered. |
 | plan-pruning and rewrite-index-ideas | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same index-dedupe, index-test, and index-rank reasons. |
 | measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three. Count partial result-comparison comparisons too. |

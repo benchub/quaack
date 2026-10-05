@@ -69,6 +69,10 @@ module Quaack
 
       DEFAULT_STATEMENT_TIMEOUT_MS = 10_000
 
+      # How many fixtures with_fixture has started to load, one that failed
+      # included: the burndown's fixture loads.
+      attr_reader :loads
+
       # What index_scans: false sets for the transaction. It's a fixed list
       # the runner owns, so no caller's SQL runs a SET.
       NO_INDEX_SCANS = %w[enable_indexscan enable_indexonlyscan enable_bitmapscan]
@@ -81,6 +85,7 @@ module Quaack
 
         @connection = connection
         @statement_timeout_ms = statement_timeout_ms
+        @loads = 0
       end
 
       # Opens the transaction, loads rows (FixtureRows) and then inserts (raw
@@ -164,6 +169,7 @@ module Quaack
       # each statement's round trip arms it for that statement (Pipeline).
       # SET LOCAL, so it ends with the transaction however it ends.
       def load(rows, inserts, settings)
+        @loads += 1
         settings = [Pipeline::DISARM_SQL, *settings]
         settings.each { |sql| database(:begin_failed, :begin) { @connection.exec(sql) } }
         # Advance sequences past the explicit values first, so ids the
