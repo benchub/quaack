@@ -187,17 +187,9 @@ module Quaack
 
       # The open line with suffix after it, as Fit cuts it for the terminal
       # now; and whether it was cut.
-      def fit(suffix) = Fit.call(@line, suffix, columns)
+      def fit(suffix) = Fit.call(@line, suffix, Fit.columns(@io))
 
-      # The terminal's width now, or nil when it can't say.
-      def columns
-        width = @io.winsize[1] if @io.respond_to?(:winsize)
-        width if width&.positive?
-      rescue SystemCallError
-        nil
-      end
-
-      private :say, :repeats_step?, :close, :clocked, :redrawing, :finish, :final_reading, :draw, :fit, :columns
+      private :say, :repeats_step?, :close, :clocked, :redrawing, :finish, :final_reading, :draw, :fit
 
       # Cuts a line, with suffix after it, short of width so it never
       # wraps, since \r goes back only to the start of a row. It answers the
@@ -214,6 +206,14 @@ module Quaack
           return ["#{line[0, room - 1]}…#{suffix}", true] if room >= 2
 
           ["#{line[0, [width - 2, 0].max]}…"[0, width - 1], true]
+        end
+
+        # io's terminal width now, or nil when it can't say.
+        def columns(io)
+          width = io.winsize[1] if io.respond_to?(:winsize)
+          width if width&.positive?
+        rescue SystemCallError
+          nil
         end
       end
 
