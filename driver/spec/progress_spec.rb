@@ -282,7 +282,7 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
-      describe "when a redraw can't write, such as to a closed pipe" do
+      describe "when only a redraw fails to write" do
         let(:broken) do
           p = described_class.new(io: hooked, total: 3, clock: -> { now.first }, interval: 0.001)
           stepper = Thread.current
