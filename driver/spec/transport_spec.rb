@@ -254,17 +254,34 @@ RSpec.describe Quaack::Driver::Transport do
       false
     end
 
+    # Whether pid, or with a negative pid its whole process group, ends
+    # within two seconds. A killed grandchild's parent was the child, so once
+    # the child is gone, init reaps it.
+    def gone_soon?(pid)
+      20.times do
+        return true unless alive?(pid)
+
+        sleep 0.1
+      end
+      false
+    end
+
     # The pid comes from the spawn, not from a pid file the child writes,
     # which a child killed while still starting under load may not have
     # written yet. The run starts a grandchild, and the child leads its own
     # process group, so signal 0 to -pid proves the kill reached the whole
-    # group, not just the child.
+    # group, not just the child. The child writes the grandchild's pid only
+    # once it has started it, so a missing file says the kill came first,
+    # and the group check would prove nothing.
     it "kills a run that takes longer than its timeout, and its process group, and says so" do
       pids = []
       allow(Open3).to receive(:popen2).and_wrap_original do |original, *args, **opts|
         original.call(*args, **opts).tap { pids << it.last.pid }
       end
-      step = local.new(command: EnclaveCommands.raw(%(Process.spawn("sleep", "30"); sleep 30)), timeout: 1)
+      ready = File.join(dir, "grandchild")
+      source = %(pid = Process.spawn("sleep", "30"); File.write(#{"#{ready}.new".inspect}, pid.to_s); ) +
+               %(File.rename(#{"#{ready}.new".inspect}, #{ready.inspect}); sleep 30)
+      step = local.new(command: EnclaveCommands.raw(source), timeout: 2)
       error = nil
 
       # The timeout, plus the moment SIGTERM takes, with room for a loaded
@@ -272,8 +289,10 @@ RSpec.describe Quaack::Driver::Transport do
       expect(elapsed { error = failure(step) }).to be < 10
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
+      expect(File.exist?(ready)).to be(true), "the grandchild never started before the timeout, so this proves nothing"
       expect(pids.size).to eq(1)
-      expect([alive?(pids.first), alive?(-pids.first)]).to eq([false, false])
+      expect([gone_soon?(Integer(File.read(ready))), gone_soon?(pids.first), gone_soon?(-pids.first)])
+        .to eq([true, true, true])
     ensure
       # If the kill missed the group, don't leave the grandchild running.
       # Once its parent has gone, init reaps it.

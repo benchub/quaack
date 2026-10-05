@@ -209,21 +209,47 @@ RSpec.describe Quaack::Driver::Start do
     expect { start(jump_timeout: 0.3) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")
   end
 
+  # The shell's pid comes from the spawn, not from a pid file, which a shell
+  # killed while still starting under load may not have written yet. The
+  # sleep writes its own pid file once it's running, so a missing file says
+  # the kill came before the sleep started, and the check would prove
+  # nothing, not that the kill worked.
   it "kills what jump_command started, not just its shell, on a timeout" do
-    pid_file = File.join(dir, "sleep.pid")
-    configure("sleep 30 & echo $! > #{pid_file}; wait")
-    expect { start(jump_timeout: 0.5) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")
-
-    pid = Integer(File.read(pid_file))
-    alive = 20.times.all? do
-      Process.kill(0, pid)
-      sleep 0.05
-      true
-    rescue Errno::ESRCH
-      false
+    pids = []
+    allow(Open3).to receive(:popen2).and_wrap_original do |original, *args, **opts|
+      original.call(*args, **opts).tap { pids << it.last.pid }
     end
-    Process.kill("KILL", pid) if alive
-    expect(alive).to be(false)
+    pid_file = File.join(dir, "sleep.pid")
+    configure("sh -c 'echo $$ > #{pid_file}.new && mv #{pid_file}.new #{pid_file} && exec sleep 30' & wait")
+
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    expect { start(jump_timeout: 1) }.to raise_error(Quaack::Driver::Start::Error, "jump_command_timed_out")
+    # The timeout, plus the moment SIGTERM takes, far short of the sleep.
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 10
+    expect(File.exist?(pid_file)).to be(true), "the sleep never started before the timeout, so this proves nothing"
+    expect(pids.size).to eq(1)
+    expect([gone_soon?(Integer(File.read(pid_file))), gone_soon?(-pids.first)]).to eq([true, true])
+  ensure
+    # If the kill missed the group, don't leave the sleep running.
+    pids&.each do |pid|
+      Process.kill("KILL", -pid)
+    rescue Errno::ESRCH
+      nil
+    end
+  end
+
+  # Whether pid, or with a negative pid its whole process group, ends within
+  # two seconds. A killed sleep's parent was the shell, so once the shell is
+  # gone, init reaps it.
+  def gone_soon?(pid)
+    20.times do
+      Process.kill(0, pid)
+      sleep 0.1
+    end
+    false
+  rescue Errno::ESRCH
+    true
   end
 
   it "refuses to record a run ID that isn't one, and writes nothing" do
