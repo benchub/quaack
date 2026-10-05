@@ -2,13 +2,13 @@
 
 module Quaack
   module Protocol
-    # The names both sides use for the DESIGN.md's burndown burndown. The enclave
+    # The names both sides use for DESIGN.md's burndown. The enclave
     # script records each stage's counts under a stage from STAGES, and the
     # driver counts its LLM calls under a step from LLM_STEPS. Every other
     # name in a burndown, such as a drop reason, a source, a search, or a
     # work total, must match NAME.
     module Burndown
-      # One per row of the DESIGN.md's burndown tables. index-dedupe through index-rank also key
+      # One per row of DESIGN.md's burndown tables. index-dedupe through index-rank also key
       # the index searches of plan-pruning and rewrite-index-ideas, one search per rewrite.
       STAGES = %w[index-from-query index-from-plan index-dedupe index-test llm-index-ideas llm-index-refine
                   index-rank rewrite-rules llm-rewrites assumption-check operator-rewrites plan-pruning

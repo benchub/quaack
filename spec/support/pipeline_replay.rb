@@ -37,7 +37,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
   # What one replayed run did. log has one line per ask: its directory and
   # whether it was replayed or fell back. drift names replayed asks whose
   # prompt doesn't match the saved prompt.md.
-  # wrong holds the numbers n of the replayed llm-rewrites rewrites, stored as
+  # wrong holds the numbers n of the replayed rewrites from llm-rewrites, stored as
   # rewrite_<n>, whose SQL carries the query's subtly wrong condition, and
   # rewrites_text the replayed llm-rewrites reply's text, or nil. html is the report
   # file the run wrote, or nil.
@@ -208,7 +208,7 @@ module PipelineReplay # rubocop:disable Metrics/ModuleLength
     { log: replies.log, drift: replies.drift, wrong: wrong(query, text), rewrites_text: text }
   end
 
-  # The llm-rewrites rewrites become rewrite_1, rewrite_2, and so on, in reply order.
+  # The rewrites from llm-rewrites become rewrite_1, rewrite_2, and so on, in reply order.
   # Their SQL is read out of the reply text, with the client's own
   # tolerant parse, only to tell which are wrong.
   def wrong(query, text)

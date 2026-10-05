@@ -8,7 +8,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks baseline --run <run ID>` (DESIGN.md's baseline, run-discipline): on the racetrack,
-      # with every index index-build built hidden, measures anchored_query
+      # with every index that index-build built hidden, measures anchored_query
       # for each literals literal set (Measurement, combination nil).
       #
       # The original gets up to 15 minutes per run (ORIGINAL_TIMEOUT_MS), not

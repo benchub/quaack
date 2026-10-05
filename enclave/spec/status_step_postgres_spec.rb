@@ -66,7 +66,7 @@ RSpec.describe "quaacks status, against a real server" do
     expect(later["entries"].select { _2 }.keys).to eq(names)
   end
 
-  it "says whether selection is in the store, for the report report" do
+  it "says whether selection is in the store, for the report" do
     prepare
     store.write("selection", "top" => [], "excluded" => {}, "infinite_sets" => [])
     expect(status["entries"]["selection"]).to be(true)

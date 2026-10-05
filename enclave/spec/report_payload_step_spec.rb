@@ -301,7 +301,7 @@ RSpec.describe "quaacks report-payload" do
         measured(store, 22, "none" => "not_better", "rewrite_22:top:1" => nil)
         selection = store.read("selection")
         store.write("selection", selection.merge("top" => [*selection["top"], { "label" => "rewrite_22:top:1" }]))
-        # No run stores this: a rewrite rewrite-test disproved is never measured.
+        # No run stores this: a rewrite that rewrite-test disproved is never measured.
         # If a store held both, the earlier step is the fate.
         measured(store, 23, "none" => "not_better")
         store.write("rewrite_tested_23", tested(false, "s1", "value"))
@@ -659,7 +659,7 @@ RSpec.describe "quaacks report-payload" do
         end
       end
 
-      context "with a rule-made rewrite rewrite-test refused to test, since it couldn't build scenarios" do
+      context "with a rule-made rewrite that rewrite-test refused to test, since it couldn't build scenarios" do
         let(:outcome) do
           with_rewrite { rule_made(it, 2, tested(false, "complex_check").merge("refused" => true), false) }
         end

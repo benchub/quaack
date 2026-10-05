@@ -51,7 +51,7 @@ module Quaack
     # placeholder whose value it matches, after its cast is set aside
     # (see Matcher), or with $? when none does. The same map redacts the
     # input plan and every racetrack plan. masked counts the $? masks, for
-    # the burndown burndown. dropped counts known fields left out because they
+    # the burndown. dropped counts known fields left out because they
     # couldn't be read.
     #
     # == Expressions that must match

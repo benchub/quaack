@@ -6,7 +6,7 @@ require_relative "plan_expression"
 
 module Quaack
   module Enclave
-    # The DESIGN.md's index-from-plan patterns, for GeneratorTwo's walk. It's private to the
+    # DESIGN.md's index-from-plan patterns, for GeneratorTwo's walk. It's private to the
     # enclave namespace. Each pattern takes one PlanNode and returns the
     # candidates it proposes there. Each checks what the IndexCandidate
     # constructor would refuse before it builds. The walk supplies columns (a PlanColumns) and the

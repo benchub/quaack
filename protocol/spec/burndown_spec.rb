@@ -7,7 +7,7 @@ require "quaack/protocol/burndown"
 # The burndown's shared names. The enclave records stage counts under STAGES
 # and the driver counts LLM calls under LLM_STEPS, so both sides use one list.
 RSpec.describe Quaack::Protocol::Burndown do
-  it "lists each stage of the DESIGN.md's burndown tables once, as a frozen String" do
+  it "lists each stage of DESIGN.md's burndown tables once, as a frozen String" do
     expect(described_class::STAGES).to eq(%w[index-from-query index-from-plan index-dedupe index-test llm-index-ideas
                                              llm-index-refine index-rank rewrite-rules llm-rewrites assumption-check
                                              operator-rewrites plan-pruning rewrite-test counterexamples

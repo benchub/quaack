@@ -67,7 +67,7 @@ module Quaack
       # command gave the instance memory. The inventory itself, its settings,
       # locale names, and extensions, stays in the store.
       inventory: %i[major_version memory_known].freeze,
-      # The DESIGN.md's burndown burndown. Its values are nested Hashes, so unlike
+      # DESIGN.md's burndown. Its values are nested Hashes, so unlike
       # every other field, they're checked on the way out: the egress
       # function sends them only if Protocol::Burndown.valid? passes, so
       # every count is an Integer and every key is a stage from
@@ -86,10 +86,10 @@ module Quaack
       # false: whether it's a partial index, which only works when the
       # predicate's literal is a constant in the application's SQL.
       index_outcome: %i[index outcome rule covered_by partial_constant_only].freeze,
-      # The DESIGN.md's llm-index-ideas payload for the LLM, from `quaacks index-payload`,
-      # built only from shape-class store entries: query is the redact redacted
+      # DESIGN.md's llm-index-ideas payload for the LLM, from `quaacks index-payload`,
+      # built only from shape-class store entries: query is the redacted
       # query; placeholders each placeholder's redact shape and the input row
-      # counts; plan the redact redacted input plan; schema the schema-dump subset;
+      # counts; plan the redacted input plan; schema the schema-dump subset;
       # stats the classify outbound statistics, whose only values are the MCV
       # values of low-cardinality columns; and mechanical_results the index-test
       # results, with plans redacted through redact and each candidate's DDL
@@ -109,7 +109,7 @@ module Quaack
       # Which step outputs a run's store holds, from `quaacks status`:
       # entries maps each of a fixed list of entry names to true or false.
       status: %i[entries].freeze,
-      # The DESIGN.md's llm-rewrites payload, from `quaacks rewrite-payload`: the same
+      # DESIGN.md's llm-rewrites payload, from `quaacks rewrite-payload`: the same
       # shape-class fields as index_payload, without mechanical_results.
       rewrite_payload: %i[query placeholders plan schema stats].freeze,
       # What `quaacks rewrite-check` made of one rewrite (llm-rewrites or operator-rewrites), or
@@ -127,8 +127,8 @@ module Quaack
       # or one of the enclave's rule constants, such as row_count or
       # discarded. Never SQL or a row.
       rewrite_test: %i[rewrite passed scenario rule].freeze,
-      # The DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
-      # original is the redact redacted query, candidate { "sql" } the stored
+      # DESIGN.md's llm-counterexamples payload, from `quaacks counterexample-payload`:
+      # original is the redacted query, candidate { "sql" } the stored
       # rewrite's SQL with $n placeholders (the LLM's own, as the inbound
       # check accepted it), placeholders and schema as in index_payload,
       # and untested_atoms rewrite-test's redacted atom shapes. Its values are
@@ -141,7 +141,7 @@ module Quaack
       # exercised; refused [{ index, rule }], each refused insert's 0-based
       # index and rule constant; load_failed true or false.
       counterexample_round: %i[match rule load_order covered refused load_failed].freeze,
-      # The DESIGN.md's report report, from `quaacks report-payload`.
+      # DESIGN.md's report, from `quaacks report-payload`.
       # original_sql is the original query, always sent: its $n SQL with
       # the clock-anchor functions put back. original_plan is its plan's node shapes
       # (type, relation, index, rows, selectivity; never a condition), and

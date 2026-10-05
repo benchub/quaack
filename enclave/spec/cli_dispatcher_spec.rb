@@ -179,7 +179,7 @@ RSpec.describe Quaack::Enclave::CLI do
     end
 
     # A run an older quaacks started has no store_format entry, and its
-    # burndown names stages by the old step IDs, such as index-dedupe.
+    # burndown names stages by the old step IDs, such as 5a-3.
     it "refuses a run an older version started as run_from_older_version, before the step runs" do
       old = Quaack::Enclave::Store.create(base:)
       FileUtils.rm_f(File.join(old.path, "store_format.json"))
@@ -192,6 +192,28 @@ RSpec.describe Quaack::Enclave::CLI do
         expect(out.string).to eq(error_line("echo", "run_from_older_version"))
       end
       expect(calls).to eq([])
+    end
+
+    # Walks the real steps table, so exempting a step from the check, or
+    # adding one that skips it, changes this list. Every step that opens a
+    # run is refused before it runs; version, intake, and teardown don't
+    # open one.
+    it "refuses an older version's run on exactly the real subcommands that open a run" do
+      refused = Quaack::Enclave::CLI::STEPS.filter_map do |name, step|
+        old = Quaack::Enclave::Store.create(base:)
+        FileUtils.rm_f(File.join(old.path, "store_format.json"))
+        out.truncate(0) && out.rewind
+        options = step.required.flat_map { ["--#{it}", "1"] }
+        cli_class.new(stdin: StringIO.new("{}"), out:, store_base: base).run([name, "--run", old.run_id, *options])
+        name if out.string == error_line(name, "run_from_older_version")
+      end
+
+      opening = %w[inventory run-server qualify schema-dump statistics volatility classify redact literals
+                   clock-anchor racetrack-setup arena-setup index-search index-payload index-feedback index-rank
+                   status index-test rewrite-payload rewrite-rules rewrite-check rewrite-prune rewrite-test
+                   counterexample-payload counterexample-round index-build baseline index-baseline candidate-runs
+                   minimax result-comparison selection report-payload]
+      expect(refused).to match_array(opening)
     end
 
     it "still names an older version's run to a step that only names it, such as teardown" do

@@ -202,7 +202,7 @@ RSpec.describe "quaack run" do
       expect(progress.grep(/Rewrite \d/)).to eq([])
     end
 
-    it "prints each index index-build builds as the enclave reports it, with its redacted DDL" do
+    it "prints each index that index-build builds as the enclave reports it, with its redacted DDL" do
       entries["index_build"] = false
       ddl = "CREATE INDEX quaack_505c95b84989bfd37136 ON public.orders USING btree (id, status) WHERE note = ?"
       streamed["index-build"] = [{ "type" => "index_build_progress", "index" => 1, "total" => 2, "ddl" => ddl },

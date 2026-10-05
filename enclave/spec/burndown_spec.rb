@@ -175,7 +175,7 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
 
     describe "type checks" do
-      it "refuses a stage that isn't one of the DESIGN.md's burndown stages, without quoting it" do
+      it "refuses a stage that isn't one of DESIGN.md's burndown stages, without quoting it" do
         expect_refused(/stage/) { record(BURNDOWN_SENTINEL, in: 0, out: 0) }
         expect_refused(/stage/) { record(:"index-dedupe", in: 0, out: 0) }
         expect_refused(/stage/) { record("index-dedupe\n", in: 0, out: 0) }

@@ -4,7 +4,7 @@ require "quaack/protocol/burndown"
 
 module Quaack
   module Driver
-    # The driver's side of the DESIGN.md's burndown burndown: how many LLM calls each
+    # The driver's side of DESIGN.md's burndown: how many LLM calls each
     # step made. The enclave script records its own counts in the governed
     # store. These stay in memory for the run, and the report reads them.
     #

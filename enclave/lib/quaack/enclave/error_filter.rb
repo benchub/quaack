@@ -25,9 +25,9 @@ module Quaack
     #   letters. Otherwise it's left out. It duck types the result, so this
     #   file doesn't need the pg gem.
     # - The step comes from the caller, and must be a lowercase name of up to
-    #   63 characters, such as classify, index-from-query, or intake. Otherwise it's left out.
-    #   Step names start with a digit and hold hyphens, so they get their own
-    #   pattern rather than the rule's.
+    #   63 characters, such as classify, index-from-query, or intake.
+    #   Otherwise it's left out. Step names hold hyphens, so they get their
+    #   own pattern rather than the rule's.
     # - The function comes from the error's function method, and is sent
     #   only when the rule is volatile_function (DESIGN.md's volatility). It must be one
     #   plain, unquoted, schema-qualified name, such as pg_catalog.random.

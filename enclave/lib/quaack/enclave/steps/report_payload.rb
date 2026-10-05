@@ -71,7 +71,7 @@ module Quaack
       # sent for it. The burndown counts those.
       #
       # Trust boundary. original_sql is the anchored query with the clock-anchor
-      # functions put back (the redact redacted query, literals as $n). A
+      # functions put back (the redacted query, literals as $n). A
       # rewrite's sql is the stored rewrite's SQL, which holds only $n and
       # what the LLM, a rule, or the operator wrote, as the inbound check
       # accepted it. DDL goes through CandidateDdlRedaction. A plan node
