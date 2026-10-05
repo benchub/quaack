@@ -20,12 +20,14 @@ module Quaack
       # A row the run didn't record is drawn grey, dashed, and striped and says "not
       # recorded", never a zero. It has no count, so it takes no part in the
       # scale: it's as wide as the last counted band's bottom, to keep the
-      # funnel's line, or WIDTH if none came before it.
+      # funnel's line, or WIDTH if none came before it, but never narrower
+      # than UNKNOWN, so it can't look like a band that counted zero.
       #
       # Every text in it goes through text, never Format.h, since an SVG
       # <text> can't hold the <code> h sets SQL in.
       module Funnel
         WIDTH = 320.0
+        UNKNOWN = 96.0
         HEIGHT = 46
         GAP = 4
         TOP = 4
@@ -50,7 +52,7 @@ module Quaack
         def funnel_bands(rows)
           last = WIDTH
           funnel_widths(rows).each_with_index.map do |widths, i|
-            next funnel_unknown(funnel_top(i), last, rows[i].first) unless widths
+            next funnel_unknown(funnel_top(i), [last, UNKNOWN].max, rows[i].first) unless widths
 
             last = widths.last
             funnel_band(funnel_top(i), widths, *rows[i])

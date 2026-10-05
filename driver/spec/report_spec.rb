@@ -1473,6 +1473,23 @@ RSpec.describe Quaack::Driver::Report do
       expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
     end
 
+    it "draws a stage the run didn't count at a visible width after a stage that let nothing through" do
+      stages["index-rank"] = { "original" => rec(2, 0, dropped: { "never_used" => 2 }) }
+      stages["index-test"] = { "original" => rec(3, 0, dropped: { "never_used" => 3 }) }
+      index = bands(funnel("index"))
+      expect(widths(index[3])).to eq([width(3, 6), 0])
+      expect(index.values_at(4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+      expect(Quaack::Driver::Report::Funnel::UNKNOWN).to be >= Quaack::Driver::Report::Funnel::WIDTH / 4
+    end
+
+    it "draws a stage the run didn't count no narrower than its minimum after a tiny count" do
+      stages["index-from-plan"] = { "original" => rec(4, 1000, added: { "generator_two" => 996 }) }
+      stages["index-test"] = { "original" => rec(3, 3, dropped: {}) }
+      index = bands(funnel("index"))
+      expect(widths(index[3])).to eq([width(3, 1000), width(3, 1000)])
+      expect(index.values_at(4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+    end
+
     it "shows a stage that counted zero as zero, apart from one that wasn't counted" do
       stages["index-test"] = { "original" => rec(0, 0) }
       band = bands(funnel("index"))[3]
