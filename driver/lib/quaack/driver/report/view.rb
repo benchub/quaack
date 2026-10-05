@@ -106,6 +106,8 @@ module Quaack
 
         def code(text) = "<code>#{h text}</code>"
 
+        def sql_code(text) = %(<code class="sql">#{h text}</code>)
+
         def num(value) = %(<td class="num">#{h(value.is_a?(Integer) ? Format.number(value) : value)}</td>)
 
         # A count, or "not recorded" for one the payload doesn't carry.

@@ -18,7 +18,7 @@ RSpec.describe Quaack::Driver::Report do
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
       "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
-      "untested_atoms" => nil, "evidence" => nil }.merge(details.transform_keys(&:to_s))
+      "untested_atoms" => nil, "covered" => nil, "evidence" => nil }.merge(details.transform_keys(&:to_s))
   end
 
   let(:payload) do
@@ -46,7 +46,7 @@ RSpec.describe Quaack::Driver::Report do
           "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
                        "actual_rows" => 5, "selectivity" => 0.005 }],
-          "untested_atoms" => [{ "shape" => "a < $n" }], "evidence" => false }
+          "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
                                      "covered_by" => { "name" => "t_created_at_id_idx", "size_bytes" => 40_960 },
@@ -200,7 +200,7 @@ RSpec.describe Quaack::Driver::Report do
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
       )
       expect(blocks.map { it.last.scan('<pre class="sql">').size }).to eq([1, 1, 1])
-      expect(blocks[1].last).to include("<li><code>a &lt; $n</code></li>")
+      expect(blocks[1].last).to include(%(<li><code class="sql">a &lt; $1</code></li>))
       expect(queries.scan('<pre class="sql">').size).to eq(3)
       expect(queries).not_to match(/<details[^>]*\bopen\b/)
     end
@@ -210,11 +210,52 @@ RSpec.describe Quaack::Driver::Report do
       expect(queries).to include("<code>SELECT FROM WHERE &lt;b&gt; $1</code>")
     end
 
-    it "lists the conditions the test data never exercised, and whether a later test did" do
-      expect(queries).to include("<li><code>a &lt; $n</code></li>")
-      expect(queries).to include("No later test exercised them either")
-      payload["rewrites"].first["evidence"] = true
-      expect(section(render(payload), "queries")).to include("The LLM-written test data exercised them afterwards")
+    describe "the conditions QUAACK's made-up rows never checked (vacuity-guard)" do
+      let(:explained) do
+        esc("QUAACK tests a rewrite on rows it makes up, to check that it returns what your query returns. " \
+            "Those rows never made the conditions below, from your query&#39;s WHERE and JOIN clauses, both true " \
+            "and false, so a rewrite that changed one of them could still have passed.")
+      end
+
+      def conditions(atoms, covered)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "covered" => covered)
+        section(render(payload), "queries")[%r{<div class="untested">.*?</div>}m]
+      end
+
+      it "says what they are and why they matter, and lists each as SQL" do
+        out = conditions(["a < $1", "t.b IS NULL"], nil)
+        expect(out).to start_with(%(<div class="untested"><p>#{explained} No later test checked them.</p>))
+        expect(out).to include(%(<ul><li><code class="sql">a &lt; $1</code></li>) +
+                               %(<li><code class="sql">t.b IS NULL</code></li></ul>))
+      end
+
+      it "says the LLM's test data didn't check them either, when counterexamples ran and covered none" do
+        expect(conditions(["a < $1"], [])).to include(
+          esc("The test data the LLM wrote afterwards to break the rewrite didn't check them either.</p>")
+        )
+      end
+
+      it "marks those the LLM's test data checked afterwards, when it checked some" do
+        out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL"])
+        expect(out).to include(esc("The test data the LLM wrote afterwards to break the rewrite checked the ones " \
+                                   "marked “checked later”, but not the others.</p>"))
+        expect(out).to include(%(<li><code class="sql">a &lt; $1</code></li>) +
+                               %(<li><code class="sql">t.b IS NULL</code> (checked later)</li>))
+        expect(out).not_to include("<details")
+      end
+
+      it "collapses the list when the LLM's test data checked them all afterwards" do
+        out = conditions(["a < $1", "t.b IS NULL"], ["t.b IS NULL", "a < $1"])
+        expect(out).to include(esc("The test data the LLM wrote afterwards to break the rewrite checked all of " \
+                                   "them, so none is left unchecked.</p>"))
+        expect(out).to include(%(<details class="untested"><summary>The 2 conditions</summary><ul>) +
+                               %(<li><code class="sql">a &lt; $1</code> (checked later)</li>))
+      end
+
+      it "never lists a value that isn't a condition's SQL, such as an atom's index" do
+        out = conditions([0, "a < $1", { "shape" => "b = $2" }, 13], nil)
+        expect(out.scan(%r{<li>.*?</li>})).to eq([%(<li><code class="sql">a &lt; $1</code></li>)])
+      end
     end
 
     it "lists no untested conditions for a rewrite that has none, or wasn't tested" do
@@ -1123,7 +1164,8 @@ RSpec.describe Quaack::Driver::Report do
                        "measurements" => nil, "verdicts" => nil }],
         "rewrites" => [{ "rewrite" => z, "sql" => "SELECT #{z}", "source" => "rule", "rules" => [z, z],
                          "fate" => "rewrite_test_disproved", "scenario" => z, "rule" => z, "round" => z, "after" => z,
-                         "plan" => [node], "untested_atoms" => [{ "shape" => z }, z], "evidence" => false }],
+                         "plan" => [node], "untested_atoms" => [z, "a < $1"], "covered" => [z],
+                         "evidence" => false }],
         "indexes" => { "quaack_z" => { "ddl" => "CREATE INDEX ON #{z}", "size" => 8192,
                                        "covered_by" => { "name" => z, "size_bytes" => 1 },
                                        "makes_redundant" => [{ "name" => z, "size_bytes" => nil }] },
@@ -1172,7 +1214,8 @@ RSpec.describe Quaack::Driver::Report do
                      "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
                      %(<article class="rewrite" id="#{escaped}"><details class="query">\n<summary><h3>),
                      "QUAACK found something better than your query as it is: ",
-                     "<code>SELECT ", "rewrite rules ", "<li><code>", '<tr class="rank"><td class="num">1</td><td>',
+                     "<code>SELECT ", "rewrite rules ", "<li><code>", '<li><code class="sql">',
+                     '<tr class="rank"><td class="num">1</td><td>',
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
@@ -1188,7 +1231,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "escapes what the payload carries in the first report too" do
       payload["original_sql"] = "SELECT <b>orig</b>"
-      payload["rewrites"].first.merge!("sql" => "SELECT <b>rw</b>", "untested_atoms" => ["<b>atom</b>"])
+      payload["rewrites"].first.merge!("sql" => "SELECT <b>rw</b>", "untested_atoms" => ["<b>atom</b>"],
+                                       "covered" => ["<b>atom</b>"])
       payload["indexes"]["quaack_a"].merge!("ddl" => "CREATE INDEX ON <b>t</b>",
                                             "covered_by" => { "name" => "<b>idx</b>", "size_bytes" => 1 })
       payload["original_plan"].first["relation"] = "<b>rel</b>"
