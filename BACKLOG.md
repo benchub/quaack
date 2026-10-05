@@ -2424,20 +2424,7 @@ From the second review of 20261004-45.
 - **Design:** none (test infrastructure).
 - **Status:** todo
 
-### 20261004-57. Rename artifacts left in comments, and a dangling colon in DESIGN.md.
-
-Minor findings from the review of 20261004-15. These are all comment or prose fixes.
-
-- "for each literals literal set" appears in `measurement.rb:11`, `steps/baseline.rb:12`, `steps/index_search.rb:34`, `steps/index_test.rb:30` and `steps/result_comparison.rb:14`.
-- "Until literals literal sets … and redact redaction" appears in `single_candidate_test.rb:32`.
-- "the volatility VolatilityCheck" appears in `index_ddl_check.rb:64`, `insert_check.rb:66` and `rewrite_candidate_check.rb:58`.
-- DESIGN.md's rewrite-index-ideas intro ends with "…that plan-pruning started:" but prose follows now, not a list.
-- "the first first" appears in `scenarios/parts.rb:40`. This one predates the rename.
-
-- **Depends on:** none.
-- **Came from:** The review of 20261004-15, 2026-10-05.
-- **Design:** none.
-- **Status:** todo
+### 20261004-57. Rename artifacts left in comments, and a dangling colon in DESIGN.md. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default.
 
