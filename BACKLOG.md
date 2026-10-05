@@ -2304,3 +2304,14 @@ Minor findings from the first review of 20261004-21:
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Status:** todo (item 1 needs the user)
 
+### 20261004-28. Timeout checks on the enclave's clock: RunDiscipline and ArenaRunner.
+
+20261004-24 found that `ProductionComparison::Run#stream` decided whether a `QueryCanceled` was a statement timeout by checking the enclave's own clock against `timeout_ms`, with no margin. Postgres fires `statement_timeout` by the server's clock. Measured at 1 s, the enclave saw the cancel after as little as 1001.3 ms, so a slightly fast clock, from load or NTP drift between the jump server and the run server, turns a timeout into an uncaught error. `RunDiscipline.timed` and `ArenaRunner::Cancel` use the same zero-margin check.
+
+Fix them the way 20261004-24 fixed `Run`, or with a shared helper. Write a test first that simulates a slow enclave clock.
+
+- **Depends on:** 20261004-24.
+- **Came from:** The builder of 20261004-24.
+- **Design:** result-comparison, rewrite-test, minimax.
+- **Status:** todo
+
