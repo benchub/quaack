@@ -17,7 +17,8 @@ module Quaack
     #
     # A name is "Adjective Noun", three syllables in all: a one-syllable
     # adjective with a two-syllable noun, or the other way round. Each list
-    # gives every word's syllable count, counted by hand.
+    # gives every word's syllable count, counted by hand. Words people say
+    # with differing counts, such as owl ("ow-ul"), are left out.
     #
     # Every word reads well next to every word of the other list. Words
     # that make a crude, body, drug, or racial reading in some pair, such
@@ -48,15 +49,15 @@ module Quaack
         "agile" => 2, "amber" => 2, "azure" => 2, "balmy" => 2, "bashful" => 2, "bouncy" => 2, "breezy" => 2,
         "busy" => 2, "candid" => 2, "cheerful" => 2, "cheery" => 2, "chipper" => 2, "chirpy" => 2, "clever" => 2,
         "cosmic" => 2, "cozy" => 2, "crimson" => 2, "dainty" => 2, "dandy" => 2, "dapper" => 2, "dizzy" => 2,
-        "dreamy" => 2, "eager" => 2, "earnest" => 2, "fancy" => 2, "feisty" => 2, "fluffy" => 2, "frosty" => 2,
-        "fuzzy" => 2, "gentle" => 2, "giddy" => 2, "golden" => 2, "graceful" => 2, "happy" => 2, "hardy" => 2,
-        "hazy" => 2, "hearty" => 2, "helpful" => 2, "honest" => 2, "humble" => 2, "icy" => 2, "jaunty" => 2,
-        "jazzy" => 2, "jolly" => 2, "joyful" => 2, "jumpy" => 2, "lanky" => 2, "lively" => 2, "lofty" => 2,
-        "lucky" => 2, "mellow" => 2, "merry" => 2, "mighty" => 2, "minty" => 2, "misty" => 2, "modest" => 2,
-        "mossy" => 2, "nifty" => 2, "nimble" => 2, "noble" => 2, "peppy" => 2, "plucky" => 2, "polite" => 2,
-        "proper" => 2, "quirky" => 2, "ready" => 2, "rosy" => 2, "rustic" => 2, "rusty" => 2, "sandy" => 2,
-        "scarlet" => 2, "shiny" => 2, "silent" => 2, "silver" => 2, "simple" => 2, "sleepy" => 2, "snappy" => 2,
-        "snowy" => 2, "sparkly" => 2, "spotted" => 2, "sprightly" => 2, "steady" => 2, "sturdy" => 2, "sunlit" => 2,
+        "dreamy" => 2, "eager" => 2, "earnest" => 2, "fancy" => 2, "fearless" => 2, "feisty" => 2, "fluffy" => 2,
+        "frosty" => 2, "gentle" => 2, "giddy" => 2, "gleaming" => 2, "golden" => 2, "graceful" => 2, "happy" => 2,
+        "hardy" => 2, "hazy" => 2, "hearty" => 2, "helpful" => 2, "honest" => 2, "humble" => 2, "icy" => 2,
+        "jaunty" => 2, "jazzy" => 2, "jolly" => 2, "joyful" => 2, "jumpy" => 2, "lanky" => 2, "lively" => 2,
+        "lofty" => 2, "lucky" => 2, "mellow" => 2, "merry" => 2, "mighty" => 2, "minty" => 2, "misty" => 2,
+        "modest" => 2, "mossy" => 2, "nifty" => 2, "nimble" => 2, "noble" => 2, "peppy" => 2, "plucky" => 2,
+        "polite" => 2, "proper" => 2, "quirky" => 2, "ready" => 2, "rosy" => 2, "rustic" => 2, "rusty" => 2,
+        "sandy" => 2, "scarlet" => 2, "shiny" => 2, "silent" => 2, "silver" => 2, "simple" => 2, "sleepy" => 2,
+        "snappy" => 2, "snowy" => 2, "spotted" => 2, "sprightly" => 2, "steady" => 2, "sturdy" => 2, "sunlit" => 2,
         "sunny" => 2, "tawny" => 2, "tidy" => 2, "tiny" => 2, "toasty" => 2, "trusty" => 2, "upbeat" => 2,
         "velvet" => 2, "vivid" => 2, "wacky" => 2, "wily" => 2, "windy" => 2, "witty" => 2, "woolly" => 2, "zany" => 2,
         "zesty" => 2
@@ -64,16 +65,16 @@ module Quaack
 
       NOUNS = {
         "bay" => 1, "bean" => 1, "bear" => 1, "bee" => 1, "bell" => 1, "bloom" => 1, "boat" => 1, "book" => 1,
-        "breeze" => 1, "brook" => 1, "cake" => 1, "calf" => 1, "carp" => 1, "clam" => 1, "cliff" => 1, "cloud" => 1,
-        "clove" => 1, "coin" => 1, "colt" => 1, "cove" => 1, "crab" => 1, "crane" => 1, "creek" => 1, "crow" => 1,
-        "crown" => 1, "cub" => 1, "dale" => 1, "dawn" => 1, "deer" => 1, "dove" => 1, "drum" => 1, "duck" => 1,
-        "dusk" => 1, "elk" => 1, "elm" => 1, "fawn" => 1, "fern" => 1, "fig" => 1, "finch" => 1, "flute" => 1,
-        "fox" => 1, "frog" => 1, "glen" => 1, "goose" => 1, "grape" => 1, "gull" => 1, "hare" => 1, "harp" => 1,
-        "hawk" => 1, "hill" => 1, "horn" => 1, "jay" => 1, "kite" => 1, "koi" => 1, "lake" => 1, "lamb" => 1,
-        "lamp" => 1, "lark" => 1, "lime" => 1, "loon" => 1, "lynx" => 1, "mole" => 1, "moon" => 1, "moose" => 1,
-        "moss" => 1, "mouse" => 1, "newt" => 1, "oak" => 1, "oat" => 1, "owl" => 1, "peak" => 1, "pear" => 1,
-        "pie" => 1, "pike" => 1, "pine" => 1, "plum" => 1, "pond" => 1, "quill" => 1, "reed" => 1, "reef" => 1,
-        "rock" => 1, "sail" => 1, "scarf" => 1, "seal" => 1, "shell" => 1, "ship" => 1, "spoon" => 1, "squid" => 1,
+        "breeze" => 1, "brook" => 1, "cake" => 1, "calf" => 1, "carp" => 1, "cliff" => 1, "cloud" => 1, "clove" => 1,
+        "coin" => 1, "colt" => 1, "cove" => 1, "crab" => 1, "crane" => 1, "creek" => 1, "crow" => 1, "crown" => 1,
+        "cub" => 1, "dale" => 1, "deer" => 1, "dove" => 1, "drum" => 1, "duck" => 1, "dusk" => 1, "elk" => 1,
+        "elm" => 1, "fawn" => 1, "fern" => 1, "fig" => 1, "finch" => 1, "flute" => 1, "fox" => 1, "frog" => 1,
+        "glen" => 1, "goose" => 1, "grape" => 1, "gull" => 1, "hare" => 1, "harp" => 1, "hawk" => 1, "hill" => 1,
+        "horn" => 1, "jay" => 1, "kelp" => 1, "kite" => 1, "koi" => 1, "lake" => 1, "lamb" => 1, "lamp" => 1,
+        "lark" => 1, "lime" => 1, "loon" => 1, "lute" => 1, "lynx" => 1, "mole" => 1, "moon" => 1, "moose" => 1,
+        "moss" => 1, "mouse" => 1, "newt" => 1, "oak" => 1, "oat" => 1, "peak" => 1, "pear" => 1, "pie" => 1,
+        "pike" => 1, "pine" => 1, "plum" => 1, "pond" => 1, "quill" => 1, "reed" => 1, "reef" => 1, "rock" => 1,
+        "sail" => 1, "scarf" => 1, "seal" => 1, "shell" => 1, "ship" => 1, "sled" => 1, "spoon" => 1, "squid" => 1,
         "star" => 1, "stone" => 1, "stork" => 1, "swan" => 1, "tern" => 1, "toad" => 1, "trout" => 1, "vale" => 1,
         "whale" => 1, "wheat" => 1, "wren" => 1, "yak" => 1,
         "acorn" => 2, "almond" => 2, "anchor" => 2, "apple" => 2, "badger" => 2, "banjo" => 2, "basket" => 2,

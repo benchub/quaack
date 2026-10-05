@@ -51,13 +51,21 @@ RSpec.describe Quaack::Driver::RewriteNames do
     end
 
     # Words that read badly in some pair, such as "Pink Beaver", "Brown
-    # Monkey", "Red Rocket", "Golden Rain", or "Blue Crystal", or badly
-    # alone, such as "dusky" for skin or "wee" for urine.
+    # Monkey", "Red Rocket", "Golden Rain", "Blue Crystal", "Fuzzy Duck",
+    # "Fluffy Clam", or "Golden Dawn", or badly alone, such as "dusky" for
+    # skin or "wee" for urine.
     let(:dropped) do
       {
-        adjectives: %w[ample dusky huge perky pink plump wee],
-        nouns: %w[beaver button cherry crystal donkey melon monkey muffin peach rain rocket seed snowflake waffle]
+        adjectives: %w[ample dusky fuzzy huge perky pink plump wee],
+        nouns: %w[beaver button cherry clam crystal dawn donkey melon monkey muffin peach rain rocket seed snowflake
+                  waffle]
       }
+    end
+
+    it "holds none of the words people say with differing syllable counts" do
+      # "owl" as "ow-ul", and "sparkly" as "spar-kuh-lee".
+      all = described_class::ADJECTIVES.merge(described_class::NOUNS)
+      expect(all.keys & %w[owl sparkly]).to eq([])
     end
 
     it "holds none of the words that read badly in a pair" do
@@ -71,9 +79,10 @@ RSpec.describe Quaack::Driver::RewriteNames do
     end
 
     it "makes none of the pairs that read badly, in all the names there are" do
-      bad = ["Pink Beaver", "Eager Beaver", "Brown Monkey", "Tan Monkey", "Pink Monkey", "Red Rocket",
-             "Golden Rain", "Blue Crystal", "Smart Donkey", "Huge Melon", "Ripe Cherry", "Perky Peach",
-             "Pink Muffin", "Golden Seed", "Ample Cake", "Blue Waffle"]
+      bad = ["Pink Beaver", "Brown Monkey", "Tan Monkey", "Pink Monkey", "Red Rocket", "Golden Rain",
+             "Blue Crystal", "Smart Donkey", "Huge Melon", "Ripe Cherry", "Perky Peach", "Pink Muffin",
+             "Golden Seed", "Ample Cake", "Blue Waffle", "Fuzzy Clam", "Woolly Clam", "Fluffy Clam", "Fuzzy Duck",
+             "Fuzzy Plum", "Golden Dawn"]
       names = described_class.names("20261004T000000Z-0a1b2c3d", described_class.size)
       expect(names & bad).to eq([])
     end
@@ -99,8 +108,8 @@ RSpec.describe Quaack::Driver::RewriteNames do
 
     it "always gives the same name for a run and number, in any process" do
       expect(described_class.name("20260926T010203Z-0123abcd", 1)).to eq("Dreamy Wren")
-      expect(described_class.name("20260926T010203Z-0123abcd", 2)).to eq("Tawny Cove")
-      expect(described_class.name("RUN-1", 1)).to eq("Vivid Colt")
+      expect(described_class.name("20260926T010203Z-0123abcd", 2)).to eq("Tawny Crab")
+      expect(described_class.name("RUN-1", 1)).to eq("Vivid Cove")
     end
 
     it "gives a rewrite's name without regard to how many rewrites there are" do
@@ -128,7 +137,7 @@ RSpec.describe Quaack::Driver::RewriteNames do
 
   describe ".label" do
     it "gives a rewrite's store name as Rewrite and its name" do
-      expect(described_class.label("RUN-1", "rewrite_1")).to eq("Rewrite Vivid Colt")
+      expect(described_class.label("RUN-1", "rewrite_1")).to eq("Rewrite Vivid Cove")
     end
 
     it "gives the number past the last name there is" do
