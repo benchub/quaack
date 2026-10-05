@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "arguments"
 require_relative "version"
 require_relative "setup_command"
 
@@ -42,7 +43,7 @@ module Quaack
           @stdout.print "quaack #{VERSION}\n"
           0
         else
-          subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
+          Arguments.not_utf8(argv, USAGE, @stderr) || subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
         end
       end
 
