@@ -266,6 +266,124 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     expect(closing("index-build")).to eq(["No index to build"])
   end
 
+  # Each enclave call an LLM step makes gets a note of its own, so the
+  # clock under an LLM ask's note never covers an enclave call.
+  describe "notes for enclave calls under an LLM step" do
+    let(:name) { Quaack::Driver::RewriteNames.label("RUN", "rewrite_1") }
+
+    # The step's lines, from its opening line up to its closing line,
+    # without "quaack: [n/t] ".
+    def lines_of(step)
+      lines = stderr.string.lines.map { it.chomp.sub(%r{\Aquaack: \[\d+/\d+\] }, "") }
+      first = lines.index { it.end_with?("(#{step})") }
+      last = lines.index { it.match?(/ in \d+s \(#{Regexp.escape(step)}\)\z/) }
+      lines[first...last]
+    end
+
+    it "notes counterexample-payload and each counterexample-round under counterexamples" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push(true)
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+
+      run
+
+      round = "#{name}: Loading the LLM's rows and comparing results (counterexamples)"
+      again = "Asking the LLM again, for different rows (llm-counterexamples)"
+      expect(lines_of("rewrite-correctness"))
+        .to eq(["Testing each rewrite for wrong results (rewrite-correctness)",
+                "#{name}: Testing the rewrite on generated rows (rewrite-test)",
+                "#{name}: Asking the LLM for rows that could break the rewrite (counterexamples)",
+                "#{name}: Reading the rewrite's shape for the LLM (counterexamples)",
+                "Asking the LLM for rows that could break the rewrite (llm-counterexamples)",
+                round, again, round, again, round])
+    end
+
+    it "notes index-payload and index-test under llm-index-ideas, and index-feedback and index-test under " \
+       "llm-index-refine" do
+      entries["index_generated_original"] = false
+      fake.reply("llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
+      fake.reply("llm-index-refine", { "indexes" => ["CREATE INDEX ON public.t (b)"] })
+      replies["index-test"] = outcomes("index_outcome", { "outcome" => "accepted" })
+      replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
+                                     "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
+
+      run
+
+      expect(lines_of("llm-index-ideas"))
+        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+                "Reading the query's shape for the LLM (llm-index-ideas)",
+                "Asking the LLM for index ideas (llm-index-ideas)",
+                "Testing the LLM's index ideas (llm-index-ideas)"])
+      expect(lines_of("llm-index-refine"))
+        .to eq(["Asking the LLM to improve its index ideas (llm-index-refine)",
+                "Reading how the LLM's index ideas did (llm-index-refine)",
+                "Asking the LLM (llm-index-refine)",
+                "Testing the LLM's revised index ideas (llm-index-refine)"])
+    end
+
+    it "notes index-payload under llm-index-refine when llm-index-ideas was already done" do
+      replies["index-feedback"] = [{ "type" => "index_feedback", "revise" => true, "refined" => false,
+                                     "candidates" => [{ "shortfall" => "unused" }], "baseline" => {} }]
+      fake.reply("llm-index-refine", { "indexes" => [] })
+
+      run
+
+      expect(lines_of("llm-index-refine"))
+        .to eq(["Asking the LLM to improve its index ideas (llm-index-refine)",
+                "Reading how the LLM's index ideas did (llm-index-refine)",
+                "Reading the query's shape for the LLM (llm-index-refine)",
+                "Asking the LLM (llm-index-refine)",
+                "Testing the LLM's revised index ideas (llm-index-refine)"])
+    end
+
+    it "notes the index-test that records an llm-index-ideas with no ideas" do
+      entries["index_generated_original"] = false
+      fake.reply("llm-index-ideas", { "indexes" => [] })
+
+      run
+
+      expect(lines_of("llm-index-ideas"))
+        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+                "Reading the query's shape for the LLM (llm-index-ideas)",
+                "Asking the LLM for index ideas (llm-index-ideas)",
+                "Recording that the LLM gave no index ideas (llm-index-ideas)"])
+    end
+
+    it "notes rewrite-check under llm-rewrites and operator-rewrites" do
+      entries.merge!("rewrites_generated" => false, "operator_rewrites_checked" => false)
+      fake.reply("llm-rewrites",
+                 { "rewrites" => [{ "sql" => "SELECT 1", "transformation" => "t", "assumptions" => [] }] })
+      fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+      run(rewrites: ["SELECT 4"])
+
+      expect(lines_of("llm-rewrites"))
+        .to eq(["Asking the LLM for rewrites of the query (llm-rewrites)", "Asking the LLM (llm-rewrites)",
+                "Checking the LLM's rewrites (llm-rewrites)"])
+      expect(lines_of("operator-rewrites"))
+        .to eq(["Checking your own rewrites (operator-rewrites)", "Asking the LLM (operator-rewrites)",
+                "Checking your rewrites against what the LLM says they assume (operator-rewrites)"])
+    end
+
+    it "notes each rewrite's enclave calls under its rewrite-llm-index-ideas and rewrite-llm-index-refine" do
+      entries.merge!(rewrite(1, rewrite_index_ideas: true, index_llm_ranked_rewrite: true))
+      fake.reply("rewrite-llm-index-ideas", { "indexes" => ["CREATE INDEX ON public.t (a)"] })
+      replies["index-test"] = outcomes("index_outcome", { "outcome" => "accepted" })
+
+      run
+
+      expect(lines_of("rewrite-index-ideas"))
+        .to eq(["Asking the LLM for index ideas for each rewrite (rewrite-index-ideas)",
+                "#{name}: Asking the LLM for index ideas the mechanical search missed (rewrite-llm-index-ideas)",
+                "#{name}: Reading the rewrite's shape for the LLM (rewrite-llm-index-ideas)",
+                "Asking the LLM for index ideas (rewrite-llm-index-ideas)",
+                "#{name}: Testing the LLM's index ideas (rewrite-llm-index-ideas)",
+                "#{name}: Asking the LLM to improve its index ideas (rewrite-llm-index-refine)",
+                "#{name}: Reading how the LLM's index ideas did (rewrite-llm-index-refine)",
+                "#{name}: Already done, skipping: Ranking the index ideas (rewrite-index-rerank)"])
+    end
+  end
+
   describe "trust boundary" do
     let(:planted) do
       { "rule" => PROGRESS_SENTINEL, "covered_by" => PROGRESS_SENTINEL, "rewrite" => PROGRESS_SENTINEL,

@@ -23,8 +23,9 @@ module Quaack
     # text.
     #
     # note prints a line under the current step, such as an LLM ask, and
-    # within(prefix) gives the same interface for a step's sub-steps, as
-    # notes.
+    # step_note(name, text) one that ends with the step's ID, such as an
+    # enclave call the step makes between LLM asks. within(prefix) gives the
+    # same interface for a step's sub-steps, as notes.
     #
     # When io is a terminal, the latest line printed while a step runs,
     # the step's own or a note, carries the step's time, counting up in
@@ -68,6 +69,8 @@ module Quaack
       end
 
       def note(text) = say(text)
+
+      def step_note(name, text) = say("#{text} (#{name})")
 
       def within(prefix) = Within.new(self, prefix)
 
@@ -208,6 +211,8 @@ module Quaack
 
         def note(text) = @progress.note(text)
 
+        def step_note(name, text) = @progress.note("#{@prefix}: #{text} (#{name})")
+
         def within(prefix) = Within.new(@progress, "#{@prefix}, #{prefix}")
       end
 
@@ -220,6 +225,8 @@ module Quaack
         def skip(*) = nil
 
         def note(*) = nil
+
+        def step_note(*) = nil
 
         def within(*) = self
       end
