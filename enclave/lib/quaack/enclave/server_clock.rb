@@ -36,10 +36,16 @@ module Quaack
       end
 
       # After a cancel: rolls back to mark's savepoint and says whether
-      # timeout_ms has passed on the server's clock since started. The
-      # transaction is usable again afterwards.
+      # timeout_ms has passed on the server's clock since started. When it
+      # reads the clock, the transaction is usable again afterwards; the
+      # caller rolls it back either way. If the clock can't be read,
+      # the cancel can't be shown to be the timeout, so it's false, and the
+      # caller raises the cancel itself, not the read's error. ArenaRunner
+      # does the same, reporting statement_canceled (see ArenaRunner::Cancel).
       def timed_out?(connection, started, timeout_ms)
         ms(connection, "ROLLBACK TO SAVEPOINT #{SAVEPOINT};") - started >= timeout_ms
+      rescue StandardError
+        false
       end
 
       def ms(connection, prefix)

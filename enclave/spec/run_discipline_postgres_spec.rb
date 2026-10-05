@@ -83,6 +83,17 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  # A cancel is the timeout only if the server's clock, read again after
+  # it, shows the timeout has passed. If that read fails, the cancel isn't
+  # counted as the timeout, and it's the cancel that's raised, not the
+  # read's error, as ArenaRunner reports it as statement_canceled.
+  it "raises the cancel, not the read's error, when the server's clock can't be read after it" do
+    clockless = clockless_after_cancel(conn, "SENTINEL_CLOCK_READ")
+    expect { run("SELECT pg_sleep(2)", timeout_ms: 100, connection: clockless) }
+      .to raise_error(PG::QueryCanceled) { expect(it.message).not_to include("SENTINEL_CLOCK_READ") }
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "refuses SQL holding more than one statement, so a COMMIT can't end the READ ONLY transaction" do
     conn.exec("CREATE TABLE rd_m (x int)")
     expect { run("COMMIT; INSERT INTO rd_m VALUES (1)") }.to raise_error(PG::SyntaxError, /multiple commands/)

@@ -153,6 +153,15 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  it "raises the cancel, not the read's error, when the server's clock can't be read after it" do
+    clockless = clockless_after_cancel(conn, "SENTINEL_CLOCK_READ")
+    expect do
+      described_class.compare(connection: clockless, original: "SELECT 1", candidate: "SELECT 1 FROM pg_sleep(2)",
+                              params: [], timeout_ms: 500)
+    end.to raise_error(PG::QueryCanceled) { expect(it.message).not_to include("SENTINEL_CLOCK_READ") }
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "runs each query read-only, so a candidate can't write" do
     conn.exec("CREATE SEQUENCE read_only_probe")
     expect { compare("SELECT 1::int8", "SELECT nextval('read_only_probe')") }

@@ -27,7 +27,8 @@ module Quaack
         # a query's timeout with the setting as the query starts. It then
         # rolls that transaction back too, leaving the connection idle and the
         # session's setting as it was. If the clock can't be read, the cancel
-        # isn't counted as the timeout.
+        # isn't counted as the timeout, as in RunDiscipline (see
+        # ServerClock.timed_out?).
         def rule(connection, started, timeout_ms)
           return :statement_canceled unless started
 
