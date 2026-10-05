@@ -2380,3 +2380,84 @@ These are review minors from 20261004-41.
 - **Came from:** The review of 20261004-41.
 - **Design:** rewrite-test.
 - **Status:** todo
+
+### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section.
+
+Two parts of the readable report are too long to scan.
+
+1. **The queries section at the top.** Keep its content, but put each query's text behind a collapsed `<details>`, so the reader sees the list of rewrites and how they fared without scrolling past every query.
+2. **"Measured, and not ranked."**
+   - Collapse it by default, behind a summary like "Things QUAACK tried that didn't pan out".
+   - Render its content as a table instead of a wall of sentences. Use one row per rewrite or index, with columns for what it was, who proposed it, and why it didn't make the cut.
+
+The report must still read correctly with JavaScript off: use `<details>`/`<summary>`, not scripts.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** todo
+
+### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably.
+
+Under some rewrites the report says: "The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. The LLM-written test data exercised them afterwards." A bullet list follows, sometimes ending in a bullet that's a lone number. The user couldn't tell what it meant.
+
+- Reword the note so a reader who doesn't know rewrite-test or counterexamples understands it. It should say:
+  - the rewrite's conditions (WHERE and JOIN predicates) that QUAACK's generated rows never made both true and false;
+  - why that matters: a rewrite that changed one of them could still have passed;
+  - whether a later test covered them.
+- Render each condition as a readable predicate, such as `t.col = $1`, styled as SQL (see 20261004-53). Today `Rewrites#atoms` joins a Hash's values with spaces.
+- Find out where the lone-number bullet comes from, such as a value or position field joined in by `atoms`, and fix it.
+- When the later test did cover them, consider collapsing the list, since nothing is left to worry about.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** todo
+
+### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse".
+
+1. **The ranking table.** Add a row for the user's query as it is, with the same measurements as the ranked candidates, so the relative improvement is visible at a glance. Mark the row clearly as the baseline, and don't give it a rank.
+2. **The "Against your query" column** in each ranked candidate's performance table. Replace "better" and "no worse" with numbers:
+   - the change in blocks read against the user's query on the same values, such as "−52%" or "1,668 vs 3,454";
+   - keep a short word only where no number exists.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** todo
+
+### 20261004-53. Report: style inline SQL so it stands out from the prose.
+
+The report puts raw SQL inside sentences, such as "Rewrite Blithe Mango with a new index on cluster44_shard_7236.assignments (context_id) INCLUDE (id, type, muted) WHERE context_type::text = 'Course'::text AND workflow_state::text <> 'deleted'::text read 1,668 blocks…". Wrap every piece of SQL the report embeds in an element such as `<code class="sql">`: index definitions, predicates, table and column names, and query text. Style it in the template's CSS with a monospace font and a subtle background, so it reads as distinct from the text around it. Long index DDL should wrap without overflowing the page.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** todo
+
+### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table.
+
+That section shows each plan as a flat bullet list, which loses the plan's shape. Render each plan as a table in the style of explain.depesz.com:
+- one row per node, indented by depth;
+- columns for node type, relation and index, estimated vs actual rows, and blocks read, where the payload carries them;
+- the nodes that differ between the winner and the user's query highlighted.
+
+If the payload's plan nodes don't carry their depth or parent, add that, inside the trust boundary 20261003-5 sets: a node sends only its type, relation, index name, row counts, and now its depth.
+
+- **Depends on:** none. Coordinate with 20261003-5, which also changes the plan payload.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** todo
+
+### 20261004-55. Report: draw the burndown as an SVG funnel.
+
+Render each burndown, rewrites and indexes, as an inline SVG sales-funnel graphic, built by the driver with no external assets or scripts:
+- one band per stage, narrowing as candidates drop out;
+- each band labeled with the stage, the count in, and the count out, with the drop-off reason on hover (`<title>`) or beside it.
+
+Keep the existing burndown table under it, for exact numbers and for readers without SVG. A stage whose counts read "not recorded" must show as unknown in the funnel, never as zero.
+
+- **Depends on:** none, but the funnel is most useful after 20261001-19 and -20 record every stage.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report, burndown.
+- **Status:** todo
