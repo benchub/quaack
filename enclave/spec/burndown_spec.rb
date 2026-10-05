@@ -397,6 +397,17 @@ RSpec.describe Quaack::Enclave::Burndown do
       )
     end
 
+    it "counts DDL refused before the Dedupe as the LLM's, dropped by rule, and keeps extra" do
+      described_class.record_llm_round(store, stage: "llm-index-refine", search: :original, dedupe:, since:, report:,
+                                              refused: { unqualified_table: 2, too_many: 1 },
+                                              extra: { fell_short: 3 })
+
+      expect(described_class.read(store).dig("stages", "llm-index-refine", "original")).to eq(
+        "in" => 0, "added" => { "llm" => 3 }, "dropped" => { "unqualified_table" => 2, "too_many" => 1 },
+        "set_aside" => 0, "out" => 0, "extra" => { "fell_short" => 3 }
+      )
+    end
+
     it "refuses any stage but llm-index-ideas or llm-index-refine" do
       round(stage: "llm-index-refine")
       %w[index-dedupe index-test

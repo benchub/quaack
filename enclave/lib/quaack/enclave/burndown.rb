@@ -145,22 +145,29 @@ module Quaack
       # holds the mechanical proposals, and then tests what's left in index-test.
       # The two are a chain, so the round's record covers both:
       #
-      # - in is 0, and added is { llm: the candidates the round filtered },
-      #   including any replacements asked for in llm-index-ideas.
-      # - dropped holds the round's index-dedupe reasons and its index-test ones.
+      # - in is 0, and added is { llm: the candidates the round filtered,
+      #   and the ones it refused before filtering }.
+      # - dropped holds the refused ones by rule, and the round's index-dedupe
+      #   reasons and its index-test ones.
       # - set_aside is what the round's filtering set aside.
       # - out is what the planner used, from report.
+      # - extra is the caller's, such as how many candidates fell short
+      #   before llm-index-refine.
+      #
+      # refused is { rule: count } for the LLM's DDL that never reached the
+      # Dedupe, such as too_many or unqualified_table (see GeneratorThree).
       #
       # since is the counts that the search's last record_dedupe or
       # record_llm_round returned, so only this round's filtering counts.
       # report must test exactly the candidates this round's filtering
       # kept, or the record won't add up and it's refused. It returns the
       # search's counts, for the since of the next round.
-      def record_llm_round(store, stage:, search:, dedupe:, since:, report:) # rubocop:disable Metrics/ParameterLists
+      def record_llm_round(store, stage:, search:, dedupe:, since:, report:, refused: {}, extra: {}) # rubocop:disable Metrics/ParameterLists
         raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
-        add(store, [[stage, search, Adapters.round_counts(counts, Adapters.since(since), report)]],
+        round = Adapters.round_counts(counts, Adapters.since(since), report)
+        add(store, [[stage, search, Adapters.with_refused(round, refused).merge(extra:)]],
             Adapters.tested_totals(report))
         counts
       end
@@ -222,6 +229,14 @@ module Quaack
           { in: 0, added: { llm: counts[:in] - since[:in] },
             dropped: drops_since(counts[:dropped], since[:dropped]).merge(tested[:dropped]),
             set_aside: counts[:set_aside] - since[:set_aside], out: tested[:out] }
+        end
+
+        # The round's counts with the refused DDL added by the LLM and
+        # dropped by rule.
+        def with_refused(round, refused)
+          refused = Input.breakdown(refused, "dropped")
+          round.merge(added: { llm: round[:added][:llm] + refused.values.sum },
+                      dropped: round[:dropped].merge(refused.transform_keys(&:to_sym)))
         end
 
         # Each reason's drops since the earlier ones, leaving out a reason

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require_relative "../burndown"
 require_relative "../generator_three"
+require_relative "../index_burndown"
 require_relative "../index_store"
 require_relative "../literal_set"
 require_relative "../pii_classification"
@@ -42,6 +44,12 @@ module Quaack
       # true, even if nothing survived. Any other round is refused with
       # index_test_unknown_round.
       #
+      # Before it writes anything else, it records the call's round in the
+      # burndown (IndexBurndown.record_round), with its since taken from the
+      # stored Dedupe in this process, so a replacement call counts only its
+      # own DDL. Each call adds to its round's record, so a call that dies
+      # after recording and is asked again counts both asks.
+      #
       # It sends one index_outcome per DDL (see GeneratorThree), never the
       # DDL or a plan.
       module IndexTest
@@ -57,16 +65,20 @@ module Quaack
           ddls = check(store, search, input, options)
           entry = store.read("index_search_#{search}")
           connection = Enclave::RunServer.connect(store, :racetrack)
-          result, report, dedupe = run(store, entry, ddls, connection)
-          save(store, search, updated(entry, dedupe, report, LiteralSet.load(store).sets, options["round"]),
-               options["round"])
-          GeneratorThree.messages(result)
+          tested = run(store, entry, ddls, connection)
+          save(store, search, entry, tested, options["round"])
+          GeneratorThree.messages(tested[2])
         ensure
           connection&.close
         end
 
-        def save(store, search, entry, round)
-          store.write("index_search_#{search}", entry)
+        # Records the round in the burndown, then rewrites the search's entry
+        # and, without a round, writes the index_generated_<search> marker.
+        # tested is run's.
+        def save(store, search, entry, tested, round)
+          IndexBurndown.record_round(store, search.to_sym, round, entry:, tested:)
+          _, dedupe, _, report = tested
+          store.write("index_search_#{search}", updated(entry, dedupe, report, LiteralSet.load(store).sets, round))
           store.write("index_generated_#{search}", true) unless round
         end
 
@@ -81,12 +93,16 @@ module Quaack
           ddls
         end
 
+        # Filters and tests the DDL. Returns [since, dedupe, result, report]:
+        # the stored Dedupe's counts before filtering, the Dedupe after,
+        # GeneratorThree's result, and the SingleCandidateTest report.
         def run(store, entry, ddls, connection)
           dedupe = IndexStore.dedupe(entry["dedupe"], statistics: PlannerStatistics.load(store).statistics,
                                                       low_cardinality: PiiClassification.load(store).low_cardinality)
+          since = Burndown.dedupe_counts(dedupe)
           result = GeneratorThree.filter(ddls, dedupe:, tables: tables(store),
                                                settings: store.read("plan")[0]["Settings"], connection:)
-          [result, test(store, connection, result.survivors), dedupe]
+          [since, dedupe, result, test(store, connection, result.survivors)]
         end
 
         def tables(store) = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
