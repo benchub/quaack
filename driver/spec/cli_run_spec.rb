@@ -293,6 +293,21 @@ RSpec.describe "quaack run" do
     )
   end
 
+  # Task 20261004-37: quaack run reads the port from the same record.
+  it "gives psql the port quaack start recorded when a setup step can't connect to production" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1", port: "6543")
+    entries.merge!(setup_done.transform_values { false })
+    failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory",
+                                                            rule: "production_connection_failed", exit_status: 70)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to match(
+      [1, include("couldn't connect to production at prod-1, port 6543. ") &
+          include("Test it with `ssh jump-1 'psql -h prod-1 -p 6543 -c ")]
+    )
+  end
+
   it "names the jump host when a step can't connect to the run server" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback",
                                                                  rule: "run_server_connection_failed", exit_status: 70)

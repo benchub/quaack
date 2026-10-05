@@ -2,12 +2,13 @@
 
 require "fileutils"
 require "json"
+require "quaack/protocol/port"
 
 module Quaack
   module Driver
     # The laptop's record of which jump server holds each run, and the
-    # production server the operator gave for it, one file per run in
-    # ~/.quaack/runs, written by `quaack start`.
+    # production server and port the operator gave for it, one file per run
+    # in ~/.quaack/runs, written by `quaack start`.
     class Runs
       # The enclave's run ID form (Enclave::Store::RUN_ID), checked here too,
       # since it becomes a file name.
@@ -21,11 +22,11 @@ module Quaack
         @dir = File.join(home, ".quaack", "runs")
       end
 
-      def record(run_id, host, server: nil)
+      def record(run_id, host, server: nil, port: nil)
         raise ArgumentError, "not a run ID" unless RUN_ID.match?(run_id)
 
         FileUtils.mkdir_p(@dir, mode: 0o700)
-        File.write(path(run_id), JSON.generate({ "jump_host" => host, "server" => server }.compact))
+        File.write(path(run_id), JSON.generate({ "jump_host" => host, "server" => server, "port" => port }.compact))
       end
 
       # The run's jump host, or nil if this laptop never started it.
@@ -38,10 +39,20 @@ module Quaack
         server if server.is_a?(String) && SERVER.match?(server)
       end
 
-      # The run's jump host and production server, as jump: and server:, for
-      # a connection failure's note (EnclaveError#rule_with_note), or nil if
-      # this laptop never started it.
-      def where(run_id) = (jump = host(run_id)) && { jump:, server: server(run_id) }
+      # The run's production port, the quaack start --port the operator
+      # gave, or nil if they gave none, an older driver didn't record it, or
+      # it isn't a port (Protocol::Port), checked again on read, since a
+      # note shows it.
+      def port(run_id)
+        port = read(run_id)&.fetch("port", nil)
+        port if Protocol::Port.valid?(port)
+      end
+
+      # The run's jump host, production server and port, as jump:, server:
+      # and port:, for a connection failure's note
+      # (EnclaveError#rule_with_note), or nil if this laptop never started
+      # it.
+      def where(run_id) = (jump = host(run_id)) && { jump:, server: server(run_id), port: port(run_id) }
 
       private
 

@@ -52,8 +52,7 @@ module Quaack
       LIBPQ_SETUP = "your libpq setup on the jump server: PG* environment variables, ~/.pg_service.conf with " \
                     "PGSERVICE, and ~/.pgpass. A non-interactive ssh session may not load the shell rc file " \
                     "that sets them."
-      PRODUCTION_SETUP = "It gives libpq only that host, and the port when you gave `quaack start --port`. The " \
-                         "port otherwise, and the user, database, and password, come from #{LIBPQ_SETUP}".freeze
+      UNKNOWN_SERVER = "the production server you gave quaack start"
       RUN_SERVER_SETUP = "Its host, port, and databases are the ones run-server was given: the --host, --port, " \
                          "--racetrack-db, and --arena-db you gave quaack setup or quaack run, and your " \
                          "run_server_command's for any you didn't. The user and password come from " \
@@ -64,8 +63,8 @@ module Quaack
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
-      # rule_with_note, with next_step and where (jump: and server:), or any
-      # other error's message.
+      # rule_with_note, with next_step and where (jump:, server: and port:),
+      # or any other error's message.
       def self.shown(error, next_step, **where)
         error.is_a?(self) ? error.rule_with_note(next_step:, **where) : error.message
       end
@@ -106,13 +105,14 @@ module Quaack
       #
       # production_connection_failed and run_server_connection_failed get
       # where the connection's settings come from, how to test it from jump,
-      # the jump host, and what to do next. production's names server, the
-      # production server the operator gave quaack start, when the caller
-      # knows it. Both come from the laptop's own record of the run, never
+      # the jump host, and what to do next. production's names server and
+      # port, the production server and port the operator gave quaack
+      # start, when the caller knows them. All come from the laptop's own
+      # record of the run, never
       # from the enclave, whose error line holds only the rule: libpq's
       # message can name the user or the database.
-      def rule_with_note(next_step: "resume the run", jump: nil, server: nil)
-        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server)}" if to_go_on?
+      def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil)
+        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server, port)}" if to_go_on?
         return "#{rule}: #{note}" if note
 
         return rule unless rule == "query_unparsable"
@@ -128,22 +128,26 @@ module Quaack
       # The rules whose note ends with what to do next.
       def to_go_on? = %w[ssh_failed incomplete production_connection_failed run_server_connection_failed].include?(rule)
 
-      def to_go_on(next_step, jump, server)
+      def to_go_on(next_step, jump, server, port)
         case rule
         when "ssh_failed" then "#{SSH_FAILED}, then #{next_step}"
         when "incomplete" then "#{ended}. To go on, #{next_step}"
-        when "production_connection_failed" then production_failed(jump, server, next_step)
+        when "production_connection_failed" then production_failed(jump, server, port, next_step)
         else run_server_failed(jump, next_step)
         end
       end
 
-      def production_failed(jump, server, next_step)
-        "couldn't connect to #{server ? "production at #{server}" : "the production server you gave quaack start"}. " \
-          "#{PRODUCTION_SETUP} Test it with `ssh #{jump} 'psql -h #{server || "<server>"} -c \"select 1\"'`, " \
-          "adding -p <n> if you gave quaack start --port. If production listens on another port than your libpq " \
-          "setup gives, start a new run with `quaack start --port <n>`. Otherwise fix your libpq setup, then " \
-          "#{next_step}"
+      # The port is in the test command only when the run recorded one.
+      def production_failed(jump, server, port, next_step)
+        "couldn't connect to #{tried(server, port)}. QUAACK gives libpq only that host#{" and port" if port}. The " \
+          "#{"port, " unless port}user, database, and password come from #{LIBPQ_SETUP} Test it with `ssh #{jump} " \
+          "'psql -h #{server || "<server>"}#{" -p #{port}" if port} -c \"select 1\"'`. If production listens on " \
+          "another port#{" than your libpq setup gives" unless port}, start a new run with `quaack start --port " \
+          "<n>`. Otherwise fix your libpq setup, then #{next_step}"
       end
+
+      # The production server and port the note names.
+      def tried(server, port) = "#{server ? "production at #{server}" : UNKNOWN_SERVER}#{", port #{port}" if port}"
 
       def run_server_failed(jump, next_step)
         "couldn't connect to the run server. #{RUN_SERVER_SETUP} Test it with `ssh #{jump} 'psql -h <host> " \
