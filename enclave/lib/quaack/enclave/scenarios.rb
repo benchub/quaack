@@ -14,6 +14,7 @@ require_relative "scenarios/plan"
 require_relative "scenarios/reads"
 require_relative "scenarios/retries"
 require_relative "scenarios/row_set"
+require_relative "scenarios/slots"
 require_relative "scenarios/ties"
 require_relative "scenarios/topology"
 require_relative "scenarios/values"
@@ -195,10 +196,7 @@ module Quaack
         end
 
         def build(variants = {})
-          @picker = Picker.new(@pools, probes, @checks, variants)
-          @identities = {}
-          @dropped = 0
-          @spills = {}
+          start(variants)
           ties = tie_groups
           Plan.new(@topology, @atoms, @pools.keys).scenarios.to_h do |name, groups|
             first, *rest = fill(groups, TIE_SCENARIOS.include?(name) ? ties : [])
@@ -208,6 +206,14 @@ module Quaack
         end
 
         private
+
+        def start(variants)
+          @picker = Picker.new(@pools, probes, @checks, variants)
+          @identities = {}
+          @built = {}
+          @dropped = 0
+          @spills = {}
+        end
 
         def refuse_user_functions
           raise Error, :expression_unique_index if @schema.tables.any? { |t| @schema.constraints(t).user_function }
@@ -240,10 +246,15 @@ module Quaack
           end
         end
 
-        # The group's rows, or nil when a near miss has no value.
+        # The group's rows, or nil when a near miss has no value. A group
+        # builds the same rows every time, and Parts tries a colliding
+        # group's retries against every fixture, so each is built once a
+        # build.
         def build_group(group)
-          rows = @topology.order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
-          rows unless rows.include?(:skip)
+          @built.fetch(group) do
+            rows = @topology.order.select { |t| group.tables.include?(t) }.map { |table| row(table, group) }
+            @built[group] = (rows.freeze unless rows.include?(:skip))
+          end
         end
 
         def row(table, group)
@@ -263,7 +274,7 @@ module Quaack
           return nil if @topology.null_cut?(table, col.name, group)
 
           slot = @topology.slot(table, col.name)
-          atoms = slot_atoms(slot)
+          atoms = slots.atoms(slot)
           return nil if nulled?(group, col, keyed || atoms.any?)
 
           bound_value(slot, @picker.satisfiable(atoms), group, table, col)
@@ -273,7 +284,7 @@ module Quaack
         # or a free one.
         def bound_value(slot, atoms, group, table, col)
           near = atoms.include?(group.near) ? group.near : nil
-          return @picker.pick(atoms, slot_columns(slot), near, group.mode, group.shift) if atoms.any?
+          return @picker.pick(atoms, slots.columns(slot), near, group.mode, group.shift) if atoms.any?
           return key_value(slot, group, table, col.name) if @topology.keyed?(table, col.name)
 
           free_values.value(table, col, group.mode)
@@ -285,23 +296,18 @@ module Quaack
         end
 
         # Whether an atom some stored value satisfies fills the slot.
-        def pooled?(slot) = @picker.satisfiable(slot_atoms(slot)).any?
+        def pooled?(slot) = @picker.satisfiable(slots.atoms(slot)).any?
 
         def generated?(col, keyed) = col.default == "generated" || (col.default == "identity" && !keyed)
 
         def nulled?(group, col, constrained) = group.mode == :nulls && col.nullable && constrained
 
-        def slot_atoms(slot)
-          members = @topology.members(slot)
-          @pools.keys.select { |i| members.include?([@pools[i].column.table, @pools[i].column.name]) }
-        end
-
-        def slot_columns(slot) = @topology.members(slot).map { |t, n| [t, @schema.column(t, n)] }
+        def slots = @slots ||= Slots.new(@topology, @pools, @schema)
 
         # The key's value (see Group#key_for), one every column of the slot
         # reads.
         def key_value(slot, group, table, name)
-          @values.shared_nth(slot_columns(slot), group.key_for(table, name, own: @topology.own_key?(table, name)))
+          @values.shared_nth(slots.columns(slot), group.key_for(table, name, own: @topology.own_key?(table, name)))
         end
 
         # Unique columns get a value per distinct row: rows alike in every
