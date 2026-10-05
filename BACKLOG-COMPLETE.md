@@ -5142,3 +5142,16 @@ The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/
 - **Design:** Progress lines for `quaack run`.
 - **Status:** done
 - **Landed:** Landed in 888cc17.
+
+### 20261004-48. README: polish the connection-note wording.
+
+These are review minors from 20261004-44.
+
+1. "For a run started before QUAACK recorded the server" doesn't say where it was recorded. Say "started by a driver before 0.1.6, which didn't record the server in `~/.quaack/runs/`", or similar.
+2. The `production_connection_failed` cell in the error table is long, and the new parenthetical in the middle makes it hard to follow. Move it to the end, or shorten it.
+
+- **Depends on:** 20261004-44.
+- **Came from:** The review of 20261004-44.
+- **Design:** none (docs only).
+- **Status:** done
+- **Landed:** Landed in 7f97f53.

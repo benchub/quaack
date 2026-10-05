@@ -2286,17 +2286,7 @@ These are review minors from 20261004-28.
 
 ### 20261004-47. Driver UTF-8 argument check: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-48. README: polish the connection-note wording.
-
-These are review minors from 20261004-44.
-
-1. "For a run started before QUAACK recorded the server" doesn't say where it was recorded. Say "started by a driver before 0.1.6, which didn't record the server in `~/.quaack/runs/`", or similar.
-2. The `production_connection_failed` cell in the error table is long, and the new parenthetical in the middle makes it hard to follow. Move it to the end, or shorten it.
-
-- **Depends on:** 20261004-44.
-- **Came from:** The review of 20261004-44.
-- **Design:** none (docs only).
-- **Status:** todo
+### 20261004-48. README: polish the connection-note wording. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-49. ArenaRunner transaction-status check: untested branches. Done, see BACKLOG-COMPLETE.md.
 
@@ -2416,4 +2406,13 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 - **Depends on:** 20261004-7.
 - **Came from:** The review of 20261004-7, 2026-10-05.
 - **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names.
+
+From the review of 20261004-48. When a run's record has no `port`, as for runs started by a driver before 0.1.6, the message says the port comes from the libpq setup, even if the operator gave `quaack start --port`. Check what the enclave actually connects with for such a run, since the jump server's run state may hold the port. Make the message say the truth, with a test.
+
+- **Depends on:** 20261004-17, -37.
+- **Came from:** The review of 20261004-48, 2026-10-05.
+- **Design:** inventory.
 - **Status:** todo
