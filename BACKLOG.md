@@ -2294,20 +2294,7 @@ Also, from the review of 20261004-24:
 - **Design:** result-comparison, rewrite-test, minimax.
 - **Status:** todo
 
-### 20261004-29. Docs and wording after ssh_failed skips teardown.
-
-Minor findings from the review of 20261004-26. After `ssh_failed`, `quaack run` now skips teardown, so the run's files, which hold copies of production data, stay on the jump server, and the run server isn't destroyed:
-
-1. README's `--keep` paragraph says that without `--keep`, QUAACK deletes the run's files "whether it succeeded or failed" and destroys the run server. Step 5 says to tear down only "If you used `--keep`". Mention the `ssh_failed` exception in both.
-2. DESIGN.md says a failing setup step in `quaack run` "is torn down unless `--keep`, as for any step". Add the `ssh_failed` exception.
-3. README's `ssh_failed` row says only "keeps the run". Say that the run server, and the production data on it, stays up until you run the printed teardown command.
-4. `teardown.rb`'s `interrupted` message still says "Run this on the jump server:". Reword it to "To tear it down later, run this on the jump server:", like the other teardown hints.
-5. When a run succeeds but teardown then fails, the message still says to resume with `quaack run --run`, which redoes the run's last steps. Teardown alone would do: say that.
-
-- **Depends on:** 20261004-26.
-- **Came from:** The review of 20261004-26.
-- **Design:** Where QUAACK runs, Transport.
-- **Status:** todo
+### 20261004-29. Docs and wording after ssh_failed skips teardown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-30. Flaky run-server-check spec: a young client listed before an old one.
 
@@ -2318,5 +2305,19 @@ Make it deterministic. For example, free an earlier slot on purpose first: open 
 - **Depends on:** none.
 - **Came from:** The builder of 20261004-28.
 - **Design:** run-server checks.
+- **Status:** todo
+
+### 20261004-31. A run that finished but couldn't tear down: show the report, and tidy the advice.
+
+Minor findings from the review of 20261004-29:
+
+1. **Report path not shown.** When a run succeeds and then teardown fails, `drive` never prints the report path, because teardown raises first, even though the report file was written. The failure message says "the run itself finished", so print the report's path too. Test first.
+2. **Teardown command printed twice.** The same case prints it once in the "couldn't tear down" line and again in "quaack run failed". Print it once.
+3. **README step 5** says "QUAACK printed this command for it". That isn't true when teardown fails with `bad_run`, `bad_store_base` or `teardown_failed`, where QUAACK says to check or remove `~/.quaack/runs/<ID>` by hand. Reword it.
+4. **Wording:** README and DESIGN.md say the run's files and the run server "stay up". Say the files "remain".
+
+- **Depends on:** 20261004-29.
+- **Came from:** The review of 20261004-29.
+- **Design:** Where QUAACK runs, report.
 - **Status:** todo
 

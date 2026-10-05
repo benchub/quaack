@@ -4758,3 +4758,19 @@ Minor findings from the first review of 20261004-21:
 - **Design:** Transport, Where QUAACK runs.
 - **Status:** done
 - **Landed:** merge d383d93. `quaack run` says resume only while the store is left (`--keep`, a failed teardown, or no teardown), and otherwise says to start a new run. After `ssh_failed`, teardown is skipped and its command is printed for later. `incomplete` ends with a command-specific "To go on". The ControlMaster note is rewritten. The review had no blocking findings; its minors are 20261004-29.
+
+### 20261004-29. Docs and wording after ssh_failed skips teardown.
+
+Minor findings from the review of 20261004-26. After `ssh_failed`, `quaack run` now skips teardown, so the run's files, which hold copies of production data, stay on the jump server, and the run server isn't destroyed:
+
+1. README's `--keep` paragraph says that without `--keep`, QUAACK deletes the run's files "whether it succeeded or failed" and destroys the run server. Step 5 says to tear down only "If you used `--keep`". Mention the `ssh_failed` exception in both.
+2. DESIGN.md says a failing setup step in `quaack run` "is torn down unless `--keep`, as for any step". Add the `ssh_failed` exception.
+3. README's `ssh_failed` row says only "keeps the run". Say that the run server, and the production data on it, stays up until you run the printed teardown command.
+4. `teardown.rb`'s `interrupted` message still says "Run this on the jump server:". Reword it to "To tear it down later, run this on the jump server:", like the other teardown hints.
+5. When a run succeeds but teardown then fails, the message still says to resume with `quaack run --run`, which redoes the run's last steps. Teardown alone would do: say that.
+
+- **Depends on:** 20261004-26.
+- **Came from:** The review of 20261004-26.
+- **Design:** Where QUAACK runs, Transport.
+- **Status:** done
+- **Landed:** merge 767713d. A run that succeeds and then fails teardown now advises running the teardown command instead of resuming. The interrupted-teardown hint is reworded. README and DESIGN.md say that ssh_failed leaves the run's files and the run server until teardown. The review had no blocking findings; its minors are 20261004-31.
