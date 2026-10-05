@@ -37,7 +37,8 @@ RSpec.describe Quaack::Enclave::RunServer do
   end
 
   it "refuses a port that isn't a whole number from 1 to 65535 as bad_run_server_port" do
-    ["", "0", "65536", "-1", "+5432", " 5432", "5432\n", "54a", "5432.0", "0x10", "05432", "99999999"].each do |port|
+    ["", "0", "65536", "-1", "+5432", " 5432", "5432\n", "54a", "5432.0", "0x10", "05432", "99999999", "５４３２",
+     "\xff", "54\xff32", "5432".encode("UTF-16LE")].each do |port|
       expect_refused("bad_run_server_port", port:)
     end
   end
