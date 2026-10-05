@@ -865,19 +865,7 @@ Minor findings from the review of 20260930-11:
 
 ### 20261001-18. Report: readable HTML. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-19. Record the rewrite stages in the burndown.
-
-In a real run the rewrite burndown has one row, plan-pruning, and it's wrong. `Burndown.record` has two production callers, both plan-pruning: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records llm-rewrites, assumption-check, operator-rewrites, rewrite-test, counterexamples, rewrite-index-ideas, or measurement.
-
-- Record every stage in DESIGN.md's burndown's rewrite table. llm-rewrites and operator-rewrites: the rewrites the LLM gave and the operator gave, counted separately, and those refused on arrival, by rule. assumption-check: unmet assumptions, and operator-rewrites' warnings. rewrite-test: disproved by scenario, untested atoms, vacuity-guard retries. counterexamples: disproved by round. measurement: by minimax and result-comparison reason.
-- Make plan-pruning one record per rewrite that adds up across its two halves, so "in" is the rewrites that reached plan-pruning and "out" is those that went on.
-- Record the work totals: indexes built, measurement runs, fixture loads.
-- A step that's skipped on a resumed run mustn't be counted twice, and one that's rerun mustn't either.
-
-- **Depends on:** 20260922-61, -64.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** burndown.
-- **Status:** todo
+### 20261001-19. Record the rewrite stages in the burndown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-20. Record the index stages in the burndown.
 
@@ -2409,4 +2397,18 @@ The review of 20261004-53 found:
 - **Depends on:** 20261004-53.
 - **Came from:** The review of 20261004-53, 2026-10-05.
 - **Design:** report.
+- **Status:** todo
+
+### 20261004-69. Rewrite burndown: minors from 20261001-19.
+
+The review of 20261001-19 found:
+1. The store format wasn't bumped. A run started before 20261001-19 and resumed after it counts surviving rewrites twice in plan-pruning, and keeps a stale `pruning` record. Either bump the store format so such runs are refused on resume, or ignore the old record.
+2. The report shows rewrite-test's "never tested" reasons as raw names ("complex check", "statement timeout", "failed"). Use the plain-English phrases `Words::REFUSALS` and `Words::FAILURES` already have.
+3. When a rewrite fails to run in a counterexamples round, the burndown says "wrong in round k", while "Who proposed what" puts it under "Stopped for another reason", which README says means not shown to be wrong. Make the burndown say it failed to run.
+4. "Refused on arrival" means only the arrival rules in the burndown, but anything not stored in "Who proposed what". Align the two, or name them differently.
+5. If a step crashes between writing its burndown record and its done marker, a rerun with a different outcome keeps the first record. The window is tiny; consider writing the record and the marker together.
+
+- **Depends on:** 20261001-19.
+- **Came from:** The review of 20261001-19, 2026-10-05.
+- **Design:** burndown.
 - **Status:** todo

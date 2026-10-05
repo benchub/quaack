@@ -5241,3 +5241,18 @@ From the review of 20261004-48. When a run's record has no `port`, as for runs s
 - **Design:** inventory.
 - **Status:** done
 - **Landed:** Landed: a run recorded with neither server nor port names both port sources.
+
+### 20261001-19. Record the rewrite stages in the burndown.
+
+In a real run the rewrite burndown has one row, plan-pruning, and it's wrong. `Burndown.record` has two production callers, both plan-pruning: `StructuralDiscard.record` under the search `rewrites` and `rewrite-prune` under `pruning`. The report sums the two, so one rewrite that came in and was pruned reads as "In 2, Out 1". Nothing records llm-rewrites, assumption-check, operator-rewrites, rewrite-test, counterexamples, rewrite-index-ideas, or measurement.
+
+- Record every stage in DESIGN.md's burndown's rewrite table. llm-rewrites and operator-rewrites: the rewrites the LLM gave and the operator gave, counted separately, and those refused on arrival, by rule. assumption-check: unmet assumptions, and operator-rewrites' warnings. rewrite-test: disproved by scenario, untested atoms, vacuity-guard retries. counterexamples: disproved by round. measurement: by minimax and result-comparison reason.
+- Make plan-pruning one record per rewrite that adds up across its two halves, so "in" is the rewrites that reached plan-pruning and "out" is those that went on.
+- Record the work totals: indexes built, measurement runs, fixture loads.
+- A step that's skipped on a resumed run mustn't be counted twice, and one that's rerun mustn't either.
+
+- **Depends on:** 20260922-61, -64.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** burndown.
+- **Status:** done
+- **Landed:** Landed: every rewrite stage, plan-pruning once per rewrite, and the work totals are recorded; record_once guards resumes.
