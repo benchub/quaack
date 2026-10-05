@@ -57,6 +57,9 @@ module Quaack
         # gives its own result and nil, like a statement. It aborts the
         # transaction, so it stands in for the last statement's result, and
         # the caller sees the cancel as it would a cancel of the statement.
+        # If the last statement failed on its own, its error is kept, and if
+        # nothing was sent, the error is only drained, so the send's own
+        # error goes up.
         def finish(connection, sent)
           connection.pipeline_sync
           results = Array.new(sent) { next_result(connection) }
@@ -67,12 +70,13 @@ module Quaack
         end
 
         # Reads the next result. If it's an error, it replaces the last of
-        # results, and the result after its nil is returned.
+        # results, unless there's none or that one failed too, and the result
+        # after its nil is returned.
         def take_late_error(connection, results)
           last = connection.get_result
           return last unless failed?(last)
 
-          results[-1] = last
+          results[-1] = last unless results.empty? || failed?(results[-1])
           connection.get_result
           connection.get_result
         end
