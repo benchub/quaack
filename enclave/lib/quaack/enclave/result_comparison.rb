@@ -176,6 +176,7 @@ module Quaack
         @kept = {}
 
         def self.parse(sql, query)
+          sql = sql.dup.freeze unless sql.frozen?
           @kept.fetch([sql, query]) do |key|
             @kept.clear if @kept.size >= KEPT
             @kept[key] = new(sql, query)

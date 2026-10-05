@@ -205,6 +205,14 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(Quaack::Enclave::Deparse).to have_received(:faithfully).with(anything).twice
     end
 
+    it "still finds a query after the caller changes the SQL string it passed" do
+      callers = sql.dup
+      parsed = shape(callers)
+      callers.replace("SELECT 1 FROM #{table}_changed")
+
+      expect(shape(sql)).to be(parsed)
+    end
+
     it "keeps different tiebreakers apart" do
       parsed = shape(sql)
 
