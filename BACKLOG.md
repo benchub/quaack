@@ -430,7 +430,7 @@ Still open from the build and reviews of 20260922-16:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-25. redact redaction loose ends.
+### 20260924-25. redact loose ends.
 
 Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - **Decided, not built:** a plan more than about 48 levels deep can't go out through egress. Refuse it with a clear rule, and list it as unsupported in v1.
@@ -447,7 +447,7 @@ Still open from the reviews of 20260922-23, 20260924-11, and 20260924-16:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260924-26. statistics statistics loose ends.
+### 20260924-26. statistics loose ends.
 
 Still open from the build and reviews of 20260922-19:
 - pg_stats and pg_stats_ext silently hide columns the operator can't SELECT, so a role with limited privileges gets missing statistics with no error. Detect it, and refuse or record it.
@@ -463,7 +463,7 @@ Still open from the build and reviews of 20260922-19:
 
 ### 20260924-27. 3f classification loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260924-28. literals literal set loose ends.
+### 20260924-28. literals loose ends.
 
 Still open from the build and reviews of 20260922-21:
 - Django date filters get no worst-case or typical value. psycopg2 writes `'...'::timestamptz`, `'...'::date`, and `'{..}'::bigint[]`, which redact turns into cast placeholders, and literals always falls back on those. Handle a cast placeholder whose cast matches the column's type.
@@ -735,7 +735,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 
 ### 20260929-29. An operator's cancel shouldn't count as disproving a rewrite.
 
-In Counterexamples (`counterexamples.rb:89-91`) and StepNine (`step_nine.rb:53-54`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in rewrite-test ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
+In Counterexamples (`counterexamples.rb:89-91`) and ScenarioTests (`scenario_tests.rb`), a candidate query that fails with `statement_canceled` is recorded as a disproof, `match` false, just like a timeout. It errs on the safe side, since it can only reject a rewrite. But a cancel from someone else says nothing about the candidate: a valid rewrite is silently lost, and the report says "disproved in rewrite-test ... (rule statement_canceled)". RunDiscipline raises on a cancel that isn't its timeout. The arena side should probably do the same, and end the step with an environment error instead of recording a verdict.
 
 - **Depends on:** 20260923-37.
 - **Came from:** Review of 20260923-37, round one.
@@ -945,7 +945,7 @@ Minor findings from both reviews of 20261001-22:
 
 Minor findings from the build and both reviews of 20261001-23:
 
-- **False rule bugs from rewrite-test and counterexamples.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. StepNine also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as result-comparison's `MISMATCHES` does. counterexamples can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
+- **False rule bugs from rewrite-test and counterexamples.** `RuleBugs.disproved_by` counts any failed `rewrite_tested_<n>` whose rule isn't `discarded`. ScenarioTests also fails a rewrite with `unsupported_order` (a WITH TIES original, for one) and with ArenaRunner's errors: `query_failed`, `statement_timeout`, `statement_canceled`, `begin_failed`. None compared results. Use an allowlist, as result-comparison's `MISMATCHES` does. counterexamples can't be told apart yet: `rewrite_round_<n>` doesn't store the round's rule, and `match` is false for `query_failed` too. Store it.
 - **Postgres 18 removes the one-arm self-join itself,** so `key_in_self_join`'s rewrite of `t.id IN (SELECT t2.id FROM t t2 WHERE P)` plans like the original and plan-pruning prunes it. DESIGN.md's rewrite-rules' table says each rule is something the planner doesn't do. Say which cases still matter (the `UNION ALL` arms, and servers before 18).
 - `rewrite-check` has the double-store window that rewrite-rules closed: a call that dies after storing rewrites and before its marker stores them again on rerun.
 - A rule-made rewrite that fails the checks counts in rewrite-rules' `failed_checks` and in plan-pruning's drops, so rewrite-rules' out isn't plan-pruning's in. Settle it with 20261001-19.
@@ -1052,7 +1052,7 @@ These tasks are worth doing, but they don't block version 1. Pick them up after 
 
 ### 20260923-41. Support DML statements.
 
-INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow production query can be DML, but rewrite-test and candidate-runs compare result rows, so this needs a design for comparing effects rather than rows. RelationQualifier's DML-target handling was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
+INSERT, UPDATE, DELETE, and MERGE, at the top level or inside a CTE. A slow production query can be DML, but rewrite-test and result-comparison compare result rows, so this needs a design for comparing effects rather than rows. RelationQualifier's DML-target handling was last present in 6507105. The allowlist (20260923-33) refuses this family in version 1. Supporting it means adding it to `SupportedSql` and handling it in every walker that 20260923-33 lists.
 
 - **Depends on:** 20260923-33.
 - **Came from:** The user's decision that refused constructs become after-v1 tasks.
@@ -1255,7 +1255,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 
 ### 20260926-42. Report loose ends, part three.
 
-- The StepNine dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
+- The ScenarioTests dropped count isn't stored anywhere readable. Store it in `rewrite_tested_<n>` and show it in the report.
 - "Whether counterexamples covered them" shows only the `evidence` flag, because per-round covered shapes aren't stored.
 - A plan node with no `Schema` is matched to a table by name only when exactly one subset table has that name.
 - LLM call counts on a resumed run include only calls from the current process.
@@ -1807,7 +1807,7 @@ Minor findings from the build and review of 20261003-17:
 
 - **One code path has no test.** No test has a nullable foreign key from a table in a cycle to a table outside it. If "this edge is in a cycle" is changed to "this table is in any cycle", every test stays green (`topology.rb:73`). Add that case.
 - **A DEFAULT in a cut column stays DEFAULT.** If the default references a row that isn't loaded yet, the load fails. Load NULL there instead, or say in DESIGN.md that this case is unsupported.
-- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. vacuity-guard's vacuity guard keeps this safe, but check whether it ever refuses a query it shouldn't.
+- **Atoms on subquery or CTE columns aren't counted as reading a column.** They have no table. vacuity-guard keeps this safe, but check whether it ever refuses a query it shouldn't.
 - **Partitioned tables with foreign keys may not load through the counterexample path.** The builder's attempt failed with `fixture_load_failed`. Reproduce it, and fix it or list it as unsupported.
 
 - **Depends on:** 20261003-17.
@@ -1845,7 +1845,7 @@ Minor findings from the build and review of 20260928-1:
 
 - **Depends on:** 20260928-1.
 - **Came from:** The build and review of 20260928-1, 2026-10-03.
-- **Design:** inventory through run-server.
+- **Design:** inventory through racetrack-setup, the steps `quaack setup` runs.
 - **Status:** todo
 
 ### 20261003-28. `shared_scan_cte`: widenings.
@@ -2049,7 +2049,7 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 
 ### 20261004-5. Build the original query's scenarios once, not once per rewrite.
 
-`steps/counterexamples.rb` calls `StepNine.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
+`steps/counterexamples.rb` calls `ScenarioTests.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
 
 - **Depends on:** 20261004-2.
 - **Came from:** The build of 20261004-2.
@@ -2176,26 +2176,7 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 - **Design:** rewrite-rules, report.
 - **Status:** todo
 
-### 20261004-15. Step slugs: minor findings.
-
-Minor findings from the review of 20261003-21:
-
-- **Untested exemptions.** No test pins which subcommands the `run_from_older_version` check covers. Exempting `Steps::Status` in `enclave/lib/quaack/enclave/cli.rb` `dispatch` keeps every spec green. Add a test that walks the real `CLI::STEPS` table.
-- **Garbled text from the rename:**
-  - The header comment of `enclave/lib/quaack/enclave/burndown.rb` became a run-on line with stray `#` marks.
-  - Doubled words in `protocol/lib/quaack/protocol/burndown.rb` and `whitelist.rb` ("burndown burndown", "report report", "the redact redacted").
-  - Doubled words in BACKLOG.md: 20260924-25, -26 and -28's titles, and "vacuity-guard's vacuity guard" in 20261003-25.
-- **Stale comment.** `enclave/lib/quaack/enclave/error_filter.rb:28-29` says step names start with a digit.
-- **BACKLOG.md references:**
-  - `StepNine` and `step_nine.rb` (now `ScenarioTests` in `scenario_tests.rb`) appear in four open entries.
-  - Old "steps 2 through 4" became "inventory through run-server", which skips the schema steps.
-  - Old "steps 9 and 14" became "rewrite-test and candidate-runs", where 14 likely meant `result-comparison`.
-- **DESIGN.md:** seven outline slugs have no heading to link to: `rewrite-correctness` (also the mapping table's target for old 9 and 10), `rewrite-index-search`, `rewrite-index-rank`, `rewrite-index-rerank`, `rewrite-prune`, `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`. Give them headings or anchors.
-
-- **Depends on:** 20261003-21.
-- **Came from:** The review of 20261003-21.
-- **Design:** The outline, `burndown`.
-- **Status:** todo
+### 20261004-15. Step slugs: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-16. Rewrite names: drop word pairs that read badly. Done, see BACKLOG-COMPLETE.md.
 
@@ -2454,4 +2435,19 @@ From the second review of 20261004-45.
 - **Depends on:** none.
 - **Came from:** The second review of 20261004-45, 2026-10-05.
 - **Design:** none (test infrastructure).
+- **Status:** todo
+
+### 20261004-57. Rename artifacts left in comments, and a dangling colon in DESIGN.md.
+
+Minor findings from the review of 20261004-15. These are all comment or prose fixes.
+
+- "for each literals literal set" appears in `measurement.rb:11`, `steps/baseline.rb:12`, `steps/index_search.rb:34`, `steps/index_test.rb:30` and `steps/result_comparison.rb:14`.
+- "Until literals literal sets … and redact redaction" appears in `single_candidate_test.rb:32`.
+- "the volatility VolatilityCheck" appears in `index_ddl_check.rb:64`, `insert_check.rb:66` and `rewrite_candidate_check.rb:58`.
+- DESIGN.md's rewrite-index-ideas intro ends with "…that plan-pruning started:" but prose follows now, not a list.
+- "the first first" appears in `scenarios/parts.rb:40`. This one predates the rename.
+
+- **Depends on:** none.
+- **Came from:** The review of 20261004-15, 2026-10-05.
+- **Design:** none.
 - **Status:** todo

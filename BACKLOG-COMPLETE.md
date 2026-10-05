@@ -5000,3 +5000,25 @@ These are review minors from 20261004-38.
 - **Design:** none (tests only).
 - **Status:** done
 - **Landed:** Landed in fe6272c.
+
+### 20261004-15. Step slugs: minor findings.
+
+Minor findings from the review of 20261003-21:
+
+- **Untested exemptions.** No test pins which subcommands the `run_from_older_version` check covers. Exempting `Steps::Status` in `enclave/lib/quaack/enclave/cli.rb` `dispatch` keeps every spec green. Add a test that walks the real `CLI::STEPS` table.
+- **Garbled text from the rename:**
+  - The header comment of `enclave/lib/quaack/enclave/burndown.rb` became a run-on line with stray `#` marks.
+  - Doubled words in `protocol/lib/quaack/protocol/burndown.rb` and `whitelist.rb` ("burndown burndown", "report report", "the redact redacted").
+  - Doubled words in BACKLOG.md: 20260924-25, -26 and -28's titles, and "vacuity-guard's vacuity guard" in 20261003-25.
+- **Stale comment.** `enclave/lib/quaack/enclave/error_filter.rb:28-29` says step names start with a digit.
+- **BACKLOG.md references:**
+  - `StepNine` and `step_nine.rb` (now `ScenarioTests` in `scenario_tests.rb`) appear in four open entries.
+  - Old "steps 2 through 4" became "inventory through run-server", which skips the schema steps.
+  - Old "steps 9 and 14" became "rewrite-test and candidate-runs", where 14 likely meant `result-comparison`.
+- **DESIGN.md:** seven outline slugs have no heading to link to: `rewrite-correctness` (also the mapping table's target for old 9 and 10), `rewrite-index-search`, `rewrite-index-rank`, `rewrite-index-rerank`, `rewrite-prune`, `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`. Give them headings or anchors.
+
+- **Depends on:** 20261003-21.
+- **Came from:** The review of 20261003-21.
+- **Design:** The outline, `burndown`.
+- **Status:** done
+- **Landed:** Landed in ecfe202. The main session fixed the BACKLOG.md items: the three titles, the vacuity-guard wording, the four StepNine references, result-comparison, and racetrack-setup.
