@@ -1,6 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# The openai gem matches ARGV with a Regexp when it loads, which raises on an
+# argument that isn't valid UTF-8, so the CLI takes the arguments first.
+argv = ARGV.dup
+ARGV.clear
+
 require "quaack/driver"
 
-exit Quaack::Driver::CLI.new.run(ARGV)
+exit Quaack::Driver::CLI.new.run(argv)

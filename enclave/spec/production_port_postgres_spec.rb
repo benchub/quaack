@@ -104,4 +104,14 @@ RSpec.describe "quaacks with production's port from intake --port, against a rea
     outcome = step("inventory", run_id, env: operator_env(PGPORT: "1"))
     expect(last_line(outcome)).to eq("type" => "error", "step" => "inventory", "rule" => "production_connection_failed")
   end
+
+  # Task 20261004-22: argv can hold bytes that aren't UTF-8.
+  it "refuses a --port that isn't UTF-8 as bad_port, not internal_error" do
+    outcome = quaacks.run("intake", *intake_args, "--server", production.host, "--port", "54\xff32",
+                          env: operator_env)
+
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([%({"type":"error","step":"intake","rule":"bad_port"}\n), "", 70])
+    expect(quaacks.runs).to eq([])
+  end
 end

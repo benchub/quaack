@@ -145,6 +145,16 @@ RSpec.describe "quaack executable" do
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
 
+    # Task 20261004-22: argv can hold bytes that aren't UTF-8.
+    it "refuses a --port that isn't UTF-8 as a usage error before ssh, without raising" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p", "--port", "54\xff32")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start: --port must be a whole number from 1 to 65535\n", 64])
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
     it "rejects --port twice, or without a value, with the usage message" do
       [%w[--port 5433 --port 5434], %w[--port]].each do |extra|
         out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",

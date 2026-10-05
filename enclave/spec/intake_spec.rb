@@ -234,8 +234,8 @@ RSpec.describe "quaacks intake" do
     end
 
     it "refuses anything but a whole number from 1 to 65535 as bad_port" do
-      ["", "0", "65536", "-1", "+5432", " 5432", "5432\n", "54a", "05432", "５４３２",
-       INTAKE_SENTINEL].each do |port|
+      ["", "0", "65536", "-1", "+5432", " 5432", "5432\n", "54a", "05432", "５４３２", "\xff", "54\xff32",
+       "5432".encode("UTF-16LE"), INTAKE_SENTINEL].each do |port|
         out.truncate(0) && out.rewind
         expect_refused("bad_port", intake_with(extra: ["--port", port]), port.inspect)
       end

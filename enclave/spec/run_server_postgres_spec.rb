@@ -174,6 +174,7 @@ RSpec.describe "quaacks run-server, against a real server" do
 
       expect_failed(run_server(host: "#{sentinels.word} x"), "bad_run_server_host")
       expect_failed(run_server(port: "0"), "bad_run_server_port")
+      expect_failed(run_server(port: "54\xff32"), "bad_run_server_port")
       expect_failed(run_server(arena: "#{sentinels.word};"), "bad_run_server_database")
     end
 
