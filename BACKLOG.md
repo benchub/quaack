@@ -2306,18 +2306,7 @@ These are review minors from 20261004-28.
 
 ### 20261004-37. Connection-failure notes: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-38. Invalid UTF-8 in driver arguments crashes with a backtrace.
-
-The builder and reviewer of 20261004-22 found these crashes:
-- `quaack setup` and `quaack run` crash on invalid UTF-8 in `--host`, `--port` or the database flags. The ssh transport raises an uncaught `ArgumentError` in `Transport::Base#refuse`.
-- `quaack start` crashes on invalid UTF-8 in `--server` (in `Transport::Base#refuse`) or `--query` (in a Pathname regex).
-
-In each case the operator gets a backtrace instead of a usage error. Check every driver argument's encoding up front, and give a usage error (exit 64) that doesn't echo the value. Write a test first for each command.
-
-- **Depends on:** 20261004-22.
-- **Came from:** The builder and review of 20261004-22.
-- **Design:** intake.
-- **Status:** todo
+### 20261004-38. Invalid UTF-8 in driver arguments crashes with a backtrace. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-39. ArenaRunner pipeline: a timeout before the Sync leaves the connection stuck. Done, see BACKLOG-COMPLETE.md.
 
@@ -2350,6 +2339,8 @@ The builder of 20261004-39 found these. Both are rare with real timeouts.
 
 Find deterministic reproductions, for example by injection, and write the tests first.
 
+Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_postgres_spec.rb:80` got `statement_canceled` instead of `statement_timeout` under parallel load. It passes alone.
+
 - **Depends on:** 20261004-39.
 - **Came from:** The builder of 20261004-39.
 - **Design:** rewrite-test.
@@ -2380,4 +2371,17 @@ This is a review minor from 20261004-42. In `Shape#initialize` (`enclave/lib/qua
 - **Depends on:** 20261004-42.
 - **Came from:** The review of 20261004-42.
 - **Design:** result-comparison.
+- **Status:** todo
+
+### 20261004-47. Driver UTF-8 argument check: follow-ups.
+
+These are review minors from 20261004-38.
+
+1. No test pins two parts of `Arguments.not_utf8`. Dropping the `(?= <)` lookahead would blame `--keep` in `run --run ID --keep <bad>`. Dropping `force_encoding` would stop the check firing under `LC_ALL=C`. Add an example for each.
+2. The flag can be misattributed. `start --server --port <bad>` blames `--port`, which there is `--server`'s value. `start … --arena-db <bad>` names a flag that `start` doesn't take, because the flag list comes from the whole usage text. Use the subcommand's own usage, and pair flags with values left to right.
+3. README: "The last names the flag the argument goes with" isn't always true. Say "names the flag the argument goes with, if any, never the argument."
+
+- **Depends on:** 20261004-38.
+- **Came from:** The review of 20261004-38.
+- **Design:** intake.
 - **Status:** todo

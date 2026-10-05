@@ -4924,3 +4924,17 @@ These are review minors from 20261004-30, in `enclave/spec/run_server_check_post
 - **Design:** none (tests only).
 - **Status:** done
 - **Landed:** Landed in 6609562. One unlikely review minor wasn't filed: an error from close_and_wait inside the ensure would replace the original error.
+
+### 20261004-38. Invalid UTF-8 in driver arguments crashes with a backtrace.
+
+The builder and reviewer of 20261004-22 found these crashes:
+- `quaack setup` and `quaack run` crash on invalid UTF-8 in `--host`, `--port` or the database flags. The ssh transport raises an uncaught `ArgumentError` in `Transport::Base#refuse`.
+- `quaack start` crashes on invalid UTF-8 in `--server` (in `Transport::Base#refuse`) or `--query` (in a Pathname regex).
+
+In each case the operator gets a backtrace instead of a usage error. Check every driver argument's encoding up front, and give a usage error (exit 64) that doesn't echo the value. Write a test first for each command.
+
+- **Depends on:** 20261004-22.
+- **Came from:** The builder and review of 20261004-22.
+- **Design:** intake.
+- **Status:** done
+- **Landed:** Landed in 10dfd89. Review minors went to 20261004-47.
