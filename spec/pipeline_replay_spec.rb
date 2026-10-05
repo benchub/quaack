@@ -39,6 +39,13 @@ RSpec.describe PipelineReplay do
             expect(outcome.teardown).to start_with("quaack: deleted the store for run ")
           end
 
+          # Task 20261001-20.
+          it "records every index stage of the original query's search when it ends in a report" do
+            stages = outcome.report ? outcome.report["burndown"]["stages"] : {}
+            missing = Quaack::Driver::Report::Words::INDEX_STAGES.keys.reject { stages.dig(it, "original") }
+            expect(missing).to eq([]) if outcome.report
+          end
+
           it "sends each replayed ask the prompt its reply answered" do
             expect(outcome.drift).to be_empty
           end
@@ -122,6 +129,19 @@ RSpec.describe PipelineReplay do
           .to match("indexes_built" => be_positive, "measurement_runs" => be_positive, "fixture_loads" => be_positive)
       end
 
+      # Task 20261001-20: the original query's index search, its LLM
+      # rounds, and its ranking, and the rewrite's own index search.
+      it "records the original's and the rewrite's index stages" do
+        stages = outcome.report["burndown"]["stages"]
+        index_stages = Quaack::Driver::Report::Words::INDEX_STAGES.keys
+        expect(index_stages.reject { stages.dig(it, "original") }).to eq([])
+        expect(stages.dig("index-from-query", "original", "added")).to include("generator_one" => be_positive)
+        expect(stages.dig("llm-index-ideas", "original")).to include("added" => { "llm" => 0 }, "out" => 0)
+        expect(stages.dig("llm-index-refine", "original", "extra")).to eq("no_ideas_tested" => 1)
+        expect(stages.dig("index-rank", "original")).to include("out" => be_positive)
+        expect(index_stages.reject { stages.dig(it, "rewrite_1") }).to eq([])
+      end
+
       it "shows the source and the rewrite-rules row in the report file `quaack run` writes" do
         expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
         expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
@@ -172,6 +192,14 @@ RSpec.describe PipelineReplay do
         expect(stages.dig("llm-rewrites", "rewrites", "added")).to include("llm" => be_positive)
         expect(stages.dig("operator-rewrites", "rewrites", "added")).to include("operator" => be_positive)
         expect(stages["rewrite-test"].keys + stages["counterexamples"].keys).to include("rewrite_2")
+      end
+
+      # Task 20261001-20: the replayed rewrite-llm-index-ideas-1's ideas,
+      # counted at the rewrite's llm-index-ideas.
+      it "record the LLM's index ideas for a rewrite" do
+        stages = run("group_having").report["burndown"]["stages"]
+        expect(stages.dig("llm-index-ideas", "rewrite_1", "added")).to match("llm" => be_positive)
+        expect(stages.dig("llm-index-refine", "rewrite_1")).not_to be_nil
       end
 
       it "load an llm-counterexamples-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it " \
