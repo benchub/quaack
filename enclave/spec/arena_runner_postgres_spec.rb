@@ -463,7 +463,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       let(:slow_first_rollback) do
         Class.new(SimpleDelegator) do
           def exec(sql, *, &)
-            sql = "#{sql}; SELECT 1 WHERE 0 IN (#{Array.new(1_000_000, 1).join(',')})" if sql.start_with?("ROLLBACK; ")
+            sql = "#{sql}; SELECT 1 WHERE 0 IN (#{Array.new(1_000_000, 1).join(",")})" if sql.start_with?("ROLLBACK; ")
             __getobj__.exec(sql, *, &)
           end
         end.new(conn)
