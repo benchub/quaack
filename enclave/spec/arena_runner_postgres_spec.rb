@@ -371,6 +371,48 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       end
     end
 
+    # After a cancel, Cancel.rule reads the clock once it has rolled back,
+    # when the session's own statement_timeout is back in force. A nonzero
+    # one, from the server, the database, the role, or a SET, mustn't cancel
+    # that read and turn a timeout into statement_canceled, nor stay changed
+    # afterwards. The slow clock read is planted as above.
+    describe "a nonzero session default" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE SCHEMA slow_clock;
+          CREATE FUNCTION slow_clock.clock_timestamp() RETURNS timestamptz LANGUAGE sql
+            AS 'SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3)';
+        SQL
+      end
+
+      def timed_out_on(connection)
+        connection.exec("SET search_path = slow_clock, pg_catalog, public")
+        runner = described_class.new(connection, statement_timeout_ms: 100)
+        error = run_error(runner) { |tx| tx.query("SELECT pg_sleep(5)") }
+        [error.rule, error.sqlstate, error.step, error.index, connection.transaction_status]
+      end
+
+      def setting_on(connection) = connection.exec("SHOW statement_timeout").getvalue(0, 0)
+
+      it "doesn't keep a timed-out statement from reading as statement_timeout under a database default" do
+        conn.exec("ALTER DATABASE #{conn.quote_ident(arena.name)} SET statement_timeout = '50ms'")
+        defaulted = arena.connect
+        expect(setting_on(defaulted)).to eq("50ms")
+
+        expect(timed_out_on(defaulted)).to eq([:statement_timeout, "57014", :query, 0, 0])
+        expect(setting_on(defaulted)).to eq("50ms")
+      ensure
+        defaulted&.close
+      end
+
+      it "doesn't keep a timed-out statement from reading as statement_timeout under a session SET" do
+        conn.exec("SET statement_timeout = 50")
+
+        expect(timed_out_on(conn)).to eq([:statement_timeout, "57014", :query, 0, 0])
+        expect(setting_on(conn)).to eq("50ms")
+      end
+    end
+
     # A statement can't turn the timeout off for the ones after it, since
     # each statement's own round trip arms it again.
     it "times a statement out after an earlier one turned the timeout off" do
@@ -416,6 +458,16 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect { short.with_fixture([parent(1, "a")]) { raise ArgumentError, "the block's own" } }
           .to raise_error(ArgumentError, "the block's own")
         expect_nothing_persisted
+      end
+
+      # The session's own timeout is off whenever no statement ran, so only
+      # a nonzero one shows that the load turns it off.
+      it "rolls back after a fixture that ran no statement, under a nonzero session timeout" do
+        conn.exec("SET statement_timeout = 100")
+
+        expect(short.with_fixture { :ran }).to eq(:ran)
+        expect_nothing_persisted
+        expect(session_timeout).to eq("100ms")
       end
     end
 
@@ -489,6 +541,50 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         error, short = late_cancel_error(self_cancel, :sync, statement_timeout_ms: 5000)
 
         expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 0])
+        expect_usable_after(short)
+      end
+
+      # After a statement fails on its own, the reset comes back aborted and
+      # nothing more runs before the Sync, so no planted statement can give
+      # the late cancel. This hands back a real canceled result just before
+      # the Sync's, faking only the edge. The cancel stands in for the
+      # reset's result, and the statement's own error must still win.
+      let(:late_result_class) do
+        Class.new(SimpleDelegator) do
+          def initialize(conn, late)
+            super(conn)
+            @late = late
+            @held = []
+          end
+
+          def arm! = @armed = true
+
+          def get_result # rubocop:disable Naming/AccessorMethodName -- PG::Connection's own name
+            return @held.shift unless @held.empty?
+
+            result = __getobj__.get_result
+            return result unless @armed && result&.result_status == 10
+
+            @armed = false
+            @held = [nil, result]
+            @late
+          end
+        end
+      end
+
+      it "keeps a statement's own error when a cancel comes after it, in the Sync's place" do
+        conn.send_query(self_cancel)
+        late = conn.get_result.tap { conn.get_result }
+        expect(late.error_field(67)).to eq("57014")
+        edge = late_result_class.new(conn, late)
+        short = described_class.new(edge, statement_timeout_ms: 5000)
+
+        error = run_error(short, [parent(1, "a")]) do |tx|
+          edge.arm!
+          tx.query("SELECT 1/0")
+        end
+
+        expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:query_failed, "22012", :query, 0])
         expect_usable_after(short)
       end
     end
