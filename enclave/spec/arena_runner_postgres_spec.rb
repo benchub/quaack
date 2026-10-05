@@ -485,12 +485,18 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [error.rule, error.sqlstate, error.step, error.index, conn.transaction_status]
       end
 
-      it "takes longer than the runner's timeout to reach" do
+      # A sanity check on the planted delay, not on the runner: the parse it
+      # adds takes longer than the runner's timeout, so the next example
+      # would fail if that ROLLBACK ran under it.
+      it "plants a delay longer than the runner's timeout (a sanity check on the fixture)" do
         conn.exec("SET statement_timeout = 100")
         expect { slow_first_rollback.exec("ROLLBACK; SELECT 1") }
           .to raise_error(PG::QueryCanceled) { expect(it.result.error_field(67)).to eq("57014") }
       end
 
+      # This pins Postgres's behaviour, not the runner's: Postgres drops the
+      # runner's SET LOCAL timeout as the transaction aborts, so it passes
+      # with no code in the runner keeping that ROLLBACK from being canceled.
       it "isn't canceled by the runner's timeout" do
         expect(timed_out).to eq([:statement_timeout, "57014", :query, 0, 0])
       end
@@ -544,6 +550,68 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect(short.with_fixture { :ran }).to eq(:ran)
         expect_nothing_persisted
         expect(session_timeout).to eq("100ms")
+      end
+    end
+
+    # After any error aborts the transaction, Postgres has dropped the
+    # runner's settings, so the closing ROLLBACK runs under the session's
+    # statement_timeout, which can be nonzero, since the run server is a
+    # restore of production. A server slower than that to reach the ROLLBACK
+    # cancels it, and the aborted transaction stays open. That's unsupported
+    # in v1 (see DESIGN.md), but it must end safely: nothing is kept, the
+    # error says what happened, and the runner refuses the next fixture. The
+    # delay is planted as a slow parse after the ROLLBACK in its query
+    # string, as above, since an aborted transaction refuses a pg_sleep.
+    describe "a closing ROLLBACK after an abort that the server is slow to reach" do
+      let(:slow_closing_rollback) do
+        Class.new(SimpleDelegator) do
+          def exec(sql, *, &)
+            sql = "#{sql}; SELECT 1 WHERE 0 IN (#{Array.new(1_000_000, 1).join(",")})" if sql == "ROLLBACK"
+            __getobj__.exec(sql, *, &)
+          end
+        end.new(conn)
+      end
+
+      let(:slow) { described_class.new(slow_closing_rollback) }
+
+      # The 50ms session timeout isn't the runner's, so turn it off before
+      # counting what persisted, from this same connection's view too.
+      def expect_left_aborted
+        expect(conn.transaction_status).to eq(described_class::PQTRANS_INERROR)
+        expect { conn.exec("SELECT 1") }.to raise_error(PG::InFailedSqlTransaction)
+        conn.exec("ROLLBACK")
+        expect(persisted_rows).to eq(0)
+      end
+
+      it "rolls back under a session timeout of 0, so the delay alone doesn't keep the transaction open" do
+        error = run_error(slow, [parent(1, "a"), parent(2, "a")])
+
+        expect([error.rule, error.sqlstate]).to eq([:fixture_load_failed, "23505"])
+        expect_nothing_persisted
+      end
+
+      context "under a nonzero session timeout" do
+        before { conn.exec("SET statement_timeout = 50") }
+
+        it "keeps the load's error, leaves the transaction aborted, and refuses the next fixture" do
+          error = run_error(slow, [parent(1, "a"), parent(2, "a")])
+
+          expect([error.rule, error.sqlstate]).to eq([:fixture_load_failed, "23505"])
+          expect(run_error.rule).to eq(:already_in_transaction)
+          expect_left_aborted
+        end
+
+        it "fails as statement_canceled at the rollback when the block caught the error that aborted it" do
+          error = run_error(slow, [parent(1, "a")]) do |tx|
+            tx.query("SELECT 1 / 0")
+          rescue described_class::Error
+            nil
+          end
+
+          expect([error.rule, error.sqlstate, error.step]).to eq([:statement_canceled, "57014", :rollback])
+          expect(run_error.rule).to eq(:already_in_transaction)
+          expect_left_aborted
+        end
       end
     end
 
