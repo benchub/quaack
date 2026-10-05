@@ -4897,3 +4897,17 @@ When a cancel or timeout arrives while the pipeline is finishing, drain to the S
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** Landed in 8915e32. Review minors were added to 20261004-41.
+
+### 20261004-42. Shape cache: tidy the specs.
+
+These are review minors from 20261004-35.
+
+1. The specs reset the cache with `instance_variable_get(:@kept).clear`. Add a small public `Shape.forget` and use it.
+2. The comment near `spec/result_comparison_spec.rb:165`, "Shapes are kept across examples, so each example's SQL names a table of its own", is half stale now that the cache is reset. Update it.
+3. The cache key holds the caller's own unfrozen SQL string. Freeze a copy as the key.
+
+- **Depends on:** 20261004-35.
+- **Came from:** The review of 20261004-35.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** Landed in 39dfed7. A review minor went to 20261004-46.

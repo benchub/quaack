@@ -2350,18 +2350,7 @@ These are review minors from 20261004-36.
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-42. Shape cache: tidy the specs.
-
-These are review minors from 20261004-35.
-
-1. The specs reset the cache with `instance_variable_get(:@kept).clear`. Add a small public `Shape.forget` and use it.
-2. The comment near `spec/result_comparison_spec.rb:165`, "Shapes are kept across examples, so each example's SQL names a table of its own", is half stale now that the cache is reset. Update it.
-3. The cache key holds the caller's own unfrozen SQL string. Freeze a copy as the key.
-
-- **Depends on:** 20261004-35.
-- **Came from:** The review of 20261004-35.
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261004-42. Shape cache: tidy the specs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-43. ArenaRunner: ROLLBACK and a pending cancel under a short timeout.
 
@@ -2392,4 +2381,13 @@ This is a review minor from 20261004-40. README says the `production_connection_
 - **Depends on:** none.
 - **Came from:** The builder of 20261004-33.
 - **Design:** none (tests only).
+- **Status:** todo
+
+### 20261004-46. Shape: drop the dead copy in `initialize`.
+
+This is a review minor from 20261004-42. In `Shape#initialize` (`enclave/lib/quaack/enclave/result_comparison.rb`), `sql.frozen? ? sql : sql.dup.freeze` can no longer copy anything, because `new` is only called from `parse`, which always passes a frozen string. Make `new` private and assign `@sql = sql`.
+
+- **Depends on:** 20261004-42.
+- **Came from:** The review of 20261004-42.
+- **Design:** result-comparison.
 - **Status:** todo
