@@ -92,6 +92,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
 
     expect(ranking.top.map(&:candidates)).to eq([[on_b]])
     expect(ranking.combination).to be_nil
+    expect(ranking.tally).to eq(described_class::Tally.new(ranked: 1, combinations: 0, unused_index: 0, explains: 0))
   end
 
   let(:join) { "SELECT * FROM o JOIN cu ON cu.id = o.cid WHERE o.x = $1 AND cu.y = $2" }
@@ -173,6 +174,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(together.values.uniq.size).to eq(1)
     expect(together.values.first).to contain_exactly(true, false)
     expect(ranking.combination).to be_nil
+    expect(ranking.tally).to eq(described_class::Tally.new(ranked: 2, combinations: 1, unused_index: 1, explains: 2))
   end
 
   # The index on b helps both branches some, so it ranks first. The ones on
@@ -188,6 +190,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(used_together(query, sets, [on_b, on_a, on_c])).to eq(slow: [false, true, true])
     expect(ranking.combination.candidates).to eq([on_b, on_a])
     expect(ranking.combination.used).to eq(slow: [true, true])
+    expect(ranking.tally).to eq(described_class::Tally.new(ranked: 3, combinations: 3, unused_index: 1, explains: 3))
   end
 
   # Each index helps one branch, and they help in the order of their
@@ -206,6 +209,7 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(ranking.top.map(&:candidates)).to eq([[on_a], [on_x], [on_z]])
     expect(ranking.combination.candidates).to eq([on_a, on_x, on_z])
     expect(ranking.combination.used).to eq(slow: [true, true, true])
+    expect(ranking.tally).to eq(described_class::Tally.new(ranked: 4, combinations: 5, unused_index: 0, explains: 5))
   end
 
   let(:point) { "SELECT * FROM t WHERE a = $1" }

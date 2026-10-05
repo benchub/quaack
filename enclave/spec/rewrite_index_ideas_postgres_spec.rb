@@ -82,11 +82,24 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
   it "runs llm-index-ideas, llm-index-refine, and a second index-rank for a surviving rewrite, with status progress" do
     ready
     before = status
+    pruning = burndown["stages"]
 
     expect(done?(run("index-test", "--search", "rewrite_1", stdin: JSON.generate("ddls" => [])))).to be(true)
     feedback = run("index-feedback", "--search", "rewrite_1")
     expect([feedback.stderr, feedback.status.exitstatus]).to eq(["", 0])
     expect(done?(run("index-rank", "--search", "rewrite_1"))).to be(true)
+
+    # Task 20261001-20: the second index-rank's record replaces plan-pruning's, and with no LLM idea, says
+    # why llm-index-refine didn't run.
+    stages = burndown["stages"]
+    expect(pruning.keys).not_to include("llm-index-ideas", "llm-index-refine")
+    expect(stages["index-rank"]).to eq(pruning["index-rank"])
+    expect(stages["index-rank"].keys).to eq(["rewrite_1"])
+    expect(stages["llm-index-ideas"]).to eq(
+      "rewrite_1" => { "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0,
+                       "extra" => {} }
+    )
+    expect(stages["llm-index-refine"]["rewrite_1"]["extra"]).to eq("no_ideas_tested" => 1)
 
     names = %w[rewrite_index_ideas_1 index_generated_rewrite_1 index_llm_ranked_rewrite_1]
     expect(before.slice(*names)).to eq(names.zip([true, false, false]).to_h)

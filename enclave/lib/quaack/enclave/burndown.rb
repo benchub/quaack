@@ -49,7 +49,9 @@ module Quaack
     #
     # Accumulating. Each call to the enclave script is its own process, so
     # each record reads the entry, adds its counts, and writes it back.
-    # Separate calls for the same stage and search add together. The driver
+    # Separate calls for the same stage and search add together, except
+    # through record_once, which records nothing the second time, and
+    # record_replacing, which keeps only the latest. The driver
     # runs one call at a time. If two calls ever raced, both would read the
     # same entry and the later write would win, losing the other's counts.
     # The entry would still add up, since each write is atomic and whole.
@@ -101,6 +103,14 @@ module Quaack
         searches = read(store)["stages"][Input.stage(stage)]
         add(store, records, totals) unless searches&.key?(Input.name(search, "search"))
       end
+
+      # Sets each [stage, search, counts] triple's record, in place of any
+      # the search had for the stage, and adds the totals, in one write. A
+      # stage whose record is the latest run of a step that can run again,
+      # such as index-rank, which ranks a rewrite's search again after
+      # rewrite-index-ideas, records this way. Totals count the work each
+      # run did, so they still add.
+      def record_replacing(store, records, totals: {}) = add(store, records, totals, replace: true)
 
       # Records one Dedupe search as an index-dedupe run: in is every candidate it
       # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
@@ -190,11 +200,11 @@ module Quaack
 
       # Checks every record and total, then adds them all to the entry in
       # one write. records are [stage, search, counts] triples.
-      def add(store, records, totals)
+      def add(store, records, totals, replace: false)
         records = records.map { |stage, search, counts| Input.stage_record(stage, search, counts) }
         totals = Input.breakdown(totals, "totals")
         burndown = read(store)
-        records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record) }
+        records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record, replace:) }
         burndown["totals"] = Entry.add_breakdowns(burndown["totals"], totals)
         store.write(ENTRY, burndown)
         nil
@@ -327,9 +337,9 @@ module Quaack
       module Entry
         module_function
 
-        def add_record(burndown, stage, search, record)
+        def add_record(burndown, stage, search, record, replace: false)
           searches = burndown["stages"][stage] ||= {}
-          searches[search] = searches.key?(search) ? add_records(searches[search], record) : record
+          searches[search] = searches.key?(search) && !replace ? add_records(searches[search], record) : record
         end
 
         def add_records(old, new)
