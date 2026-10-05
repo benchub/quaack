@@ -1187,7 +1187,7 @@ Show each plan in that explanation as a table, in the style of explain.depesz.co
 
 Write the report for a reader who hasn't read this document:
 
-- Open with the verdict: what won and by how much, or that nothing did.
+- Open with the verdict: what won and by how much, or that nothing did. Give how much as a percentage by the same rule as the ranked candidates' tables, so it says "over 99% fewer" rather than rounding to 100%.
 - Show the original query, then every stored rewrite, each pretty-printed by pg_query. SQL it can't parse is shown as sent. Each query's SQL starts collapsed in a `<details>`, whose summary gives the rewrite's name, where it came from, and what became of it, so the reader can scan the rewrites without scrolling past every query.
 - Start the ranking table with a row for the original as it is, with no rank, marked as the baseline: its blocks on the slow literal, its blocks summed over the literals the ranked candidates were summed over, and no new indexes. A number the payload doesn't carry is "not recorded", and a literal it timed out on makes the cell "timed out".
 - In each ranked candidate's table, compare the candidate's blocks on each literal with the original's on the same literal as a number: "52% fewer blocks", "4% more blocks", "same", "under 1% fewer blocks" when the difference rounds to zero, or "over 99% fewer blocks" when it rounds to all of them. When the original read no blocks, give the count of extra blocks instead of a percentage. Only when either number is missing or timed out, give the minimax verdict in words, or "not recorded" without one.

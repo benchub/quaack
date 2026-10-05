@@ -64,9 +64,6 @@ module Quaack
           "#{number(whole.to_i)}.#{tenth} #{unit}"
         end
 
-        # How many percent fewer ours is than theirs.
-        def fewer(ours, theirs) = ((theirs - ours) * 100.0 / theirs).round
-
         # A candidate's blocks against your query's, such as "52% fewer
         # blocks", or nil when either is missing.
         def against(ours, theirs)

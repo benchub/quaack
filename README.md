@@ -651,7 +651,7 @@ Each ranked candidate then gets its own table:
 
 - **Values:** `slow` is the values from your plan. `worst case` uses the most common values from the statistics, which match the most rows. `typical` uses middle-of-the-road values.
 - **Blocks read** is the total, next to what **your query as it is** read on the same values. **Already in memory** and **Read from disk** split the candidate's total. Blocks matter most. The split shows whether a win saves disk reads or just saves work in memory.
-- **Against your query** compares the two block counts in the row: how many percent fewer or more blocks the candidate read, such as "52% fewer blocks", "same" when they're equal, "under 1% more blocks" or "over 99% fewer blocks" when rounding would hide a difference. When your query read no blocks, there's no percentage, so it says how many more the candidate read. Where either number is missing or timed out, it says better, no worse, or worse instead.
+- **Against your query** compares the two block counts in the row: how many percent fewer or more blocks the candidate read, such as "52% fewer blocks", "same" when they're equal, "under 1% more blocks" or "over 99% fewer blocks" when rounding would hide a difference. When your query read no blocks, there's no percentage, so it says how many more the candidate read. Where either number is missing or timed out, it says better, no worse, or worse instead, or "not recorded" when there's no verdict either.
 - **Note** says `unstable` if the block count moved between the three runs. That usually means the plan changed between runs, so be wary of that row.
 
 ### Why the winner reads fewer blocks.
