@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "securerandom"
+require "quaack/enclave/burndown"
 require_relative "support/index_search_run"
 
 # `quaacks rewrite-test`, `counterexample-payload`, and
@@ -57,6 +58,14 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   end
 
   def lines(outcome) = outcome.stdout.lines.map { JSON.parse(it) }
+
+  def burndown = Quaack::Enclave::Burndown.read(stored)
+  def remove(entry) = FileUtils.rm_f(File.join(stored.path, "#{entry}.json"))
+
+  def counted(**counts)
+    { "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0, "extra" => {} }
+      .merge(counts.transform_keys(&:to_s))
+  end
 
   def round(number, *inserts)
     step("counterexample-round", "--search", "rewrite_1", "--round", number.to_s,
@@ -214,6 +223,95 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     end
   end
 
+  describe "rewrite-test's burndown" do
+    def test = step("rewrite-test", "--search", "rewrite_1")
+    def none = { "untested_atoms" => 0, "vacuity_guard_retries" => 0 }
+
+    it "records a rewrite that passed under its search, with untested atoms, vacuity-guard retries, and loads" do
+      # No row can fail o.status = 'held', so vacuity-guard leaves it untested.
+      ready(same, status_check: "status = 'held'")
+
+      test
+
+      expect(burndown["stages"]).to eq(
+        "rewrite-test" => { "rewrite_1" => counted(out: 1, extra: { "untested_atoms" => 1,
+                                                                    "vacuity_guard_retries" => 3 }) }
+      )
+      expect(burndown["totals"]).to eq("fixture_loads" => 18)
+    end
+
+    it "drops a disproved rewrite by its scenario, and an untested one by the refusal's rule" do
+      ready(looser)
+      test
+      expect(burndown["stages"]["rewrite-test"]).to eq("rewrite_1" => counted(dropped: { "s1" => 1 }, extra: none))
+
+      production.server.admin.exec(%(DROP DATABASE "#{arena_name}" WITH (FORCE)))
+      make_arena("status = 'open' OR status = 'closed'")
+      store.write("rewrite_2", stored.read("rewrite_1").merge("sql" => same))
+      step("rewrite-test", "--search", "rewrite_2")
+      expect(burndown["stages"]["rewrite-test"]["rewrite_2"]).to eq(counted(dropped: { "complex_check" => 1 },
+                                                                            extra: none))
+    end
+
+    it "records nothing for a rewrite plan-pruning pruned, which never reached rewrite-test" do
+      ready(same, arena: false)
+      store.write("rewrite_pruned_1", "discarded" => true)
+
+      test
+
+      expect(burndown).to eq("stages" => {}, "totals" => {})
+    end
+
+    it "counts nothing twice when a call that died before its entry is run again" do
+      ready(looser)
+      test
+      first = burndown
+      %w[rewrite_tested_1 rewrite_survived_1].each { remove(it) }
+
+      test
+
+      expect(stored.read("rewrite_tested_1")).to include("passed" => false)
+      expect(burndown).to eq(first)
+    end
+  end
+
+  describe "counterexamples' burndown" do
+    let(:note_row) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open')" }
+    let(:dup_rows) { "INSERT INTO public.orders (id, note, status) VALUES (1, $1, 'open'), (1, $1, 'open')" }
+
+    it "drops a rewrite disproved by the round that disproved it, adding up every round's fixture loads" do
+      ready(looser)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      round(1, dup_rows)
+      expect(burndown).to eq("stages" => {}, "totals" => {})
+      round(2, note_row)
+
+      expect(burndown).to eq("stages" => { "counterexamples" => { "rewrite_1" => counted(
+        dropped: { "round_2" => 1 }, extra: { "atoms_covered" => 0 }
+      ) } }, "totals" => { "fixture_loads" => 3 })
+    end
+
+    it "keeps a survivor of round 3, with the untested atoms the rounds covered, and counts it once when rerun" do
+      ready(same)
+      # The original reads o.note = $1 AND o.status = $2: atom 1 is the status test.
+      store.write("rewrite_tested_1", "passed" => true, "untested" => ["o.status = $2"], "untested_atoms" => [1])
+      round(1, note_row)
+      round(2, dup_rows)
+      round(3, dup_rows)
+      first = burndown
+      expect(first).to eq("stages" => { "counterexamples" => { "rewrite_1" => counted(
+        out: 1, extra: { "atoms_covered" => 1 }
+      ) } }, "totals" => { "fixture_loads" => 5 })
+      remove("rewrite_survived_1")
+
+      [note_row, dup_rows, dup_rows].each.with_index(1) { |insert, number| round(number, insert) }
+
+      expect(stored.read("rewrite_survived_1")).to include("survived" => true)
+      expect(burndown).to eq(first)
+    end
+  end
+
   describe "counterexample-payload (llm-counterexamples)" do
     it "sends the redacted original, the candidate's SQL, placeholders, schema, and untested atoms" do
       ready(same)
@@ -258,7 +356,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       # The round's rule is stored, so the report can tell a mismatch from
       # a candidate that failed to run (20261001-17).
       expect(stored.read("rewrite_round_1"))
-        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "covered" => [])
+        .to eq("round" => 1, "evidence" => true, "rule" => "row_count", "covered" => [], "fixture_loads" => 2)
       expect_no_leaks(sentinels, outcome)
     end
 
@@ -310,7 +408,8 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(lines(round(1, note_row)).first).to include("match" => true)
       expect(stored.entry?("rewrite_survived_1")).to be(false)
-      expect(stored.read("rewrite_round_1")).to eq("round" => 1, "evidence" => true, "rule" => nil, "covered" => [])
+      expect(stored.read("rewrite_round_1"))
+        .to eq("round" => 1, "evidence" => true, "rule" => nil, "covered" => [], "fixture_loads" => 3)
       round(2, dup_rows)
       round(3, dup_rows)
       expect(stored.read("rewrite_survived_1")).to eq("survived" => true, "evidence" => true)

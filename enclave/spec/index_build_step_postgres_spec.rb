@@ -2,6 +2,7 @@
 
 require_relative "support/index_search_run"
 require "quaack/enclave/index_build"
+require "quaack/enclave/burndown"
 
 # DESIGN.md's index-build: `quaacks index-build` builds every distinct index from the
 # index-search and rewrite-index-ideas rankings and the set-aside GIN/GiST/SP-GiST candidates,
@@ -69,6 +70,28 @@ RSpec.describe "quaacks index-build, against a real server" do
 
   # Each index's progress line carries its DDL through
   # CandidateDdlRedaction, never the stored DDL with its literals.
+  # rewrite-index-ideas runs in the driver, ahead of index-build, which
+  # records it: the rewrites that reached it all go on to measurement.
+  it "records rewrite-index-ideas' rewrites and the indexes it built in the burndown, once when rerun" do
+    ranked_run
+    [true, false].each.with_index(1) do |survived, n|
+      store.write("rewrite_#{n}", "sql" => "SELECT #{n}")
+      store.write("rewrite_survived_#{n}", "survived" => survived)
+    end
+
+    run("index-build")
+    first = Quaack::Enclave::Burndown.read(stored)
+    FileUtils.rm_f(File.join(stored.path, "index_build.json"))
+    run("index-build")
+
+    expect(stored.read("index_build")["indexes"].size).to be > 1
+    expect(first).to eq("stages" => { "rewrite-index-ideas" => { "rewrites" => {
+                          "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {}
+                        } } },
+                        "totals" => { "indexes_built" => stored.read("index_build")["indexes"].size })
+    expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
+  end
+
   it "sends a progress line before building each index, with its name and redacted DDL, never a literal" do
     ranked_run
     predicate = "note = '#{sentinels.text}'"

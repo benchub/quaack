@@ -808,7 +808,7 @@ Each rewrite goes through rewrite-check, as an LLM's does: inbound-check, assump
 
 It records the rewrite-rules burndown stage: every result the rules made, counted by the last rule applied, and how many were dropped as a duplicate, as over the cap, or for failing the checks. A result pg_query can't deparse faithfully isn't counted.
 
-The marker is its last write, so a call that dies can leave rewrites stored with no marker, and the driver then calls it again. Running it again must change nothing. It writes in this order: each survivor, then the rewrite-rules and plan-pruning burndown records together in one write, then the marker. A second call keeps a rule-made rewrite the store already holds with the same SQL instead of storing it again, and records the burndown only if no rewrite-rules record is there yet.
+The marker is its last write, so a call that dies can leave rewrites stored with no marker, and the driver then calls it again. Running it again must change nothing. It writes in this order: each survivor, then the rewrite-rules burndown record, then the marker. A second call keeps a rule-made rewrite the store already holds with the same SQL instead of storing it again, and records the burndown only if no rewrite-rules record is there yet.
 
 `report-payload` sends each rewrite's source (`rule`, `llm`, or `operator`) and, for a rule-made one, its rule names and its `denormalized_equal` assumptions as `empirical`: the tables and columns, never the type value. It sends a source or a rule name only if it's one of QUAACK's own, never what a store entry holds as it is, and an assumption only if every table and column it names is in the rewrite's own SQL, which the report sends anyway. It also sends `rule_bugs`: each rule-made rewrite that rewrite-test, counterexamples, or result-comparison disproved, with its rule names and the step, less rewrite-test and counterexamples disproofs of a rewrite resting on `denormalized_equal`. Only a test that compared results and found them different counts. In result-comparison that means a failing verdict whose rule is a result mismatch (`column_count`, `column_types`, `row_count`, `value`, `multiset`, `subset`, or `candidate_unordered`). A result-comparison timeout (`timed_out`) isn't a disproof: result-comparison runs the rewrite with no index shown, so a sound rewrite that only wins with its index can run past the timeout. Nor is `unsupported_order`, which fails every candidate of an original whose order result-comparison can't check. selection still drops such a rewrite, but the report doesn't call it a bug. A rewrite plan-pruning pruned for planning as the original does was never tested either, so it isn't one: on Postgres 18 the planner removes a single self-join on a key by itself, so `key_in_self_join`'s plainest rewrite is pruned that way.
 
@@ -837,7 +837,7 @@ Every rewrite goes through these checks, whichever source made it: llm-rewrites 
 
 #### inbound-check. What goes into the enclave.
 
-The rewrite must pass the checks under "What goes into the enclave": a single `SELECT` with no side effects, using only the supported SQL. A rewrite that fails is dropped and counted as `inbound_check`.
+The rewrite must pass the checks under "What goes into the enclave": a single `SELECT` with no side effects, using only the supported SQL. A rewrite that fails is dropped. The burndown counts it under llm-rewrites or operator-rewrites, by the rule it failed, or, for a rule-made one, in rewrite-rules' `failed_checks`.
 
 #### assumption-check. Assumption check.
 
@@ -847,7 +847,7 @@ One kind, `denormalized_equal`, states what the data holds and the schema can't:
 
 #### structural-discard. Structural discards.
 
-Plan the rewrite on the racetrack with the slow literals. Discard it if it fails to plan (`failed_to_plan`), or if its output column count or types differ from the original's (`output_mismatch`). The burndown counts these drops, and inbound-check's, under plan-pruning, with its own.
+Plan the rewrite on the racetrack with the slow literals. Discard it if it fails to plan (`failed_to_plan`), or if its output column count or types differ from the original's (`output_mismatch`). The burndown counts these drops, and clock anchoring's, under plan-pruning, with its own. A rewrite that reaches plan-pruning comes in once, whether it's dropped here or in three-configuration pruning, so plan-pruning's out is the rewrites that went on. A rule-made rewrite's drops here count in rewrite-rules' `failed_checks` instead.
 
 ## plan-pruning. Plan-based pruning.
 
@@ -1228,13 +1228,13 @@ For each stage, show how many items came in, how many the stage added, how many 
 | Stage | Adds | Drops, by reason |
 | --- | --- | --- |
 | rewrite-rules | Rule-made rewrites, counted by the last rule applied. | Duplicate of an earlier result, over the cap of ten, or failed the checks. |
-| llm-rewrites and operator-rewrites | LLM rewrites and operator rewrites, counted separately. | Failed the input checks under "What goes into the enclave." |
+| llm-rewrites and operator-rewrites | LLM rewrites and operator rewrites, counted separately. operator-rewrites has no record when the run had no `--rewrites` file. | Refused on arrival, by rule: over the cap of five, an assumption outside the vocabulary, or failed the input checks under "What goes into the enclave." |
 | assumption-check | None. | Unmet assumption. Also count the operator-rewrites warnings, which don't drop anything. |
-| plan-pruning | None. | Failed inbound-check, failed to plan, output columns didn't match, or couldn't run any differently from the original. |
-| rewrite-test | None. | Disproved, broken down by scenario, S0 through S6. Also count untested atoms and vacuity-guard retries. |
+| plan-pruning | None. | Failed to plan, output columns didn't match, the clock couldn't be anchored, or couldn't run any differently from the original. |
+| rewrite-test | None. | Disproved, broken down by scenario, S0 through S6, or never tested, by the refusal's rule or the rule of a scenario that couldn't compare. Also count untested atoms and vacuity-guard retries. |
 | counterexamples | None. | Disproved, broken down by round. Also count untested atoms that counterexamples covered. |
 | plan-pruning and rewrite-index-ideas | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same index-dedupe, index-test, and index-rank reasons. |
-| measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three. Count partial result-comparison comparisons too. |
+| measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three, by the rewrite's fate, as negative-result gives it, which also tells timing out in every run apart. Count partial result-comparison comparisons too. |
 
 **Work totals:**
 
@@ -1244,4 +1244,4 @@ For each stage, show how many items came in, how many the stage added, how many 
 - Measurement runs in baseline and candidate-runs, including literals marked unstable.
 - Fixture loads in arena.
 
-The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.
+The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. A step that runs once per rewrite records that rewrite's counts under the rewrite's search, before the entry that marks it done, and only if the burndown has no record of that stage for it yet. So a step a resumed run skips, or one it runs again after a call died, is counted once. rewrite-index-ideas also gets a record of its own, which index-build writes: the rewrites whose index searches it ran, which all go on to measurement, since their index searches drop indexes, never rewrites. selection writes measurement's. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.

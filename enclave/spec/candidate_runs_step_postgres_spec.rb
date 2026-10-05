@@ -60,6 +60,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(best).to be < runs["none"]["slow"]["total_blocks"]
     expect(entry["timed_out"]).to eq([])
     expect(entry["timed_out_count"]).to eq(0)
+    expect(entry["measurement_runs"]).to eq((combos.size + 1) * 9)
     expect(valid_count(build["indexes"].keys)).to eq("0")
 
     # DESIGN.md's blocks-metric and minimax, end to end: minimax reads these real runs.
@@ -92,6 +93,8 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
     expect(entry["candidates"]["rewrite_2"].keys).to eq(["none"])
     expect(entry["timed_out"]).to eq(["rewrite_1:none"])
     expect(entry["timed_out_count"]).to eq(1)
+    # Three sets of rewrite_2's three runs, and the first run of each of rewrite_1's.
+    expect(entry["measurement_runs"]).to eq(12)
   end
 
   # DESIGN.md's clock-anchor: baseline runs the candidate's anchored_sql, so it reads the

@@ -84,6 +84,15 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
   end
 
   describe "loading and querying" do
+    it "counts each fixture it loads, one that fails included, for the burndown's fixture loads" do
+      expect(runner.loads).to eq(0)
+      runner.with_fixture([parent(1, "a")]) { |tx| tx.query("SELECT 1") }
+      runner.with_fixture { nil }
+      expect { runner.with_fixture([parent(1, "a"), parent(2, "a")]) { nil } }.to raise_error(described_class::Error)
+
+      expect(runner.loads).to eq(3)
+    end
+
     it "loads the rows in order and returns each query's columns, type OIDs, and text rows" do
       rows = [parent(1, "a", note: "first"), parent(2, "b", qty: nil), child(10, "a", price: "1.50"), child(11, "b")]
 

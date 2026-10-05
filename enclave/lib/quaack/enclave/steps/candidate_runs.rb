@@ -22,6 +22,8 @@ module Quaack
       #   "timed_out"       the dropped runs, as "rewrite_<n>:none" or the
       #                     combination key
       #   "timed_out_count" how many were dropped, for the report
+      #   "measurement_runs" how many runs it took (Measurement.runs), the
+      #                     dropped ones' included, for the burndown
       # Every built index is hidden again at the end. Its only line is DONE.
       module CandidateRuns
         module_function
@@ -39,18 +41,21 @@ module Quaack
 
         def entry(store, connection)
           timed_out = []
-          candidates = candidates(store).to_h { [it, runs(store, connection, it, timed_out)] }
+          counted = [0]
+          candidates = candidates(store).to_h { [it, runs(store, connection, it, timed_out, counted)] }
           { "candidates" => candidates.reject { |_, runs| runs.empty? }, "timed_out" => timed_out,
-            "timed_out_count" => timed_out.size }
+            "timed_out_count" => timed_out.size, "measurement_runs" => counted.first }
         end
 
         # search's runs that didn't time out, by "none" or combination key.
-        # Adds the label of each that did to timed_out.
-        def runs(store, connection, search, timed_out)
+        # Adds the label of each that did to timed_out, and how many runs
+        # each took to counted's one element.
+        def runs(store, connection, search, timed_out, counted)
           timeout_ms = store.read("baseline").fetch("timeout_ms")
           sql = RewriteEntry.run_sql(store.read(search))
           combinations(store, search).each_with_object({}) do |key, out|
             sets = Measurement.measure(connection:, store:, sql:, combination: key, timeout_ms:)
+            counted[0] += Measurement.runs(sets)
             next timed_out << (key || "#{search}:none") if sets.values.any? { it["timed_out"] }
 
             out[key || "none"] = sets

@@ -38,6 +38,7 @@ RSpec.describe "quaacks baseline, against a real server" do
     baseline = stored.read("baseline")
     expect(baseline["sets"].keys).to match_array(%w[slow worst_case typical])
     expect(baseline["timed_out"]).to eq([])
+    expect(baseline["measurement_runs"]).to eq(9)
     baseline["sets"].each_value do |m|
       expect(m["timed_out"]).to be(false)
       expect(m["runs"].size).to eq(3)
@@ -70,7 +71,7 @@ RSpec.describe "quaacks baseline, against a real server" do
     conn&.close
   end
 
-  it "records a timed-out statement instead of blocks" do
+  it "records a timed-out statement instead of blocks, with how many runs it got through" do
     built_run
     conn = production.connect
 
@@ -78,7 +79,8 @@ RSpec.describe "quaacks baseline, against a real server" do
                                                     sql: "SELECT pg_sleep(0.3), $1::text IS NULL",
                                                     combination: nil, timeout_ms: 50)
 
-    expect(measured["slow"]).to eq("timed_out" => true)
+    expect(measured["slow"]).to eq("timed_out" => true, "ran" => 1)
+    expect(Quaack::Enclave::Measurement.runs(measured.merge("x" => { "runs" => [{}, {}, {}] }))).to eq(6)
   ensure
     conn&.close
   end

@@ -35,12 +35,14 @@ module Quaack
 
       # starting, if given, is called before each index is built with its
       # 1-based position, the total, and its stored DDL, which can hold a
-      # literal, so the caller must redact it before it leaves.
-      def build(store, connection, starting: nil)
+      # literal, so the caller must redact it before it leaves. built, if
+      # given, is called with the built indexes before index_build is written.
+      def build(store, connection, starting: nil, built: nil)
         SETTINGS.each { |k, v| connection.exec("SET #{k} = '#{v}'") }
         combinations = combinations(store)
         indexes = create_all(connection, combinations.values.flatten.uniq, starting)
         hide_all(connection, "indexes" => indexes)
+        built&.call(indexes)
         store.write("index_build", "indexes" => indexes,
                                    "combinations" => combinations.transform_values { it.map { name(it) } })
       end
@@ -110,9 +112,7 @@ module Quaack
       end
 
       # Each of build's index names, mapped to its table's schema.
-      def schemas(build)
-        build["indexes"].transform_values { index_stmt(it["ddl"]).relation.schemaname }
-      end
+      def schemas(build) = build["indexes"].transform_values { index_stmt(it["ddl"]).relation.schemaname }
 
       # Sets indisvalid for QUAACK's own non-unique indexes only, matched on
       # schema and name. schemas is one schema for every name, or a name =>

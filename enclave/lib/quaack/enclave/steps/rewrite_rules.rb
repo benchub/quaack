@@ -24,8 +24,10 @@ module Quaack
       # A survivor is stored as rewrite_<n>, in RewriteCheck's store format,
       # with "source" => "rule" and "rules" => the names of the rules
       # applied, in order. Its "transformation" is those rules' descriptions,
-      # in order, and its "assumptions" are the ones the rules stated. Its
-      # counts go to the plan-pruning burndown as rewrite-check's do.
+      # in order, and its "assumptions" are the ones the rules stated. A
+      # rewrite the checks reject is counted in rewrite-rules' failed_checks
+      # only, not in plan-pruning; a survivor enters plan-pruning in
+      # rewrite-prune.
       #
       # It records the rewrite-rules burndown stage (DESIGN.md's burndown), search rewrites:
       # added is every result the generator counted, by the name of the last
@@ -39,7 +41,7 @@ module Quaack
       #
       # Running it again changes nothing, so a call that died before its
       # marker can be repeated. The writes go in this order: each survivor,
-      # then the rewrite-rules and plan-pruning burndown records in one write, then the
+      # then the rewrite-rules burndown record, then the
       # marker. A survivor an earlier call stored is found again by its SQL
       # and kept, not stored twice (stored, and RewriteCheck.check). The
       # burndown is recorded only if it holds no rewrite-rules record yet.

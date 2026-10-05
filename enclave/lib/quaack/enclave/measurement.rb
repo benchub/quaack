@@ -20,8 +20,9 @@ module Quaack
     # built index (the baseline). sql is written with redact's placeholders
     # (anchored_query or a rewrite) and is bound with each set's literals
     # through PREPARE, never spliced in. A measurement is either
-    # { "timed_out" => true }, when any of the three runs hit
-    # statement_timeout (the caller drops that candidate and counts it), or:
+    # { "timed_out" => true, "ran" => <runs up to and including the one
+    # that timed out> }, when any of the three runs hit statement_timeout
+    # (the caller drops that candidate and counts it), or:
     #   "runs"         [{ "total_blocks", "hit", "read", "execution_ms" }]
     #   "stable"       whether total_blocks was the same in all three runs
     #   "total_blocks" the max of the three (for an unstable literal, blocks-metric and
@@ -54,14 +55,18 @@ module Quaack
 
       def measure_set(connection, bound, params, map, timeout_ms)
         sql = "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) #{bound.sql}"
-        runs = RUNS.times.map do
+        runs = RUNS.times.map do |i|
           run = RunDiscipline.run(connection:, sql:, params:, timeout_ms:)
-          return { "timed_out" => true } if run.timed_out
+          return { "timed_out" => true, "ran" => i + 1 } if run.timed_out
 
           JSON.parse(run.result.getvalue(0, 0))
         end
         summarize(runs, map)
       end
+
+      # How many EXPLAIN ANALYZE runs measure's { set name => measurement }
+      # took, for the burndown's measurement_runs.
+      def runs(sets) = sets.values.sum { it["timed_out"] ? it.fetch("ran", 0) : it["runs"].size }
 
       # The values as bound parameters, never in the SQL's text, each with
       # the type OID Postgres gave it when Binding#prepare declared the

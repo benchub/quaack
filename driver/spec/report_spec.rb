@@ -1170,6 +1170,39 @@ RSpec.describe Quaack::Driver::Report do
                                        '<td colspan="6" class="missing">not recorded</td></tr>')
     end
 
+    it "puts the rewrite stages' own reasons and counts in words" do
+      measured = { "production_mismatch" => 1, "production_timed_out" => 1, "production_not_compared" => 1,
+                   "not_better" => 1, "measurement_timed_out" => 1, "footprint_tie" => 1, "below_top_three" => 1 }
+      stages = { "llm-rewrites" => { "rewrites" => rec(0, 1, added: { "llm" => 3 },
+                                                             dropped: { "too_many" => 1, "bad_assumption" => 1 }) },
+                 "operator-rewrites" => { "rewrites" => rec(0, 1, added: { "operator" => 1 }) },
+                 "assumption-check" => { "rewrites" => rec(2, 1, dropped: { "unmet_assumption" => 1 },
+                                                                 extra: { "operator_warnings" => 2 }) },
+                 "rewrite-test" => { "rewrite_1" => rec(1, 1, extra: { "vacuity_guard_retries" => 3 }) },
+                 "counterexamples" => { "rewrite_1" => rec(2, 1, dropped: { "round_2" => 1 },
+                                                                 extra: { "atoms_covered" => 1 }) },
+                 "measurement" => { "rewrites" => rec(7, 0, dropped: measured,
+                                                            extra: { "partial_comparisons" => 2 }) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+
+      expect(table).to include(row("Rewrites from the LLM", 0, "from the LLM: 3",
+                                   "over the limit of five: 1; assumed something QUAACK can&#39;t check: 1", 0, 1,
+                                   "none"))
+      expect(table).to include(row("Checking what each rewrite assumes", 2, "none",
+                                   "assumed something your data doesn&#39;t hold: 1", 0, 1,
+                                   "warnings on your own rewrites: 2"))
+      expect(table).to include(row("Testing on made-up edge-case data", 1, "none", "none", 0, 1,
+                                   "retries to make sure every condition mattered: 3"))
+      expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none", "wrong in round 2: 1",
+                                   0, 1, "untested conditions the LLM&#39;s data exercised: 1"))
+      expect(table).to include(row("Measuring on the real data and choosing", 7, "none",
+                                   "wrong on the real data: 1; timed out on the real data: 1; " \
+                                   "couldn&#39;t be compared on the real data: 1; no better than your query: 1; " \
+                                   "timed out in every measurement run: 1; lost a tie on index size: 1; " \
+                                   "outside the top three: 1", 0, 0,
+                                   "compared on only part of the real data: 2"))
+    end
+
     it "leaves a reason with a count of zero out, and names the ones that dropped something" do
       expect(rewrite_table).to include(row("Checking each rewrite can run differently from your query", 2, "none",
                                            "planned the same as your query: 1", 0, 1, "none"))

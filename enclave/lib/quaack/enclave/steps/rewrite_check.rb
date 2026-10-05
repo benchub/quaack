@@ -5,6 +5,7 @@ require_relative "../burndown"
 require_relative "../clock_anchoring"
 require_relative "../literal_set"
 require_relative "../rewrite_assumptions"
+require_relative "../rewrite_burndown"
 require_relative "../rewrite_candidate_check"
 require_relative "../run_server"
 require_relative "../structural_discard"
@@ -57,9 +58,8 @@ module Quaack
       # The transformation and assumptions come from the LLM (or, for rewrite-rules,
       # from the rules), so they're kept in the store only, never sent.
       #
-      # Each call adds its counts to the plan-pruning burndown (StructuralDiscard.
-      # stage_record, search rewrites), with the inbound check's rejections
-      # as inbound_check. A call with llm-rewrites' rewrites (not inferred) also writes
+      # A call records its counts in the burndown (RewriteBurndown.record_check), unless an earlier
+      # call that died before its marker recorded them. A call with llm-rewrites' rewrites (not inferred) also writes
       # the rewrites_generated marker, so a resumed run skips llm-rewrites. A call
       # with operator-rewrites' (inferred) writes operator_rewrites_checked instead.
       #
@@ -68,8 +68,6 @@ module Quaack
       module RewriteCheck
         MAX = 5
         FIELDS = %w[assumptions sql transformation].freeze
-        STRUCTURAL = %w[failed_to_plan output_mismatch].freeze
-        OWN = %w[too_many bad_assumption unmet_assumption].freeze
         DATA_KINDS = %w[denormalized_equal].freeze
 
         class Error < IndexSearch::Error; end
@@ -86,14 +84,14 @@ module Quaack
         end
 
         # Checks the rewrites the block gives, stores the survivors, and
-        # records the plan-pruning burndown. It returns one rewrite_outcome per
+        # records the burndown (RewriteBurndown.record_check). It returns one rewrite_outcome per
         # rewrite. The block gets the racetrack connection every check runs
         # on. `quaacks rewrite-rules` (rewrite-rules) shares this, with source "rule".
         #
-        # also is called with the outcomes, and gives more burndown records,
-        # as Burndown.record_all takes them, to store in the same write as
-        # plan-pruning's. If it gives nil, nothing is recorded, plan-pruning's included:
-        # that's how rewrite-rules, run again, says an earlier call recorded them all.
+        # For source "rule", RewriteBurndown.check gives nothing: also is called with the
+        # outcomes, and gives the burndown records, as Burndown.record_all
+        # takes them. If it gives nil, nothing is recorded: that's how
+        # rewrite-rules, run again, says an earlier call recorded them all.
         #
         # stored is { accepted SQL => entry name }, the rewrites an earlier
         # call already stored. A survivor whose accepted SQL is there keeps
@@ -102,10 +100,9 @@ module Quaack
         def check(store, source:, stored: {}, also: ->(_) { [] })
           connection = Enclave::RunServer.connect(store, :racetrack)
           context = context(store, connection, source).merge(stored: stored.dup)
-          outcomes = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
-          more = also.call(outcomes)
-          Burndown.record_all(store, [PlanPruning.record(outcomes), *more]) if more
-          outcomes
+          tagged = yield(connection).each_with_index.map { |rewrite, i| outcome(i + 1, rewrite, context) }
+          RewriteBurndown.record_check(store, source, tagged, also)
+          tagged.map(&:first)
         ensure
           connection&.close
         end
@@ -147,14 +144,17 @@ module Quaack
         end
 
         def outcome(index, rewrite, context)
-          return rejected(index, "too_many") if index > MAX && context[:source] == "llm"
-          return rejected(index, "bad_assumption") unless assumptions?(rewrite["assumptions"], context[:source])
-
-          sql, types, warnings = checked(rewrite, context)
+          sql, types, warnings = checked(index, rewrite, context)
           name = context[:stored].delete(sql) || save(context, rewrite, sql, types, warnings)
-          { type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }
+          [{ type: :rewrite_outcome, index:, outcome: :accepted, rule: nil, rewrite: name, warnings: }, nil]
         rescue RewriteCandidateCheck::Error, ClockAnchoring::Error, Rejected => e
-          rejected(index, e.rule)
+          [rejected(index, e.rule), RewriteBurndown.stage(e)]
+        end
+
+        # Raises Rejected if a rule of this step's own refuses the rewrite on arrival.
+        def refuse!(index, rewrite, source)
+          raise Rejected, "too_many" if index > MAX && source == "llm"
+          raise Rejected, "bad_assumption" unless assumptions?(rewrite["assumptions"], source)
         end
 
         # Whether the assumptions are in assumption-check's vocabulary, with
@@ -168,7 +168,8 @@ module Quaack
         end
 
         # The accepted SQL, its output column types, and its warnings, or raises.
-        def checked(rewrite, context)
+        def checked(index, rewrite, context)
+          refuse!(index, rewrite, context[:source])
           connection = context[:connection]
           accepted = RewriteCandidateCheck.check(rewrite["sql"], context[:original], context[:settings], connection)
           warnings = unmet(rewrite["assumptions"], connection)
@@ -192,21 +193,6 @@ module Quaack
         def unmet(assumptions, connection)
           assumptions.each_with_index.reject { |assumption, _| AssumptionCheck.met?(assumption, connection) }
                      .map { |assumption, i| { "assumption" => i + 1, "kind" => assumption["kind"] } }
-        end
-
-        # The plan-pruning burndown record for a call: the rewrites the inbound
-        # check rejected, those StructuralDiscard dropped, and the survivors.
-        # Rejections by this step's own rules (llm-rewrites and assumption-check) aren't plan-pruning's.
-        module PlanPruning
-          module_function
-
-          def record(outcomes)
-            rules = outcomes.map { it[:rule]&.to_s }
-            dropped = STRUCTURAL.to_h { |rule| [rule.to_sym, rules.count(rule)] }
-            inbound = rules.count { it && !(STRUCTURAL + OWN).include?(it) }
-            kept = outcomes.filter_map { it[:rewrite] }
-            StructuralDiscard.stage_record(StructuralDiscard::Result.new(kept:, dropped:), inbound_rejected: inbound)
-          end
         end
 
         def rejected(index, rule)

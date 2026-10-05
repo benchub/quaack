@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require_relative "burndown"
 require_relative "redaction"
 
 module Quaack
@@ -11,7 +10,6 @@ module Quaack
     #
     #   result = StructuralDiscard.check(connection, original: sql, candidates: [sql, ...], literals: ["open"])
     #   # => Result(kept: [sql, ...], dropped: { failed_to_plan: 1, output_mismatch: 0 })
-    #   StructuralDiscard.record(store, result, inbound_rejected: 2)
     #
     # connection is a live racetrack connection, not inside a transaction.
     # original and each candidate are one statement with the original's $n
@@ -28,9 +26,7 @@ module Quaack
     # Column names don't matter. The original is described the same way,
     # and an error there raises, since nothing can be compared.
     #
-    # record adds the plan-pruning structural counts to the burndown under the
-    # search rewrites, with the inbound check's rejections (DESIGN.md's plan-pruning
-    # counts them here) as inbound_check.
+    # RewriteCheck records its drops in the plan-pruning burndown.
     #
     # Trust boundary. Result holds the candidates' own text, which has
     # placeholders, not literals, and counts. The literals go only to the
@@ -56,17 +52,6 @@ module Quaack
           reason.nil?
         end
         Result.new(kept: kept.freeze, dropped: dropped.freeze)
-      end
-
-      def record(store, result, inbound_rejected:)
-        Burndown.record_all(store, [stage_record(result, inbound_rejected:)])
-      end
-
-      # What record records, as a [stage, search, counts] triple for
-      # Burndown.record_all, for a caller that stores it with other stages'.
-      def stage_record(result, inbound_rejected:)
-        dropped = { inbound_check: inbound_rejected, **result.dropped }
-        ["plan-pruning", :rewrites, { in: result.kept.size + dropped.values.sum, dropped:, out: result.kept.size }]
       end
 
       def reason(connection, sql, literals, expected, param_types: [])
