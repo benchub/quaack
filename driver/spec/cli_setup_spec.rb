@@ -154,12 +154,22 @@ RSpec.describe "quaack setup" do
       fail_inventory("production_connection_failed")
 
       expect(errors).to eq("quaack setup failed: production_connection_failed: couldn't connect to production at " \
-                           "prod-1. It gives libpq only that host, and the port when you gave `quaack start " \
-                           "--port`. The port otherwise, and the user, database, and password, come from #{libpq} " \
-                           "Test it with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`, adding -p <n> if you gave " \
-                           "quaack start --port. If production listens on another port than your libpq setup " \
-                           "gives, start a new run with `quaack start --port <n>`. Otherwise fix your libpq " \
-                           "setup, then resume with `quaack setup --run #{run_id}`\n")
+                           "prod-1. QUAACK gives libpq only that host. The port, user, database, and password come " \
+                           "from #{libpq} Test it with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`. If production " \
+                           "listens on another port than your libpq setup gives, start a new run with `quaack start " \
+                           "--port <n>`. Otherwise fix your libpq setup, then resume with `quaack setup --run " \
+                           "#{run_id}`\n")
+    end
+
+    # Task 20261004-37: the port quaack start recorded goes into the test
+    # command exactly.
+    it "gives psql the port quaack start recorded" do
+      Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1", port: "6543")
+      fail_inventory("production_connection_failed")
+
+      expect(errors).to start_with("quaack setup failed: production_connection_failed: couldn't connect to " \
+                                   "production at prod-1, port 6543. ")
+      expect(errors).to include("Test it with `ssh jump-1 'psql -h prod-1 -p 6543 -c \"select 1\"'`.")
     end
 
     it "says the production server you gave quaack start for a run recorded without one" do

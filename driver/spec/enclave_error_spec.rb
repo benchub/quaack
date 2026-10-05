@@ -55,24 +55,34 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
   # production server the operator gave quaack start, so the note names
   # them, and says where the rest of the connection comes from.
   describe "production_connection_failed" do
-    let(:setup) do
-      "It gives libpq only that host, and the port when you gave `quaack start --port`. The port otherwise, " \
-        "and the user, database, and password, come from your libpq setup on the jump server: PG* environment " \
-        "variables, ~/.pg_service.conf with PGSERVICE, and ~/.pgpass. A non-interactive ssh session may not " \
-        "load the shell rc file that sets them."
+    let(:libpq) do
+      "your libpq setup on the jump server: PG* environment variables, ~/.pg_service.conf with PGSERVICE, and " \
+        "~/.pgpass. A non-interactive ssh session may not load the shell rc file that sets them."
     end
-    let(:port) do
-      "If production listens on another port than your libpq setup gives, start a new run with " \
-        "`quaack start --port <n>`. Otherwise fix your libpq setup, then resume with `quaack setup --run R1`"
-    end
+    let(:resume) { "Otherwise fix your libpq setup, then resume with `quaack setup --run R1`" }
 
     it "names the server tried, where the rest of the connection comes from, and how to test it" do
       note = error("production_connection_failed", exit_status: 70)
              .rule_with_note(next_step: "resume with `quaack setup --run R1`", jump: "jump-1", server: "prod-1")
 
-      expect(note).to eq("production_connection_failed: couldn't connect to production at prod-1. #{setup} " \
-                         "Test it with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`, adding -p <n> if you gave " \
-                         "quaack start --port. #{port}")
+      expect(note).to eq("production_connection_failed: couldn't connect to production at prod-1. QUAACK gives " \
+                         "libpq only that host. The port, user, database, and password come from #{libpq} Test it " \
+                         "with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`. If production listens on another port " \
+                         "than your libpq setup gives, start a new run with `quaack start --port <n>`. #{resume}")
+    end
+
+    # Task 20261004-37: the run records quaack start --port, so the test
+    # command gives it exactly.
+    it "names the port the run recorded, and gives it to psql as -p" do
+      note = error("production_connection_failed", exit_status: 70)
+             .rule_with_note(next_step: "resume with `quaack setup --run R1`", jump: "jump-1", server: "prod-1",
+                             port: "6543")
+
+      expect(note).to eq("production_connection_failed: couldn't connect to production at prod-1, port 6543. " \
+                         "QUAACK gives libpq only that host and port. The user, database, and password come from " \
+                         "#{libpq} Test it with `ssh jump-1 'psql -h prod-1 -p 6543 -c \"select 1\"'`. If " \
+                         "production listens on another port, start a new run with `quaack start --port <n>`. " \
+                         "#{resume}")
     end
 
     it "says the production server you gave quaack start when the driver doesn't know it" do
@@ -80,8 +90,10 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
              .rule_with_note(next_step: "resume with `quaack setup --run R1`")
 
       expect(note).to eq("production_connection_failed: couldn't connect to the production server you gave " \
-                         "quaack start. #{setup} Test it with `ssh <jump server> 'psql -h <server> -c " \
-                         "\"select 1\"'`, adding -p <n> if you gave quaack start --port. #{port}")
+                         "quaack start. QUAACK gives libpq only that host. The port, user, database, and password " \
+                         "come from #{libpq} Test it with `ssh <jump server> 'psql -h <server> -c \"select 1\"'`. " \
+                         "If production listens on another port than your libpq setup gives, start a new run with " \
+                         "`quaack start --port <n>`. #{resume}")
     end
   end
 

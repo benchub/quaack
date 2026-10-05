@@ -114,18 +114,22 @@ module Quaack
       # error text. Any other failure prints only its rule, as for start.
       # What to do next says to resume the run only while its store is left
       # (Teardown.next_step).
-      def run_command(run:, rewrites:, out:, keep:, server:) # rubocop:disable Metrics/AbcSize
+      def run_command(run:, rewrites:, out:, keep:, server:)
         require_run
         where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
         sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
-        teardown = Teardown.new(@transport.call(where[:jump]), run, @stderr)
-        EnclaveVersion.check!(teardown.transport, where[:jump])
+        teardown = Teardown.new(checked(where[:jump]), run, @stderr)
         drive(teardown, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
         @stderr.print "quaack run failed: #{EnclaveError.shown(e, Teardown.next_step(teardown, run), **where)}\n"
         1
       end
+
+      # A transport to the run's jump host, once its quaacks is this
+      # driver's version. A mismatch raises before run_command has a
+      # Teardown, so its next step is to resume the run: nothing has run.
+      def checked(jump) = @transport.call(jump).tap { EnclaveVersion.check!(it, jump) }
 
       # The rewrites file's SQL (nil without one) and the LLM client, or nil
       # with @problem set for a usage error.

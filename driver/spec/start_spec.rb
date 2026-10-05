@@ -262,6 +262,43 @@ RSpec.describe Quaack::Driver::Start do
     expect(Quaack::Driver::Runs.new(home).server(run_id)).to be_nil
   end
 
+  # Task 20261004-37: the production note's test command gives -p exactly,
+  # from the laptop's own record of quaack start --port.
+  it "records production's port when the operator gave one, alongside the jump host and server" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(server: "prod-1", port: "6543")).to eq(run_id)
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: "6543")
+  end
+
+  it "records no port when the operator gave none" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(server: "prod-1")).to eq(run_id)
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil)
+  end
+
+  it "reads back no port for a run recorded without one, as an older driver did" do
+    FileUtils.mkdir_p(File.join(home, ".quaack", "runs"))
+    File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
+               JSON.generate("jump_host" => "jump-1", "server" => "prod-1"))
+
+    expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq(jump: "jump-1", server: "prod-1", port: nil)
+  end
+
+  it "reads back no port for a record whose port isn't one, so a note never shows it" do
+    ["0", "65536", "054", "6543; rm -rf ~", 6543, ["6543"]].each do |port|
+      FileUtils.mkdir_p(File.join(home, ".quaack", "runs"))
+      File.write(File.join(home, ".quaack", "runs", "#{run_id}.json"),
+                 JSON.generate("jump_host" => "jump-1", "server" => "prod-1", "port" => port))
+
+      expect(Quaack::Driver::Runs.new(home).where(run_id)).to eq({ jump: "jump-1", server: "prod-1", port: nil }),
+                                                              port.inspect
+    end
+  end
+
   it "reads back no host for a run it never recorded" do
     expect(Quaack::Driver::Runs.new(home).host(run_id)).to be_nil
   end
