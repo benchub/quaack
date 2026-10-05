@@ -141,6 +141,13 @@ RSpec.describe Quaack::Driver::Report do
       )
     end
 
+    it "says over 99% fewer, as the winner's table does, when rounding would say all of them" do
+      payload["top"][0]["slow_blocks"] = 12
+      payload["original_measurements"]["slow"] = m(5120, 0)
+      expect(section(html, "summary")).to include("It read 12 blocks on the slow values, against 5,120 for your " \
+                                                  "query as it is (over 99% fewer).")
+    end
+
     it "says a candidate won where the original timed out" do
       payload["original_measurements"]["slow"] = { "timed_out" => true }
       payload["infinite_sets"] = ["slow"]
@@ -532,6 +539,13 @@ RSpec.describe Quaack::Driver::Report do
         payload["infinite_sets"] = ["slow"]
         expect(baseline).to include('<td class="num">timed out</td><td class="num">timed out</td>')
       end
+
+      it "says timed out in the sum, but not for the slow values, where your query timed out on another set" do
+        payload["original_measurements"]["worst_case"] = { "timed_out" => true }
+        payload["infinite_sets"] = ["worst_case"]
+        payload["labels"][0]["measurements"]["worst_case"] = m(5, 0)
+        expect(baseline).to include('<td class="num">1,000</td><td class="num">timed out</td>')
+      end
     end
 
     it "describes a candidate with several indexes, and one whose index definition is missing" do
@@ -710,6 +724,7 @@ RSpec.describe Quaack::Driver::Report do
           expect(against(m(999, 0), m(1000, 0))).to eq("under 1% fewer blocks")
           expect(against(m(1001, 0), m(1000, 0))).to eq("under 1% more blocks")
           expect(against(m(12, 0), m(5120, 0), verdict: "better")).to eq("over 99% fewer blocks")
+          expect(against(m(51, 0), m(5120, 0), verdict: "better")).to eq("99% fewer blocks")
           expect(against(m(0, 0), m(5120, 0), verdict: "better")).to eq("100% fewer blocks")
           expect(against(m(200, 0), m(100, 0), verdict: "worse")).to eq("100% more blocks")
         end

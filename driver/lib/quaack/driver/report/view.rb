@@ -80,7 +80,7 @@ module Quaack
           read = "read #{Format.number(ours)} blocks on the slow values,"
           return "#{read} where #{ORIGINAL} timed out." unless theirs
 
-          "#{read} against #{Format.number(theirs)} for #{ORIGINAL} (#{Format.fewer(ours, theirs)}% fewer)."
+          "#{read} against #{Format.number(theirs)} for #{ORIGINAL} (#{Format.apart(ours, theirs)}% fewer)."
         end
 
         # The stored rewrite a label ran, or nil for the original query.
