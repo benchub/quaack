@@ -2309,3 +2309,14 @@ Minor findings from the review of 20261004-26. After `ssh_failed`, `quaack run` 
 - **Design:** Where QUAACK runs, Transport.
 - **Status:** todo
 
+### 20261004-30. Flaky run-server-check spec: a young client listed before an old one.
+
+`enclave/spec/run_server_check_postgres_spec.rb`, "names the oldest other client first, whatever order pg_stat_activity lists them in", failed once during the build of 20261004-28. Its helper `connect_listed_before` opens and closes up to 1000 connections, hoping one lands in an earlier `pg_stat_activity` slot than `old`. That never happened, and the file passed when run alone.
+
+Make it deterministic. For example, free an earlier slot on purpose first: open a connection before `old`, close it, then connect. Or test the ordering on a stubbed list of `pg_stat_activity` rows, while still covering the real query's ORDER BY.
+
+- **Depends on:** none.
+- **Came from:** The builder of 20261004-28.
+- **Design:** run-server checks.
+- **Status:** todo
+
