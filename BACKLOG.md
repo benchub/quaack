@@ -2296,3 +2296,23 @@ Minor findings from the review of 20261004-18:
 - **Came from:** The review of 20261004-18.
 - **Design:** intake, run-server.
 - **Status:** todo
+
+### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite.
+
+In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite_<n>` took 20–21 minutes (21m11s, 21m05s, 19m47s, 21m11s), whatever the rewrite. The process pegs one core while the arena sits idle: its last query is a `ROLLBACK` minutes old. rbspy can't attach to Ubuntu's packaged `ruby3.4` ("Couldn't find Ruby VM address").
+
+1. **Profiler.** When `QUAACKS_PROFILE=<path>` is set, `quaacks` starts a thread that samples `Thread.main.backtrace_locations` every 10 ms. At exit it writes a count of each `path:lineno` (self and total) to `<path>` on the jump server.
+   - Use only the standard library, with no new gem; `Boundary::ENCLAVE_ALLOWED_GEMS` stays as it is.
+   - It records code locations only, never values, and never goes to stdout, so nothing crosses the trust boundary. A spec plants a sentinel in the data and checks it's absent from the profile.
+   - Document it in README's troubleshooting.
+2. **Reproduce.** Build a realistic, larger fixture, such as a Rails-style schema with 10–20 tables, several unique indexes and foreign keys, CHECK constraints, and a few-table join query. Time `rewrite-test` on it, and profile it with (1).
+3. **Fix the hotspots** the profile shows, keeping every outcome the same.
+   - Code reading suggests `Scenarios::RowSet` is the first suspect: `parents_of` uses `Array#include?`, `parent` runs a linear `find` per foreign key per row, and `clash?` scans the table's rows per unique constraint per new row. Hash indexes would fix all three.
+   - Each rewrite runs in a new process and rebuilds the original query's scenarios and probe caches. Consider storing what's reusable in the run store, as 20261004-5 does within one process.
+   - Add a timing guard spec on the large fixture with a generous bound, so a regression shows up.
+4. **Ask the user** to rerun with `QUAACKS_PROFILE` set, and confirm.
+
+- **Depends on:** none. Related to 20261004-5.
+- **Came from:** The user, 2026-10-04.
+- **Design:** rewrite-test, Where QUAACK runs.
+- **Status:** todo
