@@ -440,7 +440,7 @@ The driver runs `quaacks run-server --run <run ID> --host <host> --port <port> -
 
 The operator can set `run_server_command` in the quaacks config (`~/.quaack/config.json`) instead of passing the flags. It's a one-line shell command in which every `{server}` becomes the run's production server name and every `{run}` the run ID, each as one shell word. `/bin/sh` runs it on the jump server with no stdin, its stderr thrown away, and a one-hour timeout. It builds or finds the run server from production and prints one JSON object with exactly the keys `host`, `port`, `racetrack_db`, and `arena_db`. `quaacks run-server --run <run ID>` with any flag missing calls it, and each flag given overrides its value. The values are checked as the flags are. A failure is `run_server_command_failed`, `run_server_command_timed_out`, or `run_server_command_bad_output`, and nothing the command prints goes out.
 
-It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no inventory inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
+It refuses rather than guesses. The host must be a hostname or an IPv4 address (`bad_run_server_host`), the port a whole number from 1 to 65535 (`bad_run_server_port`), and each database name a plain identifier of letters, digits, underscores, and hyphens, up to 63 characters (`bad_run_server_database`). The racetrack and arena must be different databases (`run_server_same_database`). A run with no inventory is refused with `run_server_no_inventory`, and failing to connect is `run_server_connection_failed`. None of these errors names the host, the user, or a database. Nothing is recorded unless the whole step succeeds. Unsupported in v1: Unix socket paths, IPv6 addresses, and other database names.
 
 ## The schema steps.
 
@@ -858,13 +858,21 @@ A rewrite can need completely different indexes than the original query. So each
 
 Within one candidate's search, the index-dedupe filter compares only against existing indexes and against that candidate's own earlier proposals. An index that the original query's search also found still gets tested here, because it may behave differently with the rewrite.
 
+### rewrite-index-search. Mechanical index search.
+
 rewrite-check has already dropped the rewrites that fail inbound-check or structural-discard. For each remaining candidate, rewrite-index-search runs the mechanical half of its index search:
 
 1. **index-from-query and index-from-plan:** Run generator one on the candidate's parse and generator two on its plan. Generator two uses the candidate's plain `EXPLAIN` plan from the racetrack, because a rewrite has no production `EXPLAIN ANALYZE`.
 2. **index-dedupe:** Filter the results.
 3. **index-test:** Test each surviving index on its own, running the candidate query instead of the original.
 
-rewrite-index-rank ranks what index-test kept, the same way index-rank does. Then rewrite-prune runs `EXPLAIN` on the candidate on the racetrack in three configurations:
+### rewrite-index-rank. Ranking.
+
+rewrite-index-rank ranks what index-test kept, the same way index-rank does.
+
+### rewrite-prune. Pruning.
+
+rewrite-prune runs `EXPLAIN` on the candidate on the racetrack in three configurations:
 
 1. With no hypothetical indexes.
 2. With the original query's top three indexes from index-rank.
@@ -890,13 +898,15 @@ Arena's job is to disprove rewrites, not to measure them. rewrite-test generates
 
 Arena shares the server with the racetrack, and its activity can change what's in the cache. That only affects the hit-versus-read split, which is a secondary measure. Total blocks don't depend on the cache.
 
-## rewrite-test. Predicate-aware fixtures.
-
-The enclave script runs all of rewrite-test. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
+## rewrite-correctness. Correctness.
 
 rewrite-test and counterexamples together make up rewrite-correctness, which runs for each rewrite that rewrite-check kept and plan-pruning didn't prune. A rewrite either of them disproves goes no further.
 
-### fixture-scenarios. Scenarios.
+### rewrite-test. Predicate-aware fixtures.
+
+The enclave script runs all of rewrite-test. The fixtures are built around the real literals, so they never leave the enclave. The driver only gets back which candidates passed, and which scenario or atom disproved the other candidates.
+
+#### fixture-scenarios. Scenarios.
 
 From the pg_query parse, pull out every predicate atom:
 
@@ -951,7 +961,7 @@ A rule's rewrite that rests on a `denormalized_equal` assumption (assumption-che
 
 First, vacuity-guard checks S1. Then, for each scenario, fixture-open, fixture-load, fixture-compare, and fixture-rollback run once for each load order (see fixture-compare). The first scenario whose results differ disproves the candidate, and the rest don't run.
 
-### vacuity-guard. Vacuity guard.
+#### vacuity-guard. Vacuity guard.
 
 This guard checks that the fixture actually tests every atom. Without it, a candidate can pass just because the fixture never exercised the part of the query it changed.
 
@@ -976,15 +986,15 @@ A scenario never crashes QUAACK. If S1 won't load in arena, say because a trigge
 
 The enclave script tells the driver which atoms are untested by their redacted shape, such as `o.status = $1`, never by their values.
 
-### fixture-open. Open the transaction.
+#### fixture-open. Open the transaction.
 
 Begin a transaction on arena with `statement_timeout` set. A statement that hits it fails the load or the comparison as a timeout. The runner tells that from any other cancel by the arena server's clock, as run-discipline does. It reads that clock just before each statement, in the statement's own round trip (one libpq pipeline), and again after a cancel, once it has rolled back. A cancel that fires just as a statement finishes comes after the statement's result, at the pipeline's end, and the runner treats it as the statement's own, unless that statement had already failed on its own, whose error it keeps. So a fixture load takes no extra round trips and no extra transaction IDs. Since a cancel ends the transaction that way, the runner refuses every later statement of the transaction before sending it, so no statement runs outside it, without `statement_timeout`; only the closing `ROLLBACK` still goes out. It checks that from libpq's own state, with no round trip, and the refusal is `transaction_ended`, or `connection_unusable` if the connection has died.
 
-### fixture-load. Load the fixture.
+#### fixture-load. Load the fixture.
 
 Load the scenario's rows.
 
-### fixture-compare. Compare results.
+#### fixture-compare. Compare results.
 
 Run the original and every remaining candidate through the result comparator. The comparator follows these rules:
 
@@ -1006,15 +1016,15 @@ Each comparison runs twice, each time in its own transaction that rolls back. Th
 
 Any mismatch disproves the candidate.
 
-### fixture-rollback. Roll back.
+#### fixture-rollback. Roll back.
 
 Roll back the transaction.
 
-## counterexamples. Adversarial fixtures.
+### counterexamples. Adversarial fixtures.
 
-Run up to three rounds of llm-counterexamples through counterexample-rollback for each surviving candidate. A rewrite rewrite-test refused to test (see rewrite-test's refusals) never survived it, so it never gets here. Each round is one llm-counterexamples ask, then counterexample-compare and counterexample-rollback in the enclave; a round that disproves the candidate ends its rounds.
+Run up to three rounds of llm-counterexamples through counterexample-rollback for each surviving candidate. A rewrite that rewrite-test refused to test (see rewrite-test's refusals) never survived it, so it never gets here. Each round is one llm-counterexamples ask, then counterexample-compare and counterexample-rollback in the enclave; a round that disproves the candidate ends its rounds.
 
-### llm-counterexamples. Generate counterexamples.
+#### llm-counterexamples. Generate counterexamples.
 
 Give the LLM:
 
@@ -1029,13 +1039,13 @@ The enclave evaluates each value of an accepted insert in arena, once, to find i
 
 Inserts load parents' tables first. When a foreign-key cycle leaves no such order, nullable foreign keys are cut as in rewrite-test, with no atoms to prefer around. An insert that sets a value in a cut column loads with NULL there. Once every insert has loaded, an `UPDATE` keyed to the inserted row's `tableoid` and `ctid` (from `RETURNING`) sets the LLM's value, so the final data is exactly the LLM's rows and every constraint is still checked. The UPDATEs run last in both fixture-compare load orders. A `DEFAULT` in a cut column stays `DEFAULT`. If an inserted row can't be found again by its `tableoid` and `ctid` (a trigger skipped it or moved it, say), the load fails with `insert_failed`, and the round disproves nothing.
 
-### counterexample-compare. Compare results.
+#### counterexample-compare. Compare results.
 
 Run the comparator from fixture-compare. Any mismatch disproves the candidate.
 
 For each atom that vacuity-guard marked as untested, also run the vacuity-guard test on this fixture. If the atom counts as exercised, record that counterexamples covered it.
 
-### counterexample-rollback. Roll back.
+#### counterexample-rollback. Roll back.
 
 Roll back the transaction.
 
@@ -1043,13 +1053,21 @@ Roll back the transaction.
 
 For each candidate that survived rewrite-test and counterexamples, and that plan-pruning didn't prune, run the LLM half of the index search that plan-pruning started:
 
-1. **rewrite-llm-index-ideas:** Run generator three on the candidate, as llm-index-ideas does for the original. The payload uses the candidate's redacted query and plan in place of the original's, and its `mechanical_results` are the index-test results that plan-pruning saved. Then run index-dedupe and index-test on the LLM's proposals, running the candidate query.
-2. **rewrite-llm-index-refine:** If any LLM proposal fell short, give the LLM its one refinement round, as llm-index-refine does.
-3. **rewrite-index-rerank:** Combine and rank all of the candidate's indexes, mechanical and LLM, and keep what index-rank would keep.
-
 The LLM asks here are the rewrite's own: the burndown and the progress lines count them as rewrite-llm-index-ideas and rewrite-llm-index-refine, never as the original query's llm-index-ideas or llm-index-refine.
 
 The candidate's plan came from the racetrack, so its quals contain real literals. The enclave script redacts it through redact before sending it to the driver. The placeholder rules apply to candidate plans exactly as they apply to the production plan.
+
+### rewrite-llm-index-ideas. Generator three.
+
+Run generator three on the candidate, as llm-index-ideas does for the original. The payload uses the candidate's redacted query and plan in place of the original's, and its `mechanical_results` are the index-test results that plan-pruning saved. Then run index-dedupe and index-test on the LLM's proposals, running the candidate query.
+
+### rewrite-llm-index-refine. Refinement round.
+
+If any LLM proposal fell short, give the LLM its one refinement round, as llm-index-refine does.
+
+### rewrite-index-rerank. Combination and ranking.
+
+Combine and rank all of the candidate's indexes, mechanical and LLM, and keep what index-rank would keep.
 
 Each candidate's winning indexes may differ from the original query's.
 
@@ -1146,12 +1164,12 @@ A rewrite has several measured labels but one fate. It's the first of these that
 | `below_top_three` | It beat the original and fell outside selection's top three. | |
 | `footprint_tie` | It beat the original and lost the footprint tiebreak. | |
 | `not_better` | It was measured, and minimax found it no better than the original. | |
-| `measurement_timed_out` | Every one of its candidate-runs runs timed out. | |
+| `measurement_timed_out` | Every one of its runs in candidate-runs timed out. | |
 | `unfinished` | The run took it no further. | The last stage it finished. |
 
 Only the `disproved` fates and `production_mismatch` say a rewrite is wrong. The report never calls a rewrite disproved for a test that compared nothing. A `rewrite_test_untested` rewrite isn't wrong either, and it's no rewrite-rules bug: the report says QUAACK never tested it and won't recommend it, and why, by the refusal's rule in words, and for `fk_cycle` by the cycle's tables. Fates, rules, and scenarios are fixed words in the code, so they're shape, and table names are schema, checked against the run's `schema_subset`.
 
-Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that vacuity-guard marked as untested, and say whether counterexamples exercised them. Say where each rewrite came from: the rewrite-rules rules that made it, the LLM, or the operator. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
+Rank the candidates against the original, per literal and overall, using the minimax rule. For each candidate, list any atoms that vacuity-guard marked as untested, and say whether counterexamples exercised them. Say where each rewrite came from: the rules in rewrite-rules that made it, the LLM, or the operator. For a rule-made rewrite resting on a `denormalized_equal` assumption, say that it rests on something the data holds today but the schema doesn't enforce, and name the columns.
 
 If a test disproved a rule-made rewrite (rewrite-rules), say so first, above the ranking, as a bug in QUAACK, naming the rewrite, its rules, and the step that disproved it. It appears whether or not anything beat the original.
 

@@ -138,7 +138,7 @@ module Quaack
 
       # Every candidate filter has considered. Each one is dropped, set
       # aside, or kept as a proposal, so it should equal their sum. The
-      # burndown burndown records it as the count that came in, and checks that.
+      # burndown records it as the count that came in, and checks that.
       # A candidate is counted once it's been considered, so a filter call
       # that raises partway counts only the candidates it got through.
       attr_reader :considered

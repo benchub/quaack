@@ -52,7 +52,7 @@ module Quaack
       #                            minimax's footprint tiebreak
       #   not_better               it was measured and minimax found no
       #                            label better than the original
-      #   measurement_timed_out    every one of its candidate-runs runs timed out
+      #   measurement_timed_out    every one of its runs in candidate-runs timed out
       #   unfinished               the run took it no further; after is the
       #                            last stage it finished: nil (only
       #                            stored), rewrite-test, counterexamples, or measurement

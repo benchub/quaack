@@ -56,7 +56,7 @@ module Quaack
         end
 
         # The original and the candidate, each with its $n bound.
-        # Refuses (<prefix>_no_arena_setup) a run whose arena arena-setup hasn't set up.
+        # Refuses (<prefix>_no_arena_setup) a run whose arena hasn't been set up by arena-setup.
         def arena!(store, prefix)
           raise Error, "#{prefix}_no_arena_setup" unless store.entry?("arena_setup")
         end

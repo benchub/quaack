@@ -16,7 +16,7 @@ module Quaack
       # (PlanGate.check and index-test take it); and clock_replacements,
       # {"replacements" => [{"original", "anchored"}], "added_names" =>
       # [{"slot", "name"}]}, which ClockAnchoring.restore takes to put the
-      # original functions back for the report report. Both are shape: the
+      # original functions back for the report. Both are shape: the
       # literals are already placeholders, and the replacements are
       # function names, or the placeholder a clock literal was. The words
       # themselves are never written. Everything is

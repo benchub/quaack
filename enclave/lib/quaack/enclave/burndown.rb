@@ -5,27 +5,30 @@ require_relative "store"
 
 module Quaack
   module Enclave
-    # The enclave script's side of the DESIGN.md's burndown burndown: per-stage counts
+    # The enclave script's side of DESIGN.md's burndown: per-stage counts
     # and work totals, kept in the governed store as each step runs, in one
     # entry named burndown.
     #
     #   Burndown.record(store, "index-dedupe", :original, in: 10, dropped: { duplicate: 2 }, set_aside: 1, out: 7)
-    #   Burndown.add_totals(store, hypothetical_explains: 12) Burndown.read(store) # => { "stages" => { "index-dedupe"
-    #   => { "original" => { "in" => 10, "added" => {}, "dropped" => { "duplicate" => 2 }, # "set_aside" => 1, "out"
-    #   => 7, "extra" => {} } } }, # "totals" => { "hypothetical_explains" => 12 } }
-    #   Egress.serialize(Burndown.message(store)) # the burndown type on the whitelist
+    #   Burndown.add_totals(store, hypothetical_explains: 12)
+    #   Burndown.read(store)
+    #   # => { "stages" => { "index-dedupe" => { "original" => { "in" => 10, "added" => {},
+    #   #                                                         "dropped" => { "duplicate" => 2 },
+    #   #                                                         "set_aside" => 1, "out" => 7, "extra" => {} } } },
+    #   #      "totals" => { "hypothetical_explains" => 12 } }
+    #   Egress.serialize(Burndown.message(store))  # the burndown type on the whitelist
     #
     # Stages that have a result object record it through an adapter:
     #
-    #   since = Burndown.record_dedupe(store, dedupe, search: :original)          # index-dedupe
-    #   Burndown.record_single_candidate_test(store, report, search: :original)   # index-test
-    #   Burndown.record_llm_round(store, stage: "llm-index-ideas", search: :original,        # llm-index-ideas
+    #   since = Burndown.record_dedupe(store, dedupe, search: :original)               # index-dedupe
+    #   Burndown.record_single_candidate_test(store, report, search: :original)        # index-test
+    #   Burndown.record_llm_round(store, stage: "llm-index-ideas", search: :original,  # llm-index-ideas
     #                             dedupe:, since:, report: llm_report)
     #
     # A stage is one of Protocol::Burndown::STAGES. A search is :original
     # for the original query, or a Symbol naming a rewrite, since index-dedupe
-    # through index-rank run again for each rewrite in plan-pruning and rewrite-index-ideas. A record's
-    # fields:
+    # through index-rank run again for each rewrite in plan-pruning and
+    # rewrite-index-ideas. A record's fields:
     #
     # - in: how many items came into the stage.
     # - added: how many the stage added, by source, such as generator_one.

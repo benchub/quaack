@@ -12,7 +12,7 @@ module Quaack
       # `quaacks run-server --run <run ID> [--host <host>] [--port <port>]
       # [--racetrack-db <name>] [--arena-db <name>]` (DESIGN.md's run-server): checks
       # the run server, given by the flags or by the configured
-      # run_server_command (see RunServerCommand), against the run's inventory inventory,
+      # run_server_command (see RunServerCommand), against the run's inventory,
       # and records it in the run's run_server entry (see RunServer), for
       # later steps to connect with (RunServer.connect).
       #

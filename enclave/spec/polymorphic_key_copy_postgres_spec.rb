@@ -13,7 +13,7 @@ require_relative "support/production_server"
 # a submission joins its assignment, whose context is a Rails polymorphic
 # pair, and the submission keeps its own copy of the course id. The rule
 # adds that copy's filter, reusing the id's placeholder, and states the
-# assumption assumption-check checks against the data.
+# assumption that assumption-check checks against the data.
 RSpec.describe Quaack::Enclave::RewriteRules::PolymorphicKeyCopy do
   subject(:rule) { described_class.new }
 
@@ -118,7 +118,7 @@ RSpec.describe Quaack::Enclave::RewriteRules::PolymorphicKeyCopy do
     )
   end
 
-  it "states the denormalized_equal assumption assumption-check checks against the data" do
+  it "states the denormalized_equal assumption that assumption-check checks against the data" do
     expect(rewrites(canvas).map(&:assumptions)).to eq([[assumption("course_id", "Course")]])
   end
 
