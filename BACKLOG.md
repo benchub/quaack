@@ -2319,17 +2319,7 @@ These are review minors from 20261004-44.
 - **Design:** none (docs only).
 - **Status:** todo
 
-### 20261004-49. ArenaRunner transaction-status check: untested branches.
-
-These are review minors from 20261004-41.
-
-1. In `enclave/lib/quaack/enclave/arena_runner/transaction_status.rb`, `PQTRANS_INTRANS` and `PQTRANS_INERROR` in the `settled` list are never tested. Narrowing the list to `[PQTRANS_IDLE]` leaves every test green, and neither status can realistically reach that line. Reduce the check to `status == PQTRANS_IDLE`, or test them.
-2. The `connection_unusable` message ("the arena connection can't be used") now covers both the start-time refusal and a connection that dies mid-transaction. It's accurate for both, but less specific at start. Consider separate wording.
-
-- **Depends on:** 20261004-41.
-- **Came from:** The review of 20261004-41.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-49. ArenaRunner transaction-status check: untested branches. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section. Done, see BACKLOG-COMPLETE.md.
 
