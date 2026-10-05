@@ -5208,3 +5208,16 @@ These are review minors from 20261004-32.
 - **Design:** teardown.
 - **Status:** done
 - **Landed:** Landed: destroy_command_not_run rule, EnclaveError guard in Teardown.failure, Teardown::DriverError handled by run_command.
+
+### 20261004-34. ServerClock follow-ups.
+
+These are review minors from 20261004-28.
+
+1. The `cancel_when_sleeping` helper in `enclave/spec/support/server_clock.rb` can hide a spec's real failure. Make it report the failure of the code under test, not its own timeout.
+2. A failed clock read is handled differently in two places: RunDiscipline raises the read's error, while ArenaRunner reports `statement_canceled`. Pick one behavior, document it, and test it.
+
+- **Depends on:** 20261004-28.
+- **Came from:** The review of 20261004-28.
+- **Design:** run discipline, rewrite-test.
+- **Status:** done
+- **Landed:** Landed: cancel_when_sleeping reports the block's failure; a failed clock read after a cancel raises the cancel everywhere.

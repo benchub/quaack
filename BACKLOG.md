@@ -2239,17 +2239,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 
 ### 20261004-33. Tidy the oldest-client-first spec helper. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-34. ServerClock follow-ups.
-
-These are review minors from 20261004-28.
-
-1. The `cancel_when_sleeping` helper in `enclave/spec/support/server_clock.rb` can hide a spec's real failure. Make it report the failure of the code under test, not its own timeout.
-2. A failed clock read is handled differently in two places: RunDiscipline raises the read's error, while ArenaRunner reports `statement_canceled`. Pick one behavior, document it, and test it.
-
-- **Depends on:** 20261004-28.
-- **Came from:** The review of 20261004-28.
-- **Design:** run discipline, rewrite-test.
-- **Status:** todo
+### 20261004-34. ServerClock follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-35. Order-dependent Deparse cache spec. Done, see BACKLOG-COMPLETE.md.
 
@@ -2410,4 +2400,16 @@ The review of 20261004-60 found:
 - **Depends on:** 20261004-60.
 - **Came from:** The review of 20261004-60, 2026-10-05.
 - **Design:** teardown.
+- **Status:** todo
+
+### 20261004-67. ServerClock: minors from 20261004-34.
+
+The review of 20261004-34 found:
+1. Two mutations to `cancel_when_sleeping`'s success path survive: dropping `canceller.join` after the block returns, and stopping the canceller unconditionally. Add a test that the canceller's own error still surfaces when the block succeeds.
+2. `rescue StandardError` in `ServerClock.timed_out?` also swallows programming bugs (`NoMethodError`, `Float()`'s `ArgumentError`), which then read as an operator's cancel. ArenaRunner's rescue is just as broad. Consider narrowing both to `PG::Error` and the like.
+3. DESIGN.md says the enclave "raises the cancel, not the read's error". When the connection died, the `ensure ROLLBACK`'s `PG::ConnectionBad` replaces the cancel. "Every caller already handles a cancel" is also generous, since Measurement lets it propagate. Tighten the wording.
+
+- **Depends on:** 20261004-34.
+- **Came from:** The review of 20261004-34, 2026-10-05.
+- **Design:** run discipline.
 - **Status:** todo
