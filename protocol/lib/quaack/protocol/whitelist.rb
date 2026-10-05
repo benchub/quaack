@@ -144,7 +144,8 @@ module Quaack
       # DESIGN.md's report, from `quaacks report-payload`.
       # original_sql is the original query, always sent: its $n SQL with
       # the clock-anchor functions put back. original_plan is its plan's node shapes
-      # (type, relation, index, rows, selectivity; never a condition), and
+      # (type, relation, index, rows, selectivity, and depth, an Integer;
+      # never a condition), and
       # original_measurements its block counts with hit/read and stability
       # per literal set. top, excluded, and infinite_sets are the selection
       # selection. labels is every measured label, ranked or not: its

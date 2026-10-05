@@ -658,11 +658,22 @@ Each ranked candidate then gets its own table:
 
 > Rewrite Silver Fox with no new indexes read 31 blocks on the slow values, against 509 for your query as it is (94% fewer).
 >
-> How Postgres runs your query now: Sort (10 rows) › Index Scan on public.events using events_account_id_idx (500 rows, 0.1% of the table)
+> A step marked “differs”, and shaded, is one the other plan doesn't have in the same place.
 >
-> How it runs rewrite Silver Fox with no new indexes: Index Only Scan on public.events using events_account_created_idx (10 rows, under 0.1% of the table)
+> How Postgres runs your query now:
 
-This part is generated from the measurements and plans, not written by the LLM. Compare the two plans. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat your query.
+| Step | Table | Index | Estimated rows | Actual rows | Share of the table |
+|---|---|---|--:|--:|--:|
+| Sort **DIFFERS** | | | 10 | 10 | |
+| &nbsp;&nbsp;&nbsp;-> Index Scan **DIFFERS** | public.events | events_account_id_idx | 480 | 500 | 0.1% |
+
+> How it runs rewrite Silver Fox with no new indexes:
+
+| Step | Table | Index | Estimated rows | Actual rows | Share of the table |
+|---|---|---|--:|--:|--:|
+| Index Only Scan **DIFFERS** | public.events | events_account_created_idx | 10 | 10 | under 0.1% |
+
+This part is generated from the measurements and plans, not written by the LLM. Each plan is a table of its steps, in the style of explain.depesz.com, with each step indented under the one it feeds. The steps one plan has and the other doesn't are shaded and marked "differs". The payload doesn't say how many blocks each step read, so the table doesn't either. A report from an older run, whose plans don't say how deep each step is, shows the steps unindented. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat your query.
 
 ### Why nothing beat your query.
 

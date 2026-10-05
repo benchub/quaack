@@ -48,7 +48,7 @@ RSpec.describe Quaack::Driver::Report do
           "rules" => ["key_in_self_join"], "fate" => "ranked", "scenario" => nil, "rule" => nil, "round" => nil,
           "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
-                       "actual_rows" => 5, "selectivity" => 0.005 }],
+                       "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0 }],
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
@@ -59,7 +59,7 @@ RSpec.describe Quaack::Driver::Report do
                                      "makes_redundant" => [{ "name" => "t_a_idx", "size_bytes" => 8192 },
                                                            { "name" => "t_a_b_idx", "size_bytes" => nil }] } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
-                            "actual_rows" => 50, "selectivity" => 0.05 }],
+                            "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0 }],
       "timed_out_count" => 2 }
   end
 
@@ -747,29 +747,135 @@ RSpec.describe Quaack::Driver::Report do
   describe "why the winner reads fewer blocks" do
     let(:explanation) { section(html, "explanation") }
 
-    it "explains the winner from blocks, plan nodes, and selectivities" do
+    # A plan node as the payload sends it.
+    def pnode(type, depth, **shape)
+      shape = { relation: nil, index: nil, est: 10, actual: 10, selectivity: nil }.merge(shape)
+      { "node" => type, "relation" => shape[:relation], "index" => shape[:index], "est_rows" => shape[:est],
+        "actual_rows" => shape[:actual], "selectivity" => shape[:selectivity], "depth" => depth }
+    end
+
+    # Each plan table in the section, by its rows.
+    def plan_rows(html) = html.scan(%r{<table class="plan">.*?</table>}m).map { it.scan(%r{<tr.*?</tr>}m).drop(1) }
+
+    let(:header) do
+      '<tr><th scope="col">Step</th><th scope="col">Table</th><th scope="col">Index</th>' \
+        '<th scope="col" class="num">Estimated rows</th><th scope="col" class="num">Actual rows</th>' \
+        '<th scope="col" class="num">Share of the table</th></tr>'
+    end
+
+    it "explains the winner from blocks, with each plan as a table of its steps" do
       expect(explanation).to include("Rewrite Vivid Cove with no new indexes read 300 blocks on the slow values, " \
                                      "against 1,000 for your query as it is (70% fewer).")
       expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indexes:</p>")
-      expect(explanation)
-        .to include("<li>Index Scan on #{sq("public.t")} using #{sq("t_a_idx")} (5 rows, 0.5% of the table)</li>")
-      expect(explanation).to include("<li>Seq Scan on #{sq("public.t")} (50 rows, 5.0% of the table)</li>")
+      expect(explanation.scan(header).size).to eq(2)
+      expect(plan_rows(explanation)).to eq(
+        [[[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Seq Scan ),
+           %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td></td><td class="num">50</td>),
+           %(<td class="num">50</td><td class="num">5.0%</td></tr>)].join],
+         [[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Index Scan ),
+           %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td>#{sq("t_a_idx")}</td>),
+           %(<td class="num">5</td><td class="num">5</td><td class="num">0.5%</td></tr>)].join]]
+      )
+      expect(explanation).not_to include("<li>")
     end
 
-    it "says one row, and a share too small to round, in words" do
-      payload["original_plan"] = [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_pkey",
-                                    "est_rows" => 1, "actual_rows" => 1, "selectivity" => 0.000001 },
-                                  { "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 12_345,
-                                    "actual_rows" => nil, "selectivity" => nil }]
-      expect(explanation)
-        .to include("<li>Index Scan on #{sq("public.t")} using #{sq("t_pkey")} (1 row, under 0.1% of the table)</li>")
-      expect(explanation).to include("<li>Limit (12,345 rows)</li>")
+    context "with plans that share some of their steps" do
+      before do
+        payload["original_plan"] = [pnode("Limit", 0), pnode("Nested Loop", 1),
+                                    pnode("Seq Scan", 2, relation: "public.t", est: 9_000, actual: 12_345,
+                                                         selectivity: 0.5),
+                                    pnode("Index Scan", 2, relation: "public.u", index: "u_pkey", est: 1, actual: 1)]
+        payload["rewrites"].first["plan"] = [pnode("Limit", 0), pnode("Nested Loop", 1),
+                                             pnode("Index Scan", 2, relation: "public.t", index: "t_a_idx"),
+                                             pnode("Index Scan", 2, relation: "public.u", index: "u_pkey")]
+      end
+
+      it "indents each step by its depth, under an arrow, and marks only the steps the plans don't share" do
+        original, rewrite = plan_rows(explanation)
+        expect(original).to eq(
+          [[%(<tr><td class="step" style="padding-left: 0.65rem">Limit</td><td></td><td></td>),
+            %(<td class="num">10</td><td class="num">10</td><td class="num"></td></tr>)].join,
+           [%(<tr><td class="step" style="padding-left: 2.15rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
+            %(Nested Loop</td><td></td><td></td><td class="num">10</td><td class="num">10</td>),
+            %(<td class="num"></td></tr>)].join,
+           [%(<tr class="differs"><td class="step" style="padding-left: 3.65rem"><span class="arrow" ),
+            %(aria-hidden="true">-&gt; </span>Seq Scan <strong class="mark">differs</strong></td>),
+            %(<td>#{sq("public.t")}</td><td></td><td class="num">9,000</td><td class="num">12,345</td>),
+            %(<td class="num">50.0%</td></tr>)].join,
+           [%(<tr><td class="step" style="padding-left: 3.65rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
+            %(Index Scan</td><td>#{sq("public.u")}</td><td>#{sq("u_pkey")}</td><td class="num">1</td>),
+            %(<td class="num">1</td><td class="num"></td></tr>)].join]
+        )
+        expect(rewrite.map { it.include?("differs") }).to eq([false, false, true, false])
+        expect(rewrite[2]).to include("<td>#{sq("t_a_idx")}</td>")
+      end
+
+      it "says what a marked step is" do
+        expect(explanation).to include(
+          "<p class=\"note\">A step marked “differs”, and shaded, is one the other plan doesn&#39;t have in " \
+          "the same place.</p>"
+        )
+      end
+
+      it "doesn't mark a step that uses another index as shared" do
+        payload["rewrites"].first["plan"][3]["index"] = "u_other_idx"
+        expect(plan_rows(explanation).first.map { it.include?("differs") }).to eq([false, false, true, true])
+      end
+
+      it "doesn't mark a step on another table as shared" do
+        payload["rewrites"].first["plan"][3]["relation"] = "public.v"
+        expect(plan_rows(explanation).first.map { it.include?("differs") }).to eq([false, false, true, true])
+      end
+
+      it "marks only a step one plan adds, not the steps under it that both plans have" do
+        payload["original_plan"].insert(1, pnode("Sort", 1))
+        payload["original_plan"][2..].each { it["depth"] += 1 }
+        original, rewrite = plan_rows(explanation)
+        expect(original.map { it.include?("differs") }).to eq([false, true, false, true, false])
+        expect(rewrite.map { it.include?("differs") }).to eq([false, false, true, false])
+      end
+    end
+
+    it "marks nothing, and says nothing of marks, when the plans have the same steps" do
+      payload["rewrites"].first["plan"] = payload["original_plan"].map(&:dup)
+      expect(explanation).not_to include("differs")
+      expect(explanation).not_to include('class="note"')
+    end
+
+    it "says one row, a share too small to round, and a row count it doesn't have" do
+      payload["original_plan"] = [pnode("Index Scan", 0, relation: "public.t", index: "t_pkey", est: 1, actual: 1,
+                                                         selectivity: 0.000001),
+                                  pnode("Limit", 1, est: 12_345, actual: nil)]
+      rows = plan_rows(explanation).first
+      expect(rows.first).to include(%(<td class="num">1</td><td class="num">1</td><td class="num">under 0.1%</td>))
+      expect(rows.last).to include(%(<td class="num">12,345</td><td class="missing">not recorded</td>))
+    end
+
+    it "lays out a plan from a payload without depths as a flat table" do
+      payload["original_plan"] = [pnode("Limit", nil), pnode("Seq Scan", nil, relation: "public.t")]
+      expect(plan_rows(explanation).first).to eq(
+        [[%(<tr class="differs"><td class="step">Limit <strong class="mark">differs</strong></td><td></td><td></td>),
+          %(<td class="num">10</td><td class="num">10</td><td class="num"></td></tr>)].join,
+         [%(<tr class="differs"><td class="step">Seq Scan <strong class="mark">differs</strong></td>),
+          %(<td>#{sq("public.t")}</td><td></td><td class="num">10</td><td class="num">10</td>),
+          %(<td class="num"></td></tr>)].join]
+      )
+    end
+
+    it "lays out a plan flat when any depth isn't a whole number from zero up" do
+      [["2; color: red", 0], [-1, 0], [1.5, 0], [0, nil]].each do |a, b|
+        payload["original_plan"] = [pnode("Limit", a), pnode("Seq Scan", b)]
+        expect(plan_rows(section(render(payload), "explanation")).first)
+          .to all(satisfy { it.include?('<td class="step">') && !it.include?("style") && !it.include?("arrow") })
+      end
     end
 
     it "says the winner's plan wasn't recorded when the winner is the original query with new indexes" do
       payload["top"].reverse!
       expect(explanation).to include("The plan with the new indexes: not recorded.")
       expect(explanation).not_to include("t_a_idx")
+      expect(plan_rows(explanation).size).to eq(1)
+      expect(explanation).not_to include("differs")
     end
 
     it "is left out when nothing beat the original" do
@@ -1354,7 +1460,7 @@ RSpec.describe Quaack::Driver::Report do
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
-                     "<ul><li>", %( on <code class="sql">), %( using <code class="sql">), "<td>",
+                     "<ul><li>", '<td class="step">', %(<td><code class="sql">), "<td>",
                      "<td>by the rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
     end
 
@@ -1407,7 +1513,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).to include("<title>QUAACK report Rx</title>").and include("<h1>QUAACK report Rx</h1>")
       expect(section(out, "queries")).to include("rewrite rule x.").and(satisfy { !it.include?('class="sql">x') })
       expect(section(out, "ranking")).to include("a new index on #{sq("public.t (a) WHERE b")}")
-      expect(section(out, "explanation")).to include("<li>Seq Scan on #{sq("")} (50 rows")
+      expect(section(out, "explanation"))
+        .to include(%(Seq Scan <strong class="mark">differs</strong></td><td>#{sq("")}</td>))
       expect(out.scan("<code").size).to eq(out.scan("</code>").size)
     end
   end

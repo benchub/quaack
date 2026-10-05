@@ -1183,6 +1183,8 @@ Each existing index named there comes with its size from the planner statistics.
 
 Explain why the winning candidate touches fewer blocks and what that means for cache pressure. Use only plans and selectivities in that explanation. Never use literal values.
 
+Show each plan in that explanation as a table, in the style of explain.depesz.com: one row per node, depth first, each indented by its depth under an arrow, with its type, table, index, estimated and actual rows, and share of its table. Mark the nodes one plan has and the other doesn't, the winner's against the original's: shade the row and say "differs" in it, and say once what the mark means. The marked nodes are those outside the longest run of nodes, in plan order, that both plans share. Two nodes are the same when their type, table, and index are. Depth doesn't count, so a node one plan adds doesn't mark every node under it, and neither do row counts. The payload carries no blocks per node, so the table has no blocks column. A plan node in the payload carries only its type, relation, index name, row counts, selectivity, and depth, an Integer the enclave counts. A plan whose nodes don't all carry a whole-number depth from zero up, such as one from a payload older than depths, is laid out flat, with nothing indented.
+
 Write the report for a reader who hasn't read this document:
 
 - Open with the verdict: what won and by how much, or that nothing did.
