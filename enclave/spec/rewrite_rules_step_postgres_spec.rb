@@ -73,14 +73,12 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     expect(stored.read("rewrite_rules_applied")).to eq("duplicates" => 0, "over_cap" => 0)
   end
 
-  it "adds its rewrites to the plan-pruning burndown, as rewrite-check does" do
+  it "records rewrite-rules alone, its check failures in failed_checks, not in plan-pruning or llm-rewrites" do
     prepare
 
     rewrite_rules
 
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
-      .to include("in" => 1, "out" => 1, "dropped" => { "inbound_check" => 0, "failed_to_plan" => 0,
-                                                        "output_mismatch" => 0 })
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"].keys).to eq(["rewrite-rules"])
   end
 
   def burndown(stage) = Quaack::Enclave::Burndown.read(stored)["stages"].dig(stage, "rewrites")
@@ -129,7 +127,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(stored.entry?("burndown")).to be(false)
       rewrite_rules
       first = Quaack::Enclave::Burndown.read(stored)
-      expect(first["stages"].keys).to eq(%w[plan-pruning rewrite-rules])
+      expect(first["stages"].keys).to eq(%w[rewrite-rules])
       remove("rewrite_rules_applied")
       remove("burndown")
 
@@ -227,9 +225,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         "sql" => "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1",
         "transformation" => "the fake rule sound", "source" => "rule", "rules" => ["sound"]
       )
-      expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
-        .to include("in" => 3, "out" => 1, "dropped" => { "inbound_check" => 1, "failed_to_plan" => 0,
-                                                          "output_mismatch" => 1 })
+      expect(Quaack::Enclave::Burndown.read(stored)["stages"]).not_to have_key("plan-pruning")
       expect(burndown("rewrite-rules")).to eq(six_c(rules.to_h { [it.name, 1] }, 1, failed_checks: 4))
     end
 

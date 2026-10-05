@@ -20,8 +20,11 @@ module Quaack
       # It refuses a search that isn't a stored rewrite
       # (rewrite_prune_unknown_search) and one missing either ranking
       # (rewrite_prune_no_ranking), before connecting. It writes
-      # rewrite_pruned_<n> => { "discarded" => Boolean }, and adds to the
-      # plan-pruning burndown under the search pruning: in 1, dropped same_plans.
+      # rewrite_pruned_<n> => { "discarded" => Boolean }. Before that, it
+      # records the plan-pruning burndown under the search rewrite_<n>: in 1,
+      # dropped same_plans, unless a call that died before its entry recorded
+      # it. With rewrite-check's plan-pruning record, in is the rewrites that
+      # reached plan-pruning and out those that went on.
       # Its only line is DONE.
       module RewritePrune
         OPTIONS = { "search" => :value }.freeze
@@ -35,9 +38,9 @@ module Quaack
           search = check(store, options.fetch("search"))
           connection = Enclave::RunServer.connect(store, :racetrack)
           discarded = discard?(store, connection, search)
+          Burndown.record_once(store, [["plan-pruning", search.to_sym,
+                                        { in: 1, dropped: { same_plans: discarded ? 1 : 0 }, out: discarded ? 0 : 1 }]])
           store.write("rewrite_pruned_#{search.delete_prefix("rewrite_")}", "discarded" => discarded)
-          Burndown.record(store, "plan-pruning", :pruning, in: 1, dropped: { same_plans: discarded ? 1 : 0 },
-                                                           out: discarded ? 0 : 1)
           []
         ensure
           connection&.close

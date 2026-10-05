@@ -36,15 +36,60 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
     run("index-rank", "--search", search)
   end
 
-  it "records the plan-pruning burndown with inbound-check's rejections, not llm-rewrites' or assumption-check's" do
-    bad_assumption = rewrite(same).merge("assumptions" => [{ "kind" => "sorted" }])
-    ready("SELECT o.note, o.status FROM public.orders o WHERE o.note = $3", same,
-          "SELECT o.note FROM public.orders o WHERE o.note = $1", bad_assumption)
-    check("SELECT o.note, o.status FROM public.orders o WHERE o.nosuch = $1")
+  describe "the burndown of llm-rewrites' and operator-rewrites' rewrite-check" do
+    let(:not_null_note) { { "kind" => "not_null", "table" => "public.orders", "column" => "note" } }
+    let(:bad_placeholder) { "SELECT o.note, o.status FROM public.orders o WHERE o.note = $3" }
+    let(:llm) do
+      [bad_placeholder, same, rewrite(sorted).merge("assumptions" => [not_null_note]),
+       "SELECT o.note, o.status FROM public.orders o WHERE o.nosuch = $1",
+       "SELECT o.note FROM public.orders o WHERE o.note = $1", sorted]
+    end
 
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrites"])
-      .to include("in" => 4, "out" => 1,
-                  "dropped" => { "inbound_check" => 1, "failed_to_plan" => 1, "output_mismatch" => 1 })
+    def stages = Quaack::Enclave::Burndown.read(stored)["stages"]
+
+    def counted(**counts)
+      { "in" => 0, "added" => {}, "dropped" => {}, "set_aside" => 0, "extra" => {} }
+        .merge(counts.transform_keys(&:to_s))
+    end
+
+    def operator(*list) = run("rewrite-check", stdin: JSON.generate("rewrites" => list, "inferred" => true))
+
+    it "drops each rewrite in one stage: refused on arrival by rule, an unmet assumption, or plan-pruning's own" do
+      ready(*llm)
+
+      expect(stages["llm-rewrites"]).to eq(
+        "rewrites" => counted(added: { "llm" => 6 }, dropped: { "bad_placeholder" => 1, "too_many" => 1 }, out: 4)
+      )
+      expect(stages["assumption-check"])
+        .to eq("rewrites" => counted(in: 4, dropped: { "unmet_assumption" => 1 }, out: 3))
+      expect(stages["plan-pruning"])
+        .to eq("rewrites" => counted(in: 2, dropped: { "failed_to_plan" => 1, "output_mismatch" => 1 }, out: 0))
+      expect(stages).not_to have_key("operator-rewrites")
+    end
+
+    it "counts the operator's rewrites apart from the LLM's, with their warnings in assumption-check" do
+      ready(same)
+
+      operator(rewrite(same).merge("assumptions" => [{ "kind" => "sorted" }]),
+               rewrite(sorted).merge("assumptions" => [not_null_note]), rewrite(bad_placeholder))
+
+      expect(stages["operator-rewrites"]).to eq(
+        "rewrites" => counted(added: { "operator" => 3 }, dropped: { "bad_assumption" => 1, "bad_placeholder" => 1 },
+                              out: 1)
+      )
+      expect(stages["llm-rewrites"]["rewrites"]).to include("added" => { "llm" => 1 }, "out" => 1)
+      expect(stages["assumption-check"]["rewrites"])
+        .to eq(counted(in: 2, dropped: { "unmet_assumption" => 0 }, out: 2, extra: { "operator_warnings" => 1 }))
+    end
+
+    it "counts nothing twice when a call that died before its marker is run again" do
+      ready(*llm)
+      first = Quaack::Enclave::Burndown.read(stored)
+
+      check(*llm)
+
+      expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
+    end
   end
 
   it "searches a stored rewrite with index-search --search rewrite_<n>, sending only DONE" do
@@ -94,8 +139,25 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
       expect(ranked).not_to be_empty
       expect(Quaack::Enclave::Steps::RewritePrune.top(stored, search).map(&:to_ddl)).to eq(ranked)
     end
-    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["pruning"])
-      .to include("in" => 2, "out" => 1, "dropped" => { "same_plans" => 1 })
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"].except("rewrites")).to eq(
+      "rewrite_1" => { "in" => 1, "added" => {}, "dropped" => { "same_plans" => 1 }, "set_aside" => 0, "out" => 0,
+                       "extra" => {} },
+      "rewrite_2" => { "in" => 1, "added" => {}, "dropped" => { "same_plans" => 0 }, "set_aside" => 0, "out" => 1,
+                       "extra" => {} }
+    )
+  end
+
+  it "counts each rewrite once in plan-pruning, its own drops and the prune's, though rewrite-prune is run again" do
+    ready(same, sorted, "SELECT o.note FROM public.orders o WHERE o.note = $1")
+    %w[original rewrite_1 rewrite_2].each { search_and_rank(it) }
+    run("rewrite-prune", "--search", "rewrite_1")
+    2.times { run("rewrite-prune", "--search", "rewrite_2") }
+
+    searches = Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"].values
+    total = %w[in out].to_h { |field| [field, searches.sum { it[field] }] }
+    expect(total).to eq("in" => 3, "out" => 1)
+    expect(searches.map { it["dropped"] }.reduce { |a, b| a.merge(b) { |_, x, y| x + y } })
+      .to eq("output_mismatch" => 1, "same_plans" => 1)
   end
 
   context "when a literal's type differs from the one Postgres would infer (e2e 020)" do

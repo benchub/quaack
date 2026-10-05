@@ -90,6 +90,18 @@ module Quaack
       # indexes_built, measurement_runs, and fixture_loads.
       def add_totals(store, **counts) = add(store, [], counts)
 
+      # Records the [stage, search, counts] triples and totals in one write,
+      # as record_all and add_totals do, unless the burndown already has a
+      # record of the first triple's stage for its search. A step that runs
+      # once per search, then writes its marker, records this way first, so
+      # a call that died before its marker and is run again counts nothing
+      # twice.
+      def record_once(store, records, totals: {})
+        stage, search, = records.first
+        searches = read(store)["stages"][Input.stage(stage)]
+        add(store, records, totals) unless searches&.key?(Input.name(search, "search"))
+      end
+
       # Records one Dedupe search as an index-dedupe run: in is every candidate it
       # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
       # and SP-GiST candidates, and out is its proposals, which go on to

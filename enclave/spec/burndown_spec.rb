@@ -52,6 +52,31 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
   end
 
+  describe ".record_once" do
+    def search(number) = :"rewrite_#{number}"
+
+    let(:first) { search(1) }
+    let(:records) { [["rewrite-test", first, { in: 1, out: 1 }], ["counterexamples", first, { in: 1, out: 1 }]] }
+
+    it "records the stages and totals in one write, and nothing when the first stage and search are already there" do
+      described_class.record_once(store, records, totals: { fixture_loads: 2 })
+      described_class.record_once(reopened, records, totals: { fixture_loads: 2 })
+
+      burndown = described_class.read(reopened)
+      expect(burndown["stages"].transform_values(&:keys))
+        .to eq("rewrite-test" => ["rewrite_1"], "counterexamples" => ["rewrite_1"])
+      expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "out" => 1)
+      expect(burndown["totals"]).to eq("fixture_loads" => 2)
+    end
+
+    it "records a stage under another search, though the stage is there" do
+      described_class.record_once(store, records)
+
+      described_class.record_once(reopened, [["rewrite-test", search(2), { in: 1, out: 0, dropped: { s1: 1 } }]])
+      expect(described_class.read(reopened)["stages"]["rewrite-test"].keys).to eq(%w[rewrite_1 rewrite_2])
+    end
+  end
+
   describe ".record" do
     it "stores a stage's counts under its stage and search, filling in what the stage didn't give" do
       record(in: 10, dropped: { duplicate: 2, covered_by_existing: 1 }, set_aside: 1, out: 6,
