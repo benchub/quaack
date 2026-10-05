@@ -2329,16 +2329,7 @@ In each case the operator gets a backtrace instead of a usage error. Check every
 - **Design:** intake.
 - **Status:** todo
 
-### 20261004-39. ArenaRunner pipeline: a timeout before the Sync leaves the connection stuck.
-
-The builder of 20261004-36 found this. A denormalized-fixture spec with a 1 ms `statement_timeout` fails under CPU load, on main too. The timeout can fire after a statement but before the pipeline's final Sync is processed. Then `Pipeline.finish` raises `Broken` and the connection stays in pipeline mode with the Sync unread, so every later run on it reports `connection_unusable` instead of the timeout. Rare with real timeouts, but it's a real race in the 20261004-28 pipeline.
-
-When a cancel or timeout arrives while the pipeline is finishing, drain to the Sync, leave pipeline mode, and classify it as a timeout or cancel as usual. Find a deterministic reproduction, for example by injecting at `Pipeline.finish`, and write the test first.
-
-- **Depends on:** 20261004-28.
-- **Came from:** The builder of 20261004-36.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-39. ArenaRunner pipeline: a timeout before the Sync leaves the connection stuck. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-40. Connection note: port wording. Done, see BACKLOG-COMPLETE.md.
 
@@ -2350,6 +2341,9 @@ These are review minors from 20261004-36.
 2. DESIGN.md says the runner "sends nothing more until the next transaction begins", but `finish` still sends `ROLLBACK`. Reword it.
 3. The comment above `PQTRANS_*` in `arena_runner.rb` still says the status is checked only after each statement. Say it's checked before too, and that INERROR is allowed then.
 4. When a caller catches an error after the connection died, the next statement now gets `transaction_ended` ("a statement ended the arena transaction early"). It used to get `query_failed`. Consider reporting `connection_unusable` instead. Also consider whether a cancel fits `transaction_closed` better.
+
+5. (From the review of 20261004-39.) In `Pipeline.finish`, if nothing was sent and an error arrives at the Sync, `results[-1] = last` raises `IndexError`, which hides the original error. It's only possible on a dead connection. Replace the result only when there is one, or raise `Broken`.
+6. (From the review of 20261004-39.) If the last statement fails on its own and a cancel then arrives at the Sync, the cancel replaces the statement's own error. Add a comment saying it's harmless, since the transaction is aborted either way, or keep the first error.
 
 - **Depends on:** 20261004-36.
 - **Came from:** The review of 20261004-36.
