@@ -5256,3 +5256,28 @@ In a real run the rewrite burndown has one row, plan-pruning, and it's wrong. `B
 - **Design:** burndown.
 - **Status:** done
 - **Landed:** Landed: every rewrite stage, plan-pruning once per rewrite, and the work totals are recorded; record_once guards resumes.
+
+### 20261004-64. Arena timeout: minors from 20261004-58.
+
+The review of 20261004-58 found these minors in `enclave/lib/quaack/enclave/arena_runner/cancel.rb`:
+1. Nothing pins the `ensure ROLLBACK` on a failed clock read in `Cancel.rule`. If the `ensure` became an ordinary statement after the read, a raising read would leave the connection aborted (`INERROR`), and a block that caught the cancel would get 25P02 on its next statement instead of a `transaction_ended` refusal. Add a test that plants a raising second clock read and asserts the connection is idle afterwards.
+2. `Cancel.rule`'s first `ROLLBACK` (in `"ROLLBACK; BEGIN; SET LOCAL statement_timeout = 0"`) still runs under the aborted transaction's `statement_timeout`. If the server takes longer than the timeout to reach it, the cancel there reads as `statement_canceled`. It's rare. Either run that ROLLBACK untimed or document the edge.
+
+- **Depends on:** 20261004-58.
+- **Came from:** The review of 20261004-58, 2026-10-05.
+- **Design:** arena-runner.
+- **Status:** done
+- **Landed:** Landed: ensure ROLLBACK pinned; the first ROLLBACK runs under the session timeout after an abort, documented as unsupported in v1.
+
+### 20261004-67. ServerClock: minors from 20261004-34.
+
+The review of 20261004-34 found:
+1. Two mutations to `cancel_when_sleeping`'s success path survive: dropping `canceller.join` after the block returns, and stopping the canceller unconditionally. Add a test that the canceller's own error still surfaces when the block succeeds.
+2. `rescue StandardError` in `ServerClock.timed_out?` also swallows programming bugs (`NoMethodError`, `Float()`'s `ArgumentError`), which then read as an operator's cancel. ArenaRunner's rescue is just as broad. Consider narrowing both to `PG::Error` and the like.
+3. DESIGN.md says the enclave "raises the cancel, not the read's error". When the connection died, the `ensure ROLLBACK`'s `PG::ConnectionBad` replaces the cancel. "Every caller already handles a cancel" is also generous, since Measurement lets it propagate. Tighten the wording.
+
+- **Depends on:** 20261004-34.
+- **Came from:** The review of 20261004-34, 2026-10-05.
+- **Design:** run discipline.
+- **Status:** done
+- **Landed:** Landed: clock-read rescues narrowed to PG::Error; canceller success path pinned; DESIGN wording tightened.

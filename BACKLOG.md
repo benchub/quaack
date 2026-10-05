@@ -2340,16 +2340,7 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 
 ### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-64. Arena timeout: minors from 20261004-58.
-
-The review of 20261004-58 found these minors in `enclave/lib/quaack/enclave/arena_runner/cancel.rb`:
-1. Nothing pins the `ensure ROLLBACK` on a failed clock read in `Cancel.rule`. If the `ensure` became an ordinary statement after the read, a raising read would leave the connection aborted (`INERROR`), and a block that caught the cancel would get 25P02 on its next statement instead of a `transaction_ended` refusal. Add a test that plants a raising second clock read and asserts the connection is idle afterwards.
-2. `Cancel.rule`'s first `ROLLBACK` (in `"ROLLBACK; BEGIN; SET LOCAL statement_timeout = 0"`) still runs under the aborted transaction's `statement_timeout`. If the server takes longer than the timeout to reach it, the cancel there reads as `statement_canceled`. It's rare. Either run that ROLLBACK untimed or document the edge.
-
-- **Depends on:** 20261004-58.
-- **Came from:** The review of 20261004-58, 2026-10-05.
-- **Design:** arena-runner.
-- **Status:** todo
+### 20261004-64. Arena timeout: minors from 20261004-58. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-65. Ranking baseline: minors from 20261004-52.
 
@@ -2376,17 +2367,7 @@ The review of 20261004-60 found:
 - **Design:** teardown.
 - **Status:** todo
 
-### 20261004-67. ServerClock: minors from 20261004-34.
-
-The review of 20261004-34 found:
-1. Two mutations to `cancel_when_sleeping`'s success path survive: dropping `canceller.join` after the block returns, and stopping the canceller unconditionally. Add a test that the canceller's own error still surfaces when the block succeeds.
-2. `rescue StandardError` in `ServerClock.timed_out?` also swallows programming bugs (`NoMethodError`, `Float()`'s `ArgumentError`), which then read as an operator's cancel. ArenaRunner's rescue is just as broad. Consider narrowing both to `PG::Error` and the like.
-3. DESIGN.md says the enclave "raises the cancel, not the read's error". When the connection died, the `ensure ROLLBACK`'s `PG::ConnectionBad` replaces the cancel. "Every caller already handles a cancel" is also generous, since Measurement lets it propagate. Tighten the wording.
-
-- **Depends on:** 20261004-34.
-- **Came from:** The review of 20261004-34, 2026-10-05.
-- **Design:** run discipline.
-- **Status:** todo
+### 20261004-67. ServerClock: minors from 20261004-34. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-68. Inline SQL: minors from 20261004-53.
 
@@ -2411,4 +2392,27 @@ The review of 20261001-19 found:
 - **Depends on:** 20261001-19.
 - **Came from:** The review of 20261001-19, 2026-10-05.
 - **Design:** burndown.
+- **Status:** todo
+
+### 20261004-70. Arena ROLLBACK after an abort runs under the session's timeout.
+
+From the build and review of 20261004-64. Once a transaction aborts, Postgres drops its `set_config` settings, so the runner's closing `ROLLBACK` after any aborted transaction runs under the session's `statement_timeout`, not with no timeout. DESIGN.md's fixture-open paragraph still says "the closing `ROLLBACK` runs with no timeout" while also saying a nonzero session setting applies after an abort. Fix the wording, and decide whether a nonzero session timeout should be handled, for example by resetting it at connect where `Counterexamples::Evaluated` doesn't rely on it. Also:
+- Rename the spec "takes longer than the runner's timeout to reach" (arena_runner_postgres_spec) and its comment to say it's a sanity check on the fixture's delay.
+- "isn't canceled by the runner's timeout" only pins Postgres behaviour; say so in its comment.
+
+- **Depends on:** 20261004-64.
+- **Came from:** The build and review of 20261004-64, 2026-10-05.
+- **Design:** arena-runner.
+- **Status:** todo
+
+### 20261004-71. ServerClock: comments and wording from 20261004-67.
+
+The review of 20261004-67 found:
+1. A comment in `arena_runner.rb` (around line 26) still says pg "isn't an enclave dependency yet… never names a PG constant", and `pipeline.rb` repeats it. `server_clock.rb` now requires `pg`, so ArenaRunner loads it anyway. Update the comments, or drop the rule.
+2. In DESIGN.md, "The arena runner does the same, reporting it as `statement_canceled`" follows the new dead-connection exception, so it reads as if the arena runner has that exception too. It doesn't: its own `ROLLBACK` failure is caught. Say so.
+3. A bug escaping `Cancel.rule` carries the original `PG::QueryCanceled` as its cause, unlike `ArenaRunner::Error` (`cause: nil`). Egress ignores causes, so it isn't a leak, but consider raising with `cause: nil` for consistency.
+
+- **Depends on:** 20261004-67.
+- **Came from:** The review of 20261004-67, 2026-10-05.
+- **Design:** run discipline, arena-runner.
 - **Status:** todo
