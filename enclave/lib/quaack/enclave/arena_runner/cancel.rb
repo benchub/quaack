@@ -20,13 +20,24 @@ module Quaack
         # since then, so a cancel that comes sooner is some other cancel.
         #
         # The transaction is aborted, and the runner rolls it back after any
-        # error anyway, so this rolls it back now and reads the clock on the
-        # idle connection. If the clock can't be read, the cancel isn't
-        # counted as the timeout.
+        # error anyway, so this rolls it back now and reads the clock in a
+        # transaction of its own, with statement_timeout off, so a nonzero
+        # session setting, from the server, the database, the role, or a SET,
+        # can't cancel the read. It's a separate query, since the server arms
+        # a query's timeout with the setting as the query starts. It then
+        # rolls that transaction back too, leaving the connection idle and the
+        # session's setting as it was. If the clock can't be read, the cancel
+        # isn't counted as the timeout.
         def rule(connection, started, timeout_ms)
           return :statement_canceled unless started
 
-          ServerClock.ms(connection, "ROLLBACK;") - started >= timeout_ms ? :statement_timeout : :statement_canceled
+          connection.exec("ROLLBACK; BEGIN; #{Pipeline::DISARM_SQL}")
+          begin
+            now = ServerClock.ms(connection, "")
+          ensure
+            connection.exec("ROLLBACK")
+          end
+          now - started >= timeout_ms ? :statement_timeout : :statement_canceled
         rescue StandardError
           :statement_canceled
         end
