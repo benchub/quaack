@@ -39,7 +39,7 @@ module Quaack
             connection.exec("ROLLBACK")
           end
           now - started >= timeout_ms ? :statement_timeout : :statement_canceled
-        rescue StandardError
+        rescue *ServerClock::READ_ERRORS
           :statement_canceled
         end
       end

@@ -19,19 +19,18 @@ module ServerClockHelpers
   # Cancels conn's statement from a second session once pg_stat_activity
   # shows it in pg_sleep, so the cancel can't land while conn is idle and
   # get dropped. Runs the block meanwhile and returns its value. If the
-  # block fails, its failure is the one reported: the canceller is stopped,
-  # and whatever it raised, such as its own wait running out because the
-  # code under test never slept, is dropped.
+  # block succeeds, it waits for the canceller and raises whatever the
+  # canceller raised. If the block fails, its failure is the one reported:
+  # the canceller is stopped, and whatever it raised, such as its own wait
+  # running out because the code under test never slept, is dropped.
   def cancel_when_sleeping(conn)
     other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
     canceller = start_canceller(other, conn.backend_pid)
-    yielded = false
     value = yield
-    yielded = true
     canceller.join
     value
   ensure
-    stop_canceller(canceller) unless yielded
+    stop_canceller(canceller)
     other&.close
   end
 
@@ -55,12 +54,25 @@ module ServerClockHelpers
   end
 
   # Models a connection whose read of the server's clock after a cancel
-  # fails, raising an error that carries message.
+  # fails, as when the connection drops, raising a Postgres error that
+  # carries message.
   def clockless_after_cancel(conn, message)
     Class.new(SimpleDelegator) do
       define_method(:exec) do |sql, *args, &block|
-        raise IOError, message if sql.include?("ROLLBACK TO SAVEPOINT")
+        raise PG::ConnectionBad, message if sql.include?("ROLLBACK TO SAVEPOINT")
 
+        __getobj__.exec(sql, *args, &block)
+      end
+    end.new(conn)
+  end
+
+  # Models a bug in the enclave's own read of the server's clock: the exec
+  # whose SQL includes trigger reads something that isn't a clock, so
+  # parsing it fails.
+  def misread_clock(conn, trigger)
+    Class.new(SimpleDelegator) do
+      define_method(:exec) do |sql, *args, &block|
+        sql = sql.sub(Quaack::Enclave::ServerClock::NOW_SQL, "SELECT 'not a clock'") if sql.include?(trigger)
         __getobj__.exec(sql, *args, &block)
       end
     end.new(conn)
