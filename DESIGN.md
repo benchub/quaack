@@ -1051,7 +1051,7 @@ Roll back the transaction.
 
 ## rewrite-index-ideas. Per-candidate index ranking.
 
-For each candidate that survived rewrite-test and counterexamples, and that plan-pruning didn't prune, run the LLM half of the index search that plan-pruning started:
+For each candidate that survived rewrite-test and counterexamples, and that plan-pruning didn't prune, run the LLM half of the index search that plan-pruning started.
 
 The LLM asks here are the rewrite's own: the burndown and the progress lines count them as rewrite-llm-index-ideas and rewrite-llm-index-refine, never as the original query's llm-index-ideas or llm-index-refine.
 
@@ -1143,7 +1143,7 @@ The driver builds the report from the results the enclave script sent back. Ever
 
 The enclave sends the same things whether or not anything beat the original:
 
-- The original query, redacted, with the clock-anchor clock functions put back.
+- The original query, redacted, with clock-anchor's clock functions put back.
 - Every measured label, ranked or not: its measurements, its per-literal verdicts, and the built indexes it ran with. A run that timed out is listed too.
 - Every stored rewrite, ranked or not: its SQL, where it came from, and one fate. A rewrite the enclave refused on arrival isn't stored, so only the burndown counts it.
 

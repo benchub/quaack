@@ -9,7 +9,7 @@ module Quaack
     module Steps
       # `quaacks baseline --run <run ID>` (DESIGN.md's baseline, run-discipline): on the racetrack,
       # with every index that index-build built hidden, measures anchored_query
-      # for each literals literal set (Measurement, combination nil).
+      # for each literal set (Measurement, combination nil).
       #
       # The original gets up to 15 minutes per run (ORIGINAL_TIMEOUT_MS), not
       # the 3x clamp; a set that still times out counts as infinite in minimax.

@@ -10,7 +10,7 @@ module Quaack
     module Steps
       # DESIGN.md's negative-result, for ReportPayload's negative field when the selection is
       # empty: which index candidates index-test found the planner never used or
-      # HypoPG refused, and which the index-dedupe Dedupe dropped as covered by an
+      # HypoPG refused, and which index-dedupe's Dedupe dropped as covered by an
       # existing index. What became of each rewrite is in ReportPayload's
       # rewrites field (RewriteFate), whether or not the selection is empty.
       #

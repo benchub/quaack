@@ -11,7 +11,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks result-comparison --run <run ID>` (DESIGN.md's result-comparison): on the
-      # racetrack, for each literals literal set, compares anchored_query's result
+      # racetrack, for each literal set, compares anchored_query's result
       # with each candidate's that candidate_runs measured, with
       # ProductionComparison, binding the set's literals as Measurement
       # does, under the baseline's timeout_ms. Results don't depend on which

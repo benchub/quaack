@@ -63,7 +63,7 @@ module Quaack
     #     counts, in the named schema or else every schema of the plan's
     #     search path. That refuses now(), random(), nextval, set_config,
     #     and the advisory locks.
-    # 12. volatile_function: the volatility VolatilityCheck, run on the values as a
+    # 12. volatile_function: volatility's VolatilityCheck, run on the values as a
     #     SELECT's target list, finds a volatile cast. A cast is held only
     #     to the volatility rule, not to IMMUTABLE, since the input functions of
     #     date, timestamptz, and the like are STABLE, and '2024-01-01'::date

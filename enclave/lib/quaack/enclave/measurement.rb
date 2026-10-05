@@ -8,7 +8,7 @@ require_relative "run_discipline"
 
 module Quaack
   module Enclave
-    # DESIGN.md's baseline (and index-baseline, candidate-runs): the measurement process. For each literals literal
+    # DESIGN.md's baseline (and index-baseline, candidate-runs): the measurement process. For each literal
     # set, runs sql three times with EXPLAIN (ANALYZE, BUFFERS, TIMING OFF,
     # FORMAT JSON) under RunDiscipline, with only one index combination
     # visible among index_build's indexes.

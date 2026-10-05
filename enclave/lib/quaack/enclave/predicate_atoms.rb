@@ -8,7 +8,7 @@ require_relative "table_name"
 module Quaack
   module Enclave
     # rewrite-test: the predicate atoms of a query, for the value pools and the
-    # vacuity-guard vacuity guard.
+    # vacuity guard (vacuity-guard).
     #
     #   parse = PgQuery.parse(sql)
     #   atoms = PredicateAtoms.extract(parse, column_names: { table_name => ["id", ...] })
