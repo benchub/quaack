@@ -316,7 +316,11 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
                   .column_values(0).each_with_index.to_h { |pid, index| [Integer(pid, 10), index] }
     end
 
-    def listed_before?(young, old) = listed_pids.fetch(young.backend_pid) < listed_pids.fetch(old.backend_pid)
+    # Reads one snapshot, so both pids' places come from the same listing.
+    def listed_before?(young, old)
+      listed = listed_pids
+      listed.fetch(young.backend_pid) < listed.fetch(old.backend_pid)
+    end
 
     # Closes connections, once pg_stat_activity no longer lists them.
     def close_and_wait(conns)
@@ -346,19 +350,17 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
     # until one lands before old, so it reaches the slot freed before old,
     # whatever order the server hands out free slots in. The rest are then
     # closed, so only old and it are other clients. No more connections
-    # can be open than max_connections allows.
+    # can be open than max_connections allows. The rest are closed even
+    # when a connect fails, such as with "too many clients".
     def connect_listed_before(old)
       opened = []
       max_connections.times do
         opened << production.connect
-        next unless listed_before?(opened.last, old)
-
-        young = opened.pop
-        close_and_wait(opened)
-        return young.tap { connections << it }
+        return opened.pop.tap { connections << it } if listed_before?(opened.last, old)
       end
-      close_and_wait(opened)
       raise "no connection was listed before pid #{old.backend_pid}"
+    ensure
+      close_and_wait(opened)
     end
 
     # Some cases the test server can't make happen on its own, such as pids
