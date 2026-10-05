@@ -169,15 +169,17 @@ module Quaack
       # Shape keeps each answer and query it builds. Only answers are kept:
       # one that raises runs again the next time it's asked for.
       class Shape
-        # How many Shapes parse keeps. It forgets them all past this, so a
-        # long run can't grow it without bound.
+        # How many Shapes parse keeps. A new one past this makes it forget
+        # them all, so a long run can't grow it without bound.
         KEPT = 64
 
         @kept = {}
 
         def self.parse(sql, query)
-          @kept.clear if @kept.size >= KEPT
-          @kept[[sql, query]] ||= new(sql, query)
+          @kept.fetch([sql, query]) do |key|
+            @kept.clear if @kept.size >= KEPT
+            @kept[key] = new(sql, query)
+          end
         end
 
         def initialize(sql, query)

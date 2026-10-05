@@ -167,7 +167,20 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     let(:table) { "t_#{RSpec.current_example.metadata[:scoped_id].tr(":", "_")}" }
     let(:sql) { "SELECT id FROM #{table} WHERE a = 1 ORDER BY id LIMIT 5" }
 
-    before { allow(Quaack::Enclave::Deparse).to receive(:faithfully).and_call_original }
+    # Each example starts with nothing kept, so what earlier examples left
+    # can't decide when it's full.
+    before do
+      described_class::Shape.instance_variable_get(:@kept).clear
+      allow(Quaack::Enclave::Deparse).to receive(:faithfully).and_call_original
+    end
+
+    it "keeps a query it's asked for again when it's full, rather than forgetting everything" do
+      shape(sql).probe
+      (described_class::Shape::KEPT - 1).times { |i| shape("SELECT #{i} FROM #{table}_other").mode }
+      shape(sql).probe
+
+      expect(Quaack::Enclave::Deparse).to have_received(:faithfully).once
+    end
 
     it "builds each query once for the same SQL, however many times it's asked" do
       built = Array.new(3) do
