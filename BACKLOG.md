@@ -2296,28 +2296,32 @@ Also, from the review of 20261004-24:
 
 ### 20261004-29. Docs and wording after ssh_failed skips teardown. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-30. Flaky run-server-check spec: a young client listed before an old one.
+### 20261004-30. Flaky run-server-check spec: a young client listed before an old one. Done, see BACKLOG-COMPLETE.md.
 
-`enclave/spec/run_server_check_postgres_spec.rb`, "names the oldest other client first, whatever order pg_stat_activity lists them in", failed once during the build of 20261004-28. Its helper `connect_listed_before` opens and closes up to 1000 connections, hoping one lands in an earlier `pg_stat_activity` slot than `old`. That never happened, and the file passed when run alone.
+### 20261004-31. A run that finished but couldn't tear down: show the report, and tidy the advice. Done, see BACKLOG-COMPLETE.md.
 
-Make it deterministic. For example, free an earlier slot on purpose first: open a connection before `old`, close it, then connect. Or test the ordering on a stubbed list of `pg_stat_activity` rows, while still covering the real query's ORDER BY.
 
-- **Depends on:** none.
-- **Came from:** The builder of 20261004-28.
-- **Design:** run-server checks.
+### 20261004-32. Teardown-failure docs and the path-without-done case.
+
+These are review minors from 20261004-31.
+
+1. README step 5 says to "destroy the run server yourself too" after `teardown_failed`. But when `destroy_command` is set, the enclave runs it before deleting the store (see `destroyed?` in `enclave/lib/quaack/enclave/steps/teardown.rb`), so the server is usually gone already. Only `bad_run` and `bad_store_base` skip the destroy. Fix the wording.
+2. DESIGN.md and the `TEARDOWN_LEFT` comment in `driver/lib/quaack/driver/teardown.rb` say the failure line points to teardown's message for "a store teardown wouldn't or couldn't delete". For `bad_run`, `bad_store_base` and `teardown_failed`, `rule_with_note` adds no next step. Make the docs match, or add the pointer.
+3. README's "It prints the report's path, then `<run ID> done`" doesn't mention that the path can print without `done`, with exit 1, when only teardown failed. The error table mentions this only in the `ssh_failed` and `incomplete` rows. Document it for the other teardown rules too, and check stdout in the `--keep` spec.
+
+- **Depends on:** 20261004-31.
+- **Came from:** The review of 20261004-31.
+- **Design:** teardown.
 - **Status:** todo
 
-### 20261004-31. A run that finished but couldn't tear down: show the report, and tidy the advice.
+### 20261004-33. Tidy the oldest-client-first spec helper.
 
-Minor findings from the review of 20261004-29:
+These are review minors from 20261004-30, in `enclave/spec/run_server_check_postgres_spec.rb`.
 
-1. **Report path not shown.** When a run succeeds and then teardown fails, `drive` never prints the report path, because teardown raises first, even though the report file was written. The failure message says "the run itself finished", so print the report's path too. Test first.
-2. **Teardown command printed twice.** The same case prints it once in the "couldn't tear down" line and again in "quaack run failed". Print it once.
-3. **README step 5** says "QUAACK printed this command for it". That isn't true when teardown fails with `bad_run`, `bad_store_base` or `teardown_failed`, where QUAACK says to check or remove `~/.quaack/runs/<ID>` by hand. Reword it.
-4. **Wording:** README and DESIGN.md say the run's files and the run server "stay up". Say the files "remain".
+1. `listed_before?` runs a separate `pg_stat_activity` query for each pid. Take one snapshot instead.
+2. If `production.connect` raises inside `connect_listed_before`, for example with "too many clients", the connections in `opened` are never closed. Close them in an `ensure`.
 
-- **Depends on:** 20261004-29.
-- **Came from:** The review of 20261004-29.
-- **Design:** Where QUAACK runs, report.
+- **Depends on:** 20261004-30.
+- **Came from:** The review of 20261004-30.
+- **Design:** none (tests only).
 - **Status:** todo
-

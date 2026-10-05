@@ -4774,3 +4774,30 @@ Minor findings from the review of 20261004-26. After `ssh_failed`, `quaack run` 
 - **Design:** Where QUAACK runs, Transport.
 - **Status:** done
 - **Landed:** merge 767713d. A run that succeeds and then fails teardown now advises running the teardown command instead of resuming. The interrupted-teardown hint is reworded. README and DESIGN.md say that ssh_failed leaves the run's files and the run server until teardown. The review had no blocking findings; its minors are 20261004-31.
+
+### 20261004-31. A run that finished but couldn't tear down: show the report, and tidy the advice.
+
+Minor findings from the review of 20261004-29:
+
+1. **Report path not shown.** When a run succeeds and then teardown fails, `drive` never prints the report path, because teardown raises first, even though the report file was written. The failure message says "the run itself finished", so print the report's path too. Test first.
+2. **Teardown command printed twice.** The same case prints it once in the "couldn't tear down" line and again in "quaack run failed". Print it once.
+3. **README step 5** says "QUAACK printed this command for it". That isn't true when teardown fails with `bad_run`, `bad_store_base` or `teardown_failed`, where QUAACK says to check or remove `~/.quaack/runs/<ID>` by hand. Reword it.
+4. **Wording:** README and DESIGN.md say the run's files and the run server "stay up". Say the files "remain".
+
+- **Depends on:** 20261004-29.
+- **Came from:** The review of 20261004-29.
+- **Design:** Where QUAACK runs, report.
+- **Status:** done
+- **Landed:** Landed in 30f839a. Review minors went to 20261004-32.
+
+### 20261004-30. Flaky run-server-check spec: a young client listed before an old one.
+
+`enclave/spec/run_server_check_postgres_spec.rb`, "names the oldest other client first, whatever order pg_stat_activity lists them in", failed once during the build of 20261004-28. Its helper `connect_listed_before` opens and closes up to 1000 connections, hoping one lands in an earlier `pg_stat_activity` slot than `old`. That never happened, and the file passed when run alone.
+
+Make it deterministic. For example, free an earlier slot on purpose first: open a connection before `old`, close it, then connect. Or test the ordering on a stubbed list of `pg_stat_activity` rows, while still covering the real query's ORDER BY.
+
+- **Depends on:** none.
+- **Came from:** The builder of 20261004-28.
+- **Design:** run-server checks.
+- **Status:** done
+- **Landed:** Landed in 67b5f61. Review minors went to 20261004-33.
