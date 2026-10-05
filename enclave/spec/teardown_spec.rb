@@ -275,6 +275,33 @@ RSpec.describe "quaacks teardown" do
       expect(File.exist?(gone)).to be(false)
       expect(File.directory?(run.path)).to be(true)
     end
+
+    # Task 20261004-73: destroy_command runs for up to an hour after open
+    # checked the run directory, so the delete checks it again. Here the
+    # command itself loosens it. The run server is destroyed, but the store
+    # is kept, and a rerun refuses it the same way without running the
+    # command again, until the operator fixes the mode.
+    it "keeps a run directory loosened during destroy_command as bad_run, and a rerun says so too" do
+      run = store
+      File.write(File.join(dir, ".quaack", "config.json"),
+                 JSON.generate("destroy_command" => "echo x >> #{gone} && chmod 755 #{run.path}"))
+
+      expect(teardown("--run", run.run_id)).to eq(70)
+      expect(out.string).to eq(error_line("bad_run"))
+      expect(File.read(gone)).to eq("x\n")
+      expect_exposed(run.path)
+
+      out.truncate(0) && out.rewind
+      expect(teardown("--run", run.run_id)).to eq(70)
+      expect(out.string).to eq(error_line("bad_run"))
+      expect(File.read(gone)).to eq("x\n")
+
+      File.chmod(0o700, run.path)
+      File.write(File.join(dir, ".quaack", "config.json"), JSON.generate("destroy_command" => "true"))
+      out.truncate(0) && out.rewind
+      expect(teardown("--run", run.run_id)).to eq(0)
+      expect(File.exist?(run.path)).to be(false)
+    end
   end
 
   # The way the operator runs it on the jump server, after intake: the

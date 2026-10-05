@@ -26,7 +26,11 @@ module Quaack
       #
       # - bad_run: something is at the run's path, but it isn't a run
       #   directory Store.open would open, such as a symlink, which could
-      #   point out of the store. It's left alone.
+      #   point out of the store. It's left alone. The path is checked again
+      #   after destroy_command, so with one, bad_run can come after the
+      #   command destroyed the run server. A rerun then gives bad_run
+      #   again, without running the command, until the operator fixes the
+      #   run directory.
       # - bad_store_base: it can't look in the store's base, such as one
       #   that's a file or sits under a directory it can't search, or the
       #   base is a symlink or sits in one (Store::LINKED_BASE).
