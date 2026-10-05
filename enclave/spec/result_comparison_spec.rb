@@ -159,6 +159,61 @@ RSpec.describe Quaack::Enclave::ResultComparison do
     end
   end
 
+  # rewrite-test compares the same two queries over every scenario and
+  # retry. Deparsing each time was most of its garbage (task 20261004-23).
+  describe "deparsing once per query" do
+    # Shapes are kept across examples, so each example's SQL names a table
+    # of its own.
+    let(:table) { "t_#{RSpec.current_example.metadata[:scoped_id].tr(":", "_")}" }
+    let(:sql) { "SELECT id FROM #{table} WHERE a = 1 ORDER BY id LIMIT 5" }
+
+    before { allow(Quaack::Enclave::Deparse).to receive(:faithfully).and_call_original }
+
+    it "builds each query once for the same SQL, however many times it's asked" do
+      built = Array.new(3) do
+        parsed = shape(sql)
+        [parsed.without_limit, parsed.with_tiebreaker([1]), parsed.with_tiebreaker([1], descending: true), parsed.probe]
+      end
+
+      expect(built.uniq).to eq([[
+                                 "SELECT id FROM #{table} WHERE a = 1 ORDER BY id",
+                                 "SELECT id FROM #{table} WHERE a = 1 ORDER BY id, 1 LIMIT 5",
+                                 "SELECT id FROM #{table} WHERE a = 1 ORDER BY id, 1 DESC NULLS FIRST LIMIT 5",
+                                 "SELECT * FROM (#{sql}) quaack_probe LIMIT 0"
+                               ]])
+      expect(Quaack::Enclave::Deparse).to have_received(:faithfully).exactly(4).times
+    end
+
+    it "forgets what it kept once it holds #{described_class::Shape::KEPT} queries, so it can't grow without bound" do
+      shape(sql).probe
+      described_class::Shape::KEPT.times { |i| shape("SELECT #{i} FROM #{table}_other").mode }
+      shape(sql).probe
+
+      expect(Quaack::Enclave::Deparse).to have_received(:faithfully).with(anything).twice
+    end
+
+    it "keeps different tiebreakers apart" do
+      parsed = shape(sql)
+
+      expect([parsed.with_tiebreaker([1]), parsed.with_tiebreaker([2]), parsed.with_tiebreaker([1])])
+        .to eq(["SELECT id FROM #{table} WHERE a = 1 ORDER BY id, 1 LIMIT 5",
+                "SELECT id FROM #{table} WHERE a = 1 ORDER BY id, 2 LIMIT 5",
+                "SELECT id FROM #{table} WHERE a = 1 ORDER BY id, 1 LIMIT 5"])
+    end
+
+    it "names the query each was parsed as, for the same SQL" do
+      bad = "SELECT a FROM #{table} WHERE 't'::boolean ORDER BY a LIMIT 1"
+
+      queries = %i[original candidate original].map do |query|
+        described_class::Shape.parse(bad, query).probe
+      rescue described_class::Error => e
+        e.query
+      end
+
+      expect(queries).to eq(%i[original candidate original])
+    end
+  end
+
   describe "Shape#collation_names" do
     it "lists every COLLATE clause's collation, at any depth" do
       sql = %(SELECT a COLLATE "Ci", b FROM t WHERE b IN (SELECT c COLLATE pg_catalog."C" FROM u) ORDER BY a)
