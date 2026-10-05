@@ -5,6 +5,7 @@ require "pg_query"
 require "tempfile"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/table_name"
+require_relative "support/server_clock"
 
 # fixture-open, fixture-load, and fixture-rollback against a real arena database: open a transaction
 # with statement_timeout, load a fixture, run queries, and always roll back.
@@ -222,6 +223,26 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    it "turns a timed-out query into a statement_timeout error, even if the enclave's clock runs slower" do
+      short = described_class.new(conn, statement_timeout_ms: 500)
+      slow_enclave_clock
+
+      error = run_error(short, [parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") }
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
+      expect_nothing_persisted
+    end
+
+    it "turns a timed-out insert into a statement_timeout error, even if the enclave's clock runs slower" do
+      short = described_class.new(conn, statement_timeout_ms: 500)
+      slow_enclave_clock
+
+      error = run_error(short, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :insert, 0])
+      expect_nothing_persisted
+    end
+
     # A cancel shares the timeout's SQLSTATE, 57014, and its message depends
     # on lc_messages, so the runner tells them apart by time, as
     # RunDiscipline does: one that comes before the timeout could have
@@ -253,6 +274,50 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 2])
       expect_nothing_persisted
+    end
+
+    # Telling a timeout by the server's clock mustn't slow fixture loads:
+    # each statement's clock read goes in the statement's own round trip,
+    # and nothing gives a statement a transaction ID of its own.
+    describe "cost per statement" do
+      let(:counting_class) do
+        Class.new(SimpleDelegator) do
+          attr_reader :round_trips
+
+          def initialize(conn)
+            super
+            @round_trips = 0
+          end
+
+          %i[exec exec_params pipeline_sync].each do |name|
+            define_method(name) do |*args, &block|
+              @round_trips += 1
+              __getobj__.public_send(name, *args, &block)
+            end
+          end
+        end
+      end
+
+      def rows(count) = (1..count).map { parent(it, "c#{it}") }
+
+      def round_trips(count)
+        counting = counting_class.new(conn)
+        described_class.new(counting).with_fixture(rows(count)) { |tx| 2.times { tx.query("SELECT 1") } }
+        counting.round_trips
+      end
+
+      def next_xid = Integer(conn.exec("SELECT pg_snapshot_xmax(pg_current_snapshot())").getvalue(0, 0))
+
+      it "takes one round trip per statement" do
+        expect(round_trips(20) - round_trips(10)).to eq(10)
+      end
+
+      it "uses one transaction ID for the whole fixture" do
+        before = next_xid
+        runner.with_fixture(rows(10)) { |tx| 2.times { tx.query("SELECT 1") } }
+
+        expect(next_xid - before).to eq(1)
+      end
     end
 
     def canceler_name = "operator-canceler"
@@ -985,7 +1050,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
           @calls = Hash.new(0)
         end
 
-        %i[exec exec_params transaction_status set_notice_receiver].each do |name|
+        %i[exec send_query_params transaction_status set_notice_receiver].each do |name|
           define_method(name) do |*args, &block|
             @calls[name] += 1
             raise IOError, @message if @fail == [name, @calls[name]]
@@ -1007,7 +1072,9 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [:set_notice_receiver, 1] => [:connection_unusable, :transaction, nil],
         [:exec, 1] => [:begin_failed, :begin, nil],
         [:exec, 2] => [:begin_failed, :begin, nil],
-        [:exec_params, 4] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        # Each statement sends the server's clock and then itself.
+        [:send_query_params, 7] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        [:send_query_params, 8] => [:fixture_load_failed, :load, 1],
         [:transaction_status, 4] => [:fixture_load_failed, :load, 0]
       }
 
@@ -1019,6 +1086,32 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
         expect_nothing_persisted
       end
+    end
+
+    # After a cancel, the runner reads the server's clock again to tell a
+    # timeout from another cancel. If that read fails, the cancel can't be
+    # shown to be the timeout, and the read's error goes nowhere.
+    it "reports a cancel as statement_canceled when the server's clock can't be read after it" do
+      clockless = Class.new(SimpleDelegator) do
+        def initialize(conn, message)
+          super(conn)
+          @message = message
+        end
+
+        def exec(sql, *, &)
+          raise IOError, @message if sql.include?("clock_timestamp")
+
+          __getobj__.exec(sql, *, &)
+        end
+      end.new(conn, sentinel)
+      short = described_class.new(clockless, statement_timeout_ms: 100)
+
+      error = run_error(short, [parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") }
+
+      expect([error.rule, error.sqlstate, error.step, error.index, error.cause])
+        .to eq([:statement_canceled, "57014", :query, 0, nil])
+      expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
+      expect_nothing_persisted
     end
   end
 end

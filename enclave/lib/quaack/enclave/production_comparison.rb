@@ -6,6 +6,7 @@ require "pg"
 require_relative "result_comparator"
 require_relative "result_comparison"
 require_relative "run_discipline"
+require_relative "server_clock"
 
 module Quaack
   module Enclave
@@ -195,7 +196,7 @@ module Quaack
           RunDiscipline::LOCK.synchronize do
             @connection.exec("BEGIN READ ONLY")
             begin
-              started = server_ms("SET LOCAL statement_timeout = #{@timeout_ms}; SAVEPOINT digest;")
+              started = ServerClock.mark(@connection, "SET LOCAL statement_timeout = #{@timeout_ms};")
               stream(sql, tie_positions, started, &)
             ensure
               @connection.exec("ROLLBACK")
@@ -216,7 +217,7 @@ module Quaack
           rows.digested
         rescue PG::QueryCanceled
           drain
-          raise if server_ms("ROLLBACK TO SAVEPOINT digest;") - started < @timeout_ms
+          raise unless ServerClock.timed_out?(@connection, started, @timeout_ms)
 
           raise TimedOut
         end
@@ -230,11 +231,6 @@ module Quaack
 
         def drain
           while @connection.get_result; end
-        end
-
-        # The server's clock, in ms, read after the statements in prefix.
-        def server_ms(prefix)
-          Float(@connection.exec("#{prefix} SELECT extract(epoch FROM clock_timestamp()) * 1000").getvalue(0, 0))
         end
       end
 
