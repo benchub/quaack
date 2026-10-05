@@ -5054,3 +5054,20 @@ Minor findings from the review of 20261004-15. These are all comment or prose fi
 - **Design:** none.
 - **Status:** done
 - **Landed:** Landed in 1a5fd3d.
+
+### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section.
+
+Two parts of the readable report are too long to scan.
+
+1. **The queries section at the top.** Keep its content, but put each query's text behind a collapsed `<details>`, so the reader sees the list of rewrites and how they fared without scrolling past every query.
+2. **"Measured, and not ranked."**
+   - Collapse it by default, behind a summary like "Things QUAACK tried that didn't pan out".
+   - Render its content as a table instead of a wall of sentences. Use one row per rewrite or index, with columns for what it was, who proposed it, and why it didn't make the cut.
+
+The report must still read correctly with JavaScript off: use `<details>`/`<summary>`, not scripts.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed in cb12d14.

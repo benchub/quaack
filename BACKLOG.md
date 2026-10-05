@@ -2331,21 +2331,7 @@ These are review minors from 20261004-41.
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section.
-
-Two parts of the readable report are too long to scan.
-
-1. **The queries section at the top.** Keep its content, but put each query's text behind a collapsed `<details>`, so the reader sees the list of rewrites and how they fared without scrolling past every query.
-2. **"Measured, and not ranked."**
-   - Collapse it by default, behind a summary like "Things QUAACK tried that didn't pan out".
-   - Render its content as a table instead of a wall of sentences. Use one row per rewrite or index, with columns for what it was, who proposed it, and why it didn't make the cut.
-
-The report must still read correctly with JavaScript off: use `<details>`/`<summary>`, not scripts.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report.
-- **Status:** todo
+### 20261004-50. Report: collapse the query list and the "Measured, and not ranked" section. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably.
 
@@ -2437,4 +2423,17 @@ These come from the build and review of 20261004-43.
 - **Depends on:** 20261004-43.
 - **Came from:** The build and review of 20261004-43, 2026-10-05.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261004-59. Collapsed report sections: hidden warnings and links into closed sections.
+
+These are review minors from 20261004-50.
+
+- **Warnings hidden in a closed section.** A rewrite's summary line gives no hint of two warnings inside its section: that it relies on something the data holds today but the schema doesn't enforce, and the list of conditions the test data never exercised. The README tells readers to read those rewrites extra carefully. Add a short flag to the summary line, such as "⚠ relies on data" or "untested conditions". Coordinate with 20261004-51, which rewords the untested-conditions note.
+- **Links lead into closed sections.** "Its SQL is under rewrite X, above" and "See rewrite X under the queries" link to the `<article>` around a closed `<details>`, so the target stays collapsed. Point the link at the `<details>` and open it on `:target` without JavaScript (for example, give the `<details>` the id). Otherwise, reword the links to say "expand rewrite X".
+- **The not-ranked table's note is incomplete.** It says "Who proposed it" reads "not recorded" for your query with new indexes. The cell also reads that way for a rewrite whose source is unknown or that's missing from the payload. Make the note cover those cases.
+
+- **Depends on:** 20261004-50.
+- **Came from:** The review of 20261004-50, 2026-10-05.
+- **Design:** report.
 - **Status:** todo
