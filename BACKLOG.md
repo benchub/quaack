@@ -2342,14 +2342,7 @@ Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_post
 - **Design:** none (tests only).
 - **Status:** todo
 
-### 20261004-46. Shape: drop the dead copy in `initialize`.
-
-This is a review minor from 20261004-42. In `Shape#initialize` (`enclave/lib/quaack/enclave/result_comparison.rb`), `sql.frozen? ? sql : sql.dup.freeze` can no longer copy anything, because `new` is only called from `parse`, which always passes a frozen string. Make `new` private and assign `@sql = sql`.
-
-- **Depends on:** 20261004-42.
-- **Came from:** The review of 20261004-42.
-- **Design:** result-comparison.
-- **Status:** todo
+### 20261004-46. Shape: drop the dead copy in `initialize`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-47. Driver UTF-8 argument check: follow-ups.
 

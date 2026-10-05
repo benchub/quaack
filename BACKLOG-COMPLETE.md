@@ -4966,3 +4966,13 @@ These are review minors from 20261004-36.
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** Landed in 46a8e57. Review minors went to 20261004-49.
+
+### 20261004-46. Shape: drop the dead copy in `initialize`.
+
+This is a review minor from 20261004-42. In `Shape#initialize` (`enclave/lib/quaack/enclave/result_comparison.rb`), `sql.frozen? ? sql : sql.dup.freeze` can no longer copy anything, because `new` is only called from `parse`, which always passes a frozen string. Make `new` private and assign `@sql = sql`.
+
+- **Depends on:** 20261004-42.
+- **Came from:** The review of 20261004-42.
+- **Design:** result-comparison.
+- **Status:** done
+- **Landed:** Landed in 5c77de2. One review minor wasn't filed, because the reviewer said it needs no follow-up: nothing asserts the stored SQL is frozen.
