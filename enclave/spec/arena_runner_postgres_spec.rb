@@ -724,6 +724,26 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect(session_timeout).to eq("0")
     end
 
+    # Only an idle connection means a statement ended the transaction. A
+    # statement that succeeded can't leave it aborted (PQTRANS_INERROR, 3),
+    # so libpq reporting that afterwards means the connection's state can't
+    # be trusted. This fakes only the connection's status, at the check
+    # after the first query: the first read is with_fixture's, and each
+    # statement reads it before and after.
+    it "reports a transaction aborted after a statement that succeeded as connection_unusable" do
+      aborted = Class.new(SimpleDelegator) do
+        def transaction_status
+          @reads = (@reads || 0) + 1
+          @reads == 3 ? 3 : __getobj__.transaction_status
+        end
+      end.new(conn)
+
+      error = run_error(described_class.new(aborted)) { |tx| tx.query("SELECT 1") }
+
+      expect([error.rule, error.step, error.index, error.cause]).to eq([:connection_unusable, :query, 0, nil])
+      expect_nothing_persisted
+    end
+
     it "refuses a string of several statements in the backstop too" do
       error = run_error do
         runner.__send__(:statement, 'SELECT 1; INSERT INTO "Fixture Space".counters DEFAULT VALUES', [],
@@ -788,7 +808,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       expect(errors.map { [it.rule, it.step, it.index, it.sqlstate, it.cause] })
         .to eq([[:query_failed, :query, 0, nil, nil], [:connection_unusable, :query, 1, nil, nil]])
-      expect(errors.last.message).to eq("the arena connection can't be used")
+      expect(errors.last.message).to eq("the arena connection stopped working partway through the arena transaction")
       expect(rollback.rule).to eq(:rollback_failed)
     end
 
@@ -822,14 +842,16 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
   end
 
   describe "a connection that can't start a transaction" do
+    let(:start_refusal) { "the arena connection can't start a transaction: it's closed, broken, or busy" }
+
     it "reports a closed connection as unusable" do
       other = arena.connect
       other.close
 
       error = run_error(described_class.new(other))
 
-      expect([error.rule, error.step, error.sqlstate,
-              error.cause]).to eq([:connection_unusable, :transaction, nil, nil])
+      expect([error.rule, error.step, error.sqlstate, error.cause, error.message])
+        .to eq([:connection_unusable, :transaction, nil, nil, start_refusal])
     end
 
     # PQTRANS_UNKNOWN is 4: libpq has seen the connection go bad.
@@ -845,7 +867,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       error = run_error(described_class.new(other))
 
-      expect([error.rule, error.step]).to eq(%i[connection_unusable transaction])
+      expect([error.rule, error.step, error.message]).to eq([:connection_unusable, :transaction, start_refusal])
     ensure
       other&.close
     end
@@ -857,7 +879,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       error = run_error
 
-      expect([error.rule, error.step]).to eq(%i[connection_unusable transaction])
+      expect([error.rule, error.step, error.message]).to eq([:connection_unusable, :transaction, start_refusal])
       expect(conn.get_result.getvalue(0, 0)).to eq("42")
       conn.get_result
     end

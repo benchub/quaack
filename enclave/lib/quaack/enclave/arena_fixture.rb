@@ -28,13 +28,15 @@ module Quaack
           @sqlstate = sqlstate
           @step = step
           @index = index
-          super(RULES.fetch(rule))
+          super(STEP_MESSAGES.fetch([rule, step]) { RULES.fetch(rule) })
         end
       end
 
       RULES = {
         already_in_transaction: "the arena connection is already inside a transaction",
-        connection_unusable: "the arena connection can't be used",
+        # Once the transaction has started. At the start, it's
+        # STEP_MESSAGES's.
+        connection_unusable: "the arena connection stopped working partway through the arena transaction",
         statement_not_allowed: "a statement isn't one the arena transaction allows",
         statement_unparsable: "a statement for the arena transaction couldn't be parsed",
         begin_failed: "the arena transaction couldn't start",
@@ -52,6 +54,12 @@ module Quaack
         transaction_ended: "a statement ended the arena transaction early",
         transaction_closed: "the arena transaction has already been rolled back",
         rollback_failed: "the arena transaction couldn't be rolled back"
+      }.freeze
+
+      # A rule's message for one step, where RULES's would be less specific.
+      STEP_MESSAGES = {
+        %i[connection_unusable transaction] =>
+          "the arena connection can't start a transaction: it's closed, broken, or busy"
       }.freeze
 
       # A fixture row, the stand-in for what scenario building (task
