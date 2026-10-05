@@ -183,6 +183,9 @@ module Quaack
           end
         end
 
+        # Drops every Shape parse kept.
+        def self.forget = @kept.clear
+
         def initialize(sql, query)
           @sql = sql.frozen? ? sql : sql.dup.freeze
           @query = query

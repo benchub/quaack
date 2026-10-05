@@ -162,15 +162,16 @@ RSpec.describe Quaack::Enclave::ResultComparison do
   # rewrite-test compares the same two queries over every scenario and
   # retry. Deparsing each time was most of its garbage (task 20261004-23).
   describe "deparsing once per query" do
-    # Shapes are kept across examples, so each example's SQL names a table
-    # of its own.
+    # The before block's forget keeps examples apart. Each example's SQL
+    # still names a table of its own, so a failure's SQL says which example
+    # built it.
     let(:table) { "t_#{RSpec.current_example.metadata[:scoped_id].tr(":", "_")}" }
     let(:sql) { "SELECT id FROM #{table} WHERE a = 1 ORDER BY id LIMIT 5" }
 
     # Each example starts with nothing kept, so what earlier examples left
     # can't decide when it's full.
     before do
-      described_class::Shape.instance_variable_get(:@kept).clear
+      described_class::Shape.forget
       allow(Quaack::Enclave::Deparse).to receive(:faithfully).and_call_original
     end
 
@@ -211,6 +212,14 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       callers.replace("SELECT 1 FROM #{table}_changed")
 
       expect(shape(sql)).to be(parsed)
+    end
+
+    it "parses a query afresh after forget" do
+      parsed = shape(sql)
+      described_class::Shape.forget
+
+      expect(shape(sql)).not_to be(parsed)
+      expect(shape(sql)).to be(shape(sql))
     end
 
     it "keeps different tiebreakers apart" do
