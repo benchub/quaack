@@ -74,7 +74,20 @@ module Quaack
                    "failed_to_plan" => "didn't plan", "output_mismatch" => "returned different columns",
                    "same_plans" => "planned the same as your query",
                    "untested_atoms" => "conditions the test data never exercised",
-                   **SCENARIOS.transform_values { "wrong on #{it}" } }.freeze
+                   "too_many" => "over the limit of five", "bad_assumption" => "assumed something QUAACK can't check",
+                   "unmet_assumption" => "assumed something your data doesn't hold",
+                   "operator_warnings" => "warnings on your own rewrites",
+                   "vacuity_guard_retries" => "retries to make sure every condition mattered",
+                   "atoms_covered" => "untested conditions the LLM's data exercised",
+                   "production_mismatch" => "wrong on the real data",
+                   "production_timed_out" => "timed out on the real data",
+                   "production_not_compared" => "couldn't be compared on the real data",
+                   "not_better" => "no better than your query", "footprint_tie" => "lost a tie on index size",
+                   "below_top_three" => "outside the top three",
+                   "measurement_timed_out" => "timed out in every measurement run",
+                   "partial_comparisons" => "compared on only part of the real data",
+                   **SCENARIOS.transform_values { "wrong on #{it}" },
+                   **(1..3).to_h { ["round_#{it}", "wrong in round #{it}"] } }.freeze
 
         # What each of the driver's LLM calls was for.
         LLM_STEPS = { "llm-index-ideas" => "Index suggestions for the original query",
