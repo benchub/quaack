@@ -33,6 +33,9 @@ module Quaack
       # - teardown_failed: deleting the directory failed partway, and the
       #   directory is still there. A run another call deleted first is
       #   already_gone, not a failure.
+      # - destroy_command_not_run: with destroy_command, it couldn't read the
+      #   run's server, so the command never ran and the run server may
+      #   still be up. The store is left alone.
       module Teardown
         # A failed teardown. It names only its rule, and has no cause, since
         # a Store::Error names the run's directory.
@@ -72,9 +75,16 @@ module Quaack
           store = open_run(run_id, store_base) if command
           return false unless store
 
-          server = store.entry?("server") ? store.read("server") : ""
-          RunServerCommand.destroy(command, server:, run: run_id)
+          RunServerCommand.destroy(command, server: server(store), run: run_id)
           true
+        end
+
+        # The run's server, for destroy_command. An Error, not a Store::Error,
+        # so call passes it on.
+        def server(store)
+          store.entry?("server") ? store.read("server") : ""
+        rescue Store::Error
+          raise Error, "destroy_command_not_run", cause: nil
         end
 
         def open_run(run_id, store_base)

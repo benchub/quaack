@@ -122,7 +122,7 @@ module Quaack
 
         teardown = Teardown.new(checked(where[:jump]), run, @stderr)
         drive(teardown, client, run, sqls, { out:, keep:, server: })
-      rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
+      rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch, Teardown::DriverError => e
         @stderr.print "quaack run failed: #{Teardown.failure(e, teardown, run, **where)}\n"
         1
       end

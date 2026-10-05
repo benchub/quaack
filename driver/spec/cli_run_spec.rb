@@ -440,6 +440,33 @@ RSpec.describe "quaack run" do
       expect(errors).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_failed). #{later}" \
                            "quaack run failed: destroy_command_failed. To go on, #{teardown_left}\n")
     end
+
+    # Task 20261004-60: teardown couldn't read the run's server, so its
+    # destroy_command never ran, and the run server may still be up.
+    it "prints the report's path, says to destroy the run server and remove the store, and points to it" do
+      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "destroy_command_not_run")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
+      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_not_run). destroy_command " \
+                           "didn't run, so destroy the run server for run #{run_id} yourself. Then check or " \
+                           "remove ~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
+                           "quaack run failed: destroy_command_not_run. To go on, #{teardown_left}\n")
+    end
+
+    # Task 20261004-60: an error from the driver itself, not the enclave,
+    # gets the same path and pointer, and names only its rule, never the
+    # error's message.
+    [[IOError, "sentinel-io-7f3a"], [LoadError, "sentinel-load-9b2d"]].each do |klass, message|
+      it "prints the report's path and a pointer to teardown's line when teardown raises #{klass}" do
+        failing["teardown"] = klass.new(message)
+
+        expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+        expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
+        expect(errors).to eq("quaack: couldn't tear down run #{run_id} (driver_error). #{later}" \
+                             "quaack run failed: driver_error. To go on, #{teardown_left}\n")
+      end
+    end
   end
 
   it "names the table, column, and type when rewrite-test can't fill a column" do
