@@ -2294,17 +2294,7 @@ These are review minors from 20261004-28.
 
 ### 20261004-51. Report: explain the untested-conditions note under a rewrite, and render its conditions readably. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse".
-
-1. **The ranking table.** Add a row for the user's query as it is, with the same measurements as the ranked candidates, so the relative improvement is visible at a glance. Mark the row clearly as the baseline, and don't give it a rank.
-2. **The "Against your query" column** in each ranked candidate's performance table. Replace "better" and "no worse" with numbers:
-   - the change in blocks read against the user's query on the same values, such as "−52%" or "1,668 vs 3,454";
-   - keep a short word only where no number exists.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report.
-- **Status:** todo
+### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse". Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-53. Report: style inline SQL so it stands out from the prose.
 
@@ -2415,4 +2405,17 @@ The review of 20261004-58 found these minors in `enclave/lib/quaack/enclave/aren
 - **Depends on:** 20261004-58.
 - **Came from:** The review of 20261004-58, 2026-10-05.
 - **Design:** arena-runner.
+- **Status:** todo
+
+### 20261004-65. Ranking baseline: minors from 20261004-52.
+
+The review of 20261004-52 found:
+1. The verdict sentence (`View#compared`, via `Format.fewer`) rounds 12 vs 5,120 to "(100% fewer)", while the winner's table says "over 99% fewer blocks". Use one rule in both places.
+2. Nothing tests a baseline timeout on a set other than the slow values. Making `baseline_sum` check only the first set survives. Add a test where the original times out on `worst_case`.
+3. Nothing tests the "over 99%" threshold from below. Changing `percent == 100` to `percent >= 99` survives. Add a case that rounds to 99%.
+4. README's "Against your query" bullet omits the "not recorded" fallback when there's no verdict, which DESIGN.md mentions.
+
+- **Depends on:** 20261004-52.
+- **Came from:** The review of 20261004-52, 2026-10-05.
+- **Design:** report.
 - **Status:** todo

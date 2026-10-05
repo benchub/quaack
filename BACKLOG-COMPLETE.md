@@ -5169,3 +5169,16 @@ These come from the build and review of 20261004-43.
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** Landed: Cancel.rule reads the clock in its own short transaction with statement_timeout 0; clocked guard and load disarm pinned.
+
+### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse".
+
+1. **The ranking table.** Add a row for the user's query as it is, with the same measurements as the ranked candidates, so the relative improvement is visible at a glance. Mark the row clearly as the baseline, and don't give it a rank.
+2. **The "Against your query" column** in each ranked candidate's performance table. Replace "better" and "no worse" with numbers:
+   - the change in blocks read against the user's query on the same values, such as "−52%" or "1,668 vs 3,454";
+   - keep a short word only where no number exists.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed: baseline row in the ranking table; Against your query shows numbers.
