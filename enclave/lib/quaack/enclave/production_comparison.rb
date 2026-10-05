@@ -195,8 +195,8 @@ module Quaack
           RunDiscipline::LOCK.synchronize do
             @connection.exec("BEGIN READ ONLY")
             begin
-              @connection.exec("SET LOCAL statement_timeout = #{@timeout_ms}")
-              stream(sql, tie_positions, &)
+              started = server_ms("SET LOCAL statement_timeout = #{@timeout_ms}; SAVEPOINT digest;")
+              stream(sql, tie_positions, started, &)
             ensure
               @connection.exec("ROLLBACK")
             end
@@ -205,8 +205,10 @@ module Quaack
 
         private
 
-        def stream(sql, tie_positions, &)
-          started = now
+        # A cancel is a timeout only if timeout_ms has passed since started
+        # on the server's clock, the one statement_timeout fires by. The
+        # jump server's clock can run at another rate.
+        def stream(sql, tie_positions, started, &)
           rows = Rows.new(tie_positions)
           @connection.send_query_params(sql, @params)
           @connection.set_single_row_mode
@@ -214,7 +216,7 @@ module Quaack
           rows.digested
         rescue PG::QueryCanceled
           drain
-          raise if now - started < @timeout_ms
+          raise if server_ms("ROLLBACK TO SAVEPOINT digest;") - started < @timeout_ms
 
           raise TimedOut
         end
@@ -230,7 +232,10 @@ module Quaack
           while @connection.get_result; end
         end
 
-        def now = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
+        # The server's clock, in ms, read after the statements in prefix.
+        def server_ms(prefix)
+          Float(@connection.exec("#{prefix} SELECT extract(epoch FROM clock_timestamp()) * 1000").getvalue(0, 0))
+        end
       end
 
       # Row hashes gathered from one query.

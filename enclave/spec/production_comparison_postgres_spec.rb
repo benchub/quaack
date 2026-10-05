@@ -111,7 +111,9 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
                      "SELECT i FROM generate_series(1, 20) i LIMIT 4")).to eq(%w[fail row_count])
     end
 
-    slow = "SELECT i, pg_sleep(0.01)::text FROM generate_series(1, 1000) i LIMIT 2"
+    # Only rows past the LIMIT sleep, so the LIMIT run is instant however
+    # loaded the machine is, and the full run takes 1,000 s.
+    slow = "SELECT i, pg_sleep(CASE WHEN i > 2 THEN 1 ELSE 0 END)::text FROM generate_series(1, 1002) i LIMIT 2"
 
     it "is partial when the full original times out and the count matches" do
       expect(verdict(slow, "SELECT i, ''::text FROM generate_series(-5, -4) i", timeout_ms: 1_000))
@@ -121,10 +123,52 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     it "fails when the full original times out and the count differs" do
       expect(verdict(slow, "SELECT 1, ''::text", timeout_ms: 1_000)).to eq(%w[fail row_count])
     end
+
+    it "is partial when the full original times out, even if the enclave's clock runs slower than the server's" do
+      slow_enclave_clock
+      expect(verdict(slow, "SELECT i, ''::text FROM generate_series(-5, -4) i", timeout_ms: 1_000))
+        .to eq(%w[partial subset_timed_out])
+    end
+
+    it "fails with timed_out when the original's LIMIT run itself times out" do
+      expect(verdict("SELECT i FROM generate_series(1, 2) i, pg_sleep(2) LIMIT 1", "SELECT 1", timeout_ms: 500))
+        .to eq(%w[fail timed_out])
+    end
+  end
+
+  # Models a jump server whose clock runs at half the server's rate, as
+  # clock slewing can make it, a little, for real: statement_timeout fires on
+  # the server's clock, so the enclave's can't tell a timeout from a cancel.
+  def slow_enclave_clock
+    base = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
+    allow(Process).to receive(:clock_gettime).and_wrap_original do |original, id, unit = :float_second|
+      next original.call(id, unit) unless id == Process::CLOCK_MONOTONIC && unit == :millisecond
+
+      (base + ((original.call(id, :float_millisecond) - base) / 2)).floor
+    end
   end
 
   it "fails a candidate that times out" do
     expect(verdict("SELECT 1", "SELECT 1 FROM pg_sleep(2)", timeout_ms: 500)).to eq(%w[fail timed_out])
+  end
+
+  it "fails a candidate that times out, even if the enclave's clock runs slower than the server's" do
+    slow_enclave_clock
+    expect(verdict("SELECT 1", "SELECT 1 FROM pg_sleep(2)", timeout_ms: 500)).to eq(%w[fail timed_out])
+  end
+
+  it "raises an operator's cancel instead of counting it as timed out" do
+    other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
+    pid = conn.backend_pid
+    canceller = Thread.new do
+      sleep 0.3
+      other.exec_params("SELECT pg_cancel_backend($1)", [pid])
+    end
+    expect { compare("SELECT 1", "SELECT 1 FROM pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  ensure
+    canceller&.join
+    other&.close
   end
 
   it "runs each query read-only, so a candidate can't write" do
