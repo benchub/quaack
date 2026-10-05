@@ -2312,22 +2312,7 @@ These are review minors from 20261004-28.
 
 ### 20261004-40. Connection note: port wording. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-41. ArenaRunner post-cancel guard: follow-ups.
-
-These are review minors from 20261004-36.
-
-1. The cancel spec can't tell where the refusal happened. Main already raised `transaction_ended`, only after the write ran, and a read-only query sent in autocommit wouldn't be caught at all. Count sends (for example `pipeline_sync`) and expect none after the cancel.
-2. DESIGN.md says the runner "sends nothing more until the next transaction begins", but `finish` still sends `ROLLBACK`. Reword it.
-3. The comment above `PQTRANS_*` in `arena_runner.rb` still says the status is checked only after each statement. Say it's checked before too, and that INERROR is allowed then.
-4. When a caller catches an error after the connection died, the next statement now gets `transaction_ended` ("a statement ended the arena transaction early"). It used to get `query_failed`. Consider reporting `connection_unusable` instead. Also consider whether a cancel fits `transaction_closed` better.
-
-5. (From the review of 20261004-39.) In `Pipeline.finish`, if nothing was sent and an error arrives at the Sync, `results[-1] = last` raises `IndexError`, which hides the original error. It's only possible on a dead connection. Replace the result only when there is one, or raise `Broken`.
-6. (From the review of 20261004-39.) If the last statement fails on its own and a cancel then arrives at the Sync, the cancel replaces the statement's own error. Add a comment saying it's harmless, since the transaction is aborted either way, or keep the first error.
-
-- **Depends on:** 20261004-36.
-- **Came from:** The review of 20261004-36.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-41. ArenaRunner post-cancel guard: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-42. Shape cache: tidy the specs. Done, see BACKLOG-COMPLETE.md.
 
@@ -2389,4 +2374,16 @@ These are review minors from 20261004-44.
 - **Depends on:** 20261004-44.
 - **Came from:** The review of 20261004-44.
 - **Design:** none (docs only).
+- **Status:** todo
+
+### 20261004-49. ArenaRunner transaction-status check: untested branches.
+
+These are review minors from 20261004-41.
+
+1. In `enclave/lib/quaack/enclave/arena_runner/transaction_status.rb`, `PQTRANS_INTRANS` and `PQTRANS_INERROR` in the `settled` list are never tested. Narrowing the list to `[PQTRANS_IDLE]` leaves every test green, and neither status can realistically reach that line. Reduce the check to `status == PQTRANS_IDLE`, or test them.
+2. The `connection_unusable` message ("the arena connection can't be used") now covers both the start-time refusal and a connection that dies mid-transaction. It's accurate for both, but less specific at start. Consider separate wording.
+
+- **Depends on:** 20261004-41.
+- **Came from:** The review of 20261004-41.
+- **Design:** rewrite-test.
 - **Status:** todo
