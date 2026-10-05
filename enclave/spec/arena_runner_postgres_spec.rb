@@ -330,6 +330,29 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
                               [:transaction_ended, :query, 1, nil, nil], [:transaction_ended, :query, 2, nil, nil]])
         expect(sends).to eq([])
       end
+
+      # Cancel.rule rolls back its own transaction even when the clock read
+      # in it fails. This plants a read that fails on the server, so the
+      # transaction it ran in is aborted, and only that ROLLBACK leaves the
+      # connection idle, so the next statement is refused, not sent to fail
+      # with 25P02.
+      it "refuses the next statement even when the clock read after the cancel fails" do
+        failing_read = Class.new(SimpleDelegator) do
+          def exec(sql, *, &)
+            sql = "SELECT 1/0" if sql.strip == Quaack::Enclave::ServerClock::NOW_SQL
+            __getobj__.exec(sql, *, &)
+          end
+        end.new(conn)
+
+        errors, status = described_class.new(failing_read).with_fixture([parent(1, "a")]) do |tx|
+          canceled = query_error(tx, "SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+          [[canceled, query_error(tx, "SELECT 1")], conn.transaction_status]
+        end
+
+        expect(errors).to eq([[:statement_canceled, :query, 0, "57014", nil],
+                              [:transaction_ended, :query, 1, nil, nil]])
+        expect(status).to eq(0)
+      end
     end
 
     # The time is measured from the start of each statement, not of the
@@ -434,6 +457,50 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 1])
       expect_nothing_persisted
+    end
+
+    # After a cancel, Cancel.rule's first ROLLBACK can't turn the timeout off,
+    # since an aborted transaction refuses everything else. It doesn't need
+    # to for the runner's own timeout: that's set for the transaction, and
+    # Postgres drops such settings as the transaction aborts, so the ROLLBACK
+    # runs under the session's setting. Under a nonzero one, a server slower
+    # than that to reach the ROLLBACK cancels it, and the timeout reads as
+    # statement_canceled (see DESIGN.md). This plants that delay as a
+    # statement after the ROLLBACK in its query string: the server parses the
+    # whole string, with the timeout armed, before it runs the ROLLBACK.
+    describe "a first ROLLBACK after a cancel that the server is slow to reach" do
+      let(:slow_first_rollback) do
+        Class.new(SimpleDelegator) do
+          def exec(sql, *, &)
+            sql = "#{sql}; SELECT 1 WHERE 0 IN (#{Array.new(1_000_000, 1).join(",")})" if sql.start_with?("ROLLBACK; ")
+            __getobj__.exec(sql, *, &)
+          end
+        end.new(conn)
+      end
+
+      def timed_out
+        error = run_error(described_class.new(slow_first_rollback, statement_timeout_ms: 100)) do |tx|
+          tx.query("SELECT pg_sleep(5)")
+        end
+        [error.rule, error.sqlstate, error.step, error.index, conn.transaction_status]
+      end
+
+      it "takes longer than the runner's timeout to reach" do
+        conn.exec("SET statement_timeout = 100")
+        expect { slow_first_rollback.exec("ROLLBACK; SELECT 1") }
+          .to raise_error(PG::QueryCanceled) { expect(it.result.error_field(67)).to eq("57014") }
+      end
+
+      it "isn't canceled by the runner's timeout" do
+        expect(timed_out).to eq([:statement_timeout, "57014", :query, 0, 0])
+      end
+
+      it "is canceled under a nonzero session timeout, and the timeout reads as statement_canceled" do
+        conn.exec("SET statement_timeout = 50")
+
+        expect(timed_out).to eq([:statement_canceled, "57014", :query, 0, 0])
+        expect(session_timeout).to eq("50ms")
+      end
     end
 
     # The closing ROLLBACK runs with the timeout off, so a server that takes
