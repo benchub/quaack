@@ -95,15 +95,20 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
       expect(note).not_to include("-p 6543")
     end
 
-    it "says the production server you gave quaack start when the driver doesn't know it" do
+    # Task 20261004-63: a driver before 0.1.6 recorded neither the server
+    # nor the port, but passed quaack start --port to intake, whose
+    # production_port every production connection uses. So with the server
+    # unknown, the note can't say the port came from the libpq setup.
+    it "says the production server you gave quaack start, and either port source, when the driver doesn't know it" do
       note = error("production_connection_failed", exit_status: 70)
              .rule_with_note(next_step: "resume with `quaack setup --run R1`")
 
       expect(note).to eq("production_connection_failed: couldn't connect to the production server you gave " \
-                         "quaack start. QUAACK gives libpq only that host. The port, user, database, and password " \
-                         "come from #{libpq} Test it with `ssh <jump server> 'psql -h <server> -c \"select 1\"'`. " \
-                         "If production listens on another port than your libpq setup gives, start a new run with " \
-                         "`quaack start --port <n>`. #{resume}")
+                         "quaack start. QUAACK gives libpq only that host, and the port you gave `quaack start " \
+                         "--port`, if you gave one. The user, database, and password, and the port if you gave no " \
+                         "--port, come from #{libpq} Test it with `ssh <jump server> 'psql -h <server> -c " \
+                         "\"select 1\"'`, adding `-p <n>` if you gave `quaack start --port`. If production listens " \
+                         "on another port, start a new run with `quaack start --port <n>`. #{resume}")
     end
   end
 
