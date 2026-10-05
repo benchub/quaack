@@ -2267,19 +2267,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 
 ### 20261004-53. Report: style inline SQL so it stands out from the prose. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table.
-
-That section shows each plan as a flat bullet list, which loses the plan's shape. Render each plan as a table in the style of explain.depesz.com:
-- one row per node, indented by depth;
-- columns for node type, relation and index, estimated vs actual rows, and blocks read, where the payload carries them;
-- the nodes that differ between the winner and the user's query highlighted.
-
-If the payload's plan nodes don't carry their depth or parent, add that, inside the trust boundary 20261003-5 sets: a node sends only its type, relation, index name, row counts, and now its depth.
-
-- **Depends on:** none. Coordinate with 20261003-5, which also changes the plan payload.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report.
-- **Status:** todo
+### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-55. Report: draw the burndown as an SVG funnel.
 
@@ -2415,4 +2403,18 @@ The review of 20261004-67 found:
 - **Depends on:** 20261004-67.
 - **Came from:** The review of 20261004-67, 2026-10-05.
 - **Design:** run discipline, arena-runner.
+- **Status:** todo
+
+### 20261004-72. Plan tree table: minors from 20261004-54.
+
+The review of 20261004-54 found:
+1. Nothing in the protocol checks which keys a plan node carries; only the enclave spec pins it. Consider a shape check on plan nodes (pre-existing gap).
+2. The enclave spec checks the rewrite's plan with `include`, so the rewrite plan's depth isn't asserted.
+3. The `share` cutoff at `< 0.0005` in `report/plans.rb` is untested: changing it to `0.005` stays green.
+4. When the join order is swapped, the `Hash` node is marked "differs" though both plans have one, a side effect of matching in plan order. DESIGN.md allows it; consider a smarter match.
+5. The table has no blocks column, since the payload carries no per-node blocks. If the user wants per-node blocks, extending 20261003-5's boundary to send them is a separate decision.
+
+- **Depends on:** 20261004-54.
+- **Came from:** The review of 20261004-54, 2026-10-05.
+- **Design:** report.
 - **Status:** todo

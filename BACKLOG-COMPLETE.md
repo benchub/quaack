@@ -5281,3 +5281,18 @@ The review of 20261004-34 found:
 - **Design:** run discipline.
 - **Status:** done
 - **Landed:** Landed: clock-read rescues narrowed to PG::Error; canceller success path pinned; DESIGN wording tightened.
+
+### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table.
+
+That section shows each plan as a flat bullet list, which loses the plan's shape. Render each plan as a table in the style of explain.depesz.com:
+- one row per node, indented by depth;
+- columns for node type, relation and index, estimated vs actual rows, and blocks read, where the payload carries them;
+- the nodes that differ between the winner and the user's query highlighted.
+
+If the payload's plan nodes don't carry their depth or parent, add that, inside the trust boundary 20261003-5 sets: a node sends only its type, relation, index name, row counts, and now its depth.
+
+- **Depends on:** none. Coordinate with 20261003-5, which also changes the plan payload.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed: plans render as a depesz-style tree table with depth from the enclave and differing steps marked; no blocks column, since nodes carry none.
