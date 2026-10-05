@@ -717,7 +717,7 @@ Today QUAACK doesn't record which source proposed each index, so many of the ind
 
 ### Burndown.
 
-The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for your query and one for rewrites. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas came in, how many were added and from where, how many were dropped and why, how many were set aside, and how many went on. A stage the run didn't count says not recorded.
+The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for your query and one for rewrites. Above each table is a funnel: a band per stage, narrowing as ideas drop out, labeled with the stage, how many came in and went on, and why the rest dropped. Hover over a band for its whole row. A stage that adds ideas, such as the LLM's rewrites, widens instead. A stage the run didn't count is a grey, striped band that says not recorded, never zero. The table under it has the exact numbers. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas came in, how many were added and from where, how many were dropped and why, how many were set aside, and how many went on. A stage the run didn't count says not recorded.
 
 The rewrite table's first row, "Rewrites from QUAACK's own rules", shows how many rewrites each rule made, and how many were dropped as the same as another, as over the limit of ten, or for failing QUAACK's checks.
 

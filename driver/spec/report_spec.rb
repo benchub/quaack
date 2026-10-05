@@ -1377,6 +1377,141 @@ RSpec.describe Quaack::Driver::Report do
     end
   end
 
+  describe "the burndown funnels" do
+    def rec(inn, out, added: {}, dropped: {}, set_aside: 0, extra: {}) # rubocop:disable Metrics/ParameterLists
+      { "in" => inn, "added" => added, "dropped" => dropped, "set_aside" => set_aside, "out" => out,
+        "extra" => extra }
+    end
+
+    # A run whose rewrite stages were all counted, and whose index search
+    # for the original was counted only in part.
+    let(:stages) do
+      { "index-from-query" => { "original" => rec(0, 4, added: { "generator_one" => 4 }) },
+        "index-from-plan" => { "original" => rec(4, 6, added: { "generator_two" => 2 }) },
+        "index-dedupe" => { "original" => rec(6, 3, dropped: { "duplicate" => 2, "covered_by_existing" => 1 }),
+                            "rewrite_1" => rec(2, 1, dropped: { "duplicate" => 1 }) },
+        "index-rank" => { "original" => rec(3, 1, dropped: { "never_used" => 2 }) },
+        "rewrite-rules" => { "rewrites" => rec(0, 2, added: { "key_in_self_join" => 3 },
+                                                     dropped: { "duplicate" => 1 }) },
+        "llm-rewrites" => { "rewrites" => rec(2, 6, added: { "llm" => 5 }, dropped: { "inbound_check" => 1 }) },
+        "operator-rewrites" => { "rewrites" => rec(6, 8, added: { "operator" => 2 }) },
+        "assumption-check" => { "rewrites" => rec(8, 7, dropped: { "unmet_assumption" => 1 }) },
+        "plan-pruning" => { "rewrites" => rec(7, 5, dropped: { "same_plans" => 2 }) },
+        "rewrite-test" => { "rewrites" => rec(5, 4, dropped: { "s2" => 1 }) },
+        "counterexamples" => { "rewrites" => rec(4, 3, dropped: { "round_1" => 1 }) },
+        "rewrite-index-ideas" => { "rewrites" => rec(3, 3) },
+        "measurement" => { "rewrites" => rec(3, 2, dropped: { "not_better" => 1 }) } }
+    end
+
+    let(:out) { render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })) }
+
+    def funnel(id, html = out) = section(html, "burndown")[%r{<svg id="funnel-#{id}".*?</svg>}m]
+
+    def bands(svg) = svg.scan(%r{<g class="band[^"]*">.*?</g>}m)
+
+    def stage(band) = band[%r{<text class="stage"[^>]*>(.*?)</text>}, 1]
+
+    def counts(band) = band[%r{<text class="counts"[^>]*>(.*?)</text>}, 1]
+
+    # A band's width at its top and at its bottom, from its trapezoid's
+    # corners: top left, top right, bottom right, bottom left.
+    def widths(band)
+      left, right = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }.each_slice(2).to_a
+      [(left[1] - left[0]).round(2), (right[0] - right[1]).round(2)]
+    end
+
+    def width(count, largest) = (Quaack::Driver::Report::Funnel::WIDTH * count / largest).round(1)
+
+    it "draws each funnel just above its table, as an image with a name" do
+      burndown = section(out, "burndown")
+      %w[index rewrite].each do |id|
+        expect(burndown.index(%(<svg id="funnel-#{id}"))).to be < burndown.index(%(<table id="burndown-#{id}">))
+        expect(funnel(id))
+          .to start_with(%(<svg id="funnel-#{id}" class="funnel" role="img" aria-labelledby="funnel-#{id}-title"))
+      end
+      expect(burndown.index('<table id="burndown-index">')).to be < burndown.index('<svg id="funnel-rewrite"')
+      expect(funnel("index")).to include(%(<title id="funnel-index-title">Index ideas for your query, stage by stage))
+      expect(funnel("rewrite")).to include(%(<title id="funnel-rewrite-title">Rewrites, stage by stage))
+    end
+
+    it "draws one band per stage, in the table's order" do
+      %w[index rewrite].each do |id|
+        table = section(out, "burndown")[%r{<table id="burndown-#{id}">.*?</table>}m]
+        expect(bands(funnel(id)).map { stage(it) }).to eq(table.scan(%r{<tr><th scope="row">(.*?)</th>}).flatten)
+      end
+      expect(bands(funnel("rewrite")).size).to eq(10)
+    end
+
+    it "sizes every band on one scale, the funnel's largest count, narrowing within a band by what it dropped" do
+      rewrite = bands(funnel("rewrite")).map { widths(it) }
+      expected = [[0, 2], [2, 6], [6, 8], [8, 7], [7, 5], [5, 4], [4, 3], [2, 1], [3, 3], [3, 2]]
+      expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 8), width(out, 8)] })
+      expect(rewrite[3][0]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
+      expect(rewrite[4][1]).to be < rewrite[4][0]
+    end
+
+    it "labels each band with its stage, what came in and went on, and why the rest dropped out" do
+      band = bands(funnel("index"))[2]
+      expect(stage(band)).to eq("Removing duplicates and indexes you already have")
+      expect(counts(band)).to eq("6 in, 3 out · dropped: the same as another idea: 2; " \
+                                 "already covered by an index you have: 1")
+      expect(band).to include("<title>Removing duplicates and indexes you already have: 6 came in. " \
+                              "Added: none. Dropped: the same as another idea: 2; already covered by an index " \
+                              "you have: 1. Set aside: 0. 3 went on.</title>")
+    end
+
+    it "shows a stage the run didn't count as not recorded, never as zero, outside the scale" do
+      index = bands(funnel("index"))
+      unknown = index.values_at(3, 4, 5)
+      expect(unknown).to all(start_with('<g class="band unknown">'))
+      expect(unknown.map { counts(it) }).to all(eq("not recorded"))
+      expect(unknown.join).not_to match(/\b0 (in|out)\b|came in/)
+      expect(unknown).to all(include('<path class="hatch" d="M'))
+      expect(index.values_at(0, 1, 2, 6).join).not_to include('class="hatch"')
+      expect(index.map { widths(it) }.values_at(0, 1, 2, 6))
+        .to eq([[0, 4], [4, 6], [6, 3], [3, 1]].map { |inn, out| [width(inn, 6), width(out, 6)] })
+      expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
+    end
+
+    it "shows a stage that counted zero as zero, apart from one that wasn't counted" do
+      stages["index-test"] = { "original" => rec(0, 0) }
+      band = bands(funnel("index"))[3]
+      expect(band).to start_with('<g class="band">')
+      expect(counts(band)).to eq("0 in, 0 out")
+      expect(widths(band)).to eq([0, 0])
+    end
+
+    it "draws every band as unknown when the payload has no burndown" do
+      index = bands(funnel("index", html))
+      expect(index.size).to eq(7)
+      expect(index).to all(start_with('<g class="band unknown">'))
+      expect(index.map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::WIDTH] * 2))
+      expect(funnel("rewrite", html)).not_to match(/\d+ (in|out)\b/)
+    end
+
+    it "escapes what it shows, and sets no SQL apart in it" do
+      evil = "<script>alert(1)</script>]]>"
+      stages["rewrite-rules"]["rewrites"]["added"] = { evil => 3 }
+      stages["measurement"]["rewrites"]["dropped"] = { evil => 1 }
+      svg = funnel("rewrite")
+      expect(svg).not_to include("<script")
+      expect(svg).not_to include("]]>")
+      expect(svg).to include("by the rule &lt;script&gt;alert(1)&lt;/script&gt;]]&gt;: 3")
+      expect(svg).to include("dropped: &lt;script&gt;alert(1)&lt;/script&gt;]]&gt;: 1")
+      expect(svg).not_to include("<code")
+    end
+
+    it "escapes its words without setting marked SQL apart, since an SVG text can't hold code" do
+      expect(Quaack::Driver::Report::Funnel.text("on #{Quaack::Driver::Report::Format.sql_span("a < 1")}"))
+        .to eq("on a &lt; 1")
+    end
+
+    it "keeps each table, with its exact numbers, under its funnel" do
+      table = section(out, "burndown")[%r{<table id="burndown-rewrite">.*?</table>}m]
+      expect(table).to include(%(<tr><th scope="row">Your own rewrites</th><td class="num">6</td>))
+    end
+  end
+
   describe "escaping" do
     # A sentinel with the characters that would break out of text and out
     # of an attribute. It goes in every field of the payload that can hold

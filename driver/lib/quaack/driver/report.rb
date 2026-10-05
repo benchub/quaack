@@ -37,8 +37,8 @@ module Quaack
     #   nothing beat the original (negative-result).
     # - The built indexes (Indexes).
     # - Who proposed what (Accountability).
-    # - The burndown (burndown, Stages), with llm_calls, the driver's own
-    #   Burndown#llm_calls.
+    # - The burndown (burndown, Stages), each table under its funnel
+    #   (Funnel), with llm_calls, the driver's own Burndown#llm_calls.
     #
     # Where the payload doesn't carry a count, the report says "not
     # recorded". It never shows a zero for something that wasn't counted.

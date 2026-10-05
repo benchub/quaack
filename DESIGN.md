@@ -1200,7 +1200,7 @@ Write the report for a reader who hasn't read this document:
 - Say who proposed what, in two tables with a row per source and a column per outcome. Rewrites: QUAACK's rules, the LLM, and the operator, by proposed, refused on arrival, same plan as the original, wrong results, not better, ranked, and stopped for another reason. The last column keeps a rewrite whose test failed, timed out, or never ran out of the wrong and not-better columns. Indexes: generator one, generator two, the LLM, and all sources together, by proposed, already existed, planner ignored, built and measured, not better, and ranked. A built index is ranked if a ranked label ran with it. It's not better only if at least one measured label ran with it and selection excluded every one of them as `not_better`. So an index with mixed labels, one not better and one that beat the original and tied, is neither, and so is one whose label tied, fell below the top three, was dropped in result-comparison, or timed out. Those count only as built, and the report says the two columns needn't add up to the built ones.
 - Where the payload doesn't carry a count, say "not recorded". Never show a zero for something that wasn't counted.
 
-The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network.
+The report is one HTML file with its CSS inside it. It has no scripts and no animation, and it loads nothing from the network. Its only drawings are the burndown's funnels, inline SVG the driver writes, with no external assets.
 
 ### negative-result. Negative result.
 
@@ -1213,6 +1213,8 @@ List each declined or already existing index once, with the searches it came up 
 Every report ends with a burndown: how much work QUAACK did, and where candidates dropped out. It appears whether or not anything beat the original.
 
 For each stage, show how many items came in, how many the stage added, how many it dropped, and how many went on. Break every drop count down by reason.
+
+Draw each of the two tables below, index candidates for the original query and rewrite candidates, as a funnel above it: an inline SVG with one band per row, in the table's order. A band is a trapezoid as wide at its top as the count that came in and at its bottom as the count that went on, on one scale per funnel, set by its largest count. So a stage's drop is its band narrowing, and a stage that adds candidates widens. Beside each band are the stage's name, its counts in and out, and its drops by reason, cut short if they're long; the band's tooltip (`<title>`) gives the whole row. A stage the run didn't record is a grey, striped band that says "not recorded", never a zero. It has no count, so it doesn't change the scale: it's as wide as the last counted band's bottom, or the full width if none came before it. The rewrite funnel's row for the rewrites' own index searches counts indexes, not rewrites, on the same scale. Each funnel is an image with a name for screen readers, and the table under it keeps the exact numbers for readers without SVG. Every word in it is HTML-escaped and none is set apart as SQL, since SVG text can't hold `<code>`.
 
 **Index candidates for the original query:**
 
