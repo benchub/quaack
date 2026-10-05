@@ -254,10 +254,17 @@ RSpec.describe Quaack::Driver::Transport do
       false
     end
 
-    it "kills a run that takes longer than its timeout, and says so" do
-      pid_file = File.join(dir, "pid")
-      body = "File.write(#{pid_file.inspect}, Process.pid.to_s); sleep 30"
-      step = local.new(command: EnclaveCommands.probe(dir, body), timeout: 1)
+    # The pid comes from the spawn, not from a pid file the child writes,
+    # which a child killed while still starting under load may not have
+    # written yet. The run starts a grandchild, and the child leads its own
+    # process group, so signal 0 to -pid proves the kill reached the whole
+    # group, not just the child.
+    it "kills a run that takes longer than its timeout, and its process group, and says so" do
+      pids = []
+      allow(Open3).to receive(:popen2).and_wrap_original do |original, *args, **opts|
+        original.call(*args, **opts).tap { pids << it.last.pid }
+      end
+      step = local.new(command: EnclaveCommands.raw(%(Process.spawn("sleep", "30"); sleep 30)), timeout: 1)
       error = nil
 
       # The timeout, plus the moment SIGTERM takes, with room for a loaded
@@ -265,7 +272,16 @@ RSpec.describe Quaack::Driver::Transport do
       expect(elapsed { error = failure(step) }).to be < 10
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
-      expect(alive?(Integer(File.read(pid_file)))).to be(false)
+      expect(pids.size).to eq(1)
+      expect([alive?(pids.first), alive?(-pids.first)]).to eq([false, false])
+    ensure
+      # If the kill missed the group, don't leave the grandchild running.
+      # Once its parent has gone, init reaps it.
+      pids&.each do |pid|
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      end
     end
 
     it "kills the run when the driver is interrupted while waiting for it, as by a Ctrl-C" do
