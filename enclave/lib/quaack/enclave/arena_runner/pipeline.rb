@@ -34,6 +34,10 @@ module Quaack
 
         # statements are [sql, params] pairs. If a send fails, what was sent
         # is still synced and read, so the connection leaves pipeline mode.
+        # If the connection dies partway, it stays in pipeline mode: there's
+        # nothing left to sync or read. libpq then reports its transaction
+        # status as PQTRANS_UNKNOWN, so the runner sends it nothing more, and
+        # a later with_fixture refuses it as connection_unusable.
         def run(connection, statements)
           sent = []
           connection.enter_pipeline_mode

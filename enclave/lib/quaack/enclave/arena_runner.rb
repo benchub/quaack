@@ -129,14 +129,6 @@ module Quaack
         inserts.each_with_index { |insert, index| StatementCheck.check(Deferred.text(insert), :insert, index) }
       end
 
-      def refuse_unless_idle
-        status = database(:connection_unusable, :transaction) { @connection.transaction_status }
-        return if status == PQTRANS_IDLE
-
-        rule = [PQTRANS_INTRANS, PQTRANS_INERROR].include?(status) ? :already_in_transaction : :connection_unusable
-        raise Error.new(rule, step: :transaction), cause: nil
-      end
-
       # set_notice_receiver returns the previous receiver, or nil for
       # libpq's default, and with no block it puts the default back.
       # This stays local rather than using ErrorFilter.drop_notices, since it
@@ -183,16 +175,25 @@ module Quaack
         statement(sql, [], step: :query, rule: :query_failed, index:)
       end
 
-      # Runs one statement and checks that the transaction is still open. The
-      # statement check should make that impossible, so this is a backstop.
-      # The server's clock is read first, for Cancel.rule, in the same
-      # round trip (Pipeline), with no savepoint, so a statement costs no
-      # more round trips or transaction IDs than it would on its own.
+      # Runs one statement, and checks that the transaction is open both
+      # before it's sent and after it's run. Before, because Cancel.rule
+      # rolls the transaction back, so a block that caught the cancel would
+      # otherwise run its next statement in autocommit, without
+      # statement_timeout, and keep what it wrote. After, because the
+      # statement check should make it impossible for a statement to end the
+      # transaction, so this is a backstop. A transaction that an earlier
+      # error aborted, and a caller caught, is still the runner's, so its
+      # statements go out and fail with 25P02, as they would on their own.
+      # Both checks read libpq's local state, with no round trip.
+      #
+      # The server's clock is read first, for Cancel.rule, in the same round
+      # trip (Pipeline), with no savepoint, so a statement costs no more
+      # round trips or transaction IDs than it would on its own.
       def statement(sql, params, step:, rule:, index:)
+        refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS, PQTRANS_INERROR])
         started, outcome = database(rule, step, index) { Pipeline.clocked(@connection, sql, params) }
         result = database(rule, step, index, started) { outcome.check }
-        ended = database(rule, step, index) { @connection.transaction_status } != PQTRANS_INTRANS
-        raise Error.new(:transaction_ended, step:, index:), cause: nil if ended
+        refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS])
 
         types = Array.new(result.nfields) { |i| result.ftype(i) }
         Result.new(columns: result.fields, types:, rows: result.values)
@@ -247,6 +248,7 @@ module Quaack
 end
 
 require_relative "arena_runner/sequences"
+require_relative "arena_runner/transaction_status"
 require_relative "arena_runner/cancel"
 require_relative "arena_runner/pipeline"
 require_relative "arena_runner/deferred"
