@@ -17,9 +17,11 @@ module Quaack
       # setting as it is then, so clocked arms it only for its statement:
       # the clock read sets it, and a reset after the statement turns it off
       # again. The clock read, and anything the runner sends between
-      # statements, such as its ROLLBACK, then run with no timeout, so a
-      # loaded server can't cancel them with it. An error aborts the
-      # transaction, and that undoes the setting too.
+      # statements, such as its ROLLBACK, then run without the runner's
+      # timeout, so a loaded server can't cancel them with it. An error
+      # aborts the transaction, and that undoes the setting too, back to the
+      # session's, so a ROLLBACK after an abort runs under that (see
+      # DESIGN.md).
       module Pipeline
         # libpq's ExecStatusType values, since the runner names no PG
         # constant.
