@@ -180,6 +180,18 @@ RSpec.describe "quaack setup" do
       expect(errors).to include("Test it with `ssh jump-1 'psql -h <server> -c")
     end
 
+    # Task 20261004-40: a hand-edited record with a valid port but an
+    # invalid server gives no half-filled-in psql command.
+    it "leaves -p out of the test command when the recorded server isn't valid" do
+      Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1", port: "6543")
+      path = File.join(home, ".quaack", "runs", "#{run_id}.json")
+      File.write(path, JSON.generate(JSON.parse(File.read(path)).merge("server" => "-bad host")))
+      fail_inventory("production_connection_failed")
+
+      expect(errors).to include("Test it with `ssh jump-1 'psql -h <server> -c \"select 1\"'`.")
+      expect(errors).not_to include("-p 6543")
+    end
+
     it "names the jump host for the run server's, and how to resume" do
       Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
       failing["racetrack-setup"] = Quaack::Driver::EnclaveError.new(subcommand: "racetrack-setup",
