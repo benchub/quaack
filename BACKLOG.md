@@ -2287,6 +2287,7 @@ A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 
 
 - **Say what died.** For `incomplete`, `rule_with_note` adds the subcommand and how it ended: the exit status, or the signal. `EnclaveError` already has these, and they're the driver's own data, not the enclave's. Say that exit 255 means the ssh session ended or failed to connect, or the remote process was killed, and point at the jump server's kernel log (OOM killer) and sshd log.
 - **ssh keepalive.** Add `ServerAliveInterval` and `ServerAliveCountMax` to `Transport::Ssh::DEFAULT_OPTIONS`, so a quiet, long call isn't dropped by an idle firewall or NAT, and a dead link is noticed rather than hanging until the transport's timeout. Document it in README's ssh section.
+- **Give enclave calls their own progress line.** In each counterexample round, `quaacks counterexample-compare` runs right after the LLM ask and prints no line, so the "Asking the LLM for rows that could break the rewrite" clock kept running through it. That made the failure look like the LLM's, when an LLM failure is always an `llm_*` rule. Note the compare, such as "Loading the LLM's rows and comparing results", and check the other steps for an enclave call hidden under an LLM note the same way.
 - **Find the cause** once the user reports what the jump server's logs show. If the OOM killer or a slow fixture load in rewrite-test or counterexample-compare is at fault, open a task for it.
 
 - **Depends on:** none.
