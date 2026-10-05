@@ -75,16 +75,36 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
       expect(memory.bytes("printf '%#{memory::MAX_OUTPUT}s' 1024", "prod-db-3")).to eq(1024)
     end
 
+    # The shell's pid comes from the spawn, not from a pid file, which a
+    # shell killed while still starting under load may not have written yet.
+    # The sleep writes its own pid file once it's running, so a missing file
+    # says the kill came before the sleep started, and the check would prove
+    # nothing, not that the kill worked.
     it "stops a command that runs past its timeout, and everything it started, as memory_command_timed_out" do
+      pids = []
+      allow(Process).to receive(:spawn).and_wrap_original do |original, *args, **opts|
+        original.call(*args, **opts).tap { pids << it }
+      end
       pid_file = File.join(dir, "pid")
+      command = "sh -c 'echo $$ > #{pid_file}.new && mv #{pid_file}.new #{pid_file} && exec sleep 30' & wait"
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      rule = rule_of { memory.bytes("sleep 30 & echo $! > #{pid_file}; wait", "prod-db-3", timeout: 0.5) }
+      rule = rule_of { memory.bytes(command, "prod-db-3", timeout: 1) }
 
       expect(rule).to eq("memory_command_timed_out")
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 5
+      expect(File.exist?(pid_file)).to be(true), "the sleep never started before the timeout, so this proves nothing"
+      expect(pids.size).to eq(1)
       sleeper = Integer(File.read(pid_file))
       expect(gone_soon?(sleeper)).to be(true), "sleep #{sleeper} is still running"
+      expect(gone_soon?(-pids.first)).to be(true), "process group #{pids.first} is still running"
+    ensure
+      # If the kill missed the group, don't leave the sleep running.
+      pids&.each do |pid|
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      end
     end
 
     it "keeps the command's stdout and stderr out of its error, and off this process's stderr" do
@@ -143,8 +163,9 @@ RSpec.describe Quaack::Enclave::Inventory::Memory do
     e
   end
 
-  # Whether pid ends within two seconds. The killed sleep's parent was the
-  # shell, so once the shell is gone, init reaps it.
+  # Whether pid, or with a negative pid its whole process group, ends within
+  # two seconds. The killed sleep's parent was the shell, so once the shell
+  # is gone, init reaps it.
   def gone_soon?(pid)
     20.times do
       Process.kill(0, pid)
