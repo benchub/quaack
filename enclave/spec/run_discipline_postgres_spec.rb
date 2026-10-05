@@ -61,7 +61,7 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
-  it "reports a statement that hits the timeout as timed out, even if the enclave's clock runs slower than the server's" do
+  it "reports a timeout as timed out even if the enclave's clock runs slower than the server's" do
     slow_enclave_clock
     result = run("SELECT pg_sleep(2)", timeout_ms: 500)
     expect([result.timed_out, result.result]).to eq([true, nil])

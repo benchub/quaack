@@ -5,6 +5,7 @@ require "pg_query"
 require "tempfile"
 require "quaack/enclave/arena_runner"
 require "quaack/enclave/table_name"
+require_relative "support/server_clock"
 
 # fixture-open, fixture-load, and fixture-rollback against a real arena database: open a transaction
 # with statement_timeout, load a fixture, run queries, and always roll back.
@@ -222,6 +223,26 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    it "turns a timed-out query into a statement_timeout error, even if the enclave's clock runs slower" do
+      short = described_class.new(conn, statement_timeout_ms: 500)
+      slow_enclave_clock
+
+      error = run_error(short, [parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") }
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
+      expect_nothing_persisted
+    end
+
+    it "turns a timed-out insert into a statement_timeout error, even if the enclave's clock runs slower" do
+      short = described_class.new(conn, statement_timeout_ms: 500)
+      slow_enclave_clock
+
+      error = run_error(short, [], inserts: ['INSERT INTO "Fixture Space".counters (label) SELECT pg_sleep(5)::text'])
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :insert, 0])
+      expect_nothing_persisted
+    end
+
     # A cancel shares the timeout's SQLSTATE, 57014, and its message depends
     # on lc_messages, so the runner tells them apart by time, as
     # RunDiscipline does: one that comes before the timeout could have
@@ -252,6 +273,23 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       end
 
       expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 2])
+      expect_nothing_persisted
+    end
+
+    # Each statement's clock mark sets a savepoint, and releases the one
+    # before it, so they don't pile up: only the last is left to release.
+    it "keeps one clock savepoint at a time, however many statements ran" do
+      released = runner.with_fixture([parent(1, "a"), parent(2, "b")]) do |tx|
+        3.times { tx.query("SELECT 1") }
+        2.times.map do
+          conn.exec("RELEASE SAVEPOINT #{Quaack::Enclave::ServerClock::SAVEPOINT}")
+          :released
+        rescue PG::SEInvalidSpecification
+          :none_left
+        end
+      end
+
+      expect(released).to eq(%i[released none_left])
       expect_nothing_persisted
     end
 
@@ -1019,6 +1057,32 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
         expect_nothing_persisted
       end
+    end
+
+    # After a cancel, the runner reads the server's clock again to tell a
+    # timeout from another cancel. If that read fails, the cancel can't be
+    # shown to be the timeout, and the read's error goes nowhere.
+    it "reports a cancel as statement_canceled when the server's clock can't be read after it" do
+      clockless = Class.new(SimpleDelegator) do
+        def initialize(conn, message)
+          super(conn)
+          @message = message
+        end
+
+        def exec(sql, *, &)
+          raise IOError, @message if sql.include?("ROLLBACK TO SAVEPOINT")
+
+          __getobj__.exec(sql, *, &)
+        end
+      end.new(conn, sentinel)
+      short = described_class.new(clockless, statement_timeout_ms: 100)
+
+      error = run_error(short, [parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") }
+
+      expect([error.rule, error.sqlstate, error.step, error.index, error.cause])
+        .to eq([:statement_canceled, "57014", :query, 0, nil])
+      expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
+      expect_nothing_persisted
     end
   end
 end
