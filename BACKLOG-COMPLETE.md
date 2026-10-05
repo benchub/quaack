@@ -5319,3 +5319,15 @@ From the review of 20261004-66. The spec checks that the dump text doesn't inclu
 - **Design:** schema-dump.
 - **Status:** done
 - **Landed:** Landed: the two dba checks match a whole word, so pg_dump's random \restrict token can't trip them.
+
+### 20261004-70. Arena ROLLBACK after an abort runs under the session's timeout.
+
+From the build and review of 20261004-64. Once a transaction aborts, Postgres drops its `set_config` settings, so the runner's closing `ROLLBACK` after any aborted transaction runs under the session's `statement_timeout`, not with no timeout. DESIGN.md's fixture-open paragraph still says "the closing `ROLLBACK` runs with no timeout" while also saying a nonzero session setting applies after an abort. Fix the wording, and decide whether a nonzero session timeout should be handled, for example by resetting it at connect where `Counterexamples::Evaluated` doesn't rely on it. Also:
+- Rename the spec "takes longer than the runner's timeout to reach" (arena_runner_postgres_spec) and its comment to say it's a sanity check on the fixture's delay.
+- "isn't canceled by the runner's timeout" only pins Postgres behaviour; say so in its comment.
+
+- **Depends on:** 20261004-64.
+- **Came from:** The build and review of 20261004-64, 2026-10-05.
+- **Design:** arena-runner.
+- **Status:** done
+- **Landed:** Landed: DESIGN.md wording on the ROLLBACK after an abort, plus specs pinning already_in_transaction. Review minors became 20261004-75.

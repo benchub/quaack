@@ -2372,16 +2372,7 @@ The review of 20261001-19 found:
 - **Design:** burndown.
 - **Status:** todo
 
-### 20261004-70. Arena ROLLBACK after an abort runs under the session's timeout.
-
-From the build and review of 20261004-64. Once a transaction aborts, Postgres drops its `set_config` settings, so the runner's closing `ROLLBACK` after any aborted transaction runs under the session's `statement_timeout`, not with no timeout. DESIGN.md's fixture-open paragraph still says "the closing `ROLLBACK` runs with no timeout" while also saying a nonzero session setting applies after an abort. Fix the wording, and decide whether a nonzero session timeout should be handled, for example by resetting it at connect where `Counterexamples::Evaluated` doesn't rely on it. Also:
-- Rename the spec "takes longer than the runner's timeout to reach" (arena_runner_postgres_spec) and its comment to say it's a sanity check on the fixture's delay.
-- "isn't canceled by the runner's timeout" only pins Postgres behaviour; say so in its comment.
-
-- **Depends on:** 20261004-64.
-- **Came from:** The build and review of 20261004-64, 2026-10-05.
-- **Design:** arena-runner.
-- **Status:** todo
+### 20261004-70. Arena ROLLBACK after an abort runs under the session's timeout. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-71. ServerClock: comments and wording from 20261004-67.
 
@@ -2420,3 +2411,15 @@ From the review of 20261004-66. `Store.open` checks the run directory's owner an
 
 ### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token. Done, see BACKLOG-COMPLETE.md.
 
+
+### 20261004-75. Tighten the wording left over from 20261004-70.
+
+- **Status:** open
+- **Depends on:** 20261004-70 (done)
+- **From:** the review of 20261004-70.
+
+Three small accuracy fixes, all wording only:
+
+1. DESIGN.md says that after an aborted ROLLBACK the next fixture is refused, "so the step fails". On the vacuity guard's last attempt, rewrite-test instead records `passed: false` with rule `already_in_transaction`. `RewriteFate` counts that as a runner failure, not a disproof, so it's still safe. Say so.
+2. DESIGN.md says counterexamples' value evaluation "relies on" the arena session's timeout. That timeout is 0 by default, and the scenario builder's own queries run outside the runner too. Say "benefits from" and name when it applies.
+3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
