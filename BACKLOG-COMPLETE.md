@@ -4568,3 +4568,26 @@ This touches nearly every file, so build it when no other task is in flight, or 
   - **Older runs:** new stores carry `store_format` `{"format": 2}`. `quaacks` refuses an older run as `run_from_older_version` (except `teardown`), and `quaack run` and `quaack setup` explain what to do.
   - **LLM step split:** `rewrite-index-ideas`'s asks are counted under `rewrite-llm-index-ideas` and `rewrite-llm-index-refine`.
   - **Review:** one round, with no blocking findings. The minors went to 20261004-15.
+
+### 20261003-20. Give each rewrite a whimsical name.
+
+Rewrites are called "Rewrite 1", "Rewrite 2" and so on, in the progress lines (`pipeline.rb`'s `progress.within("Rewrite #{number}")`) and in the report (`report/words.rb` and `report/candidates.rb`). Numbers are easy to mix up across runs. Give each rewrite a name instead, such as "Rewrite Silver Fox" or "Rewrite Blue Lagoon".
+
+The rule:
+
+- Add two hand-written word lists to the driver: 200 adjectives and 200 nouns, each of one or two syllables. Keep them family-friendly, with no duplicates, and each word in only one list. Record each word's syllable count next to it, so nothing has to count syllables at run time.
+- A name is "Adjective Noun", title case, with three syllables in total: a one-syllable adjective with a two-syllable noun, or the other way round.
+- The names in one run are all different, and the same run always gives the same names, so a resumed run (or a report rebuilt later) agrees with the first. Pick them with a random generator seeded from the run ID, in rewrite order.
+- The name is only a label. The store keys, protocol messages and the enclave keep the rewrite's number (`rewrite_3`), and the driver maps the number to the name wherever a person reads it: progress lines, the readable report, `candidates.rb`'s descriptions, and the LLM prompts that talk about a rewrite. The report payload carries both.
+- Names come from the driver's own lists, never from enclave data, so nothing new crosses the trust boundary.
+
+Tests check that both lists have 200 words, no duplicates, and the syllable counts given, and that every name has three syllables. They check that one run ID always gives the same names, that names don't repeat in a run, and that the progress lines and report use the names. Spot-check the syllable counts by hand at review.
+
+- **Depends on:** none. 20261003-15 and -16 also change the progress lines. Whichever lands later fits in with the others.
+- **Came from:** The user, 2026-10-03.
+- **Design:** Progress lines for `quaack run`, report.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261003-20.
+  - **Change:** `driver/lib/quaack/driver/rewrite_names.rb` holds 200 adjectives and 200 nouns, half of one syllable and half of two. That gives 20,000 three-syllable names. The name for rewrite N is the Nth pair of a shuffle seeded by SHA-256 of the run ID and the draw's position, so it's stable across processes and resumes. Past the last name, the label falls back to "Rewrite <n>".
+  - **Where names show:** progress lines and the readable report use names. The payload carries `name` next to the number. Anchors, the store, the protocol and the enclave keep the number. No LLM prompt named a rewrite by number, so none changed.
+  - **Review:** one round, with no blocking findings. The minors went to 20261004-16.
