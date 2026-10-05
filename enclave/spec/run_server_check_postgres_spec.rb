@@ -303,28 +303,62 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
     it "names the oldest other client first, whatever order pg_stat_activity lists them in" do
       record_inventory
       run_server
-      old = connect
+      old = connect_after_a_free_slot
       young = connect_listed_before(old)
 
+      expect(listed_before?(young, old)).to be(true)
       expect(failure.clients.map { it["pid"] }).to eq([old.backend_pid, young.backend_pid])
     end
 
-    # A connection opened after old that pg_stat_activity lists before it:
-    # it opens and closes one until one lands in an earlier slot.
-    def connect_listed_before(old, tries: 1000)
-      tries.times do
-        young = production.connect
-        return young.tap { connections << it } if listed_before?(young, old)
-
-        young.close
-      end
-      raise "no connection was listed before pid #{old.backend_pid} in #{tries} tries"
+    # Each client backend's pid and where pg_stat_activity lists it.
+    def listed_pids
+      TestPostgres.server.admin.exec("SELECT pid FROM pg_stat_activity WHERE backend_type = 'client backend'")
+                  .column_values(0).each_with_index.to_h { |pid, index| [Integer(pid, 10), index] }
     end
 
-    def listed_before?(young, old)
-      pids = TestPostgres.server.admin.exec("SELECT pid FROM pg_stat_activity WHERE backend_type = 'client backend'")
-                         .column_values(0).map { Integer(it, 10) }
-      pids.index(young.backend_pid) < pids.index(old.backend_pid)
+    def listed_before?(young, old) = listed_pids.fetch(young.backend_pid) < listed_pids.fetch(old.backend_pid)
+
+    # Closes connections, once pg_stat_activity no longer lists them.
+    def close_and_wait(conns)
+      pids = conns.map(&:backend_pid)
+      conns.each(&:close)
+      200.times do
+        return unless listed_pids.keys.intersect?(pids)
+
+        sleep 0.05
+      end
+      raise "pids #{pids} still listed in pg_stat_activity"
+    end
+
+    # A connection with a free slot listed before it. Of two new
+    # connections, it's the one listed second, and the first is closed.
+    def connect_after_a_free_slot
+      first, second = Array.new(2) { production.connect }
+      first, second = second, first if listed_before?(second, first)
+      close_and_wait([first])
+      second.tap { connections << it }
+    end
+
+    def max_connections = Integer(TestPostgres.server.admin.exec("SHOW max_connections").getvalue(0, 0), 10)
+
+    # A connection opened after old that pg_stat_activity lists before it.
+    # Each new connection takes a free slot, and none it opens is closed
+    # until one lands before old, so it reaches the slot freed before old,
+    # whatever order the server hands out free slots in. The rest are then
+    # closed, so only old and it are other clients. No more connections
+    # can be open than max_connections allows.
+    def connect_listed_before(old)
+      opened = []
+      max_connections.times do
+        opened << production.connect
+        next unless listed_before?(opened.last, old)
+
+        young = opened.pop
+        close_and_wait(opened)
+        return young.tap { connections << it }
+      end
+      close_and_wait(opened)
+      raise "no connection was listed before pid #{old.backend_pid}"
     end
 
     # Some cases the test server can't make happen on its own, such as pids
