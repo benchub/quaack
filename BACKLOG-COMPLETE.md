@@ -5231,3 +5231,13 @@ The report puts raw SQL inside sentences, such as "Rewrite Blithe Mango with a n
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed: every embedded SQL piece is in <code class="sql">, styled and wrapping.
+
+### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names.
+
+From the review of 20261004-48. When a run's record has no `port`, as for runs started by a driver before 0.1.6, the message says the port comes from the libpq setup, even if the operator gave `quaack start --port`. Check what the enclave actually connects with for such a run, since the jump server's run state may hold the port. Make the message say the truth, with a test.
+
+- **Depends on:** 20261004-17, -37.
+- **Came from:** The review of 20261004-48, 2026-10-05.
+- **Design:** inventory.
+- **Status:** done
+- **Landed:** Landed: a run recorded with neither server nor port names both port sources.

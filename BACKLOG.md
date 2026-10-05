@@ -2350,14 +2350,7 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo
 
-### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names.
-
-From the review of 20261004-48. When a run's record has no `port`, as for runs started by a driver before 0.1.6, the message says the port comes from the libpq setup, even if the operator gave `quaack start --port`. Check what the enclave actually connects with for such a run, since the jump server's run state may hold the port. Make the message say the truth, with a test.
-
-- **Depends on:** 20261004-17, -37.
-- **Came from:** The review of 20261004-48, 2026-10-05.
-- **Design:** inventory.
-- **Status:** todo
+### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-64. Arena timeout: minors from 20261004-58.
 
