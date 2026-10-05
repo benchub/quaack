@@ -343,30 +343,43 @@ RSpec.describe "quaack run" do
     end
   end
 
-  # Task 20261004-29: after a good run, only teardown is left, so resuming
-  # (which redoes the run's last steps) isn't the advice.
+  # Tasks 20261004-29 and 20261004-31: after a good run, only teardown is
+  # left, so resuming (which redoes the run's last steps) isn't the advice.
+  # The report was written, so its path prints as after a clean run, but
+  # not done. The teardown hint prints once, in teardown's own line.
   describe "what to do when teardown fails after a good run" do
-    let(:teardown_left) { "tear the run down with `quaacks teardown --run #{run_id}` on the jump server" }
+    let(:teardown_left) { "tear the run down as said above (the run itself finished)" }
     let(:later) { "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" }
 
-    it "says to run teardown, not to resume, when ssh fails during teardown" do
+    it "prints the report's path and says to run teardown, not to resume, when ssh fails during teardown" do
       failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "ssh_failed",
                                                              exit_status: 255)
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
       expect(errors).to eq("quaack: couldn't tear down run #{run_id} (ssh_failed). #{later}" \
                            "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login " \
-                           "or network, then #{teardown_left} (the run itself finished)\n")
+                           "or network, then #{teardown_left}\n")
     end
 
-    it "says to run teardown, not to resume, when the teardown call is incomplete" do
+    it "prints the report's path and says to run teardown, not to resume, when the teardown call is incomplete" do
       failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "incomplete",
                                                              exit_status: 1)
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
       expect(errors).to eq("quaack: couldn't tear down run #{run_id} (incomplete). #{later}" \
                            "quaack run failed: incomplete: quaacks teardown ended with exit 1. " \
-                           "To go on, #{teardown_left} (the run itself finished)\n")
+                           "To go on, #{teardown_left}\n")
+    end
+
+    it "prints the report's path and only the by-hand hint when the store must be removed by hand" do
+      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect([stdout.string, File.exist?(out)]).to eq(["#{out}\n", true])
+      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
+                           "~/.quaack/runs/#{run_id} on the jump server by hand.\nquaack run failed: teardown_failed\n")
     end
   end
 
@@ -445,17 +458,6 @@ RSpec.describe "quaack run" do
       expect(errors).to include("quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--host <host>]")
       expect(transport.calls).to eq([])
     end
-  end
-
-  it "fails with exit 1 and the teardown rule when teardown fails after a good run" do
-    failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed")
-
-    status = cli.run(["run", "--run", run_id, "--out", out])
-
-    expect([status, stdout.string]).to eq([1, ""])
-    expect(errors).to eq("quaack: couldn't tear down run #{run_id} (teardown_failed). Check or remove " \
-                         "~/.quaack/runs/#{run_id} on the jump server by hand.\n" \
-                         "quaack run failed: teardown_failed\n")
   end
 
   it "skips teardown with --keep, in any position, and prints the command to run later" do

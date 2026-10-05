@@ -44,18 +44,21 @@ module Quaack
       # What to do after a failed run whose store teardown deleted.
       START_OVER = "start a new run with `quaack start`"
 
+      # What to do after a run that finished, but whose teardown failed.
+      TEARDOWN_LEFT = "tear the run down as said above (the run itself finished)"
+
       def self.command(run_id) = "quaacks teardown --run #{run_id}"
 
       # What to do after `quaack run --run <run_id>` failed: resume it
       # while its store is left, or start a new run once teardown deleted
       # it. When the run itself succeeded and only its teardown failed,
-      # resuming would redo the run's last steps, so it says to tear down.
-      # teardown is the run's Teardown, or nil if the run failed before it
-      # had one.
+      # resuming would redo the run's last steps, so it says to tear down,
+      # pointing to the failed teardown's own line, which already says how:
+      # the command, or the store to remove by hand. teardown is the run's
+      # Teardown, or nil if the run failed before it had one.
       def self.next_step(teardown, run_id)
         return START_OVER if teardown&.deleted?
-        return "tear the run down with `#{command(run_id)}` on the jump server (the run itself finished)" if
-          teardown&.only_teardown_left?
+        return TEARDOWN_LEFT if teardown&.only_teardown_left?
 
         "resume with `quaack run --run #{run_id}`"
       end

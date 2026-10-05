@@ -139,14 +139,15 @@ module Quaack
         nil
       end
 
-      # Prints the report's path, if the pipeline wrote one, before done. The
-      # run is torn down when the pipeline ends, however it ends, unless keep.
+      # Prints the report's path as soon as the pipeline writes it, so it
+      # shows even when teardown then fails, and done after. The run is torn
+      # down when the pipeline ends, however it ends, unless keep.
       def drive(teardown, client, run_id, sqls, options)
-        path = teardown.around(keep: options[:keep]) do
-          Pipeline.new(transport: teardown.transport, client:, run_id:, rewrites: sqls, out: options[:out],
-                       stderr: @stderr, setup: options[:server]).run
+        teardown.around(keep: options[:keep]) do
+          path = Pipeline.new(transport: teardown.transport, client:, run_id:, rewrites: sqls, out: options[:out],
+                              stderr: @stderr, setup: options[:server]).run
+          @stdout.print "#{path}\n" if path
         end
-        @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"
         0
       end
