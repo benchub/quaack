@@ -2254,18 +2254,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 ### 20261004-31. A run that finished but couldn't tear down: show the report, and tidy the advice. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261004-32. Teardown-failure docs and the path-without-done case.
-
-These are review minors from 20261004-31.
-
-1. README step 5 says to "destroy the run server yourself too" after `teardown_failed`. But when `destroy_command` is set, the enclave runs it before deleting the store (see `destroyed?` in `enclave/lib/quaack/enclave/steps/teardown.rb`), so the server is usually gone already. Only `bad_run` and `bad_store_base` skip the destroy. Fix the wording.
-2. DESIGN.md and the `TEARDOWN_LEFT` comment in `driver/lib/quaack/driver/teardown.rb` say the failure line points to teardown's message for "a store teardown wouldn't or couldn't delete". For `bad_run`, `bad_store_base` and `teardown_failed`, `rule_with_note` adds no next step. Make the docs match, or add the pointer.
-3. README's "It prints the report's path, then `<run ID> done`" doesn't mention that the path can print without `done`, with exit 1, when only teardown failed. The error table mentions this only in the `ssh_failed` and `incomplete` rows. Document it for the other teardown rules too, and check stdout in the `--keep` spec.
-
-- **Depends on:** 20261004-31.
-- **Came from:** The review of 20261004-31.
-- **Design:** teardown.
-- **Status:** todo
+### 20261004-32. Teardown-failure docs and the path-without-done case. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-33. Tidy the oldest-client-first spec helper. Done, see BACKLOG-COMPLETE.md.
 
@@ -2416,4 +2405,17 @@ These are review minors from 20261004-50.
 - **Depends on:** 20261004-50.
 - **Came from:** The review of 20261004-50, 2026-10-05.
 - **Design:** report.
+- **Status:** todo
+
+### 20261004-60. Teardown failure: edge cases from 20261004-32.
+
+These are review minors from 20261004-32.
+
+1. **`teardown_failed` without the destroy.** README says that after `teardown_failed`, `destroy_command` has already destroyed the run server. But `destroyed?` reads `store.read("server")` inside `call`'s `rescue Store::Error`. If that read fails, the rule is `teardown_failed` and the destroy never ran, so the run server may still be up. Give that case its own rule, or hedge the README's wording.
+2. **`Teardown.failure` assumes an `EnclaveError`.** It calls `error.to_go_on?` unguarded. That's safe today, but if teardown could raise another rescued class it would raise `NoMethodError`. Add an `is_a?(EnclaveError)` guard, with a test.
+3. **A driver error from teardown after a good run.** DESIGN.md says the pointer follows "every rule teardown fails with". A non-`EnclaveError` failure (`driver_error`) isn't rescued by `run_command`, so it escapes with no pointer and no path note. Handle it, or narrow DESIGN.md's claim. This predates 20261004-32.
+
+- **Depends on:** 20261004-32.
+- **Came from:** The review of 20261004-32, 2026-10-05.
+- **Design:** teardown.
 - **Status:** todo

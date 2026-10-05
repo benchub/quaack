@@ -5097,3 +5097,17 @@ These are review minors from 20261004-41.
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** Landed in 026aa05.
+
+### 20261004-32. Teardown-failure docs and the path-without-done case.
+
+These are review minors from 20261004-31.
+
+1. README step 5 says to "destroy the run server yourself too" after `teardown_failed`. But when `destroy_command` is set, the enclave runs it before deleting the store (see `destroyed?` in `enclave/lib/quaack/enclave/steps/teardown.rb`), so the server is usually gone already. Only `bad_run` and `bad_store_base` skip the destroy. Fix the wording.
+2. DESIGN.md and the `TEARDOWN_LEFT` comment in `driver/lib/quaack/driver/teardown.rb` say the failure line points to teardown's message for "a store teardown wouldn't or couldn't delete". For `bad_run`, `bad_store_base` and `teardown_failed`, `rule_with_note` adds no next step. Make the docs match, or add the pointer.
+3. README's "It prints the report's path, then `<run ID> done`" doesn't mention that the path can print without `done`, with exit 1, when only teardown failed. The error table mentions this only in the `ssh_failed` and `incomplete` rows. Document it for the other teardown rules too, and check stdout in the `--keep` spec.
+
+- **Depends on:** 20261004-31.
+- **Came from:** The review of 20261004-31.
+- **Design:** teardown.
+- **Status:** done
+- **Landed:** Landed in 76c5932.
