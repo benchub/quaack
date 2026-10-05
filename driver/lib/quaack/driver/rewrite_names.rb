@@ -84,12 +84,12 @@ module Quaack
         "kayak" => 2, "kettle" => 2, "kitten" => 2, "lagoon" => 2, "lantern" => 2, "lemon" => 2, "lily" => 2,
         "lizard" => 2, "llama" => 2, "lobster" => 2, "magpie" => 2, "mango" => 2, "maple" => 2, "marble" => 2,
         "meadow" => 2, "mitten" => 2, "noodle" => 2, "olive" => 2, "orchard" => 2, "otter" => 2, "paddle" => 2,
-        "pancake" => 2, "panda" => 2, "parrot" => 2, "pebble" => 2, "penguin" => 2, "pepper" => 2, "pigeon" => 2,
-        "pillow" => 2, "planet" => 2, "pocket" => 2, "pony" => 2, "pretzel" => 2, "puffin" => 2, "pumpkin" => 2,
-        "puppy" => 2, "puzzle" => 2, "rabbit" => 2, "rainbow" => 2, "raven" => 2, "ribbon" => 2, "river" => 2,
-        "robin" => 2, "saddle" => 2, "salmon" => 2, "slipper" => 2, "sparrow" => 2, "sunbeam" => 2, "teacup" => 2,
-        "teapot" => 2, "thistle" => 2, "tiger" => 2, "toucan" => 2, "trumpet" => 2, "tulip" => 2, "turtle" => 2,
-        "valley" => 2, "waffle" => 2, "wagon" => 2, "walnut" => 2, "walrus" => 2, "whistle" => 2, "willow" => 2,
+        "pancake" => 2, "panda" => 2, "parrot" => 2, "parsnip" => 2, "pebble" => 2, "penguin" => 2, "pepper" => 2,
+        "pigeon" => 2, "pillow" => 2, "planet" => 2, "pocket" => 2, "pony" => 2, "pretzel" => 2, "puffin" => 2,
+        "pumpkin" => 2, "puppy" => 2, "puzzle" => 2, "rabbit" => 2, "rainbow" => 2, "raven" => 2, "ribbon" => 2,
+        "river" => 2, "robin" => 2, "saddle" => 2, "salmon" => 2, "slipper" => 2, "sparrow" => 2, "sunbeam" => 2,
+        "teacup" => 2, "teapot" => 2, "thistle" => 2, "tiger" => 2, "toucan" => 2, "trumpet" => 2, "tulip" => 2,
+        "turtle" => 2, "valley" => 2, "wagon" => 2, "walnut" => 2, "walrus" => 2, "whistle" => 2, "willow" => 2,
         "window" => 2, "zebra" => 2
       }.freeze
 

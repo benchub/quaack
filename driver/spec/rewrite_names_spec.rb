@@ -56,7 +56,7 @@ RSpec.describe Quaack::Driver::RewriteNames do
     let(:dropped) do
       {
         adjectives: %w[ample dusky huge perky pink plump wee],
-        nouns: %w[beaver button cherry crystal donkey melon monkey muffin peach rain rocket seed snowflake]
+        nouns: %w[beaver button cherry crystal donkey melon monkey muffin peach rain rocket seed snowflake waffle]
       }
     end
 
@@ -73,7 +73,7 @@ RSpec.describe Quaack::Driver::RewriteNames do
     it "makes none of the pairs that read badly, in all the names there are" do
       bad = ["Pink Beaver", "Eager Beaver", "Brown Monkey", "Tan Monkey", "Pink Monkey", "Red Rocket",
              "Golden Rain", "Blue Crystal", "Smart Donkey", "Huge Melon", "Ripe Cherry", "Perky Peach",
-             "Pink Muffin", "Golden Seed", "Ample Cake"]
+             "Pink Muffin", "Golden Seed", "Ample Cake", "Blue Waffle"]
       names = described_class.names("20261004T000000Z-0a1b2c3d", described_class.size)
       expect(names & bad).to eq([])
     end

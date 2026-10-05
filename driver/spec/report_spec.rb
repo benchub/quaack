@@ -679,14 +679,14 @@ RSpec.describe Quaack::Driver::Report do
       list = why[%r{<ul id="negative-rewrites">.*?</ul>}m]
       expect(list.scan(/<li>(Rewrite [^(]+) \(/).flatten)
         .to eq(["Rewrite Smooth Kayak", "Rewrite Dainty Bloom", "Rewrite Bright Island", "Rewrite Trim Falcon",
-                "Rewrite Wise Sparrow"])
+                "Rewrite Wise Slipper"])
       expect(list).to include(esc("<li>Rewrite Smooth Kayak (source not recorded): It returned different results " \
                                   "from your query on made-up test data (duplicate join keys), so it's wrong.</li>"))
       expect(list).to include("<li>Rewrite Dainty Bloom (suggested by the LLM): It returned different results")
       expect(list)
         .to include(esc("<li>Rewrite Bright Island (made by QUAACK's own rewrite rule key_in_self_join): It passed"))
       expect(list).to include("<li>Rewrite Trim Falcon (your own rewrite): Postgres plans it exactly as")
-      expect(list).to include("<li>Rewrite Wise Sparrow (source not recorded): A test on made-up data (empty tables) " \
+      expect(list).to include("<li>Rewrite Wise Slipper (source not recorded): A test on made-up data (empty tables) " \
                               "ended without comparing results")
     end
 
