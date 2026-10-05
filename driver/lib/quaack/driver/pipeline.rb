@@ -8,6 +8,7 @@ require_relative "progress"
 require_relative "refinement_round"
 require_relative "report"
 require_relative "rewrite_generation"
+require_relative "rewrite_names"
 require_relative "setup"
 require_relative "step_summary"
 
@@ -127,7 +128,7 @@ module Quaack
           entries = generated(transport, client, run_id, entries, rewrites, progress)
           Pipeline.step(progress, "plan-pruning") do
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
-              prune(transport, run_id, entries, number, progress.within("Rewrite #{number}"))
+              prune(transport, run_id, entries, number, Pipeline.within(progress, run_id, number))
             end.to_a
           end
         end
@@ -202,7 +203,7 @@ module Quaack
           Pipeline.step(progress, "rewrite-correctness") do
             entries = Pipeline.status(transport, run_id) unless Pipeline.checked?(entries, rewrites)
             (1..).lazy.take_while { entries["rewrite_#{it}"] }.map do |number|
-              undecided(transport, client, run_id, entries, number, progress.within("Rewrite #{number}"))
+              undecided(transport, client, run_id, entries, number, Pipeline.within(progress, run_id, number))
             end.to_a.compact
           end
         end
@@ -263,7 +264,7 @@ module Quaack
             entries = Pipeline.status(transport, run_id)
             numbers = (1..).lazy.take_while { entries["rewrite_#{it}"] }
             numbers.select { entries["rewrite_index_ideas_#{it}"] }.map do |n|
-              asked?(transport, client, run_id, entries, n, progress.within("Rewrite #{n}"))
+              asked?(transport, client, run_id, entries, n, Pipeline.within(progress, run_id, n))
             end.to_a
           end
         end
@@ -368,6 +369,10 @@ module Quaack
       def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), summary: StepSummary::SUMMARY[name], &)
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
+
+      # Progress for rewrite number's sub-steps, under its name, such as
+      # "Rewrite Silver Fox" (RewriteNames).
+      def self.within(progress, run_id, number) = progress.within(RewriteNames.label(run_id, "rewrite_#{number}"))
 
       # What each step does, in plain English, for its progress line. The
       # step's ID follows it in parentheses.

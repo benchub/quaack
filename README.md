@@ -457,7 +457,7 @@ quaack run --run 20260928T201702Z-3f9a1c2e --keep
 
 It prints the report's path, then `<run ID> done`. Open the HTML file in a browser.
 
-While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Done in 42s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
+While it runs, it shows its progress on stderr: a line as each step starts and ends, such as `quaack: [6/18] Asking the LLM for rewrites of the query (llm-rewrites)` and `quaack: [6/18] Done in 42s (llm-rewrites)`, a line for each step a resumed run skips, and a line for each LLM ask and retry. A step that works on each rewrite in turn starts its lines for a rewrite with the rewrite's name, such as `quaack: [7/18] Rewrite Silver Fox: Ranking the index ideas (rewrite-index-rank)`. When `quaack run` does setup first, setup's eleven steps come first in the count, so the total is eleven more. On a terminal, the latest of these lines carries the running step's time so far, counting up in place, and the line before keeps its final reading. Piped to a file, the lines carry no clock, and only each step's closing line gives its time. The lines carry only step names, counts, and timings.
 
 `--keep` skips the cleanup at the end, so you can re-run or look around, and QUAACK prints the teardown command to use later. It's a good idea on your first few runs. Without it, QUAACK deletes the run's files when the run ends, whether it succeeded or failed, and destroys the run server if you set `destroy_command`.
 
@@ -567,7 +567,7 @@ It also says here if any measurement runs timed out, and if your query itself ti
 
 ### The queries.
 
-Your query comes first, then every rewrite QUAACK kept, each laid out over several lines:
+Your query comes first, then every rewrite QUAACK kept, each laid out over several lines. Each rewrite has a name of its own for the run, such as Rewrite Silver Fox, so you can tell them apart. The run's ID picks the names, so a rewrite keeps its name when you resume the run, and the progress lines on stderr use the same names.
 
 ```sql
 SELECT id, kind, created_at
@@ -603,7 +603,7 @@ A rewrite may also list **conditions the made-up test data never exercised**, su
 | --- | --- | ---: | ---: | ---: |
 | 1 | Your query with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
 | 2 | Your query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
-| 3 | Rewrite 2 with no new indexes | 31 | 140 | 0 kB |
+| 3 | Rewrite Silver Fox with no new indexes | 31 | 140 | 0 kB |
 
 The winner is first. Each **candidate** is your query, or a rewrite, run with a set of new indexes, and the report names it that way.
 
@@ -636,11 +636,11 @@ Each ranked candidate then gets its own table:
 
 ### Why the winner reads fewer blocks.
 
-> Rewrite 2 with no new indexes read 31 blocks on the slow values, against 509 for your query as it is (94% fewer).
+> Rewrite Silver Fox with no new indexes read 31 blocks on the slow values, against 509 for your query as it is (94% fewer).
 >
 > How Postgres runs your query now: Sort (10 rows) › Index Scan on public.events using events_account_id_idx (500 rows, 0.1% of the table)
 >
-> How it runs rewrite 2 with no new indexes: Index Only Scan on public.events using events_account_created_idx (10 rows, under 0.1% of the table)
+> How it runs rewrite Silver Fox with no new indexes: Index Only Scan on public.events using events_account_created_idx (10 rows, under 0.1% of the table)
 
 This part is generated from the measurements and plans, not written by the LLM. Compare the two plans. The second plan is shown only for a rewrite. When the winner is your own query with new indexes, the report says its plan is not recorded. It's left out when nothing beat your query.
 
@@ -696,7 +696,7 @@ Read it when the result surprises you. If the LLM proposed five rewrites and all
 
 ### QUAACK bug: a rule made a wrong rewrite.
 
-You should never see this section. It appears at the very top of the report, above the verdict, when a test proved one of the rules' own rewrites wrong, such as "Rewrite 1, made by QUAACK's own rewrite rule key_in_self_join, returned different results on made-up test data." QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about your query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
+You should never see this section. It appears at the very top of the report, above the verdict, when a test proved one of the rules' own rewrites wrong, such as "Rewrite Dreamy Wren, made by QUAACK's own rewrite rule key_in_self_join, returned different results on made-up test data." QUAACK's rules are meant to be sound, so that's a bug in the rule, not a finding about your query. The tests did their job: the rewrite was dropped, and the rest of the report still holds. Please report it, with the names of the rules.
 
 Only a test that found different results counts. A rule's rewrite that timed out in the final check on production data isn't listed here: a timeout means the rewrite was too slow there, not that it's wrong. A rewrite that was only dropped for planning the same way as the original isn't listed here either. That happens when Postgres already makes the rule's change by itself, and it says nothing about whether the rule is right.
 

@@ -183,19 +183,22 @@ RSpec.describe "quaack run" do
                                   "quaack: [19/19] Writing the report (report)\n")
     end
 
-    it "prints a step's sub-steps for each rewrite, under the step" do
+    it "prints a step's sub-steps for each rewrite, under the step, by the rewrite's name" do
       entries.merge!("rewrite_1" => true, "index_search_rewrite_1" => true, "index_ranking_rewrite_1" => false,
-                     "rewrite_pruned_1" => true, "rewrite_survived_1" => true)
+                     "rewrite_pruned_1" => true, "rewrite_survived_1" => true, "rewrite_index_ideas_1" => true,
+                     "index_generated_rewrite_1" => true, "index_llm_ranked_rewrite_1" => true)
 
       expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
 
-      skipped = "Rewrite 1: Already done, skipping:"
+      skipped = "Rewrite Dreamy Wren: Already done, skipping:"
       expect(progress).to include(
         "quaack: [7/18] #{skipped} Checking the query plan and searching for indexes (rewrite-index-search)\n",
-        "quaack: [7/18] Rewrite 1: Ranking the index ideas (rewrite-index-rank)\n",
+        "quaack: [7/18] Rewrite Dreamy Wren: Ranking the index ideas (rewrite-index-rank)\n",
         "quaack: [7/18] #{skipped} Dropping the rewrite if its plan can't win (rewrite-prune)\n",
-        "quaack: [9/18] #{skipped} Testing the rewrite for wrong results (rewrite-correctness)\n"
+        "quaack: [9/18] #{skipped} Testing the rewrite for wrong results (rewrite-correctness)\n",
+        start_with("quaack: [10/18] #{skipped} ")
       )
+      expect(progress.grep(/Rewrite \d/)).to eq([])
     end
 
     it "prints each index index-build builds as the enclave reports it, with its redacted DDL" do

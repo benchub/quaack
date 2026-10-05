@@ -41,7 +41,7 @@
 <h3>Your query</h3>
 <%= sql(original_sql) %>
 <% rewrites.each do |r| %>
-<article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><h3><%= h Words.rewrite(r["rewrite"]) %></h3>
+<article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><h3><%= h called(r) %></h3>
 <p class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</p>
 <% if (assumed = empirical(r)) %>
 <p class="empirical"><%= h assumed %></p>
@@ -74,7 +74,7 @@
 <% top.each_with_index do |t, i| %>
 <article class="candidate"><h3><%= i + 1 %>. <%= h describe(t["label"]) %></h3>
 <% if (r = rewrite_of(t["label"])) %>
-<p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(Words.rewrite(r["rewrite"])) %></a>, above.</p>
+<p>Its SQL is under <a href="#<%= h anchor(r["rewrite"]) %>"><%= h Words.lower(called(r)) %></a>, above.</p>
 <% end %>
 <% unless (measured(t["label"]) || {}).fetch("indexes", []).empty? %>
 <p>Its new indexes:</p>
@@ -95,7 +95,7 @@
 <p>How Postgres runs your query now:</p>
 <ul><% original_plan.each do |n| %><li><%= h node(n) %></li><% end %></ul>
 <% if (r = rewrite_of(winner["label"])) && r["plan"] %>
-<p>How it runs <%= h Words.lower(Words.rewrite(r["rewrite"])) %> with no new indexes:</p>
+<p>How it runs <%= h Words.lower(called(r)) %> with no new indexes:</p>
 <ul><% r["plan"].each do |n| %><li><%= h node(n) %></li><% end %></ul>
 <% end %>
 <% unless (measured(winner["label"]) || {}).fetch("indexes", []).empty? %>
