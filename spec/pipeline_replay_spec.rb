@@ -109,6 +109,19 @@ RSpec.describe PipelineReplay do
         expect(outcome.report["rule_bugs"]).to eq([])
       end
 
+      # Task 20261001-19: every rewrite stage the rule's rewrite went
+      # through, each counting it once, and the work totals.
+      it "records the rule's rewrite going through every later rewrite stage once, and the work totals" do
+        stages = outcome.report["burndown"]["stages"]
+        went_on = { "in" => 1, "out" => 1 }
+        expect(stages.slice("plan-pruning", "rewrite-test", "counterexamples").transform_values(&:keys))
+          .to eq("plan-pruning" => ["rewrite_1"], "rewrite-test" => ["rewrite_1"], "counterexamples" => ["rewrite_1"])
+        %w[plan-pruning rewrite-test counterexamples].each { expect(stages[it]["rewrite_1"]).to include(went_on) }
+        %w[rewrite-index-ideas measurement].each { expect(stages[it]["rewrites"]).to include(went_on) }
+        expect(outcome.report["burndown"]["totals"].slice("indexes_built", "measurement_runs", "fixture_loads"))
+          .to match("indexes_built" => be_positive, "measurement_runs" => be_positive, "fixture_loads" => be_positive)
+      end
+
       it "shows the source and the rewrite-rules row in the report file `quaack run` writes" do
         expect(outcome.html).to include("Where it came from: made by QUAACK&#39;s own rewrite rule key_in_self_join.")
         expect(outcome.html).to include('<tr><th scope="row">Rewrites from QUAACK&#39;s own rules</th>' \
@@ -147,6 +160,18 @@ RSpec.describe PipelineReplay do
         expect(outcome.log.grep(/\Allm-counterexamples-[56]:/)).to be_empty
         expect(outcome.wrong).to eq([2])
         expect(outcome.entries).to include("rewrite_index_ideas_1" => true, "rewrite_index_ideas_2" => false)
+      end
+
+      # Task 20261001-19: the LLM's and the operator's rewrites, each
+      # counted at every rewrite stage it reached, the wrong one dropped.
+      it "record every rewrite stage of a run with the LLM's and the operator's rewrites" do
+        stages = run("group_having").report["burndown"]["stages"]
+        rewrite_stages = Quaack::Driver::Report::Words::REWRITE_STAGES.keys - ["rewrite-rules"] +
+                         Quaack::Driver::Report::Words::LATE_STAGES.keys
+        expect(rewrite_stages - stages.keys).to eq([])
+        expect(stages.dig("llm-rewrites", "rewrites", "added")).to include("llm" => be_positive)
+        expect(stages.dig("operator-rewrites", "rewrites", "added")).to include("operator" => be_positive)
+        expect(stages["rewrite-test"].keys + stages["counterexamples"].keys).to include("rewrite_2")
       end
 
       it "load an llm-counterexamples-4 that sets GENERATED ALWAYS ids with OVERRIDING SYSTEM VALUE, and it " \

@@ -24,7 +24,7 @@ module Quaack
     #   plan-pruning        in and dropped StructuralDiscard's and
     #                       ClockAnchoring's rejections, by rule; out is 0,
     #                       since those that go on enter plan-pruning in
-    #                       rewrite-prune
+    #                       rewrite-prune; no record when there are none
     # The rules are all code constants. One that isn't a burndown name is
     # counted as inbound_check or failed_checks.
     module RewriteBurndown
@@ -60,7 +60,7 @@ module Quaack
                                               out: arrived }],
          ["assumption-check", :rewrites, { in: arrived, dropped: { unmet_assumption: assumption },
                                            out: arrived - assumption, extra: warnings(source, tagged) }],
-         ["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }]]
+         (["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }] if pruning.any?)].compact
       end
 
       # Records rewrite-test's burndown for search, rewrite_<n>, once: in 1,
