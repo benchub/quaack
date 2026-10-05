@@ -5309,3 +5309,13 @@ The review of 20261004-60 found:
 - **Design:** teardown.
 - **Status:** done
 - **Landed:** Landed: destroy_command runs inside Store.teardown's open; SystemCallError gives destroy_command_not_run; README lists driver_error.
+
+### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token.
+
+From the review of 20261004-66. The spec checks that the dump text doesn't include "dba", but pg_dump's random `\restrict` token sometimes contains that substring. Make the check ignore the `\restrict`/`\unrestrict` lines, or match "dba" as a word or identifier.
+
+- **Depends on:** none.
+- **Came from:** The review of 20261004-66, 2026-10-05.
+- **Design:** schema-dump.
+- **Status:** done
+- **Landed:** Landed: the two dba checks match a whole word, so pg_dump's random \restrict token can't trip them.

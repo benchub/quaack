@@ -2418,11 +2418,5 @@ From the review of 20261004-66. `Store.open` checks the run directory's owner an
 - **Design:** teardown.
 - **Status:** todo
 
-### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token.
+### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token. Done, see BACKLOG-COMPLETE.md.
 
-From the review of 20261004-66. The spec checks that the dump text doesn't include "dba", but pg_dump's random `\restrict` token sometimes contains that substring. Make the check ignore the `\restrict`/`\unrestrict` lines, or match "dba" as a word or identifier.
-
-- **Depends on:** none.
-- **Came from:** The review of 20261004-66, 2026-10-05.
-- **Design:** schema-dump.
-- **Status:** todo
