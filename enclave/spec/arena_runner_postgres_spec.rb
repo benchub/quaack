@@ -1546,9 +1546,12 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect_nothing_persisted
       end
     end
+  end
 
-    # After a cancel, the runner reads the server's clock again to tell a
-    # timeout from another cancel. If that read fails, the cancel can't be
+  # After a cancel, the runner reads the server's clock again to tell a
+  # timeout from another cancel.
+  describe "the server's clock read after a cancel" do
+    # If the read fails, as when the connection drops, the cancel can't be
     # shown to be the timeout, and the read's error goes nowhere.
     it "reports a cancel as statement_canceled when the server's clock can't be read after it" do
       clockless = Class.new(SimpleDelegator) do
@@ -1558,7 +1561,7 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         end
 
         def exec(sql, *, &)
-          raise IOError, @message if sql.include?("clock_timestamp")
+          raise PG::ConnectionBad, @message if sql.include?("clock_timestamp")
 
           __getobj__.exec(sql, *, &)
         end
@@ -1570,6 +1573,16 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect([error.rule, error.sqlstate, error.step, error.index, error.cause])
         .to eq([:statement_canceled, "57014", :query, 0, nil])
       expect([error.message, error.full_message, error.inspect].grep(/#{sentinel}/)).to be_empty
+      expect_nothing_persisted
+    end
+
+    # Only a Postgres error from the read counts as a failed read. A bug in
+    # the enclave's own code is raised, not passed off as a cancel.
+    it "raises a bug in reading the server's clock, not statement_canceled" do
+      short = described_class.new(misread_clock(conn, "clock_timestamp"), statement_timeout_ms: 100)
+
+      expect { short.with_fixture([parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") } }
+        .to raise_error(ArgumentError, /not a clock/)
       expect_nothing_persisted
     end
   end

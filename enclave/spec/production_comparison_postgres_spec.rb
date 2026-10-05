@@ -162,6 +162,15 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  it "raises a bug in reading the server's clock after a cancel, not the cancel" do
+    misread = misread_clock(conn, "ROLLBACK TO SAVEPOINT")
+    expect do
+      described_class.compare(connection: misread, original: "SELECT 1", candidate: "SELECT 1 FROM pg_sleep(2)",
+                              params: [], timeout_ms: 500)
+    end.to raise_error(ArgumentError, /not a clock/)
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "runs each query read-only, so a candidate can't write" do
     conn.exec("CREATE SEQUENCE read_only_probe")
     expect { compare("SELECT 1::int8", "SELECT nextval('read_only_probe')") }

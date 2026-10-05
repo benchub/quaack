@@ -23,5 +23,17 @@ RSpec.describe ServerClockHelpers do
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0).to be < 5
       expect(Thread.list - threads).to eq([])
     end
+
+    # Its failure means the statement wasn't cancelled as the spec meant,
+    # so a block that passes anyway mustn't hide it.
+    it "reports the canceller's own failure when the block succeeds" do
+      allow(self).to receive(:wait_until_sleeping).and_wrap_original do
+        sleep 0.2
+        raise "the canceller failed"
+      end
+      threads = Thread.list
+      expect { cancel_when_sleeping(conn) { :done } }.to raise_error(RuntimeError, "the canceller failed")
+      expect(Thread.list - threads).to eq([])
+    end
   end
 end

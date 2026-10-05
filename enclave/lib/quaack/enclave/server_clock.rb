@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "pg"
+
 module Quaack
   module Enclave
     # Tells a statement_timeout from any other cancel by the server's clock.
@@ -19,12 +21,17 @@ module Quaack
     # the clock again in a transaction that isn't aborted. Neither read is
     # part of the statement, so neither adds to its timing.
     #
-    # It uses only the connection's exec and names no PG constant, as
-    # ArenaRunner needs. ArenaRunner reads NOW_SQL itself, in each
-    # statement's own round trip, rather than set a savepoint per statement.
+    # It uses only the connection's exec. ArenaRunner reads NOW_SQL itself,
+    # in each statement's own round trip, rather than set a savepoint per
+    # statement, and names READ_ERRORS rather than a PG constant.
     module ServerClock
       SAVEPOINT = "quaack_server_clock"
       NOW_SQL = "SELECT extract(epoch FROM clock_timestamp()) * 1000"
+      # What a failed read of the clock raises, as when the connection
+      # drops. Anything else, such as a NoMethodError, or Float's
+      # ArgumentError when what's read isn't a clock, is a bug in the
+      # enclave, and is raised, not taken for a failed read.
+      READ_ERRORS = [PG::Error].freeze
 
       module_function
 
@@ -40,11 +47,12 @@ module Quaack
       # reads the clock, the transaction is usable again afterwards; the
       # caller rolls it back either way. If the clock can't be read,
       # the cancel can't be shown to be the timeout, so it's false, and the
-      # caller raises the cancel itself, not the read's error. ArenaRunner
+      # caller raises the cancel itself, not the read's error, unless its
+      # ROLLBACK fails too, as when the connection has dropped. ArenaRunner
       # does the same, reporting statement_canceled (see ArenaRunner::Cancel).
       def timed_out?(connection, started, timeout_ms)
         ms(connection, "ROLLBACK TO SAVEPOINT #{SAVEPOINT};") - started >= timeout_ms
-      rescue StandardError
+      rescue *READ_ERRORS
         false
       end
 

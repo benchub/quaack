@@ -94,6 +94,15 @@ RSpec.describe Quaack::Enclave::RunDiscipline do
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
   end
 
+  # Only a Postgres error from the read counts as a failed read. A bug in
+  # the enclave's own code is raised, not passed off as a cancel.
+  it "raises a bug in reading the server's clock after a cancel, not the cancel" do
+    misread = misread_clock(conn, "ROLLBACK TO SAVEPOINT")
+    expect { run("SELECT pg_sleep(2)", timeout_ms: 100, connection: misread) }
+      .to raise_error(ArgumentError, /not a clock/)
+    expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
+  end
+
   it "refuses SQL holding more than one statement, so a COMMIT can't end the READ ONLY transaction" do
     conn.exec("CREATE TABLE rd_m (x int)")
     expect { run("COMMIT; INSERT INTO rd_m VALUES (1)") }.to raise_error(PG::SyntaxError, /multiple commands/)
