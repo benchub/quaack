@@ -5182,3 +5182,15 @@ These come from the build and review of 20261004-43.
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed: baseline row in the ranking table; Against your query shows numbers.
+
+### 20261004-13. Two live-clock edge cases.
+
+The second review of 20261003-16 found these minors in `driver/lib/quaack/driver/progress.rb`:
+- At line 156, nothing tests that `draw` sets `@cut`. If the window widens within the last second before a line ends, after a redraw cut it, the line must still be reprinted whole. Reproduce it at 36 columns, with the clock at 1.2s, then widen to 80 before the step ends.
+- At line 144, when a finished line plus its clock is exactly as wide as the terminal, the trailing `\e[K` runs while the cursor waits to wrap, and on xterm it erases the last character, so `1m02s` shows as `1m02`. Print `\e[K` before the text instead.
+
+- **Depends on:** 20261003-16.
+- **Came from:** The second review of 20261003-16.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** Landed: @cut pinned by a test; \e[K printed before the text so a full-width line keeps its last character.
