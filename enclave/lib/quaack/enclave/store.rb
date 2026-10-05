@@ -95,10 +95,15 @@ module Quaack
       # user, or it raises BadRun. current_uid is there for tests.
       def self.open(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
+        check_run_directory(run_id, path, base, current_uid)
+        new(run_id, path)
+      end
+
+      # What open checks, so teardown can check it again just before the
+      # delete.
+      def self.check_run_directory(run_id, path, base, current_uid)
         problem = PrivateFiles.directory_problem(look_up(run_id, base) { PrivateFiles.lstat(path) }, current_uid)
         raise BadRun, "run #{run_id} #{problem}" if problem
-
-        new(run_id, path)
       end
 
       # Private helpers for the class and its instances alike, so teardown
@@ -134,7 +139,7 @@ module Quaack
         raise Error, "run ID isn't in the form YYYYMMDDTHHMMSSZ-xxxxxxxx"
       end
 
-      private_class_method :run_path, :new
+      private_class_method :run_path, :check_run_directory, :new
 
       attr_reader :run_id, :path
 

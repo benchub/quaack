@@ -24,13 +24,16 @@ module Quaack
       #
       # A block, if given, gets the opened Store just before the delete, so
       # what it reads is from the same open the delete uses. An error from
-      # it leaves the run alone.
+      # it leaves the run alone. The block can run long, as destroy_command
+      # can, so the run directory is checked again after it, as open checks
+      # it. A run that fails that check is kept, and teardown raises BadRun,
+      # as a rerun would.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
         # A fast path only: the recheck below would say already_gone too.
         return :already_gone unless look_up(run_id, base) { PrivateFiles.lstat(path) }
 
-        self.open(run_id, base:, current_uid:).tap { yield it if block_given? }.teardown
+        opened(run_id, path, base, current_uid) { yield it if block_given? }.teardown
         :deleted
       rescue BadBase
         # Not a run that went: the run's path can't be trusted to say.
@@ -44,12 +47,21 @@ module Quaack
         :already_gone
       end
 
+      # Opens the run and yields it, then checks the run directory again, as
+      # open checks it, since the block can run long.
+      def self.opened(run_id, path, base, current_uid)
+        store = self.open(run_id, base:, current_uid:)
+        yield store
+        check_run_directory(run_id, path, base, current_uid)
+        store
+      end
+
       def self.still_there?(path)
         PrivateFiles.lstat(path)
       rescue SystemCallError
         true
       end
-      private_class_method :still_there?
+      private_class_method :opened, :still_there?
     end
   end
 end

@@ -931,6 +931,53 @@ RSpec.describe Quaack::Enclave::Store do
       File.chmod(0o700, closed)
     end
 
+    # Task 20261004-73: the block can run for an hour (destroy_command), so
+    # the run directory is checked again, as open checks it, after the block
+    # and before the delete.
+    describe "rechecking the run directory after the block" do
+      it "refuses a run directory loosened to 0755 during the block as BadRun, and keeps it" do
+        store.write("literals", [STORE_SENTINEL])
+
+        expect_store_error(/\Arun #{store.run_id} has a directory with mode 0755, not 0700\z/) do
+          described_class.teardown(store.run_id, base:) { File.chmod(0o755, it.path) }
+        end
+        expect { described_class.teardown(store.run_id, base:) }.to raise_error(described_class::BadRun)
+        expect(File.read(File.join(store.path, "literals.json"))).to include(STORE_SENTINEL)
+      end
+
+      it "refuses a run directory swapped for a symlink during the block as BadRun, and keeps both" do
+        store.write("literals", [STORE_SENTINEL])
+        moved = File.join(@tmp, "moved")
+
+        expect_store_error(/\Arun #{store.run_id} has a path that isn't a directory\z/) do
+          described_class.teardown(store.run_id, base:) do |opened|
+            File.rename(opened.path, moved)
+            File.symlink(moved, opened.path)
+          end
+        end
+        expect(File.symlink?(store.path)).to be(true)
+        expect(File.read(File.join(moved, "literals.json"))).to include(STORE_SENTINEL)
+      end
+
+      # Only root could chown it, so the stat the recheck reads stands in
+      # for a run directory that changed owner during the block.
+      it "checks the owner again too" do
+        other = Process.euid + 1
+        expect_store_error(/\Arun #{store.run_id} has a directory owned by uid #{other}, not the current user/) do
+          described_class.teardown(store.run_id, base:) do
+            allow(Quaack::Enclave::PrivateFiles).to receive(:lstat).and_wrap_original do |lstat, path|
+              lstat.call(path).tap { allow(it).to receive(:uid).and_return(other) if path == store.path }
+            end
+          end
+        end
+        expect(File.directory?(store.path)).to be(true)
+      end
+
+      it "is :already_gone when the block's run vanishes, as when another teardown got there first" do
+        expect(described_class.teardown(store.run_id, base:) { FileUtils.rm_r(it.path) }).to eq(:already_gone)
+      end
+    end
+
     it "keeps the run-path helper private" do
       expect(described_class.private_methods).to include(:run_path)
       expect { described_class.run_path(store.run_id, base) }.to raise_error(NoMethodError)
