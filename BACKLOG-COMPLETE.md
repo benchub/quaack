@@ -4872,3 +4872,16 @@ Refuse to send a statement when the connection isn't inside the runner's transac
 - **Design:** none (tests only).
 - **Status:** done
 - **Landed:** Landed in fcd2b7a. Review minors went to 20261004-42.
+
+### 20261004-40. Connection note: port wording.
+
+These are review minors from 20261004-37.
+
+1. README (around line 442) says the message "names the production server and port it tried". It names a port only when `quaack start --port` gave one. Change it to "and its port, if you gave `quaack start --port`".
+2. A hand-edited run record with a valid port but an invalid server gives `psql -h <server> -p 6543`, which is half filled in. Leave out `-p` when the server is the placeholder, or accept it as is and say so.
+
+- **Depends on:** 20261004-37.
+- **Came from:** The review of 20261004-37.
+- **Design:** inventory.
+- **Status:** done
+- **Landed:** Landed in da1cf3e. One review minor, the README wording for runs with no recorded server, went to 20261004-44. The other minor questioned this task's own choice to drop -p when the server is unknown, which only affects hand-edited records, so it wasn't filed.

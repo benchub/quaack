@@ -2340,17 +2340,7 @@ When a cancel or timeout arrives while the pipeline is finishing, drain to the S
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-40. Connection note: port wording.
-
-These are review minors from 20261004-37.
-
-1. README (around line 442) says the message "names the production server and port it tried". It names a port only when `quaack start --port` gave one. Change it to "and its port, if you gave `quaack start --port`".
-2. A hand-edited run record with a valid port but an invalid server gives `psql -h <server> -p 6543`, which is half filled in. Leave out `-p` when the server is the placeholder, or accept it as is and say so.
-
-- **Depends on:** 20261004-37.
-- **Came from:** The review of 20261004-37.
-- **Design:** inventory.
-- **Status:** todo
+### 20261004-40. Connection note: port wording. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-41. ArenaRunner post-cancel guard: follow-ups.
 
@@ -2390,4 +2380,13 @@ Find deterministic reproductions, for example by injection, and write the tests 
 - **Depends on:** 20261004-39.
 - **Came from:** The builder of 20261004-39.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261004-44. README: the connection note when no server is recorded.
+
+This is a review minor from 20261004-40. README says the `production_connection_failed` message "names the production server it tried". For runs with no recorded server (started before 20261004-17), it says "the production server you gave quaack start" instead. Make README say so.
+
+- **Depends on:** 20261004-40.
+- **Came from:** The review of 20261004-40.
+- **Design:** inventory.
 - **Status:** todo
