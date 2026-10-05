@@ -2236,36 +2236,7 @@ Minor findings from the review of 20261004-18:
 - **Design:** intake, run-server.
 - **Status:** todo
 
-### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite.
-
-In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite_<n>` took 20–21 minutes (21m11s, 21m05s, 19m47s, 21m11s), whatever the rewrite. The process pegs one core while the arena sits idle: its last query is a `ROLLBACK` minutes old. rbspy can't attach to Ubuntu's packaged `ruby3.4` ("Couldn't find Ruby VM address").
-
-1. **Profiler.** When `QUAACKS_PROFILE=<path>` is set, `quaacks` starts a thread that samples `Thread.main.backtrace_locations` every 10 ms. At exit it writes a count of each `path:lineno` (self and total) to `<path>` on the jump server.
-   - Use only the standard library, with no new gem; `Boundary::ENCLAVE_ALLOWED_GEMS` stays as it is.
-   - It records code locations only, never values, and never goes to stdout, so nothing crosses the trust boundary. A spec plants a sentinel in the data and checks it's absent from the profile.
-   - Document it in README's troubleshooting.
-2. **Reproduce.** Build a realistic, larger fixture, such as a Rails-style schema with 10–20 tables, several unique indexes and foreign keys, CHECK constraints, and a few-table join query. Time `rewrite-test` on it, and profile it with (1).
-3. **Fix the hotspots** the profile shows, keeping every outcome the same.
-   - Code reading suggests `Scenarios::RowSet` is the first suspect: `parents_of` uses `Array#include?`, `parent` runs a linear `find` per foreign key per row, and `clash?` scans the table's rows per unique constraint per new row. Hash indexes would fix all three.
-   - The user's gdb samples (2026-10-04) back this up. All five native stacks sit in structural equality and hashing:
-     - `rb_equal` → `rb_funcallv` → `rb_equal`, nested.
-     - `rb_st_lookup` → `rb_eql`, wrapping `rb_hash_aset` and `rb_hash_delete_entry`. That's Ruby's recursion guard for comparing or hashing nested objects.
-     - All of it sits under `rb_hash_foreach` and many nested `rb_yield` frames.
-     That matches whole `ArenaFixture::FixtureRow` values (a `Data` holding arrays and a nested `DeferredInsert`) being compared and hashed over and over:
-     - `@rows[t].include?(r)` and `.delete` in `add?`.
-     - `tried.include?(rows)` in `add_any?`.
-     - `found.include?` and `rows.include?` in `parents_of`.
-     - `.uniq` in `Parts#spill?`.
-     - The `@evaluated` cache keyed on `[row, index]`, which `clash?` hits for every existing row.
-     Key on cheap identities instead, such as `object_id`, a per-row integer, or precomputed key tuples per constraint.
-   - Each rewrite runs in a new process and rebuilds the original query's scenarios and probe caches. Consider storing what's reusable in the run store, as 20261004-5 does within one process.
-   - Add a timing guard spec on the large fixture with a generous bound, so a regression shows up.
-4. **Ask the user** to rerun with `QUAACKS_PROFILE` set, and confirm.
-
-- **Depends on:** none. Related to 20261004-5.
-- **Came from:** The user, 2026-10-04.
-- **Design:** rewrite-test, Where QUAACK runs.
-- **Status:** todo
+### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-24. Flaky ProductionComparison timeout spec under load.
 
@@ -2311,4 +2282,25 @@ Minor findings from the first review of 20261004-21:
 - **Came from:** The first review of 20261004-21.
 - **Design:** Transport, Where QUAACK runs.
 - **Status:** todo
+
+### 20261004-27. rewrite-test CPU: confirm on the user's schema, and the open items from 20261004-23.
+
+20261004-23 cut rewrite-test's CPU on a 19-table fixture from about 25 s to about 3 s. It did that by memoizing `Topology#members` (now `Slots`), the result-comparison Shape, each build's rows, and shared expression-index keys. Still open:
+
+1. **Confirm on the user's schema.** Ask the user to rerun with `QUAACKS_PROFILE=<path>` on 0.1.5 and share the profile. That's 20261004-23's step 4.
+2. **RowSet's linear scans** are unchanged: `include?`, `parent`'s `find`, `clash?` and `parents_of`. The task suggested them, but the profile on the fixture didn't show them. Fix them if the user's profile does, test first.
+3. **Run-store reuse** of the original query's scenarios across `quaacks` processes isn't done. Do it only if the profile calls for it.
+4. **Untested evaluate-key parts.** Dropping `index` or `row.table` from `RowSet`'s evaluate key leaves every spec green. Add a test with two expression unique indexes over equal-valued columns, e.g. `lower(email)` and `lower(username)` both filled with `k5`.
+5. **Profile file mode.** When the `QUAACKS_PROFILE` file already exists, it keeps its old mode, but README and DESIGN.md promise 0600. Set the mode explicitly.
+6. **Timing margin.** Reverting only the Shape memo gives 12.4 s against the 12 s bound. The memo's own count test covers it, but consider a tighter bound or a larger gap.
+7. **Builder findings to check:**
+   - A `character varying NOT NULL CHECK (col IN (...))` column refuses with `unsatisfiable_check`.
+   - `priority >= 3` under `CHECK (priority BETWEEN 1 AND 5)` also refuses with `unsatisfiable_check`.
+   - An invoices query (`GROUP BY i.number ORDER BY i.number LIMIT 10`) fails when compared with itself, on main too.
+   Split these into their own tasks if they're real.
+
+- **Depends on:** 20261004-23.
+- **Came from:** The review of 20261004-23, and its builder.
+- **Design:** rewrite-test, Where QUAACK runs.
+- **Status:** todo (item 1 needs the user)
 

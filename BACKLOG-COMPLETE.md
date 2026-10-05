@@ -4695,3 +4695,35 @@ A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 
 - **Design:** Where QUAACK runs, Transport.
 - **Status:** done
 - **Landed:** merge b402978, plus a follow-up refactor that moves the terminal-width read into Fit to keep Progress under RuboCop ClassLength. `incomplete` names the subcommand and exit status or signal; exit 255 with no stdout probes `ssh … true`, and a failed probe gives `ssh_failed` with a resume hint for each command; ssh keepalive and ConnectTimeout defaults; progress notes for enclave calls under LLM lines; deploy fails cleanly on ssh_failed at its version check. No retry, no version bump. Round 1 found one blocking issue (deploy crash), now fixed; round 2 was clean. Minors are 20261004-26.
+
+### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite.
+
+In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite_<n>` took 20–21 minutes (21m11s, 21m05s, 19m47s, 21m11s), whatever the rewrite. The process pegs one core while the arena sits idle: its last query is a `ROLLBACK` minutes old. rbspy can't attach to Ubuntu's packaged `ruby3.4` ("Couldn't find Ruby VM address").
+
+1. **Profiler.** When `QUAACKS_PROFILE=<path>` is set, `quaacks` starts a thread that samples `Thread.main.backtrace_locations` every 10 ms. At exit it writes a count of each `path:lineno` (self and total) to `<path>` on the jump server.
+   - Use only the standard library, with no new gem; `Boundary::ENCLAVE_ALLOWED_GEMS` stays as it is.
+   - It records code locations only, never values, and never goes to stdout, so nothing crosses the trust boundary. A spec plants a sentinel in the data and checks it's absent from the profile.
+   - Document it in README's troubleshooting.
+2. **Reproduce.** Build a realistic, larger fixture, such as a Rails-style schema with 10–20 tables, several unique indexes and foreign keys, CHECK constraints, and a few-table join query. Time `rewrite-test` on it, and profile it with (1).
+3. **Fix the hotspots** the profile shows, keeping every outcome the same.
+   - Code reading suggests `Scenarios::RowSet` is the first suspect: `parents_of` uses `Array#include?`, `parent` runs a linear `find` per foreign key per row, and `clash?` scans the table's rows per unique constraint per new row. Hash indexes would fix all three.
+   - The user's gdb samples (2026-10-04) back this up. All five native stacks sit in structural equality and hashing:
+     - `rb_equal` → `rb_funcallv` → `rb_equal`, nested.
+     - `rb_st_lookup` → `rb_eql`, wrapping `rb_hash_aset` and `rb_hash_delete_entry`. That's Ruby's recursion guard for comparing or hashing nested objects.
+     - All of it sits under `rb_hash_foreach` and many nested `rb_yield` frames.
+     That matches whole `ArenaFixture::FixtureRow` values (a `Data` holding arrays and a nested `DeferredInsert`) being compared and hashed over and over:
+     - `@rows[t].include?(r)` and `.delete` in `add?`.
+     - `tried.include?(rows)` in `add_any?`.
+     - `found.include?` and `rows.include?` in `parents_of`.
+     - `.uniq` in `Parts#spill?`.
+     - The `@evaluated` cache keyed on `[row, index]`, which `clash?` hits for every existing row.
+     Key on cheap identities instead, such as `object_id`, a per-row integer, or precomputed key tuples per constraint.
+   - Each rewrite runs in a new process and rebuilds the original query's scenarios and probe caches. Consider storing what's reusable in the run store, as 20261004-5 does within one process.
+   - Add a timing guard spec on the large fixture with a generous bound, so a regression shows up.
+4. **Ask the user** to rerun with `QUAACKS_PROFILE` set, and confirm.
+
+- **Depends on:** none. Related to 20261004-5.
+- **Came from:** The user, 2026-10-04.
+- **Design:** rewrite-test, Where QUAACK runs.
+- **Status:** done
+- **Landed:** merge e57a7fe. The profile showed `Topology#members` comparing `[TableName, name]` pairs, which matches the gdb stacks; fixed with `Slots`. Also memoized result-comparison Shapes and their queries (cleared at 64), each build's rows in `Parts#spill?`, and shared expression-index keys (484 queries become 5). CPU on a 19-table Rails-style fixture went from about 25 s to about 3 s, with byte-identical outputs. Added `QUAACKS_PROFILE`, a stdlib sampling profiler, and a 12 s timing guard. The review had no blocking findings. Confirming on the user's schema, RowSet scans and the minors are 20261004-27.
