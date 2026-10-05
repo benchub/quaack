@@ -2325,3 +2325,24 @@ These are review minors from 20261004-30, in `enclave/spec/run_server_check_post
 - **Came from:** The review of 20261004-30.
 - **Design:** none (tests only).
 - **Status:** todo
+
+### 20261004-34. ServerClock follow-ups.
+
+These are review minors from 20261004-28.
+
+1. The `cancel_when_sleeping` helper in `enclave/spec/support/server_clock.rb` can hide a spec's real failure. Make it report the failure of the code under test, not its own timeout.
+2. A failed clock read is handled differently in two places: RunDiscipline raises the read's error, while ArenaRunner reports `statement_canceled`. Pick one behavior, document it, and test it.
+
+- **Depends on:** 20261004-28.
+- **Came from:** The review of 20261004-28.
+- **Design:** run discipline, rewrite-test.
+- **Status:** todo
+
+### 20261004-35. Order-dependent Deparse cache spec.
+
+`spec/result_comparison_spec.rb:172` (the `Deparse.faithfully` call-count spec from 20261004-23) failed once under `rake` with seed 34956: it expected 4 calls and got 8. It passes alone. It's probably sharing the cache with an earlier example. Reproduce with that seed, then isolate the cache per example or reset it.
+
+- **Depends on:** 20261004-23.
+- **Came from:** The builder of 20261004-28.
+- **Design:** none (tests only).
+- **Status:** todo
