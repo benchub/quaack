@@ -2211,27 +2211,12 @@ Add a fixed note to `EnclaveError#rule_with_note` for this rule, the way `run_fr
 
 It must never carry libpq's message, which can name the user or the database. Do the same for the run server's connection failure, if it has its own rule. Check README's setup section says this too.
 
-- **Depends on:** none.
+- **Depends on:** none. Mention `quaack start --port` (20261004-18, landed) in the note.
 - **Came from:** The user, 2026-10-04.
 - **Design:** inventory, Where QUAACK runs.
 - **Status:** todo
 
-### 20261004-18. `quaack start --port`: production's port.
-
-`quaack start` takes only `--server`, so every production connection passes only the host: inventory, qualify, statistics, volatility, and schema-dump's `pg_dump`. libpq then takes the port from `PGPORT`, or falls back to 5432. The user's production servers don't listen on 5432, and `PGPORT` applies to every server, so a run can't name its own port (the user, 2026-10-04).
-
-- `quaack start` takes an optional `--port <n>`, passed to `quaacks intake --port`. Check it the way `run-server` checks its `--port`.
-- Intake stores it with the run's `server`, in a way that leaves runs without it working as now. Without `--port`, nothing changes: libpq's setup decides.
-- Every production connection uses it: each `PG.connect`, and `pg_dump --port`. Find them all, ideally through one helper, so a new step can't forget it.
-- It must not change the run server's connections, which already have their own port.
-- A real-Postgres spec runs production on a port other than 5432, with `PGPORT` unset or wrong, and checks that each production step connects.
-- Update README's `quaack start` section and DESIGN.md's intake, inventory and schema-dump. The port is the operator's own input, not production data, so it doesn't cross the trust boundary. Say so.
-- If the store format changes, follow `store_format`. A gem version bump comes with it.
-
-- **Depends on:** none. 20261004-17's note should mention `--port` once this lands.
-- **Came from:** The user, 2026-10-04.
-- **Design:** intake, inventory, schema-dump, Where QUAACK runs.
-- **Status:** todo
+### 20261004-18. `quaack start --port`: production's port. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-19. `quaack run` on a terminal: drop lines the live clock makes redundant.
 
@@ -2298,4 +2283,16 @@ A real `quaack run` failed 3 minutes into Shiny Boat's counterexamples, after a 
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-04.
 - **Design:** Where QUAACK runs, Transport.
+- **Status:** todo
+
+### 20261004-22. Port check: minor findings.
+
+Minor findings from the review of 20261004-18:
+
+- **Bad encodings raise.** `Protocol::Port.valid?` (`protocol/lib/quaack/protocol/port.rb:17`) raises on invalid UTF-8 (`ArgumentError`) or UTF-16 input (`Encoding::CompatibilityError`) instead of returning false. So `--port $'\xff'` gives `internal_error` instead of `bad_port` or `bad_run_server_port`. The old run-server check tested `ascii_only?` first. Check `valid_encoding? && ascii_only?` first, with a spec for each case.
+- **The operator's commands don't get the port.** `run_server_command`, `destroy_command` and `memory_command` get only `{server}`, not production's port. Add a `{port}` placeholder only if a script needs it, and ask the user first.
+
+- **Depends on:** 20261004-18.
+- **Came from:** The review of 20261004-18.
+- **Design:** intake, run-server.
 - **Status:** todo
