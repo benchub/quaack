@@ -4591,3 +4591,17 @@ Tests check that both lists have 200 words, no duplicates, and the syllable coun
   - **Change:** `driver/lib/quaack/driver/rewrite_names.rb` holds 200 adjectives and 200 nouns, half of one syllable and half of two. That gives 20,000 three-syllable names. The name for rewrite N is the Nth pair of a shuffle seeded by SHA-256 of the run ID and the draw's position, so it's stable across processes and resumes. Past the last name, the label falls back to "Rewrite <n>".
   - **Where names show:** progress lines and the readable report use names. The payload carries `name` next to the number. Anchors, the store, the protocol and the enclave keep the number. No LLM prompt named a rewrite by number, so none changed.
   - **Review:** one round, with no blocking findings. The minors went to 20261004-16.
+
+### 20261004-16. Rewrite names: drop word pairs that read badly.
+
+From the review of 20261003-20. Each word in `driver/lib/quaack/driver/rewrite_names.rb` is family-friendly alone, but some pairs aren't: "Pink Beaver" is crude slang, and "Brown Monkey" or "Tan Monkey" can read as racial. `report_spec.rb` even shows "Pink Monkey". Drop `beaver` and `monkey`, and replace them with harmless two-syllable nouns so each list keeps 100 one-syllable and 100 two-syllable words. Re-check every color adjective against animal nouns for a similar reading. Update any spec that names a dropped word.
+
+Also minor: `RewriteNames.name` replays every draw up to n on each call. That's negligible at real sizes. Memoize per run only if it's simple.
+
+- **Depends on:** 20261003-20.
+- **Came from:** The review of 20261003-20.
+- **Design:** Progress lines for `quaack run`, report.
+- **Status:** done
+- **Landed:** 2026-10-04, as a merge of task/20261004-16.
+  - **Change:** 21 words were swapped for others with the same syllable count, among them `beaver`, `monkey`, `pink`, `rocket`, `crystal` and `waffle`. A spec pins the dropped words, and checks that none of the bad pairs can be drawn. No memoization: the replay costs next to nothing.
+  - **Review:** round 1 blocked on "Blue Waffle", the fix round swapped `waffle` for `parsnip`, and round 2 was clean. The minors went to 20261004-20.

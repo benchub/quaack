@@ -2197,16 +2197,7 @@ Minor findings from the review of 20261003-21:
 - **Design:** The outline, `burndown`.
 - **Status:** todo
 
-### 20261004-16. Rewrite names: drop word pairs that read badly.
-
-From the review of 20261003-20. Each word in `driver/lib/quaack/driver/rewrite_names.rb` is family-friendly alone, but some pairs aren't: "Pink Beaver" is crude slang, and "Brown Monkey" or "Tan Monkey" can read as racial. `report_spec.rb` even shows "Pink Monkey". Drop `beaver` and `monkey`, and replace them with harmless two-syllable nouns so each list keeps 100 one-syllable and 100 two-syllable words. Re-check every color adjective against animal nouns for a similar reading. Update any spec that names a dropped word.
-
-Also minor: `RewriteNames.name` replays every draw up to n on each call. That's negligible at real sizes. Memoize per run only if it's simple.
-
-- **Depends on:** 20261003-20.
-- **Came from:** The review of 20261003-20.
-- **Design:** Progress lines for `quaack run`, report.
-- **Status:** todo
+### 20261004-16. Rewrite names: drop word pairs that read badly. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-17. Explain `production_connection_failed`.
 
@@ -2273,4 +2264,19 @@ Specs use the fake clock and the fake terminal `io` that progress_spec.rb alread
 - **Depends on:** none.
 - **Came from:** The user, 2026-10-04.
 - **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-20. Rewrite names: ambiguous words and borderline pairs.
+
+Minor findings from both reviews of 20261004-16, in `driver/lib/quaack/driver/rewrite_names.rb`:
+
+- **Ambiguous syllable counts:** `owl` is often said "ow-ul", and `sparkly` "spar-kuh-lee". Swap each for an unambiguous word with the same count.
+- **Borderline pairs:** "Fuzzy Clam", "Woolly Clam" and "Fluffy Clam" ("clam" is crude slang), "Fuzzy Duck" (a crude spoonerism), "Fuzzy Plum", and "Golden Dawn" (a Greek neo-Nazi party). Dropping `clam`, `fuzzy` and `dawn`, or similar, fixes them. Add them to the spec's bad-pair list.
+- **Dead test entry:** "Eager Beaver" in the spec's bad-pair list can never be drawn, since both words have two syllables. Replace it with a drawable pair, or drop it.
+
+Each list keeps 100 one-syllable and 100 two-syllable words. Update the names pinned in specs that move.
+
+- **Depends on:** 20261004-16.
+- **Came from:** Both reviews of 20261004-16.
+- **Design:** Progress lines for `quaack run`, report.
 - **Status:** todo
