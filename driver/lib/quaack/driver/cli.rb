@@ -114,16 +114,16 @@ module Quaack
       # error text. Any other failure prints only its rule, as for start.
       # What to do next says to resume the run only while its store is left
       # (Teardown.next_step).
-      def run_command(run:, rewrites:, out:, keep:, server:)
+      def run_command(run:, rewrites:, out:, keep:, server:) # rubocop:disable Metrics/AbcSize
         require_run
-        host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
+        where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
         sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
-        teardown = Teardown.new(@transport.call(host), run, @stderr)
-        EnclaveVersion.check!(teardown.transport, host)
+        teardown = Teardown.new(@transport.call(where[:jump]), run, @stderr)
+        EnclaveVersion.check!(teardown.transport, where[:jump])
         drive(teardown, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{EnclaveError.shown(e, Teardown.next_step(teardown, run))}\n"
+        @stderr.print "quaack run failed: #{EnclaveError.shown(e, Teardown.next_step(teardown, run), **where)}\n"
         1
       end
 

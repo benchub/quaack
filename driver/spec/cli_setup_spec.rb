@@ -136,6 +136,54 @@ RSpec.describe "quaack setup" do
                          "and this version can't resume it. Start a new run with quaack start.\n")
   end
 
+  # Task 20261004-17: the note names the jump host and production server
+  # from the laptop's record of the run.
+  describe "a connection failure" do
+    let(:libpq) do
+      "your libpq setup on the jump server: PG* environment variables, ~/.pg_service.conf with PGSERVICE, and " \
+        "~/.pgpass. A non-interactive ssh session may not load the shell rc file that sets them."
+    end
+
+    def fail_inventory(rule)
+      failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory", rule:, exit_status: 70)
+      expect(cli.run(["setup", "--run", run_id])).to eq(1)
+    end
+
+    it "names production and the jump host, says where the rest comes from, and how to resume" do
+      Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
+      fail_inventory("production_connection_failed")
+
+      expect(errors).to eq("quaack setup failed: production_connection_failed: couldn't connect to production at " \
+                           "prod-1. It gives libpq only that host, and the port when you gave `quaack start " \
+                           "--port`. The port otherwise, and the user, database, and password, come from #{libpq} " \
+                           "Test it with `ssh jump-1 'psql -h prod-1 -c \"select 1\"'`, adding -p <n> if you gave " \
+                           "quaack start --port. If production listens on another port than your libpq setup " \
+                           "gives, start a new run with `quaack start --port <n>`. Otherwise fix your libpq " \
+                           "setup, then resume with `quaack setup --run #{run_id}`\n")
+    end
+
+    it "says the production server you gave quaack start for a run recorded without one" do
+      fail_inventory("production_connection_failed")
+
+      expect(errors).to start_with("quaack setup failed: production_connection_failed: couldn't connect to the " \
+                                   "production server you gave quaack start. ")
+      expect(errors).to include("Test it with `ssh jump-1 'psql -h <server> -c")
+    end
+
+    it "names the jump host for the run server's, and how to resume" do
+      Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
+      failing["racetrack-setup"] = Quaack::Driver::EnclaveError.new(subcommand: "racetrack-setup",
+                                                                    rule: "run_server_connection_failed",
+                                                                    exit_status: 70)
+
+      expect(cli.run(["setup", "--run", run_id])).to eq(1)
+      expect(errors).to start_with("quaack setup failed: run_server_connection_failed: couldn't connect to the " \
+                                   "run server. ")
+      expect(errors).to end_with("Test it with `ssh jump-1 'psql -h <host> -p <port> -d <racetrack db> -c " \
+                                 "\"select 1\"'`. Then resume with `quaack setup --run #{run_id}`\n")
+    end
+  end
+
   context "with another quaacks version on the jump server" do
     let(:enclave_version) { "0.0.9" }
 

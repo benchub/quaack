@@ -275,6 +275,36 @@ RSpec.describe "quaack run" do
     )
   end
 
+  # Task 20261004-17: the note names the jump host and production server
+  # from the laptop's record of the run, and what to do next once the run
+  # is torn down.
+  it "names production and the jump host when a setup step can't connect to production" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1")
+    entries.merge!(setup_done.transform_values { false })
+    failing["inventory"] = Quaack::Driver::EnclaveError.new(subcommand: "inventory",
+                                                            rule: "production_connection_failed", exit_status: 70)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to match(
+      [1, start_with("#{torn}quaack run failed: production_connection_failed: couldn't connect to production at " \
+                     "prod-1. ") & include("Test it with `ssh jump-1 'psql -h prod-1 -c ") &
+          end_with("Otherwise fix your libpq setup, then start a new run with `quaack start`\n")]
+    )
+  end
+
+  it "names the jump host when a step can't connect to the run server" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback",
+                                                                 rule: "run_server_connection_failed", exit_status: 70)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to match(
+      [1, start_with("#{torn}quaack run failed: run_server_connection_failed: couldn't connect to the run server. ") &
+          include("Test it with `ssh jump-1 'psql -h <host> -p <port>")]
+    )
+  end
+
   # Task 20261004-26: ssh is down, so teardown isn't tried, and the store is
   # left to resume.
   it "says when ssh couldn't reach the jump server, skips teardown, and gives the command that resumes the run" do

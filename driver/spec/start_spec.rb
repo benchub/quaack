@@ -240,6 +240,28 @@ RSpec.describe Quaack::Driver::Start do
     expect(Dir.exist?(File.join(home, ".quaack", "runs"))).to be(false)
   end
 
+  # Task 20261004-17: the connection-failure notes name the production
+  # server, from the laptop's own record, not the enclave's.
+  it "records the production server the operator gave, alongside the jump host" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(server: "prod-1.example.com")).to eq(run_id)
+    expect(Quaack::Driver::Runs.new(home).server(run_id)).to eq("prod-1.example.com")
+  end
+
+  it "reads back no server for a run recorded without one, as an older driver did" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1")
+
+    expect(Quaack::Driver::Runs.new(home).server(run_id)).to be_nil
+  end
+
+  it "reads back no server for a record whose server isn't a host name, so a note never shows it" do
+    Quaack::Driver::Runs.new(home).record(run_id, "jump-1", server: "prod-1; rm -rf ~")
+
+    expect(Quaack::Driver::Runs.new(home).server(run_id)).to be_nil
+  end
+
   it "reads back no host for a run it never recorded" do
     expect(Quaack::Driver::Runs.new(home).host(run_id)).to be_nil
   end

@@ -49,7 +49,7 @@ module Quaack
         @stdout.print "#{run_id} set up\n"
         0
       rescue EnclaveError, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id))}\n"
+        @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id), **Runs.new(@home).where(run_id))}\n"
         1
       end
 
