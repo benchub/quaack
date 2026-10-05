@@ -176,11 +176,15 @@ module Quaack
         @kept = {}
 
         def self.parse(sql, query)
+          sql = sql.dup.freeze unless sql.frozen?
           @kept.fetch([sql, query]) do |key|
             @kept.clear if @kept.size >= KEPT
             @kept[key] = new(sql, query)
           end
         end
+
+        # Drops every Shape parse kept.
+        def self.forget = @kept.clear
 
         def initialize(sql, query)
           @sql = sql.frozen? ? sql : sql.dup.freeze
