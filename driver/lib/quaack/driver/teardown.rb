@@ -48,10 +48,16 @@ module Quaack
 
       # What to do after `quaack run --run <run_id>` failed: resume it
       # while its store is left, or start a new run once teardown deleted
-      # it. teardown is the run's Teardown, or nil if the run failed before
-      # it had one.
+      # it. When the run itself succeeded and only its teardown failed,
+      # resuming would redo the run's last steps, so it says to tear down.
+      # teardown is the run's Teardown, or nil if the run failed before it
+      # had one.
       def self.next_step(teardown, run_id)
-        teardown&.deleted? ? START_OVER : "resume with `quaack run --run #{run_id}`"
+        return START_OVER if teardown&.deleted?
+        return "tear the run down with `#{command(run_id)}` on the jump server (the run itself finished)" if
+          teardown&.only_teardown_left?
+
+        "resume with `quaack run --run #{run_id}`"
       end
 
       def self.kept(run_id)
@@ -65,6 +71,7 @@ module Quaack
         @run_id = run_id
         @stderr = stderr
         @deleted = false
+        @only_teardown_left = false
       end
 
       # As self.around, for a caller that then asks deleted?.
@@ -88,11 +95,17 @@ module Quaack
       # teardown, and before teardown runs.
       def deleted? = @deleted
 
+      # Whether the run succeeded and then its teardown failed.
+      def only_teardown_left? = @only_teardown_left
+
       # Tears down, and raises the teardown's error only when the run itself
       # succeeded, so it never masks the run's own error.
       def finish(run_error)
         error = call(run_error)
-        raise error if error && !run_error
+        return unless error && !run_error
+
+        @only_teardown_left = true
+        raise error
       end
 
       # nil once the store is gone, or the error that says why not: the
@@ -134,7 +147,7 @@ module Quaack
       end
 
       def interrupted(run_error)
-        finish = "Run this on the jump server: #{self.class.command(@run_id)}\n"
+        finish = "#{later}\n"
         return "quaack: a signal interrupted the teardown of run #{@run_id}. #{finish}" unless run_error
 
         what = run_error.is_a?(EnclaveError) ? run_error.rule : "#{run_error.class}: #{run_error.message}"
