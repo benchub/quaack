@@ -5345,3 +5345,13 @@ The review of 20261004-52 found:
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed: the verdict sentence uses Format.apart's rounding, plus tests for a worst_case timeout and 99% rounding. The review's one minor (stale Format.fewer mentions in 20261003-4) was fixed in the backlog text.
+
+### 20261004-73. Teardown: recheck the run directory after `destroy_command`.
+
+From the review of 20261004-66. `Store.open` checks the run directory's owner and mode before `destroy_command` runs (timeout up to 3600s), but the delete afterwards only rechecks that the path is a directory and not a symlink. Before 20261004-66 the check ran right before the delete. Re-open or re-check the store after the block, with a test. Low risk: only the same user or root can change the run directory.
+
+- **Depends on:** 20261004-66.
+- **Came from:** The review of 20261004-66, 2026-10-05.
+- **Design:** teardown.
+- **Status:** done
+- **Landed:** Landed: Store.teardown rechecks the run directory after destroy_command, just before the delete, and fails as bad_run if it went bad. The review's README/DESIGN minor was fixed while landing.
