@@ -702,11 +702,13 @@ A rewrite **refused on arrival** is one QUAACK didn't keep: it failed the checks
 
 **Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored, built and measured, not better, and ranked. An index counts as **not better** only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
-Today QUAACK doesn't record which source proposed each index, so many of the index cells say not recorded.
+QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored. It doesn't record which source proposed each index it built, so the rest of the cells by source say not recorded.
 
 ### Burndown.
 
 The last section shows how much work QUAACK did and where ideas dropped out. It has a table for index ideas for your query and one for rewrites. Each row is a stage, named for what it does, such as "Removing duplicates and indexes you already have" or "Testing on made-up edge-case data". For each stage, it shows how many ideas came in, how many were added and from where, how many were dropped and why, how many were set aside, and how many went on. A stage the run didn't count says not recorded.
+
+In the index table, the LLM's rows count every index it wrote, including the ones QUAACK's checks refused, and the second round's row says why it was skipped when it was. "Trying indexes together" counts the combinations of indexes tried, and drops the ones that left an index unused or weren't the best.
 
 The rewrite table's first row, "Rewrites from QUAACK's own rules", shows how many rewrites each rule made, and how many were dropped as the same as another, as over the limit of ten, or for failing QUAACK's checks.
 

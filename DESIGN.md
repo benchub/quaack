@@ -1218,10 +1218,10 @@ For each stage, show how many items came in, how many the stage added, how many 
 | --- | --- | --- |
 | index-from-query and index-from-plan | Candidates from generator one and from generator two, counted separately. | None. |
 | index-dedupe | None. | Already covered by an existing index, duplicate of an earlier proposal, or a partial index on a column that isn't low-cardinality. GIN and GiST candidates set aside untested are counted separately. |
-| index-test | None. | The planner never used it. |
-| llm-index-ideas | LLM candidates, plus any replacements requested for dropped ones. | Same index-dedupe and index-test reasons. |
-| llm-index-refine | Revised candidates, if the round ran. Say whether it ran and why. | Same index-dedupe and index-test reasons. |
-| index-rank | Combinations tested. | Candidates and combinations that didn't make the cut. |
+| index-test | None. | The planner never used it, or HypoPG refused it. |
+| llm-index-ideas | LLM candidates, plus any replacements requested for dropped ones: every statement the LLM wrote. | Refused by the checks, by rule, such as over the cap of five or a table the query doesn't use, plus the same index-dedupe and index-test reasons. |
+| llm-index-refine | Revised candidates, if the round ran. Say whether it ran, and if it didn't, why: the LLM had no ideas tested, or none fell short. Count how many fell short when it ran. | Same as llm-index-ideas. |
+| index-rank | Combinations tested. | Candidates outside the top three, combinations that left an index unused, and combinations that weren't the best. |
 
 **Rewrite candidates:**
 
@@ -1244,4 +1244,4 @@ For each stage, show how many items came in, how many the stage added, how many 
 - Measurement runs in baseline and candidate-runs, including literals marked unstable.
 - Fixture loads in arena.
 
-The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. A step that runs once per rewrite records that rewrite's counts under the rewrite's search, before the entry that marks it done, and only if the burndown has no record of that stage for it yet. So a step a resumed run skips, or one it runs again after a call died, is counted once. rewrite-index-ideas also gets a record of its own, which index-build writes: the rewrites whose index searches it ran, which all go on to measurement, since their index searches drop indexes, never rewrites. selection writes measurement's. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.
+The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. A step that runs once per rewrite records that rewrite's counts under the rewrite's search, before the entry that marks it done, and only if the burndown has no record of that stage for it yet. So a step a resumed run skips, or one it runs again after a call died, is counted once. The index search works the same way, under `original` or the rewrite's search: index-search records index-from-query, index-from-plan, index-dedupe, and index-test, and index-test records each LLM round as it saves it. An LLM round's record counts per call, so a round the driver asks again after a call died counts both asks. Its index-dedupe drops are the ones the round's own ideas made: index-test reads them from the stored deduplication before and after it filters them, in its own process, so it needs nothing from index-search's. index-rank's record is the latest ranking's, since a rewrite's search is ranked twice, while the hypothetical `EXPLAIN`s it ran add to the totals every time. When the second LLM round wasn't needed, index-rank also records why it didn't run. rewrite-index-ideas also gets a record of its own, which index-build writes: the rewrites whose index searches it ran, which all go on to measurement, since their index searches drop indexes, never rewrites. selection writes measurement's. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.
