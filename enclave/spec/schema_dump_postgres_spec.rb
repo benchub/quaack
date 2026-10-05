@@ -198,14 +198,15 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       ddl = store.read("schema_dump")["ddl"]
       expect(ddl).to match(/^CREATE SCHEMA dba;$/)
       expect(created_tables(ddl)).to include("dba.settings")
-      expect(store.read("schema_subset")["ddl"]).not_to include("dba")
+      # A whole word, since pg_dump's random \restrict token can hold "dba".
+      expect(store.read("schema_subset")["ddl"]).not_to match(/\bdba\b/)
     end
 
     it "leaves out dba when the database has none" do
       result = run([table("other", "lonely")])
 
       expect(result.namespaces).to eq(%w[other public])
-      expect(store.read("schema_dump")["ddl"]).not_to include("dba")
+      expect(store.read("schema_dump")["ddl"]).not_to match(/\bdba\b/)
     end
 
     # --strict-names would fail the dump on a --schema for a public that
