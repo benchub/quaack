@@ -21,10 +21,10 @@ module Quaack
     # Each insert must be one INSERT and each query one SELECT. pg_query
     # checks that before anything runs.
     #
-    # The connection is a live PG::Connection to arena, passed in. Arena setup
-    # (arena-setup, task 20260922-27) isn't built yet. pg isn't an enclave dependency
-    # yet either, so this uses only the methods of the connection it's handed
-    # and never names a PG constant.
+    # The connection is a live PG::Connection to arena, passed in. pg is
+    # loaded, through ServerClock, but the runner uses only the methods of
+    # the connection it's handed, and catches a failed read of the server's
+    # clock by ServerClock::READ_ERRORS.
     #
     # Results and fixture values stay in the enclave. Nothing here goes
     # through egress. Postgres errors can carry real values, such as a unique
@@ -240,20 +240,22 @@ module Quaack
       # statement_canceled if it came sooner, such as a self-cancel or an
       # operator's pg_cancel_backend, or if the call had no reading. The two
       # share the SQLSTATE and the message text depends on lc_messages, so
-      # the server's clock tells them apart, as in RunDiscipline.
+      # the server's clock tells them apart, as in RunDiscipline. Cancel.rule
+      # runs outside the rescue, so a bug it raises doesn't carry the
+      # connection's error as its cause, just as an Error doesn't.
       def database(rule, step, index = nil, started = nil)
-        yield
-      rescue StandardError => e
-        sqlstate = sqlstate_of(e)
+        begin
+          return yield
+        rescue StandardError => e
+          sqlstate = sqlstate_of(e)
+        end
         rule = Cancel.rule(@connection, started, @statement_timeout_ms) if sqlstate == QUERY_CANCELED
         raise Error.new(rule, step:, sqlstate:, index:), cause: nil
       end
 
       # PG::Error#result is the failed PG::Result, or nil when there's none.
       # Any other error has no SQLSTATE.
-      def sqlstate_of(error)
-        error.result&.error_field(PG_DIAG_SQLSTATE) if error.respond_to?(:result)
-      end
+      def sqlstate_of(error) = (error.result&.error_field(PG_DIAG_SQLSTATE) if error.respond_to?(:result))
     end
   end
 end

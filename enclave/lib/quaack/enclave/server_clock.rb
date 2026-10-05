@@ -49,7 +49,8 @@ module Quaack
       # the cancel can't be shown to be the timeout, so it's false, and the
       # caller raises the cancel itself, not the read's error, unless its
       # ROLLBACK fails too, as when the connection has dropped. ArenaRunner
-      # does the same, reporting statement_canceled (see ArenaRunner::Cancel).
+      # also reports a failed read as a cancel, statement_canceled, but
+      # catches its own ROLLBACK's failure too (see ArenaRunner::Cancel).
       def timed_out?(connection, started, timeout_ms)
         ms(connection, "ROLLBACK TO SAVEPOINT #{SAVEPOINT};") - started >= timeout_ms
       rescue *READ_ERRORS
