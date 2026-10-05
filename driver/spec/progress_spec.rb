@@ -118,10 +118,10 @@ RSpec.describe Quaack::Driver::Progress do
       live.step("llm-rewrites", "Asking the LLM for rewrites of the query") do
         live.note("Asking the LLM (llm-rewrites)")
         now[0] = 1.2
-        wait_for(terminal, "(llm-rewrites) 1s\e[K")
+        wait_for(terminal, "(llm-rewrites) 1s")
         sleep(0.05) # many redraws' time, at the same reading
         now[0] = 61.0
-        wait_for(terminal, "(llm-rewrites) 1m01s\e[K")
+        wait_for(terminal, "(llm-rewrites) 1m01s")
         now[0] = 65.0
         live.note("Asking the LLM, attempt 2 (llm-rewrites)")
         now[0] = 70.0
@@ -129,11 +129,11 @@ RSpec.describe Quaack::Driver::Progress do
 
       expect(terminal.string).to eq(
         "quaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites)" \
-        "\rquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1s\e[K" \
-        "\rquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1m01s\e[K" \
-        "\rquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1m05s\e[K\n" \
+        "\r\e[Kquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1s" \
+        "\r\e[Kquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1m01s" \
+        "\r\e[Kquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 1m05s\n" \
         "quaack: [1/3] Asking the LLM, attempt 2 (llm-rewrites)" \
-        "\rquaack: [1/3] Asking the LLM, attempt 2 (llm-rewrites) 1m10s\e[K\n"
+        "\r\e[Kquaack: [1/3] Asking the LLM, attempt 2 (llm-rewrites) 1m10s\n"
       )
       expect(Thread.list.size).to eq(before)
     end
@@ -151,7 +151,7 @@ RSpec.describe Quaack::Driver::Progress do
         "quaack: [1/3] Already done, skipping: Searching for indexes (index-search)\n" \
         "quaack: [2/3] Asking the LLM for index ideas (llm-index-ideas)\n" \
         "quaack: [2/3] Testing the index ideas (index-test)\n" \
-        "quaack: [2/3] Testing again (index-test)\rquaack: [2/3] Testing again (index-test) 0s\e[K\n" \
+        "quaack: [2/3] Testing again (index-test)\r\e[Kquaack: [2/3] Testing again (index-test) 0s\n" \
         "quaack: [2/3] Between steps\n"
       )
     end
@@ -161,7 +161,7 @@ RSpec.describe Quaack::Driver::Progress do
       expect do
         live.step("llm-rewrites", "Asking") do
           now[0] = 2.0
-          wait_for(terminal, "(llm-rewrites) 2s\e[K")
+          wait_for(terminal, "(llm-rewrites) 2s")
           now[0] = 3.0
           raise "boom"
         end
@@ -171,7 +171,7 @@ RSpec.describe Quaack::Driver::Progress do
       sleep(0.05)
 
       expect(terminal.string).to eq(ended)
-      expect(ended).to end_with("Asking (llm-rewrites) 3s\e[K\nquaack: [1/3] Failed after 3s (llm-rewrites)\n")
+      expect(ended).to end_with("Asking (llm-rewrites) 3s\nquaack: [1/3] Failed after 3s (llm-rewrites)\n")
       expect(Thread.list.size).to eq(before)
     end
 
@@ -239,9 +239,9 @@ RSpec.describe Quaack::Driver::Progress do
         p.step("b", "B") { timer.join }
 
         expect(hooked.string).to eq(
-          "quaack: [1/3] A (a)\rquaack: [1/3] A (a) 5s\e[K\n" \
-          "quaack: [1/3] Noting (a)\rquaack: [1/3] Noting (a) 5s\e[K\n" \
-          "quaack: [2/3] B (b)\rquaack: [2/3] B (b) 0s\e[K\n"
+          "quaack: [1/3] A (a)\r\e[Kquaack: [1/3] A (a) 5s\n" \
+          "quaack: [1/3] Noting (a)\r\e[Kquaack: [1/3] Noting (a) 5s\n" \
+          "quaack: [2/3] B (b)\r\e[Kquaack: [2/3] B (b) 0s\n"
         )
         expect(Thread.list).to eq(before)
       end
@@ -276,7 +276,7 @@ RSpec.describe Quaack::Driver::Progress do
         p.note("Between steps")
 
         expect(hooked.string).to eq(
-          "quaack: [1/3] A (a)\rquaack: [1/3] A (a) 2s\e[K\n" \
+          "quaack: [1/3] A (a)\r\e[Kquaack: [1/3] A (a) 2s\n" \
           "quaack: [1/3] Failed after 2s (a)\n" \
           "quaack: [1/3] Between steps\n"
         )
@@ -307,7 +307,7 @@ RSpec.describe Quaack::Driver::Progress do
           result = broken.step("a", "A") { redraw_fails.then { :value } }
 
           expect(result).to eq(:value)
-          expect(hooked.string).to eq("quaack: [1/3] A (a)\rquaack: [1/3] A (a) 2s\e[K\n")
+          expect(hooked.string).to eq("quaack: [1/3] A (a)\r\e[Kquaack: [1/3] A (a) 2s\n")
           expect(Thread.list.size).to eq(before)
         end
 
@@ -336,13 +336,13 @@ RSpec.describe Quaack::Driver::Progress do
         narrow.columns = 40
         fitted.step("llm-index-ideas", "Asking the LLM for index ideas the mechanical search missed") do
           now[0] = 70.0
-          wait_for(narrow, " 1m10s\e[K")
+          wait_for(narrow, " 1m10s")
         end
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM for index…" \
-          "\rquaack: [1/3] Asking the LLM for… 1m10s\e[K" \
-          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 1m10s\e[K\n"
+          "\r\e[Kquaack: [1/3] Asking the LLM for… 1m10s" \
+          "\r\e[Kquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 1m10s\n"
         )
       end
 
@@ -350,16 +350,16 @@ RSpec.describe Quaack::Driver::Progress do
         narrow.columns = 46
         fitted.step("llm-rewrites", "Asking the LLM") do
           now[0] = 1.2
-          wait_for(narrow, " 1s\e[K")
+          wait_for(narrow, " 1s")
           narrow.columns = 80
           now[0] = 61.0
-          wait_for(narrow, " 1m01s\e[K")
+          wait_for(narrow, " 1m01s")
         end
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM (llm-rewrites)" \
-          "\rquaack: [1/3] Asking the LLM (llm-rewrite… 1s\e[K" \
-          "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1m01s\e[K\n"
+          "\r\e[Kquaack: [1/3] Asking the LLM (llm-rewrite… 1s" \
+          "\r\e[Kquaack: [1/3] Asking the LLM (llm-rewrites) 1m01s\n"
         )
       end
 
@@ -371,7 +371,7 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM for index…" \
-          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 0s\e[K\n"
+          "\r\e[Kquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 0s\n"
         )
       end
 
@@ -386,9 +386,60 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking (llm-rewrites)" \
-          "\rquaack: [1/3] Asking (llm-rewri… 1s\e[K" \
-          "\rquaack: [1/3] Asking (llm-rewrites) 1s\e[K\n"
+          "\r\e[Kquaack: [1/3] Asking (llm-rewri… 1s" \
+          "\r\e[Kquaack: [1/3] Asking (llm-rewrites) 1s\n"
         )
+      end
+
+      # One terminal width columns wide, as xterm draws: a character in the
+      # last column leaves the cursor on it, waiting to wrap, so a \e[K
+      # there erases that character. rows is what it shows.
+      let(:xterm) do
+        Class.new do
+          attr_reader :rows
+
+          def initialize(width)
+            @width = width
+            @rows = [+""]
+            @col = 0
+          end
+
+          def feed(bytes)
+            bytes.scan(/\e\[K|./m) { |token| control?(token) || put(token) }
+            self
+          end
+
+          def control?(token)
+            case token
+            when "\r" then @col = 0
+            when "\n" then newline
+            when "\e[K" then @rows.last.slice!(@col..)
+            else return false
+            end
+            @wrap = false
+            true
+          end
+
+          def put(char)
+            newline if @wrap
+            @rows.last[@col] = char
+            @wrap = @col == @width - 1
+            @col += 1 unless @wrap
+          end
+
+          def newline
+            @rows << +""
+            @col = 0
+          end
+        end
+      end
+
+      it "keeps the last character of a finished line exactly as wide as the terminal" do
+        narrow.columns = 41
+        slow = described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 60)
+        slow.step("llm-rewrites", "Asking") { now[0] = 62.0 }
+
+        expect(xterm.new(41).feed(narrow.string).rows).to eq(["quaack: [1/3] Asking (llm-rewrites) 1m02s", ""])
       end
 
       it "prints a line whole when it ends, if its final reading won't fit beside it" do
@@ -398,7 +449,7 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(narrow.string).to eq(
           "quaack: [1/3] Asking the LLM (llm-rewrites)" \
-          "\rquaack: [1/3] Asking the LLM (llm-rewrites) 1s\e[K\n"
+          "\r\e[Kquaack: [1/3] Asking the LLM (llm-rewrites) 1s\n"
         )
       end
 
@@ -409,7 +460,7 @@ RSpec.describe Quaack::Driver::Progress do
           wait_for(narrow, "\r")
         end
 
-        expect(narrow.string).to eq("qua…\rqua…\e[K\rquaack: [1/3] Asking (llm-rewrites) 2s\e[K\n")
+        expect(narrow.string).to eq("qua…\r\e[Kqua…\r\e[Kquaack: [1/3] Asking (llm-rewrites) 2s\n")
       end
 
       it "doesn't cut when the terminal can't say its width" do
@@ -433,7 +484,7 @@ RSpec.describe Quaack::Driver::Progress do
 
           expect(out.string).to eq(
             "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)" \
-            "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 2s\e[K\n"
+            "\r\e[Kquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 2s\n"
           )
         end
       end
@@ -447,9 +498,9 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(terminal.string).to eq(
           "quaack: [1/3] Ranking the index ideas (index-rank)" \
-          "\rquaack: [1/3] Ranking the index ideas (index-rank) 2s\e[K\n" \
+          "\r\e[Kquaack: [1/3] Ranking the index ideas (index-rank) 2s\n" \
           "quaack: [2/3] Setting up the arena (arena-setup)" \
-          "\rquaack: [2/3] Setting up the arena (arena-setup) 0s\e[K\n" \
+          "\r\e[Kquaack: [2/3] Setting up the arena (arena-setup) 0s\n" \
           "quaack: [2/3] Setting up the arena (arena-setup)\n"
         )
       end
@@ -462,9 +513,9 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(terminal.string).to eq(
           "quaack: [1/3] Searching for indexes for each rewrite (plan-pruning)" \
-          "\rquaack: [1/3] Searching for indexes for each rewrite (plan-pruning) 3s\e[K\n" \
+          "\r\e[Kquaack: [1/3] Searching for indexes for each rewrite (plan-pruning) 3s\n" \
           "quaack: [1/3] Rewrite Silver Fox: Dropping the rewrite (rewrite-prune)" \
-          "\rquaack: [1/3] Rewrite Silver Fox: Dropping the rewrite (rewrite-prune) 5s\e[K\n"
+          "\r\e[Kquaack: [1/3] Rewrite Silver Fox: Dropping the rewrite (rewrite-prune) 5s\n"
         )
       end
 
@@ -500,9 +551,9 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(terminal.string).to eq(
           "quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)" \
-          "\rquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 32s\e[K\n" \
+          "\r\e[Kquaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 32s\n" \
           "quaack: [2/3] Asking the LLM for rewrites of the query (llm-rewrites)" \
-          "\rquaack: [2/3] Asking the LLM for rewrites of the query (llm-rewrites) 51s\e[K\n"
+          "\r\e[Kquaack: [2/3] Asking the LLM for rewrites of the query (llm-rewrites) 51s\n"
         )
       end
 
@@ -520,21 +571,21 @@ RSpec.describe Quaack::Driver::Progress do
 
         expect(terminal.string.split("\n")).to eq(
           ["quaack: [1/3] Asking the LLM for index ideas (llm-index-ideas)" \
-           "\rquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s\e[K",
+           "\r\e[Kquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s",
            "quaack: [1/3] Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas)" \
-           "\rquaack: [1/3] Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas) 4s\e[K",
+           "\r\e[Kquaack: [1/3] Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas) 4s",
            "quaack: [1/3] Asking the LLM for index ideas (llm-index-ideas)" \
-           "\rquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s\e[K",
+           "\r\e[Kquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s",
            "quaack: [2/3] Checking your own rewrites (operator-rewrites)",
-           "quaack: [2/3] Asking the LLM (operator-rewrites)\rquaack: [2/3] Asking the LLM (operator-rewrites) 0s\e[K",
+           "quaack: [2/3] Asking the LLM (operator-rewrites)\r\e[Kquaack: [2/3] Asking the LLM (operator-rewrites) 0s",
            "quaack: [3/3] Asking the LLM (llm-rewrites)",
            "quaack: [3/3] Asking the LLM (llm-counterexamples)" \
-           "\rquaack: [3/3] Asking the LLM (llm-counterexamples) 0s\e[K",
+           "\r\e[Kquaack: [3/3] Asking the LLM (llm-counterexamples) 0s",
            "quaack: [4/3] Asking the LLM (llm-index-refine)",
            "quaack: [4/3] Asking the LLM for more (llm-index-refine)" \
-           "\rquaack: [4/3] Asking the LLM for more (llm-index-refine) 0s\e[K",
+           "\r\e[Kquaack: [4/3] Asking the LLM for more (llm-index-refine) 0s",
            "quaack: [5/3] Asking the LLM (llm-rewrites)",
-           "quaack: [5/3] Asking the LLM\rquaack: [5/3] Asking the LLM 0s\e[K"]
+           "quaack: [5/3] Asking the LLM\r\e[Kquaack: [5/3] Asking the LLM 0s"]
         )
       end
     end
@@ -555,10 +606,10 @@ RSpec.describe Quaack::Driver::Progress do
         50.times { |n| p.note("Note #{n}") }
       end
 
-      expect(slow.string.scan("\rquaack").size).to be > 10
+      expect(slow.string.scan("\r\e[Kquaack").size).to be > 10
       slow.string.split("\n").each do |line|
         text = line[/\A[^\r]*/]
-        expect(line.scan(/\r([^\r]*?) \d+(?:m\d\ds)?s\e\[K/).flatten.uniq - [text]).to eq([])
+        expect(line.scan(/\r\e\[K([^\r]*) \d+(?:m\d\ds)?s(?=\r|\z)/).flatten.uniq - [text]).to eq([])
       end
     end
   end
