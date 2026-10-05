@@ -2356,3 +2356,14 @@ In each case the operator gets a backtrace instead of a usage error. Check every
 - **Came from:** The builder and review of 20261004-22.
 - **Design:** intake.
 - **Status:** todo
+
+### 20261004-39. ArenaRunner pipeline: a timeout before the Sync leaves the connection stuck.
+
+The builder of 20261004-36 found this. A denormalized-fixture spec with a 1 ms `statement_timeout` fails under CPU load, on main too. The timeout can fire after a statement but before the pipeline's final Sync is processed. Then `Pipeline.finish` raises `Broken` and the connection stays in pipeline mode with the Sync unread, so every later run on it reports `connection_unusable` instead of the timeout. Rare with real timeouts, but it's a real race in the 20261004-28 pipeline.
+
+When a cancel or timeout arrives while the pipeline is finishing, drain to the Sync, leave pipeline mode, and classify it as a timeout or cancel as usual. Find a deterministic reproduction, for example by injecting at `Pipeline.finish`, and write the test first.
+
+- **Depends on:** 20261004-28.
+- **Came from:** The builder of 20261004-36.
+- **Design:** rewrite-test.
+- **Status:** todo
