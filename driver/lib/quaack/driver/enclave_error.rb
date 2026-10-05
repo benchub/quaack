@@ -47,13 +47,28 @@ module Quaack
                  "the network, and the jump server's kernel log (for the OOM killer) and sshd log"
       SSH_FAILED = "couldn't ssh to the jump server; check your ssh login or network"
 
+      # Where a connection's other settings come from, for both connection
+      # failures' notes.
+      LIBPQ_SETUP = "your libpq setup on the jump server: PG* environment variables, ~/.pg_service.conf with " \
+                    "PGSERVICE, and ~/.pgpass. A non-interactive ssh session may not load the shell rc file " \
+                    "that sets them."
+      PRODUCTION_SETUP = "It gives libpq only that host, and the port when you gave `quaack start --port`. The " \
+                         "port otherwise, and the user, database, and password, come from #{LIBPQ_SETUP}".freeze
+      RUN_SERVER_SETUP = "Its host, port, and databases are the ones run-server was given: the --host, --port, " \
+                         "--racetrack-db, and --arena-db you gave quaack setup or quaack run, and your " \
+                         "run_server_command's for any you didn't. The user and password come from " \
+                         "#{LIBPQ_SETUP}".freeze
+
       # The error line's fields beyond its rule.
       LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
 
       # What a failed command prints after its name: an EnclaveError's
-      # rule_with_note, with next_step, or any other error's message.
-      def self.shown(error, next_step) = error.is_a?(self) ? error.rule_with_note(next_step:) : error.message
+      # rule_with_note, with next_step and where (jump: and server:), or any
+      # other error's message.
+      def self.shown(error, next_step, **where)
+        error.is_a?(self) ? error.rule_with_note(next_step:, **where) : error.message
+      end
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
@@ -88,9 +103,16 @@ module Quaack
       # such as the command that resumes the run, or starting a new one when
       # teardown deleted the run's store. Both are the driver's own facts,
       # not the enclave's.
-      def rule_with_note(next_step: "resume the run")
-        return "#{rule}: #{SSH_FAILED}, then #{next_step}" if rule == "ssh_failed"
-        return "#{rule}: #{ended}. To go on, #{next_step}" if rule == "incomplete"
+      #
+      # production_connection_failed and run_server_connection_failed get
+      # where the connection's settings come from, how to test it from jump,
+      # the jump host, and what to do next. production's names server, the
+      # production server the operator gave quaack start, when the caller
+      # knows it. Both come from the laptop's own record of the run, never
+      # from the enclave, whose error line holds only the rule: libpq's
+      # message can name the user or the database.
+      def rule_with_note(next_step: "resume the run", jump: nil, server: nil)
+        return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server)}" if to_go_on?
         return "#{rule}: #{note}" if note
 
         return rule unless rule == "query_unparsable"
@@ -102,6 +124,31 @@ module Quaack
       end
 
       private
+
+      # The rules whose note ends with what to do next.
+      def to_go_on? = %w[ssh_failed incomplete production_connection_failed run_server_connection_failed].include?(rule)
+
+      def to_go_on(next_step, jump, server)
+        case rule
+        when "ssh_failed" then "#{SSH_FAILED}, then #{next_step}"
+        when "incomplete" then "#{ended}. To go on, #{next_step}"
+        when "production_connection_failed" then production_failed(jump, server, next_step)
+        else run_server_failed(jump, next_step)
+        end
+      end
+
+      def production_failed(jump, server, next_step)
+        "couldn't connect to #{server ? "production at #{server}" : "the production server you gave quaack start"}. " \
+          "#{PRODUCTION_SETUP} Test it with `ssh #{jump} 'psql -h #{server || "<server>"} -c \"select 1\"'`, " \
+          "adding -p <n> if you gave quaack start --port. If production listens on another port than your libpq " \
+          "setup gives, start a new run with `quaack start --port <n>`. Otherwise fix your libpq setup, then " \
+          "#{next_step}"
+      end
+
+      def run_server_failed(jump, next_step)
+        "couldn't connect to the run server. #{RUN_SERVER_SETUP} Test it with `ssh #{jump} 'psql -h <host> " \
+          "-p <port> -d <racetrack db> -c \"select 1\"'`. Then #{next_step}"
+      end
 
       # What rule_with_note adds after the rule, or nil.
       def note

@@ -138,7 +138,7 @@ flowchart TB
 
 - Ruby 3.4, `gem`, `gcc`, and `make` in your `$PATH`. `quaack deploy` will compile the pg_query gem there.
 - `pg_dump`, at least as new as production's Postgres.
-- A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords. Production's port comes from that setup too, unless you give `quaack start --port`, for a production server that doesn't listen where your setup points.
+- A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords. Production's port comes from that setup too, unless you give `quaack start --port`, for a production server that doesn't listen where your setup points. QUAACK runs over a non-interactive ssh session, which may not load the shell rc file that sets your `PG*` variables, so check it the way QUAACK sees it: `ssh <jump server> 'psql -h <production server> -c "select 1"'` should just work.
 - A POSIX login shell (bash, sh, or zsh).
 
 **Production:** Postgres 17 or later.
@@ -439,6 +439,8 @@ quaack setup --run 20260928T201702Z-3f9a1c2e --host runsrv-7.prod.example.com --
 
 `quaack run` takes the same four run-server flags. Any you leave out come from `run_server_command`. They only matter the first time: once the run server has been checked, setup skips that step, flags and all.
 
+`--host` and `--port` are the run server's, not production's. Production's host is the `--server` you gave `quaack start`, and its port is `quaack start --port`'s, or else your libpq setup's. For either server, the user and password, and for production the database too, come from your libpq setup on the jump server, in the non-interactive ssh session QUAACK runs in. If setup fails with `production_connection_failed` or `run_server_connection_failed`, the message says which server it tried, where the rest of the connection comes from, and the `ssh ... psql` command to test it with. It never includes libpq's own message, which can name the user or the database.
+
 Setup runs these eleven `quaacks` commands on the jump server, in this order, over ssh. It shows a line on stderr as each starts and ends, such as `quaack: [3/11] Finding the tables the query reads (qualify)`, and skips each one the run already has, so after a failure you fix the problem and run the same command again. A failure prints `quaack setup failed: <rule>` and keeps the run.
 
 | Command | What it does |
@@ -542,7 +544,7 @@ With `--keep`, a failed run leaves its work behind. Fix the problem and run the 
 
 ```sh
 quaack run --run $RUN --keep
-# quaack run failed: run_server_connection_failed
+# quaack run failed: run_server_connection_failed: couldn't connect to the run server. ...
 # ... fix the network ...
 quaack run --run $RUN --keep
 ```
@@ -714,7 +716,7 @@ Only a test that found different results counts. A rule's rewrite that timed out
 
 ## When a run fails.
 
-QUAACK prints `quaack start failed: <rule>`, `quaack setup failed: <rule>`, or `quaack run failed: <rule>`, and exits with status 1. When an LLM call fails, `quaack run` adds the provider's error after the rule, as in `quaack run failed: llm_bad_request: <detail>`. The detail comes from the LLM provider, outside the privacy line. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value, host, or password. That's deliberate: error messages cross the privacy line too.
+QUAACK prints `quaack start failed: <rule>`, `quaack setup failed: <rule>`, or `quaack run failed: <rule>`, and exits with status 1. When an LLM call fails, `quaack run` adds the provider's error after the rule, as in `quaack run failed: llm_bad_request: <detail>`. The detail comes from the LLM provider, outside the privacy line. A usage mistake, such as an unknown run ID, an unreadable rewrites file, or a bad `llm` block in `~/.quaack/driver.json`, exits with 64. Messages name a **rule**, never a value or password, and a host only when it's one you gave the driver yourself, such as the jump host or the production server in a connection failure's note. That's deliberate: error messages cross the privacy line too.
 
 Common rules:
 
@@ -725,7 +727,8 @@ Common rules:
 | `volatile_function` | The query calls a function with side effects, such as `random()` or `nextval()`. | Not supported. Results couldn't be compared. |
 | `plan_gate_mismatch_likely_stale_statistics` | The racetrack plans the query differently from production. | Usually the restore is older than production's latest `ANALYZE`. Restore a newer backup, then start a new run. |
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
-| `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. If production listens on another port than that setup gives, start a new run with `quaack start --port <n>`. |
+| `production_connection_failed` | `quaacks` couldn't connect to production. The message names the production server it tried, the `--server` you gave `quaack start`, and says the port, user, database, and password come from your libpq setup on the jump server: `PG*` environment variables, `~/.pg_service.conf` with `PGSERVICE`, and `~/.pgpass`. A non-interactive ssh session may not load the shell rc file that sets them. | Test it the way QUAACK connects: `ssh <jump server> 'psql -h <server> -c "select 1"'`, adding `-p <n>` if you gave `quaack start --port`. If production listens on another port than your setup gives, start a new run with `quaack start --port <n>`. Otherwise fix your setup, then do what the message says. |
+| `run_server_connection_failed` | `quaacks` couldn't connect to the run server. Its host, port, and databases are the `--host`, `--port`, `--racetrack-db`, and `--arena-db` you gave `quaack setup` or `quaack run`, or your `run_server_command`'s for any you didn't. The user and password come from your libpq setup on the jump server, as for production. | Test it: `ssh <jump server> 'psql -h <host> -p <port> -d <racetrack db> -c "select 1"'`. Fix the setup or the network, then do what the message says. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
 | `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, the AWS credential chain found nothing (for `bedrock`), or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. For Bedrock, check your AWS credentials, for example with `aws sts get-caller-identity`, or run `aws sso login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
 | `ssh_failed` | A call to the jump server failed, and so did a plain `ssh <host> true` right after it. The message says how to go on: resume with `quaack run --run <ID>` or `quaack setup --run <ID>`, or run `quaack start` again. `quaack run` doesn't try to tear the run down then, since ssh is down: it keeps the run, and prints the teardown command for later. The run's files remain on the jump server, and the run server stays up, both with their copies of production data, until you run that command. If the run itself had finished and only its teardown failed, QUAACK prints the report's path, and the message says to tear the run down as the line before it says, instead of resuming. | Check your ssh login (for example, renew an expired certificate or SSO session) and the network, then resume. See the `ControlMaster` note in [setup step 2](#2-tell-the-driver-how-to-find-your-jump-server). Add `--keep` when you resume, so a second failure keeps the run's work. |

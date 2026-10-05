@@ -26,8 +26,9 @@ module Quaack
     # /bin/sh runs it with no stdin and its stderr thrown away, and it must
     # print one ssh host (Transport::Ssh::HOST), with blank space around it
     # allowed. Then it runs `quaacks intake` there over ssh, and records the
-    # run's jump host in ~/.quaack/runs/<run ID>.json, so later commands take
-    # only the run ID. It returns the run ID.
+    # run's jump host and production server in ~/.quaack/runs/<run ID>.json,
+    # so later commands take only the run ID, and a connection failure's
+    # note can name the server. It returns the run ID.
     class Start
       # A failure, whose message is its rule. The command's output is never
       # in one.
@@ -53,7 +54,7 @@ module Quaack
         run_id = transport.call("intake", args:).messages.find { it["type"] == "run" }&.fetch("run_id", nil)
         raise Error, "bad_run_id" unless run_id.is_a?(String) && Runs::RUN_ID.match?(run_id)
 
-        Runs.new(@home).record(run_id, host)
+        Runs.new(@home).record(run_id, host, server:)
         run_id
       end
 
