@@ -12,6 +12,14 @@ module Quaack
       # The arena server starts a fresh statement_timeout at each statement
       # in a pipeline, after the one before it has finished, so a clock read
       # sent first is taken before the next statement's timeout starts.
+      #
+      # The server arms that timeout when a statement starts, with the
+      # setting as it is then, so clocked arms it only for its statement:
+      # the clock read sets it, and a reset after the statement turns it off
+      # again. The clock read, and anything the runner sends between
+      # statements, such as its ROLLBACK, then run with no timeout, so a
+      # loaded server can't cancel them with it. An error aborts the
+      # transaction, and that undoes the setting too.
       module Pipeline
         # libpq's ExecStatusType values, since the runner names no PG
         # constant.
@@ -23,14 +31,20 @@ module Quaack
 
         module_function
 
+        ARM_SQL = "#{ServerClock::NOW_SQL}, set_config('statement_timeout', $1, true)".freeze
+        DISARM_SQL = "SET LOCAL statement_timeout = 0"
+
         # The server's clock, in ms, read just before sql, in sql's round
         # trip, and the result to check: sql's, or the clock read's if that
-        # failed, with no clock then.
-        def clocked(connection, sql, params)
-          clock, outcome = run(connection, [[ServerClock::NOW_SQL, []], [sql, params]])
+        # failed, with no clock then. sql runs with statement_timeout set to
+        # timeout_ms. If sql succeeds and the reset after it fails, as when
+        # the timeout fires just as sql finishes, the reset's error stands in
+        # for sql's result.
+        def clocked(connection, sql, params, timeout_ms)
+          clock, outcome, reset = run(connection, [[ARM_SQL, [timeout_ms.to_s]], [sql, params], [DISARM_SQL, []]])
           return [nil, clock] unless clock.result_status == PGRES_TUPLES_OK
 
-          [Float(clock.getvalue(0, 0)), outcome]
+          [Float(clock.getvalue(0, 0)), failed?(reset) && !failed?(outcome) ? reset : outcome]
         end
 
         # statements are [sql, params] pairs. If a send fails, what was sent

@@ -341,32 +341,120 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    # The timeout is armed for each statement only, after the clock is read,
+    # so a clock read that's slow, as on a loaded server, isn't canceled by
+    # it and still dates the statement. A clock_timestamp() earlier on the
+    # search_path than pg_catalog's plants a read slower than the timeout.
+    describe "a clock read slower than the timeout" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE SCHEMA slow_clock;
+          CREATE FUNCTION slow_clock.clock_timestamp() RETURNS timestamptz LANGUAGE sql
+            AS 'SELECT pg_catalog.clock_timestamp() FROM pg_catalog.pg_sleep(0.3)';
+          SET search_path = slow_clock, pg_catalog, public;
+        SQL
+      end
+
+      it "is slower than the timeout on its own" do
+        conn.transaction do
+          conn.exec("SET LOCAL statement_timeout = 100")
+          expect { conn.exec(Quaack::Enclave::ServerClock::NOW_SQL) }
+            .to raise_error(PG::QueryCanceled) { expect(it.result.error_field(67)).to eq("57014") }
+        end
+      end
+
+      it "doesn't keep a timed-out statement from reading as statement_timeout" do
+        error = run_error(described_class.new(conn, statement_timeout_ms: 100)) { |tx| tx.query("SELECT pg_sleep(5)") }
+
+        expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
+        expect_nothing_persisted
+      end
+    end
+
+    # A statement can't turn the timeout off for the ones after it, since
+    # each statement's own round trip arms it again.
+    it "times a statement out after an earlier one turned the timeout off" do
+      short = described_class.new(conn, statement_timeout_ms: 100)
+
+      error = run_error(short) do |tx|
+        tx.query("SELECT set_config('statement_timeout', '0', true)")
+        tx.query("SELECT pg_sleep(5)")
+      end
+
+      expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 1])
+      expect_nothing_persisted
+    end
+
+    # The closing ROLLBACK runs with the timeout off, so a server that takes
+    # longer than the timeout to get to it, as a loaded one can, doesn't
+    # cancel it and leave the transaction open. This plants that delay just
+    # ahead of the ROLLBACK, in its own query string, where the timeout that
+    # was armed for the ROLLBACK would fire on it.
+    describe "a closing ROLLBACK the server is slow to reach" do
+      let(:slow_rollback_class) do
+        Class.new(SimpleDelegator) do
+          def exec(sql, *, &)
+            sql = "SELECT pg_sleep(0.3); #{sql}" if sql == "ROLLBACK"
+            __getobj__.exec(sql, *, &)
+          end
+        end
+      end
+
+      let(:short) { described_class.new(slow_rollback_class.new(conn), statement_timeout_ms: 100) }
+
+      it "rolls back after a fixture that ran no statement" do
+        expect(short.with_fixture { :ran }).to eq(:ran)
+        expect_nothing_persisted
+      end
+
+      it "rolls back after a block that returns" do
+        expect(short.with_fixture([parent(1, "a")]) { |tx| tx.query("SELECT 7").rows }).to eq([["7"]])
+        expect_nothing_persisted
+      end
+
+      it "rolls back after a block that raises, and keeps the block's error" do
+        expect { short.with_fixture([parent(1, "a")]) { raise ArgumentError, "the block's own" } }
+          .to raise_error(ArgumentError, "the block's own")
+        expect_nothing_persisted
+      end
+    end
+
     # The timeout can fire just as a statement finishes. Postgres has then
     # sent the statement's result, and it reports the cancel on the next
-    # message it handles, which is the pipeline's Sync, so the error comes
-    # after the statement's result, in the Sync's place. That's a race, so
-    # this plants the same shape: just before the runner's Sync, it sends
-    # one more statement that gets canceled.
-    describe "a cancel that arrives after the statement's result, before the Sync" do
+    # message it handles: the reset that turns the timeout off after the
+    # statement, or, if the reset has run, the pipeline's Sync. Either way
+    # the error comes after the statement's result. That's a race, so this
+    # plants the same shape: in the reset's place, or just before the
+    # runner's Sync, it sends a statement that gets canceled.
+    describe "a cancel that arrives after the statement's result" do
       let(:late_cancel_class) do
         Class.new(SimpleDelegator) do
-          def initialize(conn, sql)
+          def initialize(conn, sql, place)
             super(conn)
             @sql = sql
+            @place = place
           end
 
           def arm! = @armed = true
 
+          def send_query_params(sql, params)
+            if @armed && @place == :reset && sql == Quaack::Enclave::ArenaRunner::Pipeline::DISARM_SQL
+              @armed = false
+              sql = @sql
+            end
+            __getobj__.send_query_params(sql, params)
+          end
+
           def pipeline_sync
-            __getobj__.send_query_params(@sql, []) if @armed
+            __getobj__.send_query_params(@sql, []) if @armed && @place == :sync
             @armed = false
             __getobj__.pipeline_sync
           end
         end
       end
 
-      def late_cancel_error(sql, statement_timeout_ms:)
-        late = late_cancel_class.new(conn, sql)
+      def late_cancel_error(sql, place, statement_timeout_ms:)
+        late = late_cancel_class.new(conn, sql, place)
         short = described_class.new(late, statement_timeout_ms:)
         error = run_error(short, [parent(1, "a")]) do |tx|
           late.arm!
@@ -381,16 +469,24 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         expect(short.with_fixture([parent(2, "b")]) { |tx| tx.query("SELECT 7").rows }).to eq([["7"]])
       end
 
-      it "reports the timeout, leaves pipeline mode, and leaves the connection usable" do
-        error, short = late_cancel_error("SELECT pg_sleep(5)", statement_timeout_ms: 100)
+      let(:self_cancel) { "SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)" }
+
+      it "reports the timeout in the reset's place, leaves pipeline mode, and leaves the connection usable" do
+        error, short = late_cancel_error("SELECT pg_sleep(5)", :reset, statement_timeout_ms: 100)
 
         expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_timeout, "57014", :query, 0])
         expect_usable_after(short)
       end
 
-      it "reports another cancel as statement_canceled, and leaves the connection usable" do
-        error, short = late_cancel_error("SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)",
-                                         statement_timeout_ms: 5000)
+      it "reports another cancel in the reset's place as statement_canceled, and leaves the connection usable" do
+        error, short = late_cancel_error(self_cancel, :reset, statement_timeout_ms: 5000)
+
+        expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 0])
+        expect_usable_after(short)
+      end
+
+      it "reports a cancel in the Sync's place, leaves pipeline mode, and leaves the connection usable" do
+        error, short = late_cancel_error(self_cancel, :sync, statement_timeout_ms: 5000)
 
         expect([error.rule, error.sqlstate, error.step, error.index]).to eq([:statement_canceled, "57014", :query, 0])
         expect_usable_after(short)
@@ -1236,9 +1332,11 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         [:set_notice_receiver, 1] => [:connection_unusable, :transaction, nil],
         [:exec, 1] => [:begin_failed, :begin, nil],
         [:exec, 2] => [:begin_failed, :begin, nil],
-        # Each statement sends the server's clock and then itself.
-        [:send_query_params, 7] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
-        [:send_query_params, 8] => [:fixture_load_failed, :load, 1],
+        # Each statement sends the server's clock, itself, and the timeout's
+        # reset.
+        [:send_query_params, 10] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
+        [:send_query_params, 11] => [:fixture_load_failed, :load, 1],
+        [:send_query_params, 12] => [:fixture_load_failed, :load, 1],
         # Each statement reads the transaction status before it's sent and
         # after it's run: after two setvals, the first row's.
         [:transaction_status, 6] => [:fixture_load_failed, :load, 0],

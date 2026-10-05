@@ -160,9 +160,11 @@ module Quaack
         finish(handle, quietly: failed)
       end
 
-      # SET LOCAL, so the timeout ends with the transaction however it ends.
+      # The timeout is off between statements, whatever the session's, and
+      # each statement's round trip arms it for that statement (Pipeline).
+      # SET LOCAL, so it ends with the transaction however it ends.
       def load(rows, inserts, settings)
-        settings = ["SET LOCAL statement_timeout = #{@statement_timeout_ms}", *settings]
+        settings = [Pipeline::DISARM_SQL, *settings]
         settings.each { |sql| database(:begin_failed, :begin) { @connection.exec(sql) } }
         # Advance sequences past the explicit values first, so ids the
         # database generates for other rows never collide with them.
@@ -192,7 +194,9 @@ module Quaack
       # round trips or transaction IDs than it would on its own.
       def statement(sql, params, step:, rule:, index:)
         refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS, PQTRANS_INERROR])
-        started, outcome = database(rule, step, index) { Pipeline.clocked(@connection, sql, params) }
+        started, outcome = database(rule, step, index) do
+          Pipeline.clocked(@connection, sql, params, @statement_timeout_ms)
+        end
         result = database(rule, step, index, started) { outcome.check }
         refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS])
 
