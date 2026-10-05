@@ -2319,16 +2319,7 @@ These are review minors from 20261004-28.
 - **Design:** none (tests only).
 - **Status:** todo
 
-### 20261004-36. ArenaRunner: no statements after a cancel's rollback.
-
-This is a review minor from 20261004-28. `ArenaRunner::Cancel.rule` now rolls back the whole arena transaction after a cancel, where main left it aborted. If a fixture block caught the error and ran another query, that query would run outside any transaction and without `statement_timeout`. The reviewer reproduced it: a `WITH d AS (INSERT …) SELECT …` caught by the select-only check wrote a row that stayed in the arena. Main fails such a query with 25P02. No caller catches errors inside a fixture block today.
-
-Refuse to send a statement when the connection isn't inside the runner's transaction. Checking `transaction_status` before each send is one way; closing the handle after a cancel is another. Write a test first. Also leave pipeline mode on a dead connection, or document that it stays in it.
-
-- **Depends on:** 20261004-28.
-- **Came from:** The second review of 20261004-28.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-36. ArenaRunner: no statements after a cancel's rollback. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-37. Connection-failure notes: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
@@ -2366,4 +2357,18 @@ These are review minors from 20261004-37.
 - **Depends on:** 20261004-37.
 - **Came from:** The review of 20261004-37.
 - **Design:** inventory.
+- **Status:** todo
+
+### 20261004-41. ArenaRunner post-cancel guard: follow-ups.
+
+These are review minors from 20261004-36.
+
+1. The cancel spec can't tell where the refusal happened. Main already raised `transaction_ended`, only after the write ran, and a read-only query sent in autocommit wouldn't be caught at all. Count sends (for example `pipeline_sync`) and expect none after the cancel.
+2. DESIGN.md says the runner "sends nothing more until the next transaction begins", but `finish` still sends `ROLLBACK`. Reword it.
+3. The comment above `PQTRANS_*` in `arena_runner.rb` still says the status is checked only after each statement. Say it's checked before too, and that INERROR is allowed then.
+4. When a caller catches an error after the connection died, the next statement now gets `transaction_ended` ("a statement ended the arena transaction early"). It used to get `query_failed`. Consider reporting `connection_unusable` instead. Also consider whether a cancel fits `transaction_closed` better.
+
+- **Depends on:** 20261004-36.
+- **Came from:** The review of 20261004-36.
+- **Design:** rewrite-test.
 - **Status:** todo

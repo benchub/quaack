@@ -4850,3 +4850,15 @@ These are review minors from 20261004-17.
 - **Design:** inventory, Where QUAACK runs.
 - **Status:** done
 - **Landed:** Landed in 460dbd0. Review minors went to 20261004-40.
+
+### 20261004-36. ArenaRunner: no statements after a cancel's rollback.
+
+This is a review minor from 20261004-28. `ArenaRunner::Cancel.rule` now rolls back the whole arena transaction after a cancel, where main left it aborted. If a fixture block caught the error and ran another query, that query would run outside any transaction and without `statement_timeout`. The reviewer reproduced it: a `WITH d AS (INSERT …) SELECT …` caught by the select-only check wrote a row that stayed in the arena. Main fails such a query with 25P02. No caller catches errors inside a fixture block today.
+
+Refuse to send a statement when the connection isn't inside the runner's transaction. Checking `transaction_status` before each send is one way; closing the handle after a cancel is another. Write a test first. Also leave pipeline mode on a dead connection, or document that it stays in it.
+
+- **Depends on:** 20261004-28.
+- **Came from:** The second review of 20261004-28.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** Landed in d1d9420. Review minors went to 20261004-41.
