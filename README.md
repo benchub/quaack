@@ -138,7 +138,7 @@ flowchart TB
 
 - Ruby 3.4, `gem`, `gcc`, and `make` in your `$PATH`. `quaack deploy` will compile the pg_query gem there.
 - `pg_dump`, at least as new as production's Postgres.
-- A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords.
+- A libpq setup that connects to production and to the run server as you: `~/.pgpass`, a service in `~/.pg_service.conf`, or `PG*` environment variables. QUAACK stores no passwords. Production's port comes from that setup too, unless you give `quaack start --port`, for a production server that doesn't listen where your setup points.
 - A POSIX login shell (bash, sh, or zsh).
 
 **Production:** Postgres 17 or later.
@@ -409,6 +409,14 @@ mkdir -p ~/slow && cd ~/slow
 quaack start --server prod-db-1 --query slow/events.sql --plan slow/events-plan.json
 # 20260928T201702Z-3f9a1c2e
 ```
+
+If production doesn't listen on the port your libpq setup on the jump server gives (`PGPORT`, a service, or the default 5432), add `--port`:
+
+```sh
+quaack start --server prod-db-1 --port 6432 --query slow/events.sql --plan slow/events-plan.json
+```
+
+The run keeps the port, and every connection to production uses it: inventory, qualify, volatility, statistics, and `pg_dump`. Everything else, the user, the database, and the password, still comes from your libpq setup. `--port` is production's port only. The run server's port is `quaack setup --port`. A port that isn't a whole number from 1 to 65535 is a usage error, before ssh.
 
 The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. A quoted leading `~/`, as in `--query '~/slow/events.sql'`, is expanded by `quaacks` on the jump server; `~otheruser` is not special. If your laptop's shell expands `~` first and gives QUAACK a path under your laptop home, `quaack start` refuses before ssh and asks for a jump-server path. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it. If the jump server can't read the file, QUAACK says whether it was missing, a final symlink, not a regular file, or permission denied, without printing the path.
 
@@ -713,7 +721,7 @@ Common rules:
 | `volatile_function` | The query calls a function with side effects, such as `random()` or `nextval()`. | Not supported. Results couldn't be compared. |
 | `plan_gate_mismatch_likely_stale_statistics` | The racetrack plans the query differently from production. | Usually the restore is older than production's latest `ANALYZE`. Restore a newer backup, then start a new run. |
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
-| `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. |
+| `production_connection_failed` | `quaacks` couldn't connect to production. | Check your libpq setup on the jump server: `psql -h <server>` should just work. If production listens on another port than that setup gives, start a new run with `quaack start --port <n>`. |
 | `pg_dump_too_old` | The jump server's `pg_dump` is older than production. | Install a newer client. |
 | `llm_auth` | The driver found no Anthropic credentials, the variable `api_key_env` names (or `OPENAI_API_KEY`, for `openai_compatible`) is unset or empty, a profile couldn't be read, the AWS credential chain found nothing (for `bedrock`), or the API refused the credentials. | Set the key's variable, or for Anthropic run `ant auth login`. For Bedrock, check your AWS credentials, for example with `aws sts get-caller-identity`, or run `aws sso login`. See [setup step 3](#3-give-the-driver-access-to-an-llm). |
 | `no_driver_config`, `jump_command_failed` | The driver can't find your jump server. | Check `~/.quaack/driver.json`. |

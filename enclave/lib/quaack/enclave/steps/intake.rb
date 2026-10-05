@@ -6,7 +6,7 @@ module Quaack
   module Enclave
     module Steps
       # `quaacks intake --query <file> --plan <file> --server <name>
-      # [--captured-at <time>]` (DESIGN.md's input). The operator runs it on the
+      # [--port <n>] [--captured-at <time>]` (DESIGN.md's input). The operator runs it on the
       # jump server, where the query and its EXPLAIN (ANALYZE, BUFFERS,
       # SETTINGS, FORMAT JSON) output already sit in files. It checks the
       # three inputs (see Intake), starts the run that holds them, and
@@ -18,13 +18,17 @@ module Quaack
       #
       # The run gets four entries: query (its text, without a leading byte
       # order mark), plan (the parsed EXPLAIN output), server, and
-      # clock_anchor (see Intake.clock_anchor). The query and the plan hold
+      # clock_anchor (see Intake.clock_anchor). With --port it gets a fifth,
+      # production_port, an Integer, which every production connection
+      # passes along with the server (Inventory::Production.params). Without
+      # it there's no such entry, and libpq's setup picks the port. The query and the plan hold
       # production literals, so only the run ID goes out. The run ID is
       # shape-class data: the time the run started and eight random hex
-      # characters (Store::RUN_ID). The paths and the server name are the
-      # operator's own, and never go out either.
+      # characters (Store::RUN_ID). The paths, the server name, and the port
+      # are the operator's own, and never go out either.
       module Intake
-        OPTIONS = { "query" => :value, "plan" => :value, "server" => :value, "captured-at" => :value }.freeze
+        OPTIONS = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value,
+                    "captured-at" => :value }.freeze
         REQUIRED = %w[query plan server].freeze
 
         module_function
@@ -38,6 +42,7 @@ module Quaack
         def entries(options)
           {
             "server" => Enclave::Intake.server(options["server"]),
+            **(options.key?("port") ? { "production_port" => Enclave::Intake.port(options["port"]) } : {}),
             "clock_anchor" => Enclave::Intake.clock_anchor(options["captured-at"]),
             "query" => Enclave::Intake.query(options["query"]),
             "plan" => Enclave::Intake.plan(options["plan"])

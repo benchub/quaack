@@ -9,9 +9,9 @@ module Quaack
       # `quaacks volatility --run <run ID>` (DESIGN.md's volatility): refuses the run's
       # query if it calls a volatile function anywhere (see VolatilityCheck).
       #
-      # It reads the run's server, plan, and qualified_query entries, the
-      # last written by `quaacks qualify`. It connects to the server as
-      # inventory does (Inventory::Production.connect), and VolatilityCheck reads
+      # It reads the run's server, production_port, plan, and qualified_query
+      # entries, the last written by `quaacks qualify`. It connects to the
+      # server as inventory does (Inventory::Production.connect), and VolatilityCheck reads
       # the catalog inside one Production.read_only transaction, resolving
       # unqualified function names through the search_path in the plan's
       # SETTINGS, or the default path without one.
@@ -31,13 +31,13 @@ module Quaack
         def call(store:, **)
           query = store.read("qualified_query")
           settings = store.read("plan")[0]["Settings"]
-          check(store.read("server"), query, settings)
+          check(Enclave::Inventory::Production.params(store), query, settings)
           store.write(ENTRY, { "passed" => true })
           []
         end
 
-        def check(host, query, settings)
-          connection = Enclave::Inventory::Production.connect(host)
+        def check(production, query, settings)
+          connection = Enclave::Inventory::Production.connect(production)
           Enclave::Inventory::Production.read_only(connection) do
             VolatilityCheck.check(query, settings, connection)
           end

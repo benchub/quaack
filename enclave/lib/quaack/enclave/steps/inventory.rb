@@ -24,8 +24,8 @@ module Quaack
 
         def call(store:, **)
           config = Config.load
-          inventory = Enclave::Inventory.take(host: store.read("server"), plan: store.read("plan"),
-                                              memory_command: config.memory_command)
+          inventory = Enclave::Inventory.take(production: Enclave::Inventory::Production.params(store),
+                                              plan: store.read("plan"), memory_command: config.memory_command)
           store.write("inventory", inventory)
           [{ type: :inventory, major_version: inventory.fetch("major_version"),
              memory_known: !inventory.fetch("memory_bytes").nil? }]

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "quaack/protocol/port"
 require_relative "intake/error"
 require_relative "intake/operator_file"
 require_relative "intake/clock_anchor"
@@ -8,11 +9,13 @@ require_relative "intake/plan"
 
 module Quaack
   module Enclave
-    # The checks on input's three operator inputs (DESIGN.md's input), which
+    # The checks on input's operator inputs (DESIGN.md's input), which
     # `quaacks intake` runs (see Steps::Intake). Each returns what the run
     # stores, or raises Intake::Error with the rule the input broke:
     #
     # - server: bad_server.
+    # - production_port, from --port: bad_port, unless it's a whole number
+    #   from 1 to 65535 (Protocol::Port), as run-server's --port.
     # - clock_anchor, from --captured-at: bad_captured_at (see ClockAnchor).
     # - query, from its file: query_unreadable, query_too_large,
     #   query_not_text, query_unparsable, query_not_one_statement,
@@ -35,6 +38,12 @@ module Quaack
         raise Error, "bad_server" unless name.is_a?(String) && name.ascii_only? && SERVER.match?(name)
 
         name
+      end
+
+      def port(text)
+        raise Error, "bad_port" unless Protocol::Port.valid?(text)
+
+        Integer(text, 10)
       end
 
       def clock_anchor(captured_at) = ClockAnchor.from(captured_at)

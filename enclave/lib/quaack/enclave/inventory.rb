@@ -34,16 +34,17 @@ module Quaack
     module Inventory
       module_function
 
-      # The inventory of host, the run's server. plan is the run's EXPLAIN
-      # output. memory_command is the config's, or nil.
-      def take(host:, plan:, memory_command:)
-        inventory = read(host, plan[0].fetch("Settings", {}).keys)
-        memory = Memory.bytes(memory_command, host) if memory_command
+      # The inventory of the run's server, connected to with production,
+      # its Production.params. plan is the run's EXPLAIN output.
+      # memory_command is the config's, or nil, and gets only the host.
+      def take(production:, plan:, memory_command:)
+        inventory = read(production, plan[0].fetch("Settings", {}).keys)
+        memory = Memory.bytes(memory_command, production.fetch(:host)) if memory_command
         { **inventory, "memory_bytes" => memory }
       end
 
-      def read(host, plan_settings)
-        connection = Production.connect(host)
+      def read(production, plan_settings)
+        connection = Production.connect(production)
         Production.read(connection, plan_settings:)
       ensure
         connection&.close

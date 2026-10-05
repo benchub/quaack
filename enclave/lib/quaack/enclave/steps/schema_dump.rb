@@ -12,11 +12,12 @@ module Quaack
       # plus public, and the subset, the query's tables and their FK
       # ancestors (see Enclave::SchemaDump).
       #
-      # It reads the run's server and relations entries, the latter written
-      # by `quaacks qualify`. It connects to the server as inventory does
+      # It reads the run's server, production_port, and relations entries,
+      # the last written by `quaacks qualify`. It connects to the server as inventory does
       # (Inventory::Production.connect) and reads the catalog inside
       # Production.read_only. pg_dump runs from PATH with the operator's own
-      # libpq setup, given only the run's host, as the connection is.
+      # libpq setup, given the same Production.params as the connection: the
+      # run's host, and its port when intake had --port.
       #
       # It writes two entries:
       #
@@ -45,19 +46,19 @@ module Quaack
         module_function
 
         def call(store:, **)
-          host = store.read("server")
+          production = Enclave::Inventory::Production.params(store)
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
-          connection = Enclave::Inventory::Production.connect(host)
-          dumped(connection, relations, host).entries.each { |name, data| store.write(name, data) }
+          connection = Enclave::Inventory::Production.connect(production)
+          dumped(connection, relations, production).entries.each { |name, data| store.write(name, data) }
           []
         ensure
           connection&.close
         end
 
-        def dumped(connection, relations, host)
+        def dumped(connection, relations, production)
           Pending.new.tap do |pending|
             Enclave::Inventory::Production.read_only(connection) do
-              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: { host: })
+              Enclave::SchemaDump.run(store: pending, relations:, connection:, conninfo: production)
             end
           end
         end

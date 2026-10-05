@@ -104,6 +104,35 @@ RSpec.describe "quaack executable" do
                     "Postgres 18-only syntax isn't supported yet)\n", 1])
     end
 
+    it "passes --port, given anywhere among the options, to intake" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--port", "6543", "--server", "prod-1",
+                                        "--query", "/q", "--plan", "/p")
+
+      expect([out, status.exitstatus]).to eq(["20260926T010203Z-0123abcd\n", 0]), err
+      expect(File.read(File.join(dir, "ssh-args")))
+        .to include("jump-1 quaacks intake --query /q --plan /p --server prod-1 --port 6543")
+    end
+
+    it "refuses a bad --port as a usage error before ssh" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p", "--port", "5432x")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start: --port must be a whole number from 1 to 65535\n", 64])
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
+    it "rejects --port twice, or without a value, with the usage message" do
+      [%w[--port 5433 --port 5434], %w[--port]].each do |extra|
+        out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                          "--plan", "/p", *extra)
+
+        expect([out, status.exitstatus]).to eq(["", 64]), extra.inspect
+        expect(err).to include("quaack start --server <name> --query <file> --plan <file> [--port <n>]\n")
+      end
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
     it "rejects missing options with the usage message" do
       out, err, status = run_ruby(exe, "start", "--server", "p")
 
