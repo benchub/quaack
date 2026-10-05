@@ -2308,6 +2308,17 @@ In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite
 2. **Reproduce.** Build a realistic, larger fixture, such as a Rails-style schema with 10–20 tables, several unique indexes and foreign keys, CHECK constraints, and a few-table join query. Time `rewrite-test` on it, and profile it with (1).
 3. **Fix the hotspots** the profile shows, keeping every outcome the same.
    - Code reading suggests `Scenarios::RowSet` is the first suspect: `parents_of` uses `Array#include?`, `parent` runs a linear `find` per foreign key per row, and `clash?` scans the table's rows per unique constraint per new row. Hash indexes would fix all three.
+   - The user's gdb samples (2026-10-04) back this up. All five native stacks sit in structural equality and hashing:
+     - `rb_equal` → `rb_funcallv` → `rb_equal`, nested.
+     - `rb_st_lookup` → `rb_eql`, wrapping `rb_hash_aset` and `rb_hash_delete_entry`. That's Ruby's recursion guard for comparing or hashing nested objects.
+     - All of it sits under `rb_hash_foreach` and many nested `rb_yield` frames.
+     That matches whole `ArenaFixture::FixtureRow` values (a `Data` holding arrays and a nested `DeferredInsert`) being compared and hashed over and over:
+     - `@rows[t].include?(r)` and `.delete` in `add?`.
+     - `tried.include?(rows)` in `add_any?`.
+     - `found.include?` and `rows.include?` in `parents_of`.
+     - `.uniq` in `Parts#spill?`.
+     - The `@evaluated` cache keyed on `[row, index]`, which `clash?` hits for every existing row.
+     Key on cheap identities instead, such as `object_id`, a per-row integer, or precomputed key tuples per constraint.
    - Each rewrite runs in a new process and rebuilds the original query's scenarios and probe caches. Consider storing what's reusable in the run store, as 20261004-5 does within one process.
    - Add a timing guard spec on the large fixture with a generous bound, so a regression shows up.
 4. **Ask the user** to rerun with `QUAACKS_PROFILE` set, and confirm.
