@@ -175,6 +175,8 @@ module Quaack
 
         @kept = {}
 
+        private_class_method :new
+
         def self.parse(sql, query)
           sql = sql.dup.freeze unless sql.frozen?
           @kept.fetch([sql, query]) do |key|
@@ -187,7 +189,7 @@ module Quaack
         def self.forget = @kept.clear
 
         def initialize(sql, query)
-          @sql = sql.frozen? ? sql : sql.dup.freeze
+          @sql = sql
           @query = query
           @answers = {}
           parsed = parse

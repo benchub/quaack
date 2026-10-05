@@ -214,6 +214,12 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(shape(sql)).to be(parsed)
     end
 
+    # parse freezes the SQL it keeps, so new must be reached only through it.
+    it "makes Shapes only through parse" do
+      expect { described_class::Shape.new(sql.dup, :original) }
+        .to raise_error(NoMethodError, /private method 'new' called/)
+    end
+
     it "parses a query afresh after forget" do
       parsed = shape(sql)
       described_class::Shape.forget
