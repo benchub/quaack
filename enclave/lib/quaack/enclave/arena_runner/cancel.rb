@@ -29,6 +29,13 @@ module Quaack
         # session's setting as it was. If the clock can't be read, the cancel
         # isn't counted as the timeout, as in RunDiscipline (see
         # ServerClock.timed_out?).
+        #
+        # The first ROLLBACK can't turn the timeout off first, since an
+        # aborted transaction refuses everything else. Postgres drops the
+        # runner's timeout as the transaction aborts, since it was set for the
+        # transaction, so that ROLLBACK runs under the session's setting. A
+        # nonzero one cancels it if the server is slower than that to reach
+        # it, and the cancel reads as statement_canceled (see DESIGN.md).
         def rule(connection, started, timeout_ms)
           return :statement_canceled unless started
 
