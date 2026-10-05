@@ -146,7 +146,8 @@ RSpec.describe Quaack::Driver::Teardown do
 
   context "when a signal interrupts teardown" do
     let(:transport) { Class.new { def call(*, **) = Process.kill("TERM", Process.pid) && sleep(5) }.new }
-    let(:finish) { "Run this on the jump server: quaacks teardown --run #{run_id}\n" }
+    # Task 20261004-29: worded like the other teardown hints.
+    let(:finish) { "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n" }
 
     it "lets the signal through, and first prints the run's own error and how to finish teardown" do
       expect { around_run { raise ArgumentError, "boom" } }.to raise_error(SignalException, "SIGTERM")
@@ -190,7 +191,7 @@ RSpec.describe Quaack::Driver::Teardown do
     expect([out, status.termsig]).to eq(["", Signal.list.fetch("INT")])
     expect(err).to start_with("quaack: run #{run_id} failed (ArgumentError: boom), " \
                               "and a signal interrupted its teardown. " \
-                              "Run this on the jump server: quaacks teardown --run #{run_id}\n")
+                              "To tear it down later, run this on the jump server: quaacks teardown --run #{run_id}\n")
   end
 
   it "skips teardown with keep, and prints the run ID and the command to run later" do
