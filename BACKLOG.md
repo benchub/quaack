@@ -2333,14 +2333,7 @@ Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_post
 
 ### 20261004-44. README: the connection note when no server is recorded. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-45. Flaky transport spec: a run that outlasts its timeout.
-
-`driver/spec/transport_spec.rb:257`, "kills a run that takes longer than its timeout", failed once under `rake` during 20261004-33's build. It failed reading a pid file that didn't exist yet. The same seed passed on a rerun. It's probably a race between the child writing its pid file and the spec reading it under load. Make the spec wait for the file, or the code expose the pid, without weakening what it asserts.
-
-- **Depends on:** none.
-- **Came from:** The builder of 20261004-33.
-- **Design:** none (tests only).
-- **Status:** todo
+### 20261004-45. Flaky transport spec: a run that outlasts its timeout. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-46. Shape: drop the dead copy in `initialize`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2449,4 +2442,16 @@ Keep the existing burndown table under it, for exact numbers and for readers wit
 - **Depends on:** none, but the funnel is most useful after 20261001-19 and -20 record every stage.
 - **Came from:** The user, 2026-10-05, reading a run's report.
 - **Design:** report, burndown.
+- **Status:** todo
+
+### 20261004-56. Pid-file races in two more timeout specs, and the group check's start-up gap.
+
+From the second review of 20261004-45.
+
+- `driver/spec/start_spec.rb:213` and `enclave/spec/inventory_memory_spec.rb:79` start `sleep 30 & echo $! > pid_file; wait` under a 0.5 s timeout. The shell can be killed before it writes the pid file, the same race 20261004-45 fixed in the transport spec. Take the pid from the spawn, or otherwise close the race.
+- The transport spec's process-group check stays green without testing anything when Ruby takes longer than the 1 s timeout to start its grandchild. Make the spec notice that case, for example by having the child signal readiness first or by asserting the grandchild started.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261004-45, 2026-10-05.
+- **Design:** none (test infrastructure).
 - **Status:** todo

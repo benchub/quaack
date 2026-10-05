@@ -4990,3 +4990,13 @@ These are review minors from 20261004-38.
 - **Design:** intake.
 - **Status:** done
 - **Landed:** Landed in 399d20b.
+
+### 20261004-45. Flaky transport spec: a run that outlasts its timeout.
+
+`driver/spec/transport_spec.rb:257`, "kills a run that takes longer than its timeout", failed once under `rake` during 20261004-33's build. It failed reading a pid file that didn't exist yet. The same seed passed on a rerun. It's probably a race between the child writing its pid file and the spec reading it under load. Make the spec wait for the file, or the code expose the pid, without weakening what it asserts.
+
+- **Depends on:** none.
+- **Came from:** The builder of 20261004-33.
+- **Design:** none (tests only).
+- **Status:** done
+- **Landed:** Landed in fe6272c.
