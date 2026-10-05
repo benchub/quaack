@@ -4742,3 +4742,19 @@ Under load, a 1 s statement timeout can fire during the LIMIT run itself, not on
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** merge baeaab0. The cause was `Run#stream` judging a cancel against the enclave's own clock with no margin. `Run` now reads the server's `clock_timestamp()` before each query and sets a savepoint; after a cancel it rolls back to the savepoint and compares server clock readings. The subset specs sleep only on rows past the LIMIT. The review had no blocking findings. Its minors went to 20261004-28. Accepted as is: a backwards server clock step still raises.
+
+### 20261004-26. ssh_failed and incomplete: resume advice after teardown, and the ControlMaster note.
+
+Minor findings from the first review of 20261004-21:
+
+1. **Resume advice without `--keep`.** README's `incomplete` row (`README.md`, the errors table) says "then resume the run". But `quaack run` without `--keep` tears down on failure (`cli.rb`, `Teardown.around`). When the probe succeeded, ssh works, so teardown has likely deleted the store and there's nothing to resume.
+   - For `ssh_failed`, the teardown that follows fails too. The operator then gets both "Run this on the jump server: quaacks teardown" and "resume with `quaack run --run`", which contradict each other.
+   - Each failed teardown also probes again, adding up to 30 s.
+   - Make the advice match what's left: say "resume" only when the store was kept (or teardown failed), and skip the probe or teardown once ssh is known down.
+2. **ControlMaster note.** README's note says "If calls start failing with `ssh_failed` while plain `ssh <host>` works". But plain `ssh <host>` goes through the same `ControlPath` socket and fails the same way, and the `-o ServerAlive*` options don't reach an existing master. Rewrite it: suggest `ssh -O exit <host>`, or `ssh -o ControlMaster=no -o ControlPath=none <host>` to test.
+
+- **Depends on:** 20261004-21.
+- **Came from:** The first review of 20261004-21.
+- **Design:** Transport, Where QUAACK runs.
+- **Status:** done
+- **Landed:** merge d383d93. `quaack run` says resume only while the store is left (`--keep`, a failed teardown, or no teardown), and otherwise says to start a new run. After `ssh_failed`, teardown is skipped and its command is printed for later. `incomplete` ends with a command-specific "To go on". The ControlMaster note is rewritten. The review had no blocking findings; its minors are 20261004-29.
