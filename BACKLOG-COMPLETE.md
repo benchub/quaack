@@ -5296,3 +5296,16 @@ If the payload's plan nodes don't carry their depth or parent, add that, inside 
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed: plans render as a depesz-style tree table with depth from the enclave and differing steps marked; no blocks column, since nodes carry none.
+
+### 20261004-66. Teardown: minors from 20261004-60.
+
+The review of 20261004-60 found:
+1. `teardown_failed` without the destroy can still happen through a race: `open_run` fails, then the open inside `Store.teardown` succeeds. Also, `entry?` can raise an unrescued `SystemCallError`, which is unlikely, since the run directory is checked to be 0700 first. Decide whether either needs handling.
+2. The spec "keeps the message of the run's own non-EnclaveError" in the driver's teardown spec passed on main too, since the condition short-circuits before the guard, and `run_command` doesn't rescue `IOError` anyway. Make it cover a realistic path, or drop it.
+3. README's rules table doesn't list `driver_error`, which DESIGN.md names as a rule the operator sees.
+
+- **Depends on:** 20261004-60.
+- **Came from:** The review of 20261004-60, 2026-10-05.
+- **Design:** teardown.
+- **Status:** done
+- **Landed:** Landed: destroy_command runs inside Store.teardown's open; SystemCallError gives destroy_command_not_run; README lists driver_error.

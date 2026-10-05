@@ -2343,17 +2343,7 @@ The review of 20261004-52 found:
 - **Design:** report.
 - **Status:** todo
 
-### 20261004-66. Teardown: minors from 20261004-60.
-
-The review of 20261004-60 found:
-1. `teardown_failed` without the destroy can still happen through a race: `open_run` fails, then the open inside `Store.teardown` succeeds. Also, `entry?` can raise an unrescued `SystemCallError`, which is unlikely, since the run directory is checked to be 0700 first. Decide whether either needs handling.
-2. The spec "keeps the message of the run's own non-EnclaveError" in the driver's teardown spec passed on main too, since the condition short-circuits before the guard, and `run_command` doesn't rescue `IOError` anyway. Make it cover a realistic path, or drop it.
-3. README's rules table doesn't list `driver_error`, which DESIGN.md names as a rule the operator sees.
-
-- **Depends on:** 20261004-60.
-- **Came from:** The review of 20261004-60, 2026-10-05.
-- **Design:** teardown.
-- **Status:** todo
+### 20261004-66. Teardown: minors from 20261004-60. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-67. ServerClock: minors from 20261004-34. Done, see BACKLOG-COMPLETE.md.
 
@@ -2417,4 +2407,22 @@ The review of 20261004-54 found:
 - **Depends on:** 20261004-54.
 - **Came from:** The review of 20261004-54, 2026-10-05.
 - **Design:** report.
+- **Status:** todo
+
+### 20261004-73. Teardown: recheck the run directory after `destroy_command`.
+
+From the review of 20261004-66. `Store.open` checks the run directory's owner and mode before `destroy_command` runs (timeout up to 3600s), but the delete afterwards only rechecks that the path is a directory and not a symlink. Before 20261004-66 the check ran right before the delete. Re-open or re-check the store after the block, with a test. Low risk: only the same user or root can change the run directory.
+
+- **Depends on:** 20261004-66.
+- **Came from:** The review of 20261004-66, 2026-10-05.
+- **Design:** teardown.
+- **Status:** todo
+
+### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token.
+
+From the review of 20261004-66. The spec checks that the dump text doesn't include "dba", but pg_dump's random `\restrict` token sometimes contains that substring. Make the check ignore the `\restrict`/`\unrestrict` lines, or match "dba" as a word or identifier.
+
+- **Depends on:** none.
+- **Came from:** The review of 20261004-66, 2026-10-05.
+- **Design:** schema-dump.
 - **Status:** todo
