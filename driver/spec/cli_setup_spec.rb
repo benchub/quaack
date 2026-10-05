@@ -180,6 +180,18 @@ RSpec.describe "quaack setup" do
       expect(errors).to include("Test it with `ssh jump-1 'psql -h <server> -c")
     end
 
+    # Task 20261004-63: such a record is a driver before 0.1.6's, which
+    # gave intake quaack start --port without recording it.
+    it "says the port may be quaack start --port's for a run recorded without the server" do
+      fail_inventory("production_connection_failed")
+
+      expect(errors).to include("QUAACK gives libpq only that host, and the port you gave `quaack start --port`, " \
+                                "if you gave one. The user, database, and password, and the port if you gave no " \
+                                "--port, come from ")
+      expect(errors).to include("`ssh jump-1 'psql -h <server> -c \"select 1\"'`, adding `-p <n>` if you gave " \
+                                "`quaack start --port`.")
+    end
+
     # Task 20261004-40: a hand-edited record with a valid port but an
     # invalid server gives no half-filled-in psql command.
     it "leaves -p out of the test command when the recorded server isn't valid" do
