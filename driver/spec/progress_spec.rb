@@ -188,6 +188,137 @@ RSpec.describe Quaack::Driver::Progress do
       expect(Thread.list.size).to eq(before)
     end
 
+    describe "its timer thread" do
+      # A terminal that calls hook, if set, with each print's text before
+      # printing it, in the thread that prints.
+      let(:hooked) do
+        Class.new(StringIO) do
+          attr_accessor :hook
+
+          def tty? = true
+
+          def print(*args)
+            hook&.call(args.join)
+            super
+          end
+        end.new
+      end
+
+      # Waits, without a race, until thread is asleep, or fails after a
+      # while so a broken spec can't hang.
+      def wait_until_asleep(thread)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+        until thread.status == "sleep"
+          raise "#{thread.inspect} never slept" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+          Thread.pass
+        end
+      end
+
+      it "finishes its last redraw before the next step's line opens, so it never draws a stale time there" do
+        # With no interval, the timer never sleeps on its queue, only when
+        # it waits for the lock.
+        p = described_class.new(io: hooked, total: 3, clock: -> { now.first }, interval: 0)
+        before = Thread.list
+        timer = nil
+        # The note's print holds the step's thread, and the lock, until the
+        # timer has woken for a redraw and waits for the lock. The redraw
+        # then comes as the step closes.
+        hooked.hook = lambda do |text|
+          next unless text.include?("Noting (a)")
+
+          hooked.hook = nil
+          wait_until_asleep(timer)
+        end
+        p.step("a", "A") do
+          timer, = Thread.list - before
+          now[0] = 5.0
+          p.note("Noting (a)")
+        end
+        # Lets a timer still running from step a take its redraw.
+        p.step("b", "B") { timer.join }
+
+        expect(hooked.string).to eq(
+          "quaack: [1/3] A (a)\rquaack: [1/3] A (a) 5s\e[K\n" \
+          "quaack: [1/3] Noting (a)\rquaack: [1/3] Noting (a) 5s\e[K\n" \
+          "quaack: [2/3] B (b)\rquaack: [2/3] B (b) 0s\e[K\n"
+        )
+        expect(Thread.list).to eq(before)
+      end
+
+      it "still ends the step's clock when Ctrl-C comes while the step waits for the timer" do
+        p = described_class.new(io: hooked, total: 3, clock: -> { now.first }, interval: 0.001)
+        stepper = Thread.current
+        drawing = Queue.new
+        drawn = Queue.new
+        # The timer's redraw is held mid-draw, with the lock, so the step
+        # waits for the timer as it ends.
+        hooked.hook = lambda do |text|
+          next unless Thread.current != stepper && text.include?(" 2s")
+
+          hooked.hook = nil
+          drawing.push(true)
+          drawn.pop
+        end
+        ctrl_c = nil
+        expect do
+          p.step("a", "A") do
+            now[0] = 2.0
+            drawing.pop
+            ctrl_c = Thread.new do
+              wait_until_asleep(stepper)
+              stepper.raise(Interrupt)
+              drawn.push(true)
+            end
+          end
+        end.to raise_error(Interrupt)
+        ctrl_c.join
+        p.note("Between steps")
+
+        expect(hooked.string).to eq(
+          "quaack: [1/3] A (a)\rquaack: [1/3] A (a) 2s\e[K\n" \
+          "quaack: [1/3] Failed after 2s (a)\n" \
+          "quaack: [1/3] Between steps\n"
+        )
+      end
+
+      describe "when a redraw can't write, such as to a closed pipe" do
+        let(:broken) do
+          p = described_class.new(io: hooked, total: 3, clock: -> { now.first }, interval: 0.001)
+          stepper = Thread.current
+          signal = failed
+          hooked.hook = lambda do |_text|
+            next if Thread.current == stepper
+
+            signal.push(true)
+            raise Errno::EPIPE
+          end
+          p
+        end
+        let(:failed) { Queue.new }
+
+        def redraw_fails
+          now[0] = 2.0
+          failed.pop
+        end
+
+        it "keeps the step's own result" do
+          before = Thread.list.size
+          result = broken.step("a", "A") { redraw_fails.then { :value } }
+
+          expect(result).to eq(:value)
+          expect(hooked.string).to eq("quaack: [1/3] A (a)\rquaack: [1/3] A (a) 2s\e[K\n")
+          expect(Thread.list.size).to eq(before)
+        end
+
+        it "keeps the step's own exception" do
+          expect { broken.step("a", "A") { redraw_fails.then { raise "boom" } } }.to raise_error("boom")
+
+          expect(hooked.string.lines.last).to eq("quaack: [1/3] Failed after 2s (a)\n")
+        end
+      end
+    end
+
     describe "on a narrow terminal" do
       # A terminal whose width can change, as a resized window's does.
       let(:narrow) do
