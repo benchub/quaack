@@ -99,7 +99,7 @@ RSpec.describe Quaack::Driver::Report do
 
     it "sets inline SQL apart in monospace on a subtle background, wrapping long DDL inside the page" do
       rule = html[/^\s*code\.sql\s*\{[^}]*\}/]
-      expect(rule).to match(/background:\s*#f3f5f8/).and match(/overflow-wrap:\s*anywhere/)
+      expect(rule).to match(/background:\s*#f3f5f8/).and match(/overflow-wrap:\s*break-word/)
         .and match(/white-space:\s*pre-wrap/)
       expect(html).to match(/^\s*code, pre \{ font-family: ui-monospace, Menlo, Consolas, monospace;/)
     end
