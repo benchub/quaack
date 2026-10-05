@@ -1682,7 +1682,7 @@ The build and both reviews of 20261001-18 found these:
 - **Run the full check.** 20261001-18 landed without the enclave suite or the Docker-backed root specs. Run `bundle exec rake` on `main` and fix what's red, starting with the three assertions in `spec/pipeline_replay_spec.rb` that were reworded and never executed.
 - **Test gaps where a wrong change stays green** (the code is right):
   - The LLM row's "Already existed" count: the fixture has one `covered_by_existing` and one `duplicate`, so swapping them passes. Use different counts.
-  - The kB to MB and MB to GB boundaries, and `Format.fewer`'s rounding.
+  - The kB to MB and MB to GB boundaries, and `Format.apart`'s rounding (it replaced `Format.fewer` in 20261004-65).
   - The "It built and measured" paragraph being left out when there's a winner.
   - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
   - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
@@ -1692,7 +1692,7 @@ The build and both reviews of 20261001-18 found these:
 - **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
 - **The "refused on arrival" note leaves out a reason.** For rule rewrites, rewrite-rules' `failed_checks` also covers an assumption-check assumption failure and clock anchoring. The README has the same gap.
 - **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
-- **`Format.fewer` raises `FloatDomainError`** if the original read 0 blocks on the slow values.
+- **`Format.apart` may raise `FloatDomainError`** (this note was written about `Format.fewer`, which 20261004-65 replaced; check whether it still applies) if the original read 0 blocks on the slow values.
 - **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no operator-rewrites warnings, so no report has ever shown one. Send them, or change the README.
 - **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
 - **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing rewrite-rules rule names.
@@ -2330,18 +2330,7 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 
 ### 20261004-64. Arena timeout: minors from 20261004-58. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-65. Ranking baseline: minors from 20261004-52.
-
-The review of 20261004-52 found:
-1. The verdict sentence (`View#compared`, via `Format.fewer`) rounds 12 vs 5,120 to "(100% fewer)", while the winner's table says "over 99% fewer blocks". Use one rule in both places.
-2. Nothing tests a baseline timeout on a set other than the slow values. Making `baseline_sum` check only the first set survives. Add a test where the original times out on `worst_case`.
-3. Nothing tests the "over 99%" threshold from below. Changing `percent == 100` to `percent >= 99` survives. Add a case that rounds to 99%.
-4. README's "Against your query" bullet omits the "not recorded" fallback when there's no verdict, which DESIGN.md mentions.
-
-- **Depends on:** 20261004-52.
-- **Came from:** The review of 20261004-52, 2026-10-05.
-- **Design:** report.
-- **Status:** todo
+### 20261004-65. Ranking baseline: minors from 20261004-52. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-66. Teardown: minors from 20261004-60. Done, see BACKLOG-COMPLETE.md.
 

@@ -5331,3 +5331,17 @@ From the build and review of 20261004-64. Once a transaction aborts, Postgres dr
 - **Design:** arena-runner.
 - **Status:** done
 - **Landed:** Landed: DESIGN.md wording on the ROLLBACK after an abort, plus specs pinning already_in_transaction. Review minors became 20261004-75.
+
+### 20261004-65. Ranking baseline: minors from 20261004-52.
+
+The review of 20261004-52 found:
+1. The verdict sentence (`View#compared`, via `Format.fewer`) rounds 12 vs 5,120 to "(100% fewer)", while the winner's table says "over 99% fewer blocks". Use one rule in both places.
+2. Nothing tests a baseline timeout on a set other than the slow values. Making `baseline_sum` check only the first set survives. Add a test where the original times out on `worst_case`.
+3. Nothing tests the "over 99%" threshold from below. Changing `percent == 100` to `percent >= 99` survives. Add a case that rounds to 99%.
+4. README's "Against your query" bullet omits the "not recorded" fallback when there's no verdict, which DESIGN.md mentions.
+
+- **Depends on:** 20261004-52.
+- **Came from:** The review of 20261004-52, 2026-10-05.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed: the verdict sentence uses Format.apart's rounding, plus tests for a worst_case timeout and 99% rounding. The review's one minor (stale Format.fewer mentions in 20261003-4) was fixed in the backlog text.
