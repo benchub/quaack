@@ -41,6 +41,7 @@ RSpec.describe "quaacks index-baseline, against a real server" do
     expect(original_keys).not_to be_empty
     expect(result["combinations"].keys).to match_array(original_keys)
     expect(result["timed_out"]).to eq([])
+    expect(result["measurement_runs"]).to eq(original_keys.size * 9)
     result["combinations"].each_value do |sets|
       expect(sets.keys).to match_array(%w[slow worst_case typical])
       sets.each_value { expect(it["runs"].size).to eq(3) }
@@ -60,7 +61,8 @@ RSpec.describe "quaacks index-baseline, against a real server" do
     expect(outcome.stdout).to eq(%({"type":"done"}\n))
     result = stored.read("index_baseline")
     expect(result["timed_out"]).to match_array(original_keys)
-    expect(result["combinations"].values.flat_map(&:values)).to all(eq("timed_out" => true))
+    expect(result["combinations"].values.flat_map(&:values)).to all(eq("timed_out" => true, "ran" => 1))
+    expect(result["measurement_runs"]).to eq(original_keys.size * 3)
     expect(visible_count).to eq("0")
   end
 end

@@ -1233,7 +1233,7 @@ For each stage, show how many items came in, how many the stage added, how many 
 | rewrite-test | None. | Disproved, broken down by scenario, S0 through S6, or never tested, by the refusal's rule or the rule of a scenario that couldn't compare. Also count untested atoms and vacuity-guard retries. |
 | counterexamples | None. | Disproved, broken down by round. Also count untested atoms that counterexamples covered. |
 | plan-pruning and rewrite-index-ideas | Each candidate's own index search, totaled across candidates using the same breakdown as the table above. | Same index-dedupe, index-test, and index-rank reasons. |
-| measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three. Count partial result-comparison comparisons too. |
+| measurement | None. | Failed the minimax rule, lost a footprint tiebreak, diverged in result-comparison, or fell outside the top three, by the rewrite's fate, as negative-result gives it, which also tells timing out in every run apart. Count partial result-comparison comparisons too. |
 
 **Work totals:**
 
@@ -1243,4 +1243,4 @@ For each stage, show how many items came in, how many the stage added, how many 
 - Measurement runs in baseline and candidate-runs, including literals marked unstable.
 - Fixture loads in arena.
 
-The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. A step that runs once per rewrite records that rewrite's counts under the rewrite's search, before the entry that marks it done, and only if the burndown has no record of that stage for it yet. So a step a resumed run skips, or one it runs again after a call died, is counted once. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.
+The enclave script records its counts in the governed store as it goes, and the driver records its own, such as LLM calls. A step that runs once per rewrite records that rewrite's counts under the rewrite's search, before the entry that marks it done, and only if the burndown has no record of that stage for it yet. So a step a resumed run skips, or one it runs again after a call died, is counted once. rewrite-index-ideas also gets a record of its own, which index-build writes: the rewrites whose index searches it ran, which all go on to measurement, since their index searches drop indexes, never rewrites. selection writes measurement's. Counts are shape-class data, so they can leave the enclave through the egress function like any other result.

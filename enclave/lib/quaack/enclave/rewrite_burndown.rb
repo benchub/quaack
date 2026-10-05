@@ -3,6 +3,7 @@
 require "quaack/protocol/burndown"
 require_relative "burndown"
 require_relative "rewrite_candidate_check"
+require_relative "steps/index_search"
 require_relative "steps/rewrite_fate"
 
 module Quaack
@@ -102,6 +103,48 @@ module Quaack
                    { in: 1, dropped:, out: survived ? 1 : 0, extra: { atoms_covered: entry["covered"].size } }]],
           totals: { fixture_loads: entry["fixture_loads"] }
         )
+      end
+
+      # Records rewrite-index-ideas' burndown, once, under the search
+      # rewrites: the rewrites that reached it (IndexSearch.llm_search?) all
+      # go on, since their own index searches drop indexes, never them. Also
+      # the total indexes_built, built of them.
+      def record_build(store, built)
+        reached = measured(store).size
+        Burndown.record_once(store, [["rewrite-index-ideas", :rewrites, { in: reached, out: reached }]],
+                             totals: { indexes_built: built })
+      end
+
+      # The entries that count their measurement runs.
+      MEASURED = %w[baseline index_baseline candidate_runs].freeze
+
+      # Records measurement's burndown, once, under the search rewrites:
+      # in, the rewrites that reached it (IndexSearch.llm_search?), out,
+      # those selection ranked, and the rest dropped by their fate
+      # (RewriteFate), with result-comparison's partial comparisons as extra
+      # partial_comparisons, and baseline's, index-baseline's, and
+      # candidate-runs' runs as the total measurement_runs.
+      def record_measurement(store, selection)
+        rewrites = measured(store)
+        fates = rewrites.empty? ? [] : fates(store, rewrites, selection)
+        partial = store.read("result_comparison").fetch("partial_count", 0)
+        runs = MEASURED.sum { store.entry?(it) ? store.read(it).fetch("measurement_runs", 0) : 0 }
+        Burndown.record_once(
+          store, [["measurement", :rewrites, { in: rewrites.size, out: fates.count("ranked"),
+                                               dropped: (fates - ["ranked"]).tally.transform_keys(&:to_sym),
+                                               extra: { partial_comparisons: partial } }]],
+          totals: { measurement_runs: runs }
+        )
+      end
+
+      def measured(store)
+        (1..).lazy.take_while { store.entry?("rewrite_#{it}") }.map { "rewrite_#{it}" }
+             .select { Steps::IndexSearch.llm_search?(store, it) }.to_a
+      end
+
+      def fates(store, rewrites, selection)
+        context = Steps::RewriteFate.context(store, selection:)
+        rewrites.map { Steps::RewriteFate.call(store, it, context)["fate"] || "unfinished" }
       end
 
       def by_rule(tagged, stage, fallback)

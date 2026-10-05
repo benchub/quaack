@@ -3,6 +3,7 @@
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_build"
 require_relative "../index_candidate"
+require_relative "../rewrite_burndown"
 require_relative "../run_server"
 
 module Quaack
@@ -12,7 +13,9 @@ module Quaack
       # every ranked and set-aside index on the racetrack (IndexBuild) and
       # writes index_build. Before each index it sends an
       # index_build_progress line: its position, the total, and its DDL.
-      # Its only other line is DONE.
+      # Its only other line is DONE. Before it writes index_build, it records
+      # rewrite-index-ideas' burndown and the indexes it built
+      # (RewriteBurndown.record_build).
       #
       # Trust boundary. The stored DDL can hold a literal, so the progress
       # line's DDL goes through CandidateDdlRedaction, named with the
@@ -25,7 +28,7 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           Enclave::IndexBuild.build(store, connection, starting: lambda { |index, total, ddl|
             progress.call(type: :index_build_progress, index:, total:, ddl: shown(redaction, ddl))
-          })
+          }, built: ->(indexes) { RewriteBurndown.record_build(store, indexes.size) })
           []
         ensure
           connection&.close

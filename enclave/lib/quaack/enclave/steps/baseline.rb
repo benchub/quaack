@@ -19,6 +19,7 @@ module Quaack
       #   "timeout_ms" for index-baseline and candidate-runs: RunDiscipline.timeout_ms of the
       #                slowest racetrack baseline run (or MAX_MS, if every
       #                set timed out)
+      #   "measurement_runs" how many runs it took (Measurement.runs), for the burndown
       # Its only line is DONE.
       module Baseline
         ORIGINAL_TIMEOUT_MS = 900_000
@@ -38,7 +39,8 @@ module Quaack
         def entry(sets)
           times = sets.values.reject { it["timed_out"] }.flat_map { it["runs"] }.map { it["execution_ms"] }
           { "sets" => sets, "timed_out" => sets.select { |_, m| m["timed_out"] }.keys,
-            "timeout_ms" => times.empty? ? RunDiscipline::MAX_MS : RunDiscipline.timeout_ms(times.max) }
+            "timeout_ms" => times.empty? ? RunDiscipline::MAX_MS : RunDiscipline.timeout_ms(times.max),
+            "measurement_runs" => Measurement.runs(sets) }
         end
       end
     end

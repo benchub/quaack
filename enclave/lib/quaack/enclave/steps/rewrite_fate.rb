@@ -111,8 +111,9 @@ module Quaack
 
         module_function
 
-        def context(store)
-          selection = store.read("selection")
+        # selection, if given, stands in for the stored entry, for selection
+        # itself, which records the fates before it writes it.
+        def context(store, selection: store.read("selection"))
           runs = store.read("candidate_runs")
           compared = store.read("result_comparison") if store.entry?("result_comparison")
           Context.new(top: selection["top"].map { it["label"] }, excluded: selection["excluded"],
