@@ -729,6 +729,18 @@ Common rules:
 | `run_from_older_version` | An older version of QUAACK started this run, and its store means something else to this version. | Start a new run with `quaack start`. `quaack teardown` still works on the old run. |
 | A version mismatch message | `quaacks` on the jump server doesn't match your checkout. | Run `quaack deploy --host <jump server>`. |
 
+### A step is slow.
+
+If one `quaacks` step keeps a core busy for minutes, profile it on the jump server. Find the step's command line with `ps`, stop `quaack run` on your laptop, and run the step again by hand with `QUAACKS_PROFILE` set to a file path:
+
+```sh
+QUAACKS_PROFILE=$HOME/quaacks-profile.txt quaacks rewrite-test --search rewrite_3 --run <run ID>
+```
+
+The step runs as usual and prints the same output. When it ends, `quaacks` writes the profile, readable only by you. It's a header with the sample count, then one line per sampled `path:lineno`: how many samples that line was running in (self), how many it was anywhere on the stack in (total), and the location, busiest first. It holds code locations only, never a value from your data, so you can send it to whoever maintains QUAACK. It uses only Ruby's standard library, since tools like rbspy can't attach to Ubuntu's packaged Ruby.
+
+The sampler is a Ruby thread. It samples every 10 ms while the step waits on Postgres, but only about 7 times a second while the step is busy in Ruby. Samples lean toward waits, but over a run of minutes they still show where the CPU goes.
+
 ## What QUAACK won't do.
 
 In version 1, QUAACK refuses these, rather than give an answer it can't back up:

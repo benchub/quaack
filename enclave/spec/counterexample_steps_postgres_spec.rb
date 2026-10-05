@@ -77,6 +77,25 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect_no_leaks(sentinels, outcome)
     end
 
+    # QUAACKS_PROFILE (Profiler) writes code locations to a file on the jump
+    # server, never values, and the step prints what it would without it.
+    it "writes a profile of code locations only when QUAACKS_PROFILE is set, and prints the same" do
+      ready(looser)
+      profile = File.join(quaacks.home, "profile.txt")
+
+      outcome = quaacks.run("rewrite-test", "--search", "rewrite_1", "--run", store.run_id,
+                            env: libpq_env.merge("QUAACKS_PROFILE" => profile))
+
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      expect(lines(outcome).first).to include("passed" => false, "scenario" => "s1", "rule" => "row_count")
+      header, *rows = File.read(profile).lines
+      expect(header).to match(/\A# quaacks profile: [1-9]\d* samples\./)
+      expect(rows).to all(match(/\A\d+\t\d+\t[^\t]+:\d+\n\z/))
+      expect(rows.join).to include("/quaack/enclave/cli.rb:")
+      expect_no_leaks(sentinels, stdout: File.read(profile), why: "the profile")
+      expect(LeakCheck.findings(sentinels, stdout: "#{rows.first}#{sentinels.text}\n")).not_to eq([])
+    end
+
     it "disproves a looser rewrite by scenario and rule, and records that it didn't survive" do
       ready(looser)
 

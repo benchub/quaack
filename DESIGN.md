@@ -301,6 +301,8 @@ Before each `quaack start`, `quaack setup`, and `quaack run`, the driver runs `q
 
 Everything the enclave script prints goes through the egress function, including error messages. Postgres errors can include real values, such as the key in a unique-violation message, so errors get filtered too. That's where the trust boundary is enforced. An intake unreadable-file error may carry only one fixed reason (`missing`, `symlink`, `not_regular_file`, or `permission_denied`), never the path or the operating system's message.
 
+With `QUAACKS_PROFILE=<path>` set, `quaacks` samples its step's backtrace from a thread every 10 ms, using only the standard library, and when the step ends writes each sampled `path:lineno`'s self and total counts to that file on the jump server, mode 0600. It holds code locations only, never a value, and never goes to stdout or stderr, so it crosses nothing. It's for an operator troubleshooting a slow step by hand, since rbspy can't attach to Ubuntu's packaged Ruby.
+
 **What goes into the enclave**, from the driver to the enclave script:
 
 - Requests to run a step.

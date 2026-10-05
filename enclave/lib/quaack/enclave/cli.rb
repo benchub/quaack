@@ -3,6 +3,7 @@
 require_relative "egress"
 require_relative "error_filter"
 require_relative "hangup"
+require_relative "profiler"
 require_relative "store"
 require_relative "cli/refused"
 require_relative "cli/step"
@@ -66,11 +67,15 @@ module Quaack
 
       # What exe/quaacks runs. It silences stderr, takes stdout for the CLI
       # alone, and runs argv. out, if given, is stdout already claimed, as
-      # exe/quaacks does before it loads the enclave.
+      # exe/quaacks does before it loads the enclave. With
+      # QUAACKS_PROFILE=<path> set, it profiles the step to path (see
+      # Profiler).
       def self.main(argv, steps: STEPS, out: nil)
         ErrorFilter.silence_stderr!
         out ||= claim_stdout!
-        Hangup.during(out) { new(steps:, stdin: $stdin, out:).run(argv) }
+        Profiler.during(ENV.fetch("QUAACKS_PROFILE", nil)) do
+          Hangup.during(out) { new(steps:, stdin: $stdin, out:).run(argv) }
+        end
       end
 
       # Points STDOUT, file descriptor 1, at the null device for the rest of
