@@ -87,8 +87,12 @@ RSpec.describe "quaacks report-payload" do
     store.write("rewrite_1", "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
                              "transformation" => "moved #{sentinel}", "assumptions" => [{ "kind" => sentinel }],
                              "source" => "rule", "rules" => ["key_in_self_join"])
-    store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil, "untested" => 1,
-                                    "untested_atoms" => [{ "shape" => "column = $n" }])
+    # untested holds vacuity-guard's redacted shapes, and untested_atoms
+    # their indexes into the original's atoms, for counterexamples.
+    store.write("rewrite_tested_1", "passed" => true, "scenario" => nil, "rule" => nil,
+                                    "untested" => ["o.note = $2", "o.created_at > (now() - $1)"],
+                                    "untested_atoms" => [0, 3])
+    store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
                   "Plan" => node("Index Scan", 5, relation: "orders", index: "orders_created_at_id_idx")
@@ -197,10 +201,12 @@ RSpec.describe "quaacks report-payload" do
   end
 
   describe "every stored rewrite" do
-    it "sends a ranked rewrite's SQL, plan, untested atoms, and counterexamples evidence" do
+    it "sends a ranked rewrite's SQL, plan, untested atoms' shapes, which of them counterexamples covered, " \
+       "and counterexamples evidence" do
       expect(rewrite(1)).to include(
         "sql" => "SELECT id FROM public.orders WHERE note = $2 AND created_at > now() - $1",
-        "untested_atoms" => [{ "shape" => "column = $n" }], "evidence" => false
+        "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
+        "evidence" => false
       )
       expect(rewrite(1)["plan"].first).to include("node" => "Index Scan", "index" => "orders_created_at_id_idx",
                                                   "selectivity" => 0.005)
@@ -214,7 +220,7 @@ RSpec.describe "quaacks report-payload" do
         expect(rewrite(2)).to eq("rewrite" => "rewrite_2", "sql" => "SELECT $1", "source" => "operator",
                                  "rules" => nil, "empirical" => nil, "fate" => "unfinished", "scenario" => nil,
                                  "rule" => nil, "round" => nil, "after" => nil, "cycle" => nil, "plan" => nil,
-                                 "untested_atoms" => nil, "evidence" => nil)
+                                 "untested_atoms" => nil, "covered" => nil, "evidence" => nil)
       end
     end
   end

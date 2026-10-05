@@ -118,15 +118,31 @@ module Quaack
           "#{called(entry)} (#{source(entry) || "source #{Words::MISSING}"}): #{fate(entry)}"
         end
 
-        # The conditions rewrite-test's test data never exercised.
-        def atoms(entry) = Array(entry["untested_atoms"]).map { it.is_a?(Hash) ? it.values.join(" ") : it }
+        UNTESTED = "QUAACK tests a rewrite on rows it makes up, to check that it returns what your query returns. " \
+                   "Those rows never made the conditions below, from your query's WHERE and JOIN clauses, both " \
+                   "true and false, so a rewrite that changed one of them could still have passed."
+        LATER = "The test data the LLM wrote afterwards to break the rewrite"
+        CHECKED_LATER = "checked later"
 
-        # Whether counterexamples exercised them, which only a rewrite that survived
-        # counterexamples says.
+        # The conditions of your query that rewrite-test's made-up rows never
+        # exercised (vacuity-guard), by their redacted shapes. Anything else
+        # the payload holds there, such as an atom's index, isn't one.
+        def atoms(entry) = Array(entry["untested_atoms"]).grep(String).uniq
+
+        # Those a counterexample round's rows exercised afterwards.
+        def checked_later(entry) = atoms(entry) & Array(entry["covered"]).grep(String)
+
+        # Those no test exercised.
+        def unchecked_atoms(entry) = atoms(entry) - checked_later(entry)
+
+        # Whether a counterexample round exercised them. covered is nil
+        # when no round ran.
         def atoms_note(entry)
-          return "No later test exercised them either." if entry["evidence"] == false
+          return "No later test checked them." unless entry["covered"].is_a?(Array)
+          return "#{LATER} didn't check them either." if checked_later(entry).empty?
+          return "#{LATER} checked all of them, so none is left unchecked." if unchecked_atoms(entry).empty?
 
-          "The LLM-written test data exercised them afterwards." if entry["evidence"] == true
+          "#{LATER} checked the ones marked “#{CHECKED_LATER}”, but not the others."
         end
 
         # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.

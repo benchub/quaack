@@ -18,6 +18,7 @@
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.missing { color: #6d7785; font-style: italic; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+  code.sql { white-space: pre-wrap; }
   pre.sql { background: #f3f5f8; border: 1px solid #d5dbe3; border-radius: 4px; padding: 0.75rem 1rem;
             overflow-x: auto; line-height: 1.4; }
   article { margin: 1rem 0 1.75rem; }
@@ -55,8 +56,8 @@
 <% end %>
 <%= sql(r["sql"]) %>
 <% unless atoms(r).empty? %>
-<p>The made-up test data never exercised these conditions, so a change to one of them wasn't really checked. <%= h atoms_note(r) %></p>
-<ul><% atoms(r).each do |a| %><li><%= code(a) %></li><% end %></ul>
+<div class="untested"><p><%= h Rewrites::UNTESTED %> <%= h atoms_note(r) %></p>
+<% if unchecked_atoms(r).empty? %><details class="untested"><summary><%= h "The #{atoms(r).size} conditions" %></summary><% end %><ul><% atoms(r).each do |a| %><li><%= sql_code(a) %><%= h " (#{Rewrites::CHECKED_LATER})" if checked_later(r).include?(a) %></li><% end %></ul><% if unchecked_atoms(r).empty? %></details><% end %></div>
 <% end %>
 </details></article>
 <% end %>

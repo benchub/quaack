@@ -30,8 +30,9 @@ module Quaack
       #                          scenarios for the query: then the rule is
       #                          the refusal's, and the rewrite is untested
       #                          and never recommended
-      #   rewrite_round_<n>    { "round", "evidence", "rule" }, the last
-      #                        counterexample-compare round run (see Round.finish)
+      #   rewrite_round_<n>    { "round", "evidence", "rule", "covered" }, the
+      #                        last counterexample-compare round run (see
+      #                        Round.finish)
       #   rewrite_survived_<n> { "survived" => Boolean }, written once
       #                        rewrite-test and counterexamples are done with the rewrite:
       #                        false when plan-pruning discarded it, rewrite-test
@@ -230,20 +231,24 @@ module Quaack
           end
 
           # rewrite_round_<n> also says whether any round so far, from round
-          # 1, compared the queries on loaded fixtures ("evidence"), and
+          # 1, compared the queries on loaded fixtures ("evidence"), which
+          # untested atoms' shapes any round so far covered ("covered"), and
           # holds this round's "rule": nil for a match, the comparison's
           # rule for a mismatch, or the arena runner's when a statement
           # failed. RewriteFate reads it to tell a disproof from a
           # candidate that failed to run.
           def finish(store, number, round, outcome)
-            evidence = !outcome[:match].nil? || (round != "1" && store.read("rewrite_round_#{number}")["evidence"])
+            last = round == "1" ? { "evidence" => false, "covered" => [] } : store.read("rewrite_round_#{number}")
+            evidence = !outcome[:match].nil? || last["evidence"]
             store.write("rewrite_round_#{number}", "round" => Integer(round), "evidence" => evidence,
-                                                   "rule" => outcome[:rule])
+                                                   "rule" => outcome[:rule], "covered" => covered(last, outcome))
             return Counterexamples.survived(store, number, false) if outcome[:match] == false
             return unless round == ROUNDS.last
 
             store.write("rewrite_survived_#{number}", "survived" => true, "evidence" => evidence)
           end
+
+          def covered(last, outcome) = (Array(last["covered"]) + outcome[:covered]).uniq
         end
       end
     end

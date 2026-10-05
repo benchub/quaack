@@ -45,7 +45,10 @@ module Quaack
       #                    fk_cycle refusal's tables, "schema.name" in
       #                    foreign key order), "plan" (its node shapes on
       #                    the slow literal set, or nil), "untested_atoms"
-      #                    (rewrite-test's, or nil if it wasn't tested), and
+      #                    (rewrite-test's redacted shapes, or nil if it
+      #                    wasn't tested), "covered" (the shapes of those
+      #                    the counterexample rounds covered, or nil if no
+      #                    round ran), and
       #                    "evidence" (whether a counterexamples round compared it
       #                    on loaded inserts; nil unless it survived) }
       #   indexes          { built index name => { "ddl", "size",
@@ -119,11 +122,14 @@ module Quaack
           plan && nodes(plan, stats)
         end
 
-        # rewrite-test's untested atoms, and whether counterexamples had evidence on
-        # them, which only a rewrite that survived counterexamples has.
+        # rewrite-test's untested atoms, by their redacted shapes (not the
+        # indexes counterexamples reads), the shapes of those the
+        # counterexample rounds covered, and whether counterexamples had
+        # evidence, which only a rewrite that survived counterexamples has.
         def checks(store, number)
           survived = NegativeResult.optional(store, "rewrite_survived_#{number}")
-          { "untested_atoms" => NegativeResult.optional(store, "rewrite_tested_#{number}")&.fetch("untested_atoms"),
+          { "untested_atoms" => NegativeResult.optional(store, "rewrite_tested_#{number}")&.fetch("untested"),
+            "covered" => NegativeResult.optional(store, "rewrite_round_#{number}")&.fetch("covered", nil),
             "evidence" => (survived.fetch("evidence", true) if survived && survived["survived"] == true) }
         end
 

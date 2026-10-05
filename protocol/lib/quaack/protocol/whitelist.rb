@@ -158,7 +158,8 @@ module Quaack
       # rule, round, or last stage that goes with it (and, for an fk_cycle
       # refusal, the cycle's table names, each a relation of the run's
       # schema subset), its plan's node shapes, its
-      # untested atoms (rewrite-test's redacted shapes), and its counterexamples
+      # untested atoms (rewrite-test's redacted shapes), the shapes of those
+      # the counterexample rounds covered, and its counterexamples
       # evidence. indexes is each built index's DDL through
       # CandidateDdlRedaction with its size and catalog coverage, each
       # existing index as its name and size in bytes. negative is the negative-result
