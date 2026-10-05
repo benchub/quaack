@@ -2199,22 +2199,7 @@ Minor findings from the review of 20261003-21:
 
 ### 20261004-16. Rewrite names: drop word pairs that read badly. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-17. Explain `production_connection_failed`.
-
-`quaack setup` failing with a bare `production_connection_failed` (the user, 2026-10-04) leaves the operator guessing. The enclave connects to production with `PG.connect(host:)`, where the host is the `server` that `quaack start` recorded. The port, user, database and password come only from libpq's own setup on the jump server, in the non-interactive ssh session QUAACK runs in. The setup's own `--host` and `--port` are for the run server, and don't apply.
-
-Add a fixed note to `EnclaveError#rule_with_note` for this rule, the way `run_from_older_version` has one. It should say:
-
-- which host was tried (the driver knows the run's `server`, so it doesn't have to come from the enclave);
-- that the port, user, database and password come from `PG*` variables, `~/.pg_service.conf` with `PGSERVICE`, and `~/.pgpass` on the jump server, and that a non-interactive ssh session may not load the shell rc file that sets them;
-- how to test it: `ssh <jump> 'psql -h <server> -c "select 1"'`.
-
-It must never carry libpq's message, which can name the user or the database. Do the same for the run server's connection failure, if it has its own rule. Check README's setup section says this too.
-
-- **Depends on:** none. Mention `quaack start --port` (20261004-18, landed) in the note.
-- **Came from:** The user, 2026-10-04.
-- **Design:** inventory, Where QUAACK runs.
-- **Status:** todo
+### 20261004-17. Explain `production_connection_failed`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-18. `quaack start --port`: production's port. Done, see BACKLOG-COMPLETE.md.
 
@@ -2228,13 +2213,13 @@ It must never carry libpq's message, which can name the user or the database. Do
 
 Minor findings from the review of 20261004-18:
 
-- **Bad encodings raise.** `Protocol::Port.valid?` (`protocol/lib/quaack/protocol/port.rb:17`) raises on invalid UTF-8 (`ArgumentError`) or UTF-16 input (`Encoding::CompatibilityError`) instead of returning false. So `--port $'\xff'` gives `internal_error` instead of `bad_port` or `bad_run_server_port`. The old run-server check tested `ascii_only?` first. Check `valid_encoding? && ascii_only?` first, with a spec for each case.
+- **Bad encodings raise. Done:** landed in 6e520d5. Invalid UTF-8 in the driver's other arguments went to 20261004-38. The original finding was: `Protocol::Port.valid?` (`protocol/lib/quaack/protocol/port.rb:17`) raises on invalid UTF-8 (`ArgumentError`) or UTF-16 input (`Encoding::CompatibilityError`) instead of returning false. So `--port $'\xff'` gives `internal_error` instead of `bad_port` or `bad_run_server_port`. The old run-server check tested `ascii_only?` first. Check `valid_encoding? && ascii_only?` first, with a spec for each case.
 - **The operator's commands don't get the port.** `run_server_command`, `destroy_command` and `memory_command` get only `{server}`, not production's port. Add a `{port}` placeholder only if a script needs it, and ask the user first.
 
 - **Depends on:** 20261004-18.
 - **Came from:** The review of 20261004-18.
 - **Design:** intake, run-server.
-- **Status:** todo
+- **Status:** todo (only the `{port}` item is left, and it needs the user)
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
@@ -2343,4 +2328,31 @@ Refuse to send a statement when the connection isn't inside the runner's transac
 - **Depends on:** 20261004-28.
 - **Came from:** The second review of 20261004-28.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261004-37. Connection-failure notes: follow-ups.
+
+These are review minors from 20261004-17.
+
+1. README says "the message says which server it tried" for both connection failures, but the `run_server_connection_failed` note names no host. Fix README.
+2. Remove the inline `Metrics/AbcSize` disable on `run_command` in `driver/lib/quaack/driver/cli.rb`. It's the only one in any gem's `lib`. Split the method instead, for example by moving the run lookup and transport setup into a helper.
+3. Record `quaack start --port` in the run record too, so the note's psql test command can include `-p <n>` exactly instead of "adding -p <n> if you gave…".
+4. In the note, "It gives libpq only that host" doesn't say who "It" is. Say "QUAACK gives libpq…".
+
+- **Depends on:** 20261004-17.
+- **Came from:** The review of 20261004-17.
+- **Design:** inventory, Where QUAACK runs.
+- **Status:** todo
+
+### 20261004-38. Invalid UTF-8 in driver arguments crashes with a backtrace.
+
+The builder and reviewer of 20261004-22 found these crashes:
+- `quaack setup` and `quaack run` crash on invalid UTF-8 in `--host`, `--port` or the database flags. The ssh transport raises an uncaught `ArgumentError` in `Transport::Base#refuse`.
+- `quaack start` crashes on invalid UTF-8 in `--server` (in `Transport::Base#refuse`) or `--query` (in a Pathname regex).
+
+In each case the operator gets a backtrace instead of a usage error. Check every driver argument's encoding up front, and give a usage error (exit 64) that doesn't echo the value. Write a test first for each command.
+
+- **Depends on:** 20261004-22.
+- **Came from:** The builder and review of 20261004-22.
+- **Design:** intake.
 - **Status:** todo
