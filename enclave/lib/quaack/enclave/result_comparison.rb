@@ -163,62 +163,87 @@ module Quaack
 
       # One query's top level, parsed. Each builder parses the SQL again, so
       # none changes another's tree.
+      #
+      # rewrite-test compares the same two queries on every fixture, and
+      # deparsing them is costly, so parse keeps each Shape it makes, and a
+      # Shape keeps each answer and query it builds. Only answers are kept:
+      # one that raises runs again the next time it's asked for.
       class Shape
+        # How many Shapes parse keeps. It forgets them all past this, so a
+        # long run can't grow it without bound.
+        KEPT = 64
+
+        @kept = {}
+
         def self.parse(sql, query)
-          new(sql, query)
+          @kept.clear if @kept.size >= KEPT
+          @kept[[sql, query]] ||= new(sql, query)
         end
 
         def initialize(sql, query)
-          @sql = sql
+          @sql = sql.frozen? ? sql : sql.dup.freeze
           @query = query
+          @answers = {}
           parsed = parse
           select_stmt(parsed)
           SupportedSql.check!(parsed)
         end
 
         def mode
-          select = select_stmt(parse)
-          return :with_ties if select.limit_option == :LIMIT_OPTION_WITH_TIES
-          return :ordered unless select.sort_clause.empty?
+          kept(:mode) do
+            select = select_stmt(parse)
+            next :with_ties if select.limit_option == :LIMIT_OPTION_WITH_TIES
+            next :ordered unless select.sort_clause.empty?
 
-          select.limit_count || select.limit_offset ? :subset : :multiset
+            select.limit_count || select.limit_offset ? :subset : :multiset
+          end
         end
 
-        def ordered? = !select_stmt(parse).sort_clause.empty?
+        def ordered? = kept(:ordered?) { !select_stmt(parse).sort_clause.empty? }
 
         # Whether the top level keeps only some of its rows: a LIMIT, an
         # OFFSET, DISTINCT or DISTINCT ON, or a UNION, INTERSECT, or EXCEPT
         # without ALL. Each can keep either of two rows btree calls equal.
         def cut?
-          select = select_stmt(parse)
-          set_dedup = select.op != :SETOP_NONE && !select.all
-          !!(select.limit_count || select.limit_offset || !select.distinct_clause.empty? || set_dedup)
+          kept(:cut?) do
+            select = select_stmt(parse)
+            set_dedup = select.op != :SETOP_NONE && !select.all
+            !!(select.limit_count || select.limit_offset || !select.distinct_clause.empty? || set_dedup)
+          end
         end
 
         # The collation each COLLATE clause names, anywhere in the query,
         # without its schema.
-        def collation_names = collations(parse.tree.to_h)
+        def collation_names = kept(:collation_names) { collations(parse.tree.to_h).freeze }
 
         def without_limit
-          build do |select|
-            select.limit_count = nil
-            select.limit_offset = nil
-            # So the tree matches the one its SQL parses to, for the guard.
-            select.limit_option = :LIMIT_OPTION_DEFAULT
+          kept(:without_limit) do
+            build do |select|
+              select.limit_count = nil
+              select.limit_offset = nil
+              # So the tree matches the one its SQL parses to, for the guard.
+              select.limit_option = :LIMIT_OPTION_DEFAULT
+            end
           end
         end
 
         # positions are 1-based output column positions. descending sorts
         # each DESC NULLS FIRST, the exact reverse of the default.
         def with_tiebreaker(positions, descending: false)
-          build do |select|
-            positions.each { |position| select.sort_clause << position_sort(position, descending) }
+          kept([:with_tiebreaker, positions.dup.freeze, descending]) do
+            build do |select|
+              positions.each { |position| select.sort_clause << position_sort(position, descending) }
+            end
           end
         end
 
-        def probe = "SELECT * FROM (#{build { nil }}) quaack_probe LIMIT 0"
+        def probe = kept(:probe) { "SELECT * FROM (#{build { nil }}) quaack_probe LIMIT 0" }
 
         private
+
+        def kept(key)
+          @answers.fetch(key) { @answers[key] = yield }
+        end
 
         def parse
           PgQuery.parse(@sql)

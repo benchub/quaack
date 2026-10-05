@@ -15,12 +15,16 @@ module Quaack
       # whose keys can't be evaluated counts as colliding. So is a group
       # with a row whose foreign key points at a parent row neither here nor
       # in the group (one a left-out group held).
+      #
+      # evaluated holds each expression index's keys for the values of its
+      # columns, so RowSets that share it, as a build's do, ask Postgres
+      # once per distinct value.
       class RowSet
-        def initialize(schema, conn)
+        def initialize(schema, conn, evaluated = {})
           @schema = schema
           @conn = conn
           @rows = Hash.new { |h, k| h[k] = [] }
-          @evaluated = {}
+          @evaluated = evaluated
         end
 
         # False when the group collides or lacks a parent, and is left out.
@@ -106,8 +110,11 @@ module Quaack
 
         def values(row, columns) = columns.map { |c| row.columns.index(c)&.then { |i| row.values[i] } }
 
+        # The keys depend only on the table, the index, and the values of
+        # its columns (see run).
         def evaluate(row, index)
-          @evaluated.fetch([row, index]) { @evaluated[[row, index]] = run(row, index) }
+          key = [row.table, index, values(row, index.columns)]
+          @evaluated.fetch(key) { @evaluated[key] = run(row, index) }
         end
 
         # A column the row leaves out reads as NULL.

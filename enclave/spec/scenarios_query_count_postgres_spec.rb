@@ -78,4 +78,28 @@ RSpec.describe Quaack::Enclave::Scenarios::Checks do
     expect(probes.size).to eq(probes.uniq.size)
     expect(conn.sent.size).to be < 1500
   end
+
+  # A unique index on an expression asks Postgres for each row's key. Each
+  # spill set and build once asked again for the same rows (20261004-23).
+  context "with a unique index on an expression" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA ex;
+        CREATE TABLE ex.users (id bigserial PRIMARY KEY, email varchar(255) NOT NULL, name text);
+        CREATE UNIQUE INDEX ON ex.users (lower((email)::text));
+        CREATE TABLE ex.posts (id bigserial PRIMARY KEY, author_id bigint NOT NULL REFERENCES ex.users,
+          editor_id bigint REFERENCES ex.users, title text NOT NULL);
+      SQL
+    end
+
+    it "asks for each row's key once per run" do
+      sql = "SELECT p.title, a.name FROM ex.posts p JOIN ex.users a ON a.id = p.author_id " \
+            "LEFT JOIN ex.users e ON e.id = p.editor_id WHERE lower(a.email) = 'a@example.com' AND p.title LIKE 'A%'"
+      Quaack::Enclave::ScenarioTests.run(conn, sql, [sql])
+
+      keys = conn.sent.select { |q, _| q.start_with?("SELECT (lower") }
+      expect(keys).not_to be_empty
+      expect(keys.size).to eq(keys.uniq.size)
+    end
+  end
 end
