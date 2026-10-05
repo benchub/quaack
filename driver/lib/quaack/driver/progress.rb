@@ -144,14 +144,25 @@ module Quaack
         timer = redrawing(start, stop = Queue.new)
         yield
       ensure
+        stopping(stop, timer)
+      end
+
+      # Stops and joins the timer, if any, and ends the step's clock, even
+      # if Ctrl-C comes during the join.
+      def stopping(stop, timer)
         stop&.push(:stop)
         timer&.join
+      ensure
         @lock.synchronize { @start = @own = nil }
       end
 
       def redrawing(start, stop)
         Thread.new do
           @lock.synchronize { draw(@clock.call - start) if @line } while stop.pop(timeout: @interval).nil?
+        rescue IOError, SystemCallError
+          # A redraw that can't write, such as to a closed pipe, stops the
+          # clock quietly, so the step keeps its own result or exception.
+          # The step's next line meets the same error.
         end
       end
 
@@ -189,7 +200,7 @@ module Quaack
       # now; and whether it was cut.
       def fit(suffix) = Fit.call(@line, suffix, Fit.columns(@io))
 
-      private :say, :repeats_step?, :close, :clocked, :redrawing, :finish, :final_reading, :draw, :fit
+      private :say, :repeats_step?, :close, :clocked, :stopping, :redrawing, :finish, :final_reading, :draw, :fit
 
       # Cuts a line, with suffix after it, short of width so it never
       # wraps, since \r goes back only to the start of a row. It answers the
