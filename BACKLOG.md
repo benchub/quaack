@@ -2344,18 +2344,7 @@ Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_post
 
 ### 20261004-46. Shape: drop the dead copy in `initialize`. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-47. Driver UTF-8 argument check: follow-ups.
-
-These are review minors from 20261004-38.
-
-1. No test pins two parts of `Arguments.not_utf8`. Dropping the `(?= <)` lookahead would blame `--keep` in `run --run ID --keep <bad>`. Dropping `force_encoding` would stop the check firing under `LC_ALL=C`. Add an example for each.
-2. The flag can be misattributed. `start --server --port <bad>` blames `--port`, which there is `--server`'s value. `start … --arena-db <bad>` names a flag that `start` doesn't take, because the flag list comes from the whole usage text. Use the subcommand's own usage, and pair flags with values left to right.
-3. README: "The last names the flag the argument goes with" isn't always true. Say "names the flag the argument goes with, if any, never the argument."
-
-- **Depends on:** 20261004-38.
-- **Came from:** The review of 20261004-38.
-- **Design:** intake.
-- **Status:** todo
+### 20261004-47. Driver UTF-8 argument check: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-48. README: polish the connection-note wording.
 
