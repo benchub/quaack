@@ -55,8 +55,9 @@ module Quaack
         module_function
 
         def call(run_id:, store_base:, **)
-          destroyed = destroyed?(run_id, store_base)
-          result = Store.teardown(run_id, base: store_base)
+          command = Config.load.destroy_command
+          destroyed = false
+          result = Store.teardown(run_id, base: store_base) { destroyed = destroyed?(command, it, run_id) }
           [{ type: :teardown, run_id:, store: result, next_step: destroyed ? NOTHING_LEFT : NEXT_STEP }]
         rescue Store::BadRun
           raise Error, "bad_run", cause: nil
@@ -66,31 +67,27 @@ module Quaack
           raise Error, "teardown_failed", cause: nil
         end
 
-        # Runs the configured destroy_command for a run that's still there,
-        # before its store goes, since the command is given the run's server.
-        # Whether it ran. A run that's gone, or isn't one, is left to
-        # Store.teardown, and its run server to the operator.
-        def destroyed?(run_id, store_base)
-          command = Config.load.destroy_command
-          store = open_run(run_id, store_base) if command
-          return false unless store
+        # Runs the configured destroy_command, if any, for the run
+        # Store.teardown opened, before it deletes the store, since the
+        # command is given the run's server. Whether it ran. It runs inside
+        # that one open, so with a command, teardown_failed always means it
+        # ran. A run that's gone, or isn't one, is never opened, and its run
+        # server is left to the operator.
+        def destroyed?(command, store, run_id)
+          return false unless command
 
           RunServerCommand.destroy(command, server: server(store), run: run_id)
           true
         end
 
         # The run's server, for destroy_command. An Error, not a Store::Error,
-        # so call passes it on.
+        # so call passes it on. entry? raises a SystemCallError, which names
+        # the file, if it can't look, as when the run directory stopped being
+        # searchable after it was opened.
         def server(store)
           store.entry?("server") ? store.read("server") : ""
-        rescue Store::Error
+        rescue Store::Error, SystemCallError
           raise Error, "destroy_command_not_run", cause: nil
-        end
-
-        def open_run(run_id, store_base)
-          Store.open(run_id, base: store_base)
-        rescue Store::Error
-          nil
         end
       end
     end
