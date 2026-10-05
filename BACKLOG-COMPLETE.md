@@ -5022,3 +5022,19 @@ Minor findings from the review of 20261003-21:
 - **Design:** The outline, `burndown`.
 - **Status:** done
 - **Landed:** Landed in ecfe202. The main session fixed the BACKLOG.md items: the three titles, the vacuity-guard wording, the four StepNine references, result-comparison, and racetrack-setup.
+
+### 20261004-43. ArenaRunner: ROLLBACK and a pending cancel under a short timeout.
+
+The builder of 20261004-39 found these. Both are rare with real timeouts.
+1. The runner's `ROLLBACK` itself runs under the arena `statement_timeout`. In about 1 in 4,000 tries at 1 ms, it was canceled. Then `Cancel.rule` reports `statement_canceled` and `finish` reports `rollback_failed`. Turn the timeout off with `SET LOCAL statement_timeout = 0`, or send the ROLLBACK in a way that's immune, before rolling back.
+2. A pending cancel can surface on a later command as "canceling statement due to user request". Find where, and make sure it's classified correctly or drained.
+
+Find deterministic reproductions, for example by injection, and write the tests first.
+
+Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_postgres_spec.rb:80` got `statement_canceled` instead of `statement_timeout` under parallel load. It passes alone.
+
+- **Depends on:** 20261004-39.
+- **Came from:** The builder of 20261004-39.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** Landed in 824a10b. Root cause: the clock read ran under the transaction's statement_timeout and was itself canceled, so Cancel.rule had no start time. Each statement now arms and disarms its own timeout in the same pipeline.

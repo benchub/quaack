@@ -2297,20 +2297,7 @@ These are review minors from 20261004-28.
 
 ### 20261004-42. Shape cache: tidy the specs. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-43. ArenaRunner: ROLLBACK and a pending cancel under a short timeout.
-
-The builder of 20261004-39 found these. Both are rare with real timeouts.
-1. The runner's `ROLLBACK` itself runs under the arena `statement_timeout`. In about 1 in 4,000 tries at 1 ms, it was canceled. Then `Cancel.rule` reports `statement_canceled` and `finish` reports `rollback_failed`. Turn the timeout off with `SET LOCAL statement_timeout = 0`, or send the ROLLBACK in a way that's immune, before rolling back.
-2. A pending cancel can surface on a later command as "canceling statement due to user request". Find where, and make sure it's classified correctly or drained.
-
-Find deterministic reproductions, for example by injection, and write the tests first.
-
-Seen again in the review of 20261004-38: `enclave/spec/denormalized_fixture_postgres_spec.rb:80` got `statement_canceled` instead of `statement_timeout` under parallel load. It passes alone.
-
-- **Depends on:** 20261004-39.
-- **Came from:** The builder of 20261004-39.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-43. ArenaRunner: ROLLBACK and a pending cancel under a short timeout. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-44. README: the connection note when no server is recorded. Done, see BACKLOG-COMPLETE.md.
 
@@ -2450,4 +2437,17 @@ Minor findings from the review of 20261004-15. These are all comment or prose fi
 - **Depends on:** none.
 - **Came from:** The review of 20261004-15, 2026-10-05.
 - **Design:** none.
+- **Status:** todo
+
+### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default.
+
+These come from the build and review of 20261004-43.
+
+- **`clocked` keeps the statement's own error, but nothing tests it.** Changing the guard to `failed?(reset) ? reset : outcome` leaves the suite green. Now that the reset is last, a late cancel on the Sync replaces the reset's result, not the statement's. Test it: a late cancel on the Sync after `SELECT 1/0` must give `[:query_failed, "22012"]`, not `[:statement_canceled, "57014"]`.
+- **The disarm in `load` is only pinned by the phase-count test.** Add a test with a nonzero session `statement_timeout`, such as 100 ms. An empty fixture's slow ROLLBACK must still succeed; with `DISARM_SQL` removed from `load`, it fails.
+- **A nonzero server default.** After a cancel, `Cancel.rule` runs a clock read once the rollback has put the setting back to the session's value. A nonzero server or role default would apply to that read. Decide whether the arena connection should set `statement_timeout` to 0 at connect, and test it.
+
+- **Depends on:** 20261004-43.
+- **Came from:** The build and review of 20261004-43, 2026-10-05.
+- **Design:** rewrite-test.
 - **Status:** todo
