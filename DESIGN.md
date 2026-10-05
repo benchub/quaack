@@ -976,7 +976,7 @@ The enclave script tells the driver which atoms are untested by their redacted s
 
 ### fixture-open. Open the transaction.
 
-Begin a transaction on arena with `statement_timeout` set. A statement that hits it fails the load or the comparison as a timeout. The runner tells that from any other cancel by the arena server's clock, as run-discipline does. It reads that clock just before each statement, in the statement's own round trip (one libpq pipeline), and again after a cancel, once it has rolled back. So a fixture load takes no extra round trips and no extra transaction IDs.
+Begin a transaction on arena with `statement_timeout` set. A statement that hits it fails the load or the comparison as a timeout. The runner tells that from any other cancel by the arena server's clock, as run-discipline does. It reads that clock just before each statement, in the statement's own round trip (one libpq pipeline), and again after a cancel, once it has rolled back. So a fixture load takes no extra round trips and no extra transaction IDs. Since a cancel ends the transaction that way, the runner sends nothing more until the next transaction begins, so no statement runs outside it, without `statement_timeout`. It checks that from libpq's own state, with no round trip.
 
 ### fixture-load. Load the fixture.
 

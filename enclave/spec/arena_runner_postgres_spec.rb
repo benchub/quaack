@@ -258,6 +258,25 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    # Telling the cancel apart rolls the transaction back, so a block that
+    # catches the error and goes on would otherwise run its next query in
+    # autocommit, without statement_timeout, and keep what it wrote.
+    it "refuses any statement after a cancel has rolled the transaction back, so nothing it writes persists" do
+      write = 'WITH d AS (INSERT INTO "Fixture Space".counters DEFAULT VALUES RETURNING id) SELECT count(*) FROM d'
+      errors = []
+      runner.with_fixture([parent(1, "a")]) do |tx|
+        ["SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)", write].each do |sql|
+          tx.query(sql)
+        rescue described_class::Error => e
+          errors << e
+        end
+      end
+
+      expect(errors.map { [it.rule, it.step, it.index, it.sqlstate, it.cause] })
+        .to eq([[:statement_canceled, :query, 0, "57014", nil], [:transaction_ended, :query, 1, nil, nil]])
+      expect_nothing_persisted
+    end
+
     # The time is measured from the start of each statement, not of the
     # transaction or the runner: ScenarioTests reuses one runner across
     # scenarios, so a cancel after the timeout's worth of earlier statements
@@ -442,6 +461,25 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
       expect_nothing_persisted
     end
 
+    # An error that isn't a cancel leaves the transaction aborted, not
+    # rolled back, so it's still the runner's: a query after it goes out
+    # and fails as it would on its own.
+    it "fails a query after a caught error with 25P02, and rolls back" do
+      write = 'WITH d AS (INSERT INTO "Fixture Space".counters DEFAULT VALUES RETURNING id) SELECT 1'
+      errors = []
+      runner.with_fixture([parent(1, "a")]) do |tx|
+        ["SELECT 1 / 0", write].each do |sql|
+          tx.query(sql)
+        rescue described_class::Error => e
+          errors << e
+        end
+      end
+
+      expect(errors.map { [it.rule, it.index, it.sqlstate] })
+        .to eq([[:query_failed, 0, "22012"], [:query_failed, 1, "25P02"]])
+      expect_nothing_persisted
+    end
+
     it "rolls back after a fixture row fails to load, naming the row by its position" do
       error = run_error(runner, [parent(1, "a"), child(10, "a"), parent(2, "a")]) { raise "not reached" }
 
@@ -530,6 +568,11 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       expect([error.rule, error.step, error.index, error.cause]).to eq([:query_failed, :query, 0, nil])
       expect(persisted_rows).to eq(0)
+      # The dead connection is left in pipeline mode (PQ_PIPELINE_ABORTED,
+      # 2), and libpq reports its transaction status as PQTRANS_UNKNOWN, so
+      # the runner refuses it before sending anything.
+      expect([conn.pipeline_status, conn.transaction_status]).to eq([2, 4])
+      expect([run_error.rule, run_error.step]).to eq(%i[connection_unusable transaction])
     end
 
     it "refuses a query through the transaction after the block has returned" do
@@ -1075,7 +1118,10 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         # Each statement sends the server's clock and then itself.
         [:send_query_params, 7] => [:fixture_load_failed, :load, 1], # after two setvals (id, qty)
         [:send_query_params, 8] => [:fixture_load_failed, :load, 1],
-        [:transaction_status, 4] => [:fixture_load_failed, :load, 0]
+        # Each statement reads the transaction status before it's sent and
+        # after it's run: after two setvals, the first row's.
+        [:transaction_status, 6] => [:fixture_load_failed, :load, 0],
+        [:transaction_status, 7] => [:fixture_load_failed, :load, 0]
       }
 
       cases.each do |(method, call), expected|
