@@ -566,6 +566,30 @@ RSpec.describe "quaack run" do
     expect(errors).to include("fake invalid_request_error")
   end
 
+  # Task 20261004-66: the run's own error isn't an EnclaveError, and its
+  # teardown fails too. The run's error is what to fix, so its message
+  # shows as is, with no pointer to teardown's line.
+  { "teardown_failed" => [Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed"),
+                          "Check or remove ~/.quaack/runs/20260926T010203Z-0123abcd on the jump server by hand."],
+    "driver_error" => [IOError.new("sentinel-io-7f3a"), "To tear it down later, run this on the jump server: " \
+                                                        "quaacks teardown --run 20260926T010203Z-0123abcd"] }
+    .each do |rule, (teardown_error, hint)|
+    it "shows the LLM error alone when the run fails and then its teardown fails as #{rule}" do
+      fake.error("operator-rewrites", status: 400)
+      failing["teardown"] = teardown_error
+
+      status = cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])
+
+      expect([status, stdout.string]).to eq([1, ""])
+      teardown_line, failed_line, *rest = errors.lines
+      expect([teardown_line, rest]).to eq(["quaack: couldn't tear down run #{run_id} (#{rule}). #{hint}\n", []])
+      # The LLM error's message, which ends with the request's shape in
+      # brackets, and nothing after it.
+      expect(failed_line).to match(/\Aquaack run failed: llm_bad_request: [^\n]*fake invalid_request_error[^\n]*\]\n\z/)
+      expect(errors).not_to include("sentinel-io")
+    end
+  end
+
   it "fails with exit 1 when rewrite-payload sends no rewrite payload" do
     replies["rewrite-payload"] = []
 

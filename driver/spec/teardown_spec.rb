@@ -86,10 +86,6 @@ RSpec.describe Quaack::Driver::Teardown do
       expect(described_class.failure(error, teardown, run_id))
         .to eq("driver_error. To go on, #{described_class::TEARDOWN_LEFT}")
     end
-
-    it "keeps the message of the run's own non-EnclaveError" do
-      expect(described_class.failure(IOError.new("llm said no"), teardown, run_id)).to eq("llm said no")
-    end
   end
 
   it "treats a store that's already gone as torn down" do

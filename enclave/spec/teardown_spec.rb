@@ -221,6 +221,62 @@ RSpec.describe "quaacks teardown" do
     end
   end
 
+  # Task 20261004-66: destroy_command, in this process, so a test can step
+  # into the run's open as another process could. HOME holds the config.
+  describe "with destroy_command, between open and delete" do
+    let(:gone) { File.join(dir, "gone") }
+    let(:store) { planted_run.tap { it.write("server", "prod 1") } }
+
+    around do |example|
+      old = Dir.home
+      ENV["HOME"] = dir
+      example.run
+    ensure
+      ENV["HOME"] = old
+    end
+
+    before do
+      FileUtils.mkdir_p(File.join(dir, ".quaack"))
+      File.write(File.join(dir, ".quaack", "config.json"), JSON.generate("destroy_command" => "touch #{gone}"))
+    end
+
+    # The run isn't a run directory open would open when teardown first
+    # looks, and is one by its next look. A delete that then fails must not
+    # read as teardown_failed, which says destroy_command already ran.
+    it "never deletes a run it didn't destroy the server for, when the run only later becomes openable" do
+      locked = File.join(store.path, "locked").tap { Dir.mkdir(it) }
+      File.write(File.join(locked, "kept.json"), "[]")
+      File.chmod(0o500, locked)
+      first = true
+      allow(Quaack::Enclave::Store).to receive(:open).and_wrap_original do |open, *args, **options|
+        raise Quaack::Enclave::Store::BadRun, "not yet" if first
+
+        open.call(*args, **options)
+      ensure
+        first = false
+      end
+
+      expect(teardown("--run", store.run_id)).to eq(70)
+      expect(out.string).to eq(error_line("bad_run"))
+      expect(File.exist?(gone)).to be(false)
+      expect(Dir.children(store.path)).to include("server.json", "query.json")
+    end
+
+    # The run directory closes to search after it was opened, so looking
+    # for the server entry raises EACCES.
+    it "fails as destroy_command_not_run, with no path, when it can't look for the run's server" do
+      run = store
+      allow(Quaack::Enclave::Store).to receive(:open).and_wrap_original do |open, *args, **options|
+        open.call(*args, **options).tap { File.chmod(0o000, it.path) }
+      end
+
+      expect(teardown("--run", run.run_id)).to eq(70)
+      expect(out.string).to eq(error_line("destroy_command_not_run"))
+      expect(File.exist?(gone)).to be(false)
+      expect(File.directory?(run.path)).to be(true)
+    end
+  end
+
   # The way the operator runs it on the jump server, after intake: the
   # installed quaacks in its own process, outside Bundler, with HOME a
   # temporary directory.

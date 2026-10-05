@@ -21,12 +21,16 @@ module Quaack
       # it first, is :already_gone too. A base open would refuse, such as a
       # file, one under a directory it can't search, or a symlink, raises
       # BadBase, even with nothing at the run's path.
+      #
+      # A block, if given, gets the opened Store just before the delete, so
+      # what it reads is from the same open the delete uses. An error from
+      # it leaves the run alone.
       def self.teardown(run_id, base: default_base, current_uid: Process.euid)
         path = run_path(run_id, base)
         # A fast path only: the recheck below would say already_gone too.
         return :already_gone unless look_up(run_id, base) { PrivateFiles.lstat(path) }
 
-        self.open(run_id, base:, current_uid:).teardown
+        self.open(run_id, base:, current_uid:).tap { yield it if block_given? }.teardown
         :deleted
       rescue BadBase
         # Not a run that went: the run's path can't be trusted to say.
