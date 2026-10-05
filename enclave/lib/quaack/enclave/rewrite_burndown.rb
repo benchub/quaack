@@ -54,13 +54,17 @@ module Quaack
       def check(source, tagged)
         arrival = by_rule(tagged, :arrival, :inbound_check)
         assumption = tagged.count { it[1] == :assumption }
-        pruning = by_rule(tagged, :pruning, :failed_checks)
         arrived = tagged.size - arrival.values.sum
         [[ARRIVAL.fetch(source), :rewrites, { in: 0, added: { source.to_sym => tagged.size }, dropped: arrival,
                                               out: arrived }],
          ["assumption-check", :rewrites, { in: arrived, dropped: { unmet_assumption: assumption },
                                            out: arrived - assumption, extra: warnings(source, tagged) }],
-         (["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }] if pruning.any?)].compact
+         pruned(tagged)].compact
+      end
+
+      def pruned(tagged)
+        pruning = by_rule(tagged, :pruning, :failed_checks)
+        ["plan-pruning", :rewrites, { in: pruning.values.sum, dropped: pruning, out: 0 }] if pruning.any?
       end
 
       # Records rewrite-test's burndown for search, rewrite_<n>, once: in 1,

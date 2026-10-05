@@ -80,6 +80,8 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
       expect(stages["llm-rewrites"]["rewrites"]).to include("added" => { "llm" => 1 }, "out" => 1)
       expect(stages["assumption-check"]["rewrites"])
         .to eq(counted(in: 2, dropped: { "unmet_assumption" => 0 }, out: 2, extra: { "operator_warnings" => 1 }))
+      # Neither call's rewrites failed plan-pruning's checks, so neither writes it a record.
+      expect(stages).not_to have_key("plan-pruning")
     end
 
     it "counts nothing twice when a call that died before its marker is run again" do
