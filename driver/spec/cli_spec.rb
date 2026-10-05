@@ -329,6 +329,46 @@ RSpec.describe "quaack executable" do
       expect(ssh_log).to eq("")
     end
 
+    # Task 20261004-47: --keep takes no value, so what follows it is a
+    # stray argument, not --keep's.
+    it "doesn't blame a flag that takes no value for the argument after it" do
+      out, err, status = quaack("run", "--run", run_id, "--keep", bad)
+
+      expect([out, err, status.exitstatus]).to eq(["", "quaack run: an argument isn't valid UTF-8\n", 64])
+      expect(ssh_log).to eq("")
+    end
+
+    # Task 20261004-47: flags pair with values left to right, so here
+    # --port is --server's value and the bad argument is a stray.
+    it "doesn't blame a flag that is itself another flag's value" do
+      out, err, status = quaack("start", "--server", "--port", bad)
+
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start: an argument isn't valid UTF-8\n", 64])
+      expect(ssh_log).to eq("")
+    end
+
+    # Task 20261004-47: --arena-db is setup's and run's, not start's.
+    it "doesn't name a flag the subcommand doesn't take" do
+      out, err, status = quaack("start", "--server", "prod-1", "--query", "/q", "--plan", "/p", "--arena-db", bad)
+
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start: an argument isn't valid UTF-8\n", 64])
+      expect(ssh_log).to eq("")
+    end
+
+    # Task 20261004-47: under the C locale Ruby gives argv as binary, which
+    # is always a valid encoding, so the check has to read it as UTF-8.
+    it "refuses an argument that isn't UTF-8 under LC_ALL=C, and still passes UTF-8 through" do
+      out, err, status = Open3.capture3(env.merge("LC_ALL" => "C"), RbConfig.ruby, exe, "start", "--server", "prod-1",
+                                        "--query", bad, "--plan", "/p", chdir: dir)
+
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start: --query isn't valid UTF-8\n", 64])
+      expect(ssh_log).to eq("")
+
+      out, err, status = Open3.capture3(env.merge("LC_ALL" => "C"), RbConfig.ruby, exe, "start", "--server", "prod-1",
+                                        "--query", "r\u00e9sum\u00e9.sql", "--plan", "/p", chdir: dir)
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start failed: bad_run_id\n", 1])
+    end
+
     it "still passes non-ASCII UTF-8 through, as in a query file name or a database name" do
       out, err, status = quaack("start", "--server", "prod-1", "--query", "r\u00e9sum\u00e9.sql", "--plan", "/p")
 
