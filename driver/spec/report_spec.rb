@@ -486,6 +486,38 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking).to include('<td class="num">300</td><td class="num">400</td><td class="num">0 kB</td></tr>')
     end
 
+    describe "your query as it is, for comparison" do
+      def baseline(html = ranking) = html[%r{<tr class="baseline">.*?</tr>}m]
+
+      it "is a row above the ranked ones, with no rank, marked as the baseline, with its own blocks" do
+        expect(ranking.scan(/<tr class="(\w+)"/).flatten).to eq(%w[baseline rank rank])
+        expect(baseline).to eq('<tr class="baseline"><td class="num"></td><td>Your query as it is (the baseline, ' \
+                               'not ranked)</td><td class="num">1,000</td><td class="num">1,200</td>' \
+                               '<td class="num">none</td></tr>')
+      end
+
+      it "sums its blocks over the same sets of values as the candidates, with separators" do
+        payload["original_measurements"]["worst_case"] = m(1_234_000, 0)
+        payload["labels"][0]["measurements"]["worst_case"] = m(5, 0)
+        expect(baseline).to include('<td class="num">1,000</td><td class="num">1,235,200</td>')
+      end
+
+      it "says not recorded, never zero, for a number the payload doesn't carry" do
+        payload["original_measurements"].delete("slow")
+        payload["labels"][0]["measurements"]["worst_case"] = m(5, 0)
+        expect(baseline).to include('<td class="num">not recorded</td><td class="num">not recorded</td>')
+        payload["original_measurements"] = { "slow" => { "timed_out" => false }, "typical" => m(200, 150) }
+        expect(baseline(section(render(payload), "ranking")))
+          .to include('<td class="num">not recorded</td><td class="num">not recorded</td>')
+      end
+
+      it "says timed out where your query timed out" do
+        payload["original_measurements"]["slow"] = { "timed_out" => true }
+        payload["infinite_sets"] = ["slow"]
+        expect(baseline).to include('<td class="num">timed out</td><td class="num">timed out</td>')
+      end
+    end
+
     it "describes a candidate with several indexes, and one whose index definition is missing" do
       payload["labels"][0]["indexes"] = %w[quaack_a quaack_b]
       expect(ranking).to include("<td>Your query with new indexes on public.t (created_at) and public.t (a, b)</td>")
@@ -621,12 +653,55 @@ RSpec.describe Quaack::Driver::Report do
       it "shows blocks per set of values, against the original's, with memory and disk, verdict, and stability" do
         expect(candidate(1)).to include(
           '<tr><td>slow</td><td class="num">300</td><td class="num">1,000</td><td class="num">30</td>' \
-          '<td class="num">270</td><td>better</td><td>unstable: the count changed between runs</td></tr>'
+          '<td class="num">270</td><td>70% fewer blocks</td><td>unstable: the count changed between runs</td></tr>'
         )
         expect(candidate(2)).to include(
           '<tr><td>typical</td><td class="num">190</td><td class="num">200</td><td class="num">190</td>' \
-          '<td class="num">0</td><td>no worse</td><td></td></tr>'
+          '<td class="num">0</td><td>5% fewer blocks</td><td></td></tr>'
         )
+      end
+
+      describe "against your query" do
+        def against(ours, theirs, verdict: "no_worse")
+          payload["labels"][0].merge!("measurements" => { "slow" => m(400, 300), "typical" => ours },
+                                      "verdicts" => { "slow" => "better", "typical" => verdict })
+          payload["original_measurements"]["typical"] = theirs
+          typical(section(render(payload), "ranking").scan(%r{<article class="candidate">.*?</article>}m)[1])
+        end
+
+        # A candidate's typical row's against-your-query cell.
+        def typical(candidate)
+          candidate[%r{<tr><td>typical</td>(?:<td class="num">[^<]*</td>)*<td>([^<]*)</td>}, 1]
+        end
+
+        it "says how many percent more or fewer blocks it read, from the two numbers in its row" do
+          expect(against(m(48, 0), m(100, 0), verdict: "better")).to eq("52% fewer blocks")
+          expect(against(m(104, 0), m(100, 0))).to eq("4% more blocks")
+          expect(against(m(1668, 0), m(3454, 0), verdict: "better")).to eq("52% fewer blocks")
+        end
+
+        it "says same when the two are equal, and under 1% or over 99% when rounding would hide a difference" do
+          expect(against(m(200, 0), m(200, 0))).to eq("same")
+          expect(against(m(0, 0), m(0, 0))).to eq("same")
+          expect(against(m(999, 0), m(1000, 0))).to eq("under 1% fewer blocks")
+          expect(against(m(1001, 0), m(1000, 0))).to eq("under 1% more blocks")
+          expect(against(m(12, 0), m(5120, 0), verdict: "better")).to eq("over 99% fewer blocks")
+          expect(against(m(0, 0), m(5120, 0), verdict: "better")).to eq("100% fewer blocks")
+          expect(against(m(200, 0), m(100, 0), verdict: "worse")).to eq("100% more blocks")
+        end
+
+        it "counts the blocks when your query read none, since there's no percentage of zero" do
+          expect(against(m(5, 0), m(0, 0), verdict: "worse")).to eq("5 more blocks")
+          expect(against(m(1, 0), m(0, 0), verdict: "worse")).to eq("1 more block")
+        end
+
+        it "keeps the verdict word only where a number is missing or timed out" do
+          expect(against(m(5, 0), { "timed_out" => true }, verdict: "better")).to eq("better")
+          expect(against({ "timed_out" => true }, m(5, 0), verdict: "worse")).to eq("worse")
+          expect(against(m(5, 0), nil, verdict: "no_worse")).to eq("no worse")
+          expect(against({ "timed_out" => false }, m(5, 0), verdict: "no_worse")).to eq("no worse")
+          expect(against(m(5, 0), nil, verdict: nil)).to eq("not recorded")
+        end
       end
 
       it "says a set of values timed out" do

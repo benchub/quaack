@@ -119,18 +119,47 @@ module Quaack
           entry = measured(label) || {}
           (entry["measurements"] || {}).map do |set, counts|
             [Words.set(set), total(counts), total(original_measurements[set]), Format.number(counts["hit"]),
-             Format.number(counts["read"]), verdict_words(entry.dig("verdicts", set)),
+             Format.number(counts["read"]), against(entry, set),
              counts["stable"] == false ? "unstable: the count changed between runs" : ""]
           end
         end
 
-        def verdict_words(verdict) = Words::VERDICTS.fetch(verdict) { Words.plain(verdict) }
+        # The label's blocks against the original's on one literal set, or
+        # its verdict where either number is missing.
+        def against(entry, set) = Format.against(*blocks(entry, set)) || verdict_words(entry.dig("verdicts", set))
+
+        def verdict_words(verdict)
+          return Words::MISSING unless verdict
+
+          Words::VERDICTS.fetch(verdict) { Words.plain(verdict) }
+        end
 
         # One literal set's blocks, for the label or the original.
         def total(counts)
           return Words::MISSING unless counts
+          return "timed out" if counts["timed_out"]
 
-          counts["timed_out"] ? "timed out" : Format.number(counts["total_blocks"])
+          counts["total_blocks"].is_a?(Integer) ? Format.number(counts["total_blocks"]) : Words::MISSING
+        end
+
+        # The ranking table's cells for your query as it is: its blocks on
+        # the slow values, and summed over the sets of values the ranked
+        # candidates were summed over.
+        def baseline
+          [total(original_measurements["slow"]), baseline_sum]
+        end
+
+        def baseline_sum
+          counts = baseline_sets.map { original_measurements[it] }
+          return "timed out" if counts.any? { it&.dig("timed_out") }
+          return Words::MISSING unless counts.all? { it&.dig("total_blocks").is_a?(Integer) }
+
+          counts.sum { it["total_blocks"] }
+        end
+
+        # The sets the original measured, and any a ranked candidate measured.
+        def baseline_sets
+          original_measurements.keys | top.flat_map { measured(it["label"])&.dig("measurements")&.keys || [] }
         end
       end
     end

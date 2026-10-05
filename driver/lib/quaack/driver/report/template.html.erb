@@ -17,6 +17,7 @@
   thead th { background: #f3f5f8; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.missing { color: #6d7785; font-style: italic; }
+  tr.baseline td { background: #f7f8fa; font-style: italic; }
   code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
   code.sql { white-space: pre-wrap; }
   pre.sql { background: #f3f5f8; border: 1px solid #d5dbe3; border-radius: 4px; padding: 0.75rem 1rem;
@@ -67,6 +68,7 @@
 <p>A candidate is your query, or a rewrite of it, run with a set of new indexes. To be ranked, it must read more than 5% fewer blocks than your query as it is on the slow values (the values from your slow plan), and no more than 5% more on any other set of values. The fewest blocks on the slow values wins.</p>
 <table><thead><tr><th scope="col" class="num">#</th><th scope="col">Candidate</th><th scope="col" class="num">Blocks read, slow values</th><th scope="col" class="num">Blocks read, all values</th><th scope="col" class="num">Size of its new indexes</th></tr></thead>
 <tbody>
+<tr class="baseline"><td class="num"></td><td>Your query as it is (the baseline, not ranked)</td><%= baseline.map { num(it) }.join %><%= num("none") %></tr>
 <% top.each_with_index do |t, i| %>
 <tr class="rank"><td class="num"><%= i + 1 %></td><td><%= h describe(t["label"]) %></td><%= num(t["slow_blocks"]) %><%= num(t["total_blocks_sum"]) %><%= num(Format.size(t["footprint"])) %></tr>
 <% end %>

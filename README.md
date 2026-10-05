@@ -615,11 +615,12 @@ A rewrite may also list **conditions from your query that QUAACK's made-up rows 
 
 | # | Candidate | Blocks read, slow values | Blocks read, all values | Size of its new indexes |
 | --- | --- | ---: | ---: | ---: |
+| | Your query as it is (the baseline, not ranked) | 509 | 5,635 | none |
 | 1 | Your query with a new index on public.events (account_id, created_at) INCLUDE (kind) | 4 | 20 | 14.8 MB |
 | 2 | Your query with a new index on public.events (account_id, created_at) | 19 | 83 | 11.5 MB |
 | 3 | Rewrite Silver Fox with no new indexes | 31 | 140 | 0 kB |
 
-The winner is first. Each **candidate** is your query, or a rewrite, run with a set of new indexes, and the report names it that way.
+The first row, with no rank, is your query as it is, so you can see how far each candidate improves on it. Where a number for it wasn't recorded, the cell says "not recorded", and where your query timed out, "timed out". The winner is the first ranked row. Each **candidate** is your query, or a rewrite, run with a set of new indexes, and the report names it that way.
 
 - **Blocks read, slow values:** blocks read with the values from your slow plan. This is the number you most want down.
 - **Blocks read, all values:** blocks read, added up over the slow, worst-case, and typical values.
@@ -644,13 +645,13 @@ Each ranked candidate then gets its own table:
 
 | Values | Blocks read | Your query as it is | Already in memory | Read from disk | Against your query | Note |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
-| slow | 4 | 509 | 4 | 0 | better | |
-| worst case | 12 | 5,120 | 9 | 3 | better | |
-| typical | 4 | 6 | 4 | 0 | no worse | |
+| slow | 4 | 509 | 4 | 0 | 99% fewer blocks | |
+| worst case | 12 | 5,120 | 9 | 3 | over 99% fewer blocks | |
+| typical | 4 | 6 | 4 | 0 | 33% fewer blocks | |
 
 - **Values:** `slow` is the values from your plan. `worst case` uses the most common values from the statistics, which match the most rows. `typical` uses middle-of-the-road values.
 - **Blocks read** is the total, next to what **your query as it is** read on the same values. **Already in memory** and **Read from disk** split the candidate's total. Blocks matter most. The split shows whether a win saves disk reads or just saves work in memory.
-- **Against your query** is better, no worse, or worse.
+- **Against your query** compares the two block counts in the row: how many percent fewer or more blocks the candidate read, such as "52% fewer blocks", "same" when they're equal, "under 1% more blocks" or "over 99% fewer blocks" when rounding would hide a difference. When your query read no blocks, there's no percentage, so it says how many more the candidate read. Where either number is missing or timed out, it says better, no worse, or worse instead.
 - **Note** says `unstable` if the block count moved between the three runs. That usually means the plan changed between runs, so be wary of that row.
 
 ### Why the winner reads fewer blocks.
