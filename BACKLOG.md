@@ -2279,20 +2279,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Status:** todo (item 1 needs the user)
 
-### 20261004-28. Timeout checks on the enclave's clock: RunDiscipline and ArenaRunner.
-
-20261004-24 found that `ProductionComparison::Run#stream` decided whether a `QueryCanceled` was a statement timeout by checking the enclave's own clock against `timeout_ms`, with no margin. Postgres fires `statement_timeout` by the server's clock. Measured at 1 s, the enclave saw the cancel after as little as 1001.3 ms, so a slightly fast clock, from load or NTP drift between the jump server and the run server, turns a timeout into an uncaught error. `RunDiscipline.timed` and `ArenaRunner::Cancel` use the same zero-margin check.
-
-Fix them the way 20261004-24 fixed `Run`, or with a shared helper. Write a test first that simulates a slow enclave clock.
-
-Also, from the review of 20261004-24:
-- Update DESIGN.md's run-discipline wording to match the fix.
-- The operator-cancel spec in `enclave/spec/production_comparison_postgres_spec.rb` cancels after a fixed `sleep 0.3`. Under load the cancel can land while the backend is idle and get dropped. Wait for `pg_stat_activity` to show `pg_sleep` before cancelling.
-
-- **Depends on:** 20261004-24.
-- **Came from:** The builder of 20261004-24.
-- **Design:** result-comparison, rewrite-test, minimax.
-- **Status:** todo
+### 20261004-28. Timeout checks on the enclave's clock: RunDiscipline and ArenaRunner. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-29. Docs and wording after ssh_failed skips teardown. Done, see BACKLOG-COMPLETE.md.
 
@@ -2345,4 +2332,15 @@ These are review minors from 20261004-28.
 - **Depends on:** 20261004-23.
 - **Came from:** The builder of 20261004-28.
 - **Design:** none (tests only).
+- **Status:** todo
+
+### 20261004-36. ArenaRunner: no statements after a cancel's rollback.
+
+This is a review minor from 20261004-28. `ArenaRunner::Cancel.rule` now rolls back the whole arena transaction after a cancel, where main left it aborted. If a fixture block caught the error and ran another query, that query would run outside any transaction and without `statement_timeout`. The reviewer reproduced it: a `WITH d AS (INSERT …) SELECT …` caught by the select-only check wrote a row that stayed in the arena. Main fails such a query with 25P02. No caller catches errors inside a fixture block today.
+
+Refuse to send a statement when the connection isn't inside the runner's transaction. Checking `transaction_status` before each send is one way; closing the handle after a cancel is another. Write a test first. Also leave pipeline mode on a dead connection, or document that it stays in it.
+
+- **Depends on:** 20261004-28.
+- **Came from:** The second review of 20261004-28.
+- **Design:** rewrite-test.
 - **Status:** todo
