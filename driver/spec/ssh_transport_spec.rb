@@ -74,7 +74,8 @@ RSpec.describe Quaack::Driver::Transport::Ssh do
     described_class.new(host: "user@jump-1.example", ssh:).call("probe", args: { "v0" => "a b" }, input: {})
 
     expect(EnclaveCommands.ssh_argv(dir))
-      .to eq(["-T", "-o", "BatchMode=yes", "--", "user@jump-1.example", "quaacks probe --v0 a\\ b"])
+      .to eq(["-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4",
+              "-o", "ConnectTimeout=30", "--", "user@jump-1.example", "quaacks probe --v0 a\\ b"])
   end
 
   it "passes the options it's given in place of the defaults" do
@@ -132,12 +133,78 @@ RSpec.describe Quaack::Driver::Transport::Ssh do
       .to raise_error(Quaack::Driver::EnclaveError, "quaacks version failed: not_started")
   end
 
-  it "treats ssh failing to connect, exit 255 with nothing on stdout, as incomplete" do
-    unreachable = File.join(dir, "unreachable-ssh")
-    File.write(unreachable, "#!/bin/sh\necho 'ssh: connect to host jump port 22: Connection refused' >&2\nexit 255\n")
-    FileUtils.chmod(0o755, unreachable)
+  describe "when ssh exits 255" do
+    let(:log) { File.join(dir, "ssh-log") }
+    let(:sentinel) { "sentinel-20261004-21-probe" }
 
-    expect { described_class.new(host: "jump", ssh: unreachable).call("version") }
-      .to raise_error(Quaack::Driver::EnclaveError, "quaacks version failed: incomplete (exit 255)")
+    # A fake ssh that logs each run's argv, answers the probe (remote
+    # command true) with a sentinel on stdout and stderr and probe_exit,
+    # and runs call, shell, for anything else.
+    def scripted_ssh(call, probe_exit:)
+      path = File.join(dir, "scripted-ssh")
+      File.write(path, <<~SH)
+        #!/bin/sh
+        for last; do :; done
+        printf '%s\\037' "$@" >> '#{log}'; echo >> '#{log}'
+        if [ "$last" = true ]; then echo '#{sentinel}'; echo '#{sentinel}' >&2; exit #{probe_exit}; fi
+        #{call}
+      SH
+      FileUtils.chmod(0o755, path)
+      path
+    end
+
+    # Each run of the fake ssh, as its argv.
+    def runs = File.readlines(log, chomp: true).map { it.split("\037") }
+
+    def failure(ssh, options: ["-o", "ConnectTimeout=5"])
+      described_class.new(host: "jump-1", ssh:, options:).call("version")
+    rescue Quaack::Driver::EnclaveError => e
+      e
+    end
+
+    it "fails as ssh_failed when it printed nothing and a probe that runs no quaacks can't ssh either" do
+      error = failure(scripted_ssh("exit 255", probe_exit: 255))
+
+      expect(error.message).to eq("quaacks version failed: ssh_failed (exit 255)")
+      expect(runs).to eq([["-o", "ConnectTimeout=5", "--", "jump-1", "quaacks version"],
+                          ["-o", "ConnectTimeout=5", "--", "jump-1", "true"]])
+    end
+
+    it "stays incomplete when it printed nothing but the probe gets through, as for a killed remote process" do
+      error = failure(scripted_ssh("exit 255", probe_exit: 0))
+
+      expect(error.message).to eq("quaacks version failed: incomplete (exit 255)")
+      expect(runs.size).to eq(2)
+    end
+
+    it "runs no probe when the call printed anything, even a partial line" do
+      error = failure(scripted_ssh("printf '{\"type\":\"ver'; exit 255", probe_exit: 255))
+
+      expect(error.message).to eq("quaacks version failed: incomplete (exit 255)")
+      expect(runs.size).to eq(1)
+    end
+
+    it "runs no probe when the call exits other than 255" do
+      error = failure(scripted_ssh("exit 1", probe_exit: 255))
+
+      expect(error.message).to eq("quaacks version failed: incomplete (exit 1)")
+      expect(runs.size).to eq(1)
+    end
+
+    it "keeps nothing the probe printed" do
+      [255, 0].each do |probe_exit|
+        error = failure(scripted_ssh("exit 255", probe_exit:))
+
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+        expect(error.rule_with_note).not_to include(sentinel)
+      end
+    end
+
+    # Planted, so the check above is known to catch a sentinel.
+    it "would catch the sentinel if it got into an error" do
+      planted = Quaack::Driver::EnclaveError.new(subcommand: "version #{sentinel}", rule: "ssh_failed")
+
+      expect(planted.full_message(highlight: false)).to include(sentinel)
+    end
   end
 end

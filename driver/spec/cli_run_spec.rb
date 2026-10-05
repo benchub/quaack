@@ -274,6 +274,42 @@ RSpec.describe "quaack run" do
     )
   end
 
+  it "says when ssh couldn't reach the jump server, and the command that resumes the run" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "ssh_failed",
+                                                                 exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "#{torn}quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
+          "then resume with `quaack run --run #{run_id}`\n"]
+    )
+  end
+
+  it "says when ssh couldn't reach the jump server for the version check, not that quaacks is missing" do
+    failing["version"] = Quaack::Driver::EnclaveError.new(subcommand: "version", rule: "ssh_failed", exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
+          "then resume with `quaack run --run #{run_id}`\n"]
+    )
+  end
+
+  it "names the call that died, and how, when an enclave call is incomplete" do
+    failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "incomplete",
+                                                                 exit_status: 255)
+
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq(
+      [1, "#{torn}quaack run failed: incomplete: quaacks index-feedback ended with exit 255. The ssh " \
+          "session failed or ended, or the remote process was killed: check your ssh login, the network, and " \
+          "the jump server's kernel log (for the OOM killer) and sshd log\n"]
+    )
+  end
+
   it "names the table, column, and type when rewrite-test can't fill a column" do
     column = { "table" => "public.courses", "column" => "tags", "type" => "int4range" }
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "unsupported_type",

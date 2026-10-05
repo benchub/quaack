@@ -107,6 +107,15 @@ RSpec.describe "quaack setup" do
     expect([stdout.string, errors]).to eq(["", "quaack setup failed: unknown_relation\n"])
   end
 
+  it "says when ssh couldn't reach the jump server, and the command that resumes setup" do
+    failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "ssh_failed", exit_status: 255)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+
+    expect(errors).to eq("quaack setup failed: ssh_failed: couldn't ssh to the jump server; check your ssh login " \
+                         "or network, then resume with `quaack setup --run #{run_id}`\n")
+  end
+
   it "says to start a new run when an older version of QUAACK started this one" do
     failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version",
                                                          exit_status: 64)

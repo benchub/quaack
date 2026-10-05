@@ -75,7 +75,7 @@ module Quaack
       rescue Start::Error, EnclaveError, EnclaveVersion::Mismatch => e
         return @stderr.print("quaack start: #{e.message}\n") || EX_USAGE if e.is_a?(Start::UsageError)
 
-        @stderr.print "quaack start failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
+        @stderr.print "quaack start failed: #{EnclaveError.shown(e, "run `quaack start` again")}\n"
         1
       end
 
@@ -121,7 +121,7 @@ module Quaack
         EnclaveVersion.check!(transport, host)
         drive(transport, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{e.is_a?(EnclaveError) ? e.rule_with_note : e.message}\n"
+        @stderr.print "quaack run failed: #{EnclaveError.shown(e, "resume with `quaack run --run #{run}`")}\n"
         1
       end
 

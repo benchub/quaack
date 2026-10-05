@@ -17,8 +17,11 @@ module Quaack
     #
     # - incomplete: no error line, and the run didn't end with its done
     #   line, exit 0, and no signal. A step that called exit!, a process
-    #   killed by SIGKILL, and an ssh session that couldn't connect all end
+    #   killed by SIGKILL, and an ssh session that ended mid-call all end
     #   up here.
+    # - ssh_failed: ssh exited 255 with nothing on stdout, and a probe that
+    #   runs no quaacks couldn't ssh to the jump server either
+    #   (Transport::Ssh).
     # - unexpected_output: the run printed a line the driver refuses, such
     #   as a message of a type or with a field not on the protocol's
     #   whitelist, so the two sides disagree on the protocol.
@@ -39,9 +42,18 @@ module Quaack
       OLDER_VERSION = "an older version of QUAACK started this run, and this version can't resume it. " \
                       "Start a new run with quaack start."
 
+      # What incomplete's note adds for exit 255, and what ssh_failed's says.
+      EXIT_255 = "The ssh session failed or ended, or the remote process was killed: check your ssh login, " \
+                 "the network, and the jump server's kernel log (for the OOM killer) and sshd log"
+      SSH_FAILED = "couldn't ssh to the jump server; check your ssh login or network"
+
       # The error line's fields beyond its rule.
       LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
+
+      # What a failed command prints after its name: an EnclaveError's
+      # rule_with_note, with next_step, or any other error's message.
+      def self.shown(error, next_step) = error.is_a?(self) ? error.rule_with_note(next_step:) : error.message
 
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
@@ -70,7 +82,13 @@ module Quaack
       # rewrite-test refusal that names its column gets the table, column, and type,
       # and an fk_cycle refusal that names its tables gets them. A run an
       # older version started gets what to do instead.
-      def rule_with_note
+      #
+      # incomplete gets the subcommand and how it ended, and ssh_failed what
+      # to check, then next_step, the caller's words for what to do after,
+      # such as the command that resumes the run. Both are the driver's own
+      # facts, not the enclave's.
+      def rule_with_note(next_step: "resume the run")
+        return "#{rule}: #{SSH_FAILED}, then #{next_step}" if rule == "ssh_failed"
         return "#{rule}: #{note}" if note
 
         return rule unless rule == "query_unparsable"
@@ -86,9 +104,19 @@ module Quaack
       # What rule_with_note adds after the rule, or nil.
       def note
         return OLDER_VERSION if rule == "run_from_older_version"
+        return ended if rule == "incomplete"
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 
         named_schema
+      end
+
+      # Which call died, and how. ssh exits 255 for its own failures, and
+      # for a remote process that a signal ended.
+      def ended
+        how = ending_details.compact.first
+        return "quaacks #{subcommand} didn't finish" unless how
+
+        "quaacks #{subcommand} ended with #{how}#{". #{EXIT_255}" if exit_status == 255}"
       end
 
       def describe
