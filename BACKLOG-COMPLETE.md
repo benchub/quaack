@@ -5129,3 +5129,16 @@ Under some rewrites the report says: "The made-up test data never exercised thes
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed in 73a0586. The lone numbers were vacuity-guard atom positions: the payload read untested_atoms instead of untested. Counterexample rounds now record covered conditions.
+
+### 20261004-7. Harden the live clock's timer thread.
+
+The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/progress.rb`:
+- No spec pins `timer&.join`, so removing it keeps every spec green. An old timer that wakes as a step closes could draw a stale time on the next step's line. Test this with a redraw held mid-draw by a slow io.
+- A Ctrl-C during `timer.join` skips the rest of the cleanup, so `@start` stays set.
+- A write error such as EPIPE inside the timer thread is raised again from `join` and replaces the step's own result.
+
+- **Depends on:** 20261003-16.
+- **Came from:** The review of 20261003-16.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** Landed in 888cc17.

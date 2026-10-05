@@ -2065,17 +2065,7 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-7. Harden the live clock's timer thread.
-
-The review of 20261003-16 found three minor issues in `driver/lib/quaack/driver/progress.rb`:
-- No spec pins `timer&.join`, so removing it keeps every spec green. An old timer that wakes as a step closes could draw a stale time on the next step's line. Test this with a redraw held mid-draw by a slow io.
-- A Ctrl-C during `timer.join` skips the rest of the cleanup, so `@start` stays set.
-- A write error such as EPIPE inside the timer thread is raised again from `join` and replaces the step's own result.
-
-- **Depends on:** 20261003-16.
-- **Came from:** The review of 20261003-16.
-- **Design:** Progress lines for `quaack run`.
-- **Status:** todo
+### 20261004-7. Harden the live clock's timer thread. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-8. rewrite-test gaps found by the FK-cycle review.
 
@@ -2417,4 +2407,13 @@ From the build and review of 20261004-51:
 - **Depends on:** 20261004-51.
 - **Came from:** The build and review of 20261004-51, 2026-10-05.
 - **Design:** report, vacuity-guard.
+- **Status:** todo
+
+### 20261004-62. A closed stderr pipe ends `quaack run` with EPIPE.
+
+The review of 20261004-7 found that when stderr is a real pipe whose reader has closed, the step's own progress lines raise `Errno::EPIPE`. That replaces the step's result and stops the run, on main as well as after 20261004-7. Nothing in `driver/lib` handles EPIPE. Decide what `quaack run` should do when its progress output goes away, such as `quaack run … 2>&1 | head`. It could stop writing progress and carry on, or exit cleanly with a clear rule. Then test it with a real `IO.pipe`.
+
+- **Depends on:** 20261004-7.
+- **Came from:** The review of 20261004-7, 2026-10-05.
+- **Design:** Progress lines for `quaack run`.
 - **Status:** todo
