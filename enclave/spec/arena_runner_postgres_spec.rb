@@ -321,6 +321,29 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
                               [:transaction_ended, :query, 1, nil, nil], [:transaction_ended, :query, 2, nil, nil]])
         expect(sends).to eq([])
       end
+
+      # Cancel.rule rolls back its own transaction even when the clock read
+      # in it fails. This plants a read that fails on the server, so the
+      # transaction it ran in is aborted, and only that ROLLBACK leaves the
+      # connection idle, so the next statement is refused, not sent to fail
+      # with 25P02.
+      it "refuses the next statement even when the clock read after the cancel fails" do
+        failing_read = Class.new(SimpleDelegator) do
+          def exec(sql, *, &)
+            sql = "SELECT 1/0" if sql.strip == Quaack::Enclave::ServerClock::NOW_SQL
+            __getobj__.exec(sql, *, &)
+          end
+        end.new(conn)
+
+        errors, status = described_class.new(failing_read).with_fixture([parent(1, "a")]) do |tx|
+          canceled = query_error(tx, "SELECT pg_cancel_backend(pg_backend_pid()), pg_sleep(5)")
+          [[canceled, query_error(tx, "SELECT 1")], conn.transaction_status]
+        end
+
+        expect(errors).to eq([[:statement_canceled, :query, 0, "57014", nil],
+                              [:transaction_ended, :query, 1, nil, nil]])
+        expect(status).to eq(0)
+      end
     end
 
     # The time is measured from the start of each statement, not of the
