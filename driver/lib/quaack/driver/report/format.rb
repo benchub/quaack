@@ -41,6 +41,26 @@ module Quaack
         # How many percent fewer ours is than theirs.
         def fewer(ours, theirs) = ((theirs - ours) * 100.0 / theirs).round
 
+        # A candidate's blocks against your query's, such as "52% fewer
+        # blocks", or nil when either is missing.
+        def against(ours, theirs)
+          return unless ours && theirs
+          return "same" if ours == theirs
+          return "#{number(ours)} more #{ours == 1 ? "block" : "blocks"}" if theirs.zero?
+
+          "#{apart(ours, theirs)}% #{ours < theirs ? "fewer" : "more"} blocks"
+        end
+
+        # How many percent of theirs ours is away from it, never rounded to
+        # no difference or to all of it.
+        def apart(ours, theirs)
+          percent = ((ours - theirs).abs * 100.0 / theirs).round
+          return "under 1" if percent.zero?
+          return "over 99" if percent == 100 && ours.positive? && ours < theirs
+
+          number(percent)
+        end
+
         # The query laid out over several lines by pg_query, which keeps $n
         # placeholders and clock functions. SQL it can't lay out (it doesn't parse, say) is
         # shown as it was sent.
