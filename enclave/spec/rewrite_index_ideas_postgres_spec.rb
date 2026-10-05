@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "support/index_search_run"
+require "quaack/enclave/burndown"
 
 # DESIGN.md's rewrite-index-ideas, wired: llm-index-ideas, llm-index-refine, and index-rank for each rewrite that
 # survived rewrite-test and counterexamples (rewrite_survived_<n>, which 20260926-14 writes)
@@ -28,6 +29,22 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
     run("index-rank", "--search", "rewrite_1")
     store.write("rewrite_pruned_1", "discarded" => discarded)
     store.write("rewrite_survived_1", "survived" => survived) unless survived.nil?
+  end
+
+  def burndown = Quaack::Enclave::Burndown.read(stored)
+
+  it "records the rewrite's index-search burndown under its search, apart from the original's" do
+    ready
+
+    stages = burndown["stages"]
+    entry = stored.read("index_search_rewrite_1")
+    used = entry["results"].count { |r| !r["refusal"] && r["plans"].values.any? { it["used"] } }
+    expect(stages.keys).to include("index-from-query", "index-from-plan", "index-dedupe", "index-test")
+    expect(%w[index-from-query index-from-plan index-dedupe index-test].map { stages[it].keys })
+      .to all(eq(["rewrite_1"]))
+    expect(stages["index-test"]["rewrite_1"]).to include("in" => entry["dedupe"]["proposals"].size, "out" => used)
+    generated = stages.values_at("index-from-query", "index-from-plan").sum { it["rewrite_1"]["out"] }
+    expect(stages["index-dedupe"]["rewrite_1"]["in"]).to eq(generated)
   end
 
   it "sends a surviving rewrite's payload with its own query and its plan redacted through redact" do

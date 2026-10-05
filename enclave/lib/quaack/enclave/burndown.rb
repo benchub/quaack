@@ -108,10 +108,17 @@ module Quaack
       # index-test. It returns the counts it recorded, for the since of the LLM
       # round that follows (see record_llm_round).
       def record_dedupe(store, dedupe, search:)
-        counts = Adapters.dedupe_counts(dedupe)
-        add(store, [["index-dedupe", search, counts]], {})
-        counts
+        record = dedupe_record(dedupe, search:)
+        add(store, [record], {})
+        record.last
       end
+
+      # record_dedupe's [stage, search, counts], for record_all or record_once.
+      def dedupe_record(dedupe, search:) = ["index-dedupe", search, dedupe_counts(dedupe)]
+
+      # A Dedupe's counts as record_dedupe records them, such as the since
+      # of the LLM round about to filter through it (see record_llm_round).
+      def dedupe_counts(dedupe) = Adapters.dedupe_counts(dedupe)
 
       # Records a SingleCandidateTest report as an index-test run: in is every
       # candidate tested, out is the ones the planner used for some literal
@@ -122,8 +129,16 @@ module Quaack
       # for index-build to build for real (IndexSearch's "set_aside"), which count
       # as set aside rather than never_used.
       def record_single_candidate_test(store, report, search:, set_aside: [])
-        add(store, [["index-test", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
+        add(store, [single_candidate_test_record(report, search:, set_aside:)], tested_totals(report))
       end
+
+      # record_single_candidate_test's [stage, search, counts], and its
+      # totals, tested_totals, for record_all or record_once.
+      def single_candidate_test_record(report, search:, set_aside: [])
+        ["index-test", search, Adapters.tested_counts(report, set_aside)]
+      end
+
+      def tested_totals(report) = Adapters.tested_totals(report)
 
       # Records one LLM round, llm-index-ideas or llm-index-refine, as one record. A round filters
       # the LLM's candidates through the search's own Dedupe, which already

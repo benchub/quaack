@@ -5,6 +5,7 @@ require_relative "../rewrite_entry"
 require_relative "../dedupe"
 require_relative "../generator_one"
 require_relative "../generator_two"
+require_relative "../index_burndown"
 require_relative "../index_store"
 require_relative "../literal_set"
 require_relative "../pii_classification"
@@ -87,7 +88,9 @@ module Quaack
         # The search's entry: the original's behind the plan gate, or a
         # stored rewrite's (DESIGN.md's plan-pruning).
         def search_entry(store, connection, search)
-          return rewrite_entry(store, connection, RewriteEntry.run_sql(store.read(search))) unless search == "original"
+          unless search == "original"
+            return rewrite_entry(store, connection, RewriteEntry.run_sql(store.read(search)), search:)
+          end
 
           sql = store.read("anchored_query")
           PlanGate.check(store:, connection:, sql:)
@@ -119,11 +122,12 @@ module Quaack
 
         # index-from-query to index-test for the original, on the input plan.
         def original_entry(store, connection, sql)
-          dedupe, candidates = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
+          dedupe, candidates, generated = mechanical(store, sql, plan: store.read("plan"), analyzed: true)
           maps = LiteralSet.load(store).sets
           types = types(store, sql)
           report = SingleCandidateTest.run(connection, query: sql, literal_sets: values(maps), candidates:, types:)
-          entry(store, dedupe, report, maps).merge("parameter_types" => parameter_types(connection, sql, types))
+          entry(store, dedupe, report, maps, burndown: [:original, generated])
+            .merge("parameter_types" => parameter_types(connection, sql, types))
         end
 
         # Each $n's type for PREPARE: its original literal's (Redaction's
@@ -147,15 +151,16 @@ module Quaack
         # against existing indexes and its own proposals. index-test runs the
         # rewrite. It returns the entry, in the index_search_<search> form,
         # for the caller to store. There's no plan gate: the rewrite has no
-        # production plan to compare with.
-        def rewrite_entry(store, connection, sql)
+        # production plan to compare with. Given its search, rewrite_<n>, it
+        # records the search's burndown (see entry).
+        def rewrite_entry(store, connection, sql, search: nil)
           maps = LiteralSet.load(store).sets
           literal_sets = values(maps)
           types = types(store, sql)
           plan = slow_plan(connection, sql, literal_sets, types)
-          dedupe, candidates = mechanical(store, sql, plan:, analyzed: false)
+          dedupe, candidates, generated = mechanical(store, sql, plan:, analyzed: false)
           entry(store, dedupe, SingleCandidateTest.run(connection, query: sql, literal_sets:, candidates:, types:),
-                maps)
+                maps, burndown: search && [search.to_sym, generated])
         end
 
         # The query's plain EXPLAIN with the slow literals.
@@ -175,13 +180,14 @@ module Quaack
 
         # index-from-query and index-from-plan, each filtered by the search's Dedupe as soon as
         # it's produced. plan is the EXPLAIN index-from-plan reads, and analyzed says
-        # whether it has actual rows. Returns the Dedupe and the survivors.
+        # whether it has actual rows. Returns the Dedupe, the survivors, and
+        # how many candidates each generator made, for the burndown.
         def mechanical(store, sql, plan:, analyzed:)
           statistics = PlannerStatistics.load(store).statistics
           dedupe = Dedupe.new(statistics:, low_cardinality: PiiClassification.load(store).low_cardinality)
-          survivors = dedupe.filter(GeneratorOne.candidates(PgQuery.parse(sql), statistics)) +
-                      dedupe.filter(GeneratorTwo.candidates(plan, statistics:, schemas: schemas(store), analyzed:))
-          [dedupe, survivors]
+          one = GeneratorOne.candidates(PgQuery.parse(sql), statistics)
+          two = GeneratorTwo.candidates(plan, statistics:, schemas: schemas(store), analyzed:)
+          [dedupe, dedupe.filter(one) + dedupe.filter(two), { generator_one: one.size, generator_two: two.size }]
         end
 
         def schemas(store) = store.read("relations").map { it["schema"] }.uniq
@@ -194,13 +200,15 @@ module Quaack
           end
         end
 
-        def entry(store, dedupe, report, maps)
+        # The search's entry. burndown is [search, generated], to record the
+        # search's burndown first (IndexBurndown.record_search), or nil.
+        def entry(store, dedupe, report, maps, burndown:)
           proposals = dedupe.proposals
-          set_aside = UnusedSetAside.select(report, PiiClassification.load(store).low_cardinality)
-                                    .map { |c| IndexStore.candidate_plain(proposals.find { it == c }) }
+          unused = UnusedSetAside.select(report, PiiClassification.load(store).low_cardinality)
+          IndexBurndown.record_search(store, *burndown, dedupe:, test: [report, unused]) if burndown
           { "dedupe" => IndexStore.dedupe_plain(dedupe), "baseline" => plans(report.baseline.plans, maps),
             "results" => report.results.map { result(it, proposals, maps) },
-            "set_aside" => set_aside }
+            "set_aside" => unused.map { |c| IndexStore.candidate_plain(proposals.find { it == c }) } }
         end
 
         # Each set's plan: whether it used the candidate, its cost, and the

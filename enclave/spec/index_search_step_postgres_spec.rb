@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative "support/index_search_run"
+require "quaack/enclave/burndown"
+require "quaack/enclave/generator_one"
 
 # `quaacks index-search` (DESIGN.md's index-search and index-from-query to index-test) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler.
@@ -74,6 +76,46 @@ RSpec.describe "quaacks index-search, against a real server" do
     expect(used["plans"].transform_values { it["total_cost"] }).to eq(direct_costs(ddl))
   end
 
+  def used?(result) = !result["refusal"] && result["plans"].values.any? { it["used"] }
+
+  def burndown = Quaack::Enclave::Burndown.read(stored)
+
+  # Task 20261001-20: index-from-query and index-from-plan, by generator, then index-dedupe and
+  # index-test, each counted once however often the step runs.
+  it "records index-from-query, index-from-plan, index-dedupe, and index-test in the burndown, once" do
+    prepare
+
+    index_search
+
+    entry = stored.read("index_search_original")
+    search = restored_search(entry)
+    statistics = Quaack::Enclave::PlannerStatistics.load(stored).statistics
+    one = Quaack::Enclave::GeneratorOne.candidates(PgQuery.parse(stored.read("anchored_query")), statistics).size
+    two = search.considered - one
+    used = entry["results"].count { used?(it) }
+    expect([one, two, used]).to all(be_positive)
+    expect(burndown["stages"].transform_values(&:keys)).to eq(
+      "index-from-query" => ["original"], "index-from-plan" => ["original"], "index-dedupe" => ["original"],
+      "index-test" => ["original"]
+    )
+    expect(burndown["stages"].transform_values { it["original"] }).to eq(
+      "index-from-query" => { "in" => 0, "added" => { "generator_one" => one }, "dropped" => {}, "set_aside" => 0,
+                              "out" => one, "extra" => {} },
+      "index-from-plan" => { "in" => 0, "added" => { "generator_two" => two }, "dropped" => {}, "set_aside" => 0,
+                             "out" => two, "extra" => {} },
+      "index-dedupe" => { "in" => one + two, "added" => {}, "dropped" => search.drops.map { it.reason.name }.tally,
+                          "set_aside" => search.set_aside.size, "out" => search.proposals.size, "extra" => {} },
+      "index-test" => { "in" => entry["results"].size, "added" => {},
+                        "dropped" => { "never_used" => entry["results"].size - used }.reject { |_, n| n.zero? },
+                        "set_aside" => 0, "out" => used, "extra" => {} }
+    )
+    expect(burndown["totals"]).to eq("hypothetical_explains" => entry["results"].sum { it["plans"].size })
+
+    before = burndown
+    index_search
+    expect(burndown).to eq(before)
+  end
+
   context "when a candidate leads with a low-cardinality column (e2e 055)" do
     let(:query) { "SELECT sum(o.total) FROM public.orders o WHERE o.status = 'held'" }
 
@@ -103,6 +145,11 @@ RSpec.describe "quaacks index-search, against a real server" do
       expect(entry["set_aside"]).to eq(expected)
       expect(entry["set_aside"].map { [it["key"].map { |k| k["name"] }, it["include"]] })
         .to eq([[%w[status total], []], [["status"], []]])
+      # 20260927-19: index-test counts them as set aside, not as never used.
+      test = burndown.dig("stages", "index-test", "original")
+      expect(test&.slice("in", "set_aside", "out")).to eq("in" => entry["results"].size, "set_aside" => 2,
+                                                          "out" => entry["results"].count { used?(it) })
+      expect(test["dropped"].fetch("never_used", 0)).to eq(unused.size - 2)
     end
   end
 
