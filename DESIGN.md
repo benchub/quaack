@@ -1107,6 +1107,8 @@ Production-size results may be too big to hold in memory. In that case, stream t
 
 The one exception is fixture-compare's rule for `LIMIT` with no `ORDER BY`, which runs the original without its `LIMIT`. At production size, that query could return millions of rows. Try it under `statement_timeout`. If it times out, check only that the candidate returns the expected number of rows, and mark the comparison as partial in the report.
 
+Any other timeout, whether of a candidate or of the original as written, fails the comparison with `timed_out`. `statement_timeout` fires by the run server's clock, and the jump server's clock can run at a slightly different rate, so the enclave tells a timeout from any other cancel, such as an operator's, by reading the run server's clock before and after the query, never its own. Any other cancel is an error, not a verdict.
+
 A real difference here means a bug slipped past rewrite-test and counterexamples. Report it prominently and discard the candidate.
 
 ### selection. Selection.
