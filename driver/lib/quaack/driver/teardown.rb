@@ -37,6 +37,17 @@ module Quaack
       # The rules for a run's store the enclave wouldn't or couldn't delete.
       BY_HAND = %w[bad_run bad_store_base teardown_failed].freeze
 
+      # The rule for a teardown that failed with an error that isn't an
+      # EnclaveError.
+      DRIVER_ERROR = "driver_error"
+
+      # What around raises after a good run whose teardown failed with an
+      # error that isn't an EnclaveError, such as a bug in the driver. Its
+      # message is only the rule, and its cause the error.
+      class DriverError < StandardError
+        def initialize = super(DRIVER_ERROR)
+      end
+
       def self.around(transport:, run_id:, stderr:, keep: false, &)
         new(transport, run_id, stderr).around(keep:, &)
       end
@@ -67,11 +78,11 @@ module Quaack
       # failed: EnclaveError.shown, with next_step. When only teardown
       # failed, a rule whose note has no next step of its own, such as
       # teardown_failed, still gets one, so it doesn't read as the run's
-      # own failure.
+      # own failure. So does a DriverError.
       def self.failure(error, teardown, run_id, **where)
         step = next_step(teardown, run_id)
         shown = EnclaveError.shown(error, step, **where)
-        return shown unless teardown&.only_teardown_left? && !error.to_go_on?
+        return shown unless teardown&.only_teardown_left? && !(error.is_a?(EnclaveError) && error.to_go_on?)
 
         "#{shown}. To go on, #{step}"
       end
@@ -115,13 +126,16 @@ module Quaack
       def only_teardown_left? = @only_teardown_left
 
       # Tears down, and raises the teardown's error only when the run itself
-      # succeeded, so it never masks the run's own error.
+      # succeeded, so it never masks the run's own error: its EnclaveError,
+      # or a DriverError whose cause is any other error.
       def finish(run_error)
         error = call(run_error)
         return unless error && !run_error
 
         @only_teardown_left = true
-        raise error
+        raise error if error.is_a?(EnclaveError)
+
+        raise DriverError, cause: error
       end
 
       # nil once the store is gone, or the error that says why not: the
@@ -137,7 +151,7 @@ module Quaack
         @stderr.print interrupted(run_error)
         raise
       rescue Exception => e # rubocop:disable Lint/RescueException -- returned, not swallowed; signals go on above
-        @stderr.print failed(e.is_a?(EnclaveError) ? e.rule : "driver_error")
+        @stderr.print failed(e.is_a?(EnclaveError) ? e.rule : DRIVER_ERROR)
         e
       end
 
@@ -171,7 +185,10 @@ module Quaack
       end
 
       def failed(rule)
-        hint = if BY_HAND.include?(rule)
+        hint = if rule == "destroy_command_not_run"
+                 "destroy_command didn't run, so destroy the run server for run #{@run_id} yourself. Then check " \
+                   "or remove ~/.quaack/runs/#{@run_id} on the jump server by hand."
+               elsif BY_HAND.include?(rule)
                  "Check or remove ~/.quaack/runs/#{@run_id} on the jump server by hand."
                else
                  later

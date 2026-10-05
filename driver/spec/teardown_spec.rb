@@ -57,6 +57,41 @@ RSpec.describe Quaack::Driver::Teardown do
     expect(stderr.string).to eq("quaack: deleted the store for run #{run_id}, and destroyed its run server.\n")
   end
 
+  # Task 20261004-60: the run's server entry can't be read, so the
+  # enclave's destroy_command never runs, and the run server may be up.
+  it "says to destroy the run server by hand when the enclave couldn't read the run's server" do
+    File.write(File.join(home, ".quaack", "config.json"), '{"destroy_command": "true"}')
+    File.write(File.join(store, "server.json"), "not json")
+
+    expect { around_run }.to raise_error(Quaack::Driver::EnclaveError) { expect(it.rule).to eq("destroy_command_not_run") }
+    expect(stderr.string).to eq("quaack: couldn't tear down run #{run_id} (destroy_command_not_run). destroy_command " \
+                                "didn't run, so destroy the run server for run #{run_id} yourself. Then check or " \
+                                "remove ~/.quaack/runs/#{run_id} on the jump server by hand.\n")
+    expect(File.directory?(store)).to be(true)
+  end
+
+  # Task 20261004-60: failure's words for an error that isn't an
+  # EnclaveError, once only teardown is left, name only driver_error.
+  describe ".failure" do
+    let(:teardown) { described_class.new(transport, run_id, stderr) }
+    let(:transport) { Class.new { def call(*, **) = raise(IOError, "sentinel-io-7f3a") }.new }
+
+    it "names driver_error and points to teardown's line for a non-EnclaveError teardown failure" do
+      error = begin
+        teardown.finish(nil)
+      rescue described_class::DriverError => e
+        e
+      end
+
+      expect(described_class.failure(error, teardown, run_id))
+        .to eq("driver_error. To go on, #{described_class::TEARDOWN_LEFT}")
+    end
+
+    it "keeps the message of the run's own non-EnclaveError" do
+      expect(described_class.failure(IOError.new("llm said no"), teardown, run_id)).to eq("llm said no")
+    end
+  end
+
   it "treats a store that's already gone as torn down" do
     FileUtils.rm_rf(store)
     expect(around_run).to eq(:result)
@@ -119,8 +154,12 @@ RSpec.describe Quaack::Driver::Teardown do
       expect(stderr.string).to eq(driver_error)
     end
 
-    it "fails an otherwise good run with that error" do
-      expect { around_run }.to raise_error(IOError, "sentinel-io-7f3a")
+    # Task 20261004-60: as a DriverError naming only its rule, so quaack
+    # run reports it like the enclave's rules.
+    it "fails an otherwise good run with a DriverError, whose cause is that error" do
+      expect { around_run }.to raise_error(described_class::DriverError, "driver_error") { |e|
+        expect([e.cause.class, e.cause.message]).to eq([IOError, "sentinel-io-7f3a"])
+      }
       expect(stderr.string).to eq(driver_error)
     end
   end
@@ -138,8 +177,10 @@ RSpec.describe Quaack::Driver::Teardown do
       expect(stderr.string).to eq(driver_error)
     end
 
-    it "fails an otherwise good run with that error, and tells the operator how to finish teardown" do
-      expect { around_run }.to raise_error(LoadError, "sentinel-load-9b2d")
+    it "fails an otherwise good run with a DriverError, and tells the operator how to finish teardown" do
+      expect { around_run }.to raise_error(described_class::DriverError, "driver_error") { |e|
+        expect([e.cause.class, e.cause.message]).to eq([LoadError, "sentinel-load-9b2d"])
+      }
       expect(stderr.string).to eq(driver_error)
     end
   end

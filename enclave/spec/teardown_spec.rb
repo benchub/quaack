@@ -277,6 +277,20 @@ RSpec.describe "quaacks teardown" do
         expect_no_leaks(sentinels, outcome)
       end
 
+      # Task 20261004-60: a server entry teardown can't read, here one that
+      # isn't JSON and holds a sentinel, so destroy_command never runs.
+      it "fails as destroy_command_not_run when it can't read the run's server, and keeps the store" do
+        configure("touch #{gone}")
+        File.write(File.join(store.path, "server.json"), sentinels.text)
+
+        outcome = quaacks.run("teardown", "--run", store.run_id)
+
+        expect([outcome.stdout, outcome.status.exitstatus]).to eq([error_line("destroy_command_not_run"), 70])
+        expect(File.exist?(gone)).to be(false)
+        expect(quaacks.runs).to eq([store.run_id])
+        expect_no_leaks(sentinels, outcome)
+      end
+
       it "leaves destroying to the operator for a run that's already gone" do
         configure("touch #{gone}")
         run_id = store.run_id
