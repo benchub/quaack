@@ -9,9 +9,11 @@ module Quaack
     # out, never data from the enclave.
     #
     #   progress = Progress.new(io: $stderr, total: 18)
-    #   progress.step("llm-index-ideas", "Asking the LLM for index ideas") { ... }
-    #   # quaack: [2/18] Asking the LLM for index ideas (llm-index-ideas) 41s   on a terminal
-    #   # quaack: [2/18] Done in 42s (llm-index-ideas)                 or "Failed after 42s"
+    #   progress.step("index-rank", "Ranking the index ideas") { ... }
+    #   # quaack: [2/18] Ranking the index ideas (index-rank) 42s   on a terminal, and no more
+    #   # quaack: [2/18] Done in 42s (index-rank)                    elsewhere, after the line above
+    #   #                                                           without its clock
+    #   # quaack: [2/18] Failed after 42s (index-rank)               if it fails, anywhere
     #   progress.step("llm-index-ideas", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
     #   # quaack: [2/18] Got 4 index ideas in 42s (llm-index-ideas)
     #   progress.skip("index-search", "Searching for indexes")
@@ -32,6 +34,15 @@ module Quaack
     # once a second. A new line leaves the one before at its final
     # reading. Anywhere else, such as a log file, nothing is redrawn, and
     # only the closing line gives the time. The clock is only a duration.
+    #
+    # On a terminal, it leaves out what the clock makes redundant. A step
+    # that would close with a bare Done prints no closing line: its last
+    # open line ends at the step's final reading, even 0s. And a note that
+    # says no more than the step's own line, such as an LLM ask's "Asking
+    # the LLM (llm-rewrites)" under "Asking the LLM for rewrites of the
+    # query (llm-rewrites)", isn't printed when it would be the step's first
+    # line after its own. A summary's closing line, a failed line, and any
+    # later note, such as a second ask, still print.
     #
     # clock answers seconds and interval is the redraw's period, so specs
     # pass a fake clock and a short interval.
@@ -54,8 +65,8 @@ module Quaack
       def step(name, description, summary: nil, &)
         @number += 1
         start = @clock.call
-        result = clocked(start, "#{description} (#{name})", &)
-        close("#{summary&.call(result) || "Done"} in", start, name)
+        result = clocked(start, description, name, &)
+        close(summary&.call(result)&.then { "#{it} in" }, start, name)
         result
       rescue StandardError, Interrupt
         close("Failed after", start, name)
@@ -67,7 +78,7 @@ module Quaack
         say("Already done, skipping: #{description} (#{name})")
       end
 
-      def note(text) = say(text)
+      def note(text) = say(text, note: true)
 
       def within(prefix) = Within.new(self, prefix)
 
@@ -84,8 +95,11 @@ module Quaack
 
       # On a terminal, a line printed while a step runs is left open, so
       # the clock can be drawn after it. A new line ends it first.
-      def say(text)
+      def say(text, note: false, own: nil)
         @lock.synchronize do
+          next if note && repeats_step?(text)
+
+          @own = own
           finish(@line && @start && (@clock.call - @start))
           line = "quaack: [#{@number}/#{@total}] #{text}"
           next @io.print("#{line}\n") unless @tty && @start
@@ -96,23 +110,32 @@ module Quaack
         end
       end
 
+      # On a terminal, whether text, a note, says no more than the step's
+      # own line, which is still the latest (Repeat). The step's line keeps
+      # the clock. Callers hold the lock.
+      def repeats_step?(text) = @tty && @own && Repeat.call(text, *@own)
+
       # Ends the step: the open line takes the step's time as its final
-      # reading, then the closing line gives it.
+      # reading, then the closing line, words and the time, gives it. With
+      # no words, it closes with Done, but on a terminal prints no closing
+      # line, since the open line's final reading already gives the time.
       def close(words, start, name)
         @lock.synchronize do
           elapsed = @clock.call - start
+          next finish(elapsed, final: true) if words.nil? && @tty
+
           finish(elapsed)
-          @io.print("quaack: [#{@number}/#{@total}] #{words} #{self.class.duration(elapsed)} (#{name})\n")
+          @io.print("quaack: [#{@number}/#{@total}] #{words || "Done in"} #{self.class.duration(elapsed)} (#{name})\n")
         end
       end
 
-      # Prints line, the step's own, and runs the block as the step that
-      # started at start. On a terminal, a thread redraws the clock every
-      # interval; it's stopped and joined however the block ends, before
-      # the closing line prints.
-      def clocked(start, line)
+      # Prints the step's own line, description and name, and runs the
+      # block as the step that started at start. On a terminal, a thread
+      # redraws the clock every interval; it's stopped and joined however
+      # the block ends, before the closing line prints.
+      def clocked(start, description, name)
         @lock.synchronize { @start = start }
-        say(line)
+        say("#{description} (#{name})", own: [description, name])
         return yield unless @tty
 
         timer = redrawing(start, stop = Queue.new)
@@ -120,7 +143,7 @@ module Quaack
       ensure
         stop&.push(:stop)
         timer&.join
-        @lock.synchronize { @start = nil }
+        @lock.synchronize { @start = @own = nil }
       end
 
       def redrawing(start, stop)
@@ -130,21 +153,22 @@ module Quaack
       end
 
       # Ends the open line, if any, at its final reading: elapsed, or none.
-      # A line that was cut to fit, or won't fit now, is printed whole, from
-      # the start of its one row, so it wraps only once it's done. Callers
-      # hold the lock.
-      def finish(elapsed)
+      # Under a second it shows none, unless final, for a line that must
+      # give the step's time as it closes. A line that was cut to fit, or
+      # won't fit now, is printed whole, from the start of its one row, so
+      # it wraps only once it's done. Callers hold the lock.
+      def finish(elapsed, final: false)
         return unless @line
 
-        suffix = elapsed && elapsed >= 1 ? " #{self.class.duration(elapsed)}" : ""
-        if @cut || fit(suffix).last
-          @io.print("\r#{@line}#{suffix}\e[K")
-        elsif elapsed
-          draw(elapsed)
-        end
+        reading = final_reading(elapsed, final)
+        suffix = " #{reading}" if reading
+        @io.print("\r#{@line}#{suffix}\e[K") if @cut || fit(suffix.to_s).last || (reading && reading != @shown)
         @io.print("\n")
         @line = @shown = @cut = nil
       end
+
+      # elapsed as the open line's final reading, or nil for none.
+      def final_reading(elapsed, final) = (self.class.duration(elapsed) if elapsed && (final || elapsed >= 1))
 
       # Redraws the open line with elapsed after it, once there's a whole
       # second to show and only when the reading changes. Callers hold the
@@ -170,7 +194,7 @@ module Quaack
         nil
       end
 
-      private :say, :close, :clocked, :redrawing, :finish, :draw, :fit, :columns
+      private :say, :repeats_step?, :close, :clocked, :redrawing, :finish, :final_reading, :draw, :fit, :columns
 
       # Cuts a line, with suffix after it, short of width so it never
       # wraps, since \r goes back only to the start of a row. It answers the
@@ -187,6 +211,20 @@ module Quaack
           return ["#{line[0, room - 1]}…#{suffix}", true] if room >= 2
 
           ["#{line[0, [width - 2, 0].max]}…"[0, width - 1], true]
+        end
+      end
+
+      # Whether a note, text, says no more than a step's own line: it ends
+      # with the step's ID, name, and what comes before is the step's
+      # description or its first words, as an LLM ask's "Asking the LLM
+      # (llm-rewrites)" does under "Asking the LLM for rewrites of the query
+      # (llm-rewrites)".
+      module Repeat
+        module_function
+
+        def call(text, description, name)
+          words = text.delete_suffix(" (#{name})")
+          words != text && (description == words || description.start_with?("#{words} "))
         end
       end
 
