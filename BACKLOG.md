@@ -2218,38 +2218,7 @@ It must never carry libpq's message, which can name the user or the database. Do
 
 ### 20261004-18. `quaack start --port`: production's port. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-19. `quaack run` on a terminal: drop lines the live clock makes redundant.
-
-Since the live clock (20261003-16) landed, a terminal shows some steps' time twice (the user, 2026-10-04):
-
-```
-quaack: [13/29] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 2s
-quaack: [13/29] Asking the LLM for index ideas (llm-index-ideas) 32s
-```
-
-Other steps add real information in the lines after the first, and that must stay:
-
-```
-quaack: [17/29] Asking the LLM for rewrites of the query (llm-rewrites)
-quaack: [17/29] Asking the LLM (llm-rewrites) 51s
-quaack: [17/29] Got 3 rewrites from the LLM, 3 kept in 51s (llm-rewrites)
-```
-
-The rule, on a terminal only:
-
-- **Closing lines with no summary:** a step that would close with the bare `Done in <time>` prints no closing line. The open line's frozen clock already gives the time, so make sure it does: the last open line ends at the step's final reading, even under one second.
-- **Closing lines with a summary,** such as "Got 3 rewrites from the LLM, 3 kept in 51s", still print. So does `Failed after <time>`.
-- **Notes that only repeat the step:** an LLM ask's note (`LLM::Client::ASKING`, or a `purpose` that says no more than the step's own line, as "Asking the LLM for index ideas" does under llm-index-ideas) adds nothing when it's the step's only ask. Leave it out, and let the step's own line keep the clock.
-  - Notes that add something stay: a second ask, a re-ask, "again for replacements", a sub-step under `within`, or a count.
-  - Check the real output for each LLM step to see which notes these are. Example 1 may be such a note rather than a closing line.
-- **Not a terminal** (a pipe or a log file): nothing changes. Every line prints as now, since there's no clock there.
-
-Specs use the fake clock and the fake terminal `io` that progress_spec.rb already has. Pin the exact bytes in both modes, for a step with a summary, one without, a failed one, and one with a single LLM ask. Update README's and DESIGN.md's progress examples to match.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-04.
-- **Design:** Progress lines for `quaack run`.
-- **Status:** todo
+### 20261004-19. `quaack run` on a terminal: drop lines the live clock makes redundant. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-20. Rewrite names: ambiguous words and borderline pairs. Done, see BACKLOG-COMPLETE.md.
 
@@ -2314,3 +2283,34 @@ In the user's real run (2026-10-04), each `quaacks rewrite-test --search rewrite
 - **Came from:** The user, 2026-10-04.
 - **Design:** rewrite-test, Where QUAACK runs.
 - **Status:** todo
+
+### 20261004-24. Flaky ProductionComparison timeout spec under load.
+
+`enclave/spec/production_comparison_postgres_spec.rb:116` ("LIMIT without ORDER BY is partial when the full original times out and the count matches") failed once. It hit a `PG::QueryCanceled` raised from `ProductionComparison.take`, through `Run#digest` and `#read`, instead of returning `partial subset_timed_out`. That run had several spec suites sharing Docker; the spec passed 3 of 3 times on its own.
+
+Under load, a 1 s statement timeout can fire during the LIMIT run itself, not only the full run, and that path raises instead of giving a verdict.
+
+1. Find out whether a production run can hit the same path. If a slow server can make the LIMIT run time out, `take` should give a verdict (`timed_out`, or whatever DESIGN.md's result-comparison says), not raise. Fix that with a test first.
+2. Make the spec robust to load, for example with a larger gap between the LIMIT run's cost and the timeout.
+
+- **Depends on:** none.
+- **Came from:** The per-commit check on main after landing 20261004-19, 2026-10-04.
+- **Design:** result-comparison.
+- **Status:** todo
+
+### 20261004-25. Progress lines: summaries that only repeat the step, and asks after notes.
+
+Minor findings from the review of 20261004-19. That task drops, on a terminal, the bare `Done in` lines and an LLM ask line that repeats its step. Some lines still just repeat the step with its time:
+
+1. **Fixed-text summaries.** Many pipeline steps' summaries carry no information, e.g. "Ranked the index ideas in 5s (index-rank)" after the frozen "Ranking the index ideas (index-rank) 5s". Others do ("Got 3 rewrites from the LLM, 3 kept"). **Ask the user** whether to drop fixed-text summaries on a terminal, and how to tell the two kinds apart (e.g. a summary flag on the step, set only when the text carries counts).
+2. **Asks under per-rewrite sub-steps** still repeat, e.g. "Rewrite Silver Fox: Asking the LLM for rows that could break the rewrite (counterexamples)" followed by "Asking the LLM for rows that could break the rewrite (llm-counterexamples) 20s".
+3. **After 20261004-21's notes**, the "repeats its step" rule fires only for llm-rewrites. A note such as "Reading the query's shape for the LLM" now comes between the step line and the ask, so the ask is no longer the first line. Decide with the user whether those asks still count as repeats.
+4. A second, identical ask is also dropped, because a dropped note leaves the step as the latest line. No caller does this today, but no test pins it.
+5. No test pins the word boundary in `Repeat`: mutating `start_with?("#{words} ")` to `start_with?(words)` survives.
+6. DESIGN.md's progress paragraph says each step's closing line gives the final time, without saying that setup steps print no closing line on a terminal.
+
+- **Depends on:** 20261004-19, 20261004-21.
+- **Came from:** The review of 20261004-19.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo (needs user input on 1 and 3)
+

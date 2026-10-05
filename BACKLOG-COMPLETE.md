@@ -4641,3 +4641,37 @@ Each list keeps 100 one-syllable and 100 two-syllable words. Update the names pi
 - **Design:** Progress lines for `quaack run`, report.
 - **Status:** done
 - **Landed:** merge bd543c4. Swapped owl, sparkly, clam, dawn and fuzzy for kelp, gleaming, lute, sled and fearless; dropped "Eager Beaver". The review was clean. Its minors were accepted as is: the syllable spec checks a fixed list, and "fearless" has an accent-dependent syllable count like "deer".
+
+### 20261004-19. `quaack run` on a terminal: drop lines the live clock makes redundant.
+
+Since the live clock (20261003-16) landed, a terminal shows some steps' time twice (the user, 2026-10-04):
+
+```
+quaack: [13/29] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas) 2s
+quaack: [13/29] Asking the LLM for index ideas (llm-index-ideas) 32s
+```
+
+Other steps add real information in the lines after the first, and that must stay:
+
+```
+quaack: [17/29] Asking the LLM for rewrites of the query (llm-rewrites)
+quaack: [17/29] Asking the LLM (llm-rewrites) 51s
+quaack: [17/29] Got 3 rewrites from the LLM, 3 kept in 51s (llm-rewrites)
+```
+
+The rule, on a terminal only:
+
+- **Closing lines with no summary:** a step that would close with the bare `Done in <time>` prints no closing line. The open line's frozen clock already gives the time, so make sure it does: the last open line ends at the step's final reading, even under one second.
+- **Closing lines with a summary,** such as "Got 3 rewrites from the LLM, 3 kept in 51s", still print. So does `Failed after <time>`.
+- **Notes that only repeat the step:** an LLM ask's note (`LLM::Client::ASKING`, or a `purpose` that says no more than the step's own line, as "Asking the LLM for index ideas" does under llm-index-ideas) adds nothing when it's the step's only ask. Leave it out, and let the step's own line keep the clock.
+  - Notes that add something stay: a second ask, a re-ask, "again for replacements", a sub-step under `within`, or a count.
+  - Check the real output for each LLM step to see which notes these are. Example 1 may be such a note rather than a closing line.
+- **Not a terminal** (a pipe or a log file): nothing changes. Every line prints as now, since there's no clock there.
+
+Specs use the fake clock and the fake terminal `io` that progress_spec.rb already has. Pin the exact bytes in both modes, for a step with a summary, one without, a failed one, and one with a single LLM ask. Update README's and DESIGN.md's progress examples to match.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** merge 08cfe07. On a terminal, steps with no summary print no `Done in` line, and an LLM ask line that repeats its step (first line after the step, same ID, words a prefix of the description) is dropped. Summaries and `Failed after` still print. The review had no blocking findings; its minors are 20261004-25.
