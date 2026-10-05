@@ -2398,17 +2398,7 @@ Keep the existing burndown table under it, for exact numbers and for readers wit
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261004-56. Pid-file races in two more timeout specs, and the group check's start-up gap.
-
-From the second review of 20261004-45.
-
-- `driver/spec/start_spec.rb:213` and `enclave/spec/inventory_memory_spec.rb:79` start `sleep 30 & echo $! > pid_file; wait` under a 0.5 s timeout. The shell can be killed before it writes the pid file, the same race 20261004-45 fixed in the transport spec. Take the pid from the spawn, or otherwise close the race.
-- The transport spec's process-group check stays green without testing anything when Ruby takes longer than the 1 s timeout to start its grandchild. Make the spec notice that case, for example by having the child signal readiness first or by asserting the grandchild started.
-
-- **Depends on:** none.
-- **Came from:** The second review of 20261004-45, 2026-10-05.
-- **Design:** none (test infrastructure).
-- **Status:** todo
+### 20261004-56. Pid-file races in two more timeout specs, and the group check's start-up gap. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-57. Rename artifacts left in comments, and a dangling colon in DESIGN.md. Done, see BACKLOG-COMPLETE.md.
 

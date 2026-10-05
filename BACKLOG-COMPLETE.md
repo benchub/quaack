@@ -5071,3 +5071,16 @@ The report must still read correctly with JavaScript off: use `<details>`/`<summ
 - **Design:** report.
 - **Status:** done
 - **Landed:** Landed in cb12d14.
+
+### 20261004-56. Pid-file races in two more timeout specs, and the group check's start-up gap.
+
+From the second review of 20261004-45.
+
+- `driver/spec/start_spec.rb:213` and `enclave/spec/inventory_memory_spec.rb:79` start `sleep 30 & echo $! > pid_file; wait` under a 0.5 s timeout. The shell can be killed before it writes the pid file, the same race 20261004-45 fixed in the transport spec. Take the pid from the spawn, or otherwise close the race.
+- The transport spec's process-group check stays green without testing anything when Ruby takes longer than the 1 s timeout to start its grandchild. Make the spec notice that case, for example by having the child signal readiness first or by asserting the grandchild started.
+
+- **Depends on:** none.
+- **Came from:** The second review of 20261004-45, 2026-10-05.
+- **Design:** none (test infrastructure).
+- **Status:** done
+- **Landed:** Landed in 28cbe8a.
