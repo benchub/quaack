@@ -2224,3 +2224,20 @@ It must never carry libpq's message, which can name the user or the database. Do
 - **Came from:** The user, 2026-10-04.
 - **Design:** inventory, Where QUAACK runs.
 - **Status:** todo
+
+### 20261004-18. `quaack start --port`: production's port.
+
+`quaack start` takes only `--server`, so every production connection passes only the host: inventory, qualify, statistics, volatility, and schema-dump's `pg_dump`. libpq then takes the port from `PGPORT`, or falls back to 5432. The user's production servers don't listen on 5432, and `PGPORT` applies to every server, so a run can't name its own port (the user, 2026-10-04).
+
+- `quaack start` takes an optional `--port <n>`, passed to `quaacks intake --port`. Check it the way `run-server` checks its `--port`.
+- Intake stores it with the run's `server`, in a way that leaves runs without it working as now. Without `--port`, nothing changes: libpq's setup decides.
+- Every production connection uses it: each `PG.connect`, and `pg_dump --port`. Find them all, ideally through one helper, so a new step can't forget it.
+- It must not change the run server's connections, which already have their own port.
+- A real-Postgres spec runs production on a port other than 5432, with `PGPORT` unset or wrong, and checks that each production step connects.
+- Update README's `quaack start` section and DESIGN.md's intake, inventory and schema-dump. The port is the operator's own input, not production data, so it doesn't cross the trust boundary. Say so.
+- If the store format changes, follow `store_format`. A gem version bump comes with it.
+
+- **Depends on:** none. 20261004-17's note should mention `--port` once this lands.
+- **Came from:** The user, 2026-10-04.
+- **Design:** intake, inventory, schema-dump, Where QUAACK runs.
+- **Status:** todo
