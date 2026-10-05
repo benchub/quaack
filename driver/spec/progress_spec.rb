@@ -375,6 +375,22 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
+      it "prints a line a redraw cut whole when it ends, even if the window widened since, at the same reading" do
+        narrow.columns = 36
+        fitted.step("llm-rewrites", "Asking") do
+          now[0] = 1.2
+          wait_for(narrow, "… 1s")
+          narrow.columns = 80
+          now[0] = 1.5
+        end
+
+        expect(narrow.string).to eq(
+          "quaack: [1/3] Asking (llm-rewrites)" \
+          "\rquaack: [1/3] Asking (llm-rewri… 1s\e[K" \
+          "\rquaack: [1/3] Asking (llm-rewrites) 1s\e[K\n"
+        )
+      end
+
       it "prints a line whole when it ends, if its final reading won't fit beside it" do
         narrow.columns = 46
         slow = described_class.new(io: narrow, total: 3, clock: -> { now.first }, interval: 60)
