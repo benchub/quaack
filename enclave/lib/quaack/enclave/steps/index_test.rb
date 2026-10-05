@@ -27,7 +27,7 @@ module Quaack
       # On one racetrack connection, GeneratorThree.filter checks each DDL
       # (IndexDdlCheck, against the racetrack's catalog, with the input
       # plan's settings) and runs it through the Dedupe, and
-      # SingleCandidateTest tests the accepted ones for each literals literal set.
+      # SingleCandidateTest tests the accepted ones for each literal set.
       # Then it rewrites index_search_<search> with the Dedupe as it is now,
       # and with each tested candidate appended to "llm_results", in the
       # same form as "results" (see IndexSearch). "baseline" and "results",

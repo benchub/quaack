@@ -29,7 +29,7 @@ module Quaack
     # IndexRanking uses it to measure combinations. run is built on it, so
     # everything below holds for both.
     #
-    # Until literals literal sets (20260922-21) and redact redaction (20260922-23)
+    # Until literal sets (20260922-21) and redaction (20260922-23)
     # land, literal_sets is a stand-in: a Hash from each set's name to its
     # values, in parameter order. Each value is a String in a valid
     # encoding with no NUL, or nil for NULL. Anything else raises

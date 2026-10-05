@@ -30,8 +30,8 @@ module Quaack
       # marker (index_search_no_racetrack_setup), before connecting. Then,
       # on one racetrack connection: the plan gate on anchored_query; index-from-query
       # on the parse of anchored_query and index-from-plan on the input plan, each
-      # filtered by one index-dedupe Dedupe as soon as it's produced; and index-test on
-      # the survivors, for each literals literal set.
+      # filtered by one Dedupe (index-dedupe) as soon as it's produced; and index-test on
+      # the survivors, for each literal set.
       #
       # It writes one entry, index_search_<search>, only when all of that
       # succeeds:

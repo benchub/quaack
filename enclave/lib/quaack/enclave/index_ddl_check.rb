@@ -61,7 +61,7 @@ module Quaack
     #    on, is only right for what SupportedSql lists. A row comparison,
     #    which SupportedSql allows for keyset pagination, is refused here
     #    too as RowExpr: no index predicate needs one.
-    # 8. volatile_function (or bad_search_path): the volatility VolatilityCheck, run
+    # 8. volatile_function (or bad_search_path): volatility's VolatilityCheck, run
     #    on that SELECT, finds a volatile function, operator, or cast. Its
     #    conservative rule holds here too: a call is refused if any
     #    function it could resolve to is volatile.

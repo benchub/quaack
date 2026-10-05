@@ -55,7 +55,7 @@ module Quaack
     #    it, doesn't parse back to the tree it came from (see Deparse). So
     #    Accepted's parse is the candidate's own parse with schemas added,
     #    and checks 2 and 3 hold for it without being run again.
-    # 5. volatile_function (or bad_search_path): the volatility VolatilityCheck
+    # 5. volatile_function (or bad_search_path): volatility's VolatilityCheck
     #    finds a volatile function. That refuses set_config, advisory
     #    locks, lo_import, nextval, and the rest, whose effects outlive the
     #    arena's transaction or change the session.

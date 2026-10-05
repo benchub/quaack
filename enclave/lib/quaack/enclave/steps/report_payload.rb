@@ -22,7 +22,7 @@ module Quaack
       # report message. It reads the store only and connects to nothing.
       #
       #   original_sql     the original query, always: the redacted query
-      #                    (literals as $n) with the clock-anchor clock functions put
+      #                    (literals as $n) with clock-anchor's clock functions put
       #                    back
       #   original_plan    the redacted input plan's node shapes
       #   original_measurements  { set => { "total_blocks", "hit", "read",

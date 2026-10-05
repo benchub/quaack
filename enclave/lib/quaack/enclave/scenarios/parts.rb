@@ -37,7 +37,7 @@ module Quaack
           chains.any? { spill?(it) }
         end
 
-        # Each fixture's rows (see RowSet#in_order), the first first.
+        # Each fixture's rows (see RowSet#in_order), the first fixture first.
         def in_order(tables) = @sets.map { it.in_order(tables) }
 
         private
