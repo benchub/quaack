@@ -2277,14 +2277,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 
 ### 20261004-52. Report: show the original query in the ranking table, and numbers instead of "better"/"no worse". Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-53. Report: style inline SQL so it stands out from the prose.
-
-The report puts raw SQL inside sentences, such as "Rewrite Blithe Mango with a new index on cluster44_shard_7236.assignments (context_id) INCLUDE (id, type, muted) WHERE context_type::text = 'Course'::text AND workflow_state::text <> 'deleted'::text read 1,668 blocks…". Wrap every piece of SQL the report embeds in an element such as `<code class="sql">`: index definitions, predicates, table and column names, and query text. Style it in the template's CSS with a monospace font and a subtle background, so it reads as distinct from the text around it. Long index DDL should wrap without overflowing the page.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report.
-- **Status:** todo
+### 20261004-53. Report: style inline SQL so it stands out from the prose. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table.
 

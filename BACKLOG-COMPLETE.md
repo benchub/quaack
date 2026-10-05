@@ -5221,3 +5221,13 @@ These are review minors from 20261004-28.
 - **Design:** run discipline, rewrite-test.
 - **Status:** done
 - **Landed:** Landed: cancel_when_sleeping reports the block's failure; a failed clock read after a cancel raises the cancel everywhere.
+
+### 20261004-53. Report: style inline SQL so it stands out from the prose.
+
+The report puts raw SQL inside sentences, such as "Rewrite Blithe Mango with a new index on cluster44_shard_7236.assignments (context_id) INCLUDE (id, type, muted) WHERE context_type::text = 'Course'::text AND workflow_state::text <> 'deleted'::text read 1,668 blocks…". Wrap every piece of SQL the report embeds in an element such as `<code class="sql">`: index definitions, predicates, table and column names, and query text. Style it in the template's CSS with a monospace font and a subtle background, so it reads as distinct from the text around it. Long index DDL should wrap without overflowing the page.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Landed: every embedded SQL piece is in <code class="sql">, styled and wrapping.
