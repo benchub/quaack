@@ -2330,19 +2330,7 @@ Refuse to send a statement when the connection isn't inside the runner's transac
 - **Design:** rewrite-test.
 - **Status:** todo
 
-### 20261004-37. Connection-failure notes: follow-ups.
-
-These are review minors from 20261004-17.
-
-1. README says "the message says which server it tried" for both connection failures, but the `run_server_connection_failed` note names no host. Fix README.
-2. Remove the inline `Metrics/AbcSize` disable on `run_command` in `driver/lib/quaack/driver/cli.rb`. It's the only one in any gem's `lib`. Split the method instead, for example by moving the run lookup and transport setup into a helper.
-3. Record `quaack start --port` in the run record too, so the note's psql test command can include `-p <n>` exactly instead of "adding -p <n> if you gave…".
-4. In the note, "It gives libpq only that host" doesn't say who "It" is. Say "QUAACK gives libpq…".
-
-- **Depends on:** 20261004-17.
-- **Came from:** The review of 20261004-17.
-- **Design:** inventory, Where QUAACK runs.
-- **Status:** todo
+### 20261004-37. Connection-failure notes: follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-38. Invalid UTF-8 in driver arguments crashes with a backtrace.
 
@@ -2366,4 +2354,16 @@ When a cancel or timeout arrives while the pipeline is finishing, drain to the S
 - **Depends on:** 20261004-28.
 - **Came from:** The builder of 20261004-36.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261004-40. Connection note: port wording.
+
+These are review minors from 20261004-37.
+
+1. README (around line 442) says the message "names the production server and port it tried". It names a port only when `quaack start --port` gave one. Change it to "and its port, if you gave `quaack start --port`".
+2. A hand-edited run record with a valid port but an invalid server gives `psql -h <server> -p 6543`, which is half filled in. Leave out `-p` when the server is the placeholder, or accept it as is and say so.
+
+- **Depends on:** 20261004-37.
+- **Came from:** The review of 20261004-37.
+- **Design:** inventory.
 - **Status:** todo

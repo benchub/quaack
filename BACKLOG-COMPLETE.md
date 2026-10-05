@@ -4835,3 +4835,18 @@ It must never carry libpq's message, which can name the user or the database. Do
 - **Design:** inventory, Where QUAACK runs.
 - **Status:** done
 - **Landed:** Landed in 257615e. Review minors went to 20261004-37.
+
+### 20261004-37. Connection-failure notes: follow-ups.
+
+These are review minors from 20261004-17.
+
+1. README says "the message says which server it tried" for both connection failures, but the `run_server_connection_failed` note names no host. Fix README.
+2. Remove the inline `Metrics/AbcSize` disable on `run_command` in `driver/lib/quaack/driver/cli.rb`. It's the only one in any gem's `lib`. Split the method instead, for example by moving the run lookup and transport setup into a helper.
+3. Record `quaack start --port` in the run record too, so the note's psql test command can include `-p <n>` exactly instead of "adding -p <n> if you gave…".
+4. In the note, "It gives libpq only that host" doesn't say who "It" is. Say "QUAACK gives libpq…".
+
+- **Depends on:** 20261004-17.
+- **Came from:** The review of 20261004-17.
+- **Design:** inventory, Where QUAACK runs.
+- **Status:** done
+- **Landed:** Landed in 460dbd0. Review minors went to 20261004-40.
