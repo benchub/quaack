@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "shellwords"
 require "tmpdir"
 require "quaack/driver/cli"
+require "quaack/driver/runs"
 require "quaack/protocol/version"
 
 RSpec.describe "quaack executable" do
@@ -145,13 +147,12 @@ RSpec.describe "quaack executable" do
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
 
-    # Task 20261004-22: argv can hold bytes that aren't UTF-8.
+    # Tasks 20261004-22 and 20261004-38: argv can hold bytes that aren't UTF-8.
     it "refuses a --port that isn't UTF-8 as a usage error before ssh, without raising" do
       out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
                                         "--plan", "/p", "--port", "54\xff32")
 
-      expect([out, err, status.exitstatus])
-        .to eq(["", "quaack start: --port must be a whole number from 1 to 65535\n", 64])
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start: --port isn't valid UTF-8\n", 64])
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
 
@@ -253,6 +254,89 @@ RSpec.describe "quaack executable" do
       expect(out).to eq(""), "argv #{argv.inspect} printed #{out.inspect} to stdout"
       expect(err).to eq(Quaack::Driver::CLI::USAGE), "argv #{argv.inspect} printed #{err.inspect}"
       expect(status.exitstatus).to eq(64), "argv #{argv.inspect} exited #{status.exitstatus}"
+    end
+  end
+
+  # Task 20261004-38: every argument is checked for UTF-8 before any
+  # subcommand looks at it, and the refusal names the flag, never the value.
+  describe "arguments that aren't UTF-8" do
+    let(:dir) { Dir.mktmpdir("quaack-cli-utf8") }
+    let(:run_id) { "20260926T010203Z-0123abcd" }
+    let(:bad) { "SENTINEL\xff" }
+
+    after { FileUtils.rm_rf(dir) }
+
+    # A fake ssh first on PATH that logs each call, answers version as the
+    # expected one, status as inventory done, and each with done, a driver
+    # config whose jump_command prints jump-1, a run recorded on jump-1,
+    # and a rewrites file.
+    def env
+      bin = File.join(dir, "bin")
+      FileUtils.mkdir_p(bin)
+      write_ssh(bin)
+      write_home
+      { "HOME" => dir, "PATH" => "#{bin}:#{ENV.fetch("PATH")}", "ANTHROPIC_API_KEY" => "test-key" }
+    end
+
+    def write_home
+      FileUtils.mkdir_p(File.join(dir, ".quaack"))
+      File.write(File.join(dir, ".quaack", "driver.json"), '{"jump_command": "echo jump-1"}')
+      Quaack::Driver::Runs.new(dir).record(run_id, "jump-1")
+      File.write(File.join(dir, "r.sql"), "SELECT 1;\n")
+    end
+
+    def write_ssh(bin)
+      path = File.join(bin, "ssh")
+      File.write(path, <<~SH)
+        #!/bin/sh
+        printf '%s\\n' "$*" >> '#{dir}/ssh-log'
+        case "$*" in
+          *" quaacks version") printf '{"type":"version","version":"#{Quaack::Driver::ENCLAVE_VERSION}"}\\n';;
+          *" quaacks status "*) printf '{"type":"status","entries":{"inventory":true}}\\n';;
+        esac
+        printf '{"type":"done"}\\n'
+      SH
+      FileUtils.chmod(0o755, path)
+    end
+
+    def quaack(*argv) = Open3.capture3(env, RbConfig.ruby, exe, *argv, chdir: dir)
+    def ssh_log = File.exist?(File.join(dir, "ssh-log")) ? File.read(File.join(dir, "ssh-log")) : ""
+
+    start = %w[start --server prod-1 --query /q --plan /p --port 6543]
+    setup = %w[setup --run 20260926T010203Z-0123abcd --host rs-1 --port 6432 --racetrack-db rt --arena-db ar]
+    run = %w[run --run 20260926T010203Z-0123abcd --rewrites r.sql --out o.html --host rs-1 --port 6432
+             --racetrack-db rt --arena-db ar]
+    [start, setup, run, %w[deploy --host jump-1]].each do |argv|
+      argv.each_with_index.select { |arg, _| arg.start_with?("--") }.each do |flag, i|
+        it "refuses #{argv.first} #{flag} that isn't UTF-8 as a usage error naming the flag, before ssh" do
+          out, err, status = quaack(*argv.dup.tap { it[i + 1] = bad })
+
+          expect([out, err, status.exitstatus]).to eq(["", "quaack #{argv.first}: #{flag} isn't valid UTF-8\n", 64])
+          expect(ssh_log).to eq("")
+        end
+      end
+    end
+
+    it "refuses a flag name, subcommand, or stray argument that isn't UTF-8 without echoing any argument" do
+      [["start", "--server", "p", "--query", "/q", "--plan", "/p", "--po\xffrt", "1"], ["st\xffart"],
+       ["setup", "--run", run_id, "--keep\xff"], ["start", "--server", "er", "\xff"]].each do |argv|
+        out, err, status = quaack(*argv)
+
+        prefix = argv.first.valid_encoding? ? "quaack #{argv.first}" : "quaack"
+        expect([out, err, status.exitstatus]).to eq(["", "#{prefix}: an argument isn't valid UTF-8\n", 64]),
+                                                 argv.inspect
+      end
+      expect(ssh_log).to eq("")
+    end
+
+    it "still passes non-ASCII UTF-8 through, as in a query file name or a database name" do
+      out, err, status = quaack("start", "--server", "prod-1", "--query", "r\u00e9sum\u00e9.sql", "--plan", "/p")
+
+      expect([out, err, status.exitstatus]).to eq(["", "quaack start failed: bad_run_id\n", 1])
+      expect(ssh_log).to include("jump-1 quaacks intake --query #{Shellwords.escape("r\u00e9sum\u00e9.sql")} --plan /p")
+
+      quaack("setup", "--run", run_id, "--arena-db", "ar\u00e8ne")
+      expect(ssh_log).to include("quaacks run-server --run #{run_id} --arena-db #{Shellwords.escape("ar\u00e8ne")}")
     end
   end
 end
