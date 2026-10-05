@@ -976,7 +976,7 @@ The enclave script tells the driver which atoms are untested by their redacted s
 
 ### fixture-open. Open the transaction.
 
-Begin a transaction on arena with `statement_timeout` set.
+Begin a transaction on arena with `statement_timeout` set. A statement that hits it fails the load or the comparison as a timeout. The runner tells that from any other cancel by the arena server's clock, read before each statement and again after a cancel, as run-discipline does.
 
 ### fixture-load. Load the fixture.
 
@@ -1064,6 +1064,8 @@ Hide all of them by setting `indisvalid` to false in `pg_index`. Only ever flip 
 ### run-discipline. Run discipline.
 
 Run every statement in a `READ ONLY` transaction with `statement_timeout` set. Run one at a time, never in parallel.
+
+A statement that hits `statement_timeout` counts as timed out. Any other cancel, such as an operator's, is an error, not a timeout. The two share an SQLSTATE, and the message text depends on `lc_messages`, so the enclave tells them apart by time: a cancel is the timeout only if `statement_timeout` has passed since the statement started. `statement_timeout` fires by the run server's clock, and the jump server's clock can run at a slightly different rate, so the enclave reads the run server's clock just before the statement and again after a cancel, never its own. Neither read is part of the statement, so neither adds to what it measures.
 
 ## baseline. Baseline runs.
 

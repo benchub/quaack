@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/production_comparison"
+require_relative "support/server_clock"
 
 # DESIGN.md's result-comparison: the original and a candidate run as plain queries on the
 # racetrack, streamed and compared by hash with fixture-compare's rules.
@@ -136,18 +137,6 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     end
   end
 
-  # Models a jump server whose clock runs at half the server's rate, as
-  # clock slewing can make it, a little, for real: statement_timeout fires on
-  # the server's clock, so the enclave's can't tell a timeout from a cancel.
-  def slow_enclave_clock
-    base = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
-    allow(Process).to receive(:clock_gettime).and_wrap_original do |original, id, unit = :float_second|
-      next original.call(id, unit) unless id == Process::CLOCK_MONOTONIC && unit == :millisecond
-
-      (base + ((original.call(id, :float_millisecond) - base) / 2)).floor
-    end
-  end
-
   it "fails a candidate that times out" do
     expect(verdict("SELECT 1", "SELECT 1 FROM pg_sleep(2)", timeout_ms: 500)).to eq(%w[fail timed_out])
   end
@@ -158,17 +147,10 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
   end
 
   it "raises an operator's cancel instead of counting it as timed out" do
-    other = PG.connect(conn.conninfo_hash.compact.except(:fallback_application_name))
-    pid = conn.backend_pid
-    canceller = Thread.new do
-      sleep 0.3
-      other.exec_params("SELECT pg_cancel_backend($1)", [pid])
+    cancel_when_sleeping(conn) do
+      expect { compare("SELECT 1", "SELECT 1 FROM pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
     end
-    expect { compare("SELECT 1", "SELECT 1 FROM pg_sleep(3)") }.to raise_error(PG::QueryCanceled, /user request/)
     expect(conn.transaction_status).to eq(PG::PQTRANS_IDLE)
-  ensure
-    canceller&.join
-    other&.close
   end
 
   it "runs each query read-only, so a candidate can't write" do
