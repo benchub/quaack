@@ -16,7 +16,9 @@ module Quaack
     # then goes on to end the process as usual. A teardown that fails never
     # masks the run's own error: it prints its operator message, and raises
     # its error only when the run itself succeeded. With keep, it skips
-    # teardown and prints the command to run later.
+    # teardown and prints the command to run later. It skips it the same
+    # way after a run that failed as ssh_failed: ssh is down, so the call
+    # would only fail too, after another connect timeout and probe.
     #
     # A signal during teardown, such as a second Ctrl-C, still ends the
     # process: its SignalException goes on and replaces the run's error. So
@@ -35,7 +37,38 @@ module Quaack
       # The rules for a run's store the enclave wouldn't or couldn't delete.
       BY_HAND = %w[bad_run bad_store_base teardown_failed].freeze
 
-      def self.around(transport:, run_id:, stderr:, keep: false)
+      def self.around(transport:, run_id:, stderr:, keep: false, &)
+        new(transport, run_id, stderr).around(keep:, &)
+      end
+
+      # What to do after a failed run whose store teardown deleted.
+      START_OVER = "start a new run with `quaack start`"
+
+      def self.command(run_id) = "quaacks teardown --run #{run_id}"
+
+      # What to do after `quaack run --run <run_id>` failed: resume it
+      # while its store is left, or start a new run once teardown deleted
+      # it. teardown is the run's Teardown, or nil if the run failed before
+      # it had one.
+      def self.next_step(teardown, run_id)
+        teardown&.deleted? ? START_OVER : "resume with `quaack run --run #{run_id}`"
+      end
+
+      def self.kept(run_id)
+        "quaack: kept run #{run_id}. To tear it down later, run this on the jump server: #{command(run_id)}\n"
+      end
+
+      attr_reader :transport
+
+      def initialize(transport, run_id, stderr)
+        @transport = transport
+        @run_id = run_id
+        @stderr = stderr
+        @deleted = false
+      end
+
+      # As self.around, for a caller that then asks deleted?.
+      def around(keep: false)
         run_error = nil
         yield
       rescue Exception => e # rubocop:disable Lint/RescueException -- only noted, then re-raised
@@ -44,20 +77,16 @@ module Quaack
         run_error = e
         raise
       ensure
-        keep ? stderr.print(kept(run_id)) : new(transport, run_id, stderr).finish(run_error)
+        if keep then @stderr.print(self.class.kept(@run_id))
+        elsif ssh_failed?(run_error) then @stderr.print(skipped)
+        else finish(run_error)
+        end
       end
 
-      def self.command(run_id) = "quaacks teardown --run #{run_id}"
-
-      def self.kept(run_id)
-        "quaack: kept run #{run_id}. To tear it down later, run this on the jump server: #{command(run_id)}\n"
-      end
-
-      def initialize(transport, run_id, stderr)
-        @transport = transport
-        @run_id = run_id
-        @stderr = stderr
-      end
+      # Whether teardown deleted the run's store, so there's nothing left
+      # to resume. It's false with keep, after a skipped or failed
+      # teardown, and before teardown runs.
+      def deleted? = @deleted
 
       # Tears down, and raises the teardown's error only when the run itself
       # succeeded, so it never masks the run's own error.
@@ -72,10 +101,8 @@ module Quaack
       # LoadError, so they can't mask the run's own error either. run_error
       # is the run's own error, or nil. A signal goes on, after its message.
       def call(run_error = nil)
-        line = @transport.call("teardown", args: { run: @run_id }).messages.find { it["type"] == "teardown" }
-        raise EnclaveError.new(subcommand: "teardown", rule: "no_teardown") unless line
-
-        @stderr.print done(line["next_step"])
+        @stderr.print done(teardown_line["next_step"])
+        @deleted = true
         nil
       rescue SignalException
         @stderr.print interrupted(run_error)
@@ -86,6 +113,19 @@ module Quaack
       end
 
       private
+
+      def teardown_line
+        line = @transport.call("teardown", args: { run: @run_id }).messages.find { it["type"] == "teardown" }
+        line or raise EnclaveError.new(subcommand: "teardown", rule: "no_teardown")
+      end
+
+      def ssh_failed?(run_error) = run_error.is_a?(EnclaveError) && run_error.rule == "ssh_failed"
+
+      def skipped
+        "quaack: skipped the teardown of run #{@run_id}, since ssh to the jump server failed. #{later}\n"
+      end
+
+      def later = "To tear it down later, run this on the jump server: #{self.class.command(@run_id)}"
 
       def done(next_step)
         return "quaack: deleted the store for run #{@run_id}, and destroyed its run server.\n" if next_step == "none"
@@ -105,7 +145,7 @@ module Quaack
         hint = if BY_HAND.include?(rule)
                  "Check or remove ~/.quaack/runs/#{@run_id} on the jump server by hand."
                else
-                 "Run this on the jump server: #{self.class.command(@run_id)}"
+                 later
                end
         "quaack: couldn't tear down run #{@run_id} (#{rule}). #{hint}\n"
       end

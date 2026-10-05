@@ -275,14 +275,19 @@ RSpec.describe "quaack run" do
     )
   end
 
-  it "says when ssh couldn't reach the jump server, and the command that resumes the run" do
+  # Task 20261004-26: ssh is down, so teardown isn't tried, and the store is
+  # left to resume.
+  it "says when ssh couldn't reach the jump server, skips teardown, and gives the command that resumes the run" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "ssh_failed",
                                                                  exit_status: 255)
 
     status = cli.run(["run", "--run", run_id, "--out", out])
 
+    expect(transport.calls.map(&:first)).not_to include("teardown")
     expect([status, errors]).to eq(
-      [1, "#{torn}quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
+      [1, "quaack: skipped the teardown of run #{run_id}, since ssh to the jump server failed. To tear it down " \
+          "later, run this on the jump server: quaacks teardown --run #{run_id}\n" \
+          "quaack run failed: ssh_failed: couldn't ssh to the jump server; check your ssh login or network, " \
           "then resume with `quaack run --run #{run_id}`\n"]
     )
   end
@@ -298,7 +303,7 @@ RSpec.describe "quaack run" do
     )
   end
 
-  it "names the call that died, and how, when an enclave call is incomplete" do
+  it "names the call that died, and how, when an enclave call is incomplete, and says to start a new run" do
     failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "incomplete",
                                                                  exit_status: 255)
 
@@ -307,8 +312,35 @@ RSpec.describe "quaack run" do
     expect([status, errors]).to eq(
       [1, "#{torn}quaack run failed: incomplete: quaacks index-feedback ended with exit 255. The ssh " \
           "session failed or ended, or the remote process was killed: check your ssh login, the network, and " \
-          "the jump server's kernel log (for the OOM killer) and sshd log\n"]
+          "the jump server's kernel log (for the OOM killer) and sshd log. " \
+          "To go on, start a new run with `quaack start`\n"]
     )
+  end
+
+  # Task 20261004-26: "resume" only when the run's store is still there.
+  describe "what to do after an incomplete call" do
+    before do
+      failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "incomplete",
+                                                                   exit_status: 1)
+    end
+
+    let(:failed) { "quaack run failed: incomplete: quaacks index-feedback ended with exit 1. To go on, " }
+
+    it "says to resume the run when --keep kept it" do
+      expect(cli.run(["run", "--run", run_id, "--out", out, "--keep"])).to eq(1)
+      expect(errors).to eq("quaack: kept run #{run_id}. To tear it down later, run this on the jump server: " \
+                           "quaacks teardown --run #{run_id}\n#{failed}resume with `quaack run --run #{run_id}`\n")
+    end
+
+    it "says to resume the run when teardown failed" do
+      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "incomplete",
+                                                             exit_status: 255)
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect(errors).to eq("quaack: couldn't tear down run #{run_id} (incomplete). To tear it down later, run this " \
+                           "on the jump server: quaacks teardown --run #{run_id}\n" \
+                           "#{failed}resume with `quaack run --run #{run_id}`\n")
+    end
   end
 
   it "names the table, column, and type when rewrite-test can't fill a column" do

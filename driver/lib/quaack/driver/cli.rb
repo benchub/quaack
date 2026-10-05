@@ -112,16 +112,18 @@ module Quaack
       # a usage error naming the key. An LLM failure prints its whole
       # message, rule and detail, since the detail is the provider's own
       # error text. Any other failure prints only its rule, as for start.
+      # What to do next says to resume the run only while its store is left
+      # (Teardown.next_step).
       def run_command(run:, rewrites:, out:, keep:, server:)
         require_run
         host = Runs.new(@home).host(run) or return usage_error("unknown run ID")
         sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
-        transport = @transport.call(host)
-        EnclaveVersion.check!(transport, host)
-        drive(transport, client, run, sqls, { out:, keep:, server: })
+        teardown = Teardown.new(@transport.call(host), run, @stderr)
+        EnclaveVersion.check!(teardown.transport, host)
+        drive(teardown, client, run, sqls, { out:, keep:, server: })
       rescue EnclaveError, LLM::Error, OperatorCandidates::Error, EnclaveVersion::Mismatch => e
-        @stderr.print "quaack run failed: #{EnclaveError.shown(e, "resume with `quaack run --run #{run}`")}\n"
+        @stderr.print "quaack run failed: #{EnclaveError.shown(e, Teardown.next_step(teardown, run))}\n"
         1
       end
 
@@ -139,10 +141,10 @@ module Quaack
 
       # Prints the report's path, if the pipeline wrote one, before done. The
       # run is torn down when the pipeline ends, however it ends, unless keep.
-      def drive(transport, client, run_id, sqls, options)
-        path = Teardown.around(transport:, run_id:, stderr: @stderr, keep: options[:keep]) do
-          Pipeline.new(transport:, client:, run_id:, rewrites: sqls, out: options[:out], stderr: @stderr,
-                       setup: options[:server]).run
+      def drive(teardown, client, run_id, sqls, options)
+        path = teardown.around(keep: options[:keep]) do
+          Pipeline.new(transport: teardown.transport, client:, run_id:, rewrites: sqls, out: options[:out],
+                       stderr: @stderr, setup: options[:server]).run
         end
         @stdout.print "#{path}\n" if path
         @stdout.print "#{run_id} done\n"

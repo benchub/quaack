@@ -116,6 +116,16 @@ RSpec.describe "quaack setup" do
                          "or network, then resume with `quaack setup --run #{run_id}`\n")
   end
 
+  # Task 20261004-26: setup never tears down, so the run is there to resume.
+  it "says to resume setup after an incomplete call" do
+    failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "incomplete", exit_status: 1)
+
+    expect(cli.run(["setup", "--run", run_id])).to eq(1)
+
+    expect(errors).to eq("quaack setup failed: incomplete: quaacks qualify ended with exit 1. " \
+                         "To go on, resume with `quaack setup --run #{run_id}`\n")
+  end
+
   it "says to start a new run when an older version of QUAACK started this one" do
     failing["status"] = Quaack::Driver::EnclaveError.new(subcommand: "status", rule: "run_from_older_version",
                                                          exit_status: 64)
