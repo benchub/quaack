@@ -2251,20 +2251,7 @@ Specs use the fake clock and the fake terminal `io` that progress_spec.rb alread
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo
 
-### 20261004-20. Rewrite names: ambiguous words and borderline pairs.
-
-Minor findings from both reviews of 20261004-16, in `driver/lib/quaack/driver/rewrite_names.rb`:
-
-- **Ambiguous syllable counts:** `owl` is often said "ow-ul", and `sparkly` "spar-kuh-lee". Swap each for an unambiguous word with the same count.
-- **Borderline pairs:** "Fuzzy Clam", "Woolly Clam" and "Fluffy Clam" ("clam" is crude slang), "Fuzzy Duck" (a crude spoonerism), "Fuzzy Plum", and "Golden Dawn" (a Greek neo-Nazi party). Dropping `clam`, `fuzzy` and `dawn`, or similar, fixes them. Add them to the spec's bad-pair list.
-- **Dead test entry:** "Eager Beaver" in the spec's bad-pair list can never be drawn, since both words have two syllables. Replace it with a drawable pair, or drop it.
-
-Each list keeps 100 one-syllable and 100 two-syllable words. Update the names pinned in specs that move.
-
-- **Depends on:** 20261004-16.
-- **Came from:** Both reviews of 20261004-16.
-- **Design:** Progress lines for `quaack run`, report.
-- **Status:** todo
+### 20261004-20. Rewrite names: ambiguous words and borderline pairs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-21. Make `incomplete` failures diagnosable.
 

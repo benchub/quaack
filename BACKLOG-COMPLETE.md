@@ -4625,3 +4625,19 @@ Also minor: `RewriteNames.name` replays every draw up to n on each call. That's 
 - **Landed:** 2026-10-04, as a merge of task/20261004-18, with every gem at 0.1.4 and `rake full` passed.
   - **Change:** `quaack start --port <n>` goes to `quaacks intake --port`, which stores a `production_port` entry only when given. Inventory, qualify, volatility, statistics and schema-dump connect through `Inventory::Production.params(store)`. pg_dump gets the port in its `--dbname` conninfo. A shared `Protocol::Port.valid?` also checks run-server's port. No `store_format` bump: a store without the entry means libpq decides, as before.
   - **Review:** one round, with no blocking findings. The minors went to 20261004-22.
+
+### 20261004-20. Rewrite names: ambiguous words and borderline pairs.
+
+Minor findings from both reviews of 20261004-16, in `driver/lib/quaack/driver/rewrite_names.rb`:
+
+- **Ambiguous syllable counts:** `owl` is often said "ow-ul", and `sparkly` "spar-kuh-lee". Swap each for an unambiguous word with the same count.
+- **Borderline pairs:** "Fuzzy Clam", "Woolly Clam" and "Fluffy Clam" ("clam" is crude slang), "Fuzzy Duck" (a crude spoonerism), "Fuzzy Plum", and "Golden Dawn" (a Greek neo-Nazi party). Dropping `clam`, `fuzzy` and `dawn`, or similar, fixes them. Add them to the spec's bad-pair list.
+- **Dead test entry:** "Eager Beaver" in the spec's bad-pair list can never be drawn, since both words have two syllables. Replace it with a drawable pair, or drop it.
+
+Each list keeps 100 one-syllable and 100 two-syllable words. Update the names pinned in specs that move.
+
+- **Depends on:** 20261004-16.
+- **Came from:** Both reviews of 20261004-16.
+- **Design:** Progress lines for `quaack run`, report.
+- **Status:** done
+- **Landed:** merge bd543c4. Swapped owl, sparkly, clam, dawn and fuzzy for kelp, gleaming, lute, sled and fearless; dropped "Eager Beaver". The review was clean. Its minors were accepted as is: the syllable spec checks a fixed list, and "fearless" has an accent-dependent syllable count like "deer".
