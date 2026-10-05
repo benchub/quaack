@@ -11,9 +11,9 @@ module Quaack
       # flat.
       #
       # The steps one plan has and the other doesn't are marked, by class
-      # and in words. Two steps are the same when their depth, type, table,
-      # and index are; row counts differ between any two runs, so they
-      # don't count.
+      # and in words. Two steps are the same when their type, table, and
+      # index are, matched in plan order; depth and row counts don't count,
+      # so one added step doesn't mark every step under it.
       module Plans
         INDENT = 0.65
         STEP = 1.5
