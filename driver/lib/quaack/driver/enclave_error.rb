@@ -137,13 +137,14 @@ module Quaack
         end
       end
 
-      # The port is in the test command only when the run recorded one.
+      # The port is in the test command only when the run recorded one, and
+      # the server too, so the command is never half filled in.
       def production_failed(jump, server, port, next_step)
         "couldn't connect to #{tried(server, port)}. QUAACK gives libpq only that host#{" and port" if port}. The " \
           "#{"port, " unless port}user, database, and password come from #{LIBPQ_SETUP} Test it with `ssh #{jump} " \
-          "'psql -h #{server || "<server>"}#{" -p #{port}" if port} -c \"select 1\"'`. If production listens on " \
-          "another port#{" than your libpq setup gives" unless port}, start a new run with `quaack start --port " \
-          "<n>`. Otherwise fix your libpq setup, then #{next_step}"
+          "'psql -h #{server || "<server>"}#{" -p #{port}" if server && port} -c \"select 1\"'`. If production " \
+          "listens on another port#{" than your libpq setup gives" unless port}, start a new run with `quaack " \
+          "start --port <n>`. Otherwise fix your libpq setup, then #{next_step}"
       end
 
       # The production server and port the note names.
