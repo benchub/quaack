@@ -4911,3 +4911,16 @@ These are review minors from 20261004-35.
 - **Design:** result-comparison.
 - **Status:** done
 - **Landed:** Landed in 39dfed7. A review minor went to 20261004-46.
+
+### 20261004-33. Tidy the oldest-client-first spec helper.
+
+These are review minors from 20261004-30, in `enclave/spec/run_server_check_postgres_spec.rb`.
+
+1. `listed_before?` runs a separate `pg_stat_activity` query for each pid. Take one snapshot instead.
+2. If `production.connect` raises inside `connect_listed_before`, for example with "too many clients", the connections in `opened` are never closed. Close them in an `ensure`.
+
+- **Depends on:** 20261004-30.
+- **Came from:** The review of 20261004-30.
+- **Design:** none (tests only).
+- **Status:** done
+- **Landed:** Landed in 6609562. One unlikely review minor wasn't filed: an error from close_and_wait inside the ensure would replace the original error.

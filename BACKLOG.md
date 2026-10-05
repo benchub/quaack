@@ -2286,17 +2286,7 @@ These are review minors from 20261004-31.
 - **Design:** teardown.
 - **Status:** todo
 
-### 20261004-33. Tidy the oldest-client-first spec helper.
-
-These are review minors from 20261004-30, in `enclave/spec/run_server_check_postgres_spec.rb`.
-
-1. `listed_before?` runs a separate `pg_stat_activity` query for each pid. Take one snapshot instead.
-2. If `production.connect` raises inside `connect_listed_before`, for example with "too many clients", the connections in `opened` are never closed. Close them in an `ensure`.
-
-- **Depends on:** 20261004-30.
-- **Came from:** The review of 20261004-30.
-- **Design:** none (tests only).
-- **Status:** todo
+### 20261004-33. Tidy the oldest-client-first spec helper. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-34. ServerClock follow-ups.
 
