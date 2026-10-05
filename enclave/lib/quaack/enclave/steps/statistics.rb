@@ -11,8 +11,8 @@ module Quaack
       # statistics, existing indexes, and extended statistics for the
       # query's tables (see Enclave::PlannerStatistics).
       #
-      # It reads the run's server and relations entries, the latter written
-      # by `quaacks qualify`: the query's own tables, not schema-dump's subset, whose
+      # It reads the run's server, production_port, and relations entries,
+      # the last written by `quaacks qualify`: the query's own tables, not schema-dump's subset, whose
       # FK parents no generator reads statistics for. It connects to the
       # server as inventory does (Inventory::Production.connect), and
       # PlannerStatistics.run reads everything inside one
@@ -31,9 +31,8 @@ module Quaack
         module_function
 
         def call(store:, **)
-          host = store.read("server")
           relations = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
-          connection = Enclave::Inventory::Production.connect(host)
+          connection = Enclave::Inventory::Production.connect(Enclave::Inventory::Production.params(store))
           PlannerStatistics.run(store:, relations:, connection:)
           []
         ensure

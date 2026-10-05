@@ -10,7 +10,7 @@ module Quaack
       # qualifies the run's query against its production server, and checks
       # that every relation it uses is a plain table (see Relations).
       #
-      # It reads the run's query, plan, and server entries. It connects to
+      # It reads the run's query, plan, server, and production_port entries. It connects to
       # the server with the operator's libpq setup, as inventory does
       # (Inventory::Production.connect), and resolves names through the
       # search_path in the plan's SETTINGS, or the default path without one.
@@ -32,14 +32,14 @@ module Quaack
         def call(store:, **)
           query = store.read("query")
           settings = store.read("plan")[0]["Settings"]
-          result = check(store.read("server"), query, settings)
+          result = check(Enclave::Inventory::Production.params(store), query, settings)
           store.write("relations", result.relations.map { { "schema" => it.schema, "name" => it.name } })
           store.write("qualified_query", result.sql)
           []
         end
 
-        def check(host, query, settings)
-          connection = Enclave::Inventory::Production.connect(host)
+        def check(production, query, settings)
+          connection = Enclave::Inventory::Production.connect(production)
           Relations.check(query, settings, connection)
         ensure
           connection&.close

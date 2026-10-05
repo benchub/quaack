@@ -13,11 +13,14 @@ module Quaack
       # read what the inventory records, inside one read-only transaction.
       #
       # It connects with the operator's own libpq setup on the jump server.
-      # Only the host comes from the run. Everything else, the port, the
-      # user, the database, and the password, comes from where libpq looks
-      # for it: PGUSER and the other PG environment variables, a service
-      # from ~/.pg_service.conf named by PGSERVICE, and ~/.pgpass. QUAACK
-      # stores no credentials.
+      # Only the host, and the port when intake had --port, come from the
+      # run (params). Everything else, the user, the database, the password,
+      # and the port without --port, comes from where libpq looks for it:
+      # PGUSER and the other PG environment variables, a service from
+      # ~/.pg_service.conf named by PGSERVICE, and ~/.pgpass. QUAACK stores
+      # no credentials. Every step that reaches production, schema-dump's
+      # pg_dump included, takes its connection parameters from params, so
+      # none can leave the port out.
       #
       # Every error is an Error with only its rule, and the SQLSTATE when
       # Postgres sent one: libpq's and Postgres's messages can name the host,
@@ -49,9 +52,16 @@ module Quaack
 
         module_function
 
-        # A connection to host, its notices dropped (see Connections).
-        def connect(host)
-          Connections.register(PG.connect(host:))
+        # The run's production connection parameters: its server as host,
+        # and its production_port as port, if intake stored one.
+        def params(store)
+          port = store.read("production_port") if store.entry?("production_port")
+          { host: store.read("server"), **(port ? { port: } : {}) }
+        end
+
+        # A connection with params, its notices dropped (see Connections).
+        def connect(params)
+          Connections.register(PG.connect(**params))
         rescue PG::Error
           raise Error, "production_connection_failed", cause: nil
         end

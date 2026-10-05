@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require "delegate"
+require "fileutils"
+require "tmpdir"
+require "quaack/enclave/store"
 require "quaack/enclave/inventory/production"
 require_relative "support/production_server"
 require_relative "support/catalog_shadow"
@@ -174,9 +177,41 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
     end
   end
 
+  describe ".params" do
+    let(:dir) { Dir.mktmpdir("quaack-production-params") }
+    let(:store) { Quaack::Enclave::Store.create(base: File.join(dir, "runs")).tap { it.write("server", "prod-db-3") } }
+
+    after { FileUtils.rm_rf(dir) }
+
+    it "is the run's server alone when intake had no --port, so libpq's setup picks the port" do
+      expect(production_module.params(store)).to eq(host: "prod-db-3")
+    end
+
+    it "adds the run's production_port when intake had --port" do
+      store.write("production_port", 6543)
+
+      expect(production_module.params(store)).to eq(host: "prod-db-3", port: 6543)
+    end
+  end
+
   describe ".connect" do
+    # PGPORT points nowhere, so only the port given can reach production.
+    it "connects to the port it's given, over the operator's PGPORT" do
+      env = operator_env("PGPORT" => "1")
+      expect(production.port).not_to eq(5432)
+      expect(with_libpq_env(env) { error_of { production_module.connect(host: production.host) } }.rule)
+        .to eq("production_connection_failed")
+
+      connection = with_libpq_env(env) { production_module.connect(host: production.host, port: production.port) }
+
+      expect(connection.exec("SELECT current_database()").getvalue(0, 0)).to eq(production.name)
+      expect(connection.port).to eq(production.port)
+    ensure
+      connection&.close
+    end
+
     it "connects to the host it's given, with the rest from the operator's libpq setup" do
-      connection = with_libpq_env(operator_env) { production_module.connect(production.host) }
+      connection = with_libpq_env(operator_env) { production_module.connect(host: production.host) }
 
       expect(connection.exec("SELECT current_database()").getvalue(0, 0)).to eq(production.name)
       expect(connection.host).to eq(production.host)
@@ -185,7 +220,7 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
     end
 
     it "drops the connection's notices, so none reaches stderr" do
-      connection = with_libpq_env(operator_env) { production_module.connect(production.host) }
+      connection = with_libpq_env(operator_env) { production_module.connect(host: production.host) }
 
       expect { connection.exec("DO $$BEGIN RAISE NOTICE '%', 'x'; END$$") }.not_to output.to_stderr_from_any_process
     ensure
@@ -200,8 +235,8 @@ RSpec.describe Quaack::Enclave::Inventory::Production do
         .to raise_error(PG::ConnectionBad, /#{s.word}/)
 
       errors = [
-        with_libpq_env(bad_login) { error_of { production_module.connect(production.host) } },
-        with_libpq_env(operator_env("PGPORT" => "1")) { error_of { production_module.connect("127.0.0.1") } }
+        with_libpq_env(bad_login) { error_of { production_module.connect(host: production.host) } },
+        with_libpq_env(operator_env("PGPORT" => "1")) { error_of { production_module.connect(host: "127.0.0.1") } }
       ]
 
       expect(errors.map { [it.rule, it.sqlstate] }).to eq([["production_connection_failed", nil]] * 2)

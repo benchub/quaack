@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg"
+require "quaack/protocol/port"
 require_relative "connections"
 require_relative "intake"
 
@@ -27,7 +28,7 @@ module Quaack
     #   intake takes for the production server (Intake::SERVER). A Unix
     #   socket path or an IPv6 address is unsupported in v1.
     # - bad_run_server_port: not a whole number from 1 to 65535, written
-    #   with plain digits and no leading zero.
+    #   with plain digits and no leading zero (Protocol::Port).
     # - bad_run_server_database: not a plain identifier, a letter, digit, or
     #   underscore first, then those or hyphens, at most 63 characters, the
     #   length Postgres keeps. Other names are unsupported in v1.
@@ -47,7 +48,6 @@ module Quaack
         end
       end
 
-      PORT = /\A[1-9][0-9]{0,4}\z/
       DATABASE = /\A[A-Za-z0-9_][A-Za-z0-9_-]{0,62}\z/
       DATABASES = { racetrack: "racetrack_db", arena: "arena_db" }.freeze
 
@@ -55,7 +55,7 @@ module Quaack
 
       def record(host:, port:, racetrack_db:, arena_db:)
         raise Error, "bad_run_server_host" unless plain?(host, Intake::SERVER)
-        raise Error, "bad_run_server_port" unless plain?(port, PORT) && Integer(port, 10) <= 65_535
+        raise Error, "bad_run_server_port" unless Protocol::Port.valid?(port)
         raise Error, "bad_run_server_database" unless [racetrack_db, arena_db].all? { plain?(it, DATABASE) }
         raise Error, "run_server_same_database" if racetrack_db == arena_db
 

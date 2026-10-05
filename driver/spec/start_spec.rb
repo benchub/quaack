@@ -28,7 +28,8 @@ RSpec.describe Quaack::Driver::Start do
   def remote_intake(run_id: self.run_id, version: nil)
     body = "File.write(#{File.join(dir, "got").inspect}, JSON.generate(inputs[:options])); " \
            "[{ type: :run, run_id: #{run_id.inspect} }]"
-    command = EnclaveCommands.probe(dir, body, options: { "query" => :value, "plan" => :value, "server" => :value })
+    options = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value }
+    command = EnclaveCommands.probe(dir, body, options:)
     # The probe step answers as intake: the wrapper swaps the subcommand.
     bin = EnclaveCommands.remote_quaacks(File.join(dir, "remote-bin"), command)
     wrapper = File.join(bin, "quaacks")
@@ -56,8 +57,8 @@ RSpec.describe Quaack::Driver::Start do
     expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
-  def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", **)
-    described_class.new(home:, ssh:, **).call(server:, query:, plan:)
+  def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", port: nil, **)
+    described_class.new(home:, ssh:, **).call(server:, query:, plan:, **(port ? { port: } : {}))
   end
 
   it "runs intake on the host jump_command prints for the server, and records the run's jump host" do
@@ -69,6 +70,26 @@ RSpec.describe Quaack::Driver::Start do
     expect(JSON.parse(File.read(File.join(dir, "got"))))
       .to eq("query" => "/q q.sql", "plan" => "/p.json", "server" => "prod-1")
     expect(Quaack::Driver::Runs.new(home).host(run_id)).to eq("jump-prod-1")
+  end
+
+  it "passes production's port to intake as --port, given one" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(port: "6543")).to eq(run_id)
+    expect(JSON.parse(File.read(File.join(dir, "got"))))
+      .to eq("query" => "/q q.sql", "plan" => "/p.json", "server" => "prod-1", "port" => "6543")
+  end
+
+  it "refuses a port that isn't a whole number from 1 to 65535 before ssh" do
+    configure("echo jump-1")
+    remote_intake
+
+    ["0", "65536", "-1", "054", "5432 ", "abc", ""].each do |port|
+      expect { start(port:) }
+        .to raise_error(Quaack::Driver::Start::UsageError, "--port must be a whole number from 1 to 65535"), port
+    end
+    expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
   it "passes the server to jump_command as one quoted shell word" do

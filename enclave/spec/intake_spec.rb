@@ -217,6 +217,39 @@ RSpec.describe "quaacks intake" do
     end
   end
 
+  describe "--port" do
+    it "stores production's port as an Integer in production_port" do
+      %w[1 6543 65535].each do |port|
+        FileUtils.rm_rf(base)
+        expect(intake_with(extra: ["--port", port])).to eq(0), port
+        expect(out.string).to eq(%({"type":"run","run_id":"#{runs[0]}"}\n{"type":"done"}\n))
+        expect(only_run.read("production_port")).to eq(Integer(port))
+        out.truncate(0) && out.rewind
+      end
+    end
+
+    it "stores no production_port without --port, so libpq's setup picks the port" do
+      expect(intake_with).to eq(0)
+      expect(only_run.entry?("production_port")).to be(false)
+    end
+
+    it "refuses anything but a whole number from 1 to 65535 as bad_port" do
+      ["", "0", "65536", "-1", "+5432", " 5432", "5432\n", "54a", "05432", "５４３２",
+       INTAKE_SENTINEL].each do |port|
+        out.truncate(0) && out.rewind
+        expect_refused("bad_port", intake_with(extra: ["--port", port]), port.inspect)
+      end
+    end
+
+    it "refuses --port twice, or without a value, as usage" do
+      [["--port", "5433", "--port", "5434"], ["--port"]].each do |extra|
+        out.truncate(0) && out.rewind
+        expect(intake_with(extra:)).to eq(64), extra.inspect
+        expect(runs).to eq([])
+      end
+    end
+  end
+
   describe "--captured-at" do
     it "refuses anything but an ISO-8601 time with a zone as bad_captured_at" do
       ["2026-09-23T22:15:00", "2026-09-23 22:15:00Z", "2026-09-23", "2026-09-23T22:15Z", "1790000000",
