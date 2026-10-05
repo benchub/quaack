@@ -2310,14 +2310,7 @@ These are review minors from 20261004-28.
 - **Design:** run discipline, rewrite-test.
 - **Status:** todo
 
-### 20261004-35. Order-dependent Deparse cache spec.
-
-`spec/result_comparison_spec.rb:172` (the `Deparse.faithfully` call-count spec from 20261004-23) failed once under `rake` with seed 34956: it expected 4 calls and got 8. It passes alone. It's probably sharing the cache with an earlier example. Reproduce with that seed, then isolate the cache per example or reset it.
-
-- **Depends on:** 20261004-23.
-- **Came from:** The builder of 20261004-28.
-- **Design:** none (tests only).
-- **Status:** todo
+### 20261004-35. Order-dependent Deparse cache spec. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-36. ArenaRunner: no statements after a cancel's rollback. Done, see BACKLOG-COMPLETE.md.
 
@@ -2371,4 +2364,17 @@ These are review minors from 20261004-36.
 - **Depends on:** 20261004-36.
 - **Came from:** The review of 20261004-36.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261004-42. Shape cache: tidy the specs.
+
+These are review minors from 20261004-35.
+
+1. The specs reset the cache with `instance_variable_get(:@kept).clear`. Add a small public `Shape.forget` and use it.
+2. The comment near `spec/result_comparison_spec.rb:165`, "Shapes are kept across examples, so each example's SQL names a table of its own", is half stale now that the cache is reset. Update it.
+3. The cache key holds the caller's own unfrozen SQL string. Freeze a copy as the key.
+
+- **Depends on:** 20261004-35.
+- **Came from:** The review of 20261004-35.
+- **Design:** result-comparison.
 - **Status:** todo

@@ -4862,3 +4862,13 @@ Refuse to send a statement when the connection isn't inside the runner's transac
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** Landed in d1d9420. Review minors went to 20261004-41.
+
+### 20261004-35. Order-dependent Deparse cache spec.
+
+`spec/result_comparison_spec.rb:172` (the `Deparse.faithfully` call-count spec from 20261004-23) failed once under `rake` with seed 34956: it expected 4 calls and got 8. It passes alone. It's probably sharing the cache with an earlier example. Reproduce with that seed, then isolate the cache per example or reset it.
+
+- **Depends on:** 20261004-23.
+- **Came from:** The builder of 20261004-28.
+- **Design:** none (tests only).
+- **Status:** done
+- **Landed:** Landed in fcd2b7a. Review minors went to 20261004-42.
