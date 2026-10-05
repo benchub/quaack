@@ -2342,18 +2342,7 @@ These are review minors from 20261004-50.
 - **Design:** report.
 - **Status:** todo
 
-### 20261004-60. Teardown failure: edge cases from 20261004-32.
-
-These are review minors from 20261004-32.
-
-1. **`teardown_failed` without the destroy.** README says that after `teardown_failed`, `destroy_command` has already destroyed the run server. But `destroyed?` reads `store.read("server")` inside `call`'s `rescue Store::Error`. If that read fails, the rule is `teardown_failed` and the destroy never ran, so the run server may still be up. Give that case its own rule, or hedge the README's wording.
-2. **`Teardown.failure` assumes an `EnclaveError`.** It calls `error.to_go_on?` unguarded. That's safe today, but if teardown could raise another rescued class it would raise `NoMethodError`. Add an `is_a?(EnclaveError)` guard, with a test.
-3. **A driver error from teardown after a good run.** DESIGN.md says the pointer follows "every rule teardown fails with". A non-`EnclaveError` failure (`driver_error`) isn't rescued by `run_command`, so it escapes with no pointer and no path note. Handle it, or narrow DESIGN.md's claim. This predates 20261004-32.
-
-- **Depends on:** 20261004-32.
-- **Came from:** The review of 20261004-32, 2026-10-05.
-- **Design:** teardown.
-- **Status:** todo
+### 20261004-60. Teardown failure: edge cases from 20261004-32. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-61. Untested conditions: loose ends from 20261004-51.
 
@@ -2409,4 +2398,16 @@ The review of 20261004-52 found:
 - **Depends on:** 20261004-52.
 - **Came from:** The review of 20261004-52, 2026-10-05.
 - **Design:** report.
+- **Status:** todo
+
+### 20261004-66. Teardown: minors from 20261004-60.
+
+The review of 20261004-60 found:
+1. `teardown_failed` without the destroy can still happen through a race: `open_run` fails, then the open inside `Store.teardown` succeeds. Also, `entry?` can raise an unrescued `SystemCallError`, which is unlikely, since the run directory is checked to be 0700 first. Decide whether either needs handling.
+2. The spec "keeps the message of the run's own non-EnclaveError" in the driver's teardown spec passed on main too, since the condition short-circuits before the guard, and `run_command` doesn't rescue `IOError` anyway. Make it cover a realistic path, or drop it.
+3. README's rules table doesn't list `driver_error`, which DESIGN.md names as a rule the operator sees.
+
+- **Depends on:** 20261004-60.
+- **Came from:** The review of 20261004-60, 2026-10-05.
+- **Design:** teardown.
 - **Status:** todo

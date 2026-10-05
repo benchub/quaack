@@ -5194,3 +5194,17 @@ The second review of 20261003-16 found these minors in `driver/lib/quaack/driver
 - **Design:** Progress lines for `quaack run`.
 - **Status:** done
 - **Landed:** Landed: @cut pinned by a test; \e[K printed before the text so a full-width line keeps its last character.
+
+### 20261004-60. Teardown failure: edge cases from 20261004-32.
+
+These are review minors from 20261004-32.
+
+1. **`teardown_failed` without the destroy.** README says that after `teardown_failed`, `destroy_command` has already destroyed the run server. But `destroyed?` reads `store.read("server")` inside `call`'s `rescue Store::Error`. If that read fails, the rule is `teardown_failed` and the destroy never ran, so the run server may still be up. Give that case its own rule, or hedge the README's wording.
+2. **`Teardown.failure` assumes an `EnclaveError`.** It calls `error.to_go_on?` unguarded. That's safe today, but if teardown could raise another rescued class it would raise `NoMethodError`. Add an `is_a?(EnclaveError)` guard, with a test.
+3. **A driver error from teardown after a good run.** DESIGN.md says the pointer follows "every rule teardown fails with". A non-`EnclaveError` failure (`driver_error`) isn't rescued by `run_command`, so it escapes with no pointer and no path note. Handle it, or narrow DESIGN.md's claim. This predates 20261004-32.
+
+- **Depends on:** 20261004-32.
+- **Came from:** The review of 20261004-32, 2026-10-05.
+- **Design:** teardown.
+- **Status:** done
+- **Landed:** Landed: destroy_command_not_run rule, EnclaveError guard in Teardown.failure, Teardown::DriverError handled by run_command.
