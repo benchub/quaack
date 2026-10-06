@@ -5542,3 +5542,13 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 - **Decided by the user (2026-10-05):** Stop writing progress and keep running.
 - **Status:** done
 - **Landed:** Landed after a review with no blocking findings. QuietStream wraps the progress stream and run_command's stderr: the first failed write is swallowed, later writes are skipped, and the run keeps its exit code. Minors and the stdout case became 20261004-85.
+
+### 20261004-82. Plan tree table: a blocks column.
+
+- **Status:** done
+- **Depends on:** 20261004-72
+- **Came from:** item 5 of 20261004-72. The user decided this on 2026-10-05.
+- **Design:** report, egress (20261003-5's boundary).
+
+Send per-node block counts from the enclave in the report payload's plan nodes, as numbers only (shared hit and read blocks, from EXPLAIN (ANALYZE, BUFFERS)), and show a blocks column in the "Why the winner reads fewer blocks" plan tree table. Extend `Protocol::PlanNodes`' shape check (from 20261004-72) to allow exactly the new keys, and update DESIGN.md's boundary text. Test with planted sentinels that nothing but the counts crosses.
+- **Landed:** Landed after a review with no blocking findings. PlanNodes now requires shared_hit_blocks and shared_read_blocks (non-negative Integer or nil); the enclave sends Postgres's per-node counts; the plan tables show 'Blocks read, with the steps under it'. Rewrite plans are hypothetical, so their counts are nil: 20261004-86. Minors: 20261004-87.

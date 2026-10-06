@@ -2355,14 +2355,7 @@ In the report's Indexes table, "Built", "not better" and "ranked" per source sti
 1. `IndexDdlCheck::RULES` is kept by hand. A new refusal added to `IndexDdlCheck`, `SupportedSql`, `VolatilityCheck` or `Deparse` without updating `RULES` and the samples in `enclave/spec/index_ddl_check_spec.rb` fails nothing, so the cross-gem words spec misses it. Find a way for a new rule to fail a test, such as a spec that scans those files for the rules they raise and compares them with `RULES`.
 2. "Planner ignored" in the Indexes table doesn't count index-rank's re-test drops (`never_used`, `hypopg_refused`). That matches the LLM row and DESIGN.md, so it's a choice of definition. Consider saying so in the table's note.
 
-### 20261004-82. Plan tree table: a blocks column.
-
-- **Status:** todo
-- **Depends on:** 20261004-72
-- **Came from:** item 5 of 20261004-72. The user decided this on 2026-10-05.
-- **Design:** report, egress (20261003-5's boundary).
-
-Send per-node block counts from the enclave in the report payload's plan nodes, as numbers only (shared hit and read blocks, from EXPLAIN (ANALYZE, BUFFERS)), and show a blocks column in the "Why the winner reads fewer blocks" plan tree table. Extend `Protocol::PlanNodes`' shape check (from 20261004-72) to allow exactly the new keys, and update DESIGN.md's boundary text. Test with planted sentinels that nothing but the counts crosses.
+### 20261004-82. Plan tree table: a blocks column. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-83. Report plans: the flat-layout fallback is unreachable.
 
@@ -2395,4 +2388,24 @@ From the review of 20261004-25. On a terminal, an LLM ask that repeats its step 
 - **Depends on:** 20261004-62.
 - **Came from:** The review of 20261004-62 and its builder.
 - **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites.
+
+From 20261004-82's builder and review. Only the original plan carries per-node block counts, because it comes from the operator's `EXPLAIN (ANALYZE, BUFFERS)`. A rewrite's plan in the report is a hypothetical `EXPLAIN`, so in "Why the winner reads fewer blocks" the winner's blocks column is all "not recorded" and the report doesn't say why. Record a measured plan (ANALYZE, BUFFERS) for each ranked candidate from its measurement runs (today these keep plans only when a run is unstable), and send it in the payload within the same `PlanNodes` boundary. Until then, the report should say in words why the winner's column is empty.
+
+- **Depends on:** 20261004-82.
+- **Came from:** The builder and review of 20261004-82.
+- **Design:** report, measure, egress.
+- **Status:** todo
+
+### 20261004-87. Plan tree blocks column: minors from 20261004-82.
+
+1. A step with only one counter shows it as its total (hit missing, read 9 shows "9"). Postgres always writes both, so it's unlikely; show "not recorded" instead, or say why not. The spec pins today's behavior.
+2. Postgres counts an InitPlan's blocks in the step that runs it, not the step it hangs from, so they can appear twice in the table. The header ("with the steps under it") and DESIGN.md are true but incomplete; say so.
+3. The header doesn't say block counts are totals over all loops, while "actual rows" are per loop. A step run many times can show 1 row next to thousands of blocks. Say so in the header or a note.
+
+- **Depends on:** 20261004-82.
+- **Came from:** The review of 20261004-82.
+- **Design:** report.
 - **Status:** todo
