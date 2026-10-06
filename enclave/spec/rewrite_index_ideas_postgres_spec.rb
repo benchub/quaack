@@ -13,6 +13,7 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
   let(:sorted) do
     "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1 AND o.status = $2 ORDER BY o.total"
   end
+  let(:rewrite_sql) { sorted }
 
   def run(step, *extra, stdin: nil) = quaacks.run(step, "--run", store.run_id, *extra, stdin:, env: libpq_env)
   def done?(outcome) = [outcome.stderr, outcome.status.exitstatus, outcome.stdout] == ["", 0, %({"type":"done"}\n)]
@@ -23,7 +24,7 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
   def ready(survived: true, discarded: false)
     prepare
     store.write("schema_subset", schema_subset)
-    rewrite = { "sql" => sorted, "transformation" => "t #{sentinels.text}", "assumptions" => [] }
+    rewrite = { "sql" => rewrite_sql, "transformation" => "t #{sentinels.text}", "assumptions" => [] }
     run("rewrite-check", stdin: JSON.generate("rewrites" => [rewrite]))
     run("index-search", "--search", "rewrite_1")
     run("index-rank", "--search", "rewrite_1")
@@ -104,5 +105,40 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
     names = %w[rewrite_index_ideas_1 index_generated_rewrite_1 index_llm_ranked_rewrite_1]
     expect(before.slice(*names)).to eq(names.zip([true, false, false]).to_h)
     expect(status.slice(*names)).to eq(names.zip([true, true, true]).to_h)
+  end
+
+  # Task 20261004-76: index-test asks the planner about the rewrite's own query, in both LLM rounds.
+  context "when the rewrite filters on an expression the original doesn't" do
+    let(:rewrite_sql) do
+      "SELECT o.note, o.status FROM public.orders o WHERE lower(o.note) = lower($1) AND o.status = $2"
+    end
+    let(:for_rewrite) { "CREATE INDEX ON public.orders (lower(note))" }
+    let(:for_original) { "CREATE INDEX ON public.orders (note, status)" }
+
+    # The call's exit status, and each line's outcome or type.
+    def index_test(ddl, *extra)
+      outcome = run("index-test", "--search", "rewrite_1", *extra, stdin: JSON.generate("ddls" => [ddl]))
+      [outcome.status.exitstatus, outcome.stdout.lines.map { JSON.parse(it).then { |l| l["outcome"] || l["type"] } }]
+    end
+
+    def used_by_ddl(results)
+      results.to_h do |result|
+        [Quaack::Enclave::IndexStore.candidate(result["candidate"]).to_ddl, result["plans"].values.any? { it["used"] }]
+      end
+    end
+
+    it "keeps the ideas the rewrite uses, and not the ones only the original would use" do
+      ready
+
+      expect([index_test(for_original), index_test(for_rewrite, "--round", "refinement")])
+        .to all(eq([0, %w[accepted done]]))
+
+      results = stored.read("index_search_rewrite_1")["llm_results"]
+      expect(results.map { it["round"] }).to eq([nil, "refinement"])
+      expect(used_by_ddl(results)).to eq(
+        "CREATE INDEX ON public.orders USING btree (note, status)" => false,
+        "CREATE INDEX ON public.orders USING btree (lower(note))" => true
+      )
+    end
   end
 end
