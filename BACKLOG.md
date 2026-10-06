@@ -2323,19 +2323,7 @@ The review of 20261004-53 found:
 
 ### 20261004-71. ServerClock: comments and wording from 20261004-67. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-72. Plan tree table: minors from 20261004-54.
-
-The review of 20261004-54 found:
-1. Nothing in the protocol checks which keys a plan node carries; only the enclave spec pins it. Consider a shape check on plan nodes (pre-existing gap).
-2. The enclave spec checks the rewrite's plan with `include`, so the rewrite plan's depth isn't asserted.
-3. The `share` cutoff at `< 0.0005` in `report/plans.rb` is untested: changing it to `0.005` stays green.
-4. When the join order is swapped, the `Hash` node is marked "differs" though both plans have one, a side effect of matching in plan order. DESIGN.md allows it; consider a smarter match.
-5. The table has no blocks column, since the payload carries no per-node blocks. If the user wants per-node blocks, extending 20261003-5's boundary to send them is a separate decision.
-
-- **Depends on:** 20261004-54.
-- **Came from:** The review of 20261004-54, 2026-10-05.
-- **Design:** report.
-- **Status:** todo
+### 20261004-72. Plan tree table: minors from 20261004-54. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-73. Teardown: recheck the run directory after `destroy_command`. Done, see BACKLOG-COMPLETE.md.
 
@@ -2402,6 +2390,8 @@ Send per-node block counts from the enclave in the report payload's plan nodes, 
 ### 20261004-83. Report plans: the flat-layout fallback is unreachable.
 
 From the review of 20261004-72. Reports reach `Report.write` only through `Reply.parse`, which now refuses any plan node without an Integer depth of zero or more. So `report/plans.rb`'s flat layout (`tree?` false, ~lines 8-11 and 40-43) can't happen in a real run, and only the direct-render specs (`report_spec.rb` ~875, 886) exercise it. DESIGN.md (~1186) says both that the driver refuses a report whose nodes lack a depth and that such a plan "is laid out flat". Remove the fallback and its specs, or keep it and say why, and make DESIGN.md say one thing.
+
+While here (second review of 20261004-72): no test plants a Hash in place of a report's `rewrites`, so mutating `rewrites.is_a?(Array)` to `respond_to?(:all?)` survives in both `enclave/.../egress.rb` and `driver/.../reply.rb`. Add one.
 
 - **Depends on:** 20261004-72.
 - **Came from:** The review of 20261004-72.

@@ -5498,3 +5498,18 @@ The review of 20261001-19 found:
 - **Design:** burndown.
 - **Status:** done
 - **Landed:** Landed: store format 3 (older runs refused on resume), plain-English never-tested reasons, failed_in_round_<k>, 'Not kept' column, and Burndown.record_latest. Review minors: the note wording was fixed while landing; the funnel label test went to 20261004-79.
+
+### 20261004-72. Plan tree table: minors from 20261004-54.
+
+The review of 20261004-54 found:
+1. Nothing in the protocol checks which keys a plan node carries; only the enclave spec pins it. Consider a shape check on plan nodes (pre-existing gap).
+2. The enclave spec checks the rewrite's plan with `include`, so the rewrite plan's depth isn't asserted.
+3. The `share` cutoff at `< 0.0005` in `report/plans.rb` is untested: changing it to `0.005` stays green.
+4. When the join order is swapped, the `Hash` node is marked "differs" though both plans have one, a side effect of matching in plan order. DESIGN.md allows it; consider a smarter match.
+5. The table has no blocks column, since the payload carries no per-node blocks. If the user wants per-node blocks, extending 20261003-5's boundary to send them is a separate decision.
+
+- **Depends on:** 20261004-54.
+- **Came from:** The review of 20261004-54, 2026-10-05.
+- **Design:** report.
+- **Status:** done
+- **Landed:** Items 1-3 landed: Protocol::PlanNodes allowlist (node, relation, index, est_rows, actual_rows, selectivity, depth) enforced at enclave egress (String or Symbol plan keys) and the driver's reply check; share cutoff and rewrite depth tests. Item 4 not done (marking matches DESIGN). Item 5 became 20261004-82. Minors became 20261004-83.
