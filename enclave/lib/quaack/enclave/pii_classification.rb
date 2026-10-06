@@ -35,13 +35,12 @@ module Quaack
     #   values are at most about a tenth of the rows, so each one repeats.
     #   A negative n_distinct means the values mostly don't repeat, as in a
     #   small table of emails, so they aren't categories and never leave.
-    #   A structured column (PlannerStatistics's structured_columns: json,
-    #   jsonb, xml, tsvector, tsquery, hstore, a composite type, a range, a
-    #   multirange, an array, or a domain over one) is never
-    #   low-cardinality, however few values it holds: a document, list,
-    #   record, or span can hold facts about a person, so its values never
-    #   leave. Its frequencies follow
-    #   the rules above.
+    #   Only a sendable column (PlannerStatistics's sendable_columns: a
+    #   text-like column, or one whose type is a number, boolean, date or
+    #   time, uuid, or enum, or a domain over one) can be low-cardinality.
+    #   Any other column, such as json, an array, bytea, point, or inet, is
+    #   withheld however few values it holds, so its values never leave.
+    #   Its frequencies follow the rules above.
     #   This is the set Dedupe takes.
     #
     # outbound_statistics is a pure projection of the stored statistics:
@@ -103,16 +102,16 @@ module Quaack
       def classify_table(table, statistics, config)
         name = TableName.new(schema: table["schema"], name: table["name"])
         stats = statistics.table(name)
-        structured = table.fetch("structured_columns")
+        sendable = table.fetch("sendable_columns")
         table["column_names"].map do |column|
           pii, low = classes(config, stats, column, table["text_columns"].include?(column))
-          low &&= !structured.include?(column)
+          low &&= sendable.include?(column)
           { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii, "low_cardinality" => low }
         end
       end
 
       # [pii, low_cardinality] for one column of stats, a TableStatistics,
-      # before the structured rule. count is its distinct count, or nil when
+      # before the sendable rule. count is its distinct count, or nil when
       # that's unknown.
       def classes(config, stats, column, text)
         count = stats.column?(column) ? stats.distinct_count(column) : nil

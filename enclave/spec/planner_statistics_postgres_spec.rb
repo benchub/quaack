@@ -108,46 +108,79 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
     end
 
-    # For classify: json, jsonb, and array columns, a domain over one at any
-    # depth, and an array of a domain. Their MCV values never leave.
-    it "lists the structured columns, in attnum order" do
+    # For classify: a column's MCV values may leave only when its type is
+    # text-like or on the allowlist (numbers, money, oid, boolean, the date
+    # and time types, uuid, an enum), or a domain over one at any depth.
+    it "lists the columns whose values may leave: text-like and allowlisted types, in attnum order" do
       conn.exec(<<~SQL)
-        CREATE DOMAIN prefs AS jsonb;
-        CREATE DOMAIN deep_prefs AS prefs;
-        CREATE DOMAIN tag_list AS text[];
+        CREATE TYPE mood AS ENUM ('sad', 'fine');
         CREATE DOMAIN handle AS varchar(20);
-        CREATE TABLE shapes (a json, b jsonb, c text[], d int[], e prefs, f deep_prefs, g tag_list, h handle[],
-                             i int[][], j text, k int, l handle, m jsonpath, n uuid);
+        CREATE DOMAIN qty AS int;
+        CREATE DOMAIN calm AS mood;
+        CREATE DOMAIN deep_calm AS calm;
+        CREATE TABLE plain (a text, b handle, c smallint, d integer, e bigint, f numeric(10, 2), g real,
+                            h double precision, i money, j oid, k boolean, l date, m time, n timetz,
+                            o timestamp(3), p timestamptz, q interval, r uuid, s mood, t qty, u deep_calm);
       SQL
-      run([orders, table("public", "shapes")])
+      run([orders, table("public", "plain")])
 
-      expect(stored_table("orders")["structured_columns"]).to eq([])
-      expect(stored_table("shapes")["structured_columns"]).to eq(%w[a b c d e f g h i])
+      expect(stored_table("orders")["sendable_columns"]).to eq(%w[id customer_id status total_cents created_at])
+      expect(stored_table("plain")["sendable_columns"]).to eq(("a".."u").to_a)
     end
 
-    # hstore (the extension's type, in whatever schema it's in), xml,
-    # tsvector, tsquery, composite types (a table's row type too), ranges,
-    # and multiranges, and a domain over one at any depth.
-    it "lists the other structured types' columns too" do
+    # Every type that isn't text-like or on the allowlist is left out:
+    # structured types (json, jsonb, arrays, hstore, xml, tsvector, tsquery,
+    # composites, ranges, multiranges), bytea, the geometric and network
+    # types, bit strings, "char", and anything else, such as jsonpath or
+    # pg_lsn, and a domain over any of them at any depth. An array of an
+    # allowlisted type is left out too.
+    it "leaves out every other type, and a domain over one" do
       conn.exec(<<~SQL)
         CREATE SCHEMA ext;
         CREATE EXTENSION hstore SCHEMA ext;
         CREATE TYPE pair AS (label text, n int);
         CREATE TYPE mood AS ENUM ('sad', 'fine');
+        CREATE DOMAIN blob AS bytea;
+        CREATE DOMAIN deep_blob AS blob;
+        CREATE DOMAIN ints AS int[];
+        CREATE DOMAIN prefs AS jsonb;
+        CREATE DOMAIN deep_prefs AS prefs;
         CREATE DOMAIN tag_map AS ext.hstore;
-        CREATE DOMAIN deep_tag_map AS tag_map;
         CREATE DOMAIN span AS int4range;
-        CREATE DOMAIN deep_span AS span;
         CREATE DOMAIN pair_domain AS pair;
-        CREATE DOMAIN doc AS xml;
-        CREATE DOMAIN deep_terms AS tsvector;
-        CREATE TABLE others (a ext.hstore, b xml, c tsvector, d tsquery, e pair, f int4range, g tstzrange,
-                             h int4multirange, i deep_tag_map, j deep_span, k pair_domain, l doc, m customers,
-                             n deep_terms, o mood, p uuid, q bytea, r point, s interval, t jsonpath, u text);
+        CREATE DOMAIN qty AS int;
+        CREATE TABLE others (a bytea, b point, c line, d lseg, e box, f path, g polygon, h circle, i inet,
+                             j cidr, k macaddr, l macaddr8, m bit(3), n varbit, o "char", p json, q jsonb,
+                             r int[], s uuid[], t mood[], u qty[], v deep_blob, w ints, x deep_prefs,
+                             y ext.hstore, z tag_map, aa xml, ab tsvector, ac tsquery, ad pair, ae pair_domain,
+                             af customers, ag int4range, ah tstzrange, ai int4multirange, aj span, ak jsonpath,
+                             al pg_lsn, am regclass, an xid, ao tid, ap int);
       SQL
       run([table("public", "others")])
 
-      expect(stored_table("others")["structured_columns"]).to eq(%w[a b c d e f g h i j k l m n])
+      expect(stored_table("others")["sendable_columns"]).to eq(["ap"])
+    end
+
+    # The catalog query names every operator it compares with, so an
+    # operator planted ahead of pg_catalog's on the search_path can't make a
+    # type look text-like, allowlisted, an enum, or a clock type. These ones say yes to
+    # everything: an oid against a regtype, and one "char" against another
+    # (typcategory and typtype).
+    it "isn't fooled by an operator planted ahead of pg_catalog's" do
+      conn.exec(<<~SQL)
+        CREATE TABLE odd (a bytea, b inet, c int);
+        CREATE FUNCTION public.yes_oid(pg_catalog.oid, pg_catalog.regtype) RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT true $$;
+        CREATE FUNCTION public.yes_char(pg_catalog."char", pg_catalog."char") RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT true $$;
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog.oid, RIGHTARG = pg_catalog.regtype, FUNCTION = public.yes_oid);
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog."char", RIGHTARG = pg_catalog."char",
+                                  FUNCTION = public.yes_char);
+        SET search_path = public, pg_catalog;
+      SQL
+      run([table("public", "odd")])
+
+      expect(stored_table("odd")).to include("text_columns" => [], "sendable_columns" => ["c"], "clock_columns" => {})
     end
 
     # For clock-anchor's clock literals: the date and timestamp columns, by their
