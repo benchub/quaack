@@ -29,7 +29,8 @@ module Quaack
       # On one racetrack connection, GeneratorThree.filter checks each DDL
       # (IndexDdlCheck, against the racetrack's catalog, with the input
       # plan's settings) and runs it through the Dedupe, and
-      # SingleCandidateTest tests the accepted ones for each literal set.
+      # SingleCandidateTest tests the accepted ones for each literal set, on
+      # the search's own query: anchored_query, or the rewrite's SQL.
       # Then it rewrites index_search_<search> with the Dedupe as it is now,
       # and with each tested candidate appended to "llm_results", in the
       # same form as "results" (see IndexSearch). "baseline" and "results",
@@ -65,7 +66,7 @@ module Quaack
           ddls = check(store, search, input, options)
           entry = store.read("index_search_#{search}")
           connection = Enclave::RunServer.connect(store, :racetrack)
-          tested = run(store, entry, ddls, connection)
+          tested = run(store, search, entry, ddls, connection)
           save(store, search, entry, tested, options["round"])
           GeneratorThree.messages(tested[2])
         ensure
@@ -96,20 +97,21 @@ module Quaack
         # Filters and tests the DDL. Returns [since, dedupe, result, report]:
         # the stored Dedupe's counts before filtering, the Dedupe after,
         # GeneratorThree's result, and the SingleCandidateTest report.
-        def run(store, entry, ddls, connection)
+        def run(store, search, entry, ddls, connection)
           dedupe = IndexStore.dedupe(entry["dedupe"], statistics: PlannerStatistics.load(store).statistics,
                                                       low_cardinality: PiiClassification.load(store).low_cardinality)
           since = Burndown.dedupe_counts(dedupe)
           result = GeneratorThree.filter(ddls, dedupe:, tables: tables(store),
                                                settings: store.read("plan")[0]["Settings"], connection:)
-          [since, dedupe, result, test(store, connection, result.survivors)]
+          [since, dedupe, result, test(store, search, connection, result.survivors)]
         end
 
         def tables(store) = store.read("relations").map { TableName.new(schema: it["schema"], name: it["name"]) }
 
-        def test(store, connection, candidates)
+        # Tests the candidates against the search's own query (IndexSearch.query).
+        def test(store, search, connection, candidates)
           literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
-          query = store.read("anchored_query")
+          query = IndexSearch.query(store, search)
           SingleCandidateTest.run(connection, query:, literal_sets:, candidates:,
                                               types: IndexSearch.types(store, query))
         end
