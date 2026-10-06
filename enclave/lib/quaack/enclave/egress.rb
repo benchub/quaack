@@ -115,13 +115,22 @@ module Quaack
       # A report's plans are nested too, so each must be exactly plan nodes
       # (see Protocol::PlanNodes.valid?): original_plan, and the plan of each
       # of rewrites, an Array of Hashes, unless it's nil. Both fields are
-      # needed. The report's other fields still go out unchecked.
+      # needed. A rewrite's plan key may be a Symbol or a String, as JSON
+      # writes either as "plan", so every value under either is checked.
+      # The report's other fields still go out unchecked.
       def check_report(fields)
         rewrites = fields["rewrites"]
         return if Protocol::PlanNodes.valid?(fields["original_plan"]) && rewrites.is_a?(Array) &&
-                  rewrites.all? { it.is_a?(Hash) && (it["plan"].nil? || Protocol::PlanNodes.valid?(it["plan"])) }
+                  rewrites.all? { it.is_a?(Hash) && rewrite_plans?(it) }
 
         raise Error, "a value in this report message has a plan that isn't plan nodes"
+      end
+
+      # Whether every value of rewrite under a plan key, Symbol or String,
+      # is nil or plan nodes. PlainData has already taken only Symbol and
+      # String keys.
+      def rewrite_plans?(rewrite)
+        rewrite.all? { |key, plan| key.to_s != "plan" || plan.nil? || Protocol::PlanNodes.valid?(plan) }
       end
     end
   end

@@ -235,6 +235,8 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a planted field in a node of a rewrite's plan", nil,
        ->(n) { [{ "rewrite" => "rewrite_1", "plan" => [n, n.merge(EGRESS_SENTINEL => 1)] }] }],
       ["a value in place of a rewrite's plan", nil, ->(_) { [{ "plan" => EGRESS_SENTINEL }] }],
+      ["a planted field in a node of a rewrite's plan under a Symbol key", nil,
+       ->(n) { [{ plan: [n.merge("filter" => EGRESS_SENTINEL)] }] }],
       ["a value in place of a rewrite", nil, ->(_) { [EGRESS_SENTINEL] }],
       ["a value in place of the rewrites", nil, ->(_) { EGRESS_SENTINEL }],
       ["no rewrites", nil, ->(_) {}]
@@ -249,6 +251,14 @@ RSpec.describe Quaack::Enclave::Egress do
         }
       end
     end
+  end
+
+  it "refuses a report whose rewrite names its plan both as a Symbol and as a String, without quoting it" do
+    node = { "node" => "Seq Scan", "relation" => nil, "index" => nil, "est_rows" => 1, "actual_rows" => 1,
+             "selectivity" => nil, "depth" => 0 }
+    rewrites = [{ "plan" => nil, plan: [node.merge("filter" => EGRESS_SENTINEL)] }]
+    expect { egress.serialize(type: :report, original_plan: [node], rewrites:) }
+      .to raise_error(described_class::Error) { expect(it.message).not_to include(EGRESS_SENTINEL) }
   end
 
   it "sends plain data nested in an allowed field as is, with Symbols as their names" do
