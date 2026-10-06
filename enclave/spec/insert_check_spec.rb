@@ -185,6 +185,16 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       expect { check("INSERT INTO sales.items (id, sku) VALUES (1, 'a')") }.to rejected("unknown_column")
     end
 
+    # Dropping a column renames its pg_attribute row, so naming the old name
+    # never reaches attisdropped. Its new name does.
+    it "refuses a dropped column named as the catalog now names it" do
+      conn.exec("ALTER TABLE sales.items DROP COLUMN sku")
+      dropped = conn.exec("SELECT attname FROM pg_catalog.pg_attribute " \
+                          "WHERE attrelid = 'sales.items'::regclass AND attisdropped").getvalue(0, 0)
+      expect { check(%(INSERT INTO sales.items (id, "#{dropped}") VALUES (1, NULL))) }
+        .to rejected("unknown_column", "unknown_column: sales.items has no column #{dropped}")
+    end
+
     it "refuses a system column" do
       expect { check("INSERT INTO sales.items (ctid) VALUES ('(0,1)')") }.to rejected("unknown_column")
     end
