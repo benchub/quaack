@@ -5582,3 +5582,18 @@ In the report's Indexes table, "Built", "not better" and "ranked" per source sti
 
 **Needs a decision:** one index can come from several sources. For example, an LLM idea that repeats a generator's adds the LLM to that candidate's sources. Should it count in every source's row (then the rows don't add up to the total), only under the first source, or in a separate "several sources" row?
 - **Landed:** Landed after a review with no blocking findings. New payload field index_sources (built, not better, ranked for generator_one, generator_two and llm; Protocol::IndexSources checked at egress and in the reply check); each built index counts in every source that proposed it, with an overlap note. Minor and remaining 'not recorded' cells: 20261004-89.
+
+### 20260926-45. Driver, LLM client and harness items left from 20260924-13, -14, -20.
+
+- **Needs a decision:** lazy-loading `anthropic` would save about 0.5s per CLI start, but breaks `runtime_boundary_spec`, which expects every driver file to load the gem. Change that spec to build a client first, or keep the eager load.
+- **Pump/Child rework:** cover a child that closes stdout and then reads stdin, and a grandchild that holds stdout open.
+- **Per-example timeout for driver specs,** tuned so it doesn't cause flakes.
+- **JSON harness column:** add a JSON column to the harness schema.
+
+- **Depends on:** 20260924-13, -14, -20.
+- **Came from:** The build of those tasks.
+- **Design:** Where QUAACK runs, LLM client.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Load `anthropic` lazily, and change `runtime_boundary_spec` to build a client first.
+- **Status:** done
+- **Landed:** Items 1-3 landed after a review with no blocking findings: anthropic and openai load only when a client is built (quaack --version ~1.25s to ~0.25s), runtime_boundary_spec builds a client per SDK provider; Pump reads all of a closed-stdout child's stdin and returns when the child exits even if a grandchild holds stdout; driver examples fail after 120s (QUAACK_EXAMPLE_TIME_LIMIT). Item 4 exposed a jsonb MCV leak and moved to 20261004-90 with its patch. Doc minors fixed while landing; the drain-deadline minor is unrealistic (bounded by max_bytes) and was not filed.
