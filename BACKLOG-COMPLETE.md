@@ -5723,3 +5723,20 @@ From the builder and two reviews of 20260925-18.
 - **Decided by the user (2026-10-06):** item 1, refuse the operator's own schema too, like any other role's schema. The refusal message should say why: the name could resolve to a schema the application never saw.
 - **Status:** done
 - **Landed:** The operator's own schema is refused like any role schema, with a message saying why; role schemas that can't change resolution are skipped (respecting schema USAGE); qualified names use their last part; unqualified operators (written and implicit) and collations are checked; README names repmgr. Follow-ups: 20261006-4.
+
+### 20261004-95. Insert check: clock words, loose ends.
+
+From the review of 20260925-2.
+1. An insert that leaves out a column such as `created_at timestamptz DEFAULT now()`, or writes an explicit `DEFAULT`, loads wall-clock time, not the clock anchor. That time varies between runs and against anchored predicates like `= CURRENT_DATE`. Refuse it, or fill the column from the anchor, and say which in DESIGN.md.
+2. Rare bypasses: a word built by a function (`textcat('to','day')::date`), and backslash escapes in array or range literals (`'{to\day}'`, `'[to\day,infinity)'`). Refuse them, or list them in DESIGN.md as unsupported in v1.
+3. **Needs a decision:** the arena now always runs in UTC. Before, it effectively ran in production's timezone, so a rewrite that's equal only in UTC, such as `interval '1 day'` → `'24 hours'` on timestamptz across a DST change, can no longer be disproved there. Pinning to production's recorded TimeZone would be just as deterministic.
+4. `bind` puts the query's real literals into `$n` before the check. A `clock_literal` refusal therefore reveals whether a placeholder holds a clock word (one bit, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead would avoid both.
+5. False refusals: any function argument holding a clock word, such as `to_tsvector('english', 'Today only...')`, and a composite column whose text field holds "now".
+6. The driver's counterexamples prompt doesn't tell the LLM to avoid `'now'` and `'today'`. Check its effect on the recorded replays.
+
+- **Depends on:** 20260925-2.
+- **Came from:** The review of 20260925-2.
+- **Design:** What goes into the enclave; insert check.
+- **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2. Item 1, fill a column whose omitted or `DEFAULT` value reads the clock from the clock anchor, rather than refusing. Item 2, list the bypasses in DESIGN.md as unsupported in v1. Item 5, fix the false refusals: stop refusing a clock word that can't reach a date/time value.
+- **Status:** done
+- **Landed:** Items 1, 2, 3, 5 and 6: the arena's TimeZone is production's recorded TimeZone; clock-reading column and domain defaults are anchored; each clock word is judged by the type it reaches (array, range and composite literals parsed, escaped bypasses refused); `textcat`-built words listed as unsupported in v1; the counterexamples prompt asks for fixed dates. Item 4 (anchored placeholder binding) was built but backed out after the second review found it mis-anchors text-only arguments; split into 20261006-5. Follow-ups: 20261006-5, 20261006-6.

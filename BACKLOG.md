@@ -2371,21 +2371,7 @@ From the reviews of 20260924-7.
 - **Design:** fixture-compare, result comparison.
 - **Status:** todo
 
-### 20261004-95. Insert check: clock words, loose ends.
-
-From the review of 20260925-2.
-1. An insert that leaves out a column such as `created_at timestamptz DEFAULT now()`, or writes an explicit `DEFAULT`, loads wall-clock time, not the clock anchor. That time varies between runs and against anchored predicates like `= CURRENT_DATE`. Refuse it, or fill the column from the anchor, and say which in DESIGN.md.
-2. Rare bypasses: a word built by a function (`textcat('to','day')::date`), and backslash escapes in array or range literals (`'{to\day}'`, `'[to\day,infinity)'`). Refuse them, or list them in DESIGN.md as unsupported in v1.
-3. **Needs a decision:** the arena now always runs in UTC. Before, it effectively ran in production's timezone, so a rewrite that's equal only in UTC, such as `interval '1 day'` → `'24 hours'` on timestamptz across a DST change, can no longer be disproved there. Pinning to production's recorded TimeZone would be just as deterministic.
-4. `bind` puts the query's real literals into `$n` before the check. A `clock_literal` refusal therefore reveals whether a placeholder holds a clock word (one bit, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead would avoid both.
-5. False refusals: any function argument holding a clock word, such as `to_tsvector('english', 'Today only...')`, and a composite column whose text field holds "now".
-6. The driver's counterexamples prompt doesn't tell the LLM to avoid `'now'` and `'today'`. Check its effect on the recorded replays.
-
-- **Depends on:** 20260925-2.
-- **Came from:** The review of 20260925-2.
-- **Design:** What goes into the enclave; insert check.
-- **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2. Item 1, fill a column whose omitted or `DEFAULT` value reads the clock from the clock anchor, rather than refusing. Item 2, list the bypasses in DESIGN.md as unsupported in v1. Item 5, fix the false refusals: stop refusing a clock word that can't reach a date/time value.
-- **Status:** todo
+### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-1. Waiting-for-the-LLM line: minors from 20261004-84.
 
@@ -2435,4 +2421,29 @@ From the builder of 20261004-88.
 - **Depends on:** 20261004-88.
 - **Came from:** The builder of 20261004-88.
 - **Design:** input, qualify.
+- **Status:** todo
+
+### 20261006-5. Bind a clock-word placeholder to the anchored value (20261004-95 item 4).
+
+Split from 20261004-95. `bind` puts the query's real literals into `$n` before the insert check. A `clock_literal` refusal therefore tells the LLM one bit (whether a placeholder holds a clock word, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead avoids both. The user decided (2026-10-06) to bind the anchored value.
+
+A first build (reverted commit 50b1c27 on `main`'s history, `counterexamples/clock_binding.rb`) failed the second review: it anchored placeholders whose word never reaches a date/time value. `INSERT INTO t (id, tags) VALUES (1, string_to_array($1, ','))` into `tags text[]` with `$1 = 'today'` loaded `{2024-01-01}` instead of `{today}`. The literal `'today'` form is also refused as `clock_literal` though no date/time is reachable (insert_clock_words.rb ~158-160, ~222-223). Restrict anchoring, and the malformed-literal fallback, to targets that can hold a date/time value. Start from the reverted commit and add regressions for both forms. Also cover a placeholder holding a clock word plus more, such as `'today 10:00'` (still refused today).
+
+- **Depends on:** 20261004-95.
+- **Came from:** 20261004-95 item 4, and its second review.
+- **Design:** What goes into the enclave; insert check; clock anchoring.
+- **Status:** todo
+
+### 20261006-6. Clock words and defaults: minors from 20261004-95.
+
+From the reviews and builder of 20261004-95.
+1. Array-valued function elements bypass the nested clock check: `ARRAY[array_reverse(ARRAY['today'])]::date[]` is accepted and loads the wall-clock date (also the `::text` variant and three-dimensional constructors). Keep the array target through such functions, or refuse and list as unsupported in v1 (insert_clock_words.rb ~166-170).
+2. Some clock-reading defaults stay unanchored: a domain-typed cast such as `DEFAULT ('today'::text)::public.clock_date` (domain names fail `ClockLiterals.castable?`), and array defaults like `('{today}'::text)::date[]` (clock_defaults.rb ~106-110). Handle them or list them in DESIGN.md.
+3. An inventory without a recorded `TimeZone` raises `KeyError` in `RunServer.connect` (run_server.rb ~81), reported as `internal_error`. Refuse with a clear rule instead.
+4. Query and candidate binding outside counterexamples still binds the raw clock word.
+5. Clock anchoring doesn't anchor `current_time` or `clock_timestamp()` in queries.
+
+- **Depends on:** 20261004-95.
+- **Came from:** The reviews and builder of 20261004-95.
+- **Design:** insert check; arena setup; clock anchoring.
 - **Status:** todo
