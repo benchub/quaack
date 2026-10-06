@@ -4,6 +4,7 @@ require "quaack/enclave/arena_runner"
 require "pg_query"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/predicate_atoms"
+require "quaack/enclave/racetrack"
 
 # llm-counterexamples, the enclave's half: bind the real literals into the LLM's
 # shape-level inserts, send them through the inbound check, and fill
@@ -283,6 +284,36 @@ RSpec.describe Quaack::Enclave::Counterexamples do
     expect(prepared.refused).to eq([])
     expect(load(prepared, "SELECT r.code FROM fx.depots d JOIN fx.regions r ON r.id = d.region_id"))
       .to eq([["5001"]])
+  end
+
+  describe "a placeholder whose literal is a clock word (task 20261004-95)" do
+    let(:map) do
+      { "$1" => { "value" => " Today ", "type" => "unknown" }, "$2" => { "value" => "NOW", "type" => "unknown" },
+        "$3" => { "value" => "tomorrow", "type" => "unknown" } }
+    end
+
+    before do
+      conn.exec("CREATE TABLE fx.stamps (id integer PRIMARY KEY, day date, at timestamptz, local timestamp,
+                   note text, days daterange, due date)")
+      Quaack::Enclave::Racetrack.create_clock_anchor(conn, "'2024-03-09 23:30:00+00'::pg_catalog.timestamptz")
+      conn.exec("SET TimeZone = 'Pacific/Chatham'")
+    end
+
+    def stamps(*inserts) = described_class.prepare(conn, inserts, placeholder_map: map, tables: [tn("stamps")])
+
+    it "binds the clock anchor's value, in the session's TimeZone, where the word would read the clock" do
+      prepared = stamps("INSERT INTO fx.stamps (id, day, at, local, note, days, due)
+                         VALUES (1, $1, $2, $2::timestamp, $1, daterange($1, NULL), $3)")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT day::text, at = '2024-03-09 23:30:00+00', local::text, note, days::text, due::text
+                             FROM fx.stamps"))
+        .to eq([["2024-03-10", "t", "2024-03-10 13:15:00", " Today ", "[2024-03-10,)", "2024-03-11"]])
+    end
+
+    it "still refuses a clock word the insert writes itself" do
+      expect(stamps("INSERT INTO fx.stamps (id, day) VALUES (1, 'today')").refused)
+        .to eq([{ index: 0, rule: "clock_literal" }])
+    end
   end
 
   describe "an insert that sets a GENERATED ALWAYS key (task 20260927-24)" do

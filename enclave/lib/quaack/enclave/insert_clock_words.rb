@@ -14,7 +14,7 @@ module Quaack
     #   InsertClockWords.check(cols, rows, column_types, settings, connection)
     #   # => nil, or raises Error "clock_literal: a value for column shipped could read the clock"
     #   InsertClockWords.clock_params(cols, rows, column_types, settings, connection) { |number| value }
-    #   # => the locations of the $n whose value the block gives would read the clock
+    #   # => { location => number } for each $n whose value the block gives would read the clock
     #
     # cols is the insert's column list, rows its VALUES rows, and
     # column_types each column's type OID by name. check takes rows
@@ -129,8 +129,8 @@ module Quaack
         values(cols, rows).filter_map do |value|
           param = value.node.param_ref or next
           text = yield param.number
-          param.location if text && types.reads_clock?(text, value.targets)
-        end
+          [param.location, param.number] if text && types.reads_clock?(text, value.targets)
+        end.to_h
       end
 
       def constant(node) = node.a_const&.sval&.sval
