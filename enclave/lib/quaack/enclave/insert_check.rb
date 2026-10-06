@@ -70,8 +70,9 @@ module Quaack
     #     date, timestamptz, and the like are STABLE, and '2024-01-01'::date
     #     is what fixtures are made of.
     # 13. clock_literal (or bad_search_path): a string constant holds 'now',
-    #     'today', 'tomorrow', or 'yesterday' where Postgres could read it
-    #     as a date, time, or timestamp, so it reads the clock (see
+    #     'today', 'tomorrow', or 'yesterday' in a part Postgres could read
+    #     as a date, time, or timestamp, by the type its column, a cast, or
+    #     a function parameter gives it, so it reads the clock (see
     #     InsertClockWords).
     # 14. deparse_mismatch: the insert doesn't parse back to the same tree
     #     when pg_query deparses it (see Deparse).

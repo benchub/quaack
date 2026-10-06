@@ -290,7 +290,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
         CREATE TYPE sales.span AS (starts timestamptz, label text);
         CREATE TABLE sales.stamps (id int, at timestamptz, local timestamp, on_day date, at_time time,
                                    at_timetz timetz, days date[], during tstzrange, durings tstzmultirange, span sales.span,
-                                   due sales.day, note text, notes text[]);
+                                   due sales.day, note text, notes text[], doc tsvector, spans sales.span[]);
+        CREATE FUNCTION sales.pick(anyelement, anyelement) RETURNS anyelement LANGUAGE sql IMMUTABLE AS 'SELECT $1';
       SQL
     end
 
@@ -325,7 +326,16 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a multirange literal" => ["durings", "'{[2024-01-01,2024-01-02), [today,infinity)}'"],
       "a composite literal with a timestamptz field" => ["span", "'(now,a)'"],
       "a function's argument" => ["during", "tstzrange('now', 'infinity')"],
-      "a function's argument, whatever the function takes" => ["note", "lower('Today')"]
+      "a function's text argument when the function's result is cast to a date" => ["on_day", "lower('Today')::date"],
+      "a function's text argument when the function's result is a date's" => ["on_day", "lower('Today')"],
+      "a polymorphic function's argument another argument could make a date" =>
+        ["note", "sales.pick('today', '2024-01-01'::date)::text"],
+      "a backslash-escaped word in an array literal" => ["days", "'{to\\day}'"],
+      "a word in a nested array literal" => ["days", "'{{2024-01-01},{\" today\"}}'"],
+      "a backslash-escaped word in a range literal" => ["during", "'[to\\day,infinity)'"],
+      "a quoted, escaped word in a composite's timestamptz field" => ["span", "'(\"to\\day\",a)'"],
+      "a word in a composite in an array" => ["spans", "'{\"(now,a)\"}'"],
+      "a word in a composite literal it can't split into the type's fields" => ["span", "'(2024-01-01,now,x)'"]
     }.each do |what, (column, value)|
       it "refuses #{what}" do
         expect { stamps(column, value) }.to clock(column)
@@ -352,6 +362,13 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "words that only contain a clock word" => ["note, at_time", "'nowhere todays snow', 'allballs'"],
       "a function's argument with a clock word's letters at its end" => ["note", "lower('Snow')"],
       "a function's argument with a clock word's letters at its start" => ["note", "upper('todays')"],
+      "a function's text argument" => ["note", "lower('Today')"],
+      "a word cast to text for a polymorphic function" => ["note", "sales.pick('today'::text, 'x')"],
+      "a word in text a function reads as no date" => ["doc", "to_tsvector('english', 'Today only, till now')"],
+      "a word in a composite's text field" => ["span", "'(2024-01-01,now)'"],
+      "a word in the text field of an ARRAY's composite" => ["spans", "ARRAY['(2024-01-01,now)']::sales.span[]"],
+      "a word in the text field of a composite array cast" => ["note", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
+      "a word in a composite's quoted text field, in an array" => ["spans", "'{\"(2024-01-01,\\\"to day now\\\")\"}'"],
       "DEFAULT and NULL" => ["at, on_day", "DEFAULT, NULL"]
     }.each do |what, (columns, values)|
       it "accepts #{what}" do
@@ -421,7 +438,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "unknown_column" => planted(sentinel, column: "colour"),
       "not_plain_value" => planted(sentinel, value: "(SELECT '#{sentinel}')"),
       "not_immutable" => planted(sentinel, value: "concat(now()::text, '#{sentinel}')"),
-      "clock_literal" => planted(sentinel, value: "lower('today #{sentinel}')"),
+      "clock_literal" => planted(sentinel, column: "shipped", value: "lower('today #{sentinel}')::date"),
       "deparse_mismatch" => planted(sentinel, value: "'t'::boolean::text")
     }.each do |rule, sql|
       it "never shows up when it's refused as #{rule}" do
