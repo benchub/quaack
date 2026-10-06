@@ -117,12 +117,37 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
         CREATE DOMAIN tag_list AS text[];
         CREATE DOMAIN handle AS varchar(20);
         CREATE TABLE shapes (a json, b jsonb, c text[], d int[], e prefs, f deep_prefs, g tag_list, h handle[],
-                             i int[][], j text, k int, l handle, m jsonpath, n tsvector);
+                             i int[][], j text, k int, l handle, m jsonpath, n uuid);
       SQL
       run([orders, table("public", "shapes")])
 
       expect(stored_table("orders")["structured_columns"]).to eq([])
       expect(stored_table("shapes")["structured_columns"]).to eq(%w[a b c d e f g h i])
+    end
+
+    # hstore (the extension's type, in whatever schema it's in), xml,
+    # tsvector, tsquery, composite types (a table's row type too), ranges,
+    # and multiranges, and a domain over one at any depth.
+    it "lists the other structured types' columns too" do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA ext;
+        CREATE EXTENSION hstore SCHEMA ext;
+        CREATE TYPE pair AS (label text, n int);
+        CREATE TYPE mood AS ENUM ('sad', 'fine');
+        CREATE DOMAIN tag_map AS ext.hstore;
+        CREATE DOMAIN deep_tag_map AS tag_map;
+        CREATE DOMAIN span AS int4range;
+        CREATE DOMAIN deep_span AS span;
+        CREATE DOMAIN pair_domain AS pair;
+        CREATE DOMAIN doc AS xml;
+        CREATE DOMAIN deep_terms AS tsvector;
+        CREATE TABLE others (a ext.hstore, b xml, c tsvector, d tsquery, e pair, f int4range, g tstzrange,
+                             h int4multirange, i deep_tag_map, j deep_span, k pair_domain, l doc, m customers,
+                             n deep_terms, o mood, p uuid, q bytea, r point, s interval, t jsonpath, u text);
+      SQL
+      run([table("public", "others")])
+
+      expect(stored_table("others")["structured_columns"]).to eq(%w[a b c d e f g h i j k l m n])
     end
 
     # For clock-anchor's clock literals: the date and timestamp columns, by their

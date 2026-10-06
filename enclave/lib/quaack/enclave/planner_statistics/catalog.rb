@@ -22,10 +22,14 @@ module Quaack
         # text, varchar, char, name, citext, and any domain over one, since
         # a domain takes its base type's category.
         #
-        # A column is structured when its type is json, jsonb, or an array,
-        # or a domain over one at any depth. A domain takes its base type's
-        # category, so an array's 'A' covers a domain over one, and the
-        # recursive CTE follows a domain over json or jsonb down to it.
+        # A column is structured when its type is json, jsonb, xml, tsvector,
+        # tsquery, hstore, a composite type, a range, a multirange, or an
+        # array, or a domain over one at any depth. A domain takes its base
+        # type's category, so an array's 'A' covers a domain over one, and
+        # the recursive CTE follows a domain down to the others. hstore is
+        # an extension's type, in whatever schema it was installed in, so
+        # it's matched by name: any type named hstore counts, which only
+        # ever withholds more.
         #
         # A column is a clock column when its type, or a domain's base type,
         # is date, timestamp, or timestamptz: clock-anchor anchors a clock literal
@@ -40,7 +44,9 @@ module Quaack
                  t.typcategory = 'A' OR EXISTS (
                    WITH RECURSIVE chain(oid) AS (SELECT t.oid UNION ALL SELECT b.typbasetype FROM chain
                      JOIN pg_catalog.pg_type b ON b.oid = chain.oid WHERE b.typbasetype <> 0)
-                   SELECT FROM chain WHERE chain.oid IN ('pg_catalog.json'::pg_catalog.regtype, 'pg_catalog.jsonb'::pg_catalog.regtype))
+                   SELECT FROM chain JOIN pg_catalog.pg_type s ON s.oid = chain.oid
+                   WHERE s.typtype IN ('c', 'r', 'm') OR s.typname = 'hstore' OR s.oid = ANY (ARRAY['pg_catalog.json',
+                     'pg_catalog.jsonb', 'pg_catalog.xml', 'pg_catalog.tsvector', 'pg_catalog.tsquery']::pg_catalog.regtype[]))
           FROM pg_catalog.pg_attribute a
           JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
           WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped

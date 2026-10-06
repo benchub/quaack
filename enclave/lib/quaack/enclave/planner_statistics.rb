@@ -34,9 +34,10 @@ module Quaack
     # - text_columns: the text-like columns, in attnum order: those whose
     #   type is in Postgres's string category (text, varchar, char, name,
     #   citext, or a domain over one), for classify's heuristic.
-    # - structured_columns: the json, jsonb, and array columns, and those
-    #   whose type is a domain over one at any depth, in attnum order. classify
-    #   never marks one low-cardinality, so its MCV values never leave.
+    # - structured_columns: the json, jsonb, xml, tsvector, tsquery, hstore,
+    #   composite, range, multirange, and array columns, and those whose type
+    #   is a domain over one at any depth, in attnum order. classify never
+    #   marks one low-cardinality, so its MCV values never leave.
     # - clock_columns: each column whose type, or its domain's base type, is
     #   date, timestamp, or timestamptz, mapped to that type, for clock-anchor's
     #   clock literals.
