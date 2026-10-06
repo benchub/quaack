@@ -332,18 +332,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Design:** fixture-compare.
 - **Status:** todo
 
-### 20260924-7. fixture-compare comparator loose ends.
-
-**Needs a decision,** from the reviews of 20260922-47 and 20260923-54:
-- A precise check for ties at a cut: the rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
-- Comparing intervals by value in the comparator.
-
-- **Depends on:** 20260922-47.
-- **Came from:** The reviews of 20260922-47 and 20260923-54.
-- **Design:** fixture-compare.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Build both: the precise tie check at a cut, and comparing intervals by value.
-- **Status:** todo
+### 20260924-7. fixture-compare comparator loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-8. Burndown loose ends.
 
@@ -2404,4 +2393,33 @@ From the review of 20260924-10.
 - **Depends on:** 20260924-10.
 - **Came from:** The review of 20260924-10.
 - **Design:** index-rank, index-feedback, minimax.
+- **Status:** todo
+
+### 20261004-93. Result comparison: the candidate's own ties inside a LIMIT/OFFSET window.
+
+From the second review of 20260924-7. Correctness, already on main before that task.
+- The edge check looks only at the original's tie groups. A candidate whose own tie group sits in the middle of its window can pass when both its tiebreaker runs happen to return the original's rows.
+- Example: products `(a,10),(b,10),(b,10),(c,10),(d,5)`. The original `SELECT category, price ... ORDER BY price DESC, category LIMIT 2 OFFSET 1` always returns `b,b`. A candidate that drops `category` from its `ORDER BY` could also return `a,b`, yet it passes fixture-compare and production comparison.
+- A pure-Ruby fuzz of 12k cases found 42 such false passes, all on the row-for-row path. Each needed duplicate output rows, or a one-row window in the exact middle of a tie.
+- Suggested fix: when the candidate has a LIMIT and an OFFSET, run its through-window query (LIMIT+OFFSET, no OFFSET) both ways too. If the two runs differ, send it to CutTies or refuse it.
+- Probes: `files/review-20260924-7-r2/probe/` in the session scratchpad.
+
+- **Depends on:** 20260924-7.
+- **Came from:** The second review of 20260924-7 (B1).
+- **Design:** fixture-compare, result comparison.
+- **Status:** todo
+
+### 20261004-94. Result comparison: loose ends of the edge check.
+
+From the reviews of 20260924-7.
+1. **Regression:** `LIMIT 9223372036854775807 OFFSET n` (or the same value bound as `$1`) now fails with `bigint out of range` in the edge query. ProductionComparison raises, which crashes the result-comparison step, and fixture-compare raises `ArenaRunner::Error`. Main passed both. Clamp the sum, or skip the edge check on overflow.
+2. With `OFFSET NULL`, the edge query becomes `LIMIT n + NULL`, which has no limit. Treat a NULL offset as 0.
+3. Full runs are bounded only by the timeout, not by memory. Four runs over a big table can hold tens of millions of hashes. Add a row cap that refuses with `unsupported_order`.
+4. `through_offset!` has no nil guard. pg_query's deparser segfaults on a TypeCast with a nil arg. No realistic query reaches it today. Raise a clear error instead.
+5. The `all_columns?` guard in production comparison is dead code. Remove it, or test it.
+6. A stricter candidate, such as `ORDER BY grp DESC NULLS LAST, id LIMIT 3`, fails `value` when no tie is cut, though it would pass when one is. Make the two paths agree.
+
+- **Depends on:** 20260924-7.
+- **Came from:** The first and second reviews of 20260924-7.
+- **Design:** fixture-compare, result comparison.
 - **Status:** todo

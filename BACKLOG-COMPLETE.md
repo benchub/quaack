@@ -5637,3 +5637,17 @@ Still open from the reviews of 20260922-4 and 20260923-53:
 - **Decided by the user (2026-10-05):** Cap the element count before parsing.
 - **Status:** done
 - **Landed:** Landed: input and intake plans over 2,000,000 commas, colons and opening brackets outside strings are refused before parsing.
+
+### 20260924-7. fixture-compare comparator loose ends.
+
+**Needs a decision,** from the reviews of 20260922-47 and 20260923-54:
+- A precise check for ties at a cut: the rows before the tied group must match exactly, and the rest must come from the group. That would recover top-N originals that are refused today.
+- Comparing intervals by value in the comparator.
+
+- **Depends on:** 20260922-47.
+- **Came from:** The reviews of 20260922-47 and 20260923-54.
+- **Design:** fixture-compare.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Build both: the precise tie check at a cut, and comparing intervals by value.
+- **Status:** done
+- **Landed:** Landed: precise tie check at a LIMIT/OFFSET cut via a bounded edge check, and intervals compared by value. Follow-ups: 20261004-93, 20261004-94.
