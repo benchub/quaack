@@ -3,6 +3,7 @@
 require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
+require "quaack/protocol/index_sources"
 require "quaack/protocol/plan_nodes"
 require_relative "plain_data"
 
@@ -32,7 +33,8 @@ module Quaack
     # shape-class data. The exceptions are the burndown type, whose
     # stages and totals must pass Protocol::Burndown.valid?, and the report
     # type, whose original_plan and each rewrite's plan must pass
-    # Protocol::PlanNodes.valid?, or it raises Egress::Error. A value must be plain JSON data, though: nil, true,
+    # Protocol::PlanNodes.valid?, and whose index_sources must pass
+    # Protocol::IndexSources.valid?, or it raises Egress::Error. A value must be plain JSON data, though: nil, true,
     # false, an Integer, a Float, a String, a Symbol (sent as its name), or
     # an Array or Hash of those, with String or Symbol keys. Anything else,
     # such as an exception, a Struct, a Time, or a subclass of String, could
@@ -117,13 +119,18 @@ module Quaack
       # of rewrites, an Array of Hashes, unless it's nil. Both fields are
       # needed. A rewrite's plan key may be a Symbol or a String, as JSON
       # writes either as "plan", so every value under either is checked.
-      # The report's other fields still go out unchecked.
+      # index_sources must be exactly counts under QUAACK's own source
+      # names (see Protocol::IndexSources.valid?), and is needed too. The
+      # report's other fields still go out unchecked.
       def check_report(fields)
         rewrites = fields["rewrites"]
-        return if Protocol::PlanNodes.valid?(fields["original_plan"]) && rewrites.is_a?(Array) &&
-                  rewrites.all? { it.is_a?(Hash) && rewrite_plans?(it) }
+        unless Protocol::PlanNodes.valid?(fields["original_plan"]) && rewrites.is_a?(Array) &&
+               rewrites.all? { it.is_a?(Hash) && rewrite_plans?(it) }
+          raise Error, "a value in this report message has a plan that isn't plan nodes"
+        end
+        return if Protocol::IndexSources.valid?(fields["index_sources"])
 
-        raise Error, "a value in this report message has a plan that isn't plan nodes"
+        raise Error, "a value in this report message has index sources that aren't counts by source"
       end
 
       # Whether every value of rewrite under a plan key, Symbol or String,

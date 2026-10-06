@@ -933,4 +933,110 @@ RSpec.describe "quaacks report-payload" do
   it "sends no negative result when a candidate beat the original" do
     expect(report["negative"]).to be_nil
   end
+
+  # Task 20261004-80: which source proposed each built index, as counts by
+  # source only. In the fixture quaack_a is ranked (original:top:1), quaack_c
+  # is not better (its one label, rewrite_1:top:1, was excluded as
+  # not_better), and quaack_b is neither (its other label timed out).
+  describe "index_sources" do
+    def plain(ddl, *sources)
+      candidate = Quaack::Enclave::IndexCandidate.from_ddl(ddl, sources:)
+      Quaack::Enclave::IndexStore.candidate_plain(candidate)
+    end
+
+    def dedupe(proposals, set_aside: [])
+      { "proposals" => proposals, "set_aside" => set_aside, "drops" => [], "considered" => proposals.size }
+    end
+
+    def counts(built, not_better, ranked) = { "built" => built, "not_better" => not_better, "ranked" => ranked }
+
+    # quaack_a is generator one's in the original's search and the LLM's in
+    # the rewrite's. quaack_b is generator two's, and the LLM repeated it, so
+    # the Dedupe merged the LLM into its sources. quaack_c is the LLM's, in
+    # the rewrite's search, set aside for index-build. An existing index's
+    # copy and one no index was built from count nowhere.
+    def sourced(store)
+      a, b, c = proposed.values_at("quaack_a", "quaack_b", "quaack_c")
+      store.write("index_search_original",
+                  "dedupe" => dedupe([plain(a, :parse), plain(b, :plan, :llm),
+                                      plain("CREATE INDEX ON public.orders USING btree (note)", :parse, :plan, :llm)]),
+                  "results" => [{ "candidate" => plain(b, :plan) }])
+      store.write("index_search_rewrite_1",
+                  store.read("index_search_rewrite_1").merge(
+                    "dedupe" => dedupe([plain(a, :llm)], set_aside: [plain(b, :existing)]),
+                    "set_aside" => [plain(c, :llm)]
+                  ))
+    end
+
+    context "when the searches hold each built index's candidates" do
+      let(:outcome) { payload_of { sourced(it) } }
+
+      it "counts each built index under every source that proposed it, in any search" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(1, 0, 1), "generator_two" => counts(1, 0, 0), "llm" => counts(3, 1, 1)
+        )
+      end
+    end
+
+    context "when a built index came up in only one search" do
+      let(:outcome) do
+        payload_of do |store|
+          sourced(store)
+          store.write("index_search_rewrite_1", store.read("index_search_rewrite_1").except("dedupe", "set_aside"))
+        end
+      end
+
+      it "counts it under that search's sources only, and one no search holds under none" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(1, 0, 1), "generator_two" => counts(1, 0, 0), "llm" => counts(1, 0, 0)
+        )
+      end
+    end
+
+    context "when only the Dedupe's set-aside candidates and index-test's results hold them" do
+      let(:outcome) do
+        payload_of do |store|
+          store.write("index_search_original",
+                      "dedupe" => dedupe([], set_aside: [plain(proposed["quaack_c"], :plan)]),
+                      "llm_results" => [{ "candidate" => plain(proposed["quaack_a"], :llm) }])
+        end
+      end
+
+      it "counts each under the sources those hold" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(0, 0, 0), "generator_two" => counts(1, 1, 0), "llm" => counts(1, 0, 1)
+        )
+      end
+    end
+
+    context "when no search holds the built indexes' candidates" do
+      it "counts none of them under any source" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(0, 0, 0), "generator_two" => counts(0, 0, 0), "llm" => counts(0, 0, 0)
+        )
+      end
+    end
+
+    context "when a stored candidate's sources aren't QUAACK's own" do
+      let(:outcome) do
+        payload_of do |store|
+          sourced(store)
+          store.write("index_search_original",
+                      "dedupe" => dedupe([plain(proposed["quaack_a"], REPORT_WORD_SENTINEL, sentinel, :plan)]))
+        end
+      end
+
+      it "counts the index under QUAACK's own sources only, and never sends the others" do
+        expect(report["index_sources"]).to eq(
+          "generator_one" => counts(0, 0, 0), "generator_two" => counts(1, 0, 1), "llm" => counts(2, 1, 1)
+        )
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
+    it "names QUAACK's index sources as the protocol lists them" do
+      require "quaack/enclave/steps/index_sources"
+      expect(Quaack::Enclave::Steps::IndexSources::NAMES.values).to eq(Quaack::Protocol::IndexSources::SOURCES)
+    end
+  end
 end

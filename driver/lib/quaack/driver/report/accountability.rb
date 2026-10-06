@@ -15,11 +15,15 @@ module Quaack
       # every search. Those not kept are the proposals that weren't stored,
       # whichever check dropped them: more than the burndown's arrival rules. Both are nil until the stage is recorded.
       #
-      # Indexes. The payload doesn't say which source proposed a built,
-      # declined, or existing index, so most cells by source are nil. What
-      # each source proposed is what index-from-query, index-from-plan, and the LLM rounds (llm-index-ideas,
-      # llm-index-refine) added. An LLM round's record also holds its own drops. The
-      # last row counts what the payload does carry, whatever the source
+      # Indexes. What each source proposed is what index-from-query,
+      # index-from-plan, and the LLM rounds (llm-index-ideas, llm-index-refine)
+      # added. An LLM round's record also holds its own drops; the
+      # generators' already existed and planner ignored are nil, since the
+      # burndown counts index-dedupe's and index-test's drops for every source
+      # together. Built, not better, and ranked by source are the payload's
+      # index_sources, nil if it hasn't any. An index several sources
+      # proposed counts in each of their rows (overlap?). The last row counts
+      # what the payload carries for every source together, each index once
       # (index_totals).
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Not kept", "Same plan as the original", "Wrong results",
@@ -39,6 +43,9 @@ module Quaack
 
         LLM_ROUNDS = %w[llm-index-ideas llm-index-refine].freeze
 
+        # index_sources' outcomes, in the table's order.
+        BY_SOURCE = %w[built not_better ranked].freeze
+
         def rewrite_account
           rows = REWRITE_SOURCES.map do |source, (name, stage)|
             [name, *rewrite_counts(rewrites.select { it["source"] == source }, added(stage))]
@@ -55,12 +62,25 @@ module Quaack
 
         def index_account
           proposals = [added("index-from-query"), added("index-from-plan"), added(*LLM_ROUNDS)]
-          [["Generator one, from the query's text", proposals[0], *[nil] * 5],
-           ["Generator two, from the query's plan", proposals[1], *[nil] * 5],
+          [["Generator one, from the query's text", proposals[0], nil, nil, *built_by("generator_one")],
+           ["Generator two, from the query's plan", proposals[1], nil, nil, *built_by("generator_two")],
            ["The LLM", proposals[2], dropped(LLM_ROUNDS, %w[covered_by_existing]),
-            dropped(LLM_ROUNDS, %w[never_used hypopg_refused]), nil, nil, nil],
+            dropped(LLM_ROUNDS, %w[never_used hypopg_refused]), *built_by("llm")],
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]
         end
+
+        # The source's built, not better, and ranked counts from the
+        # payload's index_sources, or nils without it.
+        def built_by(source)
+          counts = index_sources&.fetch(source, nil)
+          counts ? counts.values_at(*BY_SOURCE) : [nil] * BY_SOURCE.size
+        end
+
+        def index_sources = @payload["index_sources"]
+
+        # Whether the index rows by source can add up to more than all
+        # sources together, which they can once they count built indexes.
+        def overlap? = !index_sources.nil?
 
         # What the payload carries for every source together. Already
         # existed and planner ignored are counted as the proposals are, from

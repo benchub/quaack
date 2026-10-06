@@ -4,6 +4,7 @@ require_relative "protocol/version"
 require_relative "protocol/whitelist"
 require_relative "protocol/burndown"
 require_relative "protocol/plan_nodes"
+require_relative "protocol/index_sources"
 require_relative "protocol/port"
 
 module Quaack

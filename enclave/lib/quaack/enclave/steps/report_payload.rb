@@ -8,6 +8,7 @@ require_relative "../index_candidate"
 require_relative "../planner_statistics"
 require_relative "../table_name"
 require_relative "existing_indexes"
+require_relative "index_sources"
 require_relative "measured_labels"
 require_relative "negative_result"
 require_relative "rewrite_fate"
@@ -76,6 +77,10 @@ module Quaack
       #                    whether or not top is empty
       #   burndown         { "stages", "totals" }, the burndown counts as
       #                    Burndown.read checks them: names and counts only
+      #   index_sources    { source => { "built", "not_better", "ranked" } },
+      #                    how many built indexes each of QUAACK's index
+      #                    sources proposed (IndexSources). One several
+      #                    sources proposed counts under each.
       #
       # A rewrite the enclave refused on arrival isn't stored, so nothing is
       # sent for it. The burndown counts those.
@@ -92,16 +97,19 @@ module Quaack
       # details are QUAACK's own constants: RewriteSource and RewriteFate
       # send no other, but for an fk_cycle's tables, which are schema and
       # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
+      # index_sources is counts under Protocol::IndexSources' fixed source
+      # names only, which egress checks.
       module ReportPayload
         module_function
 
         def call(store:, **)
           selection = store.read("selection")
           stats = PlannerStatistics.load(store).statistics
+          labels = MeasuredLabels.call(store)
           [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
-             **original(store, stats), labels: MeasuredLabels.call(store), rewrites: rewrites(store, stats),
+             **original(store, stats), labels:, rewrites: rewrites(store, stats),
              indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
-             **findings(store, selection["top"]) }]
+             index_sources: IndexSources.call(store, labels, selection), **findings(store, selection["top"]) }]
         end
 
         # negative-result, rewrite-rules, and burndown: what the report says beyond the candidates.

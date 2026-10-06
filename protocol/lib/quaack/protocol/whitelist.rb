@@ -171,17 +171,22 @@ module Quaack
       # burndown's stages and totals, as the burndown message carries
       # them. rule_bugs is the rule-made rewrites a test disproved
       # (DESIGN.md's rewrite-rules): each one's entry name, rule names, and the step that
-      # disproved it (rewrite-test, counterexamples, or result-comparison). Its values are nested.
+      # disproved it (rewrite-test, counterexamples, or result-comparison). index_sources is,
+      # for each of QUAACK's index sources (generator_one, generator_two,
+      # llm), how many of the built indexes it proposed, how many of those
+      # were not better, and how many were ranked: counts only, under the
+      # fixed names of Protocol::IndexSources. Its values are nested.
       # The plans, original_plan and each rewrite's plan, are checked on
       # the way out: the egress function sends a report only if each passes
       # Protocol::PlanNodes.valid?, so every node has exactly the fields
-      # above, each of its type. The rest go out unchecked, so the enclave's
+      # above, each of its type, and only if index_sources passes
+      # Protocol::IndexSources.valid?. The rest go out unchecked, so the enclave's
       # ReportPayload step is where they're reviewed. Sources, rule names, fates, scenarios, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds
       # as it is.
       report: %i[original_sql original_plan original_measurements top excluded infinite_sets labels rewrites
-                 indexes timed_out_count negative rule_bugs burndown].freeze,
+                 indexes timed_out_count negative rule_bugs burndown index_sources].freeze,
       # One line of index-build's progress, sent while `quaacks index-build` works,
       # just before it builds each index: index is its 1-based position,
       # total how many there are, and ddl its DDL through the enclave's
