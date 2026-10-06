@@ -2398,3 +2398,12 @@ In the report's Indexes table, "Built", "not better" and "ranked" per source sti
 - **Design:** report, egress (20261003-5's boundary).
 
 Send per-node block counts from the enclave in the report payload's plan nodes, as numbers only (shared hit and read blocks, from EXPLAIN (ANALYZE, BUFFERS)), and show a blocks column in the "Why the winner reads fewer blocks" plan tree table. Extend `Protocol::PlanNodes`' shape check (from 20261004-72) to allow exactly the new keys, and update DESIGN.md's boundary text. Test with planted sentinels that nothing but the counts crosses.
+
+### 20261004-83. Report plans: the flat-layout fallback is unreachable.
+
+From the review of 20261004-72. Reports reach `Report.write` only through `Reply.parse`, which now refuses any plan node without an Integer depth of zero or more. So `report/plans.rb`'s flat layout (`tree?` false, ~lines 8-11 and 40-43) can't happen in a real run, and only the direct-render specs (`report_spec.rb` ~875, 886) exercise it. DESIGN.md (~1186) says both that the driver refuses a report whose nodes lack a depth and that such a plan "is laid out flat". Remove the fallback and its specs, or keep it and say why, and make DESIGN.md say one thing.
+
+- **Depends on:** 20261004-72.
+- **Came from:** The review of 20261004-72.
+- **Design:** The report's plan tables.
+- **Status:** todo
