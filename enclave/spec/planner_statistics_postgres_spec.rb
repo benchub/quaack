@@ -108,6 +108,23 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
       expect(stored_table("kinds")["text_columns"]).to eq(%w[a b c d e h])
     end
 
+    # For classify: json, jsonb, and array columns, a domain over one at any
+    # depth, and an array of a domain. Their MCV values never leave.
+    it "lists the structured columns, in attnum order" do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN prefs AS jsonb;
+        CREATE DOMAIN deep_prefs AS prefs;
+        CREATE DOMAIN tag_list AS text[];
+        CREATE DOMAIN handle AS varchar(20);
+        CREATE TABLE shapes (a json, b jsonb, c text[], d int[], e prefs, f deep_prefs, g tag_list, h handle[],
+                             i int[][], j text, k int, l handle, m jsonpath, n tsvector);
+      SQL
+      run([orders, table("public", "shapes")])
+
+      expect(stored_table("orders")["structured_columns"]).to eq([])
+      expect(stored_table("shapes")["structured_columns"]).to eq(%w[a b c d e f g h i])
+    end
+
     # For clock-anchor's clock literals: the date and timestamp columns, by their
     # type, a domain's by its base type.
     it "maps the date and timestamp columns to their types" do
