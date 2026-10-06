@@ -382,17 +382,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Decided by the user (2026-10-05):** Fix self-referencing FKs (reverse them level by level, or keep such tables in forward order, whichever is sound) and add a third load order.
 - **Status:** todo
 
-### 20260924-10. index-rank loose ends.
-
-**Needs a decision,** from the reviews of 20260922-35:
-- `rank` checks the literal-set names against the baseline, but not the values. Checking the values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
-
-- **Depends on:** 20260922-35.
-- **Came from:** The reviews of 20260922-35.
-- **Design:** index-rank.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Store the baseline's values and check them.
-- **Status:** todo
+### 20260924-10. index-rank loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-11. Finish 3g redaction. Done, see BACKLOG-COMPLETE.md.
 
@@ -2412,4 +2402,16 @@ From the builder and review of 20261004-90.
 - **Depends on:** 20261004-90.
 - **Came from:** The builder and review of 20261004-90.
 - **Design:** classify, trust boundary.
+- **Status:** todo
+
+### 20261004-92. Literal-set values: test gaps, and comparisons by name only elsewhere.
+
+From the review of 20260924-10.
+1. Changing `it&.dup&.freeze` to `it` in the literal-set copy stays green: no spec edits a string in place. Add one.
+2. Making the value comparison ignore order (`transform_values(&:sort)`) stays green, yet values are positional. Add a test with the same values in another order.
+3. Other steps compare measurements from separate processes by literal-set name only: Refinement / index-feedback (stored mechanical results against LLM results) and minimax (`baseline` against `index_baseline`). Their values can differ only if `statistics` or `literals` is rerun partway through a run. Check the values there too (a stored digest would do), or refuse to rerun `literals` once later steps have used it.
+
+- **Depends on:** 20260924-10.
+- **Came from:** The review of 20260924-10.
+- **Design:** index-rank, index-feedback, minimax.
 - **Status:** todo

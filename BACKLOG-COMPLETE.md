@@ -5611,3 +5611,16 @@ Fix: never mark json, jsonb or any array column (or a domain over one) as low-ca
 - **Design:** classify, trust boundary.
 - **Status:** done
 - **Landed:** Landed after a review with no blocking findings, with 20260926-45's item 4 (customers.preferences jsonb and a json sentinel in the harness). The statistics step records each table's structured columns (json, jsonb, any array, domains over them at any depth); classify never marks them low-cardinality, so their MCV values never go out, and expression and extended-statistics MCVs follow. Minors and the other-types question: 20261004-91.
+
+### 20260924-10. index-rank loose ends.
+
+**Needs a decision,** from the reviews of 20260922-35:
+- `rank` checks the literal-set names against the baseline, but not the values. Checking the values means the baseline must store the values it was measured with. Store them, or keep this a documented precondition.
+
+- **Depends on:** 20260922-35.
+- **Came from:** The reviews of 20260922-35.
+- **Design:** index-rank.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Store the baseline's values and check them.
+- **Status:** done
+- **Landed:** Landed after a review with no blocking findings. The baseline is in memory (index-rank re-measures it each run), so no store change: Baseline and Result carry a frozen, hidden copy of their literal values, and rank checks values as well as names, raising its fixed-message ArgumentError on a mismatch. Minors and the by-name-only comparisons elsewhere: 20261004-92.
