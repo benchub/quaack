@@ -24,7 +24,7 @@ RSpec.describe Quaack::Enclave::IndexBurndown, ".record_rank" do
 
   def result(used:, refusal: nil)
     plans = refusal ? {} : { slow: sct::Plan.new(used:, total_cost: 1.0, canonical_plan: nil, raw_plan: nil) }
-    sct::Result.new(candidate: nil, size: 1, plans:, refusal:)
+    sct::Result.new(candidate: nil, size: 1, plans:, refusal:, literal_sets: {})
   end
 
   it "counts what didn't make the cut: never used, below the top three, and combinations not kept" do

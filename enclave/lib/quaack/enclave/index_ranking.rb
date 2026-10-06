@@ -17,8 +17,11 @@ module Quaack
     # takes them. baseline is an index-test Baseline, and results are index-test Results
     # from any generator and any number of runs, all for this query and
     # these literal sets. literal_sets must name the same sets as the
-    # baseline and every result that wasn't refused, or rank raises
-    # ArgumentError.
+    # baseline and every result that wasn't refused, and hold the same
+    # values those were measured with (their literal_sets), or rank raises
+    # ArgumentError, whose message names no set and no value. A cost
+    # measured with other values isn't comparable with one measured with
+    # these, even under the same name.
     #
     # A candidate's reduction for a literal set is 1 - after / before, where
     # before is the baseline's total cost and after is the cost with the
@@ -138,7 +141,9 @@ module Quaack
 
       def check(literal_sets, baseline, results)
         raise SingleCandidateTest::Error, :bad_literal unless SingleCandidateTest.literal_sets?(literal_sets)
-        return if [baseline, *results.reject(&:refusal)].all? { |r| r.plans.keys.to_set == literal_sets.keys.to_set }
+        return if [baseline, *results.reject(&:refusal)].all? do |r|
+          r.plans.keys.to_set == literal_sets.keys.to_set && r.literal_sets == literal_sets
+        end
 
         raise ArgumentError, "literal sets must match the baseline's and every result's"
       end
