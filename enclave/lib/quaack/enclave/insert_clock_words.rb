@@ -26,7 +26,9 @@ module Quaack
     # on its way into its column, and each one it could become is checked:
     # - its column's type, and the type of each cast between it and the
     #   column, as '{today}'::text::date[] is text and date[];
-    # - for an ARRAY[] element, the element type of each of those;
+    # - for an ARRAY[] element, the element type of each of those, except
+    #   that a nested ARRAY[], or a cast to an array type, is a sub-array
+    #   of the same type;
     # - for a function's argument, the type of that parameter in each
     #   function the call could resolve to (every function of that name
     #   that could take that many arguments, in the named schema or else
@@ -147,7 +149,7 @@ module Quaack
         when PgQuery::A_Const then constant(node) ? [Value.new(node:, column:, targets:)] : []
         when PgQuery::ParamRef then [Value.new(node:, column:, targets:)]
         when PgQuery::TypeCast then walk(inner.arg, column, [*closed(targets), Cast.new(inner.type_name)])
-        when PgQuery::A_ArrayExpr then inner.elements.flat_map { walk(it, column, targets.map { Element.new(it) }) }
+        when PgQuery::A_ArrayExpr then inner.elements.flat_map { walk(it, column, element_targets(it, targets)) }
         when PgQuery::FuncCall then arguments(inner, column, targets)
         else []
         end
@@ -156,6 +158,16 @@ module Quaack
       def arguments(func, column, targets)
         open = func.args.size > 1
         func.args.each_with_index.flat_map { |arg, i| walk(arg, column, [*targets, Parameter.new(func, i, open)]) }
+      end
+
+      # The targets of an ARRAY[] element. One that's an array itself, a
+      # nested ARRAY[] or a cast to an array type, is a sub-array: it
+      # becomes part of the same array, of the same type, not an element.
+      def element_targets(element, targets)
+        cast = element.type_cast
+        return targets if element.a_array_expr || (cast && !cast.type_name.array_bounds.empty?)
+
+        targets.map { Element.new(it) }
       end
 
       # The targets once a cast gives the constant its type, so a

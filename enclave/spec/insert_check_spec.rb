@@ -335,7 +335,12 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a backslash-escaped word in a range literal" => ["during", "'[to\\day,infinity)'"],
       "a quoted, escaped word in a composite's timestamptz field" => ["span", "'(\"to\\day\",a)'"],
       "a word in a composite in an array" => ["spans", "'{\"(now,a)\"}'"],
-      "a word in a composite literal it can't split into the type's fields" => ["span", "'(2024-01-01,now,x)'"]
+      "a word in a composite literal it can't split into the type's fields" => ["span", "'(2024-01-01,now,x)'"],
+      "a word in a nested ARRAY cast to date[]" => ["note", "ARRAY[ARRAY['today']]::date[]"],
+      "a word cast to text in a nested ARRAY cast to date[]" => ["note", "ARRAY[ARRAY['today'::text]]::date[]"],
+      "a word in a nested ARRAY for a date[]" => ["days", "ARRAY[ARRAY['2024-01-01'], ARRAY['today']]"],
+      "a word in an ARRAY of text[] casts, cast to date[]" => ["note", "ARRAY['{today}'::text[]]::date[]"],
+      "a word in a cast nested ARRAY, cast to date[]" => ["note", "ARRAY[ARRAY['today']::text[]]::date[]"]
     }.each do |what, (column, value)|
       it "refuses #{what}" do
         expect { stamps(column, value) }.to clock(column)
@@ -369,6 +374,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a word in the text field of an ARRAY's composite" => ["spans", "ARRAY['(2024-01-01,now)']::sales.span[]"],
       "a word in the text field of a composite array cast" => ["note", "'{\"(2024-01-01,now)\"}'::sales.span[]"],
       "a word in a composite's quoted text field, in an array" => ["spans", "'{\"(2024-01-01,\\\"to day now\\\")\"}'"],
+      "the words in a nested ARRAY for a text[]" => ["notes", "ARRAY[ARRAY['now'], ARRAY['today']]"],
+      "the words in an ARRAY of text[] casts, for a text[]" => ["notes", "ARRAY['{now}'::text[]]"],
       "DEFAULT and NULL" => ["at, on_day", "DEFAULT, NULL"]
     }.each do |what, (columns, values)|
       it "accepts #{what}" do

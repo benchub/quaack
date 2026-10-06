@@ -310,6 +310,13 @@ RSpec.describe Quaack::Enclave::Counterexamples do
         .to eq([["2024-03-10", "t", "2024-03-10 13:15:00", " Today ", "[2024-03-10,)", "2024-03-11"]])
     end
 
+    it "binds the clock anchor's value for a word in a nested ARRAY" do
+      conn.exec("ALTER TABLE fx.stamps ADD COLUMN dates date[]")
+      prepared = stamps("INSERT INTO fx.stamps (id, dates) VALUES (1, ARRAY[ARRAY[$3], ARRAY[$1]]::date[])")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT dates::text FROM fx.stamps")).to eq([["{{2024-03-11},{2024-03-10}}"]])
+    end
+
     it "still refuses a clock word the insert writes itself" do
       expect(stamps("INSERT INTO fx.stamps (id, day) VALUES (1, 'today')").refused)
         .to eq([{ index: 0, rule: "clock_literal" }])
