@@ -5566,3 +5566,19 @@ Still open from the first review of 20260925-8:
 - **Decided by the user (2026-10-05):** Wrap `Relations.check` in `Inventory::Production.read_only`, without a failing test first.
 - **Status:** done
 - **Landed:** Landed after a fix round and a clean second review. Relations.check runs inside Inventory::Production.read_only (a test can observe it after all). New ambiguous_user_schema refusal: the path has "$user" and another role's same-named schema holds a relation (with "$user" at or before where the name resolved), function or type the query names without a schema; the first review's false refusals on pganalyze, Datadog, Supabase and PgBouncer setups were fixed. Minors and the operator's-own-schema question: 20261004-88.
+
+### 20261004-80. Indexes table: which source proposed each built index.
+
+- **Decided by the user (2026-10-05):** Count it in every source's row, with a note that rows can overlap.
+- **Status:** done
+- **Depends on:** 20261004-77 (done)
+- **Came from:** item 5 of 20261004-77, which its builder left undone because it isn't cheap.
+- **Design:** report, burndown.
+
+In the report's Indexes table, "Built", "not better" and "ranked" per source still read "not recorded", because QUAACK doesn't record which source proposed each index it built. Doing it needs:
+- a new report-payload field carrying only QUAACK's own source names, from a fixed list;
+- matching each built index back to its candidates across every search;
+- changes to the per-source rows and the docs.
+
+**Needs a decision:** one index can come from several sources. For example, an LLM idea that repeats a generator's adds the LLM to that candidate's sources. Should it count in every source's row (then the rows don't add up to the total), only under the first source, or in a separate "several sources" row?
+- **Landed:** Landed after a review with no blocking findings. New payload field index_sources (built, not better, ranked for generator_one, generator_two and llm; Protocol::IndexSources checked at egress and in the reply check); each built index counts in every source that proposed it, with an overlap note. Minor and remaining 'not recorded' cells: 20261004-89.

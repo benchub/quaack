@@ -2319,20 +2319,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 5. From the review of 20261004-69: passing `stage` to a partial band's label (`funnel.rb` ~118) is untested; replacing it with `nil` stays green.
 4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".
 
-### 20261004-80. Indexes table: which source proposed each built index.
-
-- **Decided by the user (2026-10-05):** Count it in every source's row, with a note that rows can overlap.
-- **Status:** todo
-- **Depends on:** 20261004-77 (done)
-- **Came from:** item 5 of 20261004-77, which its builder left undone because it isn't cheap.
-- **Design:** report, burndown.
-
-In the report's Indexes table, "Built", "not better" and "ranked" per source still read "not recorded", because QUAACK doesn't record which source proposed each index it built. Doing it needs:
-- a new report-payload field carrying only QUAACK's own source names, from a fixed list;
-- matching each built index back to its candidates across every search;
-- changes to the per-source rows and the docs.
-
-**Needs a decision:** one index can come from several sources. For example, an LLM idea that repeats a generator's adds the LLM to that candidate's sources. Should it count in every source's row (then the rows don't add up to the total), only under the first source, or in a separate "several sources" row?
+### 20261004-80. Indexes table: which source proposed each built index. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-81. Index refusal rules: keep the list from going stale.
 
@@ -2411,4 +2398,16 @@ From the builder and two reviews of 20260925-18.
 - **Depends on:** 20260925-18.
 - **Came from:** The builder and reviews of 20260925-18.
 - **Design:** input, qualify.
+- **Status:** todo
+
+### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
+
+From the builder and review of 20261004-80.
+1. Removing `!ran.empty? &&` in `IndexSources.not_better` keeps every spec green, yet 5 of 16 recorded replays have a built index no label ran with; without that guard it would count as "not better" by source but not in "All sources together". Add a label-less built index to the producer spec's fixture.
+2. In the "Measured, and not ranked" table, "Who proposed it" still says "not recorded" for index candidates.
+3. For the generators, "Already existed" and "Planner ignored" still say "not recorded".
+
+- **Depends on:** 20261004-80.
+- **Came from:** The builder and review of 20261004-80.
+- **Design:** report, burndown.
 - **Status:** todo
