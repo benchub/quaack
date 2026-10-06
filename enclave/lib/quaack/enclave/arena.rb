@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pg"
+require_relative "clock_defaults"
 require_relative "racetrack"
 
 module Quaack
@@ -27,7 +28,8 @@ module Quaack
     # public schema is dropped first, since the dump runs CREATE SCHEMA
     # public. A dump that won't load is arena_dump_load_failed. Then the
     # quaack schema and clock_anchor(), as on the racetrack (hypopg isn't
-    # needed), and DISABLE TRIGGER USER on every table with a user trigger,
+    # needed), every default that reads the clock anchored to it
+    # (ClockDefaults), and DISABLE TRIGGER USER on every table with a user trigger,
     # so FK triggers still fire. Constraints are left as the dump made them.
     #
     # An Error's message is its rule and nothing else.
@@ -60,6 +62,7 @@ module Quaack
         arena = connect.call
         load_dump(arena, store.read("schema_dump").fetch("ddl"))
         Racetrack.create_clock_anchor(arena, literal)
+        ClockDefaults.anchor(arena)
         disable_user_triggers(arena)
         nil
       ensure

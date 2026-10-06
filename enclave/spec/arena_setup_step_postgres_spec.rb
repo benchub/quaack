@@ -39,7 +39,7 @@ RSpec.describe "quaacks arena-setup, against a real server" do
     store.write("clock_anchor", "2026-09-23T22:15:00.123456Z")
     store.write("inventory", { "database" => { "datname" => sentinels.word, "datcollate" => "C", "datctype" => "C",
                                                "datlocprovider" => "b", "datlocale" => "C.UTF-8" },
-                                "settings" => { "TimeZone" => "UTC" } })
+                               "settings" => { "TimeZone" => "UTC" } })
     store.write("schema_dump", { "namespaces" => ["public"], "ddl" => dump })
   end
 
@@ -97,6 +97,46 @@ RSpec.describe "quaacks arena-setup, against a real server" do
     expect(arena_values("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq([%w[0]])
   end
 
+  context "when the dump's columns and domains default to the clock" do
+    let(:dump) do
+      <<~SQL
+        SELECT pg_catalog.set_config('search_path', '', false);
+        CREATE SCHEMA public;
+        CREATE DOMAIN public.stamp AS timestamp with time zone DEFAULT statement_timestamp();
+        CREATE TABLE public.stamped (
+          id integer PRIMARY KEY,
+          a timestamp with time zone DEFAULT now(),
+          b timestamp with time zone DEFAULT CURRENT_TIMESTAMP(3),
+          c date DEFAULT CURRENT_DATE,
+          d date DEFAULT ('tomorrow'::text)::date,
+          e timestamp with time zone DEFAULT clock_timestamp(),
+          f timestamp without time zone DEFAULT LOCALTIMESTAMP,
+          g time without time zone DEFAULT LOCALTIME(0),
+          h time with time zone DEFAULT CURRENT_TIME,
+          i public.stamp,
+          j text DEFAULT (now())::text,
+          k timestamp with time zone DEFAULT (transaction_timestamp() + '1 day'::interval),
+          l integer DEFAULT 7,
+          m date DEFAULT '2020-02-02'::date
+        );
+      SQL
+    end
+
+    it "fills them from the clock anchor, whether the insert leaves them out or writes DEFAULT" do
+      record_run_server
+      expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
+
+      row = ["2026-09-23 22:15:00.123456+00", "2026-09-23 22:15:00.123+00", "2026-09-23", "2026-09-24",
+             "2026-09-23 22:15:00.123456+00", "2026-09-23 22:15:00.123456", "22:15:00", "22:15:00.123456+00",
+             "2026-09-23 22:15:00.123456+00", "2026-09-23 22:15:00.123456+00", "2026-09-24 22:15:00.123456+00",
+             "7", "2020-02-02"]
+      expect(arena_values("SET TimeZone = 'UTC'; INSERT INTO public.stamped (id) VALUES (1); " \
+                          "INSERT INTO public.stamped VALUES (2#{", DEFAULT" * 13}); " \
+                          "SELECT a, b, c, d, e, f, g, h, i, j, k, l, m FROM public.stamped ORDER BY id"))
+        .to eq([row, row])
+    end
+  end
+
   {
     "libc" => [{ "datlocprovider" => "c", "datlocale" => nil }, ["c", nil, "en_US.utf8", "en_US.utf8"]],
     "ICU" => [{ "datlocprovider" => "i", "datlocale" => "en-US" }, %w[i en-US en_US.utf8 en_US.utf8]]
@@ -105,7 +145,7 @@ RSpec.describe "quaacks arena-setup, against a real server" do
       record_run_server
       store.write("inventory", { "database" => { "datname" => sentinels.word, "datcollate" => "en_US.utf8",
                                                  "datctype" => "en_US.utf8", **entry },
-                                  "settings" => { "TimeZone" => "UTC" } })
+                                 "settings" => { "TimeZone" => "UTC" } })
 
       expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
       expect(arena_values("SELECT datlocprovider::text, datlocale, datcollate, datctype FROM pg_database " \

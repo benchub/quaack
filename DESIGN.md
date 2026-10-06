@@ -897,8 +897,9 @@ Arena is a second database on the same server. Set it up like this:
 1. Create it from `template0`. Set `LOCALE_PROVIDER`, `LC_COLLATE`, `LC_CTYPE`, and `ICU_LOCALE` to match inventory. Do this before you load the schema dump.
 2. Load the full schema and the extensions from schema-dump.
 3. Create the `quaack` schema and `clock_anchor()` function, the same way as in the racetrack.
-4. Keep all `VALID` constraints.
-5. Disable user triggers only, so FK triggers still fire.
+4. Anchor every column default and domain default that reads the clock, so an insert that leaves such a column out, or writes `DEFAULT`, loads the clock anchor's time, not the wall clock's, which would differ between rounds and from anchored predicates such as `= CURRENT_DATE`. In each default, `now()`, `transaction_timestamp()`, `statement_timestamp()`, `clock_timestamp()`, `current_timestamp`, `current_date`, `current_time`, `localtimestamp`, and `localtime`, with any precision, become `quaack.clock_anchor()` cast to their type, and so does a clock word cast through `text` to a date or time type, as `('today'::text)::date`. `DEFAULT 'now'` without the `text` cast is already a constant, since Postgres reads it once when the table is made. Unsupported in v1: a default that reads the clock some other way, such as `timeofday()` or a user function that calls `now()`, still reads the wall clock.
+5. Keep all `VALID` constraints.
+6. Disable user triggers only, so FK triggers still fire.
 
 Every arena session sets `TimeZone` to production's, from inventory's `settings`, whatever the operator's `PGTZ` or the run server's default.
 
