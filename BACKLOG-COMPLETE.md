@@ -5707,3 +5707,19 @@ From the builder and review of 20261004-90.
 - **Decided by the user (2026-10-06):** item 3, yes: treat hstore, xml, tsvector, composite types and ranges (and domains/arrays over them) like json: never low-cardinality, values never go out.
 - **Status:** done
 - **Landed:** Classify withholds hstore, xml, tsvector, tsquery, composite, range and multirange columns (and domains/arrays over them) like json; tests for the missing structured list and customers.preferences. Follow-ups: 20261006-2, 20261006-3.
+
+### 20261004-88. ambiguous_user_schema: minors and the operator's own schema.
+
+From the builder and two reviews of 20260925-18.
+1. **Ask the user:** the operator's own schema is trusted. If the plan ran as an application role and the operator has a schema of their own name (say `bench.orders`), `"$user"` resolves `orders` to the operator's schema, which the application never saw. Refuse it too, or keep trusting it?
+2. repmgr creates a `repmgr` role and schema with tables `events` and `nodes`, so with the default path `SELECT * FROM events` is refused. That's the rule as designed; add a README line naming this common case and the fix.
+3. A role schema the name resolved to, or one listed before `"$user"`, can't change resolution, yet still triggers the refusal (path `"$user", myapp, public` refuses `widgets` found in `myapp`; path `myapp, "$user", public` refuses `slugify()`). Skip those.
+4. Mutating the unqualified-name guard `if list.size == 1` to `if true` survives; add a test with a qualified name whose last part matches a role schema's function or type.
+5. Unqualified operators and collations aren't checked.
+
+- **Depends on:** 20260925-18.
+- **Came from:** The builder and reviews of 20260925-18.
+- **Design:** input, qualify.
+- **Decided by the user (2026-10-06):** item 1, refuse the operator's own schema too, like any other role's schema. The refusal message should say why: the name could resolve to a schema the application never saw.
+- **Status:** done
+- **Landed:** The operator's own schema is refused like any role schema, with a message saying why; role schemas that can't change resolution are skipped (respecting schema USAGE); qualified names use their last part; unqualified operators (written and implicit) and collations are checked; README names repmgr. Follow-ups: 20261006-4.

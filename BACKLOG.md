@@ -2324,20 +2324,7 @@ From 20261004-82's builder and review. Only the original plan carries per-node b
 - **Design:** report.
 - **Status:** todo
 
-### 20261004-88. ambiguous_user_schema: minors and the operator's own schema.
-
-From the builder and two reviews of 20260925-18.
-1. **Ask the user:** the operator's own schema is trusted. If the plan ran as an application role and the operator has a schema of their own name (say `bench.orders`), `"$user"` resolves `orders` to the operator's schema, which the application never saw. Refuse it too, or keep trusting it?
-2. repmgr creates a `repmgr` role and schema with tables `events` and `nodes`, so with the default path `SELECT * FROM events` is refused. That's the rule as designed; add a README line naming this common case and the fix.
-3. A role schema the name resolved to, or one listed before `"$user"`, can't change resolution, yet still triggers the refusal (path `"$user", myapp, public` refuses `widgets` found in `myapp`; path `myapp, "$user", public` refuses `slugify()`). Skip those.
-4. Mutating the unqualified-name guard `if list.size == 1` to `if true` survives; add a test with a qualified name whose last part matches a role schema's function or type.
-5. Unqualified operators and collations aren't checked.
-
-- **Depends on:** 20260925-18.
-- **Came from:** The builder and reviews of 20260925-18.
-- **Design:** input, qualify.
-- **Decided by the user (2026-10-06):** item 1, refuse the operator's own schema too, like any other role's schema. The refusal message should say why: the name could resolve to a schema the application never saw.
-- **Status:** todo
+### 20261004-88. ambiguous_user_schema: minors and the operator's own schema. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
 
@@ -2435,4 +2422,17 @@ From the builder of 20261004-91. `bytea`, geometric types (`point` and the like)
 - **Came from:** The builder of 20261004-91.
 - **Design:** classify, trust boundary.
 - **Decided by the user (2026-10-06):** flip the rule to an allowlist: only types whose values are safe to send (such as numeric, boolean, date/time, uuid and enum types, and domains over them) may be classed low-cardinality and send values. Every other type is withheld like json.
+- **Status:** todo
+
+### 20261006-4. ambiguous_user_schema: minors from 20261004-88.
+
+From the builder of 20261004-88.
+1. `pg_temp` isn't modelled in the path walk.
+2. Schemas the application role has no USAGE on aren't modelled; only the operator's USAGE is. The check can refuse a name the application could never resolve to that schema.
+3. A collation's encoding isn't considered, so the refusal can be over-cautious.
+4. A role schema that defines `=` refuses nearly every query. Correct, but blunt; consider naming the operator in the message so the fix is obvious.
+
+- **Depends on:** 20261004-88.
+- **Came from:** The builder of 20261004-88.
+- **Design:** input, qualify.
 - **Status:** todo
