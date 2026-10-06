@@ -44,10 +44,11 @@ module Quaack
     #
     # Known limits: "$user" and the USAGE check use the role QUAACK
     # connects as, so if the plan's session ran as another role, resolution
-    # can differ. The implicit pg_temp at the front of the path is ignored,
-    # so a temp relation in the plan's session that shadowed a real one
-    # isn't seen. Only relation names are qualified: functions, types,
-    # operators, collations, and names inside string literals such as
+    # can differ (qualify refuses some such paths: see UserSchema). The
+    # implicit pg_temp at the front of the path is ignored, so a temp
+    # relation in the plan's session that shadowed a real one isn't seen.
+    # Only relation names are qualified: functions, types, operators,
+    # collations, and names inside string literals such as
     # 'orders'::regclass still resolve through search_path.
     #
     # The result's sql is the rewritten query, deparsed by pg_query, parse
@@ -139,12 +140,17 @@ module Quaack
 
       # The schemas to search, in order, as Postgres builds them.
       def search_path(settings, connection)
-        raw = settings&.fetch("search_path", nil) || DEFAULT_SEARCH_PATH
         user = connection.exec("SELECT current_user").getvalue(0, 0)
-        # An empty or all-whitespace path is empty, as Postgres reads it.
-        names = raw.match?(/\A\s*\z/) ? [] : split_identifiers(raw)
-        schemas = names.map { |name| name == "$user" ? user : name }
+        schemas = path_entries(settings).map { |name| name == "$user" ? user : name }
         schemas.include?("pg_catalog") ? schemas : ["pg_catalog", *schemas]
+      end
+
+      # The entries of the search path in settings, or the default one, as
+      # written: "$user" stays "$user".
+      def path_entries(settings)
+        raw = settings&.fetch("search_path", nil) || DEFAULT_SEARCH_PATH
+        # An empty or all-whitespace path is empty, as Postgres reads it.
+        raw.match?(/\A\s*\z/) ? [] : split_identifiers(raw)
       end
 
       # Postgres's SplitIdentifierString: a comma-separated list where each
