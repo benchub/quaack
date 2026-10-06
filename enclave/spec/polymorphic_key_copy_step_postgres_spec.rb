@@ -151,6 +151,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
       store.write("schema_subset", "tables" => [["public", courses.delete_prefix("public.")],
                                                 %w[public assignments], %w[public submissions]], "ddl" => tables_sql)
       store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
+      store.write("inventory", "settings" => { "TimeZone" => "UTC" })
       store.write("arena_setup", true)
     end
 

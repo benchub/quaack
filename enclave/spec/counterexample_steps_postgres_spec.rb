@@ -20,6 +20,7 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
     store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
+    store.write("inventory", "settings" => { "TimeZone" => "UTC" })
     make_arena(status_check, arena_sql) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],

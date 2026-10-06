@@ -38,7 +38,8 @@ RSpec.describe "quaacks arena-setup, against a real server" do
   before do
     store.write("clock_anchor", "2026-09-23T22:15:00.123456Z")
     store.write("inventory", { "database" => { "datname" => sentinels.word, "datcollate" => "C", "datctype" => "C",
-                                               "datlocprovider" => "b", "datlocale" => "C.UTF-8" } })
+                                               "datlocprovider" => "b", "datlocale" => "C.UTF-8" },
+                                "settings" => { "TimeZone" => "UTC" } })
     store.write("schema_dump", { "namespaces" => ["public"], "ddl" => dump })
   end
 
@@ -103,7 +104,8 @@ RSpec.describe "quaacks arena-setup, against a real server" do
     it "builds arena with production's #{name} locale" do
       record_run_server
       store.write("inventory", { "database" => { "datname" => sentinels.word, "datcollate" => "en_US.utf8",
-                                                 "datctype" => "en_US.utf8", **entry } })
+                                                 "datctype" => "en_US.utf8", **entry },
+                                  "settings" => { "TimeZone" => "UTC" } })
 
       expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
       expect(arena_values("SELECT datlocprovider::text, datlocale, datcollate, datctype FROM pg_database " \
