@@ -1448,7 +1448,13 @@ RSpec.describe Quaack::Driver::Report do
 
     let(:out) { render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })) }
 
-    def funnel(id, html = out) = section(html, "burndown")[%r{<svg id="funnel-#{id}".*?</svg>}m]
+    # The funnel's SVG, failing the example on the spot if there's none,
+    # so a missing funnel fails on that, not on a nil further on.
+    def funnel(id, html = out)
+      svg = section(html, "burndown")[%r{<svg id="funnel-#{id}".*?</svg>}m]
+      expect(svg).not_to be_nil, %(expected the burndown section to hold <svg id="funnel-#{id}">, but it has none)
+      svg
+    end
 
     def bands(svg) = svg.scan(%r{<g class="band[^"]*">.*?</g>}m)
 
@@ -1468,9 +1474,9 @@ RSpec.describe Quaack::Driver::Report do
     it "draws each funnel just above its table, as an image with a name" do
       burndown = section(out, "burndown")
       %w[index rewrite].each do |id|
-        expect(burndown.index(%(<svg id="funnel-#{id}"))).to be < burndown.index(%(<table id="burndown-#{id}">))
         expect(funnel(id))
           .to start_with(%(<svg id="funnel-#{id}" class="funnel" role="img" aria-labelledby="funnel-#{id}-title"))
+        expect(burndown.index(%(<svg id="funnel-#{id}"))).to be < burndown.index(%(<table id="burndown-#{id}">))
       end
       expect(burndown.index('<table id="burndown-index">')).to be < burndown.index('<svg id="funnel-rewrite"')
       expect(funnel("index")).to include(%(<title id="funnel-index-title">Index ideas for your query, stage by stage))
@@ -1547,6 +1553,114 @@ RSpec.describe Quaack::Driver::Report do
       expect(index).to all(start_with('<g class="band unknown">'))
       expect(index.map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::WIDTH] * 2))
       expect(funnel("rewrite", html)).not_to match(/\d+ (in|out)\b/)
+    end
+
+    it "cuts a long label short beside its band, and keeps the whole of it in the tooltip" do
+      stages["index-dedupe"]["original"]["dropped"] = (1..12).to_h { ["reason_number_#{it}", it] }
+      band = bands(funnel("index"))[2]
+      whole = "6 in, 3 out · dropped: #{band[/Dropped: (.*?)\. Set aside/, 1]}"
+      expect(whole).to include("reason number 1: 1; ").and include("reason number 12: 12")
+      expect(whole.length).to be > Quaack::Driver::Report::Funnel::LINE
+      expect(counts(band)).to eq("#{whole[0, Quaack::Driver::Report::Funnel::LINE - 1]}…")
+    end
+
+    it "leaves a label that just fits whole" do
+      prefix = "6 in, 3 out · dropped: "
+      name = "x" * (Quaack::Driver::Report::Funnel::LINE - prefix.length - ": 1".length)
+      stages["index-dedupe"]["original"]["dropped"] = { name => 1 }
+      expect(counts(bands(funnel("index"))[2])).to eq("#{prefix}#{name}: 1")
+      expect(counts(bands(funnel("index"))[2]).length).to eq(Quaack::Driver::Report::Funnel::LINE)
+    end
+
+    it "says what a stage set aside, beside its band and in its tooltip" do
+      stages["index-dedupe"]["original"] = rec(6, 3, dropped: { "duplicate" => 2 }, set_aside: 1200)
+      band = bands(funnel("index"))[2]
+      expect(counts(band)).to eq("6 in, 3 out, 1,200 set aside · dropped: the same as another idea: 2")
+      expect(band).to include(" Set aside: 1,200. 3 went on.</title>")
+    end
+
+    it "takes the scale's largest count from what went on, too" do
+      stages["operator-rewrites"] = { "rewrites" => rec(6, 9, added: { "operator" => 3 }) }
+      rewrite = bands(funnel("rewrite")).map { widths(it) }
+      expected = [[0, 2], [2, 6], [6, 9], [8, 7], [7, 5], [5, 4], [4, 3], [2, 1], [3, 3], [3, 2]]
+      expect(rewrite).to eq(expected.map { |inn, out| [width(inn, 9), width(out, 9)] })
+      expect(rewrite[2][1]).to eq(Quaack::Driver::Report::Funnel::WIDTH)
+    end
+
+    it "draws a funnel whose every count is zero as zero wide, and its unknown stages at their minimum" do
+      stages.transform_values! { |records| records.transform_values { rec(0, 0) } }
+      index = bands(funnel("index"))
+      expect(index.values_at(0, 1, 2, 6).map { widths(it) }).to all(eq([0, 0]))
+      expect(index.values_at(3, 4, 5).map { widths(it) }).to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+      expect(bands(funnel("rewrite")).map { widths(it) }).to all(eq([0, 0]))
+    end
+
+    it "shows a stage with a negative count as not recorded, never as that count" do
+      stages["index-test"] = { "original" => rec(-1, 3) }
+      stages["llm-index-ideas"] = { "original" => rec(3, -2) }
+      index = bands(funnel("index"))
+      expect(index.values_at(3, 4)).to all(start_with('<g class="band unknown">'))
+      expect(index.values_at(3, 4).map { counts(it) }).to all(eq("not recorded"))
+      expect(index.values_at(3, 4).join).not_to match(/-[12]\b/)
+    end
+
+    # A band's trapezoid's y at its corners: top left, top right, bottom right, bottom left.
+    def rows_y(band) = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").last.to_f }
+
+    it "stacks its bands top to bottom, a gap apart, in a picture just tall enough for them" do
+      funnel_module = Quaack::Driver::Report::Funnel
+      %w[index rewrite].each do |id|
+        svg = funnel(id)
+        ys = bands(svg).map { rows_y(it) }
+        ys.each do |top, top2, bottom, bottom2|
+          expect([top2, bottom2, bottom - top]).to eq([top, bottom, funnel_module::HEIGHT])
+        end
+        expect(ys.first.first).to eq(funnel_module::TOP)
+        expect(ys.each_cons(2).map { |above, below| below.first - above.last }).to all(eq(funnel_module::GAP))
+        height = (ys.last.last + funnel_module::GAP).to_i
+        expect(svg[/viewBox="([^"]+)"/, 1]).to eq("0 0 #{funnel_module::VIEW_WIDTH} #{height}")
+      end
+      expect(funnel("index")[/viewBox="([^"]+)"/, 1]).to eq("0 0 940 354")
+    end
+
+    it "sets each band's words to its right, the stage's name over its counts, within the band's height" do
+      funnel_module = Quaack::Driver::Report::Funnel
+      expect(funnel_module::LABEL_X).to be > funnel_module::WIDTH
+      bands(funnel("index")).each do |band|
+        top = rows_y(band).first
+        texts = band.scan(/<text class="(\w+)" x="([^"]+)" y="([^"]+)">/)
+        expect(texts).to eq([["stage", funnel_module::LABEL_X.to_s, (top + 18).to_i.to_s],
+                             ["counts", funnel_module::LABEL_X.to_s, (top + 37).to_i.to_s]])
+      end
+    end
+
+    it "stripes an unknown band across its whole face at 45 degrees, every stripe cut to its edges" do
+      funnel_module = Quaack::Driver::Report::Funnel
+      [[funnel("index"), 3], [funnel("index", html), 0], [funnel("index", html), 6]].each do |svg, i|
+        band = bands(svg)[i]
+        top = rows_y(band).first
+        bottom = top + funnel_module::HEIGHT
+        left, right = band[/<polygon points="([^"]+)"/, 1].split.map { it.split(",").first.to_f }.first(2)
+        stripes = band[/<path class="hatch" d="([^"]+)"/, 1].scan(/M([\d.]+),([\d.]+)L([\d.]+),([\d.]+)/)
+                                                            .map { it.map(&:to_f) }
+        stripes.each do |x1, y1, x2, y2|
+          expect([x1, x2]).to all(be_between(left, right))
+          expect([y1, y2]).to all(be_between(top, bottom))
+          expect((x1 - x2).round(1)).to eq((y2 - y1).round(1))
+          expect(y1 == top || x1 == right).to be(true)
+          expect(y2 == bottom || x2 == left).to be(true)
+        end
+        crossings = stripes.map { |x1, y1, _, _| (x1 + y1 - top).round(1) }
+        expect(crossings.first).to eq((left + funnel_module::STRIPE).round(1))
+        expect(crossings.each_cons(2).map { |a, b| (b - a).round(1) }).to all(eq(funnel_module::STRIPE))
+        expect(crossings.last).to be > right + funnel_module::HEIGHT - funnel_module::STRIPE
+      end
+    end
+
+    it "says in an unknown band's tooltip that the run didn't count it, not that it counted none" do
+      band = bands(funnel("index"))[3]
+      expect(band).to include("<title>#{stage(band)}: not recorded. " \
+                              "This run didn&#39;t count it, which doesn&#39;t mean none.</title>")
     end
 
     it "escapes what it shows, and sets no SQL apart in it" do
