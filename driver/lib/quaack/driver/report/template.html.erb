@@ -206,6 +206,9 @@
 <% end %>
 </tbody></table>
 <p class="note">Proposed, already existed, and planner ignored count the ideas of each search, for your query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once.</p>
+<% if overlap? %>
+<p class="note">An index more than one source proposed counts in each of their rows, so the rows by source can add up to more than all sources together.</p>
+<% end %>
 <p class="note">An index counts as not better only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked (it tied with a smaller one, or three others did better), or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.</p>
 <% if unrecorded? %>
 <p class="note">&ldquo;Not recorded&rdquo; means this run didn't count it. It doesn't mean none.</p>

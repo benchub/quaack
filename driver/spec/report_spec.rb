@@ -1179,6 +1179,37 @@ RSpec.describe Quaack::Driver::Report do
           .to eq(["not recorded", "not recorded", "not recorded", "2", "1", "1"])
       end
 
+      # Task 20261004-80: the payload's index_sources counts, for each
+      # source, the built indexes it proposed, and an index several sources
+      # proposed counts under each.
+      describe "built, not better, and ranked by source" do
+        let(:index_sources) do
+          { "generator_one" => { "built" => 1, "not_better" => 0, "ranked" => 1 },
+            "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
+            "llm" => { "built" => 2, "not_better" => 1, "ranked" => 1 } }
+        end
+        let(:sourced) { render(payload.merge("index_sources" => index_sources)) }
+
+        it "fills in each source's built, not better, and ranked from the payload's index sources" do
+          counted = rows(sourced, "indexes")
+          expect(counted["Generator one, from the query&#39;s text"].last(3)).to eq(%w[1 0 1])
+          expect(counted["Generator two, from the query&#39;s plan"].last(3)).to eq(%w[0 0 0])
+          expect(counted["The LLM"].last(3)).to eq(%w[2 1 1])
+        end
+
+        it "keeps all sources together's counts of each built index once" do
+          expect(rows(sourced, "indexes")["All sources together"]).to eq(rows(html, "indexes")["All sources together"])
+          expect(rows(sourced, "indexes")["All sources together"].last(3)).to eq(%w[2 1 1])
+        end
+
+        it "says under the table that an index several sources proposed counts in each of their rows" do
+          note = "An index more than one source proposed counts in each of their rows, so the rows by source " \
+                 "can add up to more than all sources together."
+          expect(section(sourced, "accountability")).to include(note)
+          expect(section(html, "accountability")).not_to include(note)
+        end
+      end
+
       describe "the not better column" do
         # Built, not better, ranked, for all sources. quaack_a is ranked.
         # quaack_b ran only in rewrite_1:top:1, and in other if it's given.

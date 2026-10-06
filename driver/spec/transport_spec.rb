@@ -644,7 +644,8 @@ RSpec.describe Quaack::Driver::Transport do
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
       node = %({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,) +
              %("selectivity":0.05,"depth":0,"shared_hit_blocks":12,"shared_read_blocks":null)
-      good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]})
+      sources = %(,"index_sources":#{JSON.generate(index_sources)})
+      good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]#{sources}})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
       expect(result.messages.map { it.values_at("type", "original_plan") })
@@ -660,9 +661,38 @@ RSpec.describe Quaack::Driver::Transport do
        %({"type":"report","original_plan":[],"rewrites":[{"plan":[#{node.sub("null", %(["#{sentinel}"]))}}]}]}),
        %({"type":"report","original_plan":[],"rewrites":["#{sentinel}"]}),
        %({"type":"report","rewrites":[]}), %({"type":"report","original_plan":[]})].each do |line|
-        error = refusal(line)
+        error = refusal(line.sub(/}\z/, "#{sources}}"))
 
         expect(error.rule).to eq("unexpected_output"), "for #{line}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
+    let(:index_sources) do
+      { "generator_one" => { "built" => 2, "not_better" => 1, "ranked" => 1 },
+        "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
+        "llm" => { "built" => 1, "not_better" => 0, "ranked" => 1 } }
+    end
+
+    # Task 20261004-80. Egress sends a report only if its index_sources
+    # pass Protocol::IndexSources.valid?, so the driver checks the same.
+    it "reads a report whose index_sources Protocol::IndexSources.valid? passes, and refuses one it doesn't" do
+      report = ->(sources) { JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], **sources }) }
+      result = raw("print #{"#{report.call("index_sources" => index_sources)}\n{\"type\":\"done\"}\n".inspect}")
+               .call("probe")
+
+      expect(result.messages.map { it["index_sources"] }).to eq([index_sources])
+      llm = index_sources["llm"]
+      [{ "index_sources" => index_sources.merge(sentinel => llm) },
+       { "index_sources" => index_sources.except("llm").merge(sentinel => llm) },
+       { "index_sources" => index_sources.merge("llm" => llm.merge("built" => sentinel)) },
+       { "index_sources" => index_sources.merge("llm" => llm.merge(sentinel => 1)) },
+       { "index_sources" => index_sources.merge("llm" => llm.merge("ranked" => 2)) },
+       { "index_sources" => index_sources.merge("generator_two" => [sentinel]) },
+       { "index_sources" => sentinel }, { "index_sources" => nil }, {}].each do |sources|
+        error = refusal(report.call(sources))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{sources}"
         expect(error.full_message(highlight: false)).not_to include(sentinel)
       end
     end
