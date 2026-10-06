@@ -159,14 +159,30 @@ RSpec.describe "quaacks qualify, against a real server" do
 
     after { production.server.admin.exec(%(DROP ROLE IF EXISTS "#{role}")) }
 
-    it "refuses it as ambiguous_user_schema, and stores nothing" do
-      pgpass
+    def other_role_schema(ddl)
       production.server.admin.exec(%(CREATE ROLE "#{role}"))
       conn = production.connect
-      conn.exec(%(CREATE SCHEMA "#{role}"))
+      conn.exec(%(CREATE SCHEMA "#{role}"; #{ddl}))
       conn.close
+    end
+
+    it "refuses it as ambiguous_user_schema when that schema has a table the query names, and stores nothing" do
+      pgpass
+      other_role_schema(%(CREATE TABLE "#{role}".orders (id int, note text)))
 
       expect_failed(qualify, "ambiguous_user_schema")
+    end
+
+    it "qualifies the query when that schema has only what the query doesn't name, as a monitoring tool's does" do
+      pgpass
+      other_role_schema(<<~SQL)
+        CREATE FUNCTION "#{role}".explain_statement(l_query text, OUT explain json) RETURNS SETOF json
+          LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+      SQL
+
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relations")).to eq([{ "schema" => "public", "name" => "orders" },
+                                              { "schema" => "public", "name" => "items" }])
     end
   end
 

@@ -153,9 +153,9 @@ module Quaack
       def qualify(tree, settings, connection)
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
-        UserSchema.check!(settings, connection)
         rule = "unknown_relation"
-        RelationQualifier.qualify_tree(tree, settings, connection)
+        resolved = RelationQualifier.qualify_tree(tree, settings, connection)
+        UserSchema.check!(tree, resolved, settings, connection)
         Deparse.faithful_parse(tree)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil

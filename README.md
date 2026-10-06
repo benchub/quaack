@@ -743,7 +743,7 @@ Common rules:
 | --- | --- | --- |
 | `unsupported_construct` | The query uses SQL QUAACK doesn't handle yet. | See [What QUAACK won't do](#what-quaack-wont-do). |
 | `view_relation`, `inheritance_parent`, and other `..._relation` rules | The query reads something other than a plain table. | Not supported in v1. |
-| `ambiguous_user_schema` | The plan's `search_path` has `"$user"`, and the database has a schema named for a role other than the one QUAACK connects as. QUAACK can't tell whether the application's `"$user"` meant it. | Capture the plan again after `SET search_path` to the schemas the application uses, written out without `"$user"`. See [step 1](#step-1-save-the-query-and-its-plan-on-the-jump-server). |
+| `ambiguous_user_schema` | The plan's `search_path` has `"$user"`, and a schema named for a role other than the one QUAACK connects as has a table, function, or type of a name the query uses without its schema. QUAACK can't tell whether the application's `"$user"` meant that schema. | Capture the plan again after `SET search_path` to the schemas the application uses, written out without `"$user"`. See [step 1](#step-1-save-the-query-and-its-plan-on-the-jump-server). |
 | `volatile_function` | The query calls a function with side effects, such as `random()` or `nextval()`. | Not supported. Results couldn't be compared. |
 | `plan_gate_mismatch_likely_stale_statistics` | The racetrack plans the query differently from production. | Usually the restore is older than production's latest `ANALYZE`. Restore a newer backup, then start a new run. |
 | `run_server_guc_mismatch`, `run_server_...` | The run server doesn't match production, or isn't quiet. | Fix the run server's settings, or stop whatever else is connected. |
