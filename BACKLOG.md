@@ -2010,16 +2010,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 - **Design:** rewrite-test, counterexamples and report.
 - **Status:** todo
 
-### 20261004-10. Make the enclave call timeout configurable.
-
-The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, index-build failed after exactly 1h00m00s.
-
-Add a driver config setting for this timeout, with a `quaack run` flag to override it, and pass it to every `Transport::Ssh.new` that runs pipeline steps. Validate it as a positive number. Say in the failure message which setting to raise when a call hits the limit, for example: "the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds`". Document it in the README.
-
-- **Depends on:** none.
-- **Came from:** The user's Canvas run, 2026-10-04.
-- **Design:** Transport, config.
-- **Status:** todo
+### 20261004-10. Make the enclave call timeout configurable. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-11. Build each candidate index in its own enclave call.
 
@@ -2438,4 +2429,16 @@ From the builder of 20261006-3.
 - **Depends on:** 20261006-3.
 - **Came from:** The builder of 20261006-3.
 - **Design:** statistics, index-dedupe, trust boundary.
+- **Status:** todo
+
+### 20261006-8. Enclave timeout: minor findings from 20261004-10.
+
+From the review of 20261004-10.
+1. `quaack setup` keeps a fixed 3600s timeout, but a timed-out call there still says to raise `enclave_timeout_seconds`, which setup does not read (`driver/lib/quaack/driver/enclave_error.rb` `timed_out`, `setup_command.rb`). Have setup read the setting, or drop the hint when the timeout did not come from the config or flag. Deploy may have the same issue if its calls go through `Transport::Base`.
+2. `--enclave-timeout-seconds` parses with `Float()`, so it accepts forms like `0x10` and `1_000` (`driver_config.rb`). Harmless, but looser than a plain number of seconds.
+3. `EnclaveVersion.check!` reads any failed version call, including a timeout, as "quaacks is not installed".
+
+- **Depends on:** 20261004-10.
+- **Came from:** The builder and review of 20261004-10.
+- **Design:** Transport, config.
 - **Status:** todo
