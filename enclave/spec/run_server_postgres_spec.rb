@@ -264,6 +264,26 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect(outcome.status.exitstatus).to eq(0)
     end
 
+    # Task 20260925-2: a counterexample's timestamptz literal, and its
+    # 'today' at midnight, mean the same in every arena session. PGTZ beats
+    # a TimeZone in the connection's options, so it's what pins are tested
+    # against. The racetrack keeps the operator's TimeZone, which
+    # run-server checks against production's.
+    it "pins arena's TimeZone to UTC, whatever the operator's, and leaves the racetrack's alone" do
+      env = { PGUSER: production.user, PGPASSWORD: production.password, PGTZ: "Asia/Kolkata" }
+      outcome = connect_in_child(<<~RUBY, **env)
+        %i[racetrack arena].each do |database|
+          conn = Quaack::Enclave::RunServer.connect(store, database)
+          print conn.exec("SELECT current_setting('TimeZone'), '2024-01-01 10:00'::timestamptz::text").values.inspect
+          conn.close
+        end
+      RUBY
+
+      expect(outcome.stdout).to eq('[["Asia/Kolkata", "2024-01-01 10:00:00+05:30"]]' \
+                                   '[["UTC", "2024-01-01 10:00:00+00"]]')
+      expect(outcome.status.exitstatus).to eq(0)
+    end
+
     it "raises run_server_connection_failed with nothing from libpq" do
       outcome = connect_in_child(<<~RUBY, PGUSER: sentinels.word, PGPASSWORD: sentinels.text)
         begin
