@@ -2280,16 +2280,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 
 ### 20261004-82. Plan tree table: a blocks column. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-83. Report plans: the flat-layout fallback is unreachable.
-
-From the review of 20261004-72. Reports reach `Report.write` only through `Reply.parse`, which now refuses any plan node without an Integer depth of zero or more. So `report/plans.rb`'s flat layout (`tree?` false, ~lines 8-11 and 40-43) can't happen in a real run, and only the direct-render specs (`report_spec.rb` ~875, 886) exercise it. DESIGN.md (~1186) says both that the driver refuses a report whose nodes lack a depth and that such a plan "is laid out flat". Remove the fallback and its specs, or keep it and say why, and make DESIGN.md say one thing.
-
-While here (second review of 20261004-72): no test plants a Hash in place of a report's `rewrites`, so mutating `rewrites.is_a?(Array)` to `respond_to?(:all?)` survives in both `enclave/.../egress.rb` and `driver/.../reply.rb`. Add one.
-
-- **Depends on:** 20261004-72.
-- **Came from:** The review of 20261004-72.
-- **Design:** The report's plan tables.
-- **Status:** todo
+### 20261004-83. Report plans: the flat-layout fallback is unreachable. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-84. Progress: the LLM wait's clock sits on a note's line. Done, see BACKLOG-COMPLETE.md.
 
@@ -2389,7 +2380,7 @@ From the review of 20261004-84.
 
 From the builder and review of 20261004-91.
 1. The classify-level tests for xml, tsvector, range and multirange columns (`pii_classification_postgres_spec.rb` ~380-418) stay green when those types are dropped from the list, since ANALYZE gives them no positive `n_distinct`. Only `planner_statistics_postgres_spec.rb` (~131) catches it. Rename the tests to say what they show, or make them bite.
-2. `planner_statistics/catalog.rb` (~47-49) compares an `oid` with `regtype` values using a bare `=`. A planted `public.=` operator on (oid, regtype) turns json, jsonb and xml columns non-structured. Use `OPERATOR(pg_catalog.=)` or cast to `pg_catalog.oid`. Related: 20260930-13, 20260930-14.
+2. Done in 20261006-3. `planner_statistics/catalog.rb` (~47-49) compares an `oid` with `regtype` values using a bare `=`. A planted `public.=` operator on (oid, regtype) turns json, jsonb and xml columns non-structured. Use `OPERATOR(pg_catalog.=)` or cast to `pg_catalog.oid`. Related: 20260930-13, 20260930-14.
 3. The trust-boundary test's comment (`pii_classification_postgres_spec.rb` ~222-226) doesn't mention the json sentinel in `customers.preferences`.
 4. tsvector lexemes and array elements go to `most_common_elems`, which statistics doesn't read today. If it ever does, apply the same rule there.
 
@@ -2398,17 +2389,7 @@ From the builder and review of 20261004-91.
 - **Design:** classify, statistics, trust boundary.
 - **Status:** todo
 
-### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values.
-
-From the builder of 20261004-91. `bytea`, geometric types (`point` and the like) and other non-text, non-structured types can still be classed low-cardinality, so their MCV values go out. A `bytea` column can hold text.
-
-**Ask the user** which types, if any, to add to the structured (never-sent) list, or whether to flip the rule to an allowlist of types whose values may go out.
-
-- **Depends on:** 20261004-91.
-- **Came from:** The builder of 20261004-91.
-- **Design:** classify, trust boundary.
-- **Decided by the user (2026-10-06):** flip the rule to an allowlist: only types whose values are safe to send (such as numeric, boolean, date/time, uuid and enum types, and domains over them) may be classed low-cardinality and send values. Every other type is withheld like json.
-- **Status:** todo
+### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-4. ambiguous_user_schema: minors from 20261004-88.
 
@@ -2446,4 +2427,15 @@ From the reviews and builder of 20261004-95.
 - **Depends on:** 20261004-95.
 - **Came from:** The reviews and builder of 20261004-95.
 - **Design:** insert check; arena setup; clock anchoring.
+- **Status:** todo
+
+### 20261006-7. Sendable columns: loose ends from 20261006-3.
+
+From the builder of 20261006-3.
+1. The other catalog queries in `planner_statistics/catalog.rb` (tables, pg_stats, indexes, extended statistics) still use bare operators. They don't decide what's sent, but a planted operator could make them answer wrongly. Qualify them. Related: 20260930-13, 20260930-14.
+2. Dedupe now drops partial indexes whose predicates use a newly withheld type (inet, `"char"`, bit and the like). That's fail-closed by design, but it's a behavior change: say so in DESIGN.md, or let those predicates through when they carry no values.
+
+- **Depends on:** 20261006-3.
+- **Came from:** The builder of 20261006-3.
+- **Design:** statistics, index-dedupe, trust boundary.
 - **Status:** todo

@@ -5740,3 +5740,28 @@ From the review of 20260925-2.
 - **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2. Item 1, fill a column whose omitted or `DEFAULT` value reads the clock from the clock anchor, rather than refusing. Item 2, list the bypasses in DESIGN.md as unsupported in v1. Item 5, fix the false refusals: stop refusing a clock word that can't reach a date/time value.
 - **Status:** done
 - **Landed:** Items 1, 2, 3, 5 and 6: the arena's TimeZone is production's recorded TimeZone; clock-reading column and domain defaults are anchored; each clock word is judged by the type it reaches (array, range and composite literals parsed, escaped bypasses refused); `textcat`-built words listed as unsupported in v1; the counterexamples prompt asks for fixed dates. Item 4 (anchored placeholder binding) was built but backed out after the second review found it mis-anchors text-only arguments; split into 20261006-5. Follow-ups: 20261006-5, 20261006-6.
+
+### 20261004-83. Report plans: the flat-layout fallback is unreachable.
+
+From the review of 20261004-72. Reports reach `Report.write` only through `Reply.parse`, which now refuses any plan node without an Integer depth of zero or more. So `report/plans.rb`'s flat layout (`tree?` false, ~lines 8-11 and 40-43) can't happen in a real run, and only the direct-render specs (`report_spec.rb` ~875, 886) exercise it. DESIGN.md (~1186) says both that the driver refuses a report whose nodes lack a depth and that such a plan "is laid out flat". Remove the fallback and its specs, or keep it and say why, and make DESIGN.md say one thing.
+
+While here (second review of 20261004-72): no test plants a Hash in place of a report's `rewrites`, so mutating `rewrites.is_a?(Array)` to `respond_to?(:all?)` survives in both `enclave/.../egress.rb` and `driver/.../reply.rb`. Add one.
+
+- **Depends on:** 20261004-72.
+- **Came from:** The review of 20261004-72.
+- **Design:** The report's plan tables.
+- **Status:** done
+- **Landed:** Removed the unreachable flat plan layout and its specs (every report goes through Reply.parse); DESIGN.md says only that such a report is refused. Egress and the driver's reply check have tests for a Hash in place of `rewrites`.
+
+### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values.
+
+From the builder of 20261004-91. `bytea`, geometric types (`point` and the like) and other non-text, non-structured types can still be classed low-cardinality, so their MCV values go out. A `bytea` column can hold text.
+
+**Ask the user** which types, if any, to add to the structured (never-sent) list, or whether to flip the rule to an allowlist of types whose values may go out.
+
+- **Depends on:** 20261004-91.
+- **Came from:** The builder of 20261004-91.
+- **Design:** classify, trust boundary.
+- **Decided by the user (2026-10-06):** flip the rule to an allowlist: only types whose values are safe to send (such as numeric, boolean, date/time, uuid and enum types, and domains over them) may be classed low-cardinality and send values. Every other type is withheld like json.
+- **Status:** done
+- **Landed:** Statistics records `sendable_columns`: text-like types (text/PII path, unchanged) plus an allowlist of int2/4/8, numeric, float4/8, money, oid, bool, date/time types, interval, uuid, enum, and domains over them. Everything else (bytea, bit, geometric, inet/cidr/macaddr, "char", arrays, structured, unknown) is withheld. The column-type query uses OPERATOR(pg_catalog.=), covering 20261006-2 item 2. Store format bumped to 4 so runs classified by older code are refused. Follow-ups: 20261006-7.
