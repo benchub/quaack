@@ -49,7 +49,9 @@ module Quaack
       # burndown (IndexBurndown.record_round), with its since taken from the
       # stored Dedupe in this process, so a replacement call counts only its
       # own DDL. Each call adds to its round's record, so a call that dies
-      # after recording and is asked again counts both asks.
+      # after recording and is asked again counts both asks. The one
+      # exception: a refinement round replaces index-rank's record of why
+      # the round didn't run.
       #
       # It sends one index_outcome per DDL (see GeneratorThree), never the
       # DDL or a plan.

@@ -9,6 +9,9 @@ module Quaack
     # search: the original query's, or a rewrite's (plan-pruning and
     # rewrite-index-ideas). Only counts and QUAACK's own names.
     module IndexBurndown
+      # Why llm-index-refine didn't run, as index-rank records it.
+      SKIPS = %i[no_ideas_tested nothing_fell_short].freeze
+
       module_function
 
       # Records index-search's burndown for search, once (see
@@ -38,13 +41,26 @@ module Quaack
       # the Dedupe counts as refused, by its rule. For llm-index-refine, entry
       # is the search's entry from before the round, and the record keeps how
       # many first-round candidates fell short (Refinement.shortfalls).
+      #
+      # index-rank records why llm-index-refine didn't run (record_rank).
+      # The driver never runs llm-index-refine after index-rank, but if it
+      # ever does, the round's record replaces that one, so the burndown
+      # never says the round both ran and didn't.
       def record_round(store, search, round, entry:, tested:)
         since, dedupe, result, report = tested
         Burndown.record_llm_round(
           store, stage: round ? "llm-index-refine" : "llm-index-ideas", search:, dedupe:, since:, report:,
                  refused: refused(result, since, dedupe),
-                 extra: round ? { fell_short: Refinement.shortfalls(entry).compact.size } : {}
+                 extra: round ? { fell_short: Refinement.shortfalls(entry).compact.size } : {},
+                 replace: round && skip_recorded?(store, search)
         )
+      end
+
+      # Whether the search's llm-index-refine record is index-rank's record
+      # of why it didn't run.
+      def skip_recorded?(store, search)
+        extra = Burndown.read(store).dig("stages", "llm-index-refine", search.name, "extra") || {}
+        SKIPS.any? { extra.key?(it.name) }
       end
 
       # GeneratorThree's dropped DDL by rule, less what the Dedupe dropped
