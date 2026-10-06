@@ -545,18 +545,7 @@ Still open from the first review of 20260922-12:
 
 ### 20260925-17. Possible flake in the run-server success test. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-18. Qualify loose ends.
-
-Still open from the first review of 20260925-8:
-- **Needs a decision:** wrap `Relations.check` in `Inventory::Production.read_only` in the qualify step, without a failing test first, since no test can observe it.
-- Refuse a `$user` search_path entry that matches an existing schema other than the operator's own.
-
-- **Depends on:** 20260925-8.
-- **Came from:** The first review of 20260925-8.
-- **Design:** input, qualify.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Wrap `Relations.check` in `Inventory::Production.read_only`, without a failing test first.
-- **Status:** todo
+### 20260925-18. Qualify loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-19. Schema-dump loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2408,4 +2397,18 @@ From 20261004-82's builder and review. Only the original plan carries per-node b
 - **Depends on:** 20261004-82.
 - **Came from:** The review of 20261004-82.
 - **Design:** report.
+- **Status:** todo
+
+### 20261004-88. ambiguous_user_schema: minors and the operator's own schema.
+
+From the builder and two reviews of 20260925-18.
+1. **Ask the user:** the operator's own schema is trusted. If the plan ran as an application role and the operator has a schema of their own name (say `bench.orders`), `"$user"` resolves `orders` to the operator's schema, which the application never saw. Refuse it too, or keep trusting it?
+2. repmgr creates a `repmgr` role and schema with tables `events` and `nodes`, so with the default path `SELECT * FROM events` is refused. That's the rule as designed; add a README line naming this common case and the fix.
+3. A role schema the name resolved to, or one listed before `"$user"`, can't change resolution, yet still triggers the refusal (path `"$user", myapp, public` refuses `widgets` found in `myapp`; path `myapp, "$user", public` refuses `slugify()`). Skip those.
+4. Mutating the unqualified-name guard `if list.size == 1` to `if true` survives; add a test with a qualified name whose last part matches a role schema's function or type.
+5. Unqualified operators and collations aren't checked.
+
+- **Depends on:** 20260925-18.
+- **Came from:** The builder and reviews of 20260925-18.
+- **Design:** input, qualify.
 - **Status:** todo

@@ -5552,3 +5552,17 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 
 Send per-node block counts from the enclave in the report payload's plan nodes, as numbers only (shared hit and read blocks, from EXPLAIN (ANALYZE, BUFFERS)), and show a blocks column in the "Why the winner reads fewer blocks" plan tree table. Extend `Protocol::PlanNodes`' shape check (from 20261004-72) to allow exactly the new keys, and update DESIGN.md's boundary text. Test with planted sentinels that nothing but the counts crosses.
 - **Landed:** Landed after a review with no blocking findings. PlanNodes now requires shared_hit_blocks and shared_read_blocks (non-negative Integer or nil); the enclave sends Postgres's per-node counts; the plan tables show 'Blocks read, with the steps under it'. Rewrite plans are hypothetical, so their counts are nil: 20261004-86. Minors: 20261004-87.
+
+### 20260925-18. Qualify loose ends.
+
+Still open from the first review of 20260925-8:
+- **Needs a decision:** wrap `Relations.check` in `Inventory::Production.read_only` in the qualify step, without a failing test first, since no test can observe it.
+- Refuse a `$user` search_path entry that matches an existing schema other than the operator's own.
+
+- **Depends on:** 20260925-8.
+- **Came from:** The first review of 20260925-8.
+- **Design:** input, qualify.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Wrap `Relations.check` in `Inventory::Production.read_only`, without a failing test first.
+- **Status:** done
+- **Landed:** Landed after a fix round and a clean second review. Relations.check runs inside Inventory::Production.read_only (a test can observe it after all). New ambiguous_user_schema refusal: the path has "$user" and another role's same-named schema holds a relation (with "$user" at or before where the name resolved), function or type the query names without a schema; the first review's false refusals on pganalyze, Datadog, Supabase and PgBouncer setups were fixed. Minors and the operator's-own-schema question: 20261004-88.
