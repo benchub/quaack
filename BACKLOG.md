@@ -2363,14 +2363,7 @@ Three small accuracy fixes, all wording only:
 3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
 4. From the review of 20261004-71: the comments at `arena_runner.rb:24` and `arena_runner/pipeline.rb:26` no longer give a reason for hard-coding the `PGRES_*` and `PG_DIAG_SQLSTATE` values, now that pg is loaded. Give the reason, or use the `PG::` constants.
 
-### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query.
-
-- **Status:** todo
-- **Depends on:** 20261001-20 (done)
-- **Came from:** the build of 20261001-20.
-- **Design:** index-test, llm-index-ideas.
-
-index-test reads `anchored_query` for every search, so for a rewrite's search it asks the planner whether the original query, not the rewrite, would use each LLM index idea. index-rank uses the right query. Ideas that only help the rewrite may be dropped as `never_used`, and ideas that only help the original may be kept. Confirm with a test on a rewrite's search, then use the search's own query.
+### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-77. Index burndown loose ends from 20261001-20.
 

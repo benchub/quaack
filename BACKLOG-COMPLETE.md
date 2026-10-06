@@ -5410,3 +5410,13 @@ Keep the existing burndown table under it, for exact numbers and for readers wit
 - **Design:** report, burndown.
 - **Status:** done
 - **Landed:** Landed: report/funnel.rb draws each burndown as an inline SVG funnel above its table; unrecorded stages are hatched and never narrower than Funnel::UNKNOWN. Review minors became 20261004-78.
+
+### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query.
+
+- **Status:** done
+- **Depends on:** 20261001-20 (done)
+- **Came from:** the build of 20261001-20.
+- **Design:** index-test, llm-index-ideas.
+
+index-test reads `anchored_query` for every search, so for a rewrite's search it asks the planner whether the original query, not the rewrite, would use each LLM index idea. index-rank uses the right query. Ideas that only help the rewrite may be dropped as `never_used`, and ideas that only help the original may be kept. Confirm with a test on a rewrite's search, then use the search's own query.
+- **Landed:** Landed: index-test asks the planner about the search's own query (IndexSearch.query), in both LLM rounds. Clean review.
