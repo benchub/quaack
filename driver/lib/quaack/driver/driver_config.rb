@@ -6,12 +6,19 @@ module Quaack
   module Driver
     # The driver config on the laptop, ~/.quaack/driver.json: a JSON object.
     # `quaack start` reads its jump_command, and `quaack run` its llm block
-    # (see LLM.settings).
+    # (see LLM.settings). Both read enclave_timeout_seconds, if it's there:
+    # how long each enclave call may run, in seconds, before the driver
+    # kills it (Transport::Base::DEFAULT_TIMEOUT without it).
     module DriverConfig
       # A config file that isn't a JSON object, or can't be read. The
       # message never quotes it.
       class Bad < StandardError
         def initialize(path, problem) = super("bad_driver_config: #{path}: #{problem}")
+      end
+
+      # A --enclave-timeout-seconds that isn't a positive number.
+      class BadFlag < StandardError
+        def initialize = super("--enclave-timeout-seconds must be a positive number")
       end
 
       def self.path(home) = File.expand_path(File.join(home, ".quaack", "driver.json"))
@@ -27,7 +34,21 @@ module Quaack
         raise Bad.new(path, "not a JSON object") unless config.is_a?(Hash)
 
         validate_jump_command(config, path)
+        validate_enclave_timeout(config, path)
         config
+      end
+
+      # Whether value is a positive, finite number of seconds.
+      def self.seconds?(value) = value.is_a?(Numeric) && value.positive? && value.finite?
+
+      # How long each enclave call may run, in seconds: flag, the text of
+      # --enclave-timeout-seconds, if given, else config's (as read gives
+      # it, or nil) enclave_timeout_seconds, else default. A flag that isn't
+      # a positive number raises BadFlag.
+      def self.enclave_timeout(config, flag, default)
+        return config&.fetch("enclave_timeout_seconds", nil) || default unless flag
+
+        Float(flag, exception: false).then { it if seconds?(it) } or raise BadFlag
       end
 
       # Whether something is at path. Unlike File.exist?, it raises Bad
@@ -66,6 +87,13 @@ module Quaack
         raise Bad.new(path, "jump_command isn't one non-blank line")
       end
       private_class_method :validate_jump_command
+
+      def self.validate_enclave_timeout(config, path)
+        return if !config.key?("enclave_timeout_seconds") || seconds?(config["enclave_timeout_seconds"])
+
+        raise Bad.new(path, "enclave_timeout_seconds must be a positive number")
+      end
+      private_class_method :validate_enclave_timeout
 
       def self.json_error_location(error)
         match = error.message.match(/ at line (?<line>\d+) column (?<column>\d+)\z/)

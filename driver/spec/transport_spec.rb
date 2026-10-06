@@ -290,6 +290,7 @@ RSpec.describe Quaack::Driver::Transport do
       expect(elapsed { error = failure(step) }).to be < 10
       expect([error.rule, error.step, error.exit_status, error.signal]).to eq(["timeout", nil, nil, "TERM"])
       expect(error.message).to eq("quaacks probe failed: timeout (signal TERM)")
+      expect(error.timeout_seconds).to eq(2)
       expect(File.exist?(ready)).to be(true), "the grandchild never started before the timeout, so this proves nothing"
       expect(pids.size).to eq(1)
       expect([gone_soon?(Integer(File.read(ready))), gone_soon?(pids.first), gone_soon?(-pids.first)])
