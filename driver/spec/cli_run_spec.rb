@@ -227,6 +227,34 @@ RSpec.describe "quaack run" do
     end
   end
 
+  describe "when stderr is a pipe whose reader has closed" do
+    # A real pipe, as when the program reading stderr exits.
+    let(:pipe) { IO.pipe.tap { it.first.close } }
+    let(:stderr) { pipe.last }
+
+    after { stderr.close }
+
+    it "stops writing progress and runs to the end, tears down, and exits 0" do
+      entries.transform_values! { false }.merge!(setup_done)
+      entries.merge!("index_search_original" => true, "index_generated_original" => true,
+                     "index_ranking_original" => true, "rewrite_rules_applied" => true, "rewrites_generated" => true)
+
+      status = cli.run(["run", "--run", run_id, "--out", out])
+
+      expect([status, stdout.string]).to eq([0, "#{out}\n#{run_id} done\n"])
+      expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build
+                                                    baseline index-baseline candidate-runs minimax result-comparison
+                                                    selection report-payload teardown])
+    end
+
+    it "still exits 1 when a step fails" do
+      failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect(transport.calls.map(&:first).last).to eq("teardown")
+    end
+  end
+
   def rewrites_file(text = "SELECT 2 WHERE $1;\n")
     File.join(home, "rewrites.sql").tap { File.write(it, text) }
   end

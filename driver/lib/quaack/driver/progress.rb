@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "io/console"
+require_relative "quiet_stream"
 
 module Quaack
   module Driver
@@ -51,13 +52,18 @@ module Quaack
     # informative summary's closing line, a failed line, and a note that
     # adds something, such as a retry or an ask again, still print.
     #
+    # Progress is only for show, so losing io doesn't stop the run. The
+    # first write that fails, such as to a pipe whose reader has closed,
+    # ends the progress lines quietly, the clock's redraws with them, and
+    # every step still runs to its own result or exception (QuietStream).
+    #
     # clock answers seconds and interval is the redraw's period, so specs
     # pass a fake clock and a short interval.
     class Progress
       MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
       def initialize(io:, total:, clock: MONOTONIC, interval: 1)
-        @io = io
+        @io = QuietStream.wrap(io)
         @tty = io.respond_to?(:tty?) && io.tty?
         @total = total
         @clock = clock
@@ -165,10 +171,6 @@ module Quaack
       def redrawing(start, stop)
         Thread.new do
           @lock.synchronize { draw(@clock.call - start) if @line } while stop.pop(timeout: @interval).nil?
-        rescue IOError, SystemCallError
-          # A redraw that can't write, such as to a closed pipe, stops the
-          # clock quietly, so the step keeps its own result or exception.
-          # The step's next line meets the same error.
         end
       end
 

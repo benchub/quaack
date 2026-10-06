@@ -282,7 +282,7 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
-      describe "when only a redraw fails to write" do
+      describe "when a redraw fails to write" do
         let(:broken) do
           p = described_class.new(io: hooked, total: 3, clock: -> { now.first }, interval: 0.001)
           stepper = Thread.current
@@ -302,19 +302,20 @@ RSpec.describe Quaack::Driver::Progress do
           failed.pop
         end
 
-        it "keeps the step's own result" do
+        it "keeps the step's own result, and prints nothing more" do
           before = Thread.list.size
           result = broken.step("a", "A") { redraw_fails.then { :value } }
+          broken.step("b", "B") { now[0] = 9.0 }
 
           expect(result).to eq(:value)
-          expect(hooked.string).to eq("quaack: [1/3] A (a)\r\e[Kquaack: [1/3] A (a) 2s\n")
+          expect(hooked.string).to eq("quaack: [1/3] A (a)")
           expect(Thread.list.size).to eq(before)
         end
 
         it "keeps the step's own exception" do
           expect { broken.step("a", "A") { redraw_fails.then { raise "boom" } } }.to raise_error("boom")
 
-          expect(hooked.string.lines.last).to eq("quaack: [1/3] Failed after 2s (a)\n")
+          expect(hooked.string).to eq("quaack: [1/3] A (a)")
         end
       end
     end
@@ -750,6 +751,68 @@ RSpec.describe Quaack::Driver::Progress do
       end
 
       expect(io.string.lines[1]).to eq("quaack: [1/3] Rewrite 1, again: Loading the LLM's rows (counterexamples)\n")
+    end
+  end
+
+  describe "when stderr is a pipe whose reader has closed" do
+    # A real pipe, as when the program reading stderr exits. Ruby
+    # ignores SIGPIPE, so each write raises Errno::EPIPE. attempts records
+    # the thread of each print tried on it.
+    let(:pipe) { IO.pipe }
+    let(:attempts) { Queue.new }
+    let(:writer) do
+      w = pipe.last
+      tried = attempts
+      w.define_singleton_method(:print) do |*args|
+        tried.push(Thread.current)
+        super(*args)
+      end
+      w
+    end
+
+    after { pipe.each { it.close unless it.closed? } }
+
+    it "stops writing progress and runs every step to its own result" do
+      pipe.first.close
+      p = described_class.new(io: writer, total: 3, clock:)
+      ran = []
+
+      first = p.step("a", "A", summary: ->(_) { "Did A" }, informative: true) { ran << :a and :one }
+      p.skip("b", "B")
+      second = p.step("c", "C") do
+        p.note("Asking the LLM (c)")
+        p.within("Rewrite Silver Fox").step("d", "D") { ran << :d }
+        ran << :c and :two
+      end
+
+      expect([first, second, ran]).to eq([:one, :two, %i[a d c]])
+      expect(attempts.size).to eq(1)
+    end
+
+    it "keeps a failing step's own exception" do
+      pipe.first.close
+      p = described_class.new(io: writer, total: 3, clock:)
+
+      expect { p.step("a", "A") { raise "boom" } }.to raise_error("boom")
+      expect(p.step("b", "B") { :next }).to eq(:next)
+    end
+
+    it "keeps the step's result when the pipe closes under the live clock, and runs the next step" do
+      def writer.tty? = true
+      now = [0.0]
+      p = described_class.new(io: writer, total: 3, clock: -> { now.first }, interval: 0.001)
+      stepper = Thread.current
+
+      tried = []
+      result = p.step("a", "A") do
+        pipe.first.close
+        now[0] = 2.0
+        tried << (attempts.pop(timeout: 10) or break) until tried.any? { it != stepper }
+        :value
+      end
+
+      expect([result, tried.last]).to match([:value, satisfy { it.is_a?(Thread) && it != stepper }])
+      expect(p.step("b", "B") { :next }).to eq(:next)
     end
   end
 
