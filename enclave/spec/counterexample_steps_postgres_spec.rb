@@ -19,12 +19,17 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
   def ready(sql, arena: true, setup: true, status_check: nil, arena_sql: nil)
     prepare
     store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);")
-    store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
-    store.write("inventory", "settings" => { "TimeZone" => "UTC" })
+    point_at_arena
     make_arena(status_check, arena_sql) if arena
     store.write("arena_setup", true) if setup
     store.write("rewrite_1", "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [],
                              "inferred" => false, "warnings" => [], "result_types" => %w[text text])
+  end
+
+  # The run server's arena, and production's TimeZone, which it runs in.
+  def point_at_arena
+    store.write("run_server", store.read("run_server").merge("arena_db" => arena_name))
+    store.write("inventory", "settings" => { "TimeZone" => "UTC" })
   end
 
   # status_check, if given, becomes a CHECK on status in the arena, and

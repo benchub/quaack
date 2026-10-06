@@ -271,7 +271,7 @@ RSpec.describe "quaacks run-server, against a real server" do
     # the connection's options, so it's what pins are tested against. The
     # racetrack keeps the operator's TimeZone, which run-server checks
     # against production's.
-    it "pins arena's TimeZone to production's recorded one, whatever the operator's, and leaves the racetrack's alone" do
+    it "pins arena's TimeZone to production's recorded one, whatever the operator's, but not the racetrack's" do
       env = { PGUSER: production.user, PGPASSWORD: production.password, PGTZ: "Asia/Kolkata" }
       outcome = connect_in_child(<<~RUBY, **env)
         %i[racetrack arena].each do |database|
