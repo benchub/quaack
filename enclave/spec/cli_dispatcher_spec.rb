@@ -182,15 +182,18 @@ RSpec.describe Quaack::Enclave::CLI do
     # burndown names stages by the old step IDs, such as 5a-3. One with
     # format 2 was started before the rewrite stages' burndown records moved
     # to each rewrite's search, so its plan-pruning record counts survivors
-    # that resumed steps would count again.
+    # that resumed steps would count again. One with format 3 may hold a
+    # classification made before the sendable-type allowlist, which let a
+    # bytea or inet column's MCV values out.
     it "refuses a run an older version started as run_from_older_version, before the step runs" do
       old = Quaack::Enclave::Store.create(base:)
       FileUtils.rm_f(File.join(old.path, "store_format.json"))
       old.write("burndown", { "stages" => { "index-dedupe" => {} }, "totals" => {} })
       other = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 1 }) }
       per_rewrite = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 2 }) }
+      denylist = Quaack::Enclave::Store.create(base:).tap { it.write("store_format", { "format" => 3 }) }
 
-      [old, other, per_rewrite].each do |store|
+      [old, other, per_rewrite, denylist].each do |store|
         out.truncate(0) && out.rewind
         expect(cli(steps).run(["echo", "--run", store.run_id])).to eq(64)
         expect(out.string).to eq(error_line("echo", "run_from_older_version"))

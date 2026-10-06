@@ -7,10 +7,13 @@ module Quaack
     # hold change in a way that an older run would be misread by, such as
     # the step slugs that replaced DESIGN.md's old step IDs as burndown
     # stages (format 2), or the rewrite stages' records moving to each
-    # rewrite's own search (format 3). A run with another format, or none, was started by an older
-    # version, and the CLI refuses to open it (see CLI#open_store).
+    # rewrite's own search (format 3), or classify's allowlist of sendable
+    # types (format 4), since an older run's stored classification may let
+    # a bytea or inet column's MCV values out. A run with another format,
+    # or none, was started by an older version, and the CLI refuses to open
+    # it (see CLI#open_store).
     module StoreFormat
-      FORMAT = 3
+      FORMAT = 4
       ENTRY = "store_format"
 
       module_function

@@ -116,16 +116,17 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect(described_class.load(store)).to eq(result)
     end
 
-    # statistics always lists each table's structured columns. Without the
-    # list, classify can't tell which columns' values must never leave, so
-    # it fails, and stores nothing, rather than taking none to be structured.
-    it "fails on a statistics entry without the structured columns" do
+    # statistics always lists each table's sendable columns. Without the
+    # list, classify can't tell which columns' values may leave, so it
+    # fails, and stores nothing, rather than guessing. An entry an older
+    # quaacks stored, with structured_columns instead, fails the same way.
+    it "fails on a statistics entry without the sendable columns" do
       Quaack::Enclave::PlannerStatistics.run(store:, relations: [accounts], connection: conn)
       data = store.read("statistics")
-      data["tables"].each { it.delete("structured_columns") }
+      data["tables"].each { it.delete("sendable_columns") }
       store.write("statistics", data)
 
-      expect { described_class.run(store:, config:) }.to raise_error(KeyError, /structured_columns/)
+      expect { described_class.run(store:, config:) }.to raise_error(KeyError, /sendable_columns/)
       expect(store.entry?("classification")).to be(false)
     end
   end
@@ -414,6 +415,128 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       sets.each_value do |set|
         LeakCheck.check_scanner!(set)
         expect(LeakCheck.findings(set, objects: { outbound: res.outbound_statistics })).to eq([])
+      end
+    end
+  end
+
+  # DESIGN.md's classify: only text-like columns and the allowlisted types
+  # (numbers, money, oid, boolean, the date and time types, uuid, enums, and
+  # domains over them) may be low-cardinality. Every other type is withheld
+  # like json: bytea, which can hold text, the geometric types, which can
+  # hold a place, the network types, which can name a person's device or
+  # address, bit strings, and the rest, and a domain over one. Each column
+  # holds two values, one of them planted. The set's needles are the planted
+  # values as pg_stats prints them: bytea as hex, bit strings as binary
+  # digits. point has no equality operator, so ANALYZE keeps no MCV list for
+  # it, but an expression index over it does.
+  describe "columns of a type whose values may not leave" do
+    let(:token) { -> { LeakCheck::Sentinels.claim { "sentinel#{SecureRandom.hex(6)}" } } }
+    let(:bytes) { %w[b blob].to_h { [it, "#{token.call}-#{it}"] } }
+    let(:planted) do
+      octets = Array.new(3) { rand(100..255) }
+      { b: bytes["b"].unpack1("H*"), blob: bytes["blob"].unpack1("H*"),
+        p: LeakCheck::Sentinels.claim { rand(100_000_000..999_999_999) }.to_s,
+        ip: "10.#{octets.join(".")}",
+        mac: ["0a", *Array.new(5) { rand(256).to_s(16).rjust(2, "0") }].join(":"),
+        bits: LeakCheck::Sentinels.claim { rand((2**31)...(2**32)) }.to_s(2) }
+    end
+    let(:set) { LeakCheck::Sentinels.new(extra: planted) }
+    let(:gear) { table("public", "gear") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN blob AS bytea;
+        CREATE TABLE gear (kind text, b bytea, p point, ip inet, mac macaddr, bits bit(32), blob blob);
+        INSERT INTO gear
+        SELECT CASE WHEN i % 2 = 0 THEN 'odd' ELSE 'even' END,
+               CASE WHEN i % 2 = 0 THEN convert_to('#{bytes["b"]}', 'UTF8') ELSE '\\x00' END,
+               CASE WHEN i % 2 = 0 THEN point(#{planted[:p]}, 1) ELSE point(0, 0) END,
+               CASE WHEN i % 2 = 0 THEN '#{planted[:ip]}' ELSE '127.0.0.1' END::inet,
+               CASE WHEN i % 2 = 0 THEN '#{planted[:mac]}' ELSE '00:00:00:00:00:00' END::macaddr,
+               CASE WHEN i % 2 = 0 THEN B'#{planted[:bits]}' ELSE B'#{"0" * 32}' END,
+               CASE WHEN i % 2 = 0 THEN convert_to('#{bytes["blob"]}', 'UTF8') ELSE '\\x00' END::blob
+        FROM generate_series(1, 3000) AS i;
+        CREATE INDEX gear_p_x ON gear ((p[0]));
+        CREATE STATISTICS gear_b_ext (mcv) ON kind, b FROM gear;
+        ANALYZE gear;
+      SQL
+    end
+
+    def gear_result = classify([gear], with: Quaack::Enclave::Config.new({}))
+
+    def stored_gear = store.read("statistics")["tables"].first
+
+    it "classes them as neither PII nor low-cardinality, and sends their frequencies but not their values" do
+      res = gear_result
+
+      expect(classes(res, gear)).to eq(%w[b p ip mac bits blob].to_h { [it, [false, false]] }
+                                         .merge("kind" => [false, true]))
+      expect(res.low_cardinality).to eq([[gear, "kind"]])
+      %w[b ip mac bits blob].each do |column|
+        expect(stored_gear["columns"][column]["most_common_vals"].size).to eq(2)
+        expect(outbound(res, gear, column)["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+        expect(outbound(res, gear, column)["most_common_vals"]).to be_nil
+      end
+    end
+
+    it "sends an expression index's or statistics object's frequencies over one, but not its values" do
+      tables = gear_result.outbound_statistics["tables"].first
+      index = tables["indexes"].find { it["name"] == "gear_p_x" }["columns"].first
+      extended = tables["extended_statistics"].first
+
+      expect(index["most_common_freqs"]).to include(be_within(0.01).of(0.5))
+      expect(index["most_common_vals"]).to be_nil
+      expect(extended["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+      expect(extended.values_at("most_common_vals", "most_common_val_nulls")).to eq([nil, nil])
+    end
+
+    it "sends none of their values" do
+      res = gear_result
+
+      # The exposure is real: every planted value is in the stored
+      # statistics, point's through its expression index.
+      found = LeakCheck.findings(set, objects: { stored: JSON.generate(stored_gear) }).map(&:sentinel)
+      expect(found.uniq.sort).to eq(planted.keys.sort)
+      expect(stored_gear["columns"]["p"]["most_common_vals"]).to be_nil
+
+      expect_no_leaks(set, objects: { outbound: res.outbound_statistics })
+    end
+  end
+
+  # DESIGN.md's classify: the allowlisted types, an enum, and a domain over
+  # one at any depth, are still low-cardinality when they hold few values
+  # that repeat, so their MCV values leave.
+  describe "columns of an allowlisted type" do
+    let(:ledger) { table("public", "ledger") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE TYPE mood AS ENUM ('sad', 'fine', 'glad');
+        CREATE DOMAIN qty AS int;
+        CREATE DOMAIN calm AS mood;
+        CREATE DOMAIN deep_calm AS calm;
+        CREATE TABLE ledger (n int, big bigint, amount numeric(6, 2), price money, ok boolean, day date,
+                             at timestamptz, wait interval, ref uuid, m mood, q qty, dm deep_calm);
+        INSERT INTO ledger
+        SELECT i % 3, i % 3 + 10000000000, i % 3 + 0.5, (i % 3)::numeric::money, i % 3 = 0,
+               date '2024-01-01' + i % 3, timestamptz '2024-01-01 00:00Z' + (i % 3) * interval '1 hour',
+               (i % 3) * interval '1 day', ('00000000-0000-0000-0000-00000000000' || i % 3)::uuid,
+               (ARRAY['sad', 'fine', 'glad']::mood[])[1 + i % 3], i % 3,
+               (ARRAY['sad', 'fine', 'glad']::mood[])[1 + i % 3]
+        FROM generate_series(1, 3000) AS i;
+        ANALYZE ledger;
+      SQL
+    end
+
+    it "classes them as low-cardinality, and sends their values" do
+      res = classify([ledger], with: Quaack::Enclave::Config.new({}))
+      names = %w[n big amount price ok day at wait ref m q dm]
+      stored = store.read("statistics")["tables"].first["columns"]
+
+      expect(classes(res, ledger)).to eq(names.to_h { [it, [false, true]] })
+      names.each do |column|
+        expect(stored[column]["most_common_vals"]).not_to be_empty
+        expect(outbound(res, ledger, column)["most_common_vals"]).to eq(stored[column]["most_common_vals"])
       end
     end
   end
