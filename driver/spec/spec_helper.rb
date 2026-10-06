@@ -2,6 +2,7 @@
 
 require "open3"
 require "rbconfig"
+require "timeout"
 
 GEM_ROOT = File.expand_path("..", __dir__)
 REPO_ROOT = File.expand_path("..", GEM_ROOT)
@@ -38,7 +39,29 @@ ensure
   original&.each { |k, v| ENV[k] = v }
 end
 
+# Fails an example that runs past a time limit, so a hang, such as a Pump
+# bug that never returns, fails the suite with a clear message instead of
+# hanging rake. The slowest example takes about 7s, and the longest wait any
+# example allows for itself is 60s, so 120s stays clear of both even on a
+# heavily loaded machine. QUAACK_EXAMPLE_TIME_LIMIT, in seconds, overrides
+# it. The error isn't a StandardError, so an example's own rescue can't
+# swallow it.
+module ExampleTimeLimit
+  DEFAULT = 120
+  ENV_NAME = "QUAACK_EXAMPLE_TIME_LIMIT"
+
+  class Exceeded < Exception; end # rubocop:disable Lint/InheritException
+
+  def self.seconds(env = ENV) = Float(env.fetch(ENV_NAME, DEFAULT))
+
+  def self.run(example, seconds: self.seconds)
+    message = "ran past #{format("%g", seconds)}s, the per-example limit (#{ENV_NAME}). It probably hung."
+    Timeout.timeout(seconds, Exceeded, message) { example.run }
+  end
+end
+
 RSpec.configure do |config|
+  config.around { ExampleTimeLimit.run(it) }
   config.disable_monkey_patching!
   config.expect_with(:rspec) { |c| c.syntax = :expect }
   config.order = :random
