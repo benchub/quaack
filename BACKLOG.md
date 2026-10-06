@@ -2417,5 +2417,5 @@ From the review of 20260925-2.
 - **Depends on:** 20260925-2.
 - **Came from:** The review of 20260925-2.
 - **Design:** What goes into the enclave; insert check.
-- **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2.
+- **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2. Item 1, fill a column whose omitted or `DEFAULT` value reads the clock from the clock anchor, rather than refusing. Item 2, list the bypasses in DESIGN.md as unsupported in v1. Item 5, fix the false refusals: stop refusing a clock word that can't reach a date/time value.
 - **Status:** todo
