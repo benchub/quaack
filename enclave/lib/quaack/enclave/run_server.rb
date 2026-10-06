@@ -36,6 +36,15 @@ module Quaack
     #   database. arena-setup builds arena from scratch, so it can't be the
     #   racetrack.
     #
+    # An arena connection's TimeZone is set to UTC for the session, so a
+    # counterexample's timestamptz literal, or a date cast to one, means
+    # the same instant in every arena session, whatever the operator's PGTZ
+    # or the server's default (task 20260925-2). It's a SET, not a
+    # connection option, since libpq sends PGTZ after the options, and it
+    # wins. Arena.build's RESET ALL after the dump undoes it for the rest of
+    # that build, which reads no times. The racetrack keeps its TimeZone,
+    # which run-server checks against production's.
+    #
     # A connection that fails is run_server_connection_failed, with nothing
     # from libpq's message, which can name the host or the user.
     module RunServer
@@ -50,6 +59,7 @@ module Quaack
 
       DATABASE = /\A[A-Za-z0-9_][A-Za-z0-9_-]{0,62}\z/
       DATABASES = { racetrack: "racetrack_db", arena: "arena_db" }.freeze
+      ARENA_TIME_ZONE_SQL = "SET TimeZone = 'UTC'"
 
       module_function
 
@@ -69,7 +79,9 @@ module Quaack
       # The same, for a run server entry that isn't stored yet.
       def connect_to(entry, database)
         dbname = entry.fetch(DATABASES.fetch(database))
-        Connections.register(PG.connect(host: entry.fetch("host"), port: entry.fetch("port"), dbname:))
+        conn = Connections.register(PG.connect(host: entry.fetch("host"), port: entry.fetch("port"), dbname:))
+        conn.exec(ARENA_TIME_ZONE_SQL) if database == :arena
+        conn
       rescue PG::Error
         raise Error, "run_server_connection_failed", cause: nil
       end

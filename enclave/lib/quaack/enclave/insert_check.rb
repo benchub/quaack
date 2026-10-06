@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "parser_version"
 require_relative "deparse"
+require_relative "insert_clock_words"
 require_relative "insert_values"
 require_relative "table_name"
 
@@ -68,7 +69,11 @@ module Quaack
     #     to the volatility rule, not to IMMUTABLE, since the input functions of
     #     date, timestamptz, and the like are STABLE, and '2024-01-01'::date
     #     is what fixtures are made of.
-    # 13. deparse_mismatch: the insert doesn't parse back to the same tree
+    # 13. clock_literal (or bad_search_path): a string constant holds 'now',
+    #     'today', 'tomorrow', or 'yesterday' where Postgres could read it
+    #     as a date, time, or timestamp, so it reads the clock (see
+    #     InsertClockWords).
+    # 14. deparse_mismatch: the insert doesn't parse back to the same tree
     #     when pg_query deparses it (see Deparse).
     #
     # It trusts provolatile, as the other checks do. Whether a value fits
@@ -110,9 +115,9 @@ module Quaack
       # taken out.
       BARE_VALUES = PgQuery::SelectStmt.new(limit_option: :LIMIT_OPTION_DEFAULT, op: :SETOP_NONE)
 
-      # The live user columns of a table.
+      # The live user columns of a table, and their types.
       COLUMNS_SQL = <<~SQL
-        SELECT a.attname
+        SELECT a.attname, a.atttypid
         FROM pg_catalog.pg_attribute a
         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -126,8 +131,9 @@ module Quaack
         forms!(stmt)
         rows = rows!(stmt)
         table = table!(stmt.relation, tables)
-        columns!(stmt.cols, table, connection)
+        types = columns!(stmt.cols, table, connection)
         values!(rows, settings, connection)
+        clock!(stmt.cols, rows, types, settings, connection)
         accepted(stmt, table)
       end
 
@@ -190,20 +196,29 @@ module Quaack
         TableName.new(schema: relation.schemaname, name: relation.relname)
       end
 
+      # Each column's type OID, by name.
       def columns!(cols, table, connection)
-        known = connection.exec_params(COLUMNS_SQL, [table.schema, table.name]).column_values(0)
-        cols.each do |col|
-          target = col.res_target
-          unless target.indirection.empty?
-            raise Error.new("unknown_column", "#{target.name} is subscripted or has a field")
-          end
-          raise Error.new("unknown_column", "#{table} has no column #{target.name}") unless known.include?(target.name)
+        known = connection.exec_params(COLUMNS_SQL, [table.schema, table.name]).values.to_h
+        cols.each { column!(it.res_target, table, known) }
+        known
+      end
+
+      def column!(target, table, known)
+        unless target.indirection.empty?
+          raise Error.new("unknown_column", "#{target.name} is subscripted or has a field")
         end
+        raise Error.new("unknown_column", "#{table} has no column #{target.name}") unless known.key?(target.name)
       end
 
       def values!(rows, settings, connection)
         InsertValues.check(rows, settings, connection)
       rescue InsertValues::Error => e
+        raise Error.from(e), cause: nil
+      end
+
+      def clock!(cols, rows, types, settings, connection)
+        InsertClockWords.check(cols, rows, types, settings, connection)
+      rescue InsertClockWords::Error => e
         raise Error.from(e), cause: nil
       end
 
