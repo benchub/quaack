@@ -197,7 +197,7 @@
 <tr><th scope="row"><%= h name %></th><%= counts.map { count_cell(it) }.join %></tr>
 <% end %>
 </tbody></table>
-<p class="note">A rewrite refused on arrival is one QUAACK didn't keep: it failed the checks on what goes in, didn't plan, returned different columns, or, for one of QUAACK's own, repeated another or went over the limit of five. What became of each rewrite it kept is under the queries, above.</p>
+<p class="note">A rewrite not kept is one QUAACK dropped before testing it: it was over the limit (five from the LLM, ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, for one of QUAACK's own, repeated another. What became of each rewrite it kept is under the queries, above.</p>
 <h3>Indexes</h3>
 <table id="accountability-indexes"><thead><tr><th scope="col">Source</th><% Accountability::INDEX_COLUMNS.each do |c| %><th scope="col" class="num"><%= h c %></th><% end %></tr></thead>
 <tbody>

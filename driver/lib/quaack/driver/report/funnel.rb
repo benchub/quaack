@@ -96,7 +96,7 @@ module Quaack
         def funnel_band(at, widths, name, record, stage)
           shape = funnel_polygon(at, *widths, %(fill="#{BLUE}" fill-opacity="0.8" stroke="#{BLUE}"))
           %(<g class="band"><title>#{Funnel.text(funnel_summary(name, record, stage))}</title>#{shape}) +
-            %(#{funnel_words(at, name, funnel_label(record))}</g>)
+            %(#{funnel_words(at, name, funnel_label(record, stage))}</g>)
         end
 
         def funnel_unknown(at, width, name)
@@ -115,7 +115,7 @@ module Quaack
           line = %(<line class="known" x1="#{left.round(2)}" y1="#{at}" x2="#{(left + known).round(2)}" y2="#{at}" ) +
                  %(stroke="#{BLUE}" stroke-width="4"/>)
           %(<g class="band partial"><title>#{summary}</title>#{funnel_polygon(at, width, width, UNCOUNTED)}) +
-            %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, "out #{Words::MISSING}"))}</g>)
+            %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, stage, "out #{Words::MISSING}"))}</g>)
         end
 
         # The trapezoid's corners: top left, top right, bottom right,
@@ -151,10 +151,10 @@ module Quaack
 
         # What's beside a band: its counts, and its drops by reason, cut to
         # fit. The band's <title> and the table have them whole.
-        def funnel_label(record, out = "#{Format.number(record["out"])} out")
+        def funnel_label(record, stage, out = "#{Format.number(record["out"])} out")
           counts = "#{Format.number(record["in"])} in, #{out}"
           counts += ", #{Format.number(record["set_aside"])} set aside" if record["set_aside"].to_i.positive?
-          dropped = breakdown(record["dropped"].to_h)
+          dropped = breakdown(record["dropped"].to_h, stage:)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
         end
@@ -162,7 +162,8 @@ module Quaack
         def funnel_summary(name, record, stage, went_on = "#{Format.number(record["out"])} went on.")
           "#{name}: #{Format.number(record["in"])} came in. " \
             "Added: #{breakdown(record["added"].to_h, rules: stage == "rewrite-rules")}. " \
-            "Dropped: #{breakdown(record["dropped"].to_h)}. Set aside: #{Format.number(record["set_aside"].to_i)}. " \
+            "Dropped: #{breakdown(record["dropped"].to_h, stage:)}. " \
+            "Set aside: #{Format.number(record["set_aside"].to_i)}. " \
             "#{went_on}"
         end
       end

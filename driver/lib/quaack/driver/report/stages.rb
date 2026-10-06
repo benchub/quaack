@@ -45,14 +45,25 @@ module Quaack
 
         # A record's added, dropped, or extra counts in words, leaving out
         # a name that counted nothing. rewrite-rules adds by rule, and names the rule.
-        def breakdown(counts, rules: false)
+        # stage is the record's, for the names whose words depend on it (counted).
+        def breakdown(counts, rules: false, stage: nil)
           counted = counts.reject { |_, n| n.to_i.zero? }
           return "none" if counted.empty?
 
-          counted.map { |name, n| "#{counted_as(name, rules)}: #{Format.number(n)}" }.join("; ")
+          counted.map { |name, n| "#{counted_as(name, rules, stage)}: #{Format.number(n)}" }.join("; ")
         end
 
-        def counted_as(name, rule) = rule ? "by the rule #{name}" : Words::COUNTS.fetch(name) { Words.plain(name) }
+        def counted_as(name, rule, stage) = rule ? "by the rule #{name}" : counted(name, stage)
+
+        # A name in words. rewrite-test drops a rewrite it never tested by
+        # the rule of the refusal or the failure, said as the rewrite's fate
+        # says it; any rule it has no words for is a statement that failed.
+        def counted(name, stage)
+          return Words::COUNTS.fetch(name) { Words.plain(name) } unless stage == "rewrite-test" &&
+                                                                        !Words::SCENARIOS.key?(name)
+
+          "never tested, because #{Words::REFUSALS.fetch(name) { Words::FAILURES.fetch(name, Words::FAILED) }}"
+        end
 
         # The driver's LLM calls, by what each was for.
         def llm_lines

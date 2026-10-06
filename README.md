@@ -703,13 +703,13 @@ Two tables say where each idea came from and what became of it. Each has a row p
 
 **Rewrites:**
 
-| Source | Proposed | Refused on arrival | Same plan as the original | Wrong results | Not better | Ranked | Stopped for another reason |
+| Source | Proposed | Not kept | Same plan as the original | Wrong results | Not better | Ranked | Stopped for another reason |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | QUAACK's own rules | 2 | 1 | 0 | 0 | 0 | 1 | 0 |
 | The LLM | 3 | 0 | 1 | 1 | 0 | 0 | 1 |
 | You | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 
-A rewrite **refused on arrival** is one QUAACK didn't keep: it failed the checks on what goes in, didn't plan, returned different columns, or, for one of QUAACK's own, repeated another or went over the limit of five. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat your query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
+A rewrite **not kept** is one QUAACK dropped before testing it: it was over the limit (five from the LLM, ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, or, for one of QUAACK's own, repeated another. **Stopped for another reason** counts the rewrites whose tests failed or timed out without comparing anything, the ones that beat your query and still weren't ranked, and the ones the run never finished. None of those was shown to be wrong.
 
 **Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored, built and measured, not better, and ranked. An index counts as **not better** only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
@@ -721,7 +721,7 @@ The last section shows how much work QUAACK did and where ideas dropped out. It 
 
 In the index table, the LLM's rows count every index it wrote, including the ones QUAACK's checks refused, and the second round's row says why it was skipped when it was. "Trying indexes together" counts the combinations of indexes tried, and drops the ones that left an index unused or weren't the best.
 
-The rewrite table's first row, "Rewrites from QUAACK's own rules", shows how many rewrites each rule made, and how many were dropped as the same as another, as over the limit of ten, or for failing QUAACK's checks.
+The rewrite table's first row, "Rewrites from QUAACK's own rules", shows how many rewrites each rule made, and how many were dropped as the same as another, as over the limit of ten, or for failing QUAACK's checks. The testing rows tell a rewrite proved wrong from one never tested, and say why it wasn't, such as "never tested, because a statement timed out", and the LLM's test data rows tell "wrong in round 2" from "failed to run in round 2", which proves nothing.
 
 After the tables come the **LLM calls**, by what each was for, such as "Index suggestions for the original query: 2 calls", and the **other work**: plans tried with an index that wasn't built, indexes really built, measurement runs, and loads of made-up test data.
 

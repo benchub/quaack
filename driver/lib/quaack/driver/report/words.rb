@@ -105,7 +105,8 @@ module Quaack
                    "combination_unused_index" => "a combination that left an index unused",
                    "combination_not_chosen" => "a combination that wasn't the best",
                    **SCENARIOS.transform_values { "wrong on #{it}" },
-                   **(1..3).to_h { ["round_#{it}", "wrong in round #{it}"] } }.freeze
+                   **(1..3).to_h { ["round_#{it}", "wrong in round #{it}"] },
+                   **(1..3).to_h { ["failed_in_round_#{it}", "failed to run in round #{it}"] } }.freeze
 
         # What each of the driver's LLM calls was for.
         LLM_STEPS = { "llm-index-ideas" => "Index suggestions for the original query",
