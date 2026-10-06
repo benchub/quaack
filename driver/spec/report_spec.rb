@@ -1595,6 +1595,53 @@ RSpec.describe Quaack::Driver::Report do
       expect(bands(funnel("rewrite")).map { widths(it) }).to all(eq([0, 0]))
     end
 
+    # The solid line along a partly counted band's top, as its x's and y's.
+    def known_top(band)
+      line = band.match(/<line class="known" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/)
+      expect(line).not_to be_nil, "expected a solid line along the band's top, but it has none"
+      line.captures.map(&:to_f)
+    end
+
+    it "draws what's known of a stage that counted what came in but not what went on" do
+      stages["index-test"] = { "original" => rec(3, 1, dropped: { "never_used" => 1 }).except("out") }
+      index = bands(funnel("index"))
+      band = index[3]
+      top = rows_y(band).first
+      expect(band).to start_with('<g class="band partial">')
+      expect(known_top(band)).to eq([80.0, top, 240.0, top])
+      expect(widths(band)).to eq([width(3, 6), width(3, 6)])
+      expect(band).to include('<path class="hatch" d="M')
+      expect(counts(band)).to eq("3 in, out not recorded · dropped: never used by the planner: 1")
+      expect(band).to include("<title>Asking the planner whether it would use each one: 3 came in. Added: none. " \
+                              "Dropped: never used by the planner: 1. Set aside: 0. How many went on: not recorded. " \
+                              "This run didn&#39;t count it, which doesn&#39;t mean none.</title>")
+      expect(band).not_to match(/\b\d+ (out|went on)\b/)
+      expect(index.values_at(4, 5).map { widths(it) }).to all(eq([width(3, 6), width(3, 6)]))
+    end
+
+    it "counts what came in to a partly counted stage in the funnel's scale" do
+      stages["index-test"] = { "original" => rec(12, 0).except("out") }
+      expect(known_top(bands(funnel("index"))[3]).values_at(0, 2)).to eq([0.0, Quaack::Driver::Report::Funnel::WIDTH])
+      expect(widths(bands(funnel("index"))[2])).to eq([width(6, 12), width(3, 12)])
+    end
+
+    it "draws a partly counted stage's unknown part no narrower than its minimum" do
+      stages["index-test"] = { "original" => rec(1, 0).except("out") }
+      band = bands(funnel("index"))[3]
+      known = known_top(band)
+      expect((known[2] - known[0]).round(1)).to eq(width(1, 6))
+      expect(widths(band)).to eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2)
+      expect(bands(funnel("index")).values_at(4, 5).map { widths(it) })
+        .to all(eq([Quaack::Driver::Report::Funnel::UNKNOWN] * 2))
+    end
+
+    it "still shows a stage that counted what went on but not what came in as not recorded" do
+      stages["index-test"] = { "original" => rec(1, 3).except("in") }
+      band = bands(funnel("index"))[3]
+      expect(band).to start_with('<g class="band unknown">')
+      expect(counts(band)).to eq("not recorded")
+    end
+
     it "shows a stage with a negative count as not recorded, never as that count" do
       stages["index-test"] = { "original" => rec(-1, 3) }
       stages["llm-index-ideas"] = { "original" => rec(3, -2) }

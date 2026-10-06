@@ -23,6 +23,11 @@ module Quaack
       # funnel's line, or WIDTH if none came before it, but never narrower
       # than UNKNOWN, so it can't look like a band that counted zero.
       #
+      # A row that counted what came in but not what went on is drawn as
+      # far as it's known: a solid line along its top as wide as what came
+      # in, over the unknown band's grey stripes, as wide as that line but
+      # never narrower than UNKNOWN. Its count takes part in the scale.
+      #
       # Every text in it goes through text, never Format.h, since an SVG
       # <text> can't hold the <code> h sets SQL in.
       module Funnel
@@ -35,6 +40,9 @@ module Quaack
         VIEW_WIDTH = 940
         LINE = 96
         STRIPE = 10
+        BLUE = "#2f6fb3"
+        UNCOUNTED = 'fill="#eef0f3" stroke="#8a929d" stroke-dasharray="4 3"'
+        NOT_NONE = "This run didn't count it, which doesn't mean none."
 
         # Words, escaped for the SVG, with any SQL marks dropped.
         def self.text(value) = ERB::Util.html_escape(value.to_s.delete(Format::MARKS))
@@ -52,42 +60,62 @@ module Quaack
         def funnel_bands(rows)
           last = WIDTH
           funnel_widths(rows).each_with_index.map do |widths, i|
-            next funnel_unknown(funnel_top(i), [last, UNKNOWN].max, rows[i].first) unless widths
-
-            last = widths.last
-            funnel_band(funnel_top(i), widths, *rows[i])
+            at = funnel_top(i)
+            case widths
+            in nil then funnel_unknown(at, [last, UNKNOWN].max, rows[i].first)
+            in [known, nil] then funnel_partial(at, known, last = [known, UNKNOWN].max, *rows[i])
+            else funnel_band(at, widths, *rows[i]).tap { last = widths.last }
+            end
           end
         end
 
         # Each row's widths at its top and bottom, on the scale of the
-        # largest count, or nil for a row with no count.
+        # largest count: nil for a row with no count, and a nil bottom for
+        # one that counted what came in but not what went on.
         def funnel_widths(rows)
           counted = rows.map { |_, record, _| funnel_counted(record) }
-          largest = counted.compact.flatten.max.to_i
-          counted.map { it&.map { |count| funnel_scaled(count, largest) } }
+          largest = counted.flatten.compact.max.to_i
+          counted.map { it&.map { |count| count && funnel_scaled(count, largest) } }
         end
 
         def funnel_top(index) = TOP + (index * (HEIGHT + GAP))
 
-        # A record's in and out, or nil if it has no count of both.
+        # A record's in and out, in and nil if it has no out, or nil if it
+        # has no count of what came in, or a count that can't be one.
         def funnel_counted(record)
-          counts = record&.values_at("in", "out")
-          counts if counts&.all? { it.is_a?(Integer) && !it.negative? }
+          inn, out = record&.values_at("in", "out")
+          return unless funnel_count?(inn)
+
+          out.nil? ? [inn, nil] : ([inn, out] if funnel_count?(out))
         end
+
+        def funnel_count?(count) = count.is_a?(Integer) && !count.negative?
 
         def funnel_scaled(count, largest) = largest.zero? ? 0.0 : (WIDTH * count / largest).round(1)
 
         def funnel_band(at, widths, name, record, stage)
-          shape = funnel_polygon(at, *widths, 'fill="#2f6fb3" fill-opacity="0.8" stroke="#2f6fb3"')
+          shape = funnel_polygon(at, *widths, %(fill="#{BLUE}" fill-opacity="0.8" stroke="#{BLUE}"))
           %(<g class="band"><title>#{Funnel.text(funnel_summary(name, record, stage))}</title>#{shape}) +
             %(#{funnel_words(at, name, funnel_label(record))}</g>)
         end
 
         def funnel_unknown(at, width, name)
-          summary = Funnel.text("#{name}: #{Words::MISSING}. This run didn't count it, which doesn't mean none.")
-          shape = funnel_polygon(at, width, width, 'fill="#eef0f3" stroke="#8a929d" stroke-dasharray="4 3"')
+          summary = Funnel.text("#{name}: #{Words::MISSING}. #{NOT_NONE}")
+          shape = funnel_polygon(at, width, width, UNCOUNTED)
           %(<g class="band unknown"><title>#{summary}</title>#{shape}#{funnel_hatch(at, width)}) +
             %(#{funnel_words(at, name, Words::MISSING)}</g>)
+        end
+
+        # A band that counted what came in, known wide, but not what went
+        # on: the unknown band, width wide, under a solid line for its top.
+        def funnel_partial(at, known, width, name, record, stage) # rubocop:disable Metrics/ParameterLists
+          went_on = "How many went on: #{Words::MISSING}. #{NOT_NONE}"
+          summary = Funnel.text(funnel_summary(name, record, stage, went_on))
+          left = (WIDTH - known) / 2
+          line = %(<line class="known" x1="#{left.round(2)}" y1="#{at}" x2="#{(left + known).round(2)}" y2="#{at}" ) +
+                 %(stroke="#{BLUE}" stroke-width="4"/>)
+          %(<g class="band partial"><title>#{summary}</title>#{funnel_polygon(at, width, width, UNCOUNTED)}) +
+            %(#{funnel_hatch(at, width)}#{line}#{funnel_words(at, name, funnel_label(record, "out #{Words::MISSING}"))}</g>)
         end
 
         # The trapezoid's corners: top left, top right, bottom right,
@@ -123,19 +151,19 @@ module Quaack
 
         # What's beside a band: its counts, and its drops by reason, cut to
         # fit. The band's <title> and the table have them whole.
-        def funnel_label(record)
-          counts = "#{Format.number(record["in"])} in, #{Format.number(record["out"])} out"
+        def funnel_label(record, out = "#{Format.number(record["out"])} out")
+          counts = "#{Format.number(record["in"])} in, #{out}"
           counts += ", #{Format.number(record["set_aside"])} set aside" if record["set_aside"].to_i.positive?
           dropped = breakdown(record["dropped"].to_h)
           line = dropped == "none" ? counts : "#{counts} · dropped: #{dropped}"
           line.length > LINE ? "#{line[0, LINE - 1]}…" : line
         end
 
-        def funnel_summary(name, record, stage)
+        def funnel_summary(name, record, stage, went_on = "#{Format.number(record["out"])} went on.")
           "#{name}: #{Format.number(record["in"])} came in. " \
             "Added: #{breakdown(record["added"].to_h, rules: stage == "rewrite-rules")}. " \
             "Dropped: #{breakdown(record["dropped"].to_h)}. Set aside: #{Format.number(record["set_aside"].to_i)}. " \
-            "#{Format.number(record["out"])} went on."
+            "#{went_on}"
         end
       end
     end
