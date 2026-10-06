@@ -53,12 +53,15 @@ module Quaack
     #   also keep rows from the middle of a tie group, with rows of the
     #   group cut off on both sides, and then T and T' keep the same rows
     #   anyway, unless the original's runs through the end of the window
-    #   (Shape#through_window) show no tie group crosses its edges. In both
-    #   cases CutTies (result_comparison/cut_ties.rb) checks the candidate
-    #   instead: it runs both queries both ways without their
-    #   LIMIT and OFFSET to find the tie groups, and the candidate's rows
-    #   before the cut's group must be the original's, in order, and the
-    #   rest must come from that group, however either query's ties break.
+    #   (Shape#through_window) show no tie group crosses its edges. A
+    #   candidate with a LIMIT and an OFFSET can do the same with its own
+    #   tie groups, so one that matches row for row runs through its window
+    #   both ways too. In each case CutTies (result_comparison/cut_ties.rb)
+    #   checks the candidate instead: it runs both queries both ways
+    #   without their LIMIT and OFFSET to find the tie groups, and the
+    #   candidate's rows before the cut's group must be the original's, in
+    #   order, and the rest must come from that group, however either
+    #   query's ties break.
     #   It refuses DISTINCT ON in either query, an OFFSET it can't place,
     #   and a candidate whose own tie at the cut could keep a row the
     #   original's group doesn't hold.
@@ -392,10 +395,26 @@ module Quaack
         originals = both_ways(transaction, original_shape, positions)
         return refused unless ties_faithful?(originals.first, positions)
 
-        cut_tie(transaction, originals, [original_shape, candidate_shape], positions) ||
-          tiebroken(transaction, originals, candidate_shape, positions)
+        tiebroken_verdict(transaction, originals, [original_shape, candidate_shape], positions)
       end
 
+      # The verdict from the original's tiebreaker runs: the candidate's
+      # match row for row, unless either query's LIMIT or OFFSET may cut a
+      # tie group, and then CutTies' check decides.
+      def tiebroken_verdict(transaction, originals, shapes, positions)
+        if cut_tie?(transaction, shapes.first, originals, positions)
+          return cut_tie(transaction, originals, shapes, positions)
+        end
+
+        verdict = tiebroken(transaction, originals, shapes.last, positions)
+        return verdict unless verdict.match? && cut_tie?(transaction, shapes.last, originals, positions)
+
+        cut_tie(transaction, originals, shapes, positions)
+      end
+
+      # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
+      # original's tiebreaker runs. Called for the original's shape first,
+      # then for a candidate's once it has matched those runs row for row.
       def cut_tie?(transaction, shape, originals, positions)
         CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?) do
           ties_uncut?(*[false, true].map { transaction.query(shape.through_window(positions, descending: it)) })
@@ -431,10 +450,8 @@ module Quaack
       end
 
       # CutTies' check, when the original's LIMIT or OFFSET cuts a tie
-      # group, or nil.
+      # group, or the candidate's does.
       def cut_tie(transaction, originals, shapes, positions)
-        return unless cut_tie?(transaction, shapes.first, originals, positions)
-
         rule, fields = CutTies.check(shapes, originals.map(&:rows),
                                      FixtureRuns.new(transaction, positions, originals.first.types))
         ResultComparator::Verdict.for(:ordered, rule, **fields)

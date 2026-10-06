@@ -29,15 +29,18 @@ module Quaack
 
         # Whether the precise check must run instead of matching the
         # candidate's T and T' runs row for row: when the original's T and
-        # T' runs keep different rows (uncut is false), or when it keeps
+        # T' runs keep different rows (uncut is false), or when shape keeps
         # some rows (kept_rows) with a LIMIT and an OFFSET, whose rows can
         # sit inside a tie group and come out the same both ways. Then it
-        # yields, for whether the original's runs through the end of the
-        # window, with no OFFSET (Shape#through_window), keep the same rows
-        # both ways. They do when no tie group crosses either edge of the
+        # yields, for whether shape's runs through the end of the window,
+        # with no OFFSET (Shape#through_window), keep the same rows both
+        # ways. They do when no tie group crosses either edge of the
         # window, since a group's first rows in T order and its last can
         # only be the same rows when they're all the same. Then the
-        # window's rows are fixed too, and the row for row match is sound.
+        # window's rows are fixed too. shape is the original's, and then
+        # the candidate's, once its runs match the original's row for row,
+        # since its own tie groups can hide in its window the same way.
+        # The match is sound when neither's are.
         def needed?(shape, uncut:, kept_rows:)
           return true unless uncut
           return false unless shape.cut_both_ends? && kept_rows

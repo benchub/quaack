@@ -250,6 +250,27 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
       let(:five) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 1], [4, 1], [5, 2]) }
 
+      # The original keeps b, b however its ties break. The candidate ties
+      # a, b, b, and c around the rows it keeps, so it can keep a and b, as
+      # it does here, yet both its tiebreaker runs keep b and b.
+      it "refuses a candidate whose own tie reaches past both edges of the rows it keeps" do
+        rows = rows_of(%w[id label grp], [1, "a", 10], [2, "b", 10], [3, "b", 10], [4, "c", 10], [5, "d", 5])
+        original = "SELECT label, grp FROM items ORDER BY grp DESC, label LIMIT 2 OFFSET 1"
+        candidate = "SELECT label, grp FROM (SELECT * FROM items ORDER BY label <> 'c', label OFFSET 0) s " \
+                    "ORDER BY grp DESC LIMIT 2 OFFSET 1"
+        expect(raw(original, candidate, rows:)).to eq([[%w[b 10], %w[b 10]], [%w[a 10], %w[b 10]]])
+
+        expect_refused(original, candidate, rows)
+      end
+
+      # The candidate drops id, so its tie of 2, 3, and 4 crosses both
+      # edges of the rows it keeps, and its descending run keeps 4.
+      it "runs nothing without a LIMIT for a candidate that fails row for row, though its own tie crosses an edge" do
+        expect(unlimited("SELECT id, grp FROM items ORDER BY grp, id OFFSET 1 LIMIT 2",
+                         "SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 2", five))
+          .to eq([{ match: false, mode: :ordered, rule: :value, row: 0, column: 0 }, []])
+      end
+
       it "matches a candidate that keeps another row from the tie at a LIMIT" do
         original = "SELECT id, grp FROM items ORDER BY grp LIMIT 2"
         candidate = "SELECT id, grp FROM #{moved(4)} ORDER BY grp LIMIT 2"
