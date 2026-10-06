@@ -40,12 +40,9 @@ module Quaack
       end
 
       def run(argv)
-        if argv == ["--version"]
-          @stdout.print "quaack #{VERSION}\n"
-          0
-        else
-          Arguments.not_utf8(argv, USAGE, @stderr) || subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
-        end
+        return @stdout.print("quaack #{VERSION}\n") || 0 if argv == ["--version"]
+
+        Arguments.not_utf8(argv, USAGE, @stderr) || subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
       end
 
       private
