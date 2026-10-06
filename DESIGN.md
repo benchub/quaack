@@ -1225,7 +1225,7 @@ Draw each of the two tables below, index candidates for the original query and r
 | index-test | None. | The planner never used it, or HypoPG refused it. |
 | llm-index-ideas | LLM candidates, plus any replacements requested for dropped ones: every statement the LLM wrote. | Refused by the checks, by rule, such as over the cap of five or a table the query doesn't use, plus the same index-dedupe and index-test reasons. |
 | llm-index-refine | Revised candidates, if the round ran. Say whether it ran, and if it didn't, why: the LLM had no ideas tested, or none fell short. Count how many fell short when it ran. | Same as llm-index-ideas. |
-| index-rank | Combinations tested. | Candidates outside the top three, combinations that left an index unused, and combinations that weren't the best. |
+| index-rank | Combinations tested. | Candidates it tested again that the planner never used or HypoPG couldn't create, candidates outside the top three, combinations that left an index unused, and combinations that weren't the best. |
 
 **Rewrite candidates:**
 
