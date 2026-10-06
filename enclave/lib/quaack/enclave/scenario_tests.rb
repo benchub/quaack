@@ -22,8 +22,9 @@ module Quaack
     # back. The first scenario that doesn't match disproves the candidate,
     # and the rest don't run. Its Result names the scenario, the verdict's
     # rule (such as :multiset, or :unsupported_order for a refusal) and
-    # load order. A candidate that fails in arena is disproved too, with the
-    # runner's rule (such as :query_failed) and no load order. A candidate
+    # load order. A candidate that fails in arena doesn't pass either: its
+    # Result has the runner's rule (such as :query_failed) and no load order,
+    # and RewriteFate counts that as a runner failure, not a disproof. A candidate
     # that matches every scenario passes, with scenario nil.
     #
     # honour is the DenormalizedFixture::Copies of a rule's rewrite under

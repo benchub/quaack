@@ -2350,18 +2350,7 @@ The review of 20261004-54 found:
 ### 20261004-74. Flaky `schema_dump_postgres_spec.rb:204`: pg_dump's `\restrict` token. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261004-75. Tighten the wording left over from 20261004-70.
-
-- **Status:** open
-- **Depends on:** 20261004-70 (done)
-- **From:** the review of 20261004-70.
-
-Three small accuracy fixes, all wording only:
-
-1. DESIGN.md says that after an aborted ROLLBACK the next fixture is refused, "so the step fails". On the vacuity guard's last attempt, rewrite-test instead records `passed: false` with rule `already_in_transaction`. `RewriteFate` counts that as a runner failure, not a disproof, so it's still safe. Say so.
-2. DESIGN.md says counterexamples' value evaluation "relies on" the arena session's timeout. That timeout is 0 by default, and the scenario builder's own queries run outside the runner too. Say "benefits from" and name when it applies.
-3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
-4. From the review of 20261004-71: the comments at `arena_runner.rb:24` and `arena_runner/pipeline.rb:26` no longer give a reason for hard-coding the `PGRES_*` and `PG_DIAG_SQLSTATE` values, now that pg is loaded. Give the reason, or use the `PG::` constants.
+### 20261004-75. Tighten the wording left over from 20261004-70. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query. Done, see BACKLOG-COMPLETE.md.
 

@@ -5442,3 +5442,17 @@ Also:
 9. A stage with a "came in" count but no "went on" is drawn fully unknown, while the table shows the "came in" number. Draw what's known.
 10. Six funnel specs, run with the funnel taken out of the template, fail on `undefined method 'scan' for nil` rather than on an assertion. Make them fail on their assertion.
 - **Landed:** Landed: tests pin items 1-8, funnel specs fail on a clear assertion when the SVG is missing, and a stage with only a came-in count is drawn as a hatched partial band with a solid top line. Review minors became 20261004-79.
+
+### 20261004-75. Tighten the wording left over from 20261004-70.
+
+- **Status:** done
+- **Depends on:** 20261004-70 (done)
+- **From:** the review of 20261004-70.
+
+Three small accuracy fixes, all wording only:
+
+1. DESIGN.md says that after an aborted ROLLBACK the next fixture is refused, "so the step fails". On the vacuity guard's last attempt, rewrite-test instead records `passed: false` with rule `already_in_transaction`. `RewriteFate` counts that as a runner failure, not a disproof, so it's still safe. Say so.
+2. DESIGN.md says counterexamples' value evaluation "relies on" the arena session's timeout. That timeout is 0 by default, and the scenario builder's own queries run outside the runner too. Say "benefits from" and name when it applies.
+3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
+4. From the review of 20261004-71: the comments at `arena_runner.rb:24` and `arena_runner/pipeline.rb:26` no longer give a reason for hard-coding the `PGRES_*` and `PG_DIAG_SQLSTATE` values, now that pg is loaded. Give the reason, or use the `PG::` constants.
+- **Landed:** Landed: DESIGN.md wording on the aborted ROLLBACK and session timeout, the expect_left_aborted comment, and pg's own constants in the arena runner. The review's three wording minors were fixed while landing.
