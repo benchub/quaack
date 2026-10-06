@@ -2384,19 +2384,7 @@ From the review of 20260924-10.
 - **Design:** index-rank, index-feedback, minimax.
 - **Status:** todo
 
-### 20261004-93. Result comparison: the candidate's own ties inside a LIMIT/OFFSET window.
-
-From the second review of 20260924-7. Correctness, already on main before that task.
-- The edge check looks only at the original's tie groups. A candidate whose own tie group sits in the middle of its window can pass when both its tiebreaker runs happen to return the original's rows.
-- Example: products `(a,10),(b,10),(b,10),(c,10),(d,5)`. The original `SELECT category, price ... ORDER BY price DESC, category LIMIT 2 OFFSET 1` always returns `b,b`. A candidate that drops `category` from its `ORDER BY` could also return `a,b`, yet it passes fixture-compare and production comparison.
-- A pure-Ruby fuzz of 12k cases found 42 such false passes, all on the row-for-row path. Each needed duplicate output rows, or a one-row window in the exact middle of a tie.
-- Suggested fix: when the candidate has a LIMIT and an OFFSET, run its through-window query (LIMIT+OFFSET, no OFFSET) both ways too. If the two runs differ, send it to CutTies or refuse it.
-- Probes: `files/review-20260924-7-r2/probe/` in the session scratchpad.
-
-- **Depends on:** 20260924-7.
-- **Came from:** The second review of 20260924-7 (B1).
-- **Design:** fixture-compare, result comparison.
-- **Status:** todo
+### 20261004-93. Result comparison: the candidate's own ties inside a LIMIT/OFFSET window. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-94. Result comparison: loose ends of the edge check.
 
