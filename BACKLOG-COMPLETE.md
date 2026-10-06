@@ -5531,3 +5531,14 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 - **Decided by the user (2026-10-05):** Item 1: drop fixed-text summaries on a terminal; steps flag which summaries carry counts, and those always stay. Item 3: an LLM ask line after a note under the same step still counts as a repeat, and is dropped on a terminal.
 - **Status:** done
 - **Landed:** Landed after a review with no blocking findings. On a terminal, steps without informative: true print no closing line (flagged: llm-index-ideas, llm-index-refine, rewrite-rules, llm-rewrites, operator-rewrites, plan-pruning, rewrite-correctness, rewrite-index-ideas, index-build, report); asks repeating their step or sub-step are dropped even after notes. Minor: the wait's clock on a note line became 20261004-84.
+
+### 20261004-62. A closed stderr pipe ends `quaack run` with EPIPE.
+
+The review of 20261004-7 found that when stderr is a real pipe whose reader has closed, the step's own progress lines raise `Errno::EPIPE`. That replaces the step's result and stops the run, on main as well as after 20261004-7. Nothing in `driver/lib` handles EPIPE. Decide what `quaack run` should do when its progress output goes away, such as `quaack run … 2>&1 | head`. It could stop writing progress and carry on, or exit cleanly with a clear rule. Then test it with a real `IO.pipe`.
+
+- **Depends on:** 20261004-7.
+- **Came from:** The review of 20261004-7, 2026-10-05.
+- **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-05):** Stop writing progress and keep running.
+- **Status:** done
+- **Landed:** Landed after a review with no blocking findings. QuietStream wraps the progress stream and run_command's stderr: the first failed write is swallowed, later writes are skipped, and the run keeps its exit code. Minors and the stdout case became 20261004-85.

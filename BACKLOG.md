@@ -2271,15 +2271,7 @@ From the build and review of 20261004-51:
 - **Design:** report, vacuity-guard.
 - **Status:** todo
 
-### 20261004-62. A closed stderr pipe ends `quaack run` with EPIPE.
-
-The review of 20261004-7 found that when stderr is a real pipe whose reader has closed, the step's own progress lines raise `Errno::EPIPE`. That replaces the step's result and stops the run, on main as well as after 20261004-7. Nothing in `driver/lib` handles EPIPE. Decide what `quaack run` should do when its progress output goes away, such as `quaack run … 2>&1 | head`. It could stop writing progress and carry on, or exit cleanly with a clear rule. Then test it with a real `IO.pipe`.
-
-- **Depends on:** 20261004-7.
-- **Came from:** The review of 20261004-7, 2026-10-05.
-- **Design:** Progress lines for `quaack run`.
-- **Decided by the user (2026-10-05):** Stop writing progress and keep running.
-- **Status:** todo
+### 20261004-62. A closed stderr pipe ends `quaack run` with EPIPE. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names. Done, see BACKLOG-COMPLETE.md.
 
@@ -2391,5 +2383,16 @@ From the review of 20261004-25. On a terminal, an LLM ask that repeats its step 
 
 - **Depends on:** 20261004-25.
 - **Came from:** The review of 20261004-25.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261004-85. Closed output pipes: minors from 20261004-62.
+
+1. `QuietStream` only guards `print`. Every write to it uses `print` today, but a later `puts`, `write`, `<<` or `printf` would skip the guard silently. Guard the other write methods, or pin with a spec that they're unused.
+2. `quaack setup` changed without docs or tests: `Progress` wraps every stream, so with stderr closed setup now runs its steps silently instead of dying at its first progress line, yet its own `quaack setup failed:` message is unwrapped and still raises `Errno::EPIPE` (exit 1). Decide setup's rule to match `quaack run`, test it with a real `IO.pipe`, and say so in DESIGN.md.
+3. With `quaack run … 2>&1 | head`, stdout closes too: the run tears down and writes the report, then printing the report's path raises `Errno::EPIPE` out of `cli.run`. DESIGN.md says so. Decide whether that should exit cleanly with the run's real exit code.
+
+- **Depends on:** 20261004-62.
+- **Came from:** The review of 20261004-62 and its builder.
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo
