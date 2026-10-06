@@ -20,8 +20,9 @@ module Quaack
         NAME = /\A[a-z][a-z0-9-]{0,62}\z/
 
         # How long a call may run, in seconds, before the driver kills it.
-        # Some steps run many queries, so it's generous. The driver's config
-        # passes its own to the transport.
+        # Some steps run many queries, so it's generous. `quaack start` and
+        # `quaack run` pass enclave_timeout_seconds from the driver config,
+        # or run's --enclave-timeout-seconds, in its place.
         DEFAULT_TIMEOUT = 3600
         # The most a call may print. Far more than any step's messages.
         MAX_OUTPUT_BYTES = 64 * 1024 * 1024
@@ -57,7 +58,7 @@ module Quaack
         def call(subcommand, args: {}, input: nil, &progress)
           argv = argv(subcommand, args)
           run = run(argv, stdin(input), on_line(progress))
-          raise Reply.failure(argv.first, run.status, rule: run.limit.name), cause: nil if run.limit
+          raise limited(argv.first, run), cause: nil if run.limit
 
           Result.new(messages: Reply.parse(run.stdout, run.status, subcommand: argv.first))
         end
@@ -68,6 +69,13 @@ module Quaack
           Child.run(command(argv), stdin:, timeout: @timeout, max_output_bytes: @max_output_bytes, on_line:)
         rescue Child::NotStarted
           raise EnclaveError.new(subcommand: argv.first, rule: "not_started"), cause: nil
+        end
+
+        # The EnclaveError for a run a limit ended, with the timeout when
+        # that was the limit.
+        def limited(subcommand, run)
+          timeout_seconds = @timeout if run.limit == :timeout
+          Reply.failure(subcommand, run.status, rule: run.limit.name, timeout_seconds:)
         end
 
         # What Child calls with each line: it hands progress each progress
