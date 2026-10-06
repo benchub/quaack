@@ -301,17 +301,7 @@ Still open from the reviews of 20260922-10:
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Status:** todo
 
-### 20260923-58. Enclave CLI loose ends.
-
-Still open from the reviews of 20260922-4 and 20260923-53:
-- **Needs a decision:** `JSON.parse` uses 50 to 135 times the input size on dense arrays. A 64 MB `[0,0,...]` peaked at 3.2 GB. Lower `Input::MAX_BYTES`, or cap the element count before parsing.
-
-- **Depends on:** 20260923-53.
-- **Came from:** The reviews of 20260922-4 and 20260923-53.
-- **Design:** Where QUAACK runs.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Cap the element count before parsing.
-- **Status:** todo
+### 20260923-58. Enclave CLI loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260924-1. 5a-4 loose ends. Done, see BACKLOG-COMPLETE.md.
 

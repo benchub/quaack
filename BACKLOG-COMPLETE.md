@@ -5624,3 +5624,16 @@ Fix: never mark json, jsonb or any array column (or a domain over one) as low-ca
 - **Decided by the user (2026-10-05):** Store the baseline's values and check them.
 - **Status:** done
 - **Landed:** Landed after a review with no blocking findings. The baseline is in memory (index-rank re-measures it each run), so no store change: Baseline and Result carry a frozen, hidden copy of their literal values, and rank checks values as well as names, raising its fixed-message ArgumentError on a mismatch. Minors and the by-name-only comparisons elsewhere: 20261004-92.
+
+### 20260923-58. Enclave CLI loose ends.
+
+Still open from the reviews of 20260922-4 and 20260923-53:
+- **Needs a decision:** `JSON.parse` uses 50 to 135 times the input size on dense arrays. A 64 MB `[0,0,...]` peaked at 3.2 GB. Lower `Input::MAX_BYTES`, or cap the element count before parsing.
+
+- **Depends on:** 20260923-53.
+- **Came from:** The reviews of 20260922-4 and 20260923-53.
+- **Design:** Where QUAACK runs.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Cap the element count before parsing.
+- **Status:** done
+- **Landed:** Landed: input and intake plans over 2,000,000 commas, colons and opening brackets outside strings are refused before parsing.
