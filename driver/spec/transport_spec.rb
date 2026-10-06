@@ -721,6 +721,8 @@ RSpec.describe Quaack::Driver::Transport do
        %({"type":"report","original_plan":[#{node.sub("12", "12.0")}}],"rewrites":[]}),
        %({"type":"report","original_plan":[],"rewrites":[{"plan":[#{node.sub("null", %(["#{sentinel}"]))}}]}]}),
        %({"type":"report","original_plan":[],"rewrites":["#{sentinel}"]}),
+       %({"type":"report","original_plan":[],"rewrites":{}}),
+       %({"type":"report","original_plan":[],"rewrites":{"#{sentinel}":{"plan":[#{node}}]}}}),
        %({"type":"report","rewrites":[]}), %({"type":"report","original_plan":[]})].each do |line|
         error = refusal(line.sub(/}\z/, "#{sources}}"))
 

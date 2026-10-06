@@ -283,6 +283,8 @@ RSpec.describe Quaack::Enclave::Egress do
        ->(n) { [{ plan: [n.merge("filter" => EGRESS_SENTINEL)] }] }],
       ["a value in place of a rewrite", nil, ->(_) { [EGRESS_SENTINEL] }],
       ["a value in place of the rewrites", nil, ->(_) { EGRESS_SENTINEL }],
+      ["an empty Hash in place of the rewrites", nil, ->(_) { {} }],
+      ["a Hash in place of the rewrites", nil, ->(n) { { EGRESS_SENTINEL => { "plan" => [n] } } }],
       ["no rewrites", nil, ->(_) {}]
     ].each do |what, original, changed|
       it "refuses one with #{what}, without quoting it" do
