@@ -27,9 +27,10 @@ module Quaack
         # Reading takes up to about 190 bytes for each comma, colon, and
         # opening bracket outside a string, so 64 MB of [0,0,...] took
         # 3.2 GB. Past this many, input is refused unparsed, which keeps the
-        # worst, a million {}, near 400 MB. EXPLAIN's JSON, even without its
-        # indentation, has one every 10.5 bytes or more, so a plan intake
-        # takes, at most 16 MB, has under 1.6 million, and a step's input,
+        # worst parse near 550 MB. EXPLAIN's JSON, even without its
+        # indentation, measured about one every 10.7 bytes or more on very
+        # wide plans, so a plan intake takes, at most 16 MB, stays under
+        # about 1.6 million, and a step's input,
         # from one LLM reply of at most 8,000 tokens, far fewer.
         MAX_ELEMENTS = 2_000_000
         # What counts toward MAX_ELEMENTS, and the quote that starts a string,
