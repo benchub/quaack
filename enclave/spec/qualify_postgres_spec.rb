@@ -153,6 +153,63 @@ RSpec.describe "quaacks qualify, against a real server" do
     end
   end
 
+  context "with the default search path, and a schema named for a role other than the operator's" do
+    let(:plan_settings) { {} }
+    let(:role) { "app_#{SecureRandom.hex(4)}" }
+
+    after { production.server.admin.exec(%(DROP ROLE IF EXISTS "#{role}")) }
+
+    def other_role_schema(ddl)
+      production.server.admin.exec(%(CREATE ROLE "#{role}"))
+      conn = production.connect
+      conn.exec(%(CREATE SCHEMA "#{role}"; #{ddl}))
+      conn.close
+    end
+
+    it "refuses it as ambiguous_user_schema when that schema has a table the query names, and stores nothing" do
+      pgpass
+      other_role_schema(%(CREATE TABLE "#{role}".orders (id int, note text)))
+
+      expect_failed(qualify, "ambiguous_user_schema")
+    end
+
+    it "qualifies the query when that schema has only what the query doesn't name, as a monitoring tool's does" do
+      pgpass
+      other_role_schema(<<~SQL)
+        CREATE FUNCTION "#{role}".explain_statement(l_query text, OUT explain json) RETURNS SETOF json
+          LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+      SQL
+
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relations")).to eq([{ "schema" => "public", "name" => "orders" },
+                                              { "schema" => "public", "name" => "items" }])
+    end
+  end
+
+  # An operator role that can't read part of the catalog. The read fails
+  # inside Production.read_only, which names it production_read_failed,
+  # with its SQLSTATE, as the other production steps do.
+  context "when the operator's role can't read a catalog the check needs" do
+    let(:role) { "operator_#{SecureRandom.hex(4)}" }
+
+    after { production.server.admin.exec(%(DROP ROLE IF EXISTS "#{role}")) }
+
+    it "fails as production_read_failed, and stores nothing" do
+      production.server.admin.exec(%(CREATE ROLE "#{role}" LOGIN PASSWORD '#{production.password}'))
+      conn = production.connect
+      conn.exec("REVOKE SELECT ON pg_catalog.pg_inherits FROM PUBLIC")
+      conn.close
+      pgpass(user: role)
+
+      outcome = qualify(env: operator_env(PGUSER: role))
+
+      expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+        .to eq([%({"type":"error","step":"qualify","rule":"production_read_failed","sqlstate":"42501"}\n), "", 70])
+      expect(%w[qualified_query relations].select { stored.entry?(it) }).to eq([])
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
+
   it "fails a bad password as production_connection_failed, naming neither the host nor the user" do
     pgpass(user: sentinels.word, password: sentinels.text)
 

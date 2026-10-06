@@ -7,6 +7,7 @@ require_relative "from_functions"
 require_relative "relation_qualifier"
 require_relative "supported_sql"
 require_relative "table_name"
+require_relative "user_schema"
 
 module Quaack
   module Enclave
@@ -57,9 +58,9 @@ module Quaack
     # user_function_in_from (see FromFunctions).
     #
     # The other refusals: parse_error, unsupported_construct, bad_search_path
-    # (the Settings' search_path doesn't read), unknown_relation (a name
-    # doesn't resolve, or a qualified one doesn't exist), and
-    # deparse_mismatch (see Deparse).
+    # (the Settings' search_path doesn't read), ambiguous_user_schema (see
+    # UserSchema), unknown_relation (a name doesn't resolve, or a qualified
+    # one doesn't exist), and deparse_mismatch (see Deparse).
     #
     # Every refusal raises Error, with the rule and a message naming only
     # the rule and shape-class names: relations, schemas, node types, and
@@ -153,11 +154,12 @@ module Quaack
         rule = "bad_search_path"
         RelationQualifier.search_path(settings, connection)
         rule = "unknown_relation"
-        RelationQualifier.qualify_tree(tree, settings, connection)
+        resolved = RelationQualifier.qualify_tree(tree, settings, connection)
+        UserSchema.check!(tree, resolved, settings, connection)
         Deparse.faithful_parse(tree)
       rescue RelationQualifier::Error => e
         raise Error.new(rule, e.message), cause: nil
-      rescue Deparse::Error => e
+      rescue Deparse::Error, UserSchema::Error => e
         raise Error.from(e), cause: nil
       end
 

@@ -331,6 +331,149 @@ RSpec.describe Quaack::Enclave::Relations do
     end
   end
 
+  # "$user" is the role QUAACK connects as (postgres here), not the
+  # application's. A schema named for another role is one the
+  # application's "$user" could have meant, so a path with "$user" is
+  # refused when such a schema has something the query names without a
+  # schema, and could change what it resolves to.
+  describe 'a "$user" entry in the search path' do
+    let(:role) { "app_#{SecureRandom.hex(4)}" }
+
+    before { conn.exec(%(CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}")) }
+    after do
+      conn.exec(%(SET client_min_messages = warning; DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE "#{role}"))
+    end
+
+    def user_schema_refusal(schema, what)
+      rejected("ambiguous_user_schema",
+               "ambiguous_user_schema: the search path has \"$user\", and schema #{schema}, named for a role " \
+               "other than the one QUAACK connects as, has #{what}")
+    end
+
+    it "is refused when the other role's schema has a relation the query names without a schema" do
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect { check("SELECT id FROM orders") }.to user_schema_refusal(role, "a relation named orders")
+    end
+
+    it "is refused with a path that lists \"$user\", quoted or not, before the schema the name resolved to" do
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect { check("SELECT id FROM orders", { "search_path" => 'sales, "$user", public' }) }
+        .to user_schema_refusal(role, "a relation named orders")
+      expect { check("SELECT id FROM orders", { "search_path" => "sales, $user, public" }) }
+        .to user_schema_refusal(role, "a relation named orders")
+    end
+
+    it "passes when \"$user\" comes after the schema the name resolved to" do
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect(check("SELECT id FROM orders", { "search_path" => 'public, "$user"' }).relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    it "passes when the name resolved to pg_catalog first, but not when the path lists \"$user\" before it" do
+      conn.exec(%(CREATE TABLE "#{role}".pg_class (oid oid)))
+
+      expect(check("SELECT oid FROM pg_class").relations).to eq([table_name("pg_catalog", "pg_class")])
+      expect { check("SELECT oid FROM pg_class", { "search_path" => '"$user", pg_catalog' }) }
+        .to user_schema_refusal(role, "a relation named pg_class")
+    end
+
+    it "passes when the query names that relation with its schema" do
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect(check("SELECT id FROM public.orders").relations).to eq([table_name("public", "orders")])
+    end
+
+    it "is refused when the other role's schema has a function the query calls without a schema" do
+      conn.exec(%(CREATE FUNCTION "#{role}".lower(text) RETURNS text LANGUAGE sql AS 'SELECT $1'))
+
+      expect { check("SELECT id FROM public.orders WHERE lower(status) = 'x'") }
+        .to user_schema_refusal(role, "a function named lower")
+    end
+
+    it "passes when the query calls that function with its schema" do
+      conn.exec(%(CREATE FUNCTION "#{role}".lower(text) RETURNS text LANGUAGE sql AS 'SELECT $1'))
+
+      expect(check("SELECT id FROM public.orders WHERE pg_catalog.lower(status) = 'x'").relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    it "passes when the other role's schema has a relation, not a function, of a name the query calls" do
+      conn.exec(%(CREATE TABLE "#{role}".lower (id int)))
+
+      expect(check("SELECT id FROM public.orders WHERE lower(status) = 'x'").relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    # The application's "$user" would have found the other role's orders
+    # where QUAACK's found the operator's own.
+    it "is refused when the name resolved through the operator's own schema, at \"$user\"" do
+      conn.exec(%(CREATE SCHEMA postgres; CREATE TABLE postgres.orders (id int)))
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect { check("SELECT id FROM orders") }.to user_schema_refusal(role, "a relation named orders")
+    ensure
+      conn.exec("DROP SCHEMA IF EXISTS postgres CASCADE")
+    end
+
+    it "is refused when the other role's schema has a type the query names without a schema" do
+      conn.exec(%(CREATE TYPE "#{role}".mood AS ENUM ('ok')))
+
+      expect { check("SELECT id FROM public.orders WHERE status::mood = 'ok'") }
+        .to user_schema_refusal(role, "a type named mood")
+    end
+
+    it "passes when the query names that type with its schema" do
+      conn.exec(%(CREATE TYPE "#{role}".mood AS ENUM ('ok'); CREATE TYPE public.mood AS ENUM ('ok')))
+
+      expect(check("SELECT id FROM public.orders WHERE status::public.mood = 'ok'").relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    # Monitoring tools make a role and a schema of the same name, with their
+    # own functions and tables, which the application's queries never name.
+    it "passes when other roles' schemas have only what the query doesn't name, as monitoring tools' do" do
+      datadog = "datadog_#{SecureRandom.hex(4)}"
+      pganalyze = "pganalyze_#{SecureRandom.hex(4)}"
+      conn.exec(<<~SQL)
+        CREATE ROLE "#{datadog}"; CREATE SCHEMA "#{datadog}";
+        CREATE FUNCTION "#{datadog}".explain_statement(l_query text, OUT explain json) RETURNS SETOF json
+          LANGUAGE plpgsql AS 'BEGIN RETURN; END';
+        CREATE ROLE "#{pganalyze}"; CREATE SCHEMA "#{pganalyze}";
+        CREATE TABLE "#{pganalyze}".state (id int);
+        CREATE FUNCTION "#{pganalyze}".get_stat_statements() RETURNS SETOF int LANGUAGE sql AS 'SELECT 1';
+      SQL
+
+      result = check("SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id WHERE lower(o.status) = 'x'")
+
+      expect(result.relations).to eq([table_name("public", "orders"), table_name("public", "customers")])
+    ensure
+      conn.exec(<<~SQL)
+        SET client_min_messages = warning;
+        DROP SCHEMA IF EXISTS "#{datadog}" CASCADE; DROP ROLE IF EXISTS "#{datadog}";
+        DROP SCHEMA IF EXISTS "#{pganalyze}" CASCADE; DROP ROLE IF EXISTS "#{pganalyze}";
+      SQL
+    end
+
+    it "passes when the path has no \"$user\"" do
+      conn.exec(%(CREATE TABLE "#{role}".orders (id int)))
+
+      expect(check("SELECT id FROM orders", { "search_path" => "sales, public" }).relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    it "passes when the only schema named for a role is the operator's own, and resolves through it" do
+      conn.exec("CREATE SCHEMA postgres; CREATE TABLE postgres.orders (id int)")
+
+      expect(check("SELECT id FROM orders", { "search_path" => '"$user", public' }).relations)
+        .to eq([table_name("postgres", "orders")])
+    ensure
+      conn.exec("DROP SCHEMA IF EXISTS postgres CASCADE")
+    end
+  end
+
   # A user-defined function in FROM could read a view or foreign table qualify
   # never sees, so only pg_catalog's set-returning functions may go there.
   describe "a function in FROM" do
@@ -448,6 +591,17 @@ RSpec.describe Quaack::Enclave::Relations do
         expect(sql.scan(sentinel).size).to eq(7)
         refusal(sql, rule, settings).each { |text| expect(text).not_to include(sentinel) }
       end
+    end
+
+    it "never shows up when it's refused as ambiguous_user_schema" do
+      role = "app_#{SecureRandom.hex(4)}"
+      conn.exec(%(CREATE ROLE "#{role}"; CREATE SCHEMA "#{role}"; CREATE TABLE "#{role}".orders (id int)))
+      sql = self.class.planted(sentinel)
+
+      expect(sql.scan(sentinel).size).to eq(7)
+      refusal(sql, "ambiguous_user_schema").each { |text| expect(text).not_to include(sentinel) }
+    ensure
+      conn.exec(%(DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE IF EXISTS "#{role}"))
     end
 
     it "stays out of the relations it lists, though the query keeps it" do

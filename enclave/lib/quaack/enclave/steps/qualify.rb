@@ -14,7 +14,9 @@ module Quaack
       # the server with the operator's libpq setup, as inventory does
       # (Inventory::Production.connect), and resolves names through the
       # search_path in the plan's SETTINGS, or the default path without one.
-      # Only the catalog is read, with plain SELECTs.
+      # Only the catalog is read, with plain SELECTs, inside one
+      # Production.read_only transaction, so a failed read is
+      # production_read_failed, with its SQLSTATE.
       #
       # It writes two entries, for the later steps of 3 to read:
       #
@@ -40,7 +42,9 @@ module Quaack
 
         def check(production, query, settings)
           connection = Enclave::Inventory::Production.connect(production)
-          Relations.check(query, settings, connection)
+          Enclave::Inventory::Production.read_only(connection) do
+            Relations.check(query, settings, connection)
+          end
         ensure
           connection&.close
         end
