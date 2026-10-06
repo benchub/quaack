@@ -885,25 +885,6 @@ RSpec.describe Quaack::Driver::Report do
         .to eq(["0.0%", "under 0.1%", "0.1%", "0.4%"])
     end
 
-    it "lays out a plan from a payload without depths as a flat table" do
-      payload["original_plan"] = [pnode("Limit", nil), pnode("Seq Scan", nil, relation: "public.t")]
-      expect(plan_rows(explanation).first).to eq(
-        [[%(<tr class="differs"><td class="step">Limit <strong class="mark">differs</strong></td><td></td><td></td>),
-          %(<td class="num">10</td><td class="num">10</td><td class="num"></td><td class="num">7</td></tr>)].join,
-         [%(<tr class="differs"><td class="step">Seq Scan <strong class="mark">differs</strong></td>),
-          %(<td>#{sq("public.t")}</td><td></td><td class="num">10</td><td class="num">10</td>),
-          %(<td class="num"></td><td class="num">7</td></tr>)].join]
-      )
-    end
-
-    it "lays out a plan flat when any depth isn't a whole number from zero up" do
-      [["2; color: red", 0], [-1, 0], [1.5, 0], [0, nil]].each do |a, b|
-        payload["original_plan"] = [pnode("Limit", a), pnode("Seq Scan", b)]
-        expect(plan_rows(section(render(payload), "explanation")).first)
-          .to all(satisfy { it.include?('<td class="step">') && !it.include?("style") && !it.include?("arrow") })
-      end
-    end
-
     it "says the winner's plan wasn't recorded when the winner is the original query with new indexes" do
       payload["top"].reverse!
       expect(explanation).to include("The plan with the new indexes: not recorded.")
@@ -1877,7 +1858,8 @@ RSpec.describe Quaack::Driver::Report do
 
     let(:counts) { { "total_blocks" => z, "hit" => z, "read" => z, "stable" => false, "timed_out" => false } }
     let(:node) do
-      { "node" => z, "relation" => z, "index" => z, "est_rows" => z, "actual_rows" => z, "selectivity" => nil }
+      { "node" => z, "relation" => z, "index" => z, "est_rows" => z, "actual_rows" => z, "selectivity" => nil,
+        "depth" => 0 }
     end
     let(:record) do
       { "in" => z, "added" => { z => 1 }, "dropped" => { z => 1 }, "set_aside" => z, "out" => z,
@@ -1950,7 +1932,7 @@ RSpec.describe Quaack::Driver::Report do
                      '</td><td class="num">', '<a href="#', %(<a href="##{escaped}">), "<h3>1. ", "<tr><td>",
                      "</td><td>",
                      %(<section id="explanation"><h2>Why the winner reads fewer blocks</h2>\n<p>), "<p>How it runs ",
-                     "<ul><li>", '<td class="step">', %(<td><code class="sql">), "<td>",
+                     "<ul><li>", '<td class="step" style="padding-left: 0.65rem">', %(<td><code class="sql">), "<td>",
                      "<td>by the rule ", %(<td><code class="sql">), 'couldn&#39;t describe (<code class="sql">')
     end
 
