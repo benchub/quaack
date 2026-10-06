@@ -344,10 +344,10 @@ RSpec.describe Quaack::Enclave::Relations do
       conn.exec(%(SET client_min_messages = warning; DROP SCHEMA IF EXISTS "#{role}" CASCADE; DROP ROLE "#{role}"))
     end
 
-    def user_schema_refusal(schema, what)
+    def user_schema_refusal(schema, what, whose: "a role other than the one QUAACK connects as")
       rejected("ambiguous_user_schema",
-               "ambiguous_user_schema: the search path has \"$user\", and schema #{schema}, named for a role " \
-               "other than the one QUAACK connects as, has #{what}")
+               "ambiguous_user_schema: the search path has \"$user\", and schema #{schema}, named for #{whose}, " \
+               "has #{what}, so #{what.split.last} could resolve to a schema the application never saw")
     end
 
     it "is refused when the other role's schema has a relation the query names without a schema" do
@@ -464,13 +464,175 @@ RSpec.describe Quaack::Enclave::Relations do
         .to eq([table_name("public", "orders")])
     end
 
-    it "passes when the only schema named for a role is the operator's own, and resolves through it" do
+    # The application may not have run as the operator's role, so its
+    # "$user" may not have found the operator's schema.
+    it "is refused when the operator's own schema has a relation the name would resolve to" do
       conn.exec("CREATE SCHEMA postgres; CREATE TABLE postgres.orders (id int)")
 
-      expect(check("SELECT id FROM orders", { "search_path" => '"$user", public' }).relations)
-        .to eq([table_name("postgres", "orders")])
+      expect { check("SELECT id FROM orders", { "search_path" => '"$user", public' }) }
+        .to user_schema_refusal("postgres", "a relation named orders", whose: "the role QUAACK connects as")
     ensure
       conn.exec("DROP SCHEMA IF EXISTS postgres CASCADE")
+    end
+
+    it "is refused when the operator's own schema has a function the query calls without a schema" do
+      conn.exec("CREATE SCHEMA postgres")
+      conn.exec("CREATE FUNCTION postgres.slugify(text) RETURNS text LANGUAGE sql AS 'SELECT $1'")
+
+      expect { check("SELECT id FROM orders WHERE slugify(status) = 'x'", { "search_path" => '"$user", public' }) }
+        .to user_schema_refusal("postgres", "a function named slugify", whose: "the role QUAACK connects as")
+    ensure
+      conn.exec("DROP SCHEMA IF EXISTS postgres CASCADE")
+    end
+
+    # A role schema the path also lists explicitly, as an application whose
+    # role and schema are both myapp often has.
+    describe "a role's schema the path also lists" do
+      let(:myapp) { "myapp_#{SecureRandom.hex(4)}" }
+
+      before do
+        conn.exec(<<~SQL)
+          CREATE ROLE "#{myapp}"; CREATE SCHEMA "#{myapp}";
+          CREATE TABLE "#{myapp}".widgets (id int);
+          CREATE FUNCTION "#{myapp}".slugify(text) RETURNS text LANGUAGE sql AS 'SELECT $1';
+        SQL
+      end
+
+      after do
+        conn.exec(%(SET client_min_messages = warning; DROP SCHEMA "#{myapp}" CASCADE; DROP ROLE "#{myapp}"))
+      end
+
+      it "passes when the name resolved to that schema, right after \"$user\"" do
+        path = { "search_path" => %("$user", "#{myapp}", public) }
+
+        expect(check("SELECT id FROM widgets WHERE slugify('a') = 'a'", path).relations)
+          .to eq([table_name(myapp, "widgets")])
+      end
+
+      it "passes when the path lists that schema before \"$user\"" do
+        conn.exec(%(CREATE TABLE public.widgets (id int)))
+        path = { "search_path" => %(public, "#{myapp}", "$user") }
+
+        expect(check("SELECT id FROM widgets WHERE slugify(status) = 'x'", path).relations)
+          .to eq([table_name("public", "widgets")])
+        path = { "search_path" => %("#{myapp}", "$user", public) }
+        expect(check("SELECT id FROM orders WHERE slugify(status) = 'x'", path).relations)
+          .to eq([table_name("public", "orders")])
+      end
+
+      it "is refused when a schema between \"$user\" and it has the relation" do
+        conn.exec(%(CREATE TABLE public.widgets (id int)))
+
+        expect { check("SELECT id FROM widgets", { "search_path" => %("$user", public, "#{myapp}") }) }
+          .to user_schema_refusal(myapp, "a relation named widgets")
+      end
+
+      it "is refused when a schema between \"$user\" and it has a function of that name" do
+        conn.exec(%(CREATE FUNCTION public.slugify(varchar) RETURNS text LANGUAGE sql AS 'SELECT $1'))
+
+        path = { "search_path" => %("$user", public, "#{myapp}") }
+
+        expect { check("SELECT id FROM orders WHERE slugify(status) = 'x'", path) }
+          .to user_schema_refusal(myapp, "a function named slugify")
+      end
+    end
+
+    # Postgres, and RelationQualifier, skip a schema the connecting role
+    # has no USAGE on, so one before "$user" doesn't settle what the name
+    # resolves to.
+    it "is refused when the schema before \"$user\" that has the name is one the operator can't use" do
+      operator = "operator_#{SecureRandom.hex(4)}"
+      conn.exec(<<~SQL)
+        CREATE ROLE "#{operator}"; CREATE SCHEMA AUTHORIZATION "#{operator}";
+        CREATE TABLE public.widgets (id int); CREATE TABLE "#{operator}".widgets (id int);
+        CREATE TABLE "#{role}".widgets (id int); CREATE TYPE public.mood AS ENUM ('ok');
+        CREATE TYPE "#{role}".mood AS ENUM ('ok');
+        REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+      SQL
+      conn.exec(%(SET ROLE "#{operator}"))
+      path = { "search_path" => 'public, "$user"' }
+
+      expect { check("SELECT id FROM widgets", path) }.to user_schema_refusal(role, "a relation named widgets")
+      expect { check("SELECT id FROM \"#{operator}\".widgets WHERE 'ok'::mood IS NULL", path) }
+        .to user_schema_refusal(role, "a type named mood")
+    ensure
+      conn.exec(<<~SQL)
+        RESET ROLE; SET client_min_messages = warning; GRANT USAGE ON SCHEMA public TO PUBLIC;
+        DROP SCHEMA IF EXISTS "#{operator}" CASCADE; DROP ROLE IF EXISTS "#{operator}";
+      SQL
+    end
+
+    # Postgres takes the first type and collation of a name in the path, as
+    # it does relations, so one in pg_catalog, which comes first unless the
+    # path lists it, can't be shadowed.
+    it "passes when a type or collation the query names resolved before \"$user\", not when \"$user\" is first" do
+      conn.exec(%(CREATE TYPE "#{role}".text AS ENUM ('ok'); CREATE COLLATION "#{role}"."C" (locale = 'C')))
+      sql = %(SELECT id FROM public.orders WHERE status::text = 'x' ORDER BY status COLLATE "C")
+
+      expect(check(sql).relations).to eq([table_name("public", "orders")])
+      expect { check(sql, { "search_path" => '"$user", pg_catalog, public' }) }
+        .to user_schema_refusal(role, "a type named text")
+    end
+
+    it "is refused when the other role's schema has a collation the query names without a schema" do
+      conn.exec(%(CREATE COLLATION "#{role}".mine (locale = 'C')))
+
+      expect { check("SELECT id FROM public.orders ORDER BY status COLLATE mine") }
+        .to user_schema_refusal(role, "a collation named mine")
+    end
+
+    it "passes when the query names a function or type with its schema, and that's also its name in a role's schema" do
+      conn.exec(<<~SQL)
+        CREATE FUNCTION "#{role}".slugify(text) RETURNS text LANGUAGE sql AS 'SELECT $1';
+        CREATE FUNCTION public.slugify(text) RETURNS text LANGUAGE sql AS 'SELECT $1';
+        CREATE TYPE "#{role}".mood AS ENUM ('ok'); CREATE TYPE public.mood AS ENUM ('ok');
+      SQL
+
+      expect(check("SELECT id FROM public.orders WHERE public.slugify(status)::public.mood = 'ok'").relations)
+        .to eq([table_name("public", "orders")])
+    end
+
+    # Postgres chooses among operators of a name as it does functions.
+    describe "an operator in another role's schema" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE OPERATOR "#{role}".= (LEFTARG = text, RIGHTARG = text, FUNCTION = pg_catalog.texteq);
+          CREATE OPERATOR "#{role}".>= (LEFTARG = bigint, RIGHTARG = bigint, FUNCTION = pg_catalog.int8ge);
+          CREATE OPERATOR "#{role}".< (LEFTARG = text, RIGHTARG = text, FUNCTION = pg_catalog.text_lt);
+          CREATE OPERATOR "#{role}".<> (LEFTARG = text, RIGHTARG = text, FUNCTION = pg_catalog.textne);
+        SQL
+      end
+
+      {
+        "SELECT id FROM orders WHERE status = 'x'" => "=",
+        "SELECT id FROM orders WHERE status IN ('a', 'b')" => "=",
+        "SELECT id FROM orders WHERE status IN (SELECT status FROM orders)" => "=",
+        "SELECT id FROM orders WHERE status = ANY (ARRAY['a'])" => "=",
+        "SELECT id FROM orders WHERE status <> ALL (SELECT status FROM orders)" => "<>",
+        "SELECT id FROM orders WHERE NULLIF(status, 'a') IS NULL" => "=",
+        "SELECT id FROM orders WHERE status IS DISTINCT FROM 'a'" => "=",
+        "SELECT CASE status WHEN 'a' THEN 1 END FROM orders" => "=",
+        "SELECT o.id FROM orders o JOIN orders p USING (status)" => "=",
+        "SELECT o.id FROM orders o NATURAL JOIN orders p" => "=",
+        "SELECT id FROM orders WHERE id BETWEEN 1 AND 2" => ">=",
+        "SELECT id FROM orders WHERE id NOT BETWEEN SYMMETRIC 1 AND 2" => "<",
+        "SELECT id FROM orders ORDER BY status USING <" => "<"
+      }.each do |sql, operator|
+        it "is refused when the query uses one of its name without a schema: #{sql}" do
+          expect { check(sql) }.to user_schema_refusal(role, "an operator named #{operator}")
+        end
+      end
+
+      it "passes when the query uses none of its names, though it has a searched CASE and EXISTS" do
+        sql = "SELECT CASE WHEN id > 1 THEN 1 END FROM orders WHERE EXISTS (SELECT 1 FROM orders WHERE id > 2)"
+
+        expect(check(sql).relations).to eq([table_name("public", "orders")])
+      end
+
+      it "passes when the query names the operator with its schema" do
+        expect(check("SELECT id FROM orders WHERE status OPERATOR(pg_catalog.=) 'x'").relations)
+          .to eq([table_name("public", "orders")])
+      end
     end
   end
 
