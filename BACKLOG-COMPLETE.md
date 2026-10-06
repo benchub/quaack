@@ -5470,3 +5470,16 @@ Three small accuracy fixes, all wording only:
 4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
 5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.
 - **Landed:** Landed items 1-4: words for every LLM index refusal (checked by a cross-gem spec), All sources together from the burndown over every search, DESIGN's index-rank row, and the refinement round replacing index-rank's didn't-run record. Item 5 became 20261004-80; review minors became 20261004-81.
+
+### 20261004-22. Port check: minor findings.
+
+Minor findings from the review of 20261004-18:
+
+- **Bad encodings raise. Done:** landed in 6e520d5. Invalid UTF-8 in the driver's other arguments went to 20261004-38. The original finding was: `Protocol::Port.valid?` (`protocol/lib/quaack/protocol/port.rb:17`) raises on invalid UTF-8 (`ArgumentError`) or UTF-16 input (`Encoding::CompatibilityError`) instead of returning false. So `--port $'\xff'` gives `internal_error` instead of `bad_port` or `bad_run_server_port`. The old run-server check tested `ascii_only?` first. Check `valid_encoding? && ascii_only?` first, with a spec for each case.
+- **The operator's commands don't get the port.** `run_server_command`, `destroy_command` and `memory_command` get only `{server}`, not production's port. Add a `{port}` placeholder only if a script needs it, and ask the user first.
+
+- **Depends on:** 20261004-18.
+- **Came from:** The review of 20261004-18.
+- **Design:** intake, run-server.
+- **Status:** done
+- **Landed:** Closed: the user decided not to add a {port} placeholder (2026-10-05); the encoding item had already landed.

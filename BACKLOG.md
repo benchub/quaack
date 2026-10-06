@@ -225,6 +225,7 @@ Still open from the reviews of 20260922-31:
 - **Came from:** Both reviews of 20260922-31.
 - **Design:** index-from-plan.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Treat a non-MCV literal as unknown when MCVs plus nulls cover about all rows.
 - **Status:** todo
 
 ### 20260923-25. Static checker loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -246,6 +247,7 @@ Still open from the reviews of 20260922-43:
 - **Came from:** Both reviews of 20260922-43, the second review of 20260923-29, and the builder's notes.
 - **Design:** rewrite-test and vacuity-guard.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Emit a marker the report counts, and list NATURAL JOIN as unsupported in v1.
 - **Status:** todo
 
 ### 20260923-31. Finish 5a-3 dedupe and filter. Done, see BACKLOG-COMPLETE.md.
@@ -308,6 +310,7 @@ Still open from the reviews of 20260922-4 and 20260923-53:
 - **Came from:** The reviews of 20260922-4 and 20260923-53.
 - **Design:** Where QUAACK runs.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Cap the element count before parsing.
 - **Status:** todo
 
 ### 20260924-1. 5a-4 loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -349,6 +352,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Came from:** The reviews of 20260922-47 and 20260923-54.
 - **Design:** fixture-compare.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Build both: the precise tie check at a cut, and comparing intervals by value.
 - **Status:** todo
 
 ### 20260924-8. Burndown loose ends.
@@ -362,6 +366,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Came from:** Both reviews of 20260922-61.
 - **Design:** burndown.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Build all three.
 - **Status:** todo
 
 ### 20260924-9. Load-order loose ends.
@@ -374,6 +379,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Came from:** Both reviews of 20260924-5.
 - **Design:** fixture-compare.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Fix self-referencing FKs (reverse them level by level, or keep such tables in forward order, whichever is sound) and add a third load order.
 - **Status:** todo
 
 ### 20260924-10. index-rank loose ends.
@@ -385,6 +391,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 - **Came from:** The reviews of 20260922-35.
 - **Design:** index-rank.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Store the baseline's values and check them.
 - **Status:** todo
 
 ### 20260924-11. Finish 3g redaction. Done, see BACKLOG-COMPLETE.md.
@@ -505,6 +512,7 @@ Still open from the first review of 20260922-12:
 - **Came from:** The first review of 20260922-12.
 - **Design:** What goes into the enclave.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Pin the arena session's TimeZone to UTC, and refuse the special date/time inputs ('now', 'today' and the like).
 - **Status:** todo
 
 ### 20260925-3. Plan gate loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -547,6 +555,7 @@ Still open from the first review of 20260925-8:
 - **Came from:** The first review of 20260925-8.
 - **Design:** input, qualify.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Wrap `Relations.check` in `Inventory::Production.read_only`, without a failing test first.
 - **Status:** todo
 
 ### 20260925-19. Schema-dump loose ends. Done, see BACKLOG-COMPLETE.md.
@@ -718,6 +727,7 @@ Check constraints and triggers likely have the same gaps as items 2 to 4.
 - **Depends on:** 20260929-21.
 - **Came from:** The build of 20260929-21.
 - **Design:** schema-dump, racetrack-setup.
+- **Decided by the user (2026-10-05):** Refuse cleanly, and list it as unsupported in v1.
 - **Status:** todo
 
 ### 20260929-27. LLM seam: minor findings. Done, see BACKLOG-COMPLETE.md.
@@ -1247,6 +1257,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Came from:** The build of those tasks.
 - **Design:** Where QUAACK runs, LLM client.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Load `anthropic` lazily, and change `runtime_boundary_spec` to build a client first.
 - **Status:** todo
 
 ### 20260926-46. Driver crashes on the first counterexample round. Done, see BACKLOG-COMPLETE.md.
@@ -1325,6 +1336,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Came from:** Their build and reviews.
 - **Design:** qualify, volatility, input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Rewrite them (schema-qualify functions, types, operators and names inside string literals).
 - **Status:** todo
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
@@ -2136,17 +2148,7 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 
 ### 20261004-21. Make `incomplete` failures diagnosable. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-22. Port check: minor findings.
-
-Minor findings from the review of 20261004-18:
-
-- **Bad encodings raise. Done:** landed in 6e520d5. Invalid UTF-8 in the driver's other arguments went to 20261004-38. The original finding was: `Protocol::Port.valid?` (`protocol/lib/quaack/protocol/port.rb:17`) raises on invalid UTF-8 (`ArgumentError`) or UTF-16 input (`Encoding::CompatibilityError`) instead of returning false. So `--port $'\xff'` gives `internal_error` instead of `bad_port` or `bad_run_server_port`. The old run-server check tested `ascii_only?` first. Check `valid_encoding? && ascii_only?` first, with a spec for each case.
-- **The operator's commands don't get the port.** `run_server_command`, `destroy_command` and `memory_command` get only `{server}`, not production's port. Add a `{port}` placeholder only if a script needs it, and ask the user first.
-
-- **Depends on:** 20261004-18.
-- **Came from:** The review of 20261004-18.
-- **Design:** intake, run-server.
-- **Status:** todo (only the `{port}` item is left, and it needs the user)
+### 20261004-22. Port check: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-23. rewrite-test spends ~20 minutes of Ruby CPU per rewrite. Done, see BACKLOG-COMPLETE.md.
 
@@ -2166,7 +2168,8 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 - **Depends on:** 20261004-19, 20261004-21.
 - **Came from:** The review of 20261004-19.
 - **Design:** Progress lines for `quaack run`.
-- **Status:** todo (needs user input on 1 and 3)
+- **Decided by the user (2026-10-05):** Item 1: drop fixed-text summaries on a terminal; steps flag which summaries carry counts, and those always stay. Item 3: an LLM ask line after a note under the same step still counts as a repeat, and is dropped on a terminal.
+- **Status:** todo
 
 ### 20261004-26. ssh_failed and incomplete: resume advice after teardown, and the ControlMaster note. Done, see BACKLOG-COMPLETE.md.
 
@@ -2290,6 +2293,7 @@ The review of 20261004-7 found that when stderr is a real pipe whose reader has 
 - **Depends on:** 20261004-7.
 - **Came from:** The review of 20261004-7, 2026-10-05.
 - **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-05):** Stop writing progress and keep running.
 - **Status:** todo
 
 ### 20261004-63. `production_connection_failed` for a run without a recorded port: check the port source it names. Done, see BACKLOG-COMPLETE.md.
@@ -2374,6 +2378,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 
 ### 20261004-80. Indexes table: which source proposed each built index.
 
+- **Decided by the user (2026-10-05):** Count it in every source's row, with a note that rows can overlap.
 - **Status:** todo
 - **Depends on:** 20261004-77 (done)
 - **Came from:** item 5 of 20261004-77, which its builder left undone because it isn't cheap.
@@ -2395,3 +2400,12 @@ In the report's Indexes table, "Built", "not better" and "ranked" per source sti
 
 1. `IndexDdlCheck::RULES` is kept by hand. A new refusal added to `IndexDdlCheck`, `SupportedSql`, `VolatilityCheck` or `Deparse` without updating `RULES` and the samples in `enclave/spec/index_ddl_check_spec.rb` fails nothing, so the cross-gem words spec misses it. Find a way for a new rule to fail a test, such as a spec that scans those files for the rules they raise and compares them with `RULES`.
 2. "Planner ignored" in the Indexes table doesn't count index-rank's re-test drops (`never_used`, `hypopg_refused`). That matches the LLM row and DESIGN.md, so it's a choice of definition. Consider saying so in the table's note.
+
+### 20261004-82. Plan tree table: a blocks column.
+
+- **Status:** todo
+- **Depends on:** 20261004-72
+- **Came from:** item 5 of 20261004-72. The user decided this on 2026-10-05.
+- **Design:** report, egress (20261003-5's boundary).
+
+Send per-node block counts from the enclave in the report payload's plan nodes, as numbers only (shared hit and read blocks, from EXPLAIN (ANALYZE, BUFFERS)), and show a blocks column in the "Why the winner reads fewer blocks" plan tree table. Extend `Protocol::PlanNodes`' shape check (from 20261004-72) to allow exactly the new keys, and update DESIGN.md's boundary text. Test with planted sentinels that nothing but the counts crosses.
