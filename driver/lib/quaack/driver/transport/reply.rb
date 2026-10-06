@@ -3,6 +3,7 @@
 require "json"
 require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
+require "quaack/protocol/plan_nodes"
 require_relative "../enclave_error"
 require_relative "error_fields"
 require_relative "lexical"
@@ -176,12 +177,25 @@ module Quaack
 
         # Whether line is a message of a type on the whitelist, with only the
         # fields it lists for it. A burndown must also pass
-        # Protocol::Burndown.valid?, as egress checks before sending one.
+        # Protocol::Burndown.valid?, and a report's plans
+        # Protocol::PlanNodes.valid?, as egress checks before sending either.
         def message?(line)
           fields = FIELDS[line["type"]]
           return false unless fields && (line.keys - ["type"] - fields).empty?
 
-          line["type"] != "burndown" || Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
+          case line["type"]
+          when "burndown" then Protocol::Burndown.valid?(stages: line["stages"], totals: line["totals"])
+          when "report" then report_plans?(line)
+          else true
+          end
+        end
+
+        # Whether a report's original_plan, and the plan of each of its
+        # rewrites unless it's nil, are plan nodes, as egress checks.
+        def report_plans?(line)
+          rewrites = line["rewrites"]
+          Protocol::PlanNodes.valid?(line["original_plan"]) && rewrites.is_a?(Array) &&
+            rewrites.all? { it.is_a?(Hash) && (it["plan"].nil? || Protocol::PlanNodes.valid?(it["plan"])) }
         end
 
         def failure(subcommand, status, error = nil, rule: "incomplete")

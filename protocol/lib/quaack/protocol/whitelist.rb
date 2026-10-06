@@ -170,9 +170,12 @@ module Quaack
       # burndown's stages and totals, as the burndown message carries
       # them. rule_bugs is the rule-made rewrites a test disproved
       # (DESIGN.md's rewrite-rules): each one's entry name, rule names, and the step that
-      # disproved it (rewrite-test, counterexamples, or result-comparison). Its values are nested and go
-      # out unchecked, so the enclave's ReportPayload step is where this is
-      # reviewed. Sources, rule names, fates, scenarios, and steps are the
+      # disproved it (rewrite-test, counterexamples, or result-comparison). Its values are nested.
+      # The plans, original_plan and each rewrite's plan, are checked on
+      # the way out: the egress function sends a report only if each passes
+      # Protocol::PlanNodes.valid?, so every node has exactly the fields
+      # above, each of its type. The rest go out unchecked, so the enclave's
+      # ReportPayload step is where they're reviewed. Sources, rule names, fates, scenarios, and steps are the
       # enclave's own constants: its RewriteSource and RewriteFate send
       # one only if it's on their own lists, never what a store entry holds
       # as it is.
