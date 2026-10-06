@@ -537,6 +537,31 @@ RSpec.describe Quaack::Enclave::Relations do
       end
     end
 
+    # Postgres, and RelationQualifier, skip a schema the connecting role
+    # has no USAGE on, so one before "$user" doesn't settle what the name
+    # resolves to.
+    it "is refused when the schema before \"$user\" that has the name is one the operator can't use" do
+      operator = "operator_#{SecureRandom.hex(4)}"
+      conn.exec(<<~SQL)
+        CREATE ROLE "#{operator}"; CREATE SCHEMA AUTHORIZATION "#{operator}";
+        CREATE TABLE public.widgets (id int); CREATE TABLE "#{operator}".widgets (id int);
+        CREATE TABLE "#{role}".widgets (id int); CREATE TYPE public.mood AS ENUM ('ok');
+        CREATE TYPE "#{role}".mood AS ENUM ('ok');
+        REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+      SQL
+      conn.exec(%(SET ROLE "#{operator}"))
+      path = { "search_path" => 'public, "$user"' }
+
+      expect { check("SELECT id FROM widgets", path) }.to user_schema_refusal(role, "a relation named widgets")
+      expect { check("SELECT id FROM \"#{operator}\".widgets WHERE 'ok'::mood IS NULL", path) }
+        .to user_schema_refusal(role, "a type named mood")
+    ensure
+      conn.exec(<<~SQL)
+        RESET ROLE; SET client_min_messages = warning; GRANT USAGE ON SCHEMA public TO PUBLIC;
+        DROP SCHEMA IF EXISTS "#{operator}" CASCADE; DROP ROLE IF EXISTS "#{operator}";
+      SQL
+    end
+
     # Postgres takes the first type and collation of a name in the path, as
     # it does relations, so one in pg_catalog, which comes first unless the
     # path lists it, can't be shadowed.

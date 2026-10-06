@@ -18,8 +18,10 @@ module Quaack
     # - which relation, type, or collation a name the query uses without a
     #   schema resolves to. Postgres takes the first of the name in the
     #   path, so the schema matters only when no schema before "$user" has
-    #   the name, and the path doesn't list it as the first schema after
-    #   "$user" that has the name; or
+    #   the name (one the connecting role has no USAGE on doesn't count,
+    #   since Postgres skips it), and the path doesn't list it as the first
+    #   schema after "$user" that has the name (here every schema counts,
+    #   so an unusable one refuses rather than passes); or
     # - which function or operator a name the query uses without a schema
     #   resolves to. Postgres chooses among every one of the name in the
     #   path, by argument types and then path order, so the schema matters
@@ -71,7 +73,8 @@ module Quaack
           SELECT kind, name, position FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS w(kind, name, position)
         ),
         holders AS (
-          SELECT n.nspname, wanted.kind, wanted.name, wanted.position
+          SELECT n.nspname, wanted.kind, wanted.name, wanted.position,
+            pg_catalog.has_schema_privilege(n.oid, 'USAGE') AS usable
           FROM pg_catalog.pg_namespace n
           JOIN wanted ON CASE wanted.kind
             WHEN 'relation' THEN EXISTS (
@@ -98,7 +101,8 @@ module Quaack
               AND nearer.listed_at > $4::int AND nearer.listed_at < shadow.listed_at))
           AND NOT (shadow.kind = ANY ($5::text[]) AND EXISTS (
             SELECT FROM listed found
-            WHERE (found.kind, found.name) = (shadow.kind, shadow.name) AND found.listed_at < $4::int))
+            WHERE (found.kind, found.name) = (shadow.kind, shadow.name) AND found.listed_at < $4::int
+              AND found.usable))
         ORDER BY shadow.nspname, shadow.position
         LIMIT 1
       SQL
