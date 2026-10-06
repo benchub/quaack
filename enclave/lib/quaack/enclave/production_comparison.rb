@@ -33,12 +33,14 @@ module Quaack
     #   same refusals apply (unsupported_order): when a column is left out
     #   of the tiebreaker, no two of the original's rows may agree on every
     #   tiebreaker column but differ in a left-out one. When the original's
-    #   T and T' sorted digests match, and it has no LIMIT and OFFSET
-    #   together, the candidate's T and T' ordered digests must match the
-    #   original's. Otherwise a LIMIT or OFFSET may cut a tie group, and
-    #   ResultComparison::CutTies checks the candidate on row hashes, from
-    #   both queries' runs with and without their LIMIT and OFFSET, as
-    #   fixture-compare does (HashedRuns).
+    #   T and T' sorted digests match, and either it has no LIMIT and
+    #   OFFSET together or its runs through the end of the window
+    #   (Shape#through_window) match too, the candidate's T and T' ordered
+    #   digests must match the original's. Otherwise a LIMIT or OFFSET may
+    #   cut a tie group, and ResultComparison::CutTies checks the candidate
+    #   on row hashes, from both queries' runs with and without their LIMIT
+    #   and OFFSET, as fixture-compare does (HashedRuns). A run without a
+    #   LIMIT that times out refuses, unsupported_order.
     # - subset (LIMIT or OFFSET, no ORDER BY): the original as written gives
     #   the expected count. The candidate's row hashes, which number at most
     #   that, are tallied, and the original without its LIMIT streams past
@@ -160,8 +162,8 @@ module Quaack
         HashedRuns.new(run, positions).verdict([original_shape, candidate_shape], originals)
       end
 
-      def tiebreaker_runs(run, shape, positions, limited: true)
-        [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it, limited:), positions) }
+      def tiebreaker_runs(run, shape, positions)
+        [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it), positions) }
       end
 
       def positions(run, original_shape, candidate_shape, types)
@@ -185,7 +187,10 @@ module Quaack
 
       # The candidate's verdict from the original's tiebreaker runs: they
       # match row for row, or, when CutTies.needed?, ResultComparison::CutTies'
-      # check runs on row hashes, with this class as its source.
+      # check runs on row hashes, with this class as its source. Its runs
+      # without a LIMIT keep only row hashes, and when one times out, the
+      # comparison refuses with unsupported_order, as it did before the
+      # check could recover a tie at a cut.
       class HashedRuns
         def initialize(run, positions)
           @run = run
@@ -196,12 +201,18 @@ module Quaack
           return ProductionComparison.tiebroken(@run, originals, shapes.last, @positions) unless cut?(shapes, originals)
 
           @columns = originals.first.types.size
-          rule, = ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self)
+          rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
           rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
         end
 
         def fetch(shape, limited:)
-          ProductionComparison.tiebreaker_runs(@run, shape, @positions, limited:).map(&:hashes)
+          [false, true].map do |descending|
+            @run.digest(shape.with_tiebreaker(@positions, descending:, limited:)).hashes
+          rescue TimedOut
+            raise if limited
+
+            throw :full_timed_out, ResultComparison::CutTies::REFUSED
+          end
         end
 
         def key(row) = row
@@ -212,7 +223,9 @@ module Quaack
 
         def cut?(shapes, originals)
           uncut = originals.map(&:sorted).uniq.one?
-          ResultComparison::CutTies.needed?(shapes.first, uncut:, kept_rows: originals.first.hashes.any?)
+          ResultComparison::CutTies.needed?(shapes.first, uncut:, kept_rows: originals.first.hashes.any?) do
+            [false, true].map { @run.digest(shapes.first.through_window(@positions, descending: it)).sorted }.uniq.one?
+          end
         end
       end
 

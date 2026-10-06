@@ -31,8 +31,19 @@ module Quaack
         # candidate's T and T' runs row for row: when the original's T and
         # T' runs keep different rows (uncut is false), or when it keeps
         # some rows (kept_rows) with a LIMIT and an OFFSET, whose rows can
-        # sit inside a tie group and come out the same both ways.
-        def needed?(shape, uncut:, kept_rows:) = !uncut || (shape.cut_both_ends? && kept_rows)
+        # sit inside a tie group and come out the same both ways. Then it
+        # yields, for whether the original's runs through the end of the
+        # window, with no OFFSET (Shape#through_window), keep the same rows
+        # both ways. They do when no tie group crosses either edge of the
+        # window, since a group's first rows in T order and its last can
+        # only be the same rows when they're all the same. Then the
+        # window's rows are fixed too, and the row for row match is sound.
+        def needed?(shape, uncut:, kept_rows:)
+          return true unless uncut
+          return false unless shape.cut_both_ends? && kept_rows
+
+          !yield
+        end
 
         # The whole check, as [rule, fields]: rule is nil for a match, or
         # :row_count, :value, or :unsupported_order, and fields holds a

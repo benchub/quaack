@@ -6,6 +6,17 @@ require "quaack/enclave/table_name"
 
 # fixture-compare against a real arena: load a fixture with ArenaRunner, run the
 # original and a candidate, and compare them under each ordering rule.
+# Records the ordered queries a transaction runs without a LIMIT.
+class SentQueries < SimpleDelegator
+  def unlimited = (@unlimited ||= [])
+
+  def query(sql)
+    select = PgQuery.parse(sql).tree.stmts.first.stmt.select_stmt
+    unlimited << sql if select && !select.sort_clause.empty? && select.limit_count.nil?
+    super
+  end
+end
+
 RSpec.describe Quaack::Enclave::ResultComparison do
   let(:conn) { racetrack_and_arena.arena.connection }
   let(:runner) { Quaack::Enclave::ArenaRunner.new(conn) }
@@ -220,6 +231,23 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
 
       let(:four) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1]) }
+
+      # The ordered queries run without a LIMIT.
+      def unlimited(original, candidate, rows)
+        runner.with_fixture(rows) do |tx|
+          spy = SentQueries.new(tx)
+          [fields(described_class.compare(spy, original:, candidate:)), spy.unlimited]
+        end
+      end
+
+      it "runs nothing without a LIMIT when a LIMIT and an OFFSET keep a whole tie group" do
+        original = "SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 3"
+        candidate = "SELECT id, grp FROM #{moved(4)} ORDER BY grp OFFSET 1 LIMIT 3"
+        wrong = "SELECT id, grp FROM items ORDER BY grp OFFSET 2 LIMIT 3"
+        expect([unlimited(original, candidate, five), unlimited(original, wrong, five).first])
+          .to eq([[{ match: true, mode: :ordered, rule: nil, row: nil, column: nil }, []],
+                  { match: false, mode: :ordered, rule: :value, row: 0, column: 0 }])
+      end
       let(:five) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 1], [4, 1], [5, 2]) }
 
       it "matches a candidate that keeps another row from the tie at a LIMIT" do

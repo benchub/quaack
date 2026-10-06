@@ -52,8 +52,10 @@ module Quaack
     #   row between those and match both runs. A LIMIT with an OFFSET can
     #   also keep rows from the middle of a tie group, with rows of the
     #   group cut off on both sides, and then T and T' keep the same rows
-    #   anyway. In both cases CutTies (result_comparison/cut_ties.rb) checks
-    #   the candidate instead: it runs both queries both ways without their
+    #   anyway, unless the original's runs through the end of the window
+    #   (Shape#through_window) show no tie group crosses its edges. In both
+    #   cases CutTies (result_comparison/cut_ties.rb) checks the candidate
+    #   instead: it runs both queries both ways without their
     #   LIMIT and OFFSET to find the tie groups, and the candidate's rows
     #   before the cut's group must be the original's, in order, and the
     #   rest must come from that group, however either query's ties break.
@@ -256,15 +258,21 @@ module Quaack
 
         # positions are 1-based output column positions. descending sorts
         # each DESC NULLS FIRST, the exact reverse of the default. Unless
-        # limited, it drops the LIMIT and OFFSET too.
+        # limited, it drops the LIMIT and OFFSET too. limited :through adds
+        # the OFFSET to the LIMIT instead, and drops the OFFSET.
         def with_tiebreaker(positions, descending: false, limited: true)
           kept([:with_tiebreaker, positions.dup.freeze, descending, limited]) do
             build do |select|
               positions.each { |position| select.sort_clause << position_sort(position, descending) }
               unlimit(select) unless limited
+              ResultComparison.through_offset!(select) if limited == :through
             end
           end
         end
+
+        # with_tiebreaker, with a LIMIT of the LIMIT and the OFFSET added
+        # together, and no OFFSET: the rows up to the end of the ones kept.
+        def through_window(positions, descending: false) = with_tiebreaker(positions, descending:, limited: :through)
 
         def probe = kept(:probe) { "SELECT * FROM (#{build { nil }}) quaack_probe LIMIT 0" }
 
@@ -330,6 +338,25 @@ module Quaack
         node.a_const.ival.ival if node.node == :a_const && node.a_const.val == :ival
       end
 
+      # Adds a SelectStmt's OFFSET to its LIMIT, and drops the OFFSET.
+      def through_offset!(select)
+        select.limit_count = sum(select.limit_count, select.limit_offset)
+        select.limit_offset = nil
+      end
+
+      # The expression node left::bigint + right::bigint.
+      def sum(left, right)
+        plus = PgQuery::Node.new(string: PgQuery::String.new(sval: "+"))
+        PgQuery::Node.new(a_expr: PgQuery::A_Expr.new(kind: :AEXPR_OP, name: [plus], lexpr: bigint(left),
+                                                      rexpr: bigint(right)))
+      end
+
+      def bigint(node)
+        names = %w[pg_catalog int8].map { PgQuery::Node.new(string: PgQuery::String.new(sval: it)) }
+        type_name = PgQuery::TypeName.new(names:, typemod: -1)
+        PgQuery::Node.new(type_cast: PgQuery::TypeCast.new(arg: node, type_name:))
+      end
+
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
       def compare(transaction, original:, candidate:)
@@ -365,13 +392,14 @@ module Quaack
         originals = both_ways(transaction, original_shape, positions)
         return refused unless ties_faithful?(originals.first, positions)
 
-        return tiebroken(transaction, originals, candidate_shape, positions) unless cut_tie?(original_shape, originals)
-
-        cut_tie(transaction, originals, [original_shape, candidate_shape], positions)
+        cut_tie(transaction, originals, [original_shape, candidate_shape], positions) ||
+          tiebroken(transaction, originals, candidate_shape, positions)
       end
 
-      def cut_tie?(shape, originals)
-        CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?)
+      def cut_tie?(transaction, shape, originals, positions)
+        CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?) do
+          ties_uncut?(*[false, true].map { transaction.query(shape.through_window(positions, descending: it)) })
+        end
       end
 
       def both_ways(transaction, shape, positions, limited: true)
@@ -402,8 +430,11 @@ module Quaack
         ResultComparator.compare(ascending, descending, mode: :multiset).match?
       end
 
-      # The original's LIMIT or OFFSET cuts a tie group: CutTies' check.
+      # CutTies' check, when the original's LIMIT or OFFSET cuts a tie
+      # group, or nil.
       def cut_tie(transaction, originals, shapes, positions)
+        return unless cut_tie?(transaction, shapes.first, originals, positions)
+
         rule, fields = CutTies.check(shapes, originals.map(&:rows),
                                      FixtureRuns.new(transaction, positions, originals.first.types))
         ResultComparator::Verdict.for(:ordered, rule, **fields)
