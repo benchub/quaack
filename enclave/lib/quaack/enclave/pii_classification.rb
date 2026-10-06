@@ -36,9 +36,11 @@ module Quaack
     #   A negative n_distinct means the values mostly don't repeat, as in a
     #   small table of emails, so they aren't categories and never leave.
     #   A structured column (PlannerStatistics's structured_columns: json,
-    #   jsonb, an array, or a domain over one) is never low-cardinality,
-    #   however few values it holds: a document or list can hold facts
-    #   about a person, so its values never leave. Its frequencies follow
+    #   jsonb, xml, tsvector, tsquery, hstore, a composite type, a range, a
+    #   multirange, an array, or a domain over one) is never
+    #   low-cardinality, however few values it holds: a document, list,
+    #   record, or span can hold facts about a person, so its values never
+    #   leave. Its frequencies follow
     #   the rules above.
     #   This is the set Dedupe takes.
     #

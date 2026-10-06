@@ -115,6 +115,19 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       )
       expect(described_class.load(store)).to eq(result)
     end
+
+    # statistics always lists each table's structured columns. Without the
+    # list, classify can't tell which columns' values must never leave, so
+    # it fails, and stores nothing, rather than taking none to be structured.
+    it "fails on a statistics entry without the structured columns" do
+      Quaack::Enclave::PlannerStatistics.run(store:, relations: [accounts], connection: conn)
+      data = store.read("statistics")
+      data["tables"].each { it.delete("structured_columns") }
+      store.write("statistics", data)
+
+      expect { described_class.run(store:, config:) }.to raise_error(KeyError, /structured_columns/)
+      expect(store.entry?("classification")).to be(false)
+    end
   end
 
   describe "what may leave" do
@@ -225,6 +238,7 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect(stored["orders"]["total_cents"]["most_common_vals"]).to include(sentinels.number.to_s)
       expect(stored["orders"]["created_at"]["most_common_vals"]).to include(start_with(sentinels.date.iso8601))
       expect(stored["orders"]["status"]["most_common_vals"]).to include(sentinels.word)
+      expect(stored["customers"]["preferences"]["most_common_vals"]).to include(sentinels.json)
 
       LeakCheck.check_scanner!(sentinels)
       found = LeakCheck.findings(sentinels, objects: { outbound: result.outbound_statistics })
@@ -307,6 +321,95 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       # json's through its expression index.
       sets.each_value { expect(LeakCheck.findings(it, objects: { stored: })).not_to be_empty }
       expect(stored_docs["columns"]["j"]["most_common_vals"]).to be_nil
+
+      sets.each_value do |set|
+        LeakCheck.check_scanner!(set)
+        expect(LeakCheck.findings(set, objects: { outbound: res.outbound_statistics })).to eq([])
+      end
+    end
+  end
+
+  # DESIGN.md's classify: hstore, xml, tsvector, tsquery, composite, range,
+  # and multirange columns, and a domain over one, are structured too, so
+  # they're never low-cardinality and their MCV values never leave. Each
+  # column holds two values, one of them its own sentinel set's. ANALYZE
+  # keeps no MCV list for xml, which has no equality operator, or for
+  # tsvector, ranges, and multiranges, which have their own statistics, but
+  # an expression index over one does.
+  describe "other structured columns" do
+    let(:sets) { %w[h x tv tq c r mr dh].to_h { [it, LeakCheck::Sentinels.new] } }
+    let(:things) { table("public", "things") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE SCHEMA ext;
+        CREATE EXTENSION hstore SCHEMA ext;
+        CREATE TYPE pair AS (label text, n int);
+        CREATE DOMAIN tag_map AS ext.hstore;
+        CREATE TABLE things (kind text, h ext.hstore, x xml, tv tsvector, tq tsquery, c pair, r int4range,
+                             mr int4multirange, dh tag_map);
+        INSERT INTO things
+        SELECT CASE WHEN i % 2 = 0 THEN 'odd' ELSE 'even' END,
+               CASE WHEN i % 2 = 0 THEN ext.hstore('note', '#{sets["h"].text}') ELSE ''::ext.hstore END,
+               CASE WHEN i % 2 = 0 THEN '<n>#{sets["x"].text}</n>' ELSE '<n/>' END::xml,
+               CASE WHEN i % 2 = 0 THEN to_tsvector('simple', '#{sets["tv"].word}') ELSE ''::tsvector END,
+               CASE WHEN i % 2 = 0 THEN '#{sets["tq"].word}' ELSE 'plain' END::tsquery,
+               CASE WHEN i % 2 = 0 THEN ROW('#{sets["c"].text}', 1)::pair ELSE ROW('plain', 1)::pair END,
+               CASE WHEN i % 2 = 0 THEN int4range(#{sets["r"].number}, #{sets["r"].number + 1})
+                    ELSE int4range(1, 2) END,
+               CASE WHEN i % 2 = 0 THEN int4multirange(int4range(#{sets["mr"].number}, #{sets["mr"].number + 1}))
+                    ELSE int4multirange(int4range(1, 2)) END,
+               CASE WHEN i % 2 = 0 THEN ext.hstore('note', '#{sets["dh"].text}') ELSE ''::ext.hstore END::tag_map
+        FROM generate_series(1, 3000) AS i;
+        CREATE INDEX things_x_text ON things ((x::text));
+        CREATE INDEX things_tv_text ON things ((tv::text));
+        CREATE INDEX things_r_lower ON things ((lower(r)));
+        CREATE INDEX things_mr_lower ON things ((lower(mr)));
+        CREATE INDEX things_c_label ON things (((c).label));
+        CREATE STATISTICS things_h_ext (mcv) ON kind, h FROM things;
+        ANALYZE things;
+      SQL
+    end
+
+    def things_result = classify([things], with: Quaack::Enclave::Config.new({}))
+
+    def stored_things = store.read("statistics")["tables"].first
+
+    def outbound_things(res) = res.outbound_statistics["tables"].first
+
+    it "classes them as neither PII nor low-cardinality, and sends their frequencies but not their values" do
+      res = things_result
+      expect(classes(res, things)).to eq(%w[h x tv tq c r mr dh].to_h { [it, [false, false]] }
+                                           .merge("kind" => [false, true]))
+      expect(res.low_cardinality).to eq([[things, "kind"]])
+      %w[h tq c dh].each do |column|
+        expect(stored_things["columns"][column]["most_common_vals"].size).to eq(2)
+        expect(outbound(res, things, column)["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+        expect(outbound(res, things, column)["most_common_vals"]).to be_nil
+      end
+    end
+
+    it "sends an expression index's or statistics object's frequencies over one, but not its values" do
+      res = things_result
+      indexes = outbound_things(res)["indexes"].to_h { [it["name"], it["columns"].first] }
+      extended = outbound_things(res)["extended_statistics"].first
+
+      %w[things_x_text things_tv_text things_r_lower things_mr_lower things_c_label].each do |name|
+        expect(indexes[name]["most_common_freqs"]).to include(be_within(0.01).of(0.5))
+        expect(indexes[name]["most_common_vals"]).to be_nil
+      end
+      expect(extended["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+      expect(extended.values_at("most_common_vals", "most_common_val_nulls")).to eq([nil, nil])
+    end
+
+    it "sends none of their values" do
+      res = things_result
+      stored = JSON.generate(stored_things)
+
+      # The exposure is real: every sentinel is in the stored statistics,
+      # xml's, tsvector's, and the ranges' through their expression indexes.
+      sets.each_value { expect(LeakCheck.findings(it, objects: { stored: })).not_to be_empty }
+      %w[x tv r mr].each { expect(stored_things["columns"][it]["most_common_vals"]).to be_nil }
 
       sets.each_value do |set|
         LeakCheck.check_scanner!(set)
