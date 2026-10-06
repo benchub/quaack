@@ -43,6 +43,14 @@ RSpec.describe Quaack::Driver::Counterexamples do
     expect(system).not_to include("RETURNING, or OVERRIDING")
   end
 
+  it "tells the LLM to write fixed dates and times, not the clock (task 20261004-95)" do
+    fake.reply("llm-counterexamples", { "inserts" => [] })
+    described_class.new(client:).ask(payload)
+    system = fake.asks.first.body[:system]
+    expect(system).to include("now()", "CURRENT_DATE", "'now', 'today', 'tomorrow', or 'yesterday'",
+                              "fixed dates and times")
+  end
+
   describe "the rounds" do
     let(:outcomes) { [] }
     let(:compared) { [] }
