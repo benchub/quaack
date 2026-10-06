@@ -2411,3 +2411,16 @@ From the builder and review of 20261004-80.
 - **Came from:** The builder and review of 20261004-80.
 - **Design:** report, burndown.
 - **Status:** todo
+
+### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values.
+
+Found by the builder of 20260926-45 (item 4, the JSON harness column). DESIGN.md's classify section says text[], json and jsonb values never go out. But classification marks a jsonb column with few repeating values as low-cardinality and sends its MCV values: with a nullable `customers.preferences jsonb` column added to the harness and a JSON sentinel planted there, `pii_classification_postgres_spec` found `{"note": "sentinel…-json"}` in the outbound statistics. This is a trust-boundary leak on main.
+
+Fix: never mark json, jsonb or any array column (or a domain over one) as low-cardinality, so its MCV values never go out; its frequencies follow the existing rules. Expression-index and extended-statistics MCVs over such a column follow from their base columns. Land 20260926-45's item 4 with it: its patch, which adds the jsonb column and sentinel to the harness, is in the session's `files/build-20260926-45/item4-json-harness-column.patch`. Also check other places that send values (llm-index-ideas payload, report, dedupe) for the same types.
+
+**Later, ask the user:** whether other structured types (hstore, xml, composite types, ranges) should be refused the same way. This task only does what DESIGN.md already says.
+
+- **Depends on:** none.
+- **Came from:** The build of 20260926-45.
+- **Design:** classify, trust boundary.
+- **Status:** todo
