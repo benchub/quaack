@@ -15,7 +15,7 @@ RSpec.describe Quaack::Enclave::UnusedSetAside do
 
   def result(candidate, used: false, refusal: nil)
     plans = refusal ? {} : { "slow" => sct::Plan.new(used:, total_cost: 1.0, canonical_plan: nil, raw_plan: nil) }
-    sct::Result.new(candidate:, size: refusal ? nil : 8192, plans:, refusal:)
+    sct::Result.new(candidate:, size: refusal ? nil : 8192, plans:, refusal:, literal_sets: {})
   end
 
   def select(*results) = described_class.select(sct::Report.new(baseline: nil, results:), low)

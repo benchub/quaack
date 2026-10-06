@@ -8,6 +8,23 @@ require_relative "redaction"
 
 module Quaack
   module Enclave
+    # SingleCandidateTest's Baseline and Result record the literal sets
+    # they were measured with. The values are value-class, so their inspect
+    # leaves them out.
+    module RecordedLiteralSets
+      # A frozen copy of valid literal sets (SingleCandidateTest.literal_sets?).
+      def self.copy(sets) = sets.to_h { |set, values| [set, values.map { it&.dup&.freeze }.freeze] }.freeze
+
+      def inspect
+        shown = to_h.map { |name, value| "#{name}=#{name == :literal_sets ? "<redacted>" : value.inspect}" }
+        "#<data #{self.class} #{shown.join(", ")}>"
+      end
+
+      def to_s = inspect
+
+      def pretty_print(pp) = pp.text(inspect)
+    end
+
     # DESIGN.md's index-test: test each index candidate on its own with HypoPG, on the
     # racetrack. plan-pruning and rewrite-index-ideas call it the same way for a rewrite
     # candidate, with the rewrite's query in place of the original's.
@@ -16,8 +33,9 @@ module Quaack
     #                           query: "SELECT * FROM public.orders WHERE status = $1",
     #                           literal_sets: { slow: ["open"], worst: ["shipped"], typical: ["held"] },
     #                           candidates: survivors)
-    #   # => Report(baseline: Baseline(plans: { slow: Plan, ... }),
-    #   #           results: [Result(candidate:, size:, plans: { slow: Plan, ... }, refusal: nil), ...])
+    #   # => Report(baseline: Baseline(plans: { slow: Plan, ... }, literal_sets:),
+    #   #           results: [Result(candidate:, size:, plans: { slow: Plan, ... }, refusal: nil,
+    #   #                            literal_sets:), ...])
     #
     # connection is a live racetrack connection with the hypopg extension,
     # not inside a transaction. query is the text of one statement, with $n
@@ -102,7 +120,8 @@ module Quaack
     # - Enclave-only: Plan#canonical_plan (see 20260923-28), and
     #   Result#candidate, since a partial candidate's predicate can hold a
     #   literal.
-    # - Value-class: Plan#raw_plan, which holds the literals.
+    # - Value-class: Plan#raw_plan, which holds the literals, and
+    #   Baseline#literal_sets and Result#literal_sets, which are them.
     # Nothing here goes through egress yet.
     module SingleCandidateTest
       # rule is one of :in_transaction, :bad_literal, :indexes_hidden,
@@ -123,13 +142,17 @@ module Quaack
       Report = Data.define(:baseline, :results)
 
       # The plans with no hypothetical index. Here and in Result, plans maps
-      # each literal set's name to its Plan. Each baseline Plan's used is
-      # false.
-      Baseline = Data.define(:plans)
+      # each literal set's name to its Plan, and literal_sets is a frozen
+      # copy of the literal_sets it was measured with, so index-rank can
+      # check that its baseline and results were measured with the same
+      # values. Each baseline Plan's used is false.
+      Baseline = Data.define(:plans, :literal_sets) { include RecordedLiteralSets }
 
       # One candidate's test. size is hypopg_relation_size in bytes. A
       # refused candidate has a refusal, a nil size, and no plans.
-      Result = Data.define(:candidate, :size, :plans, :refusal) do
+      Result = Data.define(:candidate, :size, :plans, :refusal, :literal_sets) do
+        include RecordedLiteralSets
+
         # True if the planner used the candidate for any literal set.
         def used? = plans.values.any?(&:used)
       end
@@ -182,24 +205,21 @@ module Quaack
 
       def run(connection, query:, literal_sets:, candidates:, types: nil)
         session(connection, query:, literal_sets:, types:) do |s|
-          baseline = Baseline.new(plans: plans(s.measure([])))
-          Report.new(baseline:, results: candidates.map { |c| result(c, s.measure([c])) }.freeze)
+          sets = RecordedLiteralSets.copy(literal_sets)
+          baseline = Baseline.new(plans: plans(s.measure([])), literal_sets: sets)
+          Report.new(baseline:, results: candidates.map { |c| result(c, s.measure([c]), sets) }.freeze)
         end
       end
 
-      def result(candidate, measured)
-        return Result.new(candidate:, size: nil, plans: {}.freeze, refusal: measured.refusal) if measured.refusal
-
-        Result.new(candidate:, size: measured.sizes.first, plans: plans(measured), refusal: nil)
+      def result(candidate, measured, literal_sets)
+        Result.new(candidate:, size: measured.sizes&.first, plans: plans(measured), refusal: measured.refusal,
+                   literal_sets:)
       end
 
       # Plans for one candidate, or for the baseline, which has no index to
       # use.
       def plans(measured)
-        measured.plans.transform_values do |p|
-          Plan.new(used: p.used.any?, total_cost: p.total_cost, canonical_plan: p.canonical_plan,
-                   raw_plan: p.raw_plan)
-        end.freeze
+        measured.plans.transform_values { |p| Plan.new(**p.to_h, used: p.used.any?) }.freeze
       end
 
       # Checks the arguments, opens a Session, yields it, and returns what

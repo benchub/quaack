@@ -607,6 +607,23 @@ RSpec.describe Quaack::Enclave::SingleCandidateTest do
     expect(report.to_s).not_to include(sentinel)
   end
 
+  # index-rank checks these against its own literal sets (20260924-10).
+  it "records the literal values the baseline and each result were measured with, frozen and out of inspect" do
+    sets = { slow: [sentinel] }
+    refused = candidate(key: ["a"], predicate: "nope = 1")
+    report = run("SELECT * FROM t WHERE flag = $1", sets, [candidate(key: ["flag"]), refused])
+    sets[:slow] << "later"
+    sets[:worst] = ["later"]
+    recorded = [report.baseline, *report.results].map(&:literal_sets)
+
+    expect(report.results.last.refusal).not_to be_nil
+    expect(recorded).to all(eq({ slow: [sentinel] }))
+    expect(recorded).to all(be_frozen)
+    expect(recorded.map { it[:slow] }).to all(be_frozen)
+    shown = [report, report.baseline, *report.results].flat_map { [it.inspect, it.to_s, it.pretty_inspect] }
+    expect(shown).to all(satisfy { |text| !text.include?(sentinel) })
+  end
+
   it "drops notices during the run and puts the caller's receiver back" do
     conn.exec(<<~SQL)
       CREATE FUNCTION noisy(v text) RETURNS int IMMUTABLE LANGUAGE plpgsql AS $$

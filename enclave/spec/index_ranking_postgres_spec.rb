@@ -304,6 +304,41 @@ RSpec.describe Quaack::Enclave::IndexRanking do
     expect(leftovers).to eq(clean)
   end
 
+  # 20260924-10: the same names aren't enough. The planted value is a
+  # number, so every measurement with it succeeds.
+  it "refuses a baseline or result measured with other literal values, naming none of them" do
+    planted = "918273645"
+    report = single_test(point, point_sets, [on_a, candidate(key: %w[a c])])
+    other_sets = { slow: ["5"], typical: [planted] }
+    other = single_test(point, other_sets, [on_a])
+    mismatch = [ArgumentError, "literal sets must match the baseline's and every result's"]
+    errors = [
+      mismatch_error(point, other_sets, report),
+      mismatch_error(point, point_sets, report, results: [*report.results, *other.results]),
+      mismatch_error(point, point_sets, other, results: report.results),
+      mismatch_error(point, other_sets, other, results: report.results)
+    ]
+
+    expect(errors).to all(have_attributes(class: mismatch[0], message: mismatch[1]))
+    expect(errors.map(&:full_message)).to all(satisfy { |text| !text.include?(planted) && !text.include?("70000") })
+    expect(leftovers).to eq(clean)
+  end
+
+  def mismatch_error(...)
+    rank(...)
+    nil
+  rescue ArgumentError => e
+    e
+  end
+
+  it "ranks results from separate runs measured with the same literal values" do
+    first = single_test(point, point_sets, [on_a])
+    second = single_test(point, point_sets.transform_values { it.map(&:dup) }, [candidate(key: %w[a c])])
+    ranking = rank(point, point_sets, first, results: [*first.results, *second.results])
+
+    expect(ranking.top.map(&:ddl).flatten.size).to eq(2)
+  end
+
   it "leaves no hypothetical index, prepared statement, or transaction behind" do
     report = single_test(join, join_sets, [on_x, on_y])
     conn.exec("SELECT * FROM hypopg_create_index('CREATE INDEX ON public.o (cid)')")
@@ -321,8 +356,13 @@ RSpec.describe Quaack::Enclave::IndexRanking do
   end
 
   it "raises an error with a rule and SQLSTATE that never quotes a literal, and leaves nothing behind" do
-    report = single_test(join, join_sets, [on_x, on_y])
-    error = rank_error(join, { slow: ["5", sentinel], typical: %w[70000 70000] }, report)
+    # index-test can't measure the bad literal either, so the report is
+    # relabeled with it: the combination's EXPLAIN is the first to try it.
+    bad = { slow: ["5", sentinel], typical: %w[70000 70000] }
+    measured = single_test(join, join_sets, [on_x, on_y])
+    report = measured.with(baseline: measured.baseline.with(literal_sets: bad),
+                           results: measured.results.map { it.with(literal_sets: bad) })
+    error = rank_error(join, bad, report)
 
     expect(error).to have_attributes(rule: :explain_failed, sqlstate: "22P02", cause: nil)
     expect(error.full_message).not_to include(sentinel)

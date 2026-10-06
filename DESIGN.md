@@ -763,6 +763,8 @@ Combine candidates from all three generators greedily. Start with the best singl
 
 Rank by the **worst-case** cost reduction across the set of literals. That way, an index that only helps the slow literal(s) ranks below one that helps across the board. Use estimated size to break ties.
 
+A cost reduction compares costs measured with the same values, so index-test's baseline and each of its results record the literal values they were measured with, and index-rank refuses to rank any whose values differ from its own, even under the same set names. The refusal is an internal error that names no set and no value. The values stay in the enclave's memory: index-rank measures its baseline again on each run, from the literals step's `literal_sets` entry, so no stored entry carries them and the store's format doesn't change.
+
 Keep the top three by that ranking. Also keep the best combination if it beats the best single candidate. Each entry you keep carries:
 
 - Its DDL.
