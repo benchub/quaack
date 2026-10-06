@@ -2400,15 +2400,16 @@ From the builder and review of 20261004-80.
 - **Design:** report, burndown.
 - **Status:** todo
 
-### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values.
+### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values. Done, see BACKLOG-COMPLETE.md.
 
-Found by the builder of 20260926-45 (item 4, the JSON harness column). DESIGN.md's classify section says text[], json and jsonb values never go out. But classification marks a jsonb column with few repeating values as low-cardinality and sends its MCV values: with a nullable `customers.preferences jsonb` column added to the harness and a JSON sentinel planted there, `pii_classification_postgres_spec` found `{"note": "sentinel…-json"}` in the outbound statistics. This is a trust-boundary leak on main.
+### 20261004-91. Structured columns: test gaps, and other structured types.
 
-Fix: never mark json, jsonb or any array column (or a domain over one) as low-cardinality, so its MCV values never go out; its frequencies follow the existing rules. Expression-index and extended-statistics MCVs over such a column follow from their base columns. Land 20260926-45's item 4 with it: its patch, which adds the jsonb column and sentinel to the harness, is in the session's `files/build-20260926-45/item4-json-harness-column.patch`. Also check other places that send values (llm-index-ideas payload, report, dedupe) for the same types.
+From the builder and review of 20261004-90.
+1. The "missing structured list is an error" guard is untested: changing `table.fetch("structured_columns")` to `fetch("structured_columns", [])` keeps every suite green. Add a test that a statistics entry without the list fails classify.
+2. In `pii_classification_postgres_spec`'s trust-boundary test, the "exposure is real" block doesn't check `customers.preferences`, so if the fixture stops planting json only `leak_check_spec` notices. Add it.
+3. **Ask the user:** should hstore, xml, tsvector, composite types and ranges be treated like json (never low-cardinality, values never go out)? tsvector has an equality operator, so ANALYZE can keep MCV values for it. DESIGN.md says v1 treats them like any other non-text type.
 
-**Later, ask the user:** whether other structured types (hstore, xml, composite types, ranges) should be refused the same way. This task only does what DESIGN.md already says.
-
-- **Depends on:** none.
-- **Came from:** The build of 20260926-45.
+- **Depends on:** 20261004-90.
+- **Came from:** The builder and review of 20261004-90.
 - **Design:** classify, trust boundary.
 - **Status:** todo

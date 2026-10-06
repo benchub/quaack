@@ -5597,3 +5597,17 @@ In the report's Indexes table, "Built", "not better" and "ranked" per source sti
 - **Decided by the user (2026-10-05):** Load `anthropic` lazily, and change `runtime_boundary_spec` to build a client first.
 - **Status:** done
 - **Landed:** Items 1-3 landed after a review with no blocking findings: anthropic and openai load only when a client is built (quaack --version ~1.25s to ~0.25s), runtime_boundary_spec builds a client per SDK provider; Pump reads all of a closed-stdout child's stdin and returns when the child exits even if a grandchild holds stdout; driver examples fail after 120s (QUAACK_EXAMPLE_TIME_LIMIT). Item 4 exposed a jsonb MCV leak and moved to 20261004-90 with its patch. Doc minors fixed while landing; the drain-deadline minor is unrealistic (bounded by max_bytes) and was not filed.
+
+### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values.
+
+Found by the builder of 20260926-45 (item 4, the JSON harness column). DESIGN.md's classify section says text[], json and jsonb values never go out. But classification marks a jsonb column with few repeating values as low-cardinality and sends its MCV values: with a nullable `customers.preferences jsonb` column added to the harness and a JSON sentinel planted there, `pii_classification_postgres_spec` found `{"note": "sentinel…-json"}` in the outbound statistics. This is a trust-boundary leak on main.
+
+Fix: never mark json, jsonb or any array column (or a domain over one) as low-cardinality, so its MCV values never go out; its frequencies follow the existing rules. Expression-index and extended-statistics MCVs over such a column follow from their base columns. Land 20260926-45's item 4 with it: its patch, which adds the jsonb column and sentinel to the harness, is in the session's `files/build-20260926-45/item4-json-harness-column.patch`. Also check other places that send values (llm-index-ideas payload, report, dedupe) for the same types.
+
+**Later, ask the user:** whether other structured types (hstore, xml, composite types, ranges) should be refused the same way. This task only does what DESIGN.md already says.
+
+- **Depends on:** none.
+- **Came from:** The build of 20260926-45.
+- **Design:** classify, trust boundary.
+- **Status:** done
+- **Landed:** Landed after a review with no blocking findings, with 20260926-45's item 4 (customers.preferences jsonb and a json sentinel in the harness). The statistics step records each table's structured columns (json, jsonb, any array, domains over them at any depth); classify never marks them low-cardinality, so their MCV values never go out, and expression and extended-statistics MCVs follow. Minors and the other-types question: 20261004-91.
