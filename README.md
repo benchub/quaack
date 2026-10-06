@@ -713,7 +713,7 @@ A rewrite **refused on arrival** is one QUAACK didn't keep: it failed the checks
 
 **Indexes** has a row for each of QUAACK's two index generators (one reads the query's text, one reads its plan), one for the LLM, and one for all sources together. Its columns are proposed, already existed, planner ignored, built and measured, not better, and ranked. An index counts as **not better** only if no candidate that ran with it beat your query. A built index whose candidate beat your query and still wasn't ranked, because it tied with a smaller one or three others did better, or whose candidate timed out, is counted only under built and measured. So the last two columns needn't add up to it.
 
-QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored. It doesn't record which source proposed each index it built, so the rest of the cells by source say not recorded.
+Proposed, already existed, and planner ignored count the ideas of each search, for your query and for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not better, and ranked count each index QUAACK built once. QUAACK counts how many indexes each source proposed, and, for the LLM's, how many already existed and how many the planner ignored. It doesn't record which source proposed each index it built, so the rest of the cells by source say not recorded.
 
 ### Burndown.
 
