@@ -354,7 +354,7 @@ Any `ORDER BY ... LIMIT` whose output includes a type left out of the tiebreaker
 ### 20260924-8. Burndown loose ends.
 
 **Needs a decision,** from the second review of 20260922-61:
-- Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe, or passing a stale or wrong-search `since`. Consider deriving `since` from the stored burndown for each search.
+- Refuse misuse, such as calling `record_dedupe` twice on the same Dedupe. (The `since` part is settled: 20261001-20 has index-test derive its starting count from the stored dedupe state.)
 - Tie `record_single_candidate_test`'s report to the Dedupe's proposals.
 - index-test's `unrenderable` refusal is counted as `hypopg_refused`.
 
@@ -565,16 +565,7 @@ Still open from the first review of 20260925-8:
 
 ### 20260926-2. Build and record the run server with a configured command. Done, see BACKLOG-COMPLETE.md.
 
-### 20260926-3. Generator three follow-ups.
-
-- Record the llm-index-ideas burndown: LLM candidates, plus any replacements asked for dropped ones, with the index-dedupe and index-test reasons (DESIGN.md's burndown table).
-- `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
-
-- **Depends on:** 20260925-4.
-- **Came from:** The build and second review of 20260925-4.
-- **Design:** llm-index-ideas, burndown.
-- **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. Still open: the llm-index-ideas burndown record.
-- **Status:** todo
+### 20260926-3. Generator three follow-ups. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-1. `quaack setup`: one command for steps 2 through 4. Done, see BACKLOG-COMPLETE.md.
 
@@ -867,20 +858,7 @@ Minor findings from the review of 20260930-11:
 
 ### 20261001-19. Record the rewrite stages in the burndown. Done, see BACKLOG-COMPLETE.md.
 
-### 20261001-20. Record the index stages in the burndown.
-
-In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records index-from-query, index-from-plan, or index-rank. Wire them in, for the original's search and for each rewrite's (plan-pruning and rewrite-index-ideas):
-
-- `index-search`: index-from-query and index-from-plan (candidates per generator), index-dedupe, and index-test with its set-asides.
-- `index-test`: llm-index-ideas and llm-index-refine, one record per round, saying whether the refinement round ran.
-- `index-rank`: index-rank, combinations tested and what didn't make the cut.
-
-This takes over the llm-index-ideas burndown bullet of 20260926-3 and the `set_aside:` wiring bullet of 20260927-19. Settle 20260924-8's `since` question on the way, since `index-test` runs in a different process from `index-search`.
-
-- **Depends on:** 20260922-61, -64.
-- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
-- **Design:** burndown.
-- **Status:** todo
+### 20261001-20. Record the index stages in the burndown. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-21. Mechanical rewrite rules. Done, see BACKLOG-COMPLETE.md.
 
@@ -1419,7 +1397,6 @@ Also: fixture-compare still disproves every candidate when a scenario won't load
 
 These are minor findings from the review of 20260927-11:
 - There's no cap on set-asides. The worst realistic case is about 2 extra real builds per low-cardinality table, per search (about 18 for a 3-table join with 2 rewrites). Add a per-search cap, or limit set-asides to the moved key-only variant.
-- `Burndown.record_single_candidate_test(set_aside:)` has no production caller, so set-aside counts don't show up in real runs. Wire it in.
 - There are two low-cardinality thresholds: the generator's hardcoded 50 (`TableCandidates::LOW_CARDINALITY`) and classify's configurable one used by `UnusedSetAside`. Unify them.
 
 - **Depends on:** 20260927-11.
@@ -2363,17 +2340,7 @@ The review of 20261001-19 found:
 
 ### 20261004-70. Arena ROLLBACK after an abort runs under the session's timeout. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-71. ServerClock: comments and wording from 20261004-67.
-
-The review of 20261004-67 found:
-1. A comment in `arena_runner.rb` (around line 26) still says pg "isn't an enclave dependency yet… never names a PG constant", and `pipeline.rb` repeats it. `server_clock.rb` now requires `pg`, so ArenaRunner loads it anyway. Update the comments, or drop the rule.
-2. In DESIGN.md, "The arena runner does the same, reporting it as `statement_canceled`" follows the new dead-connection exception, so it reads as if the arena runner has that exception too. It doesn't: its own `ROLLBACK` failure is caught. Say so.
-3. A bug escaping `Cancel.rule` carries the original `PG::QueryCanceled` as its cause, unlike `ArenaRunner::Error` (`cause: nil`). Egress ignores causes, so it isn't a leak, but consider raising with `cause: nil` for consistency.
-
-- **Depends on:** 20261004-67.
-- **Came from:** The review of 20261004-67, 2026-10-05.
-- **Design:** run discipline, arena-runner.
-- **Status:** todo
+### 20261004-71. ServerClock: comments and wording from 20261004-67. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-72. Plan tree table: minors from 20261004-54.
 
@@ -2405,3 +2372,26 @@ Three small accuracy fixes, all wording only:
 1. DESIGN.md says that after an aborted ROLLBACK the next fixture is refused, "so the step fails". On the vacuity guard's last attempt, rewrite-test instead records `passed: false` with rule `already_in_transaction`. `RewriteFate` counts that as a runner failure, not a disproof, so it's still safe. Say so.
 2. DESIGN.md says counterexamples' value evaluation "relies on" the arena session's timeout. That timeout is 0 by default, and the scenario builder's own queries run outside the runner too. Say "benefits from" and name when it applies.
 3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
+4. From the review of 20261004-71: the comments at `arena_runner.rb:24` and `arena_runner/pipeline.rb:26` no longer give a reason for hard-coding the `PGRES_*` and `PG_DIAG_SQLSTATE` values, now that pg is loaded. Give the reason, or use the `PG::` constants.
+
+### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query.
+
+- **Status:** todo
+- **Depends on:** 20261001-20 (done)
+- **Came from:** the build of 20261001-20.
+- **Design:** index-test, llm-index-ideas.
+
+index-test reads `anchored_query` for every search, so for a rewrite's search it asks the planner whether the original query, not the rewrite, would use each LLM index idea. index-rank uses the right query. Ideas that only help the rewrite may be dropped as `never_used`, and ideas that only help the original may be kept. Confirm with a test on a rewrite's search, then use the search's own query.
+
+### 20261004-77. Index burndown loose ends from 20261001-20.
+
+- **Status:** todo
+- **Depends on:** 20261001-20 (done)
+- **Came from:** the build and review of 20261001-20.
+- **Design:** burndown, report.
+
+1. `report/words.rb` has no words for several reasons the checks can refuse an LLM index: `concurrently`, `unique`, `nulls_not_distinct`, `tablespace`, `on_only`, `storage_options` (from `index_ddl_check.rb`), and possibly the volatility, supported-SQL and deparse rules. They show as plain names such as "unique: 1".
+2. The report's Indexes table adds up each source's Proposed, and the LLM's "already existed" and "planner ignored", over the original and every rewrite's search. But "All sources together" (apart from Proposed) comes from the original's negative result and the indexes built, so the LLM row can disagree with the total. README's Indexes table text doesn't say the counts cover the rewrites. Make them line up, or say what each covers.
+3. index-rank's record can also drop `never_used` or `hypopg_refused` when it re-tests a candidate. DESIGN.md's index-rank burndown row doesn't list them.
+4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
+5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.

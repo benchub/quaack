@@ -5355,3 +5355,44 @@ From the review of 20261004-66. `Store.open` checks the run directory's owner an
 - **Design:** teardown.
 - **Status:** done
 - **Landed:** Landed: Store.teardown rechecks the run directory after destroy_command, just before the delete, and fails as bad_run if it went bad. The review's README/DESIGN minor was fixed while landing.
+
+### 20261004-71. ServerClock: comments and wording from 20261004-67.
+
+The review of 20261004-67 found:
+1. A comment in `arena_runner.rb` (around line 26) still says pg "isn't an enclave dependency yet… never names a PG constant", and `pipeline.rb` repeats it. `server_clock.rb` now requires `pg`, so ArenaRunner loads it anyway. Update the comments, or drop the rule.
+2. In DESIGN.md, "The arena runner does the same, reporting it as `statement_canceled`" follows the new dead-connection exception, so it reads as if the arena runner has that exception too. It doesn't: its own `ROLLBACK` failure is caught. Say so.
+3. A bug escaping `Cancel.rule` carries the original `PG::QueryCanceled` as its cause, unlike `ArenaRunner::Error` (`cause: nil`). Egress ignores causes, so it isn't a leak, but consider raising with `cause: nil` for consistency.
+
+- **Depends on:** 20261004-67.
+- **Came from:** The review of 20261004-67, 2026-10-05.
+- **Design:** run discipline, arena-runner.
+- **Status:** done
+- **Landed:** Landed: comments in arena_runner.rb and pipeline.rb and DESIGN.md wording fixed; Cancel.rule now runs outside the rescue so an escaping bug has no cause. The review's cosmetic minor went into 20261004-75.
+
+### 20261001-20. Record the index stages in the burndown.
+
+In a real run the "Index candidates for the original query" table is empty. `record_dedupe`, `record_single_candidate_test`, and `record_llm_round` exist and are tested, but no step calls them, and nothing records index-from-query, index-from-plan, or index-rank. Wire them in, for the original's search and for each rewrite's (plan-pruning and rewrite-index-ideas):
+
+- `index-search`: index-from-query and index-from-plan (candidates per generator), index-dedupe, and index-test with its set-asides.
+- `index-test`: llm-index-ideas and llm-index-refine, one record per round, saying whether the refinement round ran.
+- `index-rank`: index-rank, combinations tested and what didn't make the cut.
+
+This takes over the llm-index-ideas burndown bullet of 20260926-3 and the `set_aside:` wiring bullet of 20260927-19. Settle 20260924-8's `since` question on the way, since `index-test` runs in a different process from `index-search`.
+
+- **Depends on:** 20260922-61, -64.
+- **Came from:** The user, 2026-10-01, reading the report of run 20261001T210856Z-3b7041a3.
+- **Design:** burndown.
+- **Status:** done
+- **Landed:** Landed: index-search, index-test's LLM rounds and index-rank record their burndown stages, with words in the report. Review minors became 20261004-77; the builder's index-test query finding became 20261004-76.
+
+### 20260926-3. Generator three follow-ups.
+
+- Record the llm-index-ideas burndown: LLM candidates, plus any replacements asked for dropped ones, with the index-dedupe and index-test reasons (DESIGN.md's burndown table).
+- `CandidateDdlRedaction` masks `col = ANY (ARRAY[...])` completely, allowed MCVs included, because `operands` handles only `AEXPR_OP` and `AEXPR_IN`. Postgres prints IN lists this way, so partial-predicate values from plan filters get lost. Allow the same per-column MCV rule there.
+
+- **Depends on:** 20260925-4.
+- **Came from:** The build and second review of 20260925-4.
+- **Design:** llm-index-ideas, burndown.
+- **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. The llm-index-ideas burndown record landed with 20261001-20.
+- **Status:** done
+- **Landed:** Done: the CandidateDdlRedaction part landed 2026-09-26, and the llm-index-ideas burndown record landed with 20261001-20.
