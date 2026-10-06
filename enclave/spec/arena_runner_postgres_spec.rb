@@ -1653,5 +1653,13 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
         .to raise_error(ArgumentError, /not a clock/)
       expect_nothing_persisted
     end
+
+    # The bug doesn't carry the cancel as its cause, as an Error doesn't.
+    it "raises a bug in reading the server's clock without the cancel as its cause" do
+      short = described_class.new(misread_clock(conn, "clock_timestamp"), statement_timeout_ms: 100)
+
+      expect { short.with_fixture([parent(1, "a")]) { |tx| tx.query("SELECT pg_sleep(5)") } }
+        .to raise_error(ArgumentError, /not a clock/) { |bug| expect(bug.cause).to be_nil }
+    end
   end
 end

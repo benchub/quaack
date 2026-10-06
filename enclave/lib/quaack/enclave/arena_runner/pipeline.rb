@@ -23,8 +23,8 @@ module Quaack
       # session's, so a ROLLBACK after an abort runs under that (see
       # DESIGN.md).
       module Pipeline
-        # libpq's ExecStatusType values, since the runner names no PG
-        # constant.
+        # libpq's ExecStatusType values, as PG::Result#result_status returns
+        # them.
         PGRES_TUPLES_OK = 2
         PGRES_FATAL_ERROR = 7
         PGRES_PIPELINE_SYNC = 10
