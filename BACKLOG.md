@@ -2354,18 +2354,7 @@ The review of 20261004-54 found:
 
 ### 20261004-76. index-test tests a rewrite's LLM index ideas against the original query. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-77. Index burndown loose ends from 20261001-20.
-
-- **Status:** todo
-- **Depends on:** 20261001-20 (done)
-- **Came from:** the build and review of 20261001-20.
-- **Design:** burndown, report.
-
-1. `report/words.rb` has no words for several reasons the checks can refuse an LLM index: `concurrently`, `unique`, `nulls_not_distinct`, `tablespace`, `on_only`, `storage_options` (from `index_ddl_check.rb`), and possibly the volatility, supported-SQL and deparse rules. They show as plain names such as "unique: 1".
-2. The report's Indexes table adds up each source's Proposed, and the LLM's "already existed" and "planner ignored", over the original and every rewrite's search. But "All sources together" (apart from Proposed) comes from the original's negative result and the indexes built, so the LLM row can disagree with the total. README's Indexes table text doesn't say the counts cover the rewrites. Make them line up, or say what each covers.
-3. index-rank's record can also drop `never_used` or `hypopg_refused` when it re-tests a candidate. DESIGN.md's index-rank burndown row doesn't list them.
-4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
-5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.
+### 20261004-77. Index burndown loose ends from 20261001-20. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-78. Burndown funnel loose ends from 20261004-55. Done, see BACKLOG-COMPLETE.md.
 
@@ -2382,3 +2371,27 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 2. The partial band's solid top line is centred at `left = (WIDTH - known) / 2`. Changing it to `(WIDTH - width) / 2` stays green, which moves the line off-centre when "came in" is narrower than `UNKNOWN`.
 3. The hatch on a partial band spans the band's full width. Hatching only `known` wide stays green.
 4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".
+
+### 20261004-80. Indexes table: which source proposed each built index.
+
+- **Status:** todo
+- **Depends on:** 20261004-77 (done)
+- **Came from:** item 5 of 20261004-77, which its builder left undone because it isn't cheap.
+- **Design:** report, burndown.
+
+In the report's Indexes table, "Built", "not better" and "ranked" per source still read "not recorded", because QUAACK doesn't record which source proposed each index it built. Doing it needs:
+- a new report-payload field carrying only QUAACK's own source names, from a fixed list;
+- matching each built index back to its candidates across every search;
+- changes to the per-source rows and the docs.
+
+**Needs a decision:** one index can come from several sources. For example, an LLM idea that repeats a generator's adds the LLM to that candidate's sources. Should it count in every source's row (then the rows don't add up to the total), only under the first source, or in a separate "several sources" row?
+
+### 20261004-81. Index refusal rules: keep the list from going stale.
+
+- **Status:** todo
+- **Depends on:** 20261004-77 (done)
+- **Came from:** the review of 20261004-77.
+- **Design:** report, llm-index-ideas.
+
+1. `IndexDdlCheck::RULES` is kept by hand. A new refusal added to `IndexDdlCheck`, `SupportedSql`, `VolatilityCheck` or `Deparse` without updating `RULES` and the samples in `enclave/spec/index_ddl_check_spec.rb` fails nothing, so the cross-gem words spec misses it. Find a way for a new rule to fail a test, such as a spec that scans those files for the rules they raise and compares them with `RULES`.
+2. "Planner ignored" in the Indexes table doesn't count index-rank's re-test drops (`never_used`, `hypopg_refused`). That matches the LLM row and DESIGN.md, so it's a choice of definition. Consider saying so in the table's note.

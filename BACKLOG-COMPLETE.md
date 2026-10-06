@@ -5456,3 +5456,17 @@ Three small accuracy fixes, all wording only:
 3. The comment on the `expect_left_aborted` spec helper says it turns the 50ms session timeout off before counting. It doesn't: it runs ROLLBACK and counts from a fresh connection. Fix the comment.
 4. From the review of 20261004-71: the comments at `arena_runner.rb:24` and `arena_runner/pipeline.rb:26` no longer give a reason for hard-coding the `PGRES_*` and `PG_DIAG_SQLSTATE` values, now that pg is loaded. Give the reason, or use the `PG::` constants.
 - **Landed:** Landed: DESIGN.md wording on the aborted ROLLBACK and session timeout, the expect_left_aborted comment, and pg's own constants in the arena runner. The review's three wording minors were fixed while landing.
+
+### 20261004-77. Index burndown loose ends from 20261001-20.
+
+- **Status:** done
+- **Depends on:** 20261001-20 (done)
+- **Came from:** the build and review of 20261001-20.
+- **Design:** burndown, report.
+
+1. `report/words.rb` has no words for several reasons the checks can refuse an LLM index: `concurrently`, `unique`, `nulls_not_distinct`, `tablespace`, `on_only`, `storage_options` (from `index_ddl_check.rb`), and possibly the volatility, supported-SQL and deparse rules. They show as plain names such as "unique: 1".
+2. The report's Indexes table adds up each source's Proposed, and the LLM's "already existed" and "planner ignored", over the original and every rewrite's search. But "All sources together" (apart from Proposed) comes from the original's negative result and the indexes built, so the LLM row can disagree with the total. README's Indexes table text doesn't say the counts cover the rewrites. Make them line up, or say what each covers.
+3. index-rank's record can also drop `never_used` or `hypopg_refused` when it re-tests a candidate. DESIGN.md's index-rank burndown row doesn't list them.
+4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
+5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.
+- **Landed:** Landed items 1-4: words for every LLM index refusal (checked by a cross-gem spec), All sources together from the burndown over every search, DESIGN's index-rank row, and the refinement round replacing index-rank's didn't-run record. Item 5 became 20261004-80; review minors became 20261004-81.
