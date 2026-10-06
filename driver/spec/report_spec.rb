@@ -866,6 +866,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows.last).to include(%(<td class="num">12,345</td><td class="missing">not recorded</td>))
     end
 
+    it "says a share is under 0.1% only when it is above zero and would round to 0.0%" do
+      payload["original_plan"] = [0.0, 0.0004, 0.0005, 0.004].map { pnode("Seq Scan", 0, selectivity: it) }
+      expect(plan_rows(explanation).first.map { it[%r{<td class="num">([^<]*)</td></tr>}, 1] })
+        .to eq(["0.0%", "under 0.1%", "0.1%", "0.4%"])
+    end
+
     it "lays out a plan from a payload without depths as a flat table" do
       payload["original_plan"] = [pnode("Limit", nil), pnode("Seq Scan", nil, relation: "public.t")]
       expect(plan_rows(explanation).first).to eq(
