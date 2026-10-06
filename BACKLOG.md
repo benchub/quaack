@@ -2112,6 +2112,7 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 - **Depends on:** 20261004-23.
 - **Came from:** The review of 20261004-23, and its builder.
 - **Design:** rewrite-test, Where QUAACK runs.
+- **Decided by the user (2026-10-06):** the user will provide a profile later. Do items 4-7 now, and leave items 1-3 open in a follow-up task.
 - **Status:** todo (item 1 needs the user)
 
 ### 20261004-28. Timeout checks on the enclave's clock: RunDiscipline and ArenaRunner. Done, see BACKLOG-COMPLETE.md.
@@ -2433,4 +2434,5 @@ From the builder of 20261004-91. `bytea`, geometric types (`point` and the like)
 - **Depends on:** 20261004-91.
 - **Came from:** The builder of 20261004-91.
 - **Design:** classify, trust boundary.
+- **Decided by the user (2026-10-06):** flip the rule to an allowlist: only types whose values are safe to send (such as numeric, boolean, date/time, uuid and enum types, and domains over them) may be classed low-cardinality and send values. Every other type is withheld like json.
 - **Status:** todo
