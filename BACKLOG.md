@@ -2299,6 +2299,7 @@ From the review of 20261004-25. On a terminal, an LLM ask that repeats its step 
 - **Depends on:** 20261004-25.
 - **Came from:** The review of 20261004-25.
 - **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-06):** (c), print a short ask line such as "Waiting for the LLM", so the clock ticks on it.
 - **Status:** todo
 
 ### 20261004-85. Closed output pipes: minors from 20261004-62.
@@ -2344,6 +2345,7 @@ From the builder and two reviews of 20260925-18.
 - **Depends on:** 20260925-18.
 - **Came from:** The builder and reviews of 20260925-18.
 - **Design:** input, qualify.
+- **Decided by the user (2026-10-06):** item 1, refuse the operator's own schema too, like any other role's schema. The refusal message should say why: the name could resolve to a schema the application never saw.
 - **Status:** todo
 
 ### 20261004-89. Index sources: a test gap and the remaining "not recorded" cells.
@@ -2370,6 +2372,7 @@ From the builder and review of 20261004-90.
 - **Depends on:** 20261004-90.
 - **Came from:** The builder and review of 20261004-90.
 - **Design:** classify, trust boundary.
+- **Decided by the user (2026-10-06):** item 3, yes: treat hstore, xml, tsvector, composite types and ranges (and domains/arrays over them) like json: never low-cardinality, values never go out.
 - **Status:** todo
 
 ### 20261004-92. Literal-set values: test gaps, and comparisons by name only elsewhere.
@@ -2414,4 +2417,5 @@ From the review of 20260925-2.
 - **Depends on:** 20260925-2.
 - **Came from:** The review of 20260925-2.
 - **Design:** What goes into the enclave; insert check.
+- **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2.
 - **Status:** todo
