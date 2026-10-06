@@ -7,8 +7,8 @@ module Quaack
       # payload sends them (depth first), in the style of explain.depesz.com
       # (DESIGN.md's report). Each step is indented by its depth, under an
       # arrow, and shows the blocks it read, the steps under it included.
-      # A plan whose nodes don't all carry a whole-number depth from zero
-      # up, such as one from a payload older than depths, is laid out flat.
+      # Every node has an Integer depth of zero or more: the driver's reply
+      # check refuses a report whose plans fail Protocol::PlanNodes.valid?.
       #
       # The steps one plan has and the other doesn't are marked, by class
       # and in words. Two steps are the same when their type, table, and
@@ -25,8 +25,7 @@ module Quaack
         # when there is no plan to compare with, and nothing is marked.
         def plan_table(plan, other = nil)
           shared = other ? shared_steps(plan, other) : (0...plan.size).to_a
-          tree = tree?(plan)
-          rows = plan.each_with_index.map { |node, i| plan_row(node, tree, !shared.include?(i)) }
+          rows = plan.each_with_index.map { |node, i| plan_row(node, !shared.include?(i)) }
           %(<table class="plan"><thead>#{PLAN_HEADER}</thead>\n<tbody>\n#{rows.join("\n")}\n</tbody></table>)
         end
 
@@ -38,11 +37,9 @@ module Quaack
         # Whether either plan has a step the other doesn't.
         def plans_differ?(plan, other) = [plan.size, other.size].uniq != [shared_steps(plan, other).size]
 
-        def tree?(plan) = plan.all? { it["depth"].is_a?(Integer) && !it["depth"].negative? }
-
-        def plan_row(node, tree, differs)
-          depth = tree ? node["depth"] : nil
-          step = "#{ARROW if depth&.positive?}#{h node["node"]}#{MARK if differs}"
+        def plan_row(node, differs)
+          depth = node["depth"]
+          step = "#{ARROW if depth.positive?}#{h node["node"]}#{MARK if differs}"
           %(<tr#{' class="differs"' if differs}><td class="step"#{indent(depth)}>#{step}</td>#{plan_cells(node)}</tr>)
         end
 
@@ -60,7 +57,7 @@ module Quaack
           counts.sum unless counts.empty?
         end
 
-        def indent(depth) = depth ? format(' style="padding-left: %.2frem"', INDENT + (STEP * depth)) : ""
+        def indent(depth) = format(' style="padding-left: %.2frem"', INDENT + (STEP * depth))
 
         def named(name) = name ? h(Format.sql_span(name)) : ""
 
