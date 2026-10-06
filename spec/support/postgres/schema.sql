@@ -6,7 +6,10 @@ CREATE TABLE customers (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name text,
   email text NOT NULL,
-  created_at timestamptz NOT NULL
+  created_at timestamptz NOT NULL,
+  -- data.sql leaves it NULL. It's where LeakCheck::Fixture plants the json
+  -- sentinel.
+  preferences jsonb
 );
 
 CREATE UNIQUE INDEX customers_email_key ON customers (email);

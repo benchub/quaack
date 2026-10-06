@@ -22,6 +22,11 @@ module Quaack
         # text, varchar, char, name, citext, and any domain over one, since
         # a domain takes its base type's category.
         #
+        # A column is structured when its type is json, jsonb, or an array,
+        # or a domain over one at any depth. A domain takes its base type's
+        # category, so an array's 'A' covers a domain over one, and the
+        # recursive CTE follows a domain over json or jsonb down to it.
+        #
         # A column is a clock column when its type, or a domain's base type,
         # is date, timestamp, or timestamptz: clock-anchor anchors a clock literal
         # compared with one (see ClockLiterals).
@@ -31,7 +36,11 @@ module Quaack
                    WHEN 'pg_catalog.date'::pg_catalog.regtype THEN 'date'
                    WHEN 'pg_catalog.timestamp'::pg_catalog.regtype THEN 'timestamp'
                    WHEN 'pg_catalog.timestamptz'::pg_catalog.regtype THEN 'timestamptz'
-                 END
+                 END,
+                 t.typcategory = 'A' OR EXISTS (
+                   WITH RECURSIVE chain(oid) AS (SELECT t.oid UNION ALL SELECT b.typbasetype FROM chain
+                     JOIN pg_catalog.pg_type b ON b.oid = chain.oid WHERE b.typbasetype <> 0)
+                   SELECT FROM chain WHERE chain.oid IN ('pg_catalog.json'::pg_catalog.regtype, 'pg_catalog.jsonb'::pg_catalog.regtype))
           FROM pg_catalog.pg_attribute a
           JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
           WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped
@@ -87,14 +96,20 @@ module Quaack
         end
 
         def contents(table, oid, connection)
-          columns = connection.exec_params(COLUMNS_SQL, [oid]).values
-          { "column_names" => columns.map(&:first),
-            "text_columns" => columns.filter_map { |name, text| name if text == "t" },
-            "clock_columns" => columns.filter_map { |name, _, clock| [name, clock] if clock }.to_h,
+          { **column_types(connection.exec_params(COLUMNS_SQL, [oid]).values),
             "columns" => pg_stats(connection, table.schema, table.name),
             "indexes" => indexes(connection, table.schema, oid),
             "extended_statistics" => extended(connection, oid) }
         end
+
+        def column_types(columns)
+          { "column_names" => columns.map(&:first),
+            "text_columns" => flagged(columns, 1), "structured_columns" => flagged(columns, 3),
+            "clock_columns" => columns.filter_map { |name, _, clock| [name, clock] if clock }.to_h }
+        end
+
+        # The names of the columns whose boolean at index is true.
+        def flagged(columns, index) = columns.filter_map { |row| row.first if row[index] == "t" }
 
         def pg_stats(connection, schema, relation)
           connection.exec_params(PG_STATS_SQL, [schema, relation]).values.to_h do |name, *row|

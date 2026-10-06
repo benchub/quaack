@@ -481,6 +481,14 @@ RSpec.describe LeakCheck do
       expect(stats("orders", "created_at", "most_common_vals")).to include(sentinels.date.iso8601)
     end
 
+    it "puts the json sentinel in the planted customers' jsonb column and its most common values" do
+      planted_rows = conn.exec_params("SELECT count(*) FROM public.customers WHERE preferences = $1::jsonb",
+                                      [sentinels.json]).getvalue(0, 0)
+
+      expect(planted_rows).to eq(described_class::ROWS.to_s)
+      expect(stats("customers", "preferences", "most_common_vals")).to include(sentinels.needles.fetch(:json))
+    end
+
     it "puts the LIKE prefix in the email column's histogram bounds" do
       expect(stats("customers", "email", "histogram_bounds")).to include(sentinels.like_prefix)
     end

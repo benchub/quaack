@@ -6,8 +6,9 @@ module LeakCheck
   # or plans is exposed to them:
   #
   # - Row data and most common values: ROWS customers named with the text
-  #   sentinel, and ROWS orders with the word as status, the number as
-  #   total_cents, and noon on the date as created_at. That many repeats
+  #   sentinel and with the json sentinel as preferences, and ROWS orders
+  #   with the word as status, the number as total_cents, and noon on the
+  #   date as created_at. That many repeats
   #   make each one a most common value after ANALYZE, so pg_stats holds
   #   them.
   # - Histogram bounds: each planted customer's email starts with the LIKE
@@ -16,7 +17,7 @@ module LeakCheck
   #   be given, whose literals are the sentinels, and that finds the
   #   planted rows. Its EXPLAIN shows them too.
   #
-  # The json sentinel has no column here. It's for step input on stdin.
+  # The json sentinel is also for step input on stdin.
   module Fixture
     ROWS = 300
 
@@ -36,8 +37,9 @@ module LeakCheck
 
     def customers_sql(sentinels)
       <<~SQL
-        INSERT INTO public.customers (name, email, created_at)
-        SELECT '#{sentinels.text}', '#{sentinels.like_prefix}-' || i || '@example.com', timestamptz '2025-06-01 00:00:00+00'
+        INSERT INTO public.customers (name, email, created_at, preferences)
+        SELECT '#{sentinels.text}', '#{sentinels.like_prefix}-' || i || '@example.com', timestamptz '2025-06-01 00:00:00+00',
+               '#{sentinels.json}'::jsonb
         FROM generate_series(1, #{ROWS}) AS i
       SQL
     end

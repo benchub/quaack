@@ -35,6 +35,11 @@ module Quaack
     #   values are at most about a tenth of the rows, so each one repeats.
     #   A negative n_distinct means the values mostly don't repeat, as in a
     #   small table of emails, so they aren't categories and never leave.
+    #   A structured column (PlannerStatistics's structured_columns: json,
+    #   jsonb, an array, or a domain over one) is never low-cardinality,
+    #   however few values it holds: a document or list can hold facts
+    #   about a person, so its values never leave. Its frequencies follow
+    #   the rules above.
     #   This is the set Dedupe takes.
     #
     # outbound_statistics is a pure projection of the stored statistics:
@@ -96,14 +101,17 @@ module Quaack
       def classify_table(table, statistics, config)
         name = TableName.new(schema: table["schema"], name: table["name"])
         stats = statistics.table(name)
+        structured = table.fetch("structured_columns")
         table["column_names"].map do |column|
           pii, low = classes(config, stats, column, table["text_columns"].include?(column))
+          low &&= !structured.include?(column)
           { "schema" => name.schema, "table" => name.name, "column" => column, "pii" => pii, "low_cardinality" => low }
         end
       end
 
-      # [pii, low_cardinality] for one column of stats, a TableStatistics.
-      # count is its distinct count, or nil when that's unknown.
+      # [pii, low_cardinality] for one column of stats, a TableStatistics,
+      # before the structured rule. count is its distinct count, or nil when
+      # that's unknown.
       def classes(config, stats, column, text)
         count = stats.column?(column) ? stats.distinct_count(column) : nil
         threshold = config.cardinality_threshold

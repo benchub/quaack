@@ -233,6 +233,88 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     end
   end
 
+  # DESIGN.md's classify: json, jsonb, and array columns, and a domain over
+  # one, are never low-cardinality, however few values they hold, so their
+  # MCV values never leave. Their frequencies follow the usual rules. An
+  # expression index or statistics object over one follows from its base
+  # columns. Each column holds two values, one of them its own sentinel set's.
+  # json has no equality operator, so ANALYZE keeps no MCV list for it, but
+  # an expression index over it does.
+  describe "json, jsonb, and array columns" do
+    let(:sets) { %w[j jb tags nums dp].to_h { [it, LeakCheck::Sentinels.new] } }
+    let(:docs) { table("public", "docs") }
+
+    before do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN prefs AS jsonb;
+        CREATE TABLE docs (kind text, j json, jb jsonb, tags text[], nums int[], dp prefs);
+        INSERT INTO docs
+        SELECT CASE WHEN i % 2 = 0 THEN 'odd' ELSE 'even' END,
+               CASE WHEN i % 2 = 0 THEN '#{sets["j"].json}' ELSE '{}' END::json,
+               CASE WHEN i % 2 = 0 THEN '#{sets["jb"].json}' ELSE '{}' END::jsonb,
+               CASE WHEN i % 2 = 0 THEN ARRAY['#{sets["tags"].text}'] ELSE ARRAY['plain'] END,
+               CASE WHEN i % 2 = 0 THEN ARRAY[#{sets["nums"].number}] ELSE ARRAY[1] END,
+               CASE WHEN i % 2 = 0 THEN '#{sets["dp"].json}' ELSE '{}' END::prefs
+        FROM generate_series(1, 3000) AS i;
+        CREATE INDEX docs_j_note ON docs ((j ->> 'note'));
+        CREATE INDEX docs_jb_note ON docs ((jb ->> 'note'));
+        CREATE INDEX docs_tag ON docs ((tags[1]));
+        CREATE STATISTICS docs_jb_ext (mcv) ON kind, jb FROM docs;
+        CREATE STATISTICS docs_note_ext (mcv) ON kind, (jb ->> 'note') FROM docs;
+        ANALYZE docs;
+      SQL
+    end
+
+    def docs_result = classify([docs], with: Quaack::Enclave::Config.new({}))
+
+    def stored_docs = store.read("statistics")["tables"].first
+
+    def outbound_docs(res) = res.outbound_statistics["tables"].first
+
+    it "classes them as neither PII nor low-cardinality, and sends their frequencies but not their values" do
+      res = docs_result
+
+      expect(classes(res, docs)).to eq("kind" => [false, true], "j" => [false, false], "jb" => [false, false],
+                                       "tags" => [false, false], "nums" => [false, false], "dp" => [false, false])
+      expect(res.low_cardinality).to eq([[docs, "kind"]])
+      %w[jb tags nums dp].each do |column|
+        expect(stored_docs["columns"][column]["n_distinct"]).to eq(2.0)
+        expect(outbound(res, docs, column)["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+        expect(outbound(res, docs, column)["most_common_vals"]).to be_nil
+      end
+    end
+
+    it "sends an expression index's or statistics object's frequencies over one, but not its values" do
+      res = docs_result
+      indexes = outbound_docs(res)["indexes"].to_h { [it["name"], it["columns"].first] }
+      extended = outbound_docs(res)["extended_statistics"].to_h { [it["name"], it] }
+
+      %w[docs_j_note docs_jb_note docs_tag].each do |name|
+        expect(indexes[name]["most_common_freqs"]).to include(be_within(0.01).of(0.5))
+        expect(indexes[name]["most_common_vals"]).to be_nil
+      end
+      %w[docs_jb_ext docs_note_ext].each do |name|
+        expect(extended[name]["most_common_freqs"].sum).to be_within(0.001).of(1.0)
+        expect(extended[name].values_at("most_common_vals", "most_common_val_nulls")).to eq([nil, nil])
+      end
+    end
+
+    it "sends none of their values" do
+      res = docs_result
+      stored = JSON.generate(stored_docs)
+
+      # The exposure is real: every sentinel is in the stored statistics,
+      # json's through its expression index.
+      sets.each_value { expect(LeakCheck.findings(it, objects: { stored: })).not_to be_empty }
+      expect(stored_docs["columns"]["j"]["most_common_vals"]).to be_nil
+
+      sets.each_value do |set|
+        LeakCheck.check_scanner!(set)
+        expect(LeakCheck.findings(set, objects: { outbound: res.outbound_statistics })).to eq([])
+      end
+    end
+  end
+
   # DESIGN.md's classify: an expression index's pg_stats rows and a CREATE STATISTICS
   # object's MCV list are classified by the base columns they read. One that
   # reads any PII column is PII, so none of its MCV data leaves. Its values
