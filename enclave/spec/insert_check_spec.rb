@@ -280,6 +280,97 @@ RSpec.describe Quaack::Enclave::InsertCheck do
     end
   end
 
+  # Task 20260925-2: 'now', 'today', 'tomorrow', and 'yesterday' read the
+  # clock wherever Postgres reads them as a date, time, or timestamp, so a
+  # fixture with one changes from run to run.
+  describe "a special date or time input that reads the clock" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE DOMAIN sales.day AS date;
+        CREATE TYPE sales.span AS (starts timestamptz, label text);
+        CREATE TABLE sales.stamps (id int, at timestamptz, local timestamp, on_day date, at_time time,
+                                   at_timetz timetz, days date[], during tstzrange, durings tstzmultirange, span sales.span,
+                                   due sales.day, note text, notes text[]);
+      SQL
+    end
+
+    def stamps(column, value, settings = nil)
+      check("INSERT INTO sales.stamps (id, #{column}) VALUES (1, #{value})", settings,
+            tables: [table_name("sales", "stamps")])
+    end
+
+    def clock(column) = rejected("clock_literal", "clock_literal: a value for column #{column} could read the clock")
+
+    {
+      "'today' for a date" => ["on_day", "'today'"],
+      "'now' for a timestamptz, in any case and with whitespace around it" => ["at", "' NoW '"],
+      "'tomorrow' for a timestamp" => ["local", "'Tomorrow'"],
+      "'yesterday' for a domain over date" => ["due", "'yesterday'"],
+      "'now' for a time" => ["at_time", "'now'"],
+      "'now' for a timetz" => ["at_timetz", "'now'"],
+      "a word with a time after it" => ["local", "'today 10:00'"],
+      "a word with a time before it" => ["at", "'10:00 yesterday'"],
+      "a word after a comma" => ["local", "'10:00,tomorrow'"],
+      "a word in double quotes" => ["local", "'\"today\"'"],
+      "a word with allballs" => ["local", "'tomorrow allballs'"],
+      "a cast to timestamptz, for a text column" => ["note", "'now'::timestamptz"],
+      "a typed literal" => ["note", "timestamp 'today'"],
+      "a CAST" => ["on_day", "CAST('yesterday' AS date)"],
+      "a cast through text" => ["on_day", "'today'::text::date"],
+      "a cast to a domain over date" => ["note", "'today'::sales.day"],
+      "an array literal for a date[]" => ["days", "'{2024-01-01,today}'"],
+      "an ARRAY for a date[]" => ["days", "ARRAY['2024-01-01', 'today']"],
+      "a cast to date[]" => ["note", "'{today}'::date[]"],
+      "a range literal" => ["during", "'[now,infinity)'"],
+      "a multirange literal" => ["durings", "'{[2024-01-01,2024-01-02), [today,infinity)}'"],
+      "a composite literal with a timestamptz field" => ["span", "'(now,a)'"],
+      "a function's argument" => ["during", "tstzrange('now', 'infinity')"],
+      "a function's argument, whatever the function takes" => ["note", "lower('Today')"]
+    }.each do |what, (column, value)|
+      it "refuses #{what}" do
+        expect { stamps(column, value) }.to clock(column)
+      end
+    end
+
+    it "looks up an unqualified cast's type in the plan's search path" do
+      expect { stamps("note", "'today'::day", { "search_path" => "sales" }) }.to clock("note")
+    end
+
+    it "checks every row and every value, not just the first" do
+      expect do
+        check("INSERT INTO sales.stamps (id, note, on_day) VALUES (1, 'a', '2024-01-01'), (2, 'b', 'today')",
+              tables: [table_name("sales", "stamps")])
+      end.to clock("on_day")
+    end
+
+    {
+      "the deterministic special inputs" => ["at, local, at_time, on_day",
+                                             "'epoch', '-infinity', 'allballs', 'infinity'"],
+      "a real date and time" => ["at, local", "'2024-01-01 10:00+00', '2024-01-01 10:00'"],
+      "the words in a text column" => ["note, notes", "'now', ARRAY['today', 'tomorrow']"],
+      "the words cast to text" => ["note", "'yesterday'::text"],
+      "words that only contain a clock word" => ["note, at_time", "'nowhere todays snow', 'allballs'"],
+      "a function's argument with a clock word's letters at its end" => ["note", "lower('Snow')"],
+      "a function's argument with a clock word's letters at its start" => ["note", "upper('todays')"],
+      "DEFAULT and NULL" => ["at, on_day", "DEFAULT, NULL"]
+    }.each do |what, (columns, values)|
+      it "accepts #{what}" do
+        sql = "INSERT INTO sales.stamps (#{columns}) VALUES (#{values})"
+        accepted = check(sql, tables: [table_name("sales", "stamps")])
+        conn.exec(accepted.sql)
+        expect(accepted.sql).to eq(PgQuery.parse(sql).deparse)
+      end
+    end
+
+    it "is checked after the functions, and before the deparse" do
+      expect { stamps("note", "concat(now()::text, 'today')") }.to rejected("not_immutable")
+      expect do
+        check("INSERT INTO sales.stamps (note, on_day) VALUES ('t'::boolean::text, 'today')",
+              tables: [table_name("sales", "stamps")])
+      end.to clock("on_day")
+    end
+  end
+
   describe "an insert pg_query deparses wrong" do
     # The deparser writes 't'::boolean as true, which parses to another
     # tree.
@@ -330,6 +421,7 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "unknown_column" => planted(sentinel, column: "colour"),
       "not_plain_value" => planted(sentinel, value: "(SELECT '#{sentinel}')"),
       "not_immutable" => planted(sentinel, value: "concat(now()::text, '#{sentinel}')"),
+      "clock_literal" => planted(sentinel, value: "lower('today #{sentinel}')"),
       "deparse_mismatch" => planted(sentinel, value: "'t'::boolean::text")
     }.each do |rule, sql|
       it "never shows up when it's refused as #{rule}" do
