@@ -2378,23 +2378,18 @@ Three small accuracy fixes, all wording only:
 4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
 5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.
 
-### 20261004-78. Burndown funnel loose ends from 20261004-55.
+### 20261004-78. Burndown funnel loose ends from 20261004-55. Done, see BACKLOG-COMPLETE.md.
+
+
+### 20261004-79. Funnel partial-band tests, from 20261004-78.
 
 - **Status:** todo
-- **Depends on:** 20261004-55 (done)
-- **Came from:** both reviews of 20261004-55.
+- **Depends on:** 20261004-78 (done)
+- **Came from:** the review of 20261004-78.
 - **Design:** report.
 
-Each of these is code in `driver/lib/quaack/driver/report/funnel.rb` with no test that fails when it's broken:
-1. Cutting long labels short.
-2. Set-aside counts, beside the band and in its tooltip; the test data always has 0.
-3. The scale's largest count taken from "went on" as well as "came in".
-4. An all-zero funnel's width.
-5. Where the hatch stripes sit on an unknown band, and the unknown band's tooltip text.
-6. The negative-count guard.
-7. The vertical layout: the viewBox height and the gap between bands.
-8. Where the labels sit: their x, and the two lines' y.
-
-Also:
-9. A stage with a "came in" count but no "went on" is drawn fully unknown, while the table shows the "came in" number. Draw what's known.
-10. Six funnel specs, run with the funnel taken out of the template, fail on `undefined method 'scan' for nil` rather than on an assertion. Make them fail on their assertion.
+These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goes red when they break:
+1. The grey paint of unknown and partial bands (`UNCOUNTED`). Painting a partial band solid blue, which reads as a made-up "went on" count, stays green.
+2. The partial band's solid top line is centred at `left = (WIDTH - known) / 2`. Changing it to `(WIDTH - width) / 2` stays green, which moves the line off-centre when "came in" is narrower than `UNKNOWN`.
+3. The hatch on a partial band spans the band's full width. Hatching only `known` wide stays green.
+4. While here: the table's "Went on" cell for a stage with "came in" but no "went on" is an empty `<td>`, not "not recorded".

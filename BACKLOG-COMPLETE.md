@@ -5420,3 +5420,25 @@ Keep the existing burndown table under it, for exact numbers and for readers wit
 
 index-test reads `anchored_query` for every search, so for a rewrite's search it asks the planner whether the original query, not the rewrite, would use each LLM index idea. index-rank uses the right query. Ideas that only help the rewrite may be dropped as `never_used`, and ideas that only help the original may be kept. Confirm with a test on a rewrite's search, then use the search's own query.
 - **Landed:** Landed: index-test asks the planner about the search's own query (IndexSearch.query), in both LLM rounds. Clean review.
+
+### 20261004-78. Burndown funnel loose ends from 20261004-55.
+
+- **Status:** done
+- **Depends on:** 20261004-55 (done)
+- **Came from:** both reviews of 20261004-55.
+- **Design:** report.
+
+Each of these is code in `driver/lib/quaack/driver/report/funnel.rb` with no test that fails when it's broken:
+1. Cutting long labels short.
+2. Set-aside counts, beside the band and in its tooltip; the test data always has 0.
+3. The scale's largest count taken from "went on" as well as "came in".
+4. An all-zero funnel's width.
+5. Where the hatch stripes sit on an unknown band, and the unknown band's tooltip text.
+6. The negative-count guard.
+7. The vertical layout: the viewBox height and the gap between bands.
+8. Where the labels sit: their x, and the two lines' y.
+
+Also:
+9. A stage with a "came in" count but no "went on" is drawn fully unknown, while the table shows the "came in" number. Draw what's known.
+10. Six funnel specs, run with the funnel taken out of the template, fail on `undefined method 'scan' for nil` rather than on an assertion. Make them fail on their assertion.
+- **Landed:** Landed: tests pin items 1-8, funnel specs fail on a clear assertion when the SVG is missing, and a stage with only a came-in count is drawn as a hatched partial band with a solid top line. Review minors became 20261004-79.
