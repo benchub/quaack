@@ -40,7 +40,7 @@ module Quaack
 
         Write $1, $2, and so on wherever you want the query's own literal: the enclave puts the real value there. You may wrap one in an immutable function, such as upper($1).
 
-        Write each insert as INSERT INTO schema.table (columns) VALUES (...), (...). Always schema-qualify the table and list the columns. Values must be constants, casts, $n, DEFAULT, or immutable function calls on those. To set a GENERATED ALWAYS identity column, write OVERRIDING SYSTEM VALUE before VALUES. Don't use INSERT ... SELECT, WITH, ON CONFLICT, or RETURNING: they get the insert refused. The rows must satisfy every constraint. The enclave adds parent rows for any foreign key you leave dangling, but never bypasses a constraint.
+        Write each insert as INSERT INTO schema.table (columns) VALUES (...), (...). Always schema-qualify the table and list the columns. Values must be constants, casts, $n, DEFAULT, or immutable function calls on those. To set a GENERATED ALWAYS identity column, write OVERRIDING SYSTEM VALUE before VALUES. Don't read the clock: now(), CURRENT_DATE, CURRENT_TIMESTAMP, and a string such as 'now', 'today', 'tomorrow', or 'yesterday' read as a date or time get the insert refused, so write fixed dates and times, such as '2024-01-15 10:00:00+00'. Don't use INSERT ... SELECT, WITH, ON CONFLICT, or RETURNING: they get the insert refused. The rows must satisfy every constraint. The enclave adds parent rows for any foreign key you leave dangling, but never bypasses a constraint.
 
         Answer with JSON: {"inserts": ["INSERT INTO ...", ...]}.
       PROMPT

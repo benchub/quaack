@@ -247,6 +247,7 @@ RSpec.describe "quaacks run-server, against a real server" do
     before do
       store.write("run_server", "host" => production.host, "port" => production.port,
                                 "racetrack_db" => production.name, "arena_db" => "postgres")
+      store.write("inventory", "settings" => { "TimeZone" => "Pacific/Chatham" })
     end
 
     it "connects to the recorded racetrack or arena database with the operator's credentials, dropping notices" do
@@ -264,12 +265,13 @@ RSpec.describe "quaacks run-server, against a real server" do
       expect(outcome.status.exitstatus).to eq(0)
     end
 
-    # Task 20260925-2: a counterexample's timestamptz literal, and its
-    # 'today' at midnight, mean the same in every arena session. PGTZ beats
-    # a TimeZone in the connection's options, so it's what pins are tested
-    # against. The racetrack keeps the operator's TimeZone, which
-    # run-server checks against production's.
-    it "pins arena's TimeZone to UTC, whatever the operator's, and leaves the racetrack's alone" do
+    # Task 20260925-2, then 20261004-95: a counterexample's timestamptz
+    # literal, and its 'today' at midnight, mean the same in every arena
+    # session, and what they mean in production. PGTZ beats a TimeZone in
+    # the connection's options, so it's what pins are tested against. The
+    # racetrack keeps the operator's TimeZone, which run-server checks
+    # against production's.
+    it "pins arena's TimeZone to production's recorded one, whatever the operator's, but not the racetrack's" do
       env = { PGUSER: production.user, PGPASSWORD: production.password, PGTZ: "Asia/Kolkata" }
       outcome = connect_in_child(<<~RUBY, **env)
         %i[racetrack arena].each do |database|
@@ -280,7 +282,7 @@ RSpec.describe "quaacks run-server, against a real server" do
       RUBY
 
       expect(outcome.stdout).to eq('[["Asia/Kolkata", "2024-01-01 10:00:00+05:30"]]' \
-                                   '[["UTC", "2024-01-01 10:00:00+00"]]')
+                                   '[["Pacific/Chatham", "2024-01-01 10:00:00+13:45"]]')
       expect(outcome.status.exitstatus).to eq(0)
     end
 

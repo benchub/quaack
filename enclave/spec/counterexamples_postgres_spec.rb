@@ -285,6 +285,24 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       .to eq([["5001"]])
   end
 
+  describe "a placeholder whose literal is a clock word (task 20261004-95)" do
+    let(:map) { { "$1" => { "value" => "today", "type" => "unknown" } } }
+
+    before { conn.exec("CREATE TABLE fx.tagged (id integer PRIMARY KEY, tags text[], day date)") }
+
+    def tagged(insert) = described_class.prepare(conn, [insert], placeholder_map: map, tables: [tn("tagged")])
+
+    it "binds the word and refuses it where it could read the clock" do
+      expect(tagged("INSERT INTO fx.tagged (id, day) VALUES (1, $1)").refused)
+        .to eq([{ index: 0, rule: "clock_literal" }])
+    end
+
+    it "refuses it, rather than loading another value, where it reaches an array type through a text function" do
+      prepared = tagged("INSERT INTO fx.tagged (id, tags) VALUES (1, string_to_array($1, ','))")
+      expect([prepared.refused, prepared.inserts]).to eq([[{ index: 0, rule: "clock_literal" }], []])
+    end
+  end
+
   describe "an insert that sets a GENERATED ALWAYS key (task 20260927-24)" do
     before { conn.exec("CREATE TABLE fx.accounts (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text)") }
 
