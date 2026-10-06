@@ -77,6 +77,37 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
   end
 
+  describe ".record_replacing" do
+    it "replaces each stage's record for its search, keeping other searches, and adds the totals" do
+      record("index-rank", :original, in: 5, dropped: { below_top_three: 2 }, out: 3)
+      record("index-rank", :rewrite, in: 1, out: 1)
+      described_class.add_totals(store, hypothetical_explains: 4)
+
+      described_class.record_replacing(
+        reopened, [["index-rank", :original, { in: 2, out: 2 }],
+                   ["llm-index-refine", :original, { in: 0, out: 0, extra: { nothing_fell_short: 1 } }]],
+        totals: { hypothetical_explains: 3 }
+      )
+
+      burndown = described_class.read(reopened)
+      expect(burndown["stages"]["index-rank"]).to eq(
+        "original" => { "in" => 2, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 2, "extra" => {} },
+        "rewrite" => { "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {} }
+      )
+      expect(burndown["stages"]["llm-index-refine"]["original"]["extra"]).to eq("nothing_fell_short" => 1)
+      expect(burndown["totals"]).to eq("hypothetical_explains" => 7)
+    end
+
+    it "checks each record as record does, storing nothing when one is refused" do
+      record("index-rank", :original, in: 1, out: 1)
+
+      expect_refused(/index-rank/) do
+        described_class.record_replacing(store, [["index-rank", :original, { in: 2, out: 1 }]])
+      end
+      expect(described_class.read(store)["stages"]["index-rank"]["original"]["in"]).to eq(1)
+    end
+  end
+
   describe ".record" do
     it "stores a stage's counts under its stage and search, filling in what the stage didn't give" do
       record(in: 10, dropped: { duplicate: 2, covered_by_existing: 1 }, set_aside: 1, out: 6,
@@ -394,6 +425,17 @@ RSpec.describe Quaack::Enclave::Burndown do
 
       expect(described_class.read(store).dig("stages", "llm-index-ideas", "original")).to eq(
         "in" => 0, "added" => { "llm" => 0 }, "dropped" => {}, "set_aside" => 0, "out" => 0, "extra" => {}
+      )
+    end
+
+    it "counts DDL refused before the Dedupe as the LLM's, dropped by rule, and keeps extra" do
+      described_class.record_llm_round(store, stage: "llm-index-refine", search: :original, dedupe:, since:, report:,
+                                              refused: { unqualified_table: 2, too_many: 1 },
+                                              extra: { fell_short: 3 })
+
+      expect(described_class.read(store).dig("stages", "llm-index-refine", "original")).to eq(
+        "in" => 0, "added" => { "llm" => 3 }, "dropped" => { "unqualified_table" => 2, "too_many" => 1 },
+        "set_aside" => 0, "out" => 0, "extra" => { "fell_short" => 3 }
       )
     end
 

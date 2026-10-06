@@ -79,16 +79,17 @@ RSpec.describe "quaacks index-build, against a real server" do
       store.write("rewrite_survived_#{n}", "survived" => survived)
     end
 
+    before = Quaack::Enclave::Burndown.read(stored)
     run("index-build")
     first = Quaack::Enclave::Burndown.read(stored)
     FileUtils.rm_f(File.join(stored.path, "index_build.json"))
     run("index-build")
 
     expect(stored.read("index_build")["indexes"].size).to be > 1
-    expect(first).to eq("stages" => { "rewrite-index-ideas" => { "rewrites" => {
-                          "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {}
-                        } } },
-                        "totals" => { "indexes_built" => stored.read("index_build")["indexes"].size })
+    went_on = { "in" => 1, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 1, "extra" => {} }
+    built = stored.read("index_build")["indexes"].size
+    expect(first).to eq("stages" => before["stages"].merge("rewrite-index-ideas" => { "rewrites" => went_on }),
+                        "totals" => before["totals"].merge("indexes_built" => built))
     expect(Quaack::Enclave::Burndown.read(stored)).to eq(first)
   end
 

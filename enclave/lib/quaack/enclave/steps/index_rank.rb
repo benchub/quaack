@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../index_burndown"
 require_relative "../index_ranking"
 require_relative "../index_store"
 require_relative "../literal_set"
@@ -30,7 +31,9 @@ module Quaack
       # The DDL can hold a low-cardinality predicate literal, so the entry
       # stays in the store. Once llm-index-ideas has run for the search
       # (index_generated_<search>), it also writes index_llm_ranked_<search>,
-      # so a resumed rewrite-index-ideas knows its second index-rank ran. Its only line is DONE.
+      # so a resumed rewrite-index-ideas knows its second index-rank ran. Before
+      # either, it records the ranking in the burndown (IndexBurndown.record_rank).
+      # Its only line is DONE.
       module IndexRank
         OPTIONS = { "search" => :value }.freeze
 
@@ -53,13 +56,19 @@ module Quaack
 
         def ranking(store, search, connection)
           entry = store.read("index_search_#{search}")
+          report, ranking = rank(store, search, entry, connection)
+          IndexBurndown.record_rank(store, search.to_sym, entry, [report, ranking])
+          plain_ranking(ranking, LiteralSet.load(store).sets)
+        end
+
+        # The used candidates' index-test report, and IndexRanking's Ranking.
+        def rank(store, search, entry, connection)
           query = IndexSearch.query(store, search)
           literal_sets = IndexSearch.values(LiteralSet.load(store).sets)
           types = IndexSearch.types(store, query)
           report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates: used(entry), types:)
-          ranking = IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,
-                                                  results: report.results, types:)
-          plain_ranking(ranking, LiteralSet.load(store).sets)
+          [report, IndexRanking.rank(connection, query:, literal_sets:, baseline: report.baseline,
+                                                 results: report.results, types:)]
         end
 
         def plain_ranking(ranking, maps)

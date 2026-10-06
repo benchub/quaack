@@ -1324,6 +1324,34 @@ RSpec.describe Quaack::Driver::Report do
                                    "compared on only part of the real data: 2"))
     end
 
+    # Task 20261001-20: the names the enclave's index stages record.
+    it "puts the index stages' own reasons and counts in words" do
+      refused = %w[unqualified_table unknown_relation unrepresentable unparsable not_create_index
+                   forbidden_in_index unsupported_construct].to_h { [it, 1] }
+      ranked = { "below_top_three" => 1, "combination_unused_index" => 2, "combination_not_chosen" => 1 }
+      stages = { "llm-index-ideas" => { "original" => rec(0, 1, added: { "llm" => 4 },
+                                                                dropped: refused) },
+                 "llm-index-refine" => { "original" => rec(0, 0, extra: { "nothing_fell_short" => 1 }) },
+                 "index-rank" => { "original" => rec(4, 4, added: { "combinations" => 4 }, dropped: ranked) } }
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+
+      expect(table).to include(row("Ideas from the LLM", 0, "from the LLM: 4",
+                                   "named a table without its schema: 1; named a table the query doesn&#39;t use: 1; " \
+                                   "couldn&#39;t be tested as written: 1; didn&#39;t parse: 1; " \
+                                   "wasn&#39;t a single CREATE INDEX: 1; used something an index can&#39;t: 1; " \
+                                   "used SQL QUAACK doesn&#39;t support: 1", 0, 1, "none"))
+      expect(table).to include(row("The LLM's second round of ideas", 0, "none", "none", 0, 0,
+                                   "skipped, since none of the LLM&#39;s ideas fell short: 1"))
+      expect(table).to include(row("Trying indexes together", 4, "combinations tried: 4",
+                                   "outside the top three: 1; a combination that left an index unused: 2; " \
+                                   "a combination that wasn&#39;t the best: 1", 0, 4, "none"))
+      stages["llm-index-refine"]["original"] = rec(0, 0, extra: { "no_ideas_tested" => 1, "fell_short" => 2 })
+      table = section(render(payload.merge("burndown" => { "stages" => stages, "totals" => {} })), "burndown")
+      expect(table).to include(row("The LLM's second round of ideas", 0, "none", "none", 0, 0,
+                                   "skipped, since the LLM had no ideas to test: 1; " \
+                                   "ideas that fell short and went back to the LLM: 2"))
+    end
+
     it "leaves a reason with a count of zero out, and names the ones that dropped something" do
       expect(rewrite_table).to include(row("Checking each rewrite can run differently from your query", 2, "none",
                                            "planned the same as your query: 1", 0, 1, "none"))

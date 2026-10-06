@@ -49,7 +49,9 @@ module Quaack
     #
     # Accumulating. Each call to the enclave script is its own process, so
     # each record reads the entry, adds its counts, and writes it back.
-    # Separate calls for the same stage and search add together. The driver
+    # Separate calls for the same stage and search add together, except
+    # through record_once, which records nothing the second time, and
+    # record_replacing, which keeps only the latest. The driver
     # runs one call at a time. If two calls ever raced, both would read the
     # same entry and the later write would win, losing the other's counts.
     # The entry would still add up, since each write is atomic and whole.
@@ -102,16 +104,31 @@ module Quaack
         add(store, records, totals) unless searches&.key?(Input.name(search, "search"))
       end
 
+      # Sets each [stage, search, counts] triple's record, in place of any
+      # the search had for the stage, and adds the totals, in one write. A
+      # stage whose record is the latest run of a step that can run again,
+      # such as index-rank, which ranks a rewrite's search again after
+      # rewrite-index-ideas, records this way. Totals count the work each
+      # run did, so they still add.
+      def record_replacing(store, records, totals: {}) = add(store, records, totals, replace: true)
+
       # Records one Dedupe search as an index-dedupe run: in is every candidate it
       # considered, dropped is by Drop reason, set_aside is its GIN, GiST,
       # and SP-GiST candidates, and out is its proposals, which go on to
       # index-test. It returns the counts it recorded, for the since of the LLM
       # round that follows (see record_llm_round).
       def record_dedupe(store, dedupe, search:)
-        counts = Adapters.dedupe_counts(dedupe)
-        add(store, [["index-dedupe", search, counts]], {})
-        counts
+        record = dedupe_record(dedupe, search:)
+        add(store, [record], {})
+        record.last
       end
+
+      # record_dedupe's [stage, search, counts], for record_all or record_once.
+      def dedupe_record(dedupe, search:) = ["index-dedupe", search, dedupe_counts(dedupe)]
+
+      # A Dedupe's counts as record_dedupe records them, such as the since
+      # of the LLM round about to filter through it (see record_llm_round).
+      def dedupe_counts(dedupe) = Adapters.dedupe_counts(dedupe)
 
       # Records a SingleCandidateTest report as an index-test run: in is every
       # candidate tested, out is the ones the planner used for some literal
@@ -122,30 +139,45 @@ module Quaack
       # for index-build to build for real (IndexSearch's "set_aside"), which count
       # as set aside rather than never_used.
       def record_single_candidate_test(store, report, search:, set_aside: [])
-        add(store, [["index-test", search, Adapters.tested_counts(report, set_aside)]], Adapters.tested_totals(report))
+        add(store, [single_candidate_test_record(report, search:, set_aside:)], tested_totals(report))
       end
+
+      # record_single_candidate_test's [stage, search, counts], and its
+      # totals, tested_totals, for record_all or record_once.
+      def single_candidate_test_record(report, search:, set_aside: [])
+        ["index-test", search, Adapters.tested_counts(report, set_aside)]
+      end
+
+      def tested_totals(report) = Adapters.tested_totals(report)
 
       # Records one LLM round, llm-index-ideas or llm-index-refine, as one record. A round filters
       # the LLM's candidates through the search's own Dedupe, which already
       # holds the mechanical proposals, and then tests what's left in index-test.
       # The two are a chain, so the round's record covers both:
       #
-      # - in is 0, and added is { llm: the candidates the round filtered },
-      #   including any replacements asked for in llm-index-ideas.
-      # - dropped holds the round's index-dedupe reasons and its index-test ones.
+      # - in is 0, and added is { llm: the candidates the round filtered,
+      #   and the ones it refused before filtering }.
+      # - dropped holds the refused ones by rule, and the round's index-dedupe
+      #   reasons and its index-test ones.
       # - set_aside is what the round's filtering set aside.
       # - out is what the planner used, from report.
+      # - extra is the caller's, such as how many candidates fell short
+      #   before llm-index-refine.
+      #
+      # refused is { rule: count } for the LLM's DDL that never reached the
+      # Dedupe, such as too_many or unqualified_table (see GeneratorThree).
       #
       # since is the counts that the search's last record_dedupe or
       # record_llm_round returned, so only this round's filtering counts.
       # report must test exactly the candidates this round's filtering
       # kept, or the record won't add up and it's refused. It returns the
       # search's counts, for the since of the next round.
-      def record_llm_round(store, stage:, search:, dedupe:, since:, report:) # rubocop:disable Metrics/ParameterLists
+      def record_llm_round(store, stage:, search:, dedupe:, since:, report:, refused: {}, extra: {}) # rubocop:disable Metrics/ParameterLists
         raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
-        add(store, [[stage, search, Adapters.round_counts(counts, Adapters.since(since), report)]],
+        round = Adapters.round_counts(counts, Adapters.since(since), report)
+        add(store, [[stage, search, Adapters.with_refused(round, refused).merge(extra:)]],
             Adapters.tested_totals(report))
         counts
       end
@@ -168,11 +200,11 @@ module Quaack
 
       # Checks every record and total, then adds them all to the entry in
       # one write. records are [stage, search, counts] triples.
-      def add(store, records, totals)
+      def add(store, records, totals, replace: false)
         records = records.map { |stage, search, counts| Input.stage_record(stage, search, counts) }
         totals = Input.breakdown(totals, "totals")
         burndown = read(store)
-        records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record) }
+        records.each { |stage, search, record| Entry.add_record(burndown, stage, search, record, replace:) }
         burndown["totals"] = Entry.add_breakdowns(burndown["totals"], totals)
         store.write(ENTRY, burndown)
         nil
@@ -207,6 +239,14 @@ module Quaack
           { in: 0, added: { llm: counts[:in] - since[:in] },
             dropped: drops_since(counts[:dropped], since[:dropped]).merge(tested[:dropped]),
             set_aside: counts[:set_aside] - since[:set_aside], out: tested[:out] }
+        end
+
+        # The round's counts with the refused DDL added by the LLM and
+        # dropped by rule.
+        def with_refused(round, refused)
+          refused = Input.breakdown(refused, "dropped")
+          round.merge(added: { llm: round[:added][:llm] + refused.values.sum },
+                      dropped: round[:dropped].merge(refused.transform_keys(&:to_sym)))
         end
 
         # Each reason's drops since the earlier ones, leaving out a reason
@@ -297,9 +337,9 @@ module Quaack
       module Entry
         module_function
 
-        def add_record(burndown, stage, search, record)
+        def add_record(burndown, stage, search, record, replace: false)
           searches = burndown["stages"][stage] ||= {}
-          searches[search] = searches.key?(search) ? add_records(searches[search], record) : record
+          searches[search] = searches.key?(search) && !replace ? add_records(searches[search], record) : record
         end
 
         def add_records(old, new)

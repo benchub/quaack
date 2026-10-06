@@ -11,7 +11,7 @@ module Quaack
     #   report = SingleCandidateTest.run(connection, query:, literal_sets:, candidates:)
     #   IndexRanking.rank(connection, query:, literal_sets:,
     #                     baseline: report.baseline, results: report.results + llm_report.results)
-    #   # => Ranking(top: [Entry, Entry, Entry], combination: Entry or nil)
+    #   # => Ranking(top: [Entry, Entry, Entry], combination: Entry or nil, tally: Tally)
     #
     # connection, query, and literal_sets are as SingleCandidateTest.run
     # takes them. baseline is an index-test Baseline, and results are index-test Results
@@ -62,8 +62,17 @@ module Quaack
     # Nothing here goes through egress yet.
     module IndexRanking
       # top has up to three single-index Entries, best first. combination
-      # is an Entry with two or three indexes, or nil.
-      Ranking = Data.define(:top, :combination)
+      # is an Entry with two or three indexes, or nil. tally counts the work,
+      # for the burndown.
+      Ranking = Data.define(:top, :combination, :tally)
+
+      # ranked is how many candidates were ranked, the ones the planner used.
+      # combinations is how many combinations were measured, unused_index
+      # how many of them were left out because the plans left an index
+      # unused (or HypoPG refused them), and explains how many plans the
+      # measuring made, one per literal set of each measurement HypoPG
+      # didn't refuse.
+      Tally = Data.define(:ranked, :combinations, :unused_index, :explains)
 
       # One index, or a combination of them. candidates are the
       # IndexCandidates, and ddl has each one's to_ddl, in the same order.
@@ -106,12 +115,25 @@ module Quaack
         check(literal_sets, baseline, results)
         pool = results.select(&:used?).map { |r| single(r, baseline) }
         singles = ranked(pool)
+        counts = { combinations: 0, unused_index: 0, explains: 0 }
         if pool.size > 1
           combination = SingleCandidateTest.session(connection, query:, literal_sets:, types:) do |session|
-            combine(session, baseline, pool, singles.first)
+            combine(Counted.new(session, counts), baseline, pool, singles.first)
           end
         end
-        Ranking.new(top: singles.first(TOP).freeze, combination:)
+        Ranking.new(top: singles.first(TOP).freeze, combination:, tally: Tally.new(ranked: pool.size, **counts))
+      end
+
+      # A Session that counts its measurements into counts, as Tally does.
+      Counted = Struct.new(:session, :counts) do
+        def measure(candidates)
+          measured = session.measure(candidates)
+          counts[:combinations] += 1
+          counts[:explains] += measured.plans.size
+          measured
+        end
+
+        def unused_index = counts[:unused_index] += 1
       end
 
       def check(literal_sets, baseline, results)
@@ -166,12 +188,16 @@ module Quaack
       end
 
       # The Entry for these candidates' indexes together, or nil if the
-      # plans leave some index unused for every literal set. A measurement
-      # HypoPG refused has no plans, so it's nil too.
+      # plans leave some index unused for every literal set, counted in the
+      # session's tally. A measurement HypoPG refused has no plans, so it's
+      # nil too.
       def combined(session, candidates, baseline)
         measured = session.measure(candidates)
         used = measured.plans.transform_values(&:used)
-        return nil unless candidates.each_index.all? { |i| used.each_value.any? { |u| u[i] } }
+        unless candidates.each_index.all? { |i| used.each_value.any? { |u| u[i] } }
+          session.unused_index
+          return nil
+        end
 
         entry(candidates, measured.sizes.sum, measured.plans, used, baseline)
       end

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative "support/index_search_run"
+require "quaack/enclave/burndown"
+require "quaack/enclave/refinement"
 
 # `quaacks index-test` (DESIGN.md's llm-index-ideas and index-test): the LLM's DDL, filtered
 # through the stored search's Dedupe and tested on the racetrack, the way
@@ -92,6 +94,52 @@ RSpec.describe "quaacks index-test, against a real server" do
 
     expect(stored.read("index_search_original")["llm_results"].map { it["round"] }).to eq([nil, "refinement"])
     expect(index_test(ddls(partial), "--round", "third").stdout).to eq(error_line("index_test_unknown_round"))
+  end
+
+  def burndown = Quaack::Enclave::Burndown.read(stored)
+  def used?(result) = !result["refusal"] && result["plans"].values.any? { it["used"] }
+
+  # Each tested result's index-test counts: [out, dropped].
+  def tested(results)
+    used = results.count { used?(it) }
+    refused = results.count { it["refusal"] }
+    [used, { "never_used" => results.size - used - refused, "hypopg_refused" => refused }.reject { |_, n| n.zero? }]
+  end
+
+  # Task 20261001-20: llm-index-ideas once per call, its replacements adding to it, and llm-index-refine
+  # with how many first-round candidates fell short.
+  it "records each LLM round in the burndown, with DDL refused before the Dedupe, and counts only its own" do
+    prepare
+    index_search
+    duplicate = Quaack::Enclave::IndexStore.candidate(stored.read("index_search_original")["results"].first["candidate"])
+    before = burndown
+
+    index_test(ddls(partial, "CREATE INDEX ON orders (total)", duplicate.to_ddl))
+    first = stored.read("index_search_original")["llm_results"]
+    out, dropped = tested(first)
+    expect(burndown["stages"]["llm-index-ideas"]).to eq(
+      "original" => { "in" => 0, "added" => { "llm" => 3 },
+                      "dropped" => { "unqualified_table" => 1, "duplicate" => 1 }.merge(dropped),
+                      "set_aside" => 0, "out" => out, "extra" => {} }
+    )
+    expect(burndown["totals"]["hypothetical_explains"])
+      .to eq(before["totals"]["hypothetical_explains"] + first.sum { it["plans"].size })
+
+    index_test(ddls(partial, "CREATE INDEX ON public.orders (total)"))
+    both = stored.read("index_search_original")
+    out, dropped = tested(both["llm_results"])
+    expect(burndown["stages"]["llm-index-ideas"]["original"]).to eq(
+      "in" => 0, "added" => { "llm" => 5 }, "dropped" => { "unqualified_table" => 1, "duplicate" => 2 }.merge(dropped),
+      "set_aside" => 0, "out" => out, "extra" => {}
+    )
+
+    index_test(ddls("CREATE INDEX ON orders (created_at)"), "--round", "refinement")
+    expect(burndown["stages"]["llm-index-refine"]).to eq(
+      "original" => { "in" => 0, "added" => { "llm" => 1 }, "dropped" => { "unqualified_table" => 1 },
+                      "set_aside" => 0, "out" => 0,
+                      "extra" => { "fell_short" => Quaack::Enclave::Refinement.shortfalls(both).compact.size } }
+    )
+    expect(burndown["stages"].except("llm-index-ideas", "llm-index-refine")).to eq(before["stages"])
   end
 
   it "refuses stdin that isn't {\"ddls\": [strings]}, and a run with no index search, storing nothing" do

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative "support/index_search_run"
+require "quaack/enclave/burndown"
+require "quaack/enclave/refinement"
 
 # `quaacks index-rank` (DESIGN.md's index-rank): ranks and combines every tested
 # candidate of a search, mechanical and LLM, after a real index-search and
@@ -49,6 +51,76 @@ RSpec.describe "quaacks index-rank, against a real server" do
     expect(kept.flat_map { it["plans"].values }).to all(be_a(Array))
     expect(LeakCheck.findings(sentinels, stdout: held)).to eq([])
     expect(held).to include("$1")
+  end
+
+  def burndown = Quaack::Enclave::Burndown.read(stored)
+  def used?(result) = !result["refusal"] && result["plans"].values.any? { it["used"] }
+
+  # Task 20261001-20: index-rank's record is the latest ranking's, and says what didn't make the cut.
+  it "records index-rank in the burndown, the latest ranking replacing an earlier one" do
+    prepare
+    index_search
+    index_test("CREATE INDEX ON public.orders (note) WHERE status = 'held'")
+    entry = stored.read("index_search_original")
+    used = (entry["results"] + entry["llm_results"]).count { used?(it) }
+    before = burndown
+
+    index_rank
+    first = burndown
+    index_rank
+
+    ranking = stored.read("index_ranking_original")
+    record = burndown["stages"]["index-rank"]["original"]
+    # Four used candidates: the top three go on, and each of the three
+    # combinations with the best one leaves an index unused, so there's no
+    # combination.
+    expect([used, ranking["top"].size, ranking["combination"]]).to eq([4, 3, nil])
+    expect(record).to eq(
+      "in" => 4, "added" => { "combinations" => 3 },
+      "dropped" => { "below_top_three" => 1, "combination_unused_index" => 3 },
+      "set_aside" => 0, "out" => 3, "extra" => {}
+    )
+    # The LLM's idea held up, so llm-index-refine had nothing to revise.
+    expect(burndown["stages"]["llm-index-refine"]).to eq(
+      "original" => { "in" => 0, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0,
+                      "extra" => { "nothing_fell_short" => 1 } }
+    )
+    expect(burndown["stages"].except("index-rank", "llm-index-refine")).to eq(before["stages"])
+    expect(burndown["stages"]["index-rank"]).to eq(first["stages"]["index-rank"])
+    explains = first["totals"]["hypothetical_explains"] - before["totals"]["hypothetical_explains"]
+    expect(explains).to eq((4 + 3) * entry["baseline"].size)
+    expect(burndown["totals"]["hypothetical_explains"]).to eq(first["totals"]["hypothetical_explains"] + explains)
+  end
+
+  it "records why llm-index-refine didn't run, once llm-index-ideas has, and nothing when it did run" do
+    prepare
+    index_search
+    index_rank
+    expect(burndown["stages"].keys).not_to include("llm-index-refine")
+
+    index_test
+    index_rank
+    expect(burndown["stages"]["llm-index-refine"]).to eq(
+      "original" => { "in" => 0, "added" => {}, "dropped" => {}, "set_aside" => 0, "out" => 0,
+                      "extra" => { "no_ideas_tested" => 1 } }
+    )
+  end
+
+  it "records nothing for llm-index-refine when an idea fell short, so it ran or will" do
+    prepare
+    index_search
+    index_test("CREATE INDEX ON public.orders (total)")
+    expect(Quaack::Enclave::Refinement.shortfalls(stored.read("index_search_original"))).to eq([["unused", nil]])
+
+    index_rank
+    expect(burndown["stages"].keys).not_to include("llm-index-refine")
+
+    refine = JSON.generate("ddls" => [])
+    quaacks.run("index-test", "--run", store.run_id, "--round", "refinement", stdin: refine, env: libpq_env)
+    refined = burndown["stages"]["llm-index-refine"]
+    index_rank
+    expect(burndown["stages"]["llm-index-refine"]).to eq(refined)
+    expect(refined["original"]["extra"]).to eq("fell_short" => 1)
   end
 
   context "when a literal's type differs from the one Postgres would infer (e2e 020)" do

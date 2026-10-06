@@ -86,6 +86,18 @@ module Quaack
                    "below_top_three" => "outside the top three",
                    "measurement_timed_out" => "timed out in every measurement run",
                    "partial_comparisons" => "compared on only part of the real data",
+                   "unqualified_table" => "named a table without its schema",
+                   "unknown_relation" => "named a table the query doesn't use",
+                   "unrepresentable" => "couldn't be tested as written", "unparsable" => "didn't parse",
+                   "not_create_index" => "wasn't a single CREATE INDEX",
+                   "forbidden_in_index" => "used something an index can't",
+                   "unsupported_construct" => "used SQL QUAACK doesn't support",
+                   "fell_short" => "ideas that fell short and went back to the LLM",
+                   "nothing_fell_short" => "skipped, since none of the LLM's ideas fell short",
+                   "no_ideas_tested" => "skipped, since the LLM had no ideas to test",
+                   "combinations" => "combinations tried",
+                   "combination_unused_index" => "a combination that left an index unused",
+                   "combination_not_chosen" => "a combination that wasn't the best",
                    **SCENARIOS.transform_values { "wrong on #{it}" },
                    **(1..3).to_h { ["round_#{it}", "wrong in round #{it}"] } }.freeze
 
