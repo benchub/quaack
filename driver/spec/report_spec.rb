@@ -1194,9 +1194,59 @@ RSpec.describe Quaack::Driver::Report do
         end
       end
 
-      it "counts the declined and existing indexes of a negative result" do
+      # Task 20261004-77: a negative result's lists hold each index once,
+      # but the proposals count every search's ideas, so the totals don't
+      # come from them.
+      it "doesn't count a negative result's declined and existing indexes, which hold each index once" do
         expect(rows(render(negative_payload), "indexes")["All sources together"])
-          .to eq(["not recorded", "1", "3", "2", "2", "0"])
+          .to eq(["not recorded", "not recorded", "not recorded", "2", "2", "0"])
+      end
+
+      # Task 20261004-77.
+      describe "already existed and planner ignored, for all sources together" do
+        before do
+          stages.merge!(
+            "index-from-query" => { "original" => rec(0, 3, added: { "generator_one" => 3 }) },
+            "index-from-plan" => { "original" => rec(0, 4, added: { "generator_two" => 4 }) },
+            "index-dedupe" => { "original" => rec(7, 4, dropped: { "covered_by_existing" => 2, "duplicate" => 1 }),
+                                "rewrite_1" => rec(3, 2, dropped: { "covered_by_existing" => 1 }) },
+            "index-test" => { "original" => rec(4, 2, dropped: { "never_used" => 1, "hypopg_refused" => 1 }),
+                              "rewrite_1" => rec(2, 0, dropped: { "never_used" => 2 }) },
+            "llm-index-ideas" => { "original" => rec(0, 1, added: { "llm" => 5 },
+                                                           dropped: { "covered_by_existing" => 1, "duplicate" => 1,
+                                                                      "never_used" => 1, "hypopg_refused" => 1 }) },
+            "llm-index-refine" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
+          )
+        end
+
+        it "counts every search's ideas, the LLM's and the generators', as the proposals do" do
+          counted = rows(accountable, "indexes")
+          expect(counted["The LLM"].first(3)).to eq(%w[6 1 3])
+          expect(counted["All sources together"].first(3)).to eq(%w[13 4 7])
+        end
+
+        def together
+          rendered = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }))
+          rows(rendered, "indexes")["All sources together"].first(3)
+        end
+
+        it "says under the table what each column counts" do
+          expect(section(html, "accountability")).to include(
+            "Proposed, already existed, and planner ignored count the ideas of each search, for your query and " \
+            "for each rewrite, so an idea that came up in two searches counts twice. Built and measured, not " \
+            "better, and ranked count each index QUAACK built once."
+          )
+        end
+
+        it "says not recorded unless the generators' and the LLM's are both recorded" do
+          stages.delete("index-dedupe")
+          stages.delete("index-test")
+          expect(together).to eq(["13", "not recorded", "not recorded"])
+          stages.delete("llm-index-ideas")
+          stages.delete("llm-index-refine")
+          stages.merge!("index-dedupe" => { "original" => rec(3, 3) }, "index-test" => { "original" => rec(3, 3) })
+          expect(together).to eq(["not recorded", "not recorded", "not recorded"])
+        end
       end
 
       it "fills in each source's proposals, and the LLM's drops, once the burndown records them" do

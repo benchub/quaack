@@ -45,6 +45,10 @@ module Quaack
       # DESIGN.md's llm-index-ideas asks for up to five.
       MAX_CANDIDATES = 5
 
+      # Every rule it drops DDL for before the Dedupe. The report has words
+      # for each one.
+      REFUSALS = ["too_many", *IndexDdlCheck::RULES, "unrepresentable"].freeze
+
       Outcome = Data.define(:index, :status, :rule, :covered_by, :partial_constant_only, :candidate)
       Result = Data.define(:outcomes, :survivors)
 

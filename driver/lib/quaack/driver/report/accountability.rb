@@ -19,7 +19,8 @@ module Quaack
       # declined, or existing index, so most cells by source are nil. What
       # each source proposed is what index-from-query, index-from-plan, and the LLM rounds (llm-index-ideas,
       # llm-index-refine) added. An LLM round's record also holds its own drops. The
-      # last row counts what the payload does carry, whatever the source.
+      # last row counts what the payload does carry, whatever the source
+      # (index_totals).
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
                            "Not better", "Ranked", "Stopped for another reason"].freeze
@@ -61,14 +62,27 @@ module Quaack
            ["All sources together", (proposals.sum if proposals.all?), *index_totals]]
         end
 
-        # What the payload carries for every source together: the declined
-        # and existing indexes of a negative result, each counted once, and
-        # the built indexes. One is ranked if a ranked candidate ran with it
-        # (Indexes#proposed). The not better and ranked columns needn't add
-        # up to the built ones: see not_better_indexes.
+        # What the payload carries for every source together. Already
+        # existed and planner ignored are counted as the proposals are, from
+        # the burndown, over every search, so an idea that came up in two
+        # searches counts twice: index-dedupe's and index-test's drops of the
+        # generators' ideas, and the LLM rounds' own. Each is nil unless both
+        # are recorded. A negative result's lists hold each index once, so
+        # they'd count a different thing. The built, not better, and ranked
+        # columns count each built index once. One is ranked if a ranked
+        # candidate ran with it (Indexes#proposed). The not better and
+        # ranked columns needn't add up to the built ones: see
+        # not_better_indexes.
         def index_totals
-          [negative && negative["existing"].size, negative && negative["declined"].size, indexes.size,
-           not_better_indexes.size, proposed.size]
+          [together(%w[index-dedupe], %w[covered_by_existing]),
+           together(%w[index-test], %w[never_used hypopg_refused]), indexes.size, not_better_indexes.size,
+           proposed.size]
+        end
+
+        # The generators' stage's drops for reasons, plus the LLM rounds'.
+        def together(stages, reasons)
+          counts = [dropped(stages, reasons), dropped(LLM_ROUNDS, reasons)]
+          counts.sum if counts.all?
         end
 
         # The built indexes that were not better: at least one measured

@@ -123,6 +123,12 @@ module Quaack
         ["storage_options", "WITH (...)", ->(stmt) { !stmt.options.empty? }]
       ].freeze
 
+      # Every rule the check refuses with, in the order it checks them. The
+      # report has words for each one.
+      RULES = ["unparsable", "not_create_index", *REFUSED_OPTIONS.map(&:first), "unqualified_table",
+               "unknown_relation", "forbidden_in_index", "unsupported_construct", "volatile_function",
+               "bad_search_path", "deparse_mismatch"].freeze
+
       module_function
 
       def check(sql, tables, settings, connection)

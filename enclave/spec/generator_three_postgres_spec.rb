@@ -103,6 +103,19 @@ RSpec.describe Quaack::Enclave::GeneratorThree do
     expect(dedupe.considered).to eq(5)
   end
 
+  # Task 20261004-77: the report has words for each of REFUSALS (see the
+  # root spec/report_words_spec.rb).
+  it "lists in REFUSALS every rule it drops DDL for before the Dedupe, the inbound check's included" do
+    conn.exec("CREATE EXTENSION pg_trgm")
+    ddls = ["CREATE INDEX ON public.customers USING gist (email gist_trgm_ops(siglen=32))",
+            "CREATE INDEX ON orders (id)", *["SELECT 1"] * 3, "CREATE INDEX ON public.orders (id)"]
+
+    expect(filter(ddls).outcomes.map(&:rule))
+      .to eq(%w[unrepresentable unqualified_table not_create_index not_create_index not_create_index too_many])
+    expect(described_class::REFUSALS)
+      .to match_array(["too_many", "unrepresentable", *Quaack::Enclave::IndexDdlCheck::RULES])
+  end
+
   it "refuses anything but an Array of Strings, without quoting it" do
     expect { filter(sentinel) }.to raise_error(ArgumentError) { expect(it.message).not_to include(sentinel) }
     expect { filter([1]) }.to raise_error(ArgumentError) { expect(it.message).not_to include(sentinel) }

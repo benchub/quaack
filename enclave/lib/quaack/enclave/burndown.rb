@@ -172,13 +172,17 @@ module Quaack
       # report must test exactly the candidates this round's filtering
       # kept, or the record won't add up and it's refused. It returns the
       # search's counts, for the since of the next round.
-      def record_llm_round(store, stage:, search:, dedupe:, since:, report:, refused: {}, extra: {}) # rubocop:disable Metrics/ParameterLists
+      #
+      # With replace, the round's record takes the place of any the search
+      # had for the stage, as record_replacing does, rather than adding to
+      # it.
+      def record_llm_round(store, stage:, search:, dedupe:, since:, report:, refused: {}, extra: {}, replace: false) # rubocop:disable Metrics/ParameterLists
         raise Error, "an LLM round's stage must be llm-index-ideas or llm-index-refine" unless ROUNDS.include?(stage)
 
         counts = Adapters.dedupe_counts(dedupe)
         round = Adapters.round_counts(counts, Adapters.since(since), report)
         add(store, [[stage, search, Adapters.with_refused(round, refused).merge(extra:)]],
-            Adapters.tested_totals(report))
+            Adapters.tested_totals(report), replace:)
         counts
       end
 

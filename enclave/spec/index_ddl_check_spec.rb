@@ -309,6 +309,42 @@ RSpec.describe Quaack::Enclave::IndexDdlCheck do
     end
   end
 
+  # Task 20261004-77: the report has words for each rule in RULES (see the
+  # root spec/report_words_spec.rb), so RULES must hold every rule the
+  # check refuses with, its own and the ones it takes from SupportedSql,
+  # VolatilityCheck, and Deparse.
+  describe "RULES" do
+    {
+      "unparsable" => ["CREATE INDEX ON", nil],
+      "not_create_index" => ["SELECT 1", nil],
+      "concurrently" => ["CREATE INDEX CONCURRENTLY ON public.orders (status)", nil],
+      "unique" => ["CREATE UNIQUE INDEX ON public.orders (status)", nil],
+      "nulls_not_distinct" => ["CREATE INDEX ON public.orders (status) NULLS NOT DISTINCT", nil],
+      "tablespace" => ["CREATE INDEX ON public.orders (status) TABLESPACE pg_default", nil],
+      "on_only" => ["CREATE INDEX ON ONLY public.orders (status)", nil],
+      "storage_options" => ["CREATE INDEX ON public.orders (status) WITH (fillfactor = 70)", nil],
+      "unqualified_table" => ["CREATE INDEX ON orders (status)", nil],
+      "unknown_relation" => ["CREATE INDEX ON sales.refunds (id)", nil],
+      "forbidden_in_index" => ["CREATE INDEX ON public.orders (status) WHERE status = $1", nil],
+      "unsupported_construct" => ["CREATE INDEX ON public.orders ((xmlelement(name x, status)))", nil],
+      "volatile_function" => ["CREATE INDEX ON public.orders ((random()))", nil],
+      "bad_search_path" => ["CREATE INDEX ON public.orders ((lower(status)))", { "search_path" => "public," }],
+      "deparse_mismatch" => ["CREATE INDEX ON public.orders (status) WHERE 't'::boolean", nil]
+    }.then do |samples|
+      it "lists every rule the check refuses with, each of which it can refuse with" do
+        raised = samples.to_h do |rule, (sql, settings)|
+          check(sql, settings)
+          [rule, nil]
+        rescue described_class::Error => e
+          [rule, e.rule]
+        end
+
+        expect(raised).to eq(samples.keys.to_h { [it, it] })
+        expect(described_class::RULES).to match_array(samples.keys)
+      end
+    end
+  end
+
   describe "the order of the checks" do
     it "checks the statement before its options, and the options in order" do
       expect { check("CREATE UNIQUE INDEX CONCURRENTLY ON public.orders (id); SELECT 1") }
