@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "arguments"
+require_relative "quiet_stream"
 require_relative "version"
 require_relative "setup_command"
 
@@ -39,12 +40,9 @@ module Quaack
       end
 
       def run(argv)
-        if argv == ["--version"]
-          @stdout.print "quaack #{VERSION}\n"
-          0
-        else
-          Arguments.not_utf8(argv, USAGE, @stderr) || subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
-        end
+        return @stdout.print("quaack #{VERSION}\n") || 0 if argv == ["--version"]
+
+        Arguments.not_utf8(argv, USAGE, @stderr) || subcommand(argv) || (@stderr.print(USAGE) || EX_USAGE)
       end
 
       private
@@ -115,8 +113,13 @@ module Quaack
       # error text. Any other failure prints only its rule, as for start.
       # What to do next says to resume the run only while its store is left
       # (Teardown.failure).
+      #
+      # Its progress and messages on stderr are only for show: once a write
+      # there fails, such as to a closed pipe, the rest are skipped and the
+      # run goes on to its own exit status (QuietStream).
       def run_command(run:, rewrites:, out:, keep:, server:)
         require_run
+        @stderr = QuietStream.wrap(@stderr)
         where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
         sqls, client = prepare(rewrites) || (return usage_error(@problem))
 
