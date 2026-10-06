@@ -30,6 +30,12 @@ RSpec.describe "quaacks report-payload" do
       "Plans" => plans }.compact
   end
 
+  # The original plan's block counters, as EXPLAIN (ANALYZE, BUFFERS) writes them.
+  let(:original_blocks) do
+    { "Shared Hit Blocks" => 30, "Shared Read Blocks" => 70, "Shared Dirtied Blocks" => 2,
+      "Local Hit Blocks" => 5, "Temp Read Blocks" => 9 }
+  end
+
   let(:redacted_query) { "SELECT id FROM public.orders WHERE created_at > now() - $1::interval AND note = $2" }
   let(:proposed) do
     { "quaack_a" => "CREATE INDEX ON public.orders USING btree (created_at)",
@@ -56,7 +62,8 @@ RSpec.describe "quaacks report-payload" do
     store.write("classification", "outbound_statistics" => { "tables" => [
                   { "schema" => "public", "name" => "orders", "columns" => [] }
                 ] })
-    store.write("redacted_plan", "explain" => [{ "Plan" => node("Seq Scan", 50, relation: "orders").except("Schema") }])
+    original = node("Seq Scan", 50, relation: "orders").except("Schema").merge(original_blocks)
+    store.write("redacted_plan", "explain" => [{ "Plan" => original }])
     store.write("index_build", "indexes" => proposed.transform_values { { "ddl" => it, "size" => 8192 } },
                                "combinations" => { "original:top:1" => ["quaack_a"], "original:top:2" => ["quaack_b"],
                                                    "rewrite_1:top:1" => %w[quaack_b quaack_c],
@@ -212,9 +219,10 @@ RSpec.describe "quaacks report-payload" do
       )
       expect(rewrite(1)["plan"]).to eq(
         [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
-           "selectivity" => nil, "depth" => 0 },
+           "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => nil, "shared_read_blocks" => nil },
          { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_created_at_id_idx",
-           "est_rows" => 5, "actual_rows" => 5, "selectivity" => 0.005, "depth" => 1 }]
+           "est_rows" => 5, "actual_rows" => 5, "selectivity" => 0.005, "depth" => 1, "shared_hit_blocks" => nil,
+           "shared_read_blocks" => nil }]
       )
     end
 
@@ -734,18 +742,30 @@ RSpec.describe "quaacks report-payload" do
     )
   end
 
-  it "sends plan node shapes with selectivities" do
+  it "sends plan node shapes with selectivities and shared hit and read block counts" do
     expect(report["original_plan"]).to eq([{ "node" => "Seq Scan", "relation" => "public.orders", "index" => nil,
                                              "est_rows" => 50, "actual_rows" => 50, "selectivity" => 0.05,
-                                             "depth" => 0 }])
+                                             "depth" => 0, "shared_hit_blocks" => 30, "shared_read_blocks" => 70 }])
+  end
+
+  context "with a plan whose block counters aren't counts" do
+    let(:original_blocks) { { "Shared Hit Blocks" => sentinel, "Shared Read Blocks" => -4 } }
+
+    it "sends no block counts, never what the counters hold" do
+      expect(report["original_plan"].first.slice("shared_hit_blocks", "shared_read_blocks"))
+        .to eq("shared_hit_blocks" => nil, "shared_read_blocks" => nil)
+      expect_no_leaks(sentinels, outcome)
+    end
   end
 
   context "with a nested plan whose nodes carry more than their shapes" do
-    # Every field a plan node holds that isn't its shape, with a sentinel.
+    # Every field a plan node holds that isn't its shape, with a sentinel,
+    # even the block counters whose counts it sends.
     let(:noise) do
       ["Alias", "Parent Relationship", "Subplan Name", "Join Filter", "Hash Cond", "Recheck Cond", "Startup Cost",
-       "Total Cost", "Shared Hit Blocks", "Shared Read Blocks", "Actual Loops", "Strategy", "Join Type",
-       "Function Name", "CTE Name", "Workers Planned"].to_h { [it, sentinel] }.merge(
+       "Total Cost", "Shared Hit Blocks", "Shared Read Blocks", "Local Hit Blocks", "Temp Read Blocks",
+       "Actual Loops", "Strategy", "Join Type", "Function Name", "CTE Name",
+       "Workers Planned"].to_h { [it, sentinel] }.merge(
          "Output" => [sentinel], "Index Cond" => "(id = '#{sentinel}')", "Sort Key" => [sentinel],
          "Group Key" => [sentinel]
        )
@@ -771,12 +791,14 @@ RSpec.describe "quaacks report-payload" do
       expect(report["original_plan"].map { it["depth"] }).to all(be_an(Integer))
     end
 
-    it "sends a node's type, relation, index name, row counts, selectivity, and depth, and nothing else" do
+    it "sends a node's type, relation, index name, row counts, selectivity, depth, and block counts, " \
+       "and nothing else" do
       expect(report["original_plan"].map(&:keys).uniq)
-        .to eq([%w[node relation index est_rows actual_rows selectivity depth]])
+        .to eq([%w[node relation index est_rows actual_rows selectivity depth shared_hit_blocks shared_read_blocks]])
       expect(report["original_plan"][3]).to eq("node" => "Index Scan", "relation" => "public.orders",
                                                "index" => "orders_created_at_id_idx", "est_rows" => 1,
-                                               "actual_rows" => 1, "selectivity" => 0.001, "depth" => 2)
+                                               "actual_rows" => 1, "selectivity" => 0.001, "depth" => 2,
+                                               "shared_hit_blocks" => nil, "shared_read_blocks" => nil)
       expect_no_leaks(sentinels, outcome)
     end
 

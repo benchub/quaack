@@ -48,7 +48,8 @@ RSpec.describe Quaack::Driver::Report do
           "rules" => ["key_in_self_join"], "fate" => "ranked", "scenario" => nil, "rule" => nil, "round" => nil,
           "after" => nil,
           "plan" => [{ "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
-                       "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0 }],
+                       "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0, "shared_hit_blocks" => nil,
+                       "shared_read_blocks" => nil }],
           "untested_atoms" => ["a < $1"], "covered" => nil, "evidence" => nil }
       ],
       "indexes" => { "quaack_a" => { "ddl" => "CREATE INDEX ON public.t USING btree (created_at)", "size" => 8192,
@@ -59,7 +60,8 @@ RSpec.describe Quaack::Driver::Report do
                                      "makes_redundant" => [{ "name" => "t_a_idx", "size_bytes" => 8192 },
                                                            { "name" => "t_a_b_idx", "size_bytes" => nil }] } },
       "original_plan" => [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 50,
-                            "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0 }],
+                            "actual_rows" => 50, "selectivity" => 0.05, "depth" => 0,
+                            "shared_hit_blocks" => 1_200, "shared_read_blocks" => 34 }],
       "timed_out_count" => 2 }
   end
 
@@ -764,9 +766,10 @@ RSpec.describe Quaack::Driver::Report do
 
     # A plan node as the payload sends it.
     def pnode(type, depth, **shape)
-      shape = { relation: nil, index: nil, est: 10, actual: 10, selectivity: nil }.merge(shape)
+      shape = { relation: nil, index: nil, est: 10, actual: 10, selectivity: nil, hit: 4, read: 3 }.merge(shape)
       { "node" => type, "relation" => shape[:relation], "index" => shape[:index], "est_rows" => shape[:est],
-        "actual_rows" => shape[:actual], "selectivity" => shape[:selectivity], "depth" => depth }
+        "actual_rows" => shape[:actual], "selectivity" => shape[:selectivity], "depth" => depth,
+        "shared_hit_blocks" => shape[:hit], "shared_read_blocks" => shape[:read] }
     end
 
     # Each plan table in the section, by its rows.
@@ -775,7 +778,8 @@ RSpec.describe Quaack::Driver::Report do
     let(:header) do
       '<tr><th scope="col">Step</th><th scope="col">Table</th><th scope="col">Index</th>' \
         '<th scope="col" class="num">Estimated rows</th><th scope="col" class="num">Actual rows</th>' \
-        '<th scope="col" class="num">Share of the table</th></tr>'
+        '<th scope="col" class="num">Share of the table</th>' \
+        '<th scope="col" class="num">Blocks read, with the steps under it</th></tr>'
     end
 
     it "explains the winner from blocks, with each plan as a table of its steps" do
@@ -786,10 +790,11 @@ RSpec.describe Quaack::Driver::Report do
       expect(plan_rows(explanation)).to eq(
         [[[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Seq Scan ),
            %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td></td><td class="num">50</td>),
-           %(<td class="num">50</td><td class="num">5.0%</td></tr>)].join],
+           %(<td class="num">50</td><td class="num">5.0%</td><td class="num">1,234</td></tr>)].join],
          [[%(<tr class="differs"><td class="step" style="padding-left: 0.65rem">Index Scan ),
            %(<strong class="mark">differs</strong></td><td>#{sq("public.t")}</td><td>#{sq("t_a_idx")}</td>),
-           %(<td class="num">5</td><td class="num">5</td><td class="num">0.5%</td></tr>)].join]]
+           %(<td class="num">5</td><td class="num">5</td><td class="num">0.5%</td>),
+           %(<td class="missing">not recorded</td></tr>)].join]]
       )
       expect(explanation).not_to include("<li>")
     end
@@ -809,17 +814,17 @@ RSpec.describe Quaack::Driver::Report do
         original, rewrite = plan_rows(explanation)
         expect(original).to eq(
           [[%(<tr><td class="step" style="padding-left: 0.65rem">Limit</td><td></td><td></td>),
-            %(<td class="num">10</td><td class="num">10</td><td class="num"></td></tr>)].join,
+            %(<td class="num">10</td><td class="num">10</td><td class="num"></td><td class="num">7</td></tr>)].join,
            [%(<tr><td class="step" style="padding-left: 2.15rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
             %(Nested Loop</td><td></td><td></td><td class="num">10</td><td class="num">10</td>),
-            %(<td class="num"></td></tr>)].join,
+            %(<td class="num"></td><td class="num">7</td></tr>)].join,
            [%(<tr class="differs"><td class="step" style="padding-left: 3.65rem"><span class="arrow" ),
             %(aria-hidden="true">-&gt; </span>Seq Scan <strong class="mark">differs</strong></td>),
             %(<td>#{sq("public.t")}</td><td></td><td class="num">9,000</td><td class="num">12,345</td>),
-            %(<td class="num">50.0%</td></tr>)].join,
+            %(<td class="num">50.0%</td><td class="num">7</td></tr>)].join,
            [%(<tr><td class="step" style="padding-left: 3.65rem"><span class="arrow" aria-hidden="true">-&gt; </span>),
             %(Index Scan</td><td>#{sq("public.u")}</td><td>#{sq("u_pkey")}</td><td class="num">1</td>),
-            %(<td class="num">1</td><td class="num"></td></tr>)].join]
+            %(<td class="num">1</td><td class="num"></td><td class="num">7</td></tr>)].join]
         )
         expect(rewrite.map { it.include?("differs") }).to eq([false, false, true, false])
         expect(rewrite[2]).to include("<td>#{sq("t_a_idx")}</td>")
@@ -866,9 +871,17 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows.last).to include(%(<td class="num">12,345</td><td class="missing">not recorded</td>))
     end
 
+    it "says a step's blocks read as its shared hit and read blocks together, or not recorded without either" do
+      payload["original_plan"] = [[12_000, 345], [0, 0], [nil, 9], [8, nil], [nil, nil]].map do |hit, read|
+        pnode("Seq Scan", 0, hit:, read:)
+      end
+      expect(plan_rows(explanation).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>}, 1] })
+        .to eq(["12,345", "0", "9", "8", "not recorded"])
+    end
+
     it "says a share is under 0.1% only when it is above zero and would round to 0.0%" do
       payload["original_plan"] = [0.0, 0.0004, 0.0005, 0.004].map { pnode("Seq Scan", 0, selectivity: it) }
-      expect(plan_rows(explanation).first.map { it[%r{<td class="num">([^<]*)</td></tr>}, 1] })
+      expect(plan_rows(explanation).first.map { it[%r{<td class="num">([^<]*)</td><td class="num">7</td></tr>}, 1] })
         .to eq(["0.0%", "under 0.1%", "0.1%", "0.4%"])
     end
 
@@ -876,10 +889,10 @@ RSpec.describe Quaack::Driver::Report do
       payload["original_plan"] = [pnode("Limit", nil), pnode("Seq Scan", nil, relation: "public.t")]
       expect(plan_rows(explanation).first).to eq(
         [[%(<tr class="differs"><td class="step">Limit <strong class="mark">differs</strong></td><td></td><td></td>),
-          %(<td class="num">10</td><td class="num">10</td><td class="num"></td></tr>)].join,
+          %(<td class="num">10</td><td class="num">10</td><td class="num"></td><td class="num">7</td></tr>)].join,
          [%(<tr class="differs"><td class="step">Seq Scan <strong class="mark">differs</strong></td>),
           %(<td>#{sq("public.t")}</td><td></td><td class="num">10</td><td class="num">10</td>),
-          %(<td class="num"></td></tr>)].join]
+          %(<td class="num"></td><td class="num">7</td></tr>)].join]
       )
     end
 
