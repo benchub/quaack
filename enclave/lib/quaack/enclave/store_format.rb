@@ -6,10 +6,11 @@ module Quaack
     # its store_format entry. FORMAT changes when entry names or what they
     # hold change in a way that an older run would be misread by, such as
     # the step slugs that replaced DESIGN.md's old step IDs as burndown
-    # stages. A run with another format, or none, was started by an older
+    # stages (format 2), or the rewrite stages' records moving to each
+    # rewrite's own search (format 3). A run with another format, or none, was started by an older
     # version, and the CLI refuses to open it (see CLI#open_store).
     module StoreFormat
-      FORMAT = 2
+      FORMAT = 3
       ENTRY = "store_format"
 
       module_function

@@ -12,8 +12,8 @@ module Quaack
       # Rewrites. The payload gives every stored rewrite a source and a
       # fate, so the outcome columns are always counts. How many each source
       # proposed is what its burndown stage added (rewrite-rules, llm-rewrites, operator-rewrites), over
-      # every search. Those refused on arrival are the proposals that
-      # weren't stored. Both are nil until the stage is recorded.
+      # every search. Those not kept are the proposals that weren't stored,
+      # whichever check dropped them: more than the burndown's arrival rules. Both are nil until the stage is recorded.
       #
       # Indexes. The payload doesn't say which source proposed a built,
       # declined, or existing index, so most cells by source are nil. What
@@ -22,7 +22,7 @@ module Quaack
       # last row counts what the payload does carry, whatever the source
       # (index_totals).
       module Accountability
-        REWRITE_COLUMNS = ["Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
+        REWRITE_COLUMNS = ["Proposed", "Not kept", "Same plan as the original", "Wrong results",
                            "Not better", "Ranked", "Stopped for another reason"].freeze
         INDEX_COLUMNS = ["Proposed", "Already existed", "Planner ignored", "Built and measured", "Not better",
                          "Ranked"].freeze

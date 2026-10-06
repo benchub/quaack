@@ -77,6 +77,25 @@ RSpec.describe Quaack::Enclave::Burndown do
     end
   end
 
+  describe ".record_latest" do
+    def search(number) = :"rewrite_#{number}"
+
+    let(:records) { [["rewrite-test", search(1), { in: 1, out: 0, dropped: { s1: 1 } }]] }
+
+    it "replaces the search's records with the latest call's, but adds the totals only the first time" do
+      described_class.record_latest(store, records, totals: { fixture_loads: 2 })
+      record("rewrite-test", search(2), in: 1, out: 1)
+
+      described_class.record_latest(reopened, [["rewrite-test", search(1), { in: 1, out: 1 }]],
+                                    totals: { fixture_loads: 3 })
+
+      burndown = described_class.read(reopened)
+      expect(burndown["stages"]["rewrite-test"].transform_values { it.slice("dropped", "out") })
+        .to eq("rewrite_1" => { "dropped" => {}, "out" => 1 }, "rewrite_2" => { "dropped" => {}, "out" => 1 })
+      expect(burndown["totals"]).to eq("fixture_loads" => 2)
+    end
+  end
+
   describe ".record_replacing" do
     it "replaces each stage's record for its search, keeping other searches, and adds the totals" do
       record("index-rank", :original, in: 5, dropped: { below_top_three: 2 }, out: 3)

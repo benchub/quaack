@@ -51,7 +51,7 @@ module Quaack
     # each record reads the entry, adds its counts, and writes it back.
     # Separate calls for the same stage and search add together, except
     # through record_once, which records nothing the second time, and
-    # record_replacing, which keeps only the latest. The driver
+    # record_replacing and record_latest, which keep only the latest. The driver
     # runs one call at a time. If two calls ever raced, both would read the
     # same entry and the later write would win, losing the other's counts.
     # The entry would still add up, since each write is atomic and whole.
@@ -102,6 +102,20 @@ module Quaack
         stage, search, = records.first
         searches = read(store)["stages"][Input.stage(stage)]
         add(store, records, totals) unless searches&.key?(Input.name(search, "search"))
+      end
+
+      # Records the [stage, search, counts] triples in place of any the
+      # first triple's search had for their stages, and adds the totals
+      # only if the first triple's stage had no record for its search yet,
+      # in one write. A step that runs once per rewrite, then writes its
+      # marker, records this way first. The store can't write the record
+      # and the marker together, so a call can die between them; the rerun
+      # then records its own outcome, which may differ, while the work the
+      # dead call did stays counted once, as record_once counts it.
+      def record_latest(store, records, totals: {})
+        stage, search, = records.first
+        searches = read(store)["stages"][Input.stage(stage)]
+        add(store, records, searches&.key?(Input.name(search, "search")) ? {} : totals, replace: true)
       end
 
       # Sets each [stage, search, counts] triple's record, in place of any

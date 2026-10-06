@@ -22,8 +22,8 @@ module Quaack
       # (rewrite_prune_no_ranking), before connecting. It writes
       # rewrite_pruned_<n> => { "discarded" => Boolean }. Before that, it
       # records the plan-pruning burndown under the search rewrite_<n>: in 1,
-      # dropped same_plans, unless a call that died before its entry recorded
-      # it. With rewrite-check's plan-pruning record, in is the rewrites that
+      # dropped same_plans, in place of the record of a call that died
+      # before its entry (Burndown.record_latest). With rewrite-check's plan-pruning record, in is the rewrites that
       # reached plan-pruning and out those that went on.
       # Its only line is DONE.
       module RewritePrune
@@ -38,8 +38,8 @@ module Quaack
           search = check(store, options.fetch("search"))
           connection = Enclave::RunServer.connect(store, :racetrack)
           discarded = discard?(store, connection, search)
-          Burndown.record_once(store, [["plan-pruning", search.to_sym,
-                                        { in: 1, dropped: { same_plans: discarded ? 1 : 0 }, out: discarded ? 0 : 1 }]])
+          counts = { in: 1, dropped: { same_plans: discarded ? 1 : 0 }, out: discarded ? 0 : 1 }
+          Burndown.record_latest(store, [["plan-pruning", search.to_sym, counts]])
           store.write("rewrite_pruned_#{search.delete_prefix("rewrite_")}", "discarded" => discarded)
           []
         ensure

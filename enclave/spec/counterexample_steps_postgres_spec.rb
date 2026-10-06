@@ -273,6 +273,23 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       expect(stored.read("rewrite_tested_1")).to include("passed" => false)
       expect(burndown).to eq(first)
     end
+
+    # Task 20261004-69: the rerun's outcome differs (here, the rewrite is
+    # now the equivalent one), so its record replaces the dead call's. The
+    # fixtures the dead call loaded stay counted once.
+    it "keeps the latest outcome's record when a call that died before its entry is run again differently" do
+      ready(looser)
+      test
+      loads = burndown["totals"]
+      %w[rewrite_tested_1 rewrite_survived_1].each { remove(it) }
+      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same))
+
+      test
+
+      expect(stored.read("rewrite_tested_1")).to include("passed" => true)
+      expect(burndown["stages"]["rewrite-test"]["rewrite_1"]).to include("in" => 1, "dropped" => {}, "out" => 1)
+      expect(burndown["totals"]).to eq(loads)
+    end
   end
 
   describe "counterexamples' burndown" do
@@ -292,6 +309,20 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
       ) } }, "totals" => { "fixture_loads" => 3 })
     end
 
+    # RewriteFate calls this counterexamples_failed, not a disproof, so the
+    # burndown mustn't say the round proved it wrong.
+    it "drops a rewrite that failed to run in a round as failed in that round, not as disproved" do
+      ready("SELECT o.note, (o.id / 0)::text FROM public.orders o WHERE o.note = $1")
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+
+      round(1, note_row)
+
+      expect(stored.read("rewrite_round_1")).to include("rule" => "query_failed")
+      expect(burndown["stages"]).to eq("counterexamples" => { "rewrite_1" => counted(
+        dropped: { "failed_in_round_1" => 1 }, extra: { "atoms_covered" => 0 }
+      ) })
+    end
+
     it "keeps a survivor of round 3, with the untested atoms the rounds covered, and counts it once when rerun" do
       ready(same)
       # The original reads o.note = $1 AND o.status = $2: atom 1 is the status test.
@@ -309,6 +340,23 @@ RSpec.describe "quaacks rewrite-test and the counterexample rounds, against a re
 
       expect(stored.read("rewrite_survived_1")).to include("survived" => true)
       expect(burndown).to eq(first)
+    end
+
+    # Task 20261004-69: a round that disproved the rewrite died before
+    # rewrite_survived_<n>; the rerun's rounds, on the equivalent rewrite,
+    # all match, so the survivor's record replaces the disproof's.
+    it "keeps the latest outcome's record when rounds that died before deciding are run again differently" do
+      ready(looser)
+      store.write("rewrite_tested_1", "passed" => true, "untested_atoms" => [])
+      round(1, note_row)
+      expect(burndown["stages"]["counterexamples"]["rewrite_1"]["dropped"]).to eq("round_1" => 1)
+      remove("rewrite_survived_1")
+      store.write("rewrite_1", stored.read("rewrite_1").merge("sql" => same))
+
+      [note_row, dup_rows, dup_rows].each.with_index(1) { |insert, number| round(number, insert) }
+
+      expect(stored.read("rewrite_survived_1")).to include("survived" => true)
+      expect(burndown["stages"]["counterexamples"]["rewrite_1"]).to include("dropped" => {}, "out" => 1)
     end
   end
 

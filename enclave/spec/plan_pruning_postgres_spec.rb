@@ -162,6 +162,25 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
       .to eq("output_mismatch" => 1, "same_plans" => 1)
   end
 
+  # Task 20261004-69: a call that died after its burndown record and before
+  # rewrite_pruned_<n> is run again, and this time the rewrite plans
+  # differently (here, rewrite_1's entries become rewrite_2's).
+  it "keeps the latest outcome's record when a call that died before its entry is run again" do
+    ready(same, sorted)
+    %w[original rewrite_1 rewrite_2].each { search_and_rank(it) }
+    run("rewrite-prune", "--search", "rewrite_1")
+    FileUtils.rm_f(File.join(stored.path, "rewrite_pruned_1.json"))
+    %w[rewrite_%s index_search_rewrite_%s index_ranking_rewrite_%s].each do |name|
+      store.write(format(name, 1), stored.read(format(name, 2)))
+    end
+
+    run("rewrite-prune", "--search", "rewrite_1")
+
+    expect(stored.read("rewrite_pruned_1")).to eq("discarded" => false)
+    expect(Quaack::Enclave::Burndown.read(stored)["stages"]["plan-pruning"]["rewrite_1"])
+      .to include("in" => 1, "dropped" => { "same_plans" => 0 }, "out" => 1)
+  end
+
   context "when a literal's type differs from the one Postgres would infer (e2e 020)" do
     let(:query) do
       "SELECT o.note, o.status FROM public.orders o WHERE o.note = '#{sentinels.text}' " \

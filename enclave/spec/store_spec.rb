@@ -53,8 +53,8 @@ RSpec.describe Quaack::Enclave::Store do
       store = described_class.create(base: @tmp)
 
       expect(store.entry_names).to eq(["store_format"])
-      expect(store.read("store_format")).to eq({ "format" => 2 })
-      expect(Quaack::Enclave::StoreFormat::FORMAT).to eq(2)
+      expect(store.read("store_format")).to eq({ "format" => 3 })
+      expect(Quaack::Enclave::StoreFormat::FORMAT).to eq(3)
     end
 
     # Each base is named for the sentinel, so a message that named the base

@@ -1092,9 +1092,22 @@ RSpec.describe Quaack::Driver::Report do
     it "has one rewrites table: a row per source, a column per outcome" do
       table = accountable[%r{<table id="accountability-rewrites">.*?</table>}m]
       expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
-        .to eq(["Source", "Proposed", "Refused on arrival", "Same plan as the original", "Wrong results",
+        .to eq(["Source", "Proposed", "Not kept", "Same plan as the original", "Wrong results",
                 "Not better", "Ranked", "Stopped for another reason"])
       expect(rows(accountable, "rewrites").keys).to eq([esc("QUAACK's own rules"), "The LLM", "You"])
+    end
+
+    # Task 20261004-69: the burndown's "refused on arrival" is only
+    # llm-rewrites' and operator-rewrites' own rules, so this column, which
+    # counts every proposal that wasn't stored, has a name of its own.
+    it "says what the not kept column counts: every rewrite dropped before it was stored" do
+      expect(accountable).to include(
+        "A rewrite not kept is one QUAACK dropped before testing it: it was over the limit (five from the LLM, " \
+        "ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
+        "checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, " \
+        "or, for one of QUAACK's own, repeated another."
+      )
+      expect(accountable).not_to include("refused on arrival")
     end
 
     it "counts each source's rewrites by what became of them" do
@@ -1372,6 +1385,27 @@ RSpec.describe Quaack::Driver::Report do
                                    "timed out in every measurement run: 1; lost a tie on index size: 1; " \
                                    "outside the top three: 1", 0, 0,
                                    "compared on only part of the real data: 2"))
+    end
+
+    # Task 20261004-69: rewrite-test's never-tested reasons in the fates'
+    # own words, and a counterexamples round that failed to run said so.
+    it "says why rewrite-test never tested a rewrite, and which round failed to run, in words" do
+      untested = { "s2" => 1, "complex_check" => 1, "statement_timeout" => 1, "query_failed" => 1, "failed" => 1 }
+      stages = { "rewrite-test" => { "rewrite_1" => rec(5, 0, dropped: untested) },
+                 "counterexamples" => { "rewrite_1" => rec(2, 0, dropped: { "round_1" => 1,
+                                                                            "failed_in_round_3" => 1 }) } }
+      html = render(payload.merge("burndown" => { "stages" => stages, "totals" => {} }))
+      table = section(html, "burndown")
+
+      tested = "wrong on NULLs: 1; never tested, because a CHECK constraint on its tables is too complex for " \
+               "QUAACK to satisfy: 1; never tested, because a statement timed out: 1; never tested, because a " \
+               "statement failed on the test database: 1; never tested, because a statement failed on the test " \
+               "database: 1"
+      expect(table).to include(row("Testing on made-up edge-case data", 5, "none", esc(tested), 0, 0, "none"))
+      expect(table).to include(row("Testing on data the LLM wrote to break them", 2, "none",
+                                   "wrong in round 1: 1; failed to run in round 3: 1", 0, 0, "none"))
+      expect(table).to include(esc("Dropped: #{tested}."))
+      expect(table).to include(esc("dropped: wrong on NULLs: 1; never tested, because a CHECK"))
     end
 
     # Task 20261001-20: the names the enclave's index stages record.
