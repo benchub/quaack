@@ -24,6 +24,19 @@ module Quaack
       module Input
         # Well past any query, plan, or batch of candidates a step takes.
         MAX_BYTES = 64 * 1024 * 1024
+        # Reading takes up to about 190 bytes for each comma, colon, and
+        # opening bracket outside a string, so 64 MB of [0,0,...] took
+        # 3.2 GB. Past this many, input is refused unparsed, which keeps the
+        # worst parse near 550 MB. EXPLAIN's JSON, even without its
+        # indentation, measured about one every 10.7 bytes or more on very
+        # wide plans, so a plan intake takes, at most 16 MB, stays under
+        # about 1.6 million, and a step's input,
+        # from one LLM reply of at most 8,000 tokens, far fewer.
+        MAX_ELEMENTS = 2_000_000
+        # What counts toward MAX_ELEMENTS, and the quote that starts a string,
+        # in which nothing counts.
+        ELEMENT_OR_STRING = /[",:\[{]/
+        ELEMENTS = ",:[{"
 
         # Parsing into this finds a key repeated in one object, on any json
         # version: the parser sets each key with []=.
@@ -53,7 +66,8 @@ module Quaack
         module_function
 
         # The parsed object, with String keys. It raises Refused with
-        # input_too_large for more than MAX_BYTES, and with bad_input for
+        # input_too_large for more than MAX_BYTES or MAX_ELEMENTS, and with
+        # bad_input for
         # anything that isn't one JSON object in UTF-8 nested at most
         # PlainData::MAX_DEPTH deep, with no key repeated in an object, no
         # comments, no unknown escapes, and no Float that isn't finite. The
@@ -74,10 +88,11 @@ module Quaack
 
         # Like parse, but for any one JSON document, not only an object.
         # Intake reads the operator's plan file with it, since EXPLAIN's
-        # JSON is an Array.
+        # JSON is an Array. Its input_too_large is for MAX_ELEMENTS only.
         def parse_document(text)
           # JSON accepts bytes that aren't UTF-8 inside a string.
           raise Refused, "bad_input" unless text.valid_encoding? && !lexical_problem?(text)
+          raise Refused, "input_too_large" if too_many_elements?(text)
 
           object = begin
             # The first parse only looks for a repeated key. The second
@@ -102,6 +117,27 @@ module Quaack
           while scanner.skip_until(OUTSIDE)
             return true if scanner.matched == "/"
             return true if bad_string?(scanner)
+          end
+          false
+        end
+
+        # Whether text has more than MAX_ELEMENTS commas, colons, and opening
+        # brackets outside its strings. Most text has fewer even counting
+        # those inside, which String#count finds quickly. Otherwise it scans,
+        # and stops once it's past. Run after lexical_problem?, so text has
+        # no comment.
+        def too_many_elements?(text)
+          text.count(ELEMENTS) > MAX_ELEMENTS && elements_past_max?(StringScanner.new(text))
+        end
+
+        def elements_past_max?(scanner)
+          elements = 0
+          while scanner.skip_until(ELEMENT_OR_STRING)
+            if scanner.matched == '"'
+              bad_string?(scanner)
+            elsif (elements += 1) > MAX_ELEMENTS
+              return true
+            end
           end
           false
         end

@@ -12,6 +12,8 @@ module Quaack
       # 1. plan_not_json: it isn't one JSON document, read as strictly as
       #    the CLI reads stdin (see CLI::Input): UTF-8, no repeated key, no
       #    comment, no unknown escape, and no number too big for a Float.
+      #    Or plan_too_large, before it's parsed, when it has more than
+      #    CLI::Input::MAX_ELEMENTS elements.
       # 2. plan_bad_shape: it isn't what EXPLAIN writes for one statement,
       #    an Array of one object whose "Plan" is an object, with a
       #    "Settings" that's an object of Strings if it's there at all.
@@ -47,8 +49,8 @@ module Quaack
 
         def parse(text)
           CLI::Input.parse_document(text)
-        rescue CLI::Refused
-          raise Error, "plan_not_json", cause: nil
+        rescue CLI::Refused => e
+          raise Error, e.rule == "input_too_large" ? "plan_too_large" : "plan_not_json", cause: nil
         end
 
         def shaped?(plan)

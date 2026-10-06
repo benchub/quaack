@@ -358,6 +358,14 @@ RSpec.describe "quaacks intake" do
       refuses_plan("#{plan_text}#{" " * (max + 1 - plan_text.bytesize)}", "plan_too_large")
       expect(intake_with(plan: file("big.json", plan_text + (" " * (max - plan_text.bytesize))))).to eq(0)
     end
+
+    it "refuses a plan of more than CLI::Input::MAX_ELEMENTS elements as plan_too_large" do
+      elements = Quaack::Enclave::CLI::Input::MAX_ELEMENTS
+      plan = JSON.parse(plan_text)
+      plan[0]["Sentinel"] = [INTAKE_SENTINEL, *Array.new(elements, 0)]
+
+      refuses_plan(JSON.generate(plan), "plan_too_large")
+    end
   end
 
   describe "the query" do

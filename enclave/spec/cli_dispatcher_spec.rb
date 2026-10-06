@@ -560,6 +560,45 @@ RSpec.describe Quaack::Enclave::CLI do
       expect(calls.size).to eq(1)
     end
 
+    # JSON.parse takes 50 to 135 times a dense array's size (20260923-58),
+    # so Input counts the elements first and refuses too many unparsed.
+    describe "the element cap" do
+      let(:max) { cli_class::Input::MAX_ELEMENTS }
+
+      # A stdin object with exactly elements commas, colons, and opening
+      # brackets outside its strings: {, :, ",", :, and [, then one comma
+      # between each pair of zeros. The string s holds anything.
+      def dense(elements, string = CLI_SENTINEL)
+        %({"s":"#{string}","a":[#{Array.new(elements - 4, "0").join(",")}]})
+      end
+
+      it "is 2,000,000" do
+        expect(max).to eq(2_000_000)
+      end
+
+      it "refuses more than MAX_ELEMENTS as input_too_large before parsing, without the input's text" do
+        allow(JSON).to receive(:parse).and_call_original
+
+        expect(cli(steps, stdin: StringIO.new(dense(max + 1))).run(["echo"])).to eq(64)
+        expect(out.string).to eq(error_line("echo", "input_too_large"))
+        expect(JSON).not_to have_received(:parse)
+        expect(calls).to eq([])
+      end
+
+      it "accepts MAX_ELEMENTS" do
+        expect(cli(steps, stdin: StringIO.new(dense(max))).run(["echo"])).to eq(0)
+        expect(calls.fetch(0).fetch(:input).fetch("a").size).to eq(max - 4)
+      end
+
+      it "doesn't count commas, colons, brackets, or escaped quotes inside strings" do
+        string = %(,:[{]}\\"\\\\) * 600_000
+        expect(string.count(",:[{")).to be > max
+
+        expect(cli(steps, stdin: StringIO.new(dense(max, "#{string}\\\\"))).run(["echo"])).to eq(0)
+        expect(calls.fetch(0).fetch(:input).fetch("s")).to eq("#{%(,:[{]}"\\) * 600_000}\\")
+      end
+    end
+
     it "never reads stdin for a step that takes no input" do
       stdin = Object.new
       def stdin.read(*) = raise("read stdin")
