@@ -36,8 +36,10 @@ module Quaack
     #   T and T' sorted digests match, and either it has no LIMIT and
     #   OFFSET together or its runs through the end of the window
     #   (Shape#through_window) match too, the candidate's T and T' ordered
-    #   digests must match the original's. Otherwise a LIMIT or OFFSET may
-    #   cut a tie group, and ResultComparison::CutTies checks the candidate
+    #   digests must match the original's, and so must the sorted digests
+    #   of its own runs through its window, when it has a LIMIT and an
+    #   OFFSET. Otherwise a LIMIT or OFFSET may cut a tie group, and
+    #   ResultComparison::CutTies checks the candidate
     #   on row hashes, from both queries' runs with and without their LIMIT
     #   and OFFSET, as fixture-compare does (HashedRuns). A run without a
     #   LIMIT that times out refuses, unsupported_order.
@@ -198,11 +200,12 @@ module Quaack
         end
 
         def verdict(shapes, originals)
-          return ProductionComparison.tiebroken(@run, originals, shapes.last, @positions) unless cut?(shapes, originals)
+          return check(shapes, originals) if cut?(shapes.first, originals)
 
-          @columns = originals.first.types.size
-          rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
-          rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
+          verdict = ProductionComparison.tiebroken(@run, originals, shapes.last, @positions)
+          return verdict unless verdict.result == "pass" && cut?(shapes.last, originals)
+
+          check(shapes, originals)
         end
 
         def fetch(shape, limited:)
@@ -221,10 +224,19 @@ module Quaack
 
         private
 
-        def cut?(shapes, originals)
+        def check(shapes, originals)
+          @columns = originals.first.types.size
+          rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
+          rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
+        end
+
+        # Whether shape's LIMIT or OFFSET may cut a tie group, by the
+        # original's tiebreaker runs, which a candidate that gets here
+        # matched row for row.
+        def cut?(shape, originals)
           uncut = originals.map(&:sorted).uniq.one?
-          ResultComparison::CutTies.needed?(shapes.first, uncut:, kept_rows: originals.first.hashes.any?) do
-            [false, true].map { @run.digest(shapes.first.through_window(@positions, descending: it)).sorted }.uniq.one?
+          ResultComparison::CutTies.needed?(shape, uncut:, kept_rows: originals.first.hashes.any?) do
+            [false, true].map { @run.digest(shape.through_window(@positions, descending: it)).sorted }.uniq.one?
           end
         end
       end

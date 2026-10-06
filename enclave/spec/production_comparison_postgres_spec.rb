@@ -172,6 +172,13 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         expect([good, bad, spy.unlimited]).to eq([["pass", nil], %w[fail value], []])
       end
 
+      # The candidate's rows through the end of its window, the first 65,
+      # cut the tie group of 130 to 139, but it already fails row for row.
+      it "runs none for a candidate that fails row for row, though its own tie crosses an edge" do
+        bad = spied("SELECT i / 10 AS a, i FROM generate_series(0, 199) i ORDER BY a DESC LIMIT 20 OFFSET 45")
+        expect([bad, spy.unlimited]).to eq([%w[fail value], []])
+      end
+
       # The first tie group holds 200 to 204, and the rest hold ten rows
       # each, so the rows kept span 45 to 64, and a group spans 105 to 114.
       it "runs none for a LIMIT and an OFFSET bound to params" do
@@ -179,6 +186,29 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
         params = [{ value: "20", type: 20 }, { value: "45", type: 20 }]
         result = described_class.compare(connection: spy, original: sql, candidate: sql, params:, timeout_ms: 5_000)
         expect([result.result, result.rule, spy.unlimited]).to eq(["pass", nil, []])
+      end
+    end
+
+    # The original's rows are fixed, so the candidate's tiebreaker runs
+    # must match row for row, but a candidate with a LIMIT and an OFFSET
+    # can keep rows from the middle of its own tie group and still match.
+    describe "a candidate whose own tie reaches past the edges of the rows it keeps" do
+      # The original keeps b, b however its ties break. The candidate ties
+      # a, b, b, and c around the rows it keeps, so it could keep a and b,
+      # yet both its tiebreaker runs keep b and b.
+      it "refuses a candidate whose own tie reaches past both edges of the rows it keeps" do
+        products = "(VALUES ('a', 10), ('b', 10), ('b', 10), ('c', 10), ('d', 5)) p(category, price)"
+        expect(verdict("SELECT category, price FROM #{products} ORDER BY price DESC, category LIMIT 2 OFFSET 1",
+                       "SELECT category, price FROM #{products} ORDER BY price DESC LIMIT 2 OFFSET 1"))
+          .to eq(%w[fail unsupported_order])
+      end
+
+      # The original always keeps 3. The candidate ties all five, and its
+      # runs keep the middle one, 3, both ways, but it could keep any.
+      it "refuses a candidate that keeps one row from the middle of its own tie" do
+        expect(verdict("SELECT i FROM generate_series(1, 5) i ORDER BY i OFFSET 2 LIMIT 1",
+                       "SELECT i FROM generate_series(1, 5) i ORDER BY i * 0 OFFSET 2 LIMIT 1"))
+          .to eq(%w[fail unsupported_order])
       end
     end
 
