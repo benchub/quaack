@@ -230,9 +230,9 @@ module Quaack
           rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
         end
 
-        # Whether shape's LIMIT or OFFSET may cut a tie group, by the
-        # original's tiebreaker runs, which a candidate that gets here
-        # matched row for row.
+        # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
+        # original's tiebreaker runs. Called for the original's shape first,
+        # then for a candidate's once it has matched those runs row for row.
         def cut?(shape, originals)
           uncut = originals.map(&:sorted).uniq.one?
           ResultComparison::CutTies.needed?(shape, uncut:, kept_rows: originals.first.hashes.any?) do

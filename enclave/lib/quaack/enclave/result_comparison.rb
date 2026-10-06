@@ -412,9 +412,9 @@ module Quaack
         cut_tie(transaction, originals, shapes, positions)
       end
 
-      # Whether shape's LIMIT or OFFSET may cut a tie group, by the
-      # original's tiebreaker runs, which a candidate that gets here
-      # matched row for row.
+      # Whether shape's LIMIT or OFFSET may cut a tie group, judged by the
+      # original's tiebreaker runs. Called for the original's shape first,
+      # then for a candidate's once it has matched those runs row for row.
       def cut_tie?(transaction, shape, originals, positions)
         CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?) do
           ties_uncut?(*[false, true].map { transaction.query(shape.through_window(positions, descending: it)) })
