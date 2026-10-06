@@ -5513,3 +5513,21 @@ The review of 20261004-54 found:
 - **Design:** report.
 - **Status:** done
 - **Landed:** Items 1-3 landed: Protocol::PlanNodes allowlist (node, relation, index, est_rows, actual_rows, selectivity, depth) enforced at enclave egress (String or Symbol plan keys) and the driver's reply check; share cutoff and rewrite depth tests. Item 4 not done (marking matches DESIGN). Item 5 became 20261004-82. Minors became 20261004-83.
+
+### 20261004-25. Progress lines: summaries that only repeat the step, and asks after notes.
+
+Minor findings from the review of 20261004-19. That task drops, on a terminal, the bare `Done in` lines and an LLM ask line that repeats its step. Some lines still just repeat the step with its time:
+
+1. **Fixed-text summaries.** Many pipeline steps' summaries carry no information, e.g. "Ranked the index ideas in 5s (index-rank)" after the frozen "Ranking the index ideas (index-rank) 5s". Others do ("Got 3 rewrites from the LLM, 3 kept"). **Ask the user** whether to drop fixed-text summaries on a terminal, and how to tell the two kinds apart (e.g. a summary flag on the step, set only when the text carries counts).
+2. **Asks under per-rewrite sub-steps** still repeat, e.g. "Rewrite Silver Fox: Asking the LLM for rows that could break the rewrite (counterexamples)" followed by "Asking the LLM for rows that could break the rewrite (llm-counterexamples) 20s".
+3. **After 20261004-21's notes**, the "repeats its step" rule fires only for llm-rewrites. A note such as "Reading the query's shape for the LLM" now comes between the step line and the ask, so the ask is no longer the first line. Decide with the user whether those asks still count as repeats.
+4. A second, identical ask is also dropped, because a dropped note leaves the step as the latest line. No caller does this today, but no test pins it.
+5. No test pins the word boundary in `Repeat`: mutating `start_with?("#{words} ")` to `start_with?(words)` survives.
+6. DESIGN.md's progress paragraph says each step's closing line gives the final time, without saying that setup steps print no closing line on a terminal.
+
+- **Depends on:** 20261004-19, 20261004-21.
+- **Came from:** The review of 20261004-19.
+- **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-05):** Item 1: drop fixed-text summaries on a terminal; steps flag which summaries carry counts, and those always stay. Item 3: an LLM ask line after a note under the same step still counts as a repeat, and is dropped on a terminal.
+- **Status:** done
+- **Landed:** Landed after a review with no blocking findings. On a terminal, steps without informative: true print no closing line (flagged: llm-index-ideas, llm-index-refine, rewrite-rules, llm-rewrites, operator-rewrites, plan-pruning, rewrite-correctness, rewrite-index-ideas, index-build, report); asks repeating their step or sub-step are dropped even after notes. Minor: the wait's clock on a note line became 20261004-84.

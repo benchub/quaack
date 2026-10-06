@@ -2154,22 +2154,7 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 
 ### 20261004-24. Flaky ProductionComparison timeout spec under load. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-25. Progress lines: summaries that only repeat the step, and asks after notes.
-
-Minor findings from the review of 20261004-19. That task drops, on a terminal, the bare `Done in` lines and an LLM ask line that repeats its step. Some lines still just repeat the step with its time:
-
-1. **Fixed-text summaries.** Many pipeline steps' summaries carry no information, e.g. "Ranked the index ideas in 5s (index-rank)" after the frozen "Ranking the index ideas (index-rank) 5s". Others do ("Got 3 rewrites from the LLM, 3 kept"). **Ask the user** whether to drop fixed-text summaries on a terminal, and how to tell the two kinds apart (e.g. a summary flag on the step, set only when the text carries counts).
-2. **Asks under per-rewrite sub-steps** still repeat, e.g. "Rewrite Silver Fox: Asking the LLM for rows that could break the rewrite (counterexamples)" followed by "Asking the LLM for rows that could break the rewrite (llm-counterexamples) 20s".
-3. **After 20261004-21's notes**, the "repeats its step" rule fires only for llm-rewrites. A note such as "Reading the query's shape for the LLM" now comes between the step line and the ask, so the ask is no longer the first line. Decide with the user whether those asks still count as repeats.
-4. A second, identical ask is also dropped, because a dropped note leaves the step as the latest line. No caller does this today, but no test pins it.
-5. No test pins the word boundary in `Repeat`: mutating `start_with?("#{words} ")` to `start_with?(words)` survives.
-6. DESIGN.md's progress paragraph says each step's closing line gives the final time, without saying that setup steps print no closing line on a terminal.
-
-- **Depends on:** 20261004-19, 20261004-21.
-- **Came from:** The review of 20261004-19.
-- **Design:** Progress lines for `quaack run`.
-- **Decided by the user (2026-10-05):** Item 1: drop fixed-text summaries on a terminal; steps flag which summaries carry counts, and those always stay. Item 3: an LLM ask line after a note under the same step still counts as a repeat, and is dropped on a terminal.
-- **Status:** todo
+### 20261004-25. Progress lines: summaries that only repeat the step, and asks after notes. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-26. ssh_failed and incomplete: resume advice after teardown, and the ControlMaster note. Done, see BACKLOG-COMPLETE.md.
 
@@ -2396,4 +2381,15 @@ While here (second review of 20261004-72): no test plants a Hash in place of a r
 - **Depends on:** 20261004-72.
 - **Came from:** The review of 20261004-72.
 - **Design:** The report's plan tables.
+- **Status:** todo
+
+### 20261004-84. Progress: the LLM wait's clock sits on a note's line.
+
+From the review of 20261004-25. On a terminal, an LLM ask that repeats its step is dropped even after a note (the user's 2026-10-05 decision on -25 item 3). So during the wait, the live clock ticks on the note: "Reading the query's shape for the LLM (llm-index-ideas) 1m10s", which reads as if the enclave call took the minute. The first counterexamples ask does the same under "Rewrite X: Reading the rewrite's shape for the LLM". `progress_spec.rb` (~571) pins today's behavior.
+
+**Ask the user** which they prefer: (a) keep it; (b) when the latest line is a note, freeze the note and print the ask after all (so the clock ticks on "Asking the LLM…"); or (c) print a short ask line such as "Waiting for the LLM" instead of the repeated wording.
+
+- **Depends on:** 20261004-25.
+- **Came from:** The review of 20261004-25.
+- **Design:** Progress lines for `quaack run`.
 - **Status:** todo
