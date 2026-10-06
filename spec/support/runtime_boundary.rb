@@ -7,11 +7,13 @@ require "rbconfig"
 # throwaway copies with planted violations.
 #
 # It builds one side's gem, installs it with its gemspec's dependency closure
-# into a throwaway GEM_HOME, and runs it there, outside Bundler, three ways:
-# with --version, with no arguments (the usage branch), and with a script
-# that requires every .rb file under the lib/ of each installed gem built
-# from the repo, such as quaacks and quaack-protocol. Each run must
-# exit as expected, and every file it loads must pass two checks:
+# into a throwaway GEM_HOME, and runs it there, outside Bundler: with
+# --version, with no arguments (the usage branch), with a script that
+# requires every .rb file under the lib/ of each installed gem built from the
+# repo, such as quaacks and quaack-protocol, and with the side's own scripts.
+# The driver's builds a client for each LLM provider, since it loads each
+# provider's SDK only then. Each run must exit as expected, and every file it
+# loads must pass two checks:
 #
 # - It comes from the standard library, the side's own gem, or an allowed
 #   gem. For the enclave, the allowed gems are Boundary::ENCLAVE_ALLOWED_GEMS,
@@ -31,7 +33,7 @@ require "rbconfig"
 # edits $LOADED_FEATURES or turns off the check.
 #
 # It also can't see code that never runs. A require inside a method body
-# that none of the three runs calls loads nothing, and files outside lib/,
+# that none of the runs calls loads nothing, and files outside lib/,
 # other than the executable, aren't required. The static checks in
 # boundary_spec.rb catch plain requires there.
 #
@@ -42,6 +44,7 @@ require "rbconfig"
 # catches that.
 module RuntimeBoundary
   EVERY_LIB_FILE = "every file under lib/"
+  BUILD_LLM_CLIENTS_RUN = "an LLM client for each provider"
 
   # Each set of executable arguments to run, and the exit status it must end
   # with. 64 is EX_USAGE, what both CLIs return for bad arguments.
@@ -57,11 +60,32 @@ module RuntimeBoundary
     end
   RUBY
 
+  # Builds a client for each provider whose SDK the driver loads, with a
+  # transport that's never called and keys that are never sent, so it
+  # touches no network and needs no credentials.
+  BUILD_LLM_CLIENTS = <<~RUBY
+    gem "quaack-driver"
+    require "quaack/driver"
+    llm = Quaack::Driver::LLM
+    edge = ->(*) { raise "the boundary check makes no LLM calls" }
+    built = {
+      "anthropic" => [{}, { api_key: "unused" }],
+      "openai_compatible" => [{ "model" => "m" }, { api_key: "unused" }],
+      "bedrock" => [{ "model" => "m", "aws_region" => "us-west-2" }, { aws_access_key: "a", aws_secret_key: "s" }]
+    }.map do |provider, (block, options)|
+      settings = llm.settings({ "provider" => provider, **block }, env: {})
+      llm::Client.new(burndown: Quaack::Driver::Burndown.new, settings:, transport: edge, **options)
+      provider
+    end
+    puts built.join(" ")
+  RUBY
+
   # One side of the boundary. `gemspec_path` is the gemspec to build, the
   # repo's own or a throwaway copy's. `sources` maps other gem names to
   # gemspecs to build instead of taking them from the repo or the bundle.
-  # `allowed_gems` is nil to allow the gemspec's closure.
-  Side = Data.define(:gemspec_path, :exe, :sources, :allowed_gems, :forbidden_gems, :forbidden_requires)
+  # `allowed_gems` is nil to allow the gemspec's closure. `scripts` maps a
+  # label to the source of a Ruby script to run too, which must exit 0.
+  Side = Data.define(:gemspec_path, :exe, :sources, :allowed_gems, :forbidden_gems, :forbidden_requires, :scripts)
 
   Violation = Data.define(:run, :message) do
     def to_s = "#{run}: #{message}"
@@ -76,7 +100,7 @@ module RuntimeBoundary
   def enclave(gemspec_path: RepoGems.gemspec_path("enclave"), sources: {}, allowed_gems: Boundary::ENCLAVE_ALLOWED_GEMS)
     Side.new(gemspec_path: gemspec_path, exe: "quaacks", sources: sources, allowed_gems: allowed_gems,
              forbidden_gems: [RepoGems.gemspec("driver").name],
-             forbidden_requires: Boundary::ENCLAVE_FORBIDDEN_REQUIRES)
+             forbidden_requires: Boundary::ENCLAVE_FORBIDDEN_REQUIRES, scripts: {})
   end
 
   # The driver needs no forbidden requires: the enclave isn't an allowed gem,
@@ -84,7 +108,7 @@ module RuntimeBoundary
   def driver(gemspec_path: RepoGems.gemspec_path("driver"), sources: {})
     Side.new(gemspec_path: gemspec_path, exe: "quaack", sources: sources, allowed_gems: nil,
              forbidden_gems: [RepoGems.gemspec("enclave").name],
-             forbidden_requires: [])
+             forbidden_requires: [], scripts: { BUILD_LLM_CLIENTS_RUN => BUILD_LLM_CLIENTS })
   end
 
   # Installs `side` into `dir`, runs it every way, and returns a Report.
@@ -146,7 +170,17 @@ module RuntimeBoundary
       File.write(script, REQUIRE_EVERY_LIB_FILE)
       # Every gem built from the repo ships with the side, such as
       # quaack-protocol, so their files get required too.
-      runs.merge(EVERY_LIB_FILE => [@install.run_ruby(script, *@install.built_gem_names), 0])
+      runs[EVERY_LIB_FILE] = [@install.run_ruby(script, *@install.built_gem_names), 0]
+      runs.merge(script_runs)
+    end
+
+    # The side's own scripts, each of which must exit 0.
+    def script_runs
+      @side.scripts.each_with_index.to_h do |(label, source), i|
+        path = File.join(@install.dir, "script_#{i}.rb")
+        File.write(path, source)
+        [label, [@install.run_ruby(path), 0]]
+      end
     end
 
     def rules

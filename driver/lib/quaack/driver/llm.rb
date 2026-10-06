@@ -37,6 +37,12 @@ module Quaack
       ADAPTERS = { "anthropic" => :AnthropicAdapter, "openai_compatible" => :OpenAICompatibleAdapter,
                    "bedrock" => :BedrockAdapter, "copilot_cli" => :CopilotCLIAdapter }.freeze
 
+      # Each SDK takes about half a second to load, so an adapter that needs
+      # one loads, and loads its SDK, only when `adapter` first names it.
+      autoload :AnthropicAdapter, File.expand_path("llm/anthropic_adapter", __dir__)
+      autoload :OpenAICompatibleAdapter, File.expand_path("llm/openai_compatible_adapter", __dir__)
+      autoload :BedrockAdapter, File.expand_path("llm/bedrock_adapter", __dir__)
+
       BLOCK = "llm"
       FILE = "~/.quaack/driver.json"
 
@@ -165,7 +171,4 @@ end
 
 require_relative "llm/error"
 require_relative "llm/client"
-require_relative "llm/anthropic_adapter"
-require_relative "llm/openai_compatible_adapter"
-require_relative "llm/bedrock_adapter"
 require_relative "llm/copilot_cli_adapter"
