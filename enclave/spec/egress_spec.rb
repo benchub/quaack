@@ -68,8 +68,9 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "keeps every field on each type's list, and only those, for every type on the whitelist" do
-      # A burndown's fields must be a burndown, so it gets its own tests below.
-      whitelist.except(:burndown).each do |type, fields|
+      # A burndown's fields must be a burndown, and a report's plans plan
+      # nodes, so they get their own tests below.
+      whitelist.except(:burndown, :report).each do |type, fields|
         message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
         out = egress.serialize(message)
 
@@ -206,6 +207,58 @@ RSpec.describe Quaack::Enclave::Egress do
       expect { egress.serialize(type: :burndown, stages: {}) }.to raise_error(described_class::Error)
       expect { egress.serialize(type: :burndown, totals: {}) }.to raise_error(described_class::Error)
     end
+  end
+
+  describe "a report message" do
+    let(:plan_node) do
+      { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_pkey", "est_rows" => 5,
+        "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0 }
+    end
+    let(:rewrites) do
+      [{ "rewrite" => "rewrite_1", "sql" => "SELECT $1", "plan" => [plan_node] },
+       { "rewrite" => "rewrite_2", "plan" => nil }]
+    end
+
+    it "sends a report whose plans are plan nodes as it is, with its other fields unchecked" do
+      out = egress.serialize(type: :report, original_plan: [plan_node], rewrites:, labels: "value of labels",
+                             rows: EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "report", "original_plan" => [plan_node], "rewrites" => rewrites,
+                                    "labels" => "value of labels")
+    end
+
+    [
+      ["a planted field in a node of the original's plan", ->(n) { [n.merge("filter" => EGRESS_SENTINEL)] }, nil],
+      ["a value in place of the original's plan", ->(_) { EGRESS_SENTINEL }, nil],
+      ["a depth that isn't an Integer", ->(n) { [n.merge("depth" => EGRESS_SENTINEL)] }, nil],
+      ["no original plan", ->(_) {}, nil],
+      ["a planted field in a node of a rewrite's plan", nil,
+       ->(n) { [{ "rewrite" => "rewrite_1", "plan" => [n, n.merge(EGRESS_SENTINEL => 1)] }] }],
+      ["a value in place of a rewrite's plan", nil, ->(_) { [{ "plan" => EGRESS_SENTINEL }] }],
+      ["a planted field in a node of a rewrite's plan under a Symbol key", nil,
+       ->(n) { [{ plan: [n.merge("filter" => EGRESS_SENTINEL)] }] }],
+      ["a value in place of a rewrite", nil, ->(_) { [EGRESS_SENTINEL] }],
+      ["a value in place of the rewrites", nil, ->(_) { EGRESS_SENTINEL }],
+      ["no rewrites", nil, ->(_) {}]
+    ].each do |what, original, changed|
+      it "refuses one with #{what}, without quoting it" do
+        message = { type: :report, original_plan: original ? original.call(plan_node) : [plan_node],
+                    rewrites: changed ? changed.call(plan_node) : rewrites }.compact
+        refusal = "a value in this report message has a plan that isn't plan nodes"
+        expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
+          expect(e.message).not_to include(EGRESS_SENTINEL)
+          expect(e.cause).to be_nil
+        }
+      end
+    end
+  end
+
+  it "refuses a report whose rewrite names its plan both as a Symbol and as a String, without quoting it" do
+    node = { "node" => "Seq Scan", "relation" => nil, "index" => nil, "est_rows" => 1, "actual_rows" => 1,
+             "selectivity" => nil, "depth" => 0 }
+    rewrites = [{ "plan" => nil, plan: [node.merge("filter" => EGRESS_SENTINEL)] }]
+    expect { egress.serialize(type: :report, original_plan: [node], rewrites:) }
+      .to raise_error(described_class::Error) { expect(it.message).not_to include(EGRESS_SENTINEL) }
   end
 
   it "sends plain data nested in an allowed field as is, with Symbols as their names" do

@@ -639,6 +639,29 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Egress sends a report only if its plans pass Protocol::PlanNodes.valid?,
+    # so the driver checks the same.
+    it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
+      node = %({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,) +
+             %("selectivity":0.05,"depth":0)
+      good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]})
+      result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it.values_at("type", "original_plan") })
+        .to eq([["report", [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 5,
+                              "actual_rows" => 5.5, "selectivity" => 0.05, "depth" => 0 }]]])
+      [%({"type":"report","original_plan":[#{node},"filter":"#{sentinel}"}],"rewrites":[]}),
+       %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":[#{node},"#{sentinel}":1}]}]}),
+       %({"type":"report","original_plan":[#{node.sub('"depth":0', '"depth":"0"')}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[],"rewrites":["#{sentinel}"]}),
+       %({"type":"report","rewrites":[]}), %({"type":"report","original_plan":[]})].each do |line|
+        error = refusal(line)
+
+        expect(error.rule).to eq("unexpected_output"), "for #{line}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     it "refuses a message that repeats a key" do
       expect(refusal(%({"type":"version","version":"1","version":"2"})).rule).to eq("unexpected_output")
       expect(refusal(%({"type":"burndown","stages":{"a":1,"a":2},"totals":{}})).rule).to eq("unexpected_output")

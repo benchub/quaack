@@ -95,7 +95,9 @@ RSpec.describe "quaacks report-payload" do
     store.write("rewrite_round_1", "round" => 3, "evidence" => true, "rule" => nil, "covered" => ["o.note = $2"])
     store.write("rewrite_survived_1", "survived" => true, "evidence" => false)
     store.write("index_search_rewrite_1", "baseline" => { "slow" => { "plan" => [{
-                  "Plan" => node("Index Scan", 5, relation: "orders", index: "orders_created_at_id_idx")
+                  "Plan" => node("Limit", 5, plans: [
+                                   node("Index Scan", 5, relation: "orders", index: "orders_created_at_id_idx")
+                                 ])
                 }] } })
     Quaack::Enclave::Burndown.record(store, "index-dedupe", :original, in: 4, dropped: { duplicate: 1 }, out: 3)
     Quaack::Enclave::Burndown.add_totals(store, hypothetical_explains: 12)
@@ -208,8 +210,12 @@ RSpec.describe "quaacks report-payload" do
         "untested_atoms" => ["o.note = $2", "o.created_at > (now() - $1)"], "covered" => ["o.note = $2"],
         "evidence" => false
       )
-      expect(rewrite(1)["plan"].first).to include("node" => "Index Scan", "index" => "orders_created_at_id_idx",
-                                                  "selectivity" => 0.005)
+      expect(rewrite(1)["plan"]).to eq(
+        [{ "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => 5, "actual_rows" => 5,
+           "selectivity" => nil, "depth" => 0 },
+         { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_created_at_id_idx",
+           "est_rows" => 5, "actual_rows" => 5, "selectivity" => 0.005, "depth" => 1 }]
+      )
     end
 
     context "with a rewrite that was stored and taken no further" do
