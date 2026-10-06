@@ -43,7 +43,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
   def rows_of(columns, *rows)
     rows.map do |values|
-      Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns:, values: values.map(&:to_s))
+      Quaack::Enclave::ArenaRunner::FixtureRow.new(table: items, columns:, values: values.map { |value| value&.to_s })
     end
   end
 
@@ -120,13 +120,13 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       expect(fields(compare(limited, candidate))).to include(match: true, mode: :ordered)
     end
 
-    it "refuses a LIMIT that splits a tie, even for a good candidate" do
+    it "matches a good candidate when the LIMIT splits a tie" do
       limited = "#{original} LIMIT 2"
       candidate = "SELECT id, grp FROM #{reversed} ORDER BY grp LIMIT 2"
       first, second = raw(limited, candidate)
       expect(first.sort).not_to eq(second.sort)
 
-      expect(fields(compare(limited, candidate))).to include(match: false, rule: :unsupported_order)
+      expect(fields(compare(limited, candidate))).to include(match: true, rule: nil)
     end
 
     it "keeps the OFFSET" do
@@ -201,11 +201,12 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
-    # The original's rows depend on how a tie at a LIMIT or OFFSET cut, or
-    # a DISTINCT ON pick, breaks. The two tiebreaker runs only expose the
-    # first and last rows of each tie, so the comparison refuses.
+    # The original's rows depend on how a tie at a LIMIT or OFFSET cut
+    # breaks. The rows before the tie must match, in order, and the rest
+    # must come from the tie (CutTies), whichever way each query's ties
+    # break. A DISTINCT ON pick from a tie is refused.
     describe "a tie at a cut" do
-      # Reads items with id 3, or 2 below, first, then by id.
+      # Reads items with the given id first, then by id.
       def moved(id) = "(SELECT * FROM items ORDER BY id = #{id} DESC, id OFFSET 0) s"
 
       def expect_refused(original, candidate, rows)
@@ -213,9 +214,127 @@ RSpec.describe Quaack::Enclave::ResultComparison do
           .to eq(match: false, mode: :ordered, rule: :unsupported_order, row: nil, column: nil)
       end
 
-      let(:four) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1]) }
+      def expect_matched(original, candidate, rows)
+        expect(fields(compare(original, candidate, rows:)))
+          .to eq(match: true, mode: :ordered, rule: nil, row: nil, column: nil)
+      end
 
-      it "refuses a LIMIT that cuts a tie" do
+      let(:four) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1]) }
+      let(:five) { rows_of(%w[id grp], [1, 0], [2, 1], [3, 1], [4, 1], [5, 2]) }
+
+      it "matches a candidate that keeps another row from the tie at a LIMIT" do
+        original = "SELECT id, grp FROM items ORDER BY grp LIMIT 2"
+        candidate = "SELECT id, grp FROM #{moved(4)} ORDER BY grp LIMIT 2"
+        expect(raw(original, candidate, rows: four)).to eq([[%w[1 0], %w[2 1]], [%w[1 0], %w[4 1]]])
+
+        expect_matched(original, candidate, four)
+      end
+
+      it "matches a candidate that keeps other rows from the tie at an OFFSET" do
+        original = "SELECT id, grp FROM items ORDER BY grp OFFSET 2"
+        candidate = "SELECT id, grp FROM items ORDER BY grp, id DESC OFFSET 2"
+        expect(raw(original, candidate, rows: five)).to eq([[%w[3 1], %w[4 1], %w[5 2]], [%w[3 1], %w[2 1], %w[5 2]]])
+
+        expect_matched(original, candidate, five)
+      end
+
+      it "is a value mismatch for a wrong row before the tie" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                          "SELECT id, grp FROM items WHERE id <> 1 ORDER BY grp LIMIT 2", rows: four)
+
+        expect(fields(verdict)).to eq(match: false, mode: :ordered, rule: :value, row: 0, column: nil)
+      end
+
+      it "is a value mismatch for a row from outside the tie" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                          "SELECT id, grp FROM items WHERE grp <> 1 ORDER BY grp LIMIT 2", rows: four)
+
+        expect(fields(verdict)).to eq(match: false, mode: :ordered, rule: :value, row: 1, column: nil)
+      end
+
+      it "is a value mismatch for more of a row than the tie holds" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 3",
+                          "SELECT id, grp FROM items UNION ALL SELECT 2, 1 ORDER BY grp LIMIT 3", rows: five)
+
+        expect(fields(verdict)).to eq(match: false, mode: :ordered, rule: :value, row: 1, column: nil)
+      end
+
+      it "is a value mismatch for the right rows in the wrong order" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                          "SELECT id, grp FROM items ORDER BY grp DESC OFFSET 2", rows: four)
+
+        expect(fields(verdict)).to include(match: false, rule: :value, row: 0)
+      end
+
+      it "is a row_count mismatch when the candidate keeps more rows" do
+        verdict = compare("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                          "SELECT id, grp FROM items ORDER BY grp LIMIT 3", rows: four)
+
+        expect(fields(verdict)).to include(match: false, rule: :row_count)
+      end
+
+      it "checks every sort key, with its direction and NULLS placement" do
+        rows = rows_of(%w[id grp price], [1, 1, nil], [2, 1, nil], [3, 1, 5], [4, 2, 1])
+        original = "SELECT id, grp, price FROM items ORDER BY grp DESC, price NULLS FIRST LIMIT 2"
+        candidate = "SELECT id, grp, price FROM #{moved(2)} ORDER BY grp DESC, price NULLS FIRST LIMIT 2"
+        expect(raw(original, candidate, rows:)).to eq([[%w[4 2 1], ["1", "1", nil]], [%w[4 2 1], ["2", "1", nil]]])
+
+        expect_matched(original, candidate, rows)
+        expect(fields(compare(original, "SELECT id, grp, price FROM items ORDER BY grp DESC, price LIMIT 2", rows:)))
+          .to eq(match: false, mode: :ordered, rule: :value, row: 1, column: nil)
+      end
+
+      it "finds an OFFSET it can't read where only one place fits" do
+        original = "SELECT id, grp FROM items ORDER BY grp OFFSET (SELECT 1) LIMIT 1"
+
+        expect_matched(original, "SELECT id, grp FROM #{moved(4)} ORDER BY grp OFFSET 1 LIMIT 1", four)
+        expect(fields(compare(original, "SELECT id, grp FROM items ORDER BY grp OFFSET 3 LIMIT 1", rows: four)))
+          .to eq(match: false, mode: :ordered, rule: :value, row: 0, column: nil)
+      end
+
+      it "matches when an OFFSET it can't read passes every row" do
+        sql = "SELECT id, grp FROM items ORDER BY grp OFFSET (SELECT 9) LIMIT 1"
+        expect(raw(sql, rows: four)).to eq([[]])
+
+        expect_matched(sql, sql, four)
+      end
+
+      # The tiebreaker runs can check a candidate with DISTINCT ON when no
+      # tie is cut, and CutTies' can't.
+      it "checks an OFFSET with no LIMIT with the tiebreaker runs alone" do
+        expect_matched("SELECT id, grp FROM items ORDER BY grp, id OFFSET 1",
+                       "SELECT DISTINCT ON (grp, id) id, grp FROM items ORDER BY grp, id OFFSET 1", four)
+      end
+
+      it "refuses an OFFSET it can't read when more than one place fits" do
+        rows = rows_of(%w[id grp label], [1, 1, "p"], [2, 1, "q"], [3, 2, "p"], [4, 2, "q"])
+        candidate = "SELECT label FROM #{moved(2)} ORDER BY grp OFFSET 1 LIMIT 1"
+
+        expect_matched("SELECT label FROM items ORDER BY grp OFFSET 1 LIMIT 1", candidate, rows)
+        expect_matched("SELECT label FROM items ORDER BY grp LIMIT 1",
+                       "SELECT label FROM #{moved(2)} ORDER BY grp LIMIT 1", rows)
+        expect_refused("SELECT label FROM items ORDER BY grp OFFSET (SELECT 1) LIMIT 1", candidate, rows)
+        expect_refused("SELECT label FROM items ORDER BY grp OFFSET 1 LIMIT 1",
+                       candidate.sub("1 LIMIT", "(SELECT 1) LIMIT"), rows)
+      end
+
+      # The original keeps two of 2, 3, 4, and 5, so its two tiebreaker
+      # runs keep 3 and 4 both ways. The candidate ties every row, and its
+      # runs keep 3 and 4 too, but as written it keeps 1 and 6.
+      it "refuses a candidate that matches a tie cut on both sides of the rows kept" do
+        original = "SELECT i FROM generate_series(1, 6) i ORDER BY i IN (1, 6) OFFSET 1 LIMIT 2"
+        candidate = "SELECT i FROM unnest(ARRAY[2, 3, 1, 6, 4, 5]) i ORDER BY i * 0 OFFSET 2 LIMIT 2"
+        expect(raw(original, candidate)).to eq([[%w[3], %w[4]], [%w[1], %w[6]]])
+
+        expect_refused(original, candidate, fixture)
+        expect_matched(original, "SELECT i FROM generate_series(6, 1, -1) i ORDER BY i IN (1, 6) OFFSET 1 LIMIT 2",
+                       fixture)
+      end
+
+      # The candidate ties 2, 3, and 4, so its LIMIT could keep 3, which
+      # the original never keeps. Its two tiebreaker runs keep 2 and 4,
+      # rows the original could keep, and 3 shows only as written.
+      it "refuses a candidate whose own tie at the cut could keep a row the original's can't" do
         original = "SELECT id, grp FROM items ORDER BY grp LIMIT 2"
         candidate = "SELECT id, grp FROM #{moved(3)} ORDER BY LEAST(grp, 1) LIMIT 2"
         expect(raw(candidate, rows: four)).to eq([[%w[1 0], %w[3 2]]])
@@ -223,11 +342,23 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         expect_refused(original, candidate, four)
       end
 
-      it "refuses before the candidate runs" do
-        failing = "SELECT id, grp / (id - id) AS grp FROM items ORDER BY grp LIMIT 2"
-        expect { raw(failing, rows: four) }.to raise_error(Quaack::Enclave::ArenaRunner::Error)
+      it "refuses the same hole at an OFFSET" do
+        rows = rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1], [5, 3])
 
-        expect_refused("SELECT id, grp FROM items ORDER BY grp LIMIT 2", failing, four)
+        candidate = "SELECT id, grp FROM #{moved(3)} ORDER BY CASE WHEN grp = 2 THEN 1 ELSE grp END OFFSET 1 LIMIT 1"
+
+        expect_refused("SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 1", candidate, rows)
+      end
+
+      # The candidate ties all three rows, so it could keep 1 and 3, but
+      # the original always keeps 2 second.
+      it "refuses a candidate whose tie at the cut spans two of the original's" do
+        rows = rows_of(%w[id grp], [1, 1], [2, 2], [3, 1])
+        original = "SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 2"
+        expect(raw(original, "SELECT id, grp FROM #{moved(3)} ORDER BY grp * 0 LIMIT 2", rows:))
+          .to eq([[%w[3 1], %w[2 2]], [%w[3 1], %w[1 1]]])
+
+        expect_refused(original, "SELECT id, grp FROM items ORDER BY grp * 0 LIMIT 2", rows)
       end
 
       it "refuses a DISTINCT ON whose pick is a tie" do
@@ -237,12 +368,9 @@ RSpec.describe Quaack::Enclave::ResultComparison do
                        "SELECT DISTINCT ON (grp) grp, id FROM #{moved(2)} ORDER BY grp, LEAST(price, 1)", rows)
       end
 
-      it "refuses an OFFSET that cuts a tie" do
-        rows = rows_of(%w[id grp], [1, 0], [2, 1], [3, 2], [4, 1], [5, 3])
-
-        candidate = "SELECT id, grp FROM #{moved(3)} ORDER BY CASE WHEN grp = 2 THEN 1 ELSE grp END OFFSET 1 LIMIT 1"
-
-        expect_refused("SELECT id, grp FROM items ORDER BY grp OFFSET 1 LIMIT 1", candidate, rows)
+      it "refuses a candidate with DISTINCT ON when the original's LIMIT cuts a tie" do
+        expect_refused("SELECT id, grp FROM items ORDER BY grp LIMIT 2",
+                       "SELECT DISTINCT ON (grp, id) id, grp FROM items ORDER BY grp, id LIMIT 2", four)
       end
 
       it "still matches a LIMIT that cuts no tie" do

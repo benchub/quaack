@@ -169,7 +169,7 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
 
   describe "refusals" do
     it "refuses when the forward run refuses, and says which run it was" do
-      original = "SELECT id, grp FROM items ORDER BY grp LIMIT 2"
+      original = "SELECT DISTINCT ON (grp) grp, id FROM items ORDER BY grp"
 
       expect(fields(both(original, original))).to eq(match: false, mode: :ordered, rule: :unsupported_order,
                                                      load_order: :forward)

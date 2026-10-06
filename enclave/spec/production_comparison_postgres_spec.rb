@@ -79,10 +79,64 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(verdict("SELECT 1 ORDER BY 1", "SELECT 1")).to eq(%w[fail candidate_unordered])
     end
 
-    it "refuses an original whose LIMIT cuts a tie group" do
-      expect(verdict("SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3",
-                     "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3"))
-        .to eq(%w[fail unsupported_order])
+    describe "an original whose LIMIT or OFFSET cuts a tie group" do
+      let(:original) { "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3" }
+
+      it "passes a candidate that keeps other rows from the tie" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"))
+          .to eq(["pass", nil])
+      end
+
+      it "fails a row from outside the tie with the value rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i UNION ALL SELECT 0, 10 " \
+                                 "ORDER BY a LIMIT 3")).to eq(%w[fail value])
+      end
+
+      it "fails more of a row than the tie holds with the value rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i UNION ALL SELECT 0, 2 " \
+                                 "ORDER BY a LIMIT 3")).to eq(%w[fail value])
+      end
+
+      it "passes an OFFSET bound to a param that passes every row" do
+        sql = "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a OFFSET $1 LIMIT 2"
+        expect(verdict(sql, sql, params: [{ value: "99", type: 23 }])).to eq(["pass", nil])
+      end
+
+      it "fails another number of rows with the row_count rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 2"))
+          .to eq(%w[fail row_count])
+      end
+
+      it "finds an OFFSET bound to a param" do
+        offset = "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a OFFSET $1 LIMIT 2"
+        candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a OFFSET $1 LIMIT 2"
+        params = [{ value: "1", type: 23 }]
+
+        expect([verdict(offset, candidate, params:), verdict(offset, candidate.sub("$1", "$1 + 2"), params:)])
+          .to eq([["pass", nil], %w[fail value]])
+      end
+
+      # 1 and 3 tie in the original, and come before 2. The candidate ties
+      # all three, so it could keep 2, though its tiebreaker runs keep 1
+      # and 3.
+      it "refuses a candidate whose own tie at the cut could keep a row the original's can't" do
+        expect(verdict("SELECT i FROM generate_series(1, 3) i ORDER BY i = 2 LIMIT 1",
+                       "SELECT i FROM generate_series(1, 3) i ORDER BY i * 0 LIMIT 1"))
+          .to eq(%w[fail unsupported_order])
+      end
+
+      # The original keeps two of 2, 3, 4, and 5, and 3 and 4 both ways
+      # its ties break. The candidate ties every row, and could keep 1.
+      it "refuses a candidate that matches a tie cut on both sides of the rows kept" do
+        expect(verdict("SELECT i FROM generate_series(1, 6) i ORDER BY i IN (1, 6) OFFSET 1 LIMIT 2",
+                       "SELECT i FROM generate_series(1, 6) i ORDER BY i * 0 OFFSET 2 LIMIT 2"))
+          .to eq(%w[fail unsupported_order])
+      end
+
+      it "refuses a candidate with DISTINCT ON" do
+        expect(verdict(original, "SELECT DISTINCT ON (a, i) i % 2 AS a, i FROM generate_series(1, 9) i " \
+                                 "ORDER BY a, i LIMIT 3")).to eq(%w[fail unsupported_order])
+      end
     end
 
     it "refuses WITH TIES" do

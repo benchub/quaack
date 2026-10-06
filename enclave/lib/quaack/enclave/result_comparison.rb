@@ -6,6 +6,7 @@ require_relative "result_comparator"
 require_relative "supported_sql"
 require_relative "result_comparison/tiebreaker"
 require_relative "result_comparison/load_orders"
+require_relative "result_comparison/cut_ties"
 
 module Quaack
   module Enclave
@@ -42,14 +43,23 @@ module Quaack
     #   (T', the exact reverse). The candidate's T run must match the
     #   original's T run, row for row, and likewise for T'.
     #
-    #   First, though, the original's T and T' runs must hold the same
-    #   multiset of rows, or it's an unsupported_order mismatch and the
-    #   candidate never runs. They differ when a LIMIT or OFFSET cuts a tie
+    #   That holds only when the original's T and T' runs hold the same
+    #   multiset of rows. They differ when a LIMIT or OFFSET cuts a tie
     #   group, or a DISTINCT ON picks from one, and the rows on either side
     #   of the cut differ. Then the original's answer depends on how the tie
-    #   breaks, and two runs can't check a candidate: T and T' only show the
-    #   first and last rows of a tie in T order, so a candidate could widen
-    #   the tie at the cut with a row between those and match both runs.
+    #   breaks, and T and T' only show the first and last rows of the tie
+    #   in T order, so a candidate could widen the tie at the cut with a
+    #   row between those and match both runs. A LIMIT with an OFFSET can
+    #   also keep rows from the middle of a tie group, with rows of the
+    #   group cut off on both sides, and then T and T' keep the same rows
+    #   anyway. In both cases CutTies (result_comparison/cut_ties.rb) checks
+    #   the candidate instead: it runs both queries both ways without their
+    #   LIMIT and OFFSET to find the tie groups, and the candidate's rows
+    #   before the cut's group must be the original's, in order, and the
+    #   rest must come from that group, however either query's ties break.
+    #   It refuses DISTINCT ON in either query, an OFFSET it can't place,
+    #   and a candidate whose own tie at the cut could keep a row the
+    #   original's group doesn't hold.
     #
     #   The principle. A column goes in the tiebreaker only if values btree
     #   calls equal are always equal to the comparator too (see Tiebreaker::UNFAITHFUL).
@@ -57,8 +67,9 @@ module Quaack
     #   comparator, on every tiebreaker column.
     #
     #   When every output column is in the tiebreaker and the original's T
-    #   and T' multisets are equal, the two runs are sound. With no cut the
-    #   original's rows are fixed. With a cut, each tie group the cut
+    #   and T' multisets are equal, with no LIMIT and OFFSET together, the
+    #   two runs are sound. With no cut the original's rows are fixed. With
+    #   a cut at one end of the rows kept, each tie group the cut
     #   passes through gives the same rows in T and T', and a group's rows
     #   sorted in T order can only do that if they're all btree-equal on
     #   every tiebreaker column, so equal to the comparator. So the
@@ -220,27 +231,37 @@ module Quaack
           end
         end
 
+        # Whether the top level has DISTINCT ON, which picks one row from
+        # each tie group.
+        def distinct_on? = kept(:distinct_on?) { select_stmt(parse).distinct_clause.any?(&:node) }
+
+        # The top level's OFFSET when it's an integer constant, 0 when
+        # there's none, and nil otherwise, such as for a parameter.
+        def offset = kept(:offset) { ResultComparison.offset_value(select_stmt(parse).limit_offset) }
+
+        # Whether the top level has a LIMIT and an OFFSET that might not be
+        # 0, so the rows it keeps can sit inside a tie group with rows of
+        # the group cut off on both sides.
+        def cut_both_ends? = kept(:cut_both_ends?) { !select_stmt(parse).limit_count.nil? && offset != 0 }
+
         # The collation each COLLATE clause names, anywhere in the query,
         # without its schema.
         def collation_names = kept(:collation_names) { collations(parse.tree.to_h).freeze }
 
         def without_limit
           kept(:without_limit) do
-            build do |select|
-              select.limit_count = nil
-              select.limit_offset = nil
-              # So the tree matches the one its SQL parses to, for the guard.
-              select.limit_option = :LIMIT_OPTION_DEFAULT
-            end
+            build { |select| unlimit(select) }
           end
         end
 
         # positions are 1-based output column positions. descending sorts
-        # each DESC NULLS FIRST, the exact reverse of the default.
-        def with_tiebreaker(positions, descending: false)
-          kept([:with_tiebreaker, positions.dup.freeze, descending]) do
+        # each DESC NULLS FIRST, the exact reverse of the default. Unless
+        # limited, it drops the LIMIT and OFFSET too.
+        def with_tiebreaker(positions, descending: false, limited: true)
+          kept([:with_tiebreaker, positions.dup.freeze, descending, limited]) do
             build do |select|
               positions.each { |position| select.sort_clause << position_sort(position, descending) }
+              unlimit(select) unless limited
             end
           end
         end
@@ -275,6 +296,13 @@ module Quaack
           raise Error.new(:deparse_mismatch, query: @query), cause: nil
         end
 
+        def unlimit(select)
+          select.limit_count = nil
+          select.limit_offset = nil
+          # So the tree matches the one its SQL parses to, for the guard.
+          select.limit_option = :LIMIT_OPTION_DEFAULT
+        end
+
         def collations(node)
           case node
           when Hash
@@ -293,6 +321,14 @@ module Quaack
       end
 
       module_function
+
+      # An OFFSET node's value when it's an integer constant, 0 for no
+      # node, and nil otherwise.
+      def offset_value(node)
+        return 0 unless node
+
+        node.a_const.ival.ival if node.node == :a_const && node.a_const.val == :ival
+      end
 
       # Runs the original and the candidate in transaction, an
       # ArenaRunner::Transaction, and returns a ResultComparator::Verdict.
@@ -327,13 +363,19 @@ module Quaack
         return refused unless positions
 
         originals = both_ways(transaction, original_shape, positions)
-        return refused unless ties_uncut?(*originals) && ties_faithful?(originals.first, positions)
+        return refused unless ties_faithful?(originals.first, positions)
 
-        tiebroken(transaction, originals, candidate_shape, positions)
+        return tiebroken(transaction, originals, candidate_shape, positions) unless cut_tie?(original_shape, originals)
+
+        cut_tie(transaction, originals, [original_shape, candidate_shape], positions)
       end
 
-      def both_ways(transaction, shape, positions)
-        [false, true].map { |descending| transaction.query(shape.with_tiebreaker(positions, descending:)) }
+      def cut_tie?(shape, originals)
+        CutTies.needed?(shape, uncut: ties_uncut?(*originals), kept_rows: originals.first.rows.any?)
+      end
+
+      def both_ways(transaction, shape, positions, limited: true)
+        [false, true].map { |descending| transaction.query(shape.with_tiebreaker(positions, descending:, limited:)) }
       end
 
       def refused = ResultComparator::Verdict.for(:ordered, :unsupported_order)
@@ -358,6 +400,28 @@ module Quaack
       # break, as far as the two tiebreaker runs show.
       def ties_uncut?(ascending, descending)
         ResultComparator.compare(ascending, descending, mode: :multiset).match?
+      end
+
+      # The original's LIMIT or OFFSET cuts a tie group: CutTies' check.
+      def cut_tie(transaction, originals, shapes, positions)
+        rule, fields = CutTies.check(shapes, originals.map(&:rows),
+                                     FixtureRuns.new(transaction, positions, originals.first.types))
+        ResultComparator::Verdict.for(:ordered, rule, **fields)
+      end
+
+      # CutTies' source: tiebreaker runs in the arena transaction, and rows
+      # compared as ResultComparator compares them.
+      class FixtureRuns
+        def initialize(transaction, positions, types)
+          @transaction = transaction
+          @positions = positions
+          @types = types
+        end
+
+        def fetch(shape, limited:) = ResultComparison.both_ways(@transaction, shape, @positions, limited:).map(&:rows)
+        def key(row) = ResultComparator::Values.key(@types, row)
+        def contained?(big, small) = ResultComparator.unpartnered_row(@types, big, small).nil?
+        def all_columns? = @positions.size == @types.size
       end
 
       def tiebroken(transaction, originals, candidate_shape, positions)
