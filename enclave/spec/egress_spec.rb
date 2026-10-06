@@ -212,7 +212,8 @@ RSpec.describe Quaack::Enclave::Egress do
   describe "a report message" do
     let(:plan_node) do
       { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_pkey", "est_rows" => 5,
-        "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0 }
+        "actual_rows" => 5, "selectivity" => 0.005, "depth" => 0, "shared_hit_blocks" => 3,
+        "shared_read_blocks" => nil }
     end
     let(:rewrites) do
       [{ "rewrite" => "rewrite_1", "sql" => "SELECT $1", "plan" => [plan_node] },
@@ -232,6 +233,15 @@ RSpec.describe Quaack::Enclave::Egress do
       ["a value in place of the original's plan", ->(_) { EGRESS_SENTINEL }, nil],
       ["a depth that isn't an Integer", ->(n) { [n.merge("depth" => EGRESS_SENTINEL)] }, nil],
       ["no original plan", ->(_) {}, nil],
+      ["a planted String in a block count of the original's plan",
+       ->(n) { [n.merge("shared_hit_blocks" => EGRESS_SENTINEL)] }, nil],
+      ["a planted key in a block count of the original's plan",
+       ->(n) { [n.merge("shared_read_blocks" => { EGRESS_SENTINEL => 4 })] }, nil],
+      ["a block count that isn't an Integer", ->(n) { [n.merge("shared_read_blocks" => 4.0)] }, nil],
+      ["a planted String in a block count of a rewrite's plan", nil,
+       ->(n) { [{ "rewrite" => "rewrite_1", "plan" => [n, n.merge("shared_read_blocks" => EGRESS_SENTINEL)] }] }],
+      ["a planted String in a block count of a rewrite's plan under a Symbol key", nil,
+       ->(n) { [{ plan: [n.merge("shared_hit_blocks" => [EGRESS_SENTINEL])] }] }],
       ["a planted field in a node of a rewrite's plan", nil,
        ->(n) { [{ "rewrite" => "rewrite_1", "plan" => [n, n.merge(EGRESS_SENTINEL => 1)] }] }],
       ["a value in place of a rewrite's plan", nil, ->(_) { [{ "plan" => EGRESS_SENTINEL }] }],
@@ -255,7 +265,7 @@ RSpec.describe Quaack::Enclave::Egress do
 
   it "refuses a report whose rewrite names its plan both as a Symbol and as a String, without quoting it" do
     node = { "node" => "Seq Scan", "relation" => nil, "index" => nil, "est_rows" => 1, "actual_rows" => 1,
-             "selectivity" => nil, "depth" => 0 }
+             "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => nil, "shared_read_blocks" => nil }
     rewrites = [{ "plan" => nil, plan: [node.merge("filter" => EGRESS_SENTINEL)] }]
     expect { egress.serialize(type: :report, original_plan: [node], rewrites:) }
       .to raise_error(described_class::Error) { expect(it.message).not_to include(EGRESS_SENTINEL) }

@@ -10,19 +10,21 @@ RSpec.describe Quaack::Protocol::PlanNodes do
   let(:sentinel) { "SENTINEL_PLAN_NODE_7f3a" }
   let(:node) do
     { "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_pkey", "est_rows" => 5,
-      "actual_rows" => 4.5, "selectivity" => 0.005, "depth" => 1 }
+      "actual_rows" => 4.5, "selectivity" => 0.005, "depth" => 1, "shared_hit_blocks" => 3,
+      "shared_read_blocks" => 0 }
   end
 
   def valid?(plan) = described_class.valid?(plan)
 
-  it "lists a node's fields: its type, relation, index name, row counts, selectivity, and depth" do
-    expect(described_class::FIELDS).to eq(%w[node relation index est_rows actual_rows selectivity depth])
+  it "lists a node's fields: its type, relation, index name, row counts, selectivity, depth, and block counts" do
+    expect(described_class::FIELDS).to eq(%w[node relation index est_rows actual_rows selectivity depth
+                                             shared_hit_blocks shared_read_blocks])
     expect(described_class::FIELDS).to be_frozen.and(all(be_frozen))
   end
 
   it "takes a plan of nodes with exactly those fields, in any order, and an empty plan" do
     top = { "node" => "Limit", "relation" => nil, "index" => nil, "est_rows" => nil, "actual_rows" => nil,
-            "selectivity" => nil, "depth" => 0 }
+            "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => nil, "shared_read_blocks" => nil }
     expect(valid?([top, node, node.to_a.reverse.to_h])).to be(true)
     expect(valid?([])).to be(true)
   end
@@ -72,6 +74,22 @@ RSpec.describe Quaack::Protocol::PlanNodes do
   it "refuses a depth that isn't an Integer of zero or more" do
     [nil, -1, 1.0, "1", true, [1]].each do |bad|
       expect(valid?([node.merge("depth" => bad)])).to be(false), bad.inspect
+    end
+  end
+
+  it "takes a block count of zero or more, or nil" do
+    [0, 7, 2**40, nil].each do |count|
+      %w[shared_hit_blocks shared_read_blocks].each do |field|
+        expect(valid?([node.merge(field => count)])).to be(true), "#{field}: #{count.inspect}"
+      end
+    end
+  end
+
+  it "refuses a block count that isn't an Integer of zero or more or nil, such as a planted sentinel" do
+    [sentinel, "5", 5.0, 1.5, -1, true, [5], { sentinel => 5 }, :"5"].each do |bad|
+      %w[shared_hit_blocks shared_read_blocks].each do |field|
+        expect(valid?([node.merge(field => bad)])).to be(false), "#{field}: #{bad.inspect}"
+      end
     end
   end
 

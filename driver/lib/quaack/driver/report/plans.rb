@@ -6,9 +6,9 @@ module Quaack
       # A plan as a table of its steps, one row per node in the order the
       # payload sends them (depth first), in the style of explain.depesz.com
       # (DESIGN.md's report). Each step is indented by its depth, under an
-      # arrow. A plan whose nodes don't all carry a whole-number depth from
-      # zero up, such as one from a payload older than depths, is laid out
-      # flat.
+      # arrow, and shows the blocks it read, the steps under it included.
+      # A plan whose nodes don't all carry a whole-number depth from zero
+      # up, such as one from a payload older than depths, is laid out flat.
       #
       # The steps one plan has and the other doesn't are marked, by class
       # and in words. Two steps are the same when their type, table, and
@@ -32,7 +32,8 @@ module Quaack
 
         PLAN_HEADER = '<tr><th scope="col">Step</th><th scope="col">Table</th><th scope="col">Index</th>' \
                       '<th scope="col" class="num">Estimated rows</th><th scope="col" class="num">Actual rows</th>' \
-                      '<th scope="col" class="num">Share of the table</th></tr>'
+                      '<th scope="col" class="num">Share of the table</th>' \
+                      '<th scope="col" class="num">Blocks read, with the steps under it</th></tr>'
 
         # Whether either plan has a step the other doesn't.
         def plans_differ?(plan, other) = [plan.size, other.size].uniq != [shared_steps(plan, other).size]
@@ -47,7 +48,16 @@ module Quaack
 
         def plan_cells(node)
           %(<td>#{named(node["relation"])}</td><td>#{named(node["index"])}</td>) +
-            "#{count_cell(node["est_rows"])}#{count_cell(node["actual_rows"])}#{num(share(node["selectivity"]))}"
+            "#{count_cell(node["est_rows"])}#{count_cell(node["actual_rows"])}#{num(share(node["selectivity"]))}" \
+            "#{count_cell(step_blocks(node))}"
+        end
+
+        # A step's blocks read: its shared hit and read blocks together, as
+        # Postgres counts them, the steps under it included. nil if the
+        # payload has neither, as for a plan from a plain EXPLAIN.
+        def step_blocks(node)
+          counts = node.values_at("shared_hit_blocks", "shared_read_blocks").grep(Integer)
+          counts.sum unless counts.empty?
         end
 
         def indent(depth) = depth ? format(' style="padding-left: %.2frem"', INDENT + (STEP * depth)) : ""

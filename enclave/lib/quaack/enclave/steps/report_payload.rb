@@ -27,7 +27,10 @@ module Quaack
       #   original_plan    the redacted input plan's node shapes, depth
       #                    first: { "node", "relation", "index",
       #                    "est_rows", "actual_rows", "selectivity",
-      #                    "depth" (an Integer, 0 for the top node) }
+      #                    "depth" (an Integer, 0 for the top node),
+      #                    "shared_hit_blocks", "shared_read_blocks" (the
+      #                    node's BUFFERS counts, its children's included,
+      #                    or nil) }
       #   original_measurements  { set => { "total_blocks", "hit", "read",
       #                    "stable", "timed_out" } }, the bare original's
       #                    baseline; hit and read are the run with the most
@@ -47,7 +50,8 @@ module Quaack
       #                    "after", and "cycle" (RewriteFate; cycle is an
       #                    fk_cycle refusal's tables, "schema.name" in
       #                    foreign key order), "plan" (its node shapes on
-      #                    the slow literal set, or nil), "untested_atoms"
+      #                    the slow literal set, or nil; a hypothetical
+      #                    EXPLAIN, so its block counts are nil), "untested_atoms"
       #                    (rewrite-test's redacted shapes, or nil if it
       #                    wasn't tested), "covered" (the shapes of those
       #                    the counterexample rounds covered, or nil if no
@@ -81,9 +85,10 @@ module Quaack
       # rewrite's sql is the stored rewrite's SQL, which holds only $n and
       # what the LLM, a rule, or the operator wrote, as the inbound check
       # accepted it. DDL goes through CandidateDdlRedaction. A plan node
-      # sends only its type, relation, index name, and row counts, never a
-      # Filter or Index Cond. Measurements are counts. Index names and
-      # relations are schema. A source, a rule name, a fate, and a fate's
+      # sends only its type, relation, index name, row counts, and shared
+      # hit and read block counts (Integers or nil), never a Filter or
+      # Index Cond. Measurements are counts. Index names and relations are
+      # schema. A source, a rule name, a fate, and a fate's
       # details are QUAACK's own constants: RewriteSource and RewriteFate
       # send no other, but for an fk_cycle's tables, which are schema and
       # each one the schema_subset entry holds. Untested atoms are rewrite-test's redacted shapes.
@@ -170,16 +175,28 @@ module Quaack
         end
 
         # A plan's nodes in depth-first order, each as its type, relation,
-        # index name, row counts, selectivity, and its depth (0 for the
-        # top node), which the enclave counts, so it's always an Integer.
+        # index name, row counts, selectivity, its depth (0 for the top
+        # node), which the enclave counts, so it's always an Integer, and its
+        # shared hit and read block counts (blocks).
         def nodes(explain, stats)
           flatten(explain.first["Plan"]).map do |plan, depth|
             table = table(plan, stats)
             { "node" => plan["Node Type"], "relation" => table && "#{table.schema}.#{table.name}",
               "index" => plan["Index Name"], "est_rows" => plan["Plan Rows"], "actual_rows" => plan["Actual Rows"],
-              "selectivity" => selectivity(plan, table, stats), "depth" => depth }
+              "selectivity" => selectivity(plan, table, stats), "depth" => depth, **blocks(plan) }
           end
         end
+
+        # The node's Shared Hit Blocks and Shared Read Blocks, as EXPLAIN
+        # (ANALYZE, BUFFERS) gives them, each including its children's. A
+        # counter that's missing, as it is in a plan without BUFFERS such as
+        # a rewrite's hypothetical one, or that isn't a count, is nil.
+        def blocks(plan)
+          { "shared_hit_blocks" => count(plan["Shared Hit Blocks"]),
+            "shared_read_blocks" => count(plan["Shared Read Blocks"]) }
+        end
+
+        def count(value) = (value if value.is_a?(Integer) && !value.negative?)
 
         # The node's table, by its Schema if the plan is VERBOSE, or else
         # the one subset table of that name. nil if neither finds one.

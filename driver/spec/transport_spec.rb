@@ -643,16 +643,21 @@ RSpec.describe Quaack::Driver::Transport do
     # so the driver checks the same.
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
       node = %({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,) +
-             %("selectivity":0.05,"depth":0)
+             %("selectivity":0.05,"depth":0,"shared_hit_blocks":12,"shared_read_blocks":null)
       good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
       expect(result.messages.map { it.values_at("type", "original_plan") })
         .to eq([["report", [{ "node" => "Seq Scan", "relation" => "public.t", "index" => nil, "est_rows" => 5,
-                              "actual_rows" => 5.5, "selectivity" => 0.05, "depth" => 0 }]]])
+                              "actual_rows" => 5.5, "selectivity" => 0.05, "depth" => 0,
+                              "shared_hit_blocks" => 12, "shared_read_blocks" => nil }]]])
       [%({"type":"report","original_plan":[#{node},"filter":"#{sentinel}"}],"rewrites":[]}),
        %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":[#{node},"#{sentinel}":1}]}]}),
        %({"type":"report","original_plan":[#{node.sub('"depth":0', '"depth":"0"')}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[#{node.sub("12", %("#{sentinel}"))}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[#{node.sub("null", %({"#{sentinel}":1}))}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[#{node.sub("12", "12.0")}}],"rewrites":[]}),
+       %({"type":"report","original_plan":[],"rewrites":[{"plan":[#{node.sub("null", %(["#{sentinel}"]))}}]}]}),
        %({"type":"report","original_plan":[],"rewrites":["#{sentinel}"]}),
        %({"type":"report","rewrites":[]}), %({"type":"report","original_plan":[]})].each do |line|
         error = refusal(line)
