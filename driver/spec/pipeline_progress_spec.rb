@@ -384,6 +384,53 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     end
   end
 
+  # On a terminal, each line's clock gives its step's time, so a closing
+  # line that only repeats the step is left out.
+  describe "on a terminal" do
+    let(:stderr) { Class.new(StringIO) { def tty? = true }.new }
+
+    # Each line as it ends, without its redraws, number, or clock.
+    def ended
+      stderr.string.split("\n").map do |line|
+        line.split("\r\e[K").last.sub(%r{\Aquaack: \[\d+/\d+\] }, "").sub(/ (?:\d+h)?(?:\d+m)?\d+s\z/, "")
+      end
+    end
+
+    it "closes only the steps whose summaries carry more than the step's own line" do
+      entries.merge!(%w[index_search_original index_generated_original index_ranking_original rewrite_rules_applied
+                        rewrites_generated operator_rewrites_checked arena_setup index_build baseline index_baseline
+                        candidate_runs minimax result_comparison selection].to_h { [it, false] })
+      fake.reply("llm-index-ideas", { "indexes" => [] })
+      fake.reply("llm-rewrites", { "rewrites" => [] })
+      fake.reply("operator-rewrites", { "rewrites" => [{ "transformation" => "t", "assumptions" => [] }] })
+
+      run(out:, rewrites: ["SELECT 9"])
+
+      expect(ended.grep(/ in \d+s \(/).map { it[/\(([^()]+)\)\z/, 1] })
+        .to eq(%w[llm-index-ideas llm-index-refine rewrite-rules llm-rewrites operator-rewrites plan-pruning
+                  rewrite-correctness rewrite-index-ideas index-build report])
+      expect(ended).to include("Ranking the index ideas (index-rank)", "Picking the top three (selection)")
+    end
+
+    it "leaves out counterexamples' first ask, which repeats its sub-step, and keeps the asks again" do
+      entries.merge!(rewrite(1, rewrite_survived: false))
+      tests.push(true)
+      3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
+      name = Quaack::Driver::RewriteNames.label("RUN", "rewrite_1")
+
+      run
+
+      expect(ended.select { it.include?("(counterexamples)") || it.include?("(llm-counterexamples)") })
+        .to eq(["#{name}: Asking the LLM for rows that could break the rewrite (counterexamples)",
+                "#{name}: Reading the rewrite's shape for the LLM (counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
+                "Asking the LLM again, for different rows (llm-counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
+                "Asking the LLM again, for different rows (llm-counterexamples)",
+                "#{name}: Loading the LLM's rows and comparing results (counterexamples)"])
+    end
+  end
+
   describe "trust boundary" do
     let(:planted) do
       { "rule" => PROGRESS_SENTINEL, "covered_by" => PROGRESS_SENTINEL, "rewrite" => PROGRESS_SENTINEL,

@@ -519,9 +519,20 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
-      it "still closes a step with its summary" do
+      it "prints no closing line for a summary not flagged as informative, which only repeats the step" do
+        live.step("index-rank", "Ranking the index ideas", summary: ->(_) { "Ranked the index ideas" }) do
+          now[0] = 5.0
+        end
+
+        expect(terminal.string).to eq(
+          "quaack: [1/3] Ranking the index ideas (index-rank)" \
+          "\r\e[Kquaack: [1/3] Ranking the index ideas (index-rank) 5s\n"
+        )
+      end
+
+      it "still closes a step with its summary when the step flags it as informative" do
         live.step("llm-rewrites", "Asking the LLM for rewrites of the query",
-                  summary: ->(n) { "Got #{n} rewrites from the LLM" }) do
+                  summary: ->(n) { "Got #{n} rewrites from the LLM" }, informative: true) do
           now[0] = 0.5
           3
         end
@@ -557,12 +568,74 @@ RSpec.describe Quaack::Driver::Progress do
         )
       end
 
+      it "leaves out an ask that repeats the step even after a note under the same step" do
+        live.step("llm-index-ideas", "Asking the LLM for index ideas the mechanical search missed") do
+          live.step_note("llm-index-ideas", "Reading the query's shape for the LLM")
+          now[0] = 2.0
+          live.note("Asking the LLM for index ideas (llm-index-ideas)")
+          now[0] = 30.0
+        end
+
+        expect(terminal.string.split("\n")).to eq(
+          ["quaack: [1/3] Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+           "quaack: [1/3] Reading the query's shape for the LLM (llm-index-ideas)" \
+           "\r\e[Kquaack: [1/3] Reading the query's shape for the LLM (llm-index-ideas) 30s"]
+        )
+      end
+
+      it "leaves out a second ask identical to the first, whether right after it or after another note" do
+        live.step("llm-rewrites", "Asking the LLM for rewrites of the query") do
+          live.note("Asking the LLM (llm-rewrites)")
+          live.note("Asking the LLM (llm-rewrites)")
+          now[0] = 4.0
+          live.step_note("llm-rewrites", "Checking the LLM's rewrites")
+          live.note("Asking the LLM (llm-rewrites)")
+          now[0] = 9.0
+        end
+
+        expect(terminal.string.split("\n")).to eq(
+          ["quaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites)" \
+           "\r\e[Kquaack: [1/3] Asking the LLM for rewrites of the query (llm-rewrites) 4s",
+           "quaack: [1/3] Checking the LLM's rewrites (llm-rewrites)" \
+           "\r\e[Kquaack: [1/3] Checking the LLM's rewrites (llm-rewrites) 9s"]
+        )
+      end
+
+      it "keeps an ask whose words only start like the step's, not at a word's end" do
+        live.step("llm-index-ideas", "Asking the LLM for index ideas") do
+          live.note("Asking the LLM for index idea (llm-index-ideas)")
+        end
+
+        expect(terminal.string.split("\n").last)
+          .to start_with("quaack: [1/3] Asking the LLM for index idea (llm-index-ideas)")
+      end
+
+      it "leaves out an ask that repeats a sub-step's words, after the sub-step's prefix and whatever its ID" do
+        live.step("rewrite-correctness", "Testing each rewrite for wrong results") do
+          sub = live.within("Rewrite Silver Fox")
+          sub.step("counterexamples", "Asking the LLM for rows that could break the rewrite") do
+            sub.step_note("counterexamples", "Reading the rewrite's shape for the LLM")
+            live.note("Asking the LLM for rows that could break the rewrite (llm-counterexamples)")
+            live.note("Asking the LLM again, for different rows (llm-counterexamples)")
+          end
+          live.note("Asking the LLM for rows that could break the rewrite (llm-counterexamples)")
+        end
+
+        expect(terminal.string.split("\n").map { it[/\A[^\r]*/] }).to eq(
+          ["quaack: [1/3] Testing each rewrite for wrong results (rewrite-correctness)",
+           "quaack: [1/3] Rewrite Silver Fox: Asking the LLM for rows that could break the rewrite (counterexamples)",
+           "quaack: [1/3] Rewrite Silver Fox: Reading the rewrite's shape for the LLM (counterexamples)",
+           "quaack: [1/3] Asking the LLM again, for different rows (llm-counterexamples)",
+           "quaack: [1/3] Asking the LLM for rows that could break the rewrite (llm-counterexamples)"]
+        )
+      end
+
       it "keeps notes that add something: another ask, another step's ID or none, or more words" do
         live.step("llm-index-ideas", "Asking the LLM for index ideas") do
           live.note("Asking the LLM for index ideas (llm-index-ideas)")
           now[0] = 4.0
           live.note("Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas)")
-          live.note("Asking the LLM for index ideas (llm-index-ideas)")
+          live.note("Asking the LLM for index ideas, attempt 2 (llm-index-ideas)")
         end
         live.step("operator-rewrites", "Checking your own rewrites") { live.note("Asking the LLM (operator-rewrites)") }
         live.step("llm-rewrites", "Asking the LLM") { live.note("Asking the LLM (llm-counterexamples)") }
@@ -574,8 +647,8 @@ RSpec.describe Quaack::Driver::Progress do
            "\r\e[Kquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s",
            "quaack: [1/3] Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas)" \
            "\r\e[Kquaack: [1/3] Asking the LLM again, for replacements for the dropped ideas (llm-index-ideas) 4s",
-           "quaack: [1/3] Asking the LLM for index ideas (llm-index-ideas)" \
-           "\r\e[Kquaack: [1/3] Asking the LLM for index ideas (llm-index-ideas) 4s",
+           "quaack: [1/3] Asking the LLM for index ideas, attempt 2 (llm-index-ideas)" \
+           "\r\e[Kquaack: [1/3] Asking the LLM for index ideas, attempt 2 (llm-index-ideas) 4s",
            "quaack: [2/3] Checking your own rewrites (operator-rewrites)",
            "quaack: [2/3] Asking the LLM (operator-rewrites)\r\e[Kquaack: [2/3] Asking the LLM (operator-rewrites) 0s",
            "quaack: [3/3] Asking the LLM (llm-rewrites)",
@@ -631,10 +704,10 @@ RSpec.describe Quaack::Driver::Progress do
                             "quaack: [1/3] Done in 1m10s (llm-rewrites)\n")
   end
 
-  it "prints every line, closing and note alike, when its io isn't a terminal" do
+  it "prints every line, closing, summary, and note alike, when its io isn't a terminal" do
     times.replace([0.0, 2.0, 10.0, 10.5, 20.0, 51.0, 60.0, 63.0])
     p = progress(total: 4)
-    p.step("index-rank", "Ranking the index ideas") { nil }
+    p.step("index-rank", "Ranking the index ideas", summary: ->(_) { "Ranked the index ideas" }) { nil }
     p.step("arena-setup", "Setting up the arena") { nil }
     p.step("llm-rewrites", "Asking the LLM for rewrites of the query", summary: ->(n) { "Got #{n} rewrites" }) do
       p.note("Asking the LLM (llm-rewrites)")
@@ -644,7 +717,7 @@ RSpec.describe Quaack::Driver::Progress do
 
     expect(io.string).to eq(
       "quaack: [1/4] Ranking the index ideas (index-rank)\n" \
-      "quaack: [1/4] Done in 2s (index-rank)\n" \
+      "quaack: [1/4] Ranked the index ideas in 2s (index-rank)\n" \
       "quaack: [2/4] Setting up the arena (arena-setup)\n" \
       "quaack: [2/4] Done in 0s (arena-setup)\n" \
       "quaack: [3/4] Asking the LLM for rewrites of the query (llm-rewrites)\n" \

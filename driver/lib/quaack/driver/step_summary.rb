@@ -104,6 +104,13 @@ module Quaack
         "selection" => ->(_) { "Picked the top choices" },
         "report" => ->(path) { "Wrote the report to #{path}" }
       }.freeze
+
+      # The steps whose summaries carry more than the step's own line, such
+      # as counts or the report's path, so they close the step even on a
+      # terminal (Progress#step's informative). The rest only say the step
+      # is done, which there the clock already shows.
+      INFORMATIVE = %w[llm-index-ideas llm-index-refine rewrite-rules llm-rewrites operator-rewrites plan-pruning
+                       rewrite-correctness rewrite-index-ideas index-build report].freeze
     end
   end
 end

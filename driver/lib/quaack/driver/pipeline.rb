@@ -390,7 +390,10 @@ module Quaack
 
       # Runs the block as the step name, saying what it does, and then what
       # it did, from StepSummary.
-      def self.step(progress, name, &) = progress.step(name, SAY.fetch(name), summary: StepSummary::SUMMARY[name], &)
+      def self.step(progress, name, &)
+        progress.step(name, SAY.fetch(name), summary: StepSummary::SUMMARY[name],
+                                             informative: StepSummary::INFORMATIVE.include?(name), &)
+      end
 
       def self.skip(progress, name) = progress.skip(name, SAY.fetch(name))
 

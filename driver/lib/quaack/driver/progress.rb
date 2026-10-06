@@ -14,7 +14,7 @@ module Quaack
     #   # quaack: [2/18] Done in 42s (index-rank)                    elsewhere, after the line above
     #   #                                                           without its clock
     #   # quaack: [2/18] Failed after 42s (index-rank)               if it fails, anywhere
-    #   progress.step("llm-index-ideas", "...", summary: ->(result) { "Got 4 index ideas" }) { ... }
+    #   progress.step("llm-index-ideas", "...", summary: ->(result) { "Got 4 index ideas" }, informative: true) { ... }
     #   # quaack: [2/18] Got 4 index ideas in 42s (llm-index-ideas)
     #   progress.skip("index-search", "Searching for indexes")
     #   # quaack: [1/18] Already done, skipping: Searching for indexes (index-search)
@@ -40,13 +40,16 @@ module Quaack
     # clock is only a duration.
     #
     # On a terminal, it leaves out what the clock makes redundant. A step
-    # that would close with a bare Done prints no closing line: its last
-    # open line ends at the step's final reading, even 0s. And a note that
-    # says no more than the step's own line, such as an LLM ask's "Asking
-    # the LLM (llm-rewrites)" under "Asking the LLM for rewrites of the
-    # query (llm-rewrites)", isn't printed when it would be the step's first
-    # line after its own. A summary's closing line, a failed line, and any
-    # later note, such as a second ask, still print.
+    # that would close with a bare Done, or with a summary the step doesn't
+    # flag as informative, such as "Ranked the index ideas", prints no
+    # closing line: its last open line ends at the step's final reading,
+    # even 0s. And a note that says no more than the step's own line, such
+    # as an LLM ask's "Asking the LLM (llm-rewrites)" under "Asking the LLM
+    # for rewrites of the query (llm-rewrites)", isn't printed, even after
+    # other notes under the step, and nor is one that says no more than the
+    # current sub-step's line after its prefix, whatever its ID. An
+    # informative summary's closing line, a failed line, and a note that
+    # adds something, such as a retry or an ask again, still print.
     #
     # clock answers seconds and interval is the redraw's period, so specs
     # pass a fake clock and a short interval.
@@ -65,11 +68,14 @@ module Quaack
 
       # Runs the block as the next step and returns what it returns.
       # summary, if given, is called with that result, and what it returns,
-      # unless nil, closes the step in place of Done.
-      def step(name, description, summary: nil, &)
+      # unless nil, closes the step in place of Done. On a terminal, it's
+      # left out unless informative, the step's flag that it carries more
+      # than the step's own line, such as counts.
+      def step(name, description, summary: nil, informative: false, &)
         @number += 1
         start = @clock.call
         result = clocked(start, description, name, &)
+        summary = nil if @tty && !informative
         close(summary&.call(result)&.then { "#{it} in" }, start, name)
         result
       rescue StandardError, Interrupt
@@ -88,24 +94,20 @@ module Quaack
 
       def within(prefix) = Within.new(self, prefix)
 
-      # seconds as 42s, 1m30s, or 1h02m05s.
-      def self.duration(seconds)
-        seconds = seconds.to_i
-        hours, rest = seconds.divmod(3600)
-        minutes, secs = rest.divmod(60)
-        return "#{hours}h#{format("%<m>02dm%<s>02ds", m: minutes, s: secs)}" if hours.positive?
-        return "#{minutes}m#{format("%<s>02ds", s: secs)}" if minutes.positive?
+      # Runs the block as a sub-step of the current step, if any, whose line
+      # says description, so a note that repeats it is left out on a
+      # terminal (repeats_step?).
+      def sub_step(description, &) = @own ? @own.within(description, &) : yield
 
-        "#{secs}s"
-      end
+      # seconds as 42s, 1m30s, or 1h02m05s.
+      def self.duration(seconds) = Duration.call(seconds)
 
       # On a terminal, a line printed while a step runs is left open, so
       # the clock can be drawn after it. A new line ends it first.
-      def say(text, note: false, own: nil)
+      def say(text, note: false)
         @lock.synchronize do
           next if note && repeats_step?(text)
 
-          @own = own
           finish(@line && @start && (@clock.call - @start))
           line = "quaack: [#{@number}/#{@total}] #{text}"
           next @io.print("#{line}\n") unless @tty && @start
@@ -117,9 +119,9 @@ module Quaack
       end
 
       # On a terminal, whether text, a note, says no more than the step's
-      # own line, which is still the latest (Repeat). The step's line keeps
-      # the clock. Callers hold the lock.
-      def repeats_step?(text) = @tty && @own && Repeat.call(text, *@own)
+      # own line, or the current sub-step's, however many lines came after
+      # it (Repeat). The latest line keeps the clock. Callers hold the lock.
+      def repeats_step?(text) = @tty && @own&.repeated?(text)
 
       # Ends the step: the open line takes the step's time as its final
       # reading, then the closing line, words and the time, gives it. With
@@ -140,8 +142,9 @@ module Quaack
       # redraws the clock every interval; it's stopped and joined however
       # the block ends, before the closing line prints.
       def clocked(start, description, name)
+        @own = Repeat.new(description, name)
         @lock.synchronize { @start = start }
-        say("#{description} (#{name})", own: [description, name])
+        say("#{description} (#{name})")
         return yield unless @tty
 
         timer = redrawing(start, stop = Queue.new)
@@ -205,6 +208,21 @@ module Quaack
 
       private :say, :repeats_step?, :close, :clocked, :stopping, :redrawing, :finish, :final_reading, :draw, :fit
 
+      # seconds as 42s, 1m30s, or 1h02m05s (Progress.duration).
+      module Duration
+        module_function
+
+        def call(seconds)
+          seconds = seconds.to_i
+          hours, rest = seconds.divmod(3600)
+          minutes, secs = rest.divmod(60)
+          return "#{hours}h#{format("%<m>02dm%<s>02ds", m: minutes, s: secs)}" if hours.positive?
+          return "#{minutes}m#{format("%<s>02ds", s: secs)}" if minutes.positive?
+
+          "#{secs}s"
+        end
+      end
+
       # Cuts a line, with suffix after it, short of width so it never
       # wraps, since \r goes back only to the start of a row. It answers the
       # text and whether it was cut. The suffix is dropped only when even a
@@ -231,16 +249,30 @@ module Quaack
         end
       end
 
-      # Whether a note, text, says no more than a step's own line: it ends
-      # with the step's ID, name, and what comes before is the step's
-      # description or its first words, as an LLM ask's "Asking the LLM
-      # (llm-rewrites)" does under "Asking the LLM for rewrites of the query
-      # (llm-rewrites)".
-      module Repeat
-        module_function
+      # The lines a note under a step mustn't merely repeat: the step's
+      # own, and its current sub-step's, if any.
+      class Repeat
+        def initialize(description, name) = @lines = [[description, name]]
 
-        def call(text, description, name)
-          words = text.delete_suffix(" (#{name})")
+        # Runs the block as a sub-step whose line says description.
+        def within(description)
+          @lines.push([description])
+          yield
+        ensure
+          @lines.pop
+        end
+
+        def repeated?(text) = @lines.any? { |description, name| self.class.call(text, description, name) }
+
+        # Whether a note, text, says no more than a line: it ends with the
+        # line's ID, name, and what comes before is the line's description
+        # or its first words, as an LLM ask's "Asking the LLM
+        # (llm-rewrites)" does under "Asking the LLM for rewrites of the
+        # query (llm-rewrites)". With no name, as for a sub-step, any ID will
+        # do, since its ask names the LLM's step, such as
+        # llm-counterexamples under counterexamples.
+        def self.call(text, description, name = nil)
+          words = name ? text.delete_suffix(" (#{name})") : text.sub(/ \([^()]+\)\z/, "")
           words != text && (description == words || description.start_with?("#{words} "))
         end
       end
@@ -254,9 +286,9 @@ module Quaack
         end
 
         # A sub-step prints no closing line, so it has no use for a summary.
-        def step(name, description, **)
+        def step(name, description, **, &)
           @progress.note("#{@prefix}: #{description} (#{name})")
-          yield
+          @progress.sub_step(description, &)
         end
 
         def skip(name, description) = @progress.note("#{@prefix}: Already done, skipping: #{description} (#{name})")
