@@ -32,6 +32,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         jp json_pair,
         mp mood_pair,
         iv interval,
+        jb jsonb,
         c bpchar,
         na numeric[],
         np npair,
@@ -328,48 +329,92 @@ RSpec.describe Quaack::Enclave::ResultComparison do
       end
     end
 
+    # The comparator reads an interval column by value, as interval's own
+    # btree does, so '1 day' and '24 hours' are one value however a tie
+    # between them comes back, and interval goes in the tiebreaker.
+    describe "interval columns" do
+      let(:equal_pair) { rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"]) }
+
+      it "matches a tie between equal intervals that print differently, whichever way it comes back" do
+        original = "SELECT iv FROM items ORDER BY grp, id"
+        candidate = "SELECT iv FROM #{reversed} ORDER BY grp"
+        expect(raw(original, candidate, rows: equal_pair)).to eq([[["1 day"], ["24:00:00"]], [["24:00:00"], ["1 day"]]])
+
+        expect(fields(compare(original, candidate, rows: equal_pair)))
+          .to eq(match: true, mode: :ordered, rule: nil, row: nil, column: nil)
+      end
+
+      it "matches a LIMIT that keeps either of two equal intervals" do
+        verdicts = [forward, reversed].map do |from|
+          compare("SELECT iv FROM items ORDER BY grp, id LIMIT 1", "SELECT iv FROM #{from} ORDER BY grp LIMIT 1",
+                  rows: equal_pair)
+        end
+
+        expect(verdicts.map { |v| fields(v) }.uniq).to eq([{ match: true, mode: :ordered, rule: nil, row: nil,
+                                                             column: nil }])
+      end
+
+      it "is a value mismatch for an interval that isn't equal" do
+        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "25 hours"])
+
+        verdict = compare("SELECT iv FROM items ORDER BY grp, id LIMIT 1",
+                          "SELECT iv FROM items ORDER BY grp, id DESC LIMIT 1", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :value, row: 0, column: 0)
+      end
+
+      it "puts interval in the tiebreaker, so a candidate that drops it as a key is caught" do
+        rows = rows_of(%w[id grp iv], [1, 1, "2 days"], [2, 1, "1 day"])
+        original = "SELECT iv FROM items ORDER BY iv"
+        candidate = "SELECT iv FROM #{reversed} ORDER BY grp"
+        expect(raw(original, rows:)).to eq([[["1 day"], ["2 days"]]])
+
+        expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :value)
+      end
+    end
+
     # btree calls these values equal, but they print differently, so a
     # tiebreaker can't split them and the comparator would see them differ.
     describe "types whose equal values print differently" do
-      it "refuses an interval column in a tie, since the tie can come back either way" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
-        original = "SELECT iv FROM items ORDER BY grp, id"
-        candidate = "SELECT iv FROM #{forward} ORDER BY grp"
-        forward_rows, reversed_rows = raw(candidate, "SELECT iv FROM #{reversed} ORDER BY grp", rows:)
+      it "refuses a jsonb column in a tie, since the tie can come back either way" do
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
+        original = "SELECT jb FROM items ORDER BY grp, id"
+        candidate = "SELECT jb FROM #{forward} ORDER BY grp"
+        forward_rows, reversed_rows = raw(candidate, "SELECT jb FROM #{reversed} ORDER BY grp", rows:)
         expect([forward_rows == raw(original, rows:).first, forward_rows == reversed_rows]).to eq([true, false])
 
         expect(fields(compare(original, candidate, rows:))).to include(match: false, rule: :unsupported_order)
       end
 
-      it "refuses an interval column under a LIMIT" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+      it "refuses a jsonb column under a LIMIT" do
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
 
-        verdict = compare("SELECT iv FROM items ORDER BY grp, id LIMIT 1",
-                          "SELECT iv FROM #{forward} ORDER BY grp LIMIT 1", rows:)
-
-        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
-      end
-
-      it "refuses an interval column when only the original has a LIMIT" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
-
-        verdict = compare("SELECT iv FROM items ORDER BY grp LIMIT 1",
-                          "SELECT iv FROM items WHERE id = 1 ORDER BY grp", rows:)
+        verdict = compare("SELECT jb FROM items ORDER BY grp, id LIMIT 1",
+                          "SELECT jb FROM #{forward} ORDER BY grp LIMIT 1", rows:)
 
         expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
       end
 
-      # The odd interval sits after a repeat, and then between repeats, so
+      it "refuses a jsonb column when only the original has a LIMIT" do
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
+
+        verdict = compare("SELECT jb FROM items ORDER BY grp LIMIT 1",
+                          "SELECT jb FROM items WHERE id = 1 ORDER BY grp", rows:)
+
+        expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
+      end
+
+      # The odd value sits after a repeat, and then between repeats, so
       # checking only the first two rows, or only the first and last, of a
       # tie misses it in one fixture or the other.
       [
-        ["1 day", "1 day", "24 hours"],
-        ["1 day", "1 day", "24 hours", "1 day"]
-      ].each do |intervals|
-        it "refuses an interval column when a tie of #{intervals.size} hides a different interval: #{intervals}" do
-          rows = rows_of(%w[id grp iv], *intervals.each_with_index.map { |iv, i| [i + 1, 1, iv] })
+        ['{"a": 1.0}', '{"a": 1.0}', '{"a": 1.00}'],
+        ['{"a": 1.0}', '{"a": 1.0}', '{"a": 1.00}', '{"a": 1.0}']
+      ].each do |docs|
+        it "refuses a jsonb column when a tie of #{docs.size} hides a different value: #{docs}" do
+          rows = rows_of(%w[id grp jb], *docs.each_with_index.map { |jb, i| [i + 1, 1, jb] })
 
-          verdict = compare("SELECT iv FROM items ORDER BY grp, id", "SELECT iv FROM #{forward} ORDER BY grp", rows:)
+          verdict = compare("SELECT jb FROM items ORDER BY grp, id", "SELECT jb FROM #{forward} ORDER BY grp", rows:)
 
           expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
         end
@@ -377,7 +422,7 @@ RSpec.describe Quaack::Enclave::ResultComparison do
 
       {
         "numeric" => ["np", "(1,1.0)", "(1,1.00)"],
-        "interval" => ["ip", "(1,1 day)", "(1,24 hours)"]
+        "interval" => ["ip", "(1,1 day)", "(1,24:00:00)"]
       }.each do |field, (column, first, second)|
         it "leaves out a composite with a #{field} field, whose equal values print differently" do
           rows = rows_of(["id", "grp", column], [1, 1, first], [2, 1, second])
@@ -390,21 +435,21 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         end
       end
 
-      it "refuses an interval column when only the candidate has a LIMIT" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
+      it "refuses a jsonb column when only the candidate has a LIMIT" do
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
 
-        verdict = compare("SELECT iv FROM items WHERE id = 1 ORDER BY grp",
-                          "SELECT iv FROM #{forward} ORDER BY grp LIMIT 1", rows:)
+        verdict = compare("SELECT jb FROM items WHERE id = 1 ORDER BY grp",
+                          "SELECT jb FROM #{forward} ORDER BY grp LIMIT 1", rows:)
 
         expect(fields(verdict)).to include(match: false, rule: :unsupported_order)
       end
 
-      it "still compares an interval column when no tie holds different intervals" do
-        rows = rows_of(%w[id grp iv], [1, 1, "1 day"], [2, 1, "24 hours"])
-        original = "SELECT id, iv FROM #{forward} ORDER BY grp"
+      it "still compares a jsonb column when no tie holds different values" do
+        rows = rows_of(%w[id grp jb], [1, 1, '{"a": 1.0}'], [2, 1, '{"a": 1.00}'])
+        original = "SELECT id, jb FROM #{forward} ORDER BY grp"
 
-        expect(compare(original, "SELECT id, iv FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)
-        expect(fields(compare(original, "SELECT id, iv FROM items ORDER BY id DESC", rows:)))
+        expect(compare(original, "SELECT id, jb FROM #{reversed} ORDER BY grp", rows:).match?).to be(true)
+        expect(fields(compare(original, "SELECT id, jb FROM items ORDER BY id DESC", rows:)))
           .to include(match: false, rule: :value)
       end
 

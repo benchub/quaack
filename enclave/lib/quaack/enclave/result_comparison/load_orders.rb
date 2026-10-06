@@ -21,7 +21,7 @@ module Quaack
       # level, such as ORDER BY grp, id LIMIT 2 in a subquery or a LATERAL
       # top-1, gets the original's rows by luck. So does a DISTINCT or GROUP
       # BY that keeps a different representative of values Postgres calls
-      # equal, such as '1 day' for '24 hours', or 'a' for 'A' under a
+      # equal, such as jsonb's {"a": 1.0} for {"a": 1.00}, or 'a' for 'A' under a
       # nondeterministic collation. A fresh load in reverse gives the heap
       # the reverse order, so a seq scan feeds those rows the other way
       # round, and the luck runs out.

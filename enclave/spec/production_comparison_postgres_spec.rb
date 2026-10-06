@@ -42,6 +42,11 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(verdict("SELECT 0.3::float8", "SELECT 0.1::float8 + 0.2::float8")).to eq(["pass", nil])
   end
 
+  it "hashes intervals by value, so equal intervals that print differently pass" do
+    expect([verdict("SELECT interval '1 day'", "SELECT interval '24 hours'"),
+            verdict("SELECT interval '1 day'", "SELECT interval '25 hours'")]).to eq([["pass", nil], %w[fail multiset]])
+  end
+
   it "binds params to both queries" do
     expect(verdict("SELECT i FROM generate_series(1, 9) i WHERE i < $1",
                    "SELECT i FROM generate_series(1, 9) i WHERE i < $1 ORDER BY i DESC",

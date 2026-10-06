@@ -113,7 +113,7 @@ module Quaack
     # - Nondeterminism below the top level. A LIMIT, DISTINCT, GROUP BY, or
     #   UNION inside a subquery or CTE, in either query, can keep any of
     #   several rows, or any representative of values btree calls equal,
-    #   such as '1 day' for '24 hours'. So can a top-level DISTINCT or
+    #   such as {"a": 1.0} for {"a": 1.00} in jsonb. So can a top-level DISTINCT or
     #   GROUP BY over such a column in a query with no ORDER BY. The fixture
     #   shows only the one Postgres picked.
     # - A nondeterministic collation outside the ordered mode, where no

@@ -22,19 +22,19 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
 
   before do
     conn.exec(<<~SQL)
-      CREATE TABLE items (id integer PRIMARY KEY, grp integer NOT NULL, label text, iv interval);
+      CREATE TABLE items (id integer PRIMARY KEY, grp integer NOT NULL, label text, iv interval, jb jsonb);
       CREATE TABLE parent (id integer PRIMARY KEY);
       CREATE TABLE child (id integer PRIMARY KEY, parent_id integer REFERENCES parent);
     SQL
   end
 
   # Loaded in id order, the way a scenario is. grp 1 ties three ways, and
-  # within it label ties twice. The two intervals in grp 1 are equal to
-  # Postgres but print differently.
+  # within it label ties twice. The two intervals, and the two jsonb
+  # values, in grp 1 are equal to Postgres but print differently.
   let(:items) do
-    rows_of("items", %w[id grp label iv],
-            [1, 1, "x", "1 day"], [2, 1, "x", "24 hours"], [3, 1, "y", "1 day"],
-            [4, 2, "x", "1 day"], [5, 2, "x", "1 day"])
+    rows_of("items", %w[id grp label iv jb],
+            [1, 1, "x", "1 day", '{"a": 1.0}'], [2, 1, "x", "24 hours", '{"a": 1.00}'], [3, 1, "y", "1 day", "{}"],
+            [4, 2, "x", "1 day", "{}"], [5, 2, "x", "1 day", "{}"])
   end
 
   def both(original, candidate, rows: items, inserts: [])
@@ -97,13 +97,24 @@ RSpec.describe Quaack::Enclave::ResultComparison, ".compare_in_both_orders" do
       expect(fields(both(original, candidate))).to eq(match: false, mode: :ordered, rule: :value, load_order: :reverse)
     end
 
-    it "catches a DISTINCT that keeps another representative of equal intervals" do
-      original = "SELECT iv FROM items WHERE id = 1"
-      candidate = "SELECT DISTINCT iv FROM items WHERE grp = 1 AND label = 'x'"
+    it "catches a DISTINCT that keeps another representative of equal jsonb values" do
+      original = "SELECT jb FROM items WHERE id = 1"
+      candidate = "SELECT DISTINCT jb FROM items WHERE grp = 1 AND label = 'x'"
       expect(forward_only(original, candidate).match?).to be(true)
 
       expect(fields(both(original, candidate))).to eq(match: false, mode: :multiset, rule: :multiset,
                                                       load_order: :reverse)
+    end
+
+    # Intervals compare by value, as the original's own DISTINCT or = does,
+    # so the other representative is the same value.
+    it "matches a DISTINCT that keeps another representative of equal intervals" do
+      original = "SELECT iv FROM items WHERE id = 1"
+      candidate = "SELECT DISTINCT iv FROM items WHERE grp = 1 AND label = 'x'"
+      expect(runner.with_fixture(described_class.reverse_load(items)) { |tx| tx.query(candidate).rows })
+        .to eq([["24:00:00"]])
+
+      expect(fields(both(original, candidate))).to eq(match: true, mode: :multiset, rule: nil, load_order: nil)
     end
 
     it "catches a DISTINCT that keeps another representative under a nondeterministic collation" do
