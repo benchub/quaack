@@ -5396,3 +5396,17 @@ This takes over the llm-index-ideas burndown bullet of 20260926-3 and the `set_a
 - **Landed (2026-09-26):** MCV handling for `= ANY` arrays in CandidateDdlRedaction. The llm-index-ideas burndown record landed with 20261001-20.
 - **Status:** done
 - **Landed:** Done: the CandidateDdlRedaction part landed 2026-09-26, and the llm-index-ideas burndown record landed with 20261001-20.
+
+### 20261004-55. Report: draw the burndown as an SVG funnel.
+
+Render each burndown, rewrites and indexes, as an inline SVG sales-funnel graphic, built by the driver with no external assets or scripts:
+- one band per stage, narrowing as candidates drop out;
+- each band labeled with the stage, the count in, and the count out, with the drop-off reason on hover (`<title>`) or beside it.
+
+Keep the existing burndown table under it, for exact numbers and for readers without SVG. A stage whose counts read "not recorded" must show as unknown in the funnel, never as zero.
+
+- **Depends on:** none, but the funnel is most useful after 20261001-19 and -20 record every stage.
+- **Came from:** The user, 2026-10-05, reading a run's report.
+- **Design:** report, burndown.
+- **Status:** done
+- **Landed:** Landed: report/funnel.rb draws each burndown as an inline SVG funnel above its table; unrecorded stages are hatched and never narrower than Funnel::UNKNOWN. Review minors became 20261004-78.

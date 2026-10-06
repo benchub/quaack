@@ -2246,18 +2246,7 @@ Minor findings from the review of 20261004-19. That task drops, on a terminal, t
 
 ### 20261004-54. Report: show "Why the winner reads fewer blocks" plans as a tree table. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-55. Report: draw the burndown as an SVG funnel.
-
-Render each burndown, rewrites and indexes, as an inline SVG sales-funnel graphic, built by the driver with no external assets or scripts:
-- one band per stage, narrowing as candidates drop out;
-- each band labeled with the stage, the count in, and the count out, with the drop-off reason on hover (`<title>`) or beside it.
-
-Keep the existing burndown table under it, for exact numbers and for readers without SVG. A stage whose counts read "not recorded" must show as unknown in the funnel, never as zero.
-
-- **Depends on:** none, but the funnel is most useful after 20261001-19 and -20 record every stage.
-- **Came from:** The user, 2026-10-05, reading a run's report.
-- **Design:** report, burndown.
-- **Status:** todo
+### 20261004-55. Report: draw the burndown as an SVG funnel. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-56. Pid-file races in two more timeout specs, and the group check's start-up gap. Done, see BACKLOG-COMPLETE.md.
 
@@ -2395,3 +2384,24 @@ index-test reads `anchored_query` for every search, so for a rewrite's search it
 3. index-rank's record can also drop `never_used` or `hypopg_refused` when it re-tests a candidate. DESIGN.md's index-rank burndown row doesn't list them.
 4. The "second round didn't run" record could go stale if index-test ran again after index-rank. The driver never runs them in that order today; refuse or overwrite it if that changes.
 5. Built, not better, and ranked per source still read "not recorded" in the Indexes table, because QUAACK doesn't record which source proposed each index it built. Record it, if it's cheap.
+
+### 20261004-78. Burndown funnel loose ends from 20261004-55.
+
+- **Status:** todo
+- **Depends on:** 20261004-55 (done)
+- **Came from:** both reviews of 20261004-55.
+- **Design:** report.
+
+Each of these is code in `driver/lib/quaack/driver/report/funnel.rb` with no test that fails when it's broken:
+1. Cutting long labels short.
+2. Set-aside counts, beside the band and in its tooltip; the test data always has 0.
+3. The scale's largest count taken from "went on" as well as "came in".
+4. An all-zero funnel's width.
+5. Where the hatch stripes sit on an unknown band, and the unknown band's tooltip text.
+6. The negative-count guard.
+7. The vertical layout: the viewBox height and the gap between bands.
+8. Where the labels sit: their x, and the two lines' y.
+
+Also:
+9. A stage with a "came in" count but no "went on" is drawn fully unknown, while the table shows the "came in" number. Draw what's known.
+10. Six funnel specs, run with the funnel taken out of the template, fail on `undefined method 'scan' for nil` rather than on an assertion. Make them fail on their assertion.
