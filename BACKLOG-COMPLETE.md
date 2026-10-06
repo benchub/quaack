@@ -5651,3 +5651,17 @@ Still open from the reviews of 20260922-4 and 20260923-53:
 - **Decided by the user (2026-10-05):** Build both: the precise tie check at a cut, and comparing intervals by value.
 - **Status:** done
 - **Landed:** Landed: precise tie check at a LIMIT/OFFSET cut via a bounded edge check, and intervals compared by value. Follow-ups: 20261004-93, 20261004-94.
+
+### 20260925-2. Insert check loose ends.
+
+Still open from the first review of 20260922-12:
+- **Needs a decision:** values aren't pinned to be deterministic. TimeZone-dependent timestamptz literals and `'now'` or `'today'` are accepted. Fix the arena session's TimeZone, or refuse the special date and time inputs.
+- Removing the `attisdropped` clause in COLUMNS_SQL stays green. Keep it or drop it.
+
+- **Depends on:** 20260922-12.
+- **Came from:** The first review of 20260922-12.
+- **Design:** What goes into the enclave.
+- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
+- **Decided by the user (2026-10-05):** Pin the arena session's TimeZone to UTC, and refuse the special date/time inputs ('now', 'today' and the like).
+- **Status:** done
+- **Landed:** Landed: arena sessions pinned to UTC; new clock_literal refusal for now/today/tomorrow/yesterday; attisdropped covered by a test. Follow-ups: 20261004-95.

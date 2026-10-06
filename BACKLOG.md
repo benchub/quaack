@@ -471,18 +471,7 @@ Still open from the build and reviews of 20260922-25:
 
 ### 20260925-1. Index DDL check loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20260925-2. Insert check loose ends.
-
-Still open from the first review of 20260922-12:
-- **Needs a decision:** values aren't pinned to be deterministic. TimeZone-dependent timestamptz literals and `'now'` or `'today'` are accepted. Fix the arena session's TimeZone, or refuse the special date and time inputs.
-- Removing the `attisdropped` clause in COLUMNS_SQL stays green. Keep it or drop it.
-
-- **Depends on:** 20260922-12.
-- **Came from:** The first review of 20260922-12.
-- **Design:** What goes into the enclave.
-- **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
-- **Decided by the user (2026-10-05):** Pin the arena session's TimeZone to UTC, and refuse the special date/time inputs ('now', 'today' and the like).
-- **Status:** todo
+### 20260925-2. Insert check loose ends. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260925-3. Plan gate loose ends. Done, see BACKLOG-COMPLETE.md.
 
@@ -2422,4 +2411,19 @@ From the reviews of 20260924-7.
 - **Depends on:** 20260924-7.
 - **Came from:** The first and second reviews of 20260924-7.
 - **Design:** fixture-compare, result comparison.
+- **Status:** todo
+
+### 20261004-95. Insert check: clock words, loose ends.
+
+From the review of 20260925-2.
+1. An insert that leaves out a column such as `created_at timestamptz DEFAULT now()`, or writes an explicit `DEFAULT`, loads wall-clock time, not the clock anchor. That time varies between runs and against anchored predicates like `= CURRENT_DATE`. Refuse it, or fill the column from the anchor, and say which in DESIGN.md.
+2. Rare bypasses: a word built by a function (`textcat('to','day')::date`), and backslash escapes in array or range literals (`'{to\day}'`, `'[to\day,infinity)'`). Refuse them, or list them in DESIGN.md as unsupported in v1.
+3. **Needs a decision:** the arena now always runs in UTC. Before, it effectively ran in production's timezone, so a rewrite that's equal only in UTC, such as `interval '1 day'` → `'24 hours'` on timestamptz across a DST change, can no longer be disproved there. Pinning to production's recorded TimeZone would be just as deterministic.
+4. `bind` puts the query's real literals into `$n` before the check. A `clock_literal` refusal therefore reveals whether a placeholder holds a clock word (one bit, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead would avoid both.
+5. False refusals: any function argument holding a clock word, such as `to_tsvector('english', 'Today only...')`, and a composite column whose text field holds "now".
+6. The driver's counterexamples prompt doesn't tell the LLM to avoid `'now'` and `'today'`. Check its effect on the recorded replays.
+
+- **Depends on:** 20260925-2.
+- **Came from:** The review of 20260925-2.
+- **Design:** What goes into the enclave; insert check.
 - **Status:** todo
