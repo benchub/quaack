@@ -2,6 +2,7 @@
 
 require "quaack/enclave/production_comparison"
 require_relative "support/server_clock"
+require_relative "support/sent_sql"
 
 # DESIGN.md's result-comparison: the original and a candidate run as plain queries on the
 # racetrack, streamed and compared by hash with fixture-compare's rules.
@@ -42,6 +43,11 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
     expect(verdict("SELECT 0.3::float8", "SELECT 0.1::float8 + 0.2::float8")).to eq(["pass", nil])
   end
 
+  it "hashes intervals by value, so equal intervals that print differently pass" do
+    expect([verdict("SELECT interval '1 day'", "SELECT interval '24 hours'"),
+            verdict("SELECT interval '1 day'", "SELECT interval '25 hours'")]).to eq([["pass", nil], %w[fail multiset]])
+  end
+
   it "binds params to both queries" do
     expect(verdict("SELECT i FROM generate_series(1, 9) i WHERE i < $1",
                    "SELECT i FROM generate_series(1, 9) i WHERE i < $1 ORDER BY i DESC",
@@ -74,10 +80,106 @@ RSpec.describe Quaack::Enclave::ProductionComparison do
       expect(verdict("SELECT 1 ORDER BY 1", "SELECT 1")).to eq(%w[fail candidate_unordered])
     end
 
-    it "refuses an original whose LIMIT cuts a tie group" do
-      expect(verdict("SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3",
-                     "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3"))
-        .to eq(%w[fail unsupported_order])
+    describe "an original whose LIMIT or OFFSET cuts a tie group" do
+      let(:original) { "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 3" }
+
+      it "passes a candidate that keeps other rows from the tie" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"))
+          .to eq(["pass", nil])
+      end
+
+      it "fails a row from outside the tie with the value rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i UNION ALL SELECT 0, 10 " \
+                                 "ORDER BY a LIMIT 3")).to eq(%w[fail value])
+      end
+
+      it "fails more of a row than the tie holds with the value rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i UNION ALL SELECT 0, 2 " \
+                                 "ORDER BY a LIMIT 3")).to eq(%w[fail value])
+      end
+
+      it "passes an OFFSET bound to a param that passes every row" do
+        sql = "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a OFFSET $1 LIMIT 2"
+        expect(verdict(sql, sql, params: [{ value: "99", type: 23 }])).to eq(["pass", nil])
+      end
+
+      it "fails another number of rows with the row_count rule" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a LIMIT 2"))
+          .to eq(%w[fail row_count])
+      end
+
+      it "finds an OFFSET bound to a param" do
+        offset = "SELECT i % 2 AS a, i FROM generate_series(1, 9) i ORDER BY a OFFSET $1 LIMIT 2"
+        candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a OFFSET $1 LIMIT 2"
+        params = [{ value: "1", type: 23 }]
+
+        expect([verdict(offset, candidate, params:), verdict(offset, candidate.sub("$1", "$1 + 2"), params:)])
+          .to eq([["pass", nil], %w[fail value]])
+      end
+
+      # 1 and 3 tie in the original, and come before 2. The candidate ties
+      # all three, so it could keep 2, though its tiebreaker runs keep 1
+      # and 3.
+      it "refuses a candidate whose own tie at the cut could keep a row the original's can't" do
+        expect(verdict("SELECT i FROM generate_series(1, 3) i ORDER BY i = 2 LIMIT 1",
+                       "SELECT i FROM generate_series(1, 3) i ORDER BY i * 0 LIMIT 1"))
+          .to eq(%w[fail unsupported_order])
+      end
+
+      # The original keeps two of 2, 3, 4, and 5, and 3 and 4 both ways
+      # its ties break. The candidate ties every row, and could keep 1.
+      it "refuses a candidate that matches a tie cut on both sides of the rows kept" do
+        expect(verdict("SELECT i FROM generate_series(1, 6) i ORDER BY i IN (1, 6) OFFSET 1 LIMIT 2",
+                       "SELECT i FROM generate_series(1, 6) i ORDER BY i * 0 OFFSET 2 LIMIT 2"))
+          .to eq(%w[fail unsupported_order])
+      end
+
+      it "refuses a candidate with DISTINCT ON" do
+        expect(verdict(original, "SELECT DISTINCT ON (a, i) i % 2 AS a, i FROM generate_series(1, 9) i " \
+                                 "ORDER BY a, i LIMIT 3")).to eq(%w[fail unsupported_order])
+      end
+
+      # The runs without a LIMIT are made to outlast the timeout here, as
+      # a large table's would.
+      it "refuses, rather than failing timed_out, when the runs without its LIMIT time out" do
+        slow = SentSql::Slow.new(conn)
+        candidate = "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i ORDER BY a LIMIT 3"
+        result = described_class.compare(connection: slow, original:, candidate:, timeout_ms: 300, params: [])
+        expect([result.result, result.rule, slow.slowed]).to eq(["fail", "unsupported_order", true])
+      end
+
+      it "still fails timed_out when the candidate's own runs time out" do
+        expect(verdict(original, "SELECT i % 2 AS a, i FROM generate_series(9, 1, -1) i, pg_sleep(1) " \
+                                 "ORDER BY a LIMIT 3", timeout_ms: 300)).to eq(%w[fail timed_out])
+      end
+    end
+
+    # Pagination as ORMs write it, where the tie groups don't reach the
+    # edges of the rows kept: the original's runs through the window, both
+    # ways, hold the same rows, so nothing runs without a LIMIT.
+    describe "an original with a LIMIT and an OFFSET whose edges no tie reaches" do
+      let(:original) { "SELECT i / 10 AS a, i FROM generate_series(0, 199) i ORDER BY a DESC LIMIT 20 OFFSET 40" }
+      let(:spy) { SentSql::Recorder.new(conn) }
+
+      def spied(candidate, params: [])
+        result = described_class.compare(connection: spy, original:, candidate:, params:, timeout_ms: 5_000)
+        [result.result, result.rule]
+      end
+
+      it "runs no query without a LIMIT, and still checks the candidate row for row" do
+        good = spied("SELECT i / 10 AS a, i FROM generate_series(199, 0, -1) i ORDER BY a DESC LIMIT 20 OFFSET 40")
+        bad = spied("SELECT i / 10 AS a, i FROM generate_series(0, 199) i ORDER BY a DESC LIMIT 20 OFFSET 41")
+        expect([good, bad, spy.unlimited]).to eq([["pass", nil], %w[fail value], []])
+      end
+
+      # The first tie group holds 200 to 204, and the rest hold ten rows
+      # each, so the rows kept span 45 to 64, and a group spans 105 to 114.
+      it "runs none for a LIMIT and an OFFSET bound to params" do
+        sql = "SELECT i / 10 AS a, i FROM generate_series(0, 204) i ORDER BY a DESC LIMIT $1 OFFSET $2"
+        params = [{ value: "20", type: 20 }, { value: "45", type: 20 }]
+        result = described_class.compare(connection: spy, original: sql, candidate: sql, params:, timeout_ms: 5_000)
+        expect([result.result, result.rule, spy.unlimited]).to eq(["pass", nil, []])
+      end
     end
 
     it "refuses WITH TIES" do

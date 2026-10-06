@@ -30,11 +30,17 @@ module Quaack
     # Modes, as fixture-compare picks them from the original's top level:
     # - multiset: the column types, row counts, and sorted digests match.
     # - ordered: fixture-compare's tiebreaker runs, T and T', on both queries, and the
-    #   same refusals apply (unsupported_order): the original's T and T'
-    #   sorted digests must match, and when a column is left out of the
-    #   tiebreaker, no two of the original's rows may agree on every
-    #   tiebreaker column but differ in a left-out one. Then the
-    #   candidate's T and T' ordered digests must match the original's.
+    #   same refusals apply (unsupported_order): when a column is left out
+    #   of the tiebreaker, no two of the original's rows may agree on every
+    #   tiebreaker column but differ in a left-out one. When the original's
+    #   T and T' sorted digests match, and either it has no LIMIT and
+    #   OFFSET together or its runs through the end of the window
+    #   (Shape#through_window) match too, the candidate's T and T' ordered
+    #   digests must match the original's. Otherwise a LIMIT or OFFSET may
+    #   cut a tie group, and ResultComparison::CutTies checks the candidate
+    #   on row hashes, from both queries' runs with and without their LIMIT
+    #   and OFFSET, as fixture-compare does (HashedRuns). A run without a
+    #   LIMIT that times out refuses, unsupported_order.
     # - subset (LIMIT or OFFSET, no ORDER BY): the original as written gives
     #   the expected count. The candidate's row hashes, which number at most
     #   that, are tallied, and the original without its LIMIT streams past
@@ -63,7 +69,8 @@ module Quaack
       # A streamed result: its column types, row count, and digests.
       # hidden is whether rows agree on the tie columns but differ in the
       # others (only when tie columns were given).
-      Digested = Data.define(:types, :count, :sorted, :ordered, :hidden)
+      # hashes are the row hashes, in order.
+      Digested = Data.define(:types, :count, :sorted, :ordered, :hidden, :hashes)
 
       class TimedOut < StandardError; end
 
@@ -150,16 +157,14 @@ module Quaack
 
         positions = positions(run, original_shape, candidate_shape, expected.types)
         originals = positions && tiebreaker_runs(run, original_shape, positions)
-        return fail("unsupported_order") unless originals && ties_sound?(*originals)
+        return fail("unsupported_order") if originals.nil? || originals.first.hidden
 
-        tiebroken(run, originals, candidate_shape, positions)
+        HashedRuns.new(run, positions).verdict([original_shape, candidate_shape], originals)
       end
 
       def tiebreaker_runs(run, shape, positions)
         [false, true].map { run.digest(shape.with_tiebreaker(positions, descending: it), positions) }
       end
-
-      def ties_sound?(ascending, descending) = ascending.sorted == descending.sorted && !ascending.hidden
 
       def positions(run, original_shape, candidate_shape, types)
         catalog = Catalog.new(run.connection)
@@ -178,6 +183,50 @@ module Quaack
           return fail("value") if actual.ordered != original.ordered
         end
         pass
+      end
+
+      # The candidate's verdict from the original's tiebreaker runs: they
+      # match row for row, or, when CutTies.needed?, ResultComparison::CutTies'
+      # check runs on row hashes, with this class as its source. Its runs
+      # without a LIMIT keep only row hashes, and when one times out, the
+      # comparison refuses with unsupported_order, as it did before the
+      # check could recover a tie at a cut.
+      class HashedRuns
+        def initialize(run, positions)
+          @run = run
+          @positions = positions
+        end
+
+        def verdict(shapes, originals)
+          return ProductionComparison.tiebroken(@run, originals, shapes.last, @positions) unless cut?(shapes, originals)
+
+          @columns = originals.first.types.size
+          rule, = catch(:full_timed_out) { ResultComparison::CutTies.check(shapes, originals.map(&:hashes), self) }
+          rule ? ProductionComparison.fail(rule.to_s) : ProductionComparison.pass
+        end
+
+        def fetch(shape, limited:)
+          [false, true].map do |descending|
+            @run.digest(shape.with_tiebreaker(@positions, descending:, limited:)).hashes
+          rescue TimedOut
+            raise if limited
+
+            throw :full_timed_out, ResultComparison::CutTies::REFUSED
+          end
+        end
+
+        def key(row) = row
+        def contained?(big, small) = ResultComparison::CutTies.tallied?(big, small)
+        def all_columns? = @positions.size == @columns
+
+        private
+
+        def cut?(shapes, originals)
+          uncut = originals.map(&:sorted).uniq.one?
+          ResultComparison::CutTies.needed?(shapes.first, uncut:, kept_rows: originals.first.hashes.any?) do
+            [false, true].map { @run.digest(shapes.first.through_window(@positions, descending: it)).sorted }.uniq.one?
+          end
+        end
       end
 
       # Runs queries for one compare.
@@ -257,7 +306,8 @@ module Quaack
         def digested
           count = @hashes.size
           Digested.new(types: @types, count:, sorted: Digest::SHA256.digest("#{count}:#{@hashes.sort.join}"),
-                       ordered: Digest::SHA256.digest("#{count}:#{@hashes.join}"), hidden: @hidden)
+                       ordered: Digest::SHA256.digest("#{count}:#{@hashes.join}"), hidden: @hidden,
+                       hashes: @hashes)
         end
 
         private

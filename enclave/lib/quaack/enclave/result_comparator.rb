@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "arena_fixture"
+require_relative "result_comparator/interval_text"
 
 module Quaack
   module Enclave
@@ -36,6 +37,9 @@ module Quaack
     # - numeric: equal by value, exactly, so 1.0 equals 1.00. NaN and the
     #   infinities equal only themselves.
     # - bpchar: equal ignoring trailing spaces, as bpchar's own equality is.
+    # - interval: equal by value, as interval's own equality is, so '1 day'
+    #   equals '24 hours' and '1 mon' equals '30 days' (IntervalText reads
+    #   every IntervalStyle).
     # - Everything else: exact text. That includes arrays and composites
     #   that hold floats or numerics, so float noise inside one, or a
     #   numeric's printed scale, is a mismatch. That limitation can only
@@ -86,6 +90,7 @@ module Quaack
       FLOAT_TYPES = [700, 701].freeze
       NUMERIC_TYPE = 1700
       BPCHAR_TYPE = 1042
+      INTERVAL_TYPE = 1186
       RELATIVE_TOLERANCE = 1e-9
       ABSOLUTE_TOLERANCE = 1e-12
 
@@ -214,11 +219,13 @@ module Quaack
 
         # The text that equal values of the type share: numeric without its
         # scale's trailing zeros, bpchar without trailing spaces (which
-        # bpchar's own equality ignores), and anything else as it is.
+        # bpchar's own equality ignores), interval as the value interval's
+        # own equality compares (IntervalText), and anything else as it is.
         def canonical(type, text)
           case type
           when NUMERIC_TYPE then numeric_text(text)
           when BPCHAR_TYPE then text.sub(/ +\z/, "")
+          when INTERVAL_TYPE then IntervalText.span(text).to_s
           else text
           end
         end

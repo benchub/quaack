@@ -26,15 +26,15 @@ module Quaack
 
         # A column goes in the tiebreaker only if values btree calls equal
         # are always equal to the comparator too. These break that:
-        # - At any level: interval ('1 day' and '24 hours') and jsonb
-        #   ({"a": 1.0} and {"a": 1.00}), which the comparator reads as text.
-        # - Inside an array, range, or composite, also numeric, float4,
-        #   float8, and bpchar. The comparator reads those by value, or
-        #   without trailing spaces, only as a whole column. Inside a
-        #   container it reads the container's text, where {1.0} and {1.00}
-        #   differ.
-        UNFAITHFUL = %i[interval jsonb].freeze
-        UNFAITHFUL_INSIDE = [*UNFAITHFUL, :numeric, :float4, :float8, :bpchar].freeze
+        # - At any level: jsonb ({"a": 1.0} and {"a": 1.00}), which the
+        #   comparator reads as text.
+        # - Inside an array, range, or composite, also interval, numeric,
+        #   float4, float8, and bpchar. The comparator reads those by value,
+        #   or without trailing spaces, only as a whole column. Inside a
+        #   container it reads the container's text, where {1.0} and {1.00},
+        #   or {"1 day"} and {"24:00:00"}, differ.
+        UNFAITHFUL = %i[jsonb].freeze
+        UNFAITHFUL_INSIDE = [*UNFAITHFUL, :interval, :numeric, :float4, :float8, :bpchar].freeze
         FAITHFUL_ELEMENTS = ORDERABLE_TYPES.except(*UNFAITHFUL_INSIDE)
         # Built-in element types a container may hold.
         FAITHFUL_ELEMENT_OIDS = FAITHFUL_ELEMENTS.values.to_set(&:first).freeze

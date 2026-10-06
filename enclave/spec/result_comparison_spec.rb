@@ -98,10 +98,11 @@ RSpec.describe Quaack::Enclave::ResultComparison do
         .to eq([1, 3, 5, 7, 8, 9])
     end
 
-    # Each prints btree-equal values differently: '1 day' and '24 hours',
-    # {"a": 1.0} and {"a": 1.00}, or an element's scale or padding.
-    it "leaves out interval, jsonb, and arrays of numeric, floats, bpchar, interval, or jsonb" do
-      expect(described_class::Tiebreaker.positions([1186, 3802, 1231, 1021, 1022, 1014, 1187, 3807])).to eq([])
+    # Each prints btree-equal values differently: {"a": 1.0} and
+    # {"a": 1.00}, or an element's scale, padding, or '1 day' and
+    # '24 hours'. The comparator reads a whole interval column by value.
+    it "leaves out jsonb, and arrays of numeric, floats, bpchar, interval, or jsonb, but keeps interval" do
+      expect(described_class::Tiebreaker.positions([1186, 3802, 1231, 1021, 1022, 1014, 1187, 3807])).to eq([1])
     end
 
     it "adds the catalog's orderable types" do

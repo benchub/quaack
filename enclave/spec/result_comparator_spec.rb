@@ -272,6 +272,64 @@ RSpec.describe Quaack::Enclave::ResultComparator do
       end
     end
 
+    # Each style's text is the output Postgres 18 gives for that value under
+    # that IntervalStyle. result_comparison_postgres_spec.rb checks many
+    # more against Postgres's own equality.
+    describe "interval" do
+      def interval = 1186
+
+      def intervals_equal?(expected, actual)
+        compare(result([interval], [[expected]]), result([interval], [[actual]]), mode: :ordered).match?
+      end
+
+      it "compares by value, as interval's own equality does, so a month is 30 days and a day 24 hours" do
+        pairs = [["1 day", "24:00:00"], ["1 mon", "30 days"], ["1 year", "360 days"], ["1 day -01:00:00", "23:00:00"],
+                 ["-1 days +01:00:00", "-23:00:00"], ["00:00:00", "0 days"]]
+
+        expect(pairs.map { |pair| intervals_equal?(*pair) }).to eq([true] * pairs.size)
+      end
+
+      it "compares exactly, to the microsecond" do
+        pairs = [["1 day", "1 day 00:00:00.000001"], ["1 mon", "31 days"], ["1 day", "-1 days"],
+                 ["00:00:01", "-00:00:01"], ["1 year", "365 days"]]
+
+        expect(pairs.map { |pair| intervals_equal?(*pair) }).to eq([false] * pairs.size)
+      end
+
+      it "reads every IntervalStyle's output" do
+        # 1 year 2 mons -3 days 04:05:06.789 = 417 days 04:05:06.789.
+        same = ["1 year 2 mons -3 days +04:05:06.789", "@ 1 year 2 mons -3 days 4 hours 5 mins 6.789 secs",
+                "+1-2 -3 +4:05:06.789", "P1Y2M-3DT4H5M6.789S", "417 days 04:05:06.789",
+                "@ 1 year 2 mons 3 days 4 hours 5 mins 6.789 secs ago", "-1-2 -3 -4:05:06.789",
+                "P-1Y-2M-3DT-4H-5M-6.789S"]
+
+        expect(same.map { |text| intervals_equal?(same.first, text) }).to eq(([true] * 5) + ([false] * 3))
+        expect(same.last(3).map { |text| intervals_equal?(same[5], text) }).to eq([true] * 3)
+      end
+
+      it "reads sql_standard's one leading sign as applying to every field" do
+        expect([intervals_equal?("-1 1:00:00", "-1 days -01:00:00"), intervals_equal?("-1-2", "-1 years -2 mons"),
+                intervals_equal?("-1 1:00:00", "-1 days +01:00:00")]).to eq([true, true, false])
+      end
+
+      it "treats the infinities as equal only to themselves" do
+        expect([intervals_equal?("infinity", "infinity"), intervals_equal?("-infinity", "-infinity"),
+                intervals_equal?("infinity", "-infinity"), intervals_equal?("infinity", "178000000 years")])
+          .to eq([true, true, false, false])
+      end
+
+      it "matches by value in a multiset too" do
+        verdict = compare(result([interval], [["1 day"], ["1 mon"]]), result([interval], [["30 days"], ["24:00:00"]]))
+
+        expect(verdict.match?).to be(true)
+      end
+
+      it "refuses interval text it can't read, and keeps none of it" do
+        expect { intervals_equal?("1 fortnight #{sentinel}", "1 day") }
+          .to raise_error(ArgumentError) { |error| expect(error.message).not_to include(sentinel) }
+      end
+    end
+
     describe "float tolerance" do
       it "is a relative 1e-9" do
         expect([floats("1", "1.0000000009").match?, floats("1", "1.0000000011").match?,
