@@ -56,6 +56,30 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect_no_leaks(sentinels, outcome)
     end
 
+    # A run an older quaacks classified before the sendable-type allowlist
+    # (store format 3) may hold a bytea column's MCV values in its
+    # classification. Resume skips classify when its entry exists, so the
+    # payload steps must refuse the run rather than send what it holds.
+    it "refuses a run classified before the sendable-type allowlist, sending none of its MCV values" do
+      ready
+      classification = stored.read("classification")
+      classification["outbound_statistics"]["tables"].first["columns"] <<
+        { "name" => "b", "n_distinct" => 2, "null_frac" => 0, "correlation" => nil,
+          "most_common_freqs" => [0.5, 0.5], "most_common_vals" => "{#{sentinels.text},other}" }
+      stored.write("classification", classification)
+
+      current = quaacks.run("rewrite-payload", "--run", store.run_id)
+      expect(current.stdout).to include(sentinels.text), "the planted value must reach the payload of a current run"
+
+      stored.write("store_format", { "format" => 3 })
+      %w[rewrite-payload index-payload].each do |step|
+        outcome = quaacks.run(step, "--run", store.run_id)
+        expect([outcome.status.exitstatus, outcome.stdout])
+          .to eq([64, %({"type":"error","step":"#{step}","rule":"run_from_older_version"}\n)])
+        expect_no_leaks(sentinels, outcome)
+      end
+    end
+
     context "with a timestamptz range, after index-search" do
       let(:query) do
         "SELECT o.note FROM public.orders o WHERE o.note = '#{sentinels.text}' " \
