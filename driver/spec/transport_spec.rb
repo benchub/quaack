@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "shellwords"
 require "tmpdir"
 require "quaack/driver/transport"
 
@@ -335,6 +336,66 @@ RSpec.describe Quaack::Driver::Transport do
       expect(took).to be < 4
       expect(result.messages).to eq([])
       expect([Thread.list.size, fds_after]).to eq([threads, fds_before])
+    end
+
+    # The call's timeout is far past the elapsed limit, so a call that
+    # waits for it fails the limit rather than passing late.
+    it "goes on writing stdin to a run that closes its stdout before reading it all" do
+      count = File.join(dir, "count")
+      source = %(STDOUT.reopen(File::NULL); File.write(#{count.inspect}, STDIN.read.bytesize.to_s))
+      step = local.new(command: EnclaveCommands.raw(source), timeout: 30)
+      input = { "a" => "x" * (8 * 1024 * 1024) }
+      error = nil
+
+      expect(elapsed { error = failure(step, input:) }).to be < 15
+      expect(error.rule).to eq("incomplete")
+      expect(File.read(count)).to eq(JSON.generate(input).bytesize.to_s)
+    end
+
+    # Something the run started, still holding its stdout, mustn't keep the
+    # call waiting for the timeout once the run has ended. The call takes
+    # what the run printed, and leaves the grandchild alone: a real one is
+    # more likely an ssh ControlPersist master than a stray.
+    it "returns once the run ends, even if something it started still holds stdout" do
+      pid_file = File.join(dir, "grandchild")
+      script = "sleep 60 & echo $! > #{pid_file.shellescape}; " \
+               "printf '{\"type\":\"version\",\"version\":\"1\"}\\n{\"type\":\"done\"}\\n'; exit 0"
+      step = local.new(command: ["sh", "-c", script], timeout: 30)
+      result = nil
+
+      expect(elapsed { result = step.call("probe") }).to be < 15
+      expect(result.messages).to eq([{ "type" => "version", "version" => "1" }])
+      expect(alive?(Integer(File.read(pid_file)))).to be(true)
+    ensure
+      Process.kill("KILL", Integer(File.read(pid_file))) if pid_file && File.exist?(pid_file)
+    end
+
+    # The progress block holds the call until the run has ended, so what the
+    # run printed after the progress line is still in the pipe when the call
+    # sees it end, and must be read from there.
+    it "keeps what the run printed before it ended, even if something it started still holds stdout" do
+      pid_file, grandchild_file, go = %w[pid grandchild go].map { File.join(dir, it) }
+      source = <<~RUBY
+        $stdout.sync = true
+        File.write(#{pid_file.inspect}, Process.pid.to_s)
+        File.write(#{grandchild_file.inspect}, Process.spawn("sleep", "60").to_s)
+        print %({"type":"index_build_progress","index":1,"total":2,"ddl":"CREATE INDEX x"}\\n)
+        sleep 0.01 until File.exist?(#{go.inspect})
+        print %({"type":"version","version":"1"}\\n{"type":"done"}\\n)
+      RUBY
+      step = local.new(command: EnclaveCommands.raw(source), timeout: 30)
+      ended = false
+      result = step.call("probe") do
+        File.write(go, "")
+        pid = Integer(File.read(pid_file))
+        100.times { alive?(pid) ? sleep(0.1) : break }
+        ended = !alive?(pid)
+      end
+
+      expect(ended).to be(true), "the run hadn't ended, so this proves nothing"
+      expect(result.messages).to eq([{ "type" => "version", "version" => "1" }])
+    ensure
+      Process.kill("KILL", Integer(File.read(grandchild_file))) if grandchild_file && File.exist?(grandchild_file)
     end
 
     # The timeout is long enough that the child has installed its TERM trap

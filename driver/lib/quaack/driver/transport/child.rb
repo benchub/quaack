@@ -14,9 +14,12 @@ module Quaack
       # It writes stdin and reads stdout in one loop, without blocking on
       # either, so a child that fills its stdout before reading all of stdin
       # can't deadlock with it, and there's no writer thread to outlive the
-      # call. A child that ends without reading all of stdin is its own
-      # business: once the child has ended, stdin is closed, even if
-      # something the child started still holds it open.
+      # call. A child that closes its stdout still gets the rest of stdin. A
+      # child that ends without reading all of stdin is its own business:
+      # once the child has ended, stdin is closed, and stdout is read only
+      # for what's already there, even if something the child started still
+      # holds either open. Whatever that is, it's left running, since it may
+      # be meant to outlive the call, as an ssh ControlPersist master is.
       #
       # A child that runs past its deadline, or prints more than the cap, is
       # killed: SIGTERM, then SIGKILL if it's still running GRACE seconds
@@ -34,6 +37,9 @@ module Quaack
 
         GRACE = 2
         CHUNK = 64 * 1024
+        # How often, at most, Pump checks whether the child has ended while
+        # neither pipe is ready.
+        POLL = 0.1
 
         module_function
 
@@ -46,7 +52,7 @@ module Quaack
           # The [command, argv0] form never goes through a shell, even when
           # argv has only one element.
           input, output, waiter = start(argv)
-          stdout, limit = Pump.new(input, output, stdin, deadline:, max_bytes: max_output_bytes, on_line:).run
+          stdout, limit = Pump.new(input, output, stdin, waiter, deadline:, max_bytes: max_output_bytes, on_line:).run
           limit ||= wait(waiter, deadline)
           terminate(waiter) if limit
           Run.new(stdout:, status: waiter.value, limit:)
@@ -88,15 +94,19 @@ module Quaack
           nil
         end
 
-        # Writes stdin to input and reads output until output closes, the
-        # deadline passes, or output holds more than max_bytes. run returns
+        # Writes stdin to input and reads output until both are done, the
+        # child (waiter's) ends, the deadline passes, or output holds more
+        # than max_bytes. Writing is done once all of stdin is written or the
+        # child closes its stdin, and reading once output closes. run returns
         # [stdout as read, limit], where limit is :output_too_large or nil.
         # At the deadline it just stops: Child.wait then finds the child
         # still running and calls it a timeout.
         class Pump
-          def initialize(input, output, stdin, deadline:, max_bytes:, on_line: nil) # rubocop:disable Metrics/ParameterLists
+          def initialize(input, output, stdin, waiter, deadline:, max_bytes:, on_line: nil) # rubocop:disable Metrics/ParameterLists
             @input = input
             @output = output
+            @waiter = waiter
+            @reading = true
             # An empty stdin is written as zero bytes, which closes input.
             @pending = (stdin || "").b
             @deadline = deadline
@@ -108,22 +118,46 @@ module Quaack
           end
 
           def run
-            loop do
-              readable, writable = IO.select([@output], writing? ? [@input] : [], nil, remaining)
-              return [@stdout, nil] if readable.nil?
-
-              write if writable.any?
-              next if readable.empty?
-
-              limit = read
-              return [@stdout, limit == :eof ? nil : limit] if limit
+            until remaining.zero?
+              ended = turn
+              return [@stdout, *ended] if ended
             end
+            [@stdout, nil]
           end
 
           private
 
+          # Writes and reads what's ready. nil to keep going, or once done,
+          # [limit].
+          def turn
+            readable, writable = ready
+            write if writable.any?
+            limit = read if readable.any?
+            return [limit] if limit
+            return [nil] unless @reading || writing?
+
+            [drain] unless @waiter.alive?
+          end
+
+          # The pipes ready to read and to write, waiting at most POLL.
+          def ready
+            readable, writable = IO.select(@reading ? [@output] : [], writing? ? [@input] : [], nil,
+                                           [remaining, POLL].min)
+            [readable || [], writable || []]
+          end
+
           def remaining = [@deadline - Child.now, 0].max
           def writing? = !@input.closed?
+
+          # Once the child has ended, reads only what output already holds.
+          # Returns :output_too_large or nil. Child.run closes input.
+          def drain
+            while @reading
+              limit = read
+              return limit if limit
+              return if @output.wait_readable(0).nil?
+            end
+          end
 
           # Writes what it can of the rest of stdin, and closes input once
           # it's all written, or once the child has closed its end.
@@ -139,10 +173,16 @@ module Quaack
 
           def finish_writing = @input.close
 
-          # nil to keep going, :eof once output closes, or :output_too_large.
+          def finish_reading
+            @reading = false
+            nil
+          end
+
+          # :output_too_large, or nil to keep going. Reading stops once
+          # output closes.
           def read
             chunk = @output.read_nonblock(CHUNK, exception: false)
-            return :eof if chunk.nil?
+            return finish_reading if chunk.nil?
             return if chunk == :wait_readable
 
             @stdout << chunk

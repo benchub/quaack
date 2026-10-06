@@ -17,6 +17,21 @@ RSpec.describe "quaack executable" do
     expect(status.exitstatus).to eq(0)
   end
 
+  # Each LLM SDK takes about half a second to load, so the driver loads one
+  # only when it builds a client for its provider.
+  it "loads no LLM SDK to start" do
+    Dir.mktmpdir("quaack-cli-features") do |dir|
+      features = File.join(dir, "features")
+      dump = "at_exit { File.write(#{features.dump}, $LOADED_FEATURES.join(10.chr)) }; load ARGV.shift"
+      out, err, status = run_ruby("-e", dump, exe, "--version")
+
+      expect([out, status.exitstatus]).to eq(["quaack #{Quaack::Driver::VERSION}\n", 0]), "stderr was #{err}"
+      loaded = File.read(features).split("\n")
+      expect(loaded).to include(end_with("/quaack/driver/llm.rb"))
+      expect(loaded.grep(%r{/(anthropic|openai)\.rb\z})).to eq([])
+    end
+  end
+
   describe "start" do
     let(:dir) { Dir.mktmpdir("quaack-cli-start") }
 

@@ -27,9 +27,9 @@ RSpec.describe "what each side loads at runtime" do
       expect(@report.violations).to eq([]), @report.violations.join("\n")
     end
 
-    # Today the entry file loads every other lib file itself, so these can't
-    # tell a run that requires every file from one that requires only the
-    # entry. spec/runtime_boundary_checker_spec.rb proves that with files
+    # Today the entry file loads nearly every other lib file itself (the LLM
+    # adapters are autoloaded), so these can't always tell a run that requires
+    # every file from one that requires only the entry. spec/runtime_boundary_checker_spec.rb proves that with files
     # nothing requires.
     def lib_files(gem_name)
       lib = File.join(@report.install.gem_dirs.fetch(gem_name), "lib")
@@ -68,12 +68,27 @@ RSpec.describe "what each side loads at runtime" do
   describe "the driver side" do
     it_behaves_like "a side that loads only what it may",
                     :driver, "driver", "quaack", "quaack #{Quaack::Driver::VERSION}\n" do
-      # The LLM client needs the Anthropic SDK, which only the driver may
-      # load. This shows the clean result above covers it.
-      it "loads the anthropic gem from its installed copy" do
-        anthropic = File.join(@report.install.gem_dirs.fetch("anthropic"), "lib", "anthropic.rb")
+      # The LLM client needs each provider's SDK, which only the driver may
+      # load, and it loads one only when it builds that provider's client.
+      # These show the clean result above covers them, and that starting
+      # loads neither.
+      it "loads each LLM SDK from its installed copy when it builds a client" do
+        run = @report.runs.fetch(RuntimeBoundary::BUILD_LLM_CLIENTS_RUN)
 
-        expect(@report.runs.fetch("every file under lib/").loaded_features).to include(anthropic)
+        expect(run.stdout).to eq("anthropic openai_compatible bedrock\n"), "stderr was #{run.stderr}"
+        sdks = %w[anthropic openai].map { File.join(@report.install.gem_dirs.fetch(it), "lib", "#{it}.rb") }
+        expect(run.loaded_features).to include(*sdks)
+      end
+
+      it "loads no LLM SDK when it starts" do
+        sdk_dirs = %w[anthropic openai].map { "#{@report.install.gem_dirs.fetch(it)}/" }
+        starts = @report.runs.slice("quaack --version", "quaack")
+
+        expect(starts.size).to eq(2)
+        starts.each do |label, run|
+          expect(run.loaded_features).to include(end_with("/lib/quaack/driver/llm.rb"))
+          expect(run.loaded_features.select { |f| f.start_with?(*sdk_dirs) }).to eq([]), label
+        end
       end
     end
   end
