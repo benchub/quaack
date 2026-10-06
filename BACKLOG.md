@@ -2290,17 +2290,7 @@ While here (second review of 20261004-72): no test plants a Hash in place of a r
 - **Design:** The report's plan tables.
 - **Status:** todo
 
-### 20261004-84. Progress: the LLM wait's clock sits on a note's line.
-
-From the review of 20261004-25. On a terminal, an LLM ask that repeats its step is dropped even after a note (the user's 2026-10-05 decision on -25 item 3). So during the wait, the live clock ticks on the note: "Reading the query's shape for the LLM (llm-index-ideas) 1m10s", which reads as if the enclave call took the minute. The first counterexamples ask does the same under "Rewrite X: Reading the rewrite's shape for the LLM". `progress_spec.rb` (~571) pins today's behavior.
-
-**Ask the user** which they prefer: (a) keep it; (b) when the latest line is a note, freeze the note and print the ask after all (so the clock ticks on "Asking the LLM…"); or (c) print a short ask line such as "Waiting for the LLM" instead of the repeated wording.
-
-- **Depends on:** 20261004-25.
-- **Came from:** The review of 20261004-25.
-- **Design:** Progress lines for `quaack run`.
-- **Decided by the user (2026-10-06):** (c), print a short ask line such as "Waiting for the LLM", so the clock ticks on it.
-- **Status:** todo
+### 20261004-84. Progress: the LLM wait's clock sits on a note's line. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-85. Closed output pipes: minors from 20261004-62.
 
@@ -2362,18 +2352,7 @@ From the builder and review of 20261004-80.
 
 ### 20261004-90. Classify: low-cardinality json, jsonb and array columns send their MCV values. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-91. Structured columns: test gaps, and other structured types.
-
-From the builder and review of 20261004-90.
-1. The "missing structured list is an error" guard is untested: changing `table.fetch("structured_columns")` to `fetch("structured_columns", [])` keeps every suite green. Add a test that a statistics entry without the list fails classify.
-2. In `pii_classification_postgres_spec`'s trust-boundary test, the "exposure is real" block doesn't check `customers.preferences`, so if the fixture stops planting json only `leak_check_spec` notices. Add it.
-3. **Ask the user:** should hstore, xml, tsvector, composite types and ranges be treated like json (never low-cardinality, values never go out)? tsvector has an equality operator, so ANALYZE can keep MCV values for it. DESIGN.md says v1 treats them like any other non-text type.
-
-- **Depends on:** 20261004-90.
-- **Came from:** The builder and review of 20261004-90.
-- **Design:** classify, trust boundary.
-- **Decided by the user (2026-10-06):** item 3, yes: treat hstore, xml, tsvector, composite types and ranges (and domains/arrays over them) like json: never low-cardinality, values never go out.
-- **Status:** todo
+### 20261004-91. Structured columns: test gaps, and other structured types. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-92. Literal-set values: test gaps, and comparisons by name only elsewhere.
 
@@ -2418,4 +2397,40 @@ From the review of 20260925-2.
 - **Came from:** The review of 20260925-2.
 - **Design:** What goes into the enclave; insert check.
 - **Decided by the user (2026-10-06):** item 3, pin the arena session's TimeZone to production's recorded TimeZone instead of UTC. This reverses the UTC part of 20260925-2. Item 1, fill a column whose omitted or `DEFAULT` value reads the clock from the clock anchor, rather than refusing. Item 2, list the bypasses in DESIGN.md as unsupported in v1. Item 5, fix the false refusals: stop refusing a clock word that can't reach a date/time value.
+- **Status:** todo
+
+### 20261006-1. Waiting-for-the-LLM line: minors from 20261004-84.
+
+From the review of 20261004-84.
+1. `driver/spec/pipeline_progress_spec.rb` (~432): the new `it` has no blank line before it.
+2. `progress.rb` (~107-110): the `sub_step` comment still says a repeated note "is left out on a terminal"; it can now print as a wait line.
+3. Removing `note &&` in `Progress#shown` stays green. Harmless today, since no step note repeats its step's line, but nothing pins it. Add a test or drop the guard.
+
+- **Depends on:** 20261004-84.
+- **Came from:** The review of 20261004-84.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261006-2. Structured columns: minors from 20261004-91.
+
+From the builder and review of 20261004-91.
+1. The classify-level tests for xml, tsvector, range and multirange columns (`pii_classification_postgres_spec.rb` ~380-418) stay green when those types are dropped from the list, since ANALYZE gives them no positive `n_distinct`. Only `planner_statistics_postgres_spec.rb` (~131) catches it. Rename the tests to say what they show, or make them bite.
+2. `planner_statistics/catalog.rb` (~47-49) compares an `oid` with `regtype` values using a bare `=`. A planted `public.=` operator on (oid, regtype) turns json, jsonb and xml columns non-structured. Use `OPERATOR(pg_catalog.=)` or cast to `pg_catalog.oid`. Related: 20260930-13, 20260930-14.
+3. The trust-boundary test's comment (`pii_classification_postgres_spec.rb` ~222-226) doesn't mention the json sentinel in `customers.preferences`.
+4. tsvector lexemes and array elements go to `most_common_elems`, which statistics doesn't read today. If it ever does, apply the same rule there.
+
+- **Depends on:** 20261004-91.
+- **Came from:** The builder and review of 20261004-91.
+- **Design:** classify, statistics, trust boundary.
+- **Status:** todo
+
+### 20261006-3. Classify: bytea, geometric and other non-text types can still send MCV values.
+
+From the builder of 20261004-91. `bytea`, geometric types (`point` and the like) and other non-text, non-structured types can still be classed low-cardinality, so their MCV values go out. A `bytea` column can hold text.
+
+**Ask the user** which types, if any, to add to the structured (never-sent) list, or whether to flip the rule to an allowlist of types whose values may go out.
+
+- **Depends on:** 20261004-91.
+- **Came from:** The builder of 20261004-91.
+- **Design:** classify, trust boundary.
 - **Status:** todo

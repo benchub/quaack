@@ -5680,3 +5680,30 @@ From the second review of 20260924-7. Correctness, already on main before that t
 - **Design:** fixture-compare, result comparison.
 - **Status:** done
 - **Landed:** Landed: a candidate with LIMIT and OFFSET that matches row for row now runs its through-window query both ways, and goes to CutTies if they differ.
+
+### 20261004-84. Progress: the LLM wait's clock sits on a note's line.
+
+From the review of 20261004-25. On a terminal, an LLM ask that repeats its step is dropped even after a note (the user's 2026-10-05 decision on -25 item 3). So during the wait, the live clock ticks on the note: "Reading the query's shape for the LLM (llm-index-ideas) 1m10s", which reads as if the enclave call took the minute. The first counterexamples ask does the same under "Rewrite X: Reading the rewrite's shape for the LLM". `progress_spec.rb` (~571) pins today's behavior.
+
+**Ask the user** which they prefer: (a) keep it; (b) when the latest line is a note, freeze the note and print the ask after all (so the clock ticks on "Asking the LLM…"); or (c) print a short ask line such as "Waiting for the LLM" instead of the repeated wording.
+
+- **Depends on:** 20261004-25.
+- **Came from:** The review of 20261004-25.
+- **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-06):** (c), print a short ask line such as "Waiting for the LLM", so the clock ticks on it.
+- **Status:** done
+- **Landed:** On a terminal, an LLM ask that repeats its step after a note now prints as "Waiting for the LLM (<ask ID>)", and the clock ticks on it. Follow-ups: 20261006-1.
+
+### 20261004-91. Structured columns: test gaps, and other structured types.
+
+From the builder and review of 20261004-90.
+1. The "missing structured list is an error" guard is untested: changing `table.fetch("structured_columns")` to `fetch("structured_columns", [])` keeps every suite green. Add a test that a statistics entry without the list fails classify.
+2. In `pii_classification_postgres_spec`'s trust-boundary test, the "exposure is real" block doesn't check `customers.preferences`, so if the fixture stops planting json only `leak_check_spec` notices. Add it.
+3. **Ask the user:** should hstore, xml, tsvector, composite types and ranges be treated like json (never low-cardinality, values never go out)? tsvector has an equality operator, so ANALYZE can keep MCV values for it. DESIGN.md says v1 treats them like any other non-text type.
+
+- **Depends on:** 20261004-90.
+- **Came from:** The builder and review of 20261004-90.
+- **Design:** classify, trust boundary.
+- **Decided by the user (2026-10-06):** item 3, yes: treat hstore, xml, tsvector, composite types and ranges (and domains/arrays over them) like json: never low-cardinality, values never go out.
+- **Status:** done
+- **Landed:** Classify withholds hstore, xml, tsvector, tsquery, composite, range and multirange columns (and domains/arrays over them) like json; tests for the missing structured list and customers.preferences. Follow-ups: 20261006-2, 20261006-3.
