@@ -5483,3 +5483,18 @@ Minor findings from the review of 20261004-18:
 - **Design:** intake, run-server.
 - **Status:** done
 - **Landed:** Closed: the user decided not to add a {port} placeholder (2026-10-05); the encoding item had already landed.
+
+### 20261004-69. Rewrite burndown: minors from 20261001-19.
+
+The review of 20261001-19 found:
+1. The store format wasn't bumped. A run started before 20261001-19 and resumed after it counts surviving rewrites twice in plan-pruning, and keeps a stale `pruning` record. Either bump the store format so such runs are refused on resume, or ignore the old record.
+2. The report shows rewrite-test's "never tested" reasons as raw names ("complex check", "statement timeout", "failed"). Use the plain-English phrases `Words::REFUSALS` and `Words::FAILURES` already have.
+3. When a rewrite fails to run in a counterexamples round, the burndown says "wrong in round k", while "Who proposed what" puts it under "Stopped for another reason", which README says means not shown to be wrong. Make the burndown say it failed to run.
+4. "Refused on arrival" means only the arrival rules in the burndown, but anything not stored in "Who proposed what". Align the two, or name them differently.
+5. If a step crashes between writing its burndown record and its done marker, a rerun with a different outcome keeps the first record. The window is tiny; consider writing the record and the marker together.
+
+- **Depends on:** 20261001-19.
+- **Came from:** The review of 20261001-19, 2026-10-05.
+- **Design:** burndown.
+- **Status:** done
+- **Landed:** Landed: store format 3 (older runs refused on resume), plain-English never-tested reasons, failed_in_round_<k>, 'Not kept' column, and Burndown.record_latest. Review minors: the note wording was fixed while landing; the funnel label test went to 20261004-79.

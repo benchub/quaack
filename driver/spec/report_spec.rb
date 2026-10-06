@@ -1102,7 +1102,7 @@ RSpec.describe Quaack::Driver::Report do
     # counts every proposal that wasn't stored, has a name of its own.
     it "says what the not kept column counts: every rewrite dropped before it was stored" do
       expect(accountable).to include(
-        "A rewrite not kept is one QUAACK dropped before testing it: it was over the limit (five from the LLM, " \
+        "A rewrite not kept is one QUAACK dropped before it was stored: it was over the limit (five from the LLM, " \
         "ten from QUAACK's rules), assumed something QUAACK can't check or your data doesn't hold, failed the " \
         "checks on what goes in, didn't plan, returned different columns, or couldn't have its clock pinned, " \
         "or, for one of QUAACK's own, repeated another."
