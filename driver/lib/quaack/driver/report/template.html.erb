@@ -34,6 +34,11 @@
   summary h3 { display: inline; margin: 0; }
   summary .source, summary .fate { display: block; margin-left: 1.1rem; }
   details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }
+  svg.funnel { display: block; width: 100%; height: auto; margin: 0.75rem 0; }
+  svg.funnel text { font: 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1c2430; }
+  svg.funnel text.stage { font-weight: 600; }
+  svg.funnel text.counts { font-size: 12px; fill: #515b69; }
+  svg.funnel .unknown text.counts { font-style: italic; }
 </style>
 </head><body>
 <h1>QUAACK report <%= h run_id %></h1>
@@ -208,6 +213,7 @@
 <section id="burndown"><h2>Burndown: how much QUAACK did, and where ideas dropped out</h2>
 <% [["index", "Index ideas for your query", index_rows], ["rewrite", "Rewrites", rewrite_rows]].each do |id, title, rows| %>
 <h3><%= h title %></h3>
+<%= funnel(id, title, rows) %>
 <table id="burndown-<%= id %>"><thead><tr><th scope="col">Stage</th><th scope="col" class="num">Came in</th><th scope="col">Added</th><th scope="col">Dropped</th><th scope="col" class="num">Set aside</th><th scope="col" class="num">Went on</th><th scope="col">Also counted</th></tr></thead>
 <tbody>
 <% rows.each do |name, record, stage| %>

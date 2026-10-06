@@ -9,6 +9,7 @@ require_relative "indexes"
 require_relative "accountability"
 require_relative "plans"
 require_relative "stages"
+require_relative "funnel"
 
 module Quaack
   module Driver
@@ -24,6 +25,7 @@ module Quaack
         include Accountability
         include Plans
         include Stages
+        include Funnel
 
         TEMPLATE = File.read(File.join(__dir__, "template.html.erb"), encoding: "UTF-8").freeze
         MISSING = %(<td class="missing">#{Words::MISSING}</td>).freeze
