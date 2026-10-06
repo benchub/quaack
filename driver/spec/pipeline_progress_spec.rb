@@ -412,7 +412,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(ended).to include("Ranking the index ideas (index-rank)", "Picking the top three (selection)")
     end
 
-    it "leaves out counterexamples' first ask, which repeats its sub-step, and keeps the asks again" do
+    it "waits on a short line for counterexamples' first ask, which repeats its sub-step, and keeps the asks again" do
       entries.merge!(rewrite(1, rewrite_survived: false))
       tests.push(true)
       3.times { fake.reply("llm-counterexamples", { "inserts" => [] }) }
@@ -423,11 +423,25 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       expect(ended.select { it.include?("(counterexamples)") || it.include?("(llm-counterexamples)") })
         .to eq(["#{name}: Asking the LLM for rows that could break the rewrite (counterexamples)",
                 "#{name}: Reading the rewrite's shape for the LLM (counterexamples)",
+                "Waiting for the LLM (llm-counterexamples)",
                 "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
                 "Asking the LLM again, for different rows (llm-counterexamples)",
                 "#{name}: Loading the LLM's rows and comparing results (counterexamples)",
                 "Asking the LLM again, for different rows (llm-counterexamples)",
                 "#{name}: Loading the LLM's rows and comparing results (counterexamples)"])
+    end
+    it "waits on a short line for llm-index-ideas' ask, which repeats its step, after the query's shape note" do
+      entries["index_generated_original"] = false
+      fake.reply("llm-index-ideas", { "indexes" => [] })
+
+      run
+
+      first = ended.index("Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)")
+      expect(ended[first, 4])
+        .to eq(["Asking the LLM for index ideas the mechanical search missed (llm-index-ideas)",
+                "Reading the query's shape for the LLM (llm-index-ideas)",
+                "Waiting for the LLM (llm-index-ideas)",
+                "Recording that the LLM gave no index ideas (llm-index-ideas)"])
     end
   end
 

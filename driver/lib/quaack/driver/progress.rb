@@ -46,11 +46,15 @@ module Quaack
     # closing line: its last open line ends at the step's final reading,
     # even 0s. And a note that says no more than the step's own line, such
     # as an LLM ask's "Asking the LLM (llm-rewrites)" under "Asking the LLM
-    # for rewrites of the query (llm-rewrites)", isn't printed, even after
-    # other notes under the step, and nor is one that says no more than the
-    # current sub-step's line after its prefix, whatever its ID. An
-    # informative summary's closing line, a failed line, and a note that
-    # adds something, such as a retry or an ask again, still print.
+    # for rewrites of the query (llm-rewrites)", isn't printed while the
+    # clock is on that line, and nor is one that says no more than the
+    # current sub-step's line after its prefix, whatever its ID. When a note
+    # came between, such as "Reading the query's shape for the LLM", a short
+    # line, "Waiting for the LLM" and the ask's ID, prints in its place, so
+    # the clock leaves the note and the wait isn't read as the note's. A
+    # repeat right after that wait isn't printed either. An informative
+    # summary's closing line, a failed line, and a note that adds
+    # something, such as a retry or an ask again, still print.
     #
     # Progress is only for show, so losing io doesn't stop the run. The
     # first write that fails, such as to a pipe whose reader has closed,
@@ -112,7 +116,7 @@ module Quaack
       # the clock can be drawn after it. A new line ends it first.
       def say(text, note: false)
         @lock.synchronize do
-          next if note && repeats_step?(text)
+          next unless (text = shown(text, note))
 
           finish(@line && @start && (@clock.call - @start))
           line = "quaack: [#{@number}/#{@total}] #{text}"
@@ -126,8 +130,12 @@ module Quaack
 
       # On a terminal, whether text, a note, says no more than the step's
       # own line, or the current sub-step's, however many lines came after
-      # it (Repeat). The latest line keeps the clock. Callers hold the lock.
+      # it (Repeat). Callers hold the lock.
       def repeats_step?(text) = @tty && @own&.repeated?(text)
+
+      # text as it prints, or nil if it's left out (Repeat#shown). Callers
+      # hold the lock.
+      def shown(text, note) = @own ? @own.shown(text, note && repeats_step?(text)) : text
 
       # Ends the step: the open line takes the step's time as its final
       # reading, then the closing line, words and the time, gives it. With
@@ -148,9 +156,9 @@ module Quaack
       # redraws the clock every interval; it's stopped and joined however
       # the block ends, before the closing line prints.
       def clocked(start, description, name)
-        @own = Repeat.new(description, name)
         @lock.synchronize { @start = start }
         say("#{description} (#{name})")
+        @own = Repeat.new(description, name)
         return yield unless @tty
 
         timer = redrawing(start, stop = Queue.new)
@@ -208,7 +216,8 @@ module Quaack
       # now; and whether it was cut.
       def fit(suffix) = Fit.call(@line, suffix, Fit.columns(@io))
 
-      private :say, :repeats_step?, :close, :clocked, :stopping, :redrawing, :finish, :final_reading, :draw, :fit
+      private :say, :repeats_step?, :shown, :close, :clocked, :stopping, :redrawing, :finish, :final_reading, :draw,
+              :fit
 
       # seconds as 42s, 1m30s, or 1h02m05s (Progress.duration).
       module Duration
@@ -252,12 +261,18 @@ module Quaack
       end
 
       # The lines a note under a step mustn't merely repeat: the step's
-      # own, and its current sub-step's, if any.
+      # own, and its current sub-step's, if any. It's made once the step's
+      # own line has printed, so that line is the latest, @plain.
       class Repeat
-        def initialize(description, name) = @lines = [[description, name]]
+        def initialize(description, name)
+          @lines = [[description, name]]
+          @plain = true
+        end
 
-        # Runs the block as a sub-step whose line says description.
+        # Runs the block as a sub-step whose line says description, the
+        # latest line once the block starts.
         def within(description)
+          @plain = true
           @lines.push([description])
           yield
         ensure
@@ -265,6 +280,18 @@ module Quaack
         end
 
         def repeated?(text) = @lines.any? { |description, name| self.class.call(text, description, name) }
+
+        # text as it prints after the latest line, or nil if it's left out.
+        # A note that repeats a line, repeat, is left out while that line or
+        # a wait is the latest, @plain, and so keeps the clock. After any
+        # other line, it prints as a short wait with its ID, so the clock
+        # leaves that line, and the LLM's time isn't read as its.
+        def shown(text, repeat)
+          return if repeat && @plain
+
+          @plain = repeat
+          repeat ? text.sub(/\A.* (?=\([^()]+\)\z)/, "Waiting for the LLM ") : text
+        end
 
         # Whether a note, text, says no more than a line: it ends with the
         # line's ID, name, and what comes before is the line's description
