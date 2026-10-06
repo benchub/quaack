@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pg"
 require_relative "../server_clock"
 
 module Quaack
@@ -23,12 +24,6 @@ module Quaack
       # session's, so a ROLLBACK after an abort runs under that (see
       # DESIGN.md).
       module Pipeline
-        # libpq's ExecStatusType values, as PG::Result#result_status returns
-        # them.
-        PGRES_TUPLES_OK = 2
-        PGRES_FATAL_ERROR = 7
-        PGRES_PIPELINE_SYNC = 10
-
         class Broken < StandardError; end
 
         module_function
@@ -44,7 +39,7 @@ module Quaack
         # for sql's result.
         def clocked(connection, sql, params, timeout_ms)
           clock, outcome, reset = run(connection, [[ARM_SQL, [timeout_ms.to_s]], [sql, params], [DISARM_SQL, []]])
-          return [nil, clock] unless clock.result_status == PGRES_TUPLES_OK
+          return [nil, clock] unless clock.result_status == PG::PGRES_TUPLES_OK
 
           [Float(clock.getvalue(0, 0)), failed?(reset) && !failed?(outcome) ? reset : outcome]
         end
@@ -99,9 +94,9 @@ module Quaack
 
         def next_result(connection) = connection.get_result.tap { connection.get_result }
 
-        def synced?(result) = result&.result_status == PGRES_PIPELINE_SYNC
+        def synced?(result) = result&.result_status == PG::PGRES_PIPELINE_SYNC
 
-        def failed?(result) = result&.result_status == PGRES_FATAL_ERROR
+        def failed?(result) = result&.result_status == PG::PGRES_FATAL_ERROR
       end
     end
   end

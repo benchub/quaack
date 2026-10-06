@@ -574,10 +574,11 @@ RSpec.describe Quaack::Enclave::ArenaRunner do
 
       let(:slow) { described_class.new(slow_closing_rollback) }
 
-      # The 50ms session timeout isn't the runner's, so turn it off before
-      # counting what persisted, from this same connection's view too.
+      # The transaction is left aborted, so this connection refuses
+      # everything but ROLLBACK. Roll it back here, then count what
+      # persisted from a fresh connection.
       def expect_left_aborted
-        expect(conn.transaction_status).to eq(described_class::PQTRANS_INERROR)
+        expect(conn.transaction_status).to eq(PG::PQTRANS_INERROR)
         expect { conn.exec("SELECT 1") }.to raise_error(PG::InFailedSqlTransaction)
         conn.exec("ROLLBACK")
         expect(persisted_rows).to eq(0)
