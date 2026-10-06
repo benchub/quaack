@@ -9,9 +9,10 @@ module Quaack
 
       def refuse_unless_idle
         status = database(:connection_unusable, :transaction) { @connection.transaction_status }
-        return if status == PQTRANS_IDLE
+        return if status == PG::PQTRANS_IDLE
 
-        rule = [PQTRANS_INTRANS, PQTRANS_INERROR].include?(status) ? :already_in_transaction : :connection_unusable
+        in_transaction = [PG::PQTRANS_INTRANS, PG::PQTRANS_INERROR].include?(status)
+        rule = in_transaction ? :already_in_transaction : :connection_unusable
         raise Error.new(rule, step: :transaction), cause: nil
       end
 
@@ -25,7 +26,8 @@ module Quaack
         status = database(rule, step, index) { @connection.transaction_status }
         return if open.include?(status)
 
-        raise Error.new(status == PQTRANS_IDLE ? :transaction_ended : :connection_unusable, step:, index:), cause: nil
+        refusal = status == PG::PQTRANS_IDLE ? :transaction_ended : :connection_unusable
+        raise Error.new(refusal, step:, index:), cause: nil
       end
     end
   end

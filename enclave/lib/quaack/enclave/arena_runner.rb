@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pg"
 require "pg_query"
 require_relative "arena_fixture"
 
@@ -21,27 +22,23 @@ module Quaack
     # Each insert must be one INSERT and each query one SELECT. pg_query
     # checks that before anything runs.
     #
-    # The connection is a live PG::Connection to arena, passed in. pg is
-    # loaded, through ServerClock, but the runner uses only the methods of
-    # the connection it's handed, and catches a failed read of the server's
-    # clock by ServerClock::READ_ERRORS.
+    # The connection is a live PG::Connection to arena, passed in. The
+    # runner names pg's constants for libpq's codes, such as
+    # PG::PQTRANS_IDLE and PG::PG_DIAG_SQLSTATE, and catches a failed read
+    # of the server's clock by ServerClock::READ_ERRORS.
     #
     # Results and fixture values stay in the enclave. Nothing here goes
     # through egress. Postgres errors can carry real values, such as a unique
     # violation's key or a check violation's whole row, so every database
     # error becomes an ArenaRunner::Error that keeps none of Postgres's text.
     class ArenaRunner
-      # From libpq. The runner needs the connection idle before it starts,
-      # and inside its transaction both before and after every statement.
-      # Before, INERROR is allowed too: an aborted transaction is still the
-      # runner's. After, only INTRANS is. A connection that's ACTIVE (1,
-      # busy with a query) or UNKNOWN (4, gone bad) can't start one.
-      PQTRANS_IDLE = 0
-      PQTRANS_INTRANS = 2
-      PQTRANS_INERROR = 3
-      # PG_DIAG_SQLSTATE from libpq's postgres_ext.h: the field code for
-      # PG::Result#error_field, which is 'C'.ord.
-      PG_DIAG_SQLSTATE = 67
+      # libpq's transaction status, as PG::Connection#transaction_status
+      # returns it. The runner needs the connection idle (PQTRANS_IDLE)
+      # before it starts, and inside its transaction both before and after
+      # every statement. Before, PQTRANS_INERROR is allowed too: an aborted
+      # transaction is still the runner's. After, only PQTRANS_INTRANS is. A
+      # connection that's PQTRANS_ACTIVE (busy with a query) or
+      # PQTRANS_UNKNOWN (gone bad) can't start one.
       QUERY_CANCELED = "57014"
 
       # Refuses a statement that its step may not run, before it runs.
@@ -199,12 +196,12 @@ module Quaack
       # trip (Pipeline), with no savepoint, so a statement costs no more
       # round trips or transaction IDs than it would on its own.
       def statement(sql, params, step:, rule:, index:)
-        refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS, PQTRANS_INERROR])
+        refuse_outside_transaction(rule, step, index, [PG::PQTRANS_INTRANS, PG::PQTRANS_INERROR])
         started, outcome = database(rule, step, index) do
           Pipeline.clocked(@connection, sql, params, @statement_timeout_ms)
         end
         result = database(rule, step, index, started) { outcome.check }
-        refuse_outside_transaction(rule, step, index, [PQTRANS_INTRANS])
+        refuse_outside_transaction(rule, step, index, [PG::PQTRANS_INTRANS])
 
         types = Array.new(result.nfields) { |i| result.ftype(i) }
         Result.new(columns: result.fields, types:, rows: result.values)
@@ -255,7 +252,7 @@ module Quaack
 
       # PG::Error#result is the failed PG::Result, or nil when there's none.
       # Any other error has no SQLSTATE.
-      def sqlstate_of(error) = (error.result&.error_field(PG_DIAG_SQLSTATE) if error.respond_to?(:result))
+      def sqlstate_of(error) = (error.result&.error_field(PG::PG_DIAG_SQLSTATE) if error.respond_to?(:result))
     end
   end
 end
