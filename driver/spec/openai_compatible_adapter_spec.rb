@@ -11,6 +11,7 @@ require_relative "support/llm_client_examples"
 RSpec.describe "the OpenAI-compatible adapter" do
   it_behaves_like "an LLM client" do
     let(:fake) { FakeOpenAI.new }
+    let(:refused_key_error) { { message: "Incorrect API key provided: SENTINEL-KEY" } }
   end
 
   let(:burndown) { Quaack::Driver::Burndown.new }
@@ -120,8 +121,8 @@ RSpec.describe "the OpenAI-compatible adapter" do
     end
 
     it "stops sending response_format once the API has rejected it and the ask without it worked" do
-      fake.error("llm-index-ideas", status: 400).reply("llm-index-ideas", { "ddl" => [] }).reply("llm-index-ideas",
-                                                                                                 { "ddl" => [] })
+      fake.error("llm-index-ideas", status: 400, param: "response_format")
+          .reply("llm-index-ideas", { "ddl" => [] }).reply("llm-index-ideas", { "ddl" => [] })
       ask(schema: schema)
       ask(schema: schema)
 
@@ -129,16 +130,58 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(burndown.llm_calls).to eq("llm-index-ideas" => 3)
     end
 
+    it "asks again without response_format when the rejection's message names it, with no param" do
+      fake.error("llm-index-ideas", status: 400, message: "response_format json_schema isn't supported")
+          .reply("llm-index-ideas", { "ddl" => [] })
+
+      expect(ask(schema: schema)).to eq("ddl" => [])
+      expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, false])
+    end
+
+    # A 400 for something else, such as a context that's too long, or a
+    # schema-validation miss like Groq's json_validate_failed, isn't the API
+    # refusing response_format.
+    [400, 422].each do |status|
+      it "doesn't ask again on a #{status} that isn't about response_format, and keeps sending it" do
+        fake.error("llm-index-ideas", status: status, message: "context too long", param: "messages")
+            .error("llm-index-ideas", status: status, message: "json_validate_failed")
+            .reply("llm-index-ideas", { "ddl" => [] })
+
+        expect(ask_error(schema: schema).rule).to eq("llm_bad_request")
+        expect(ask_error(schema: schema).rule).to eq("llm_bad_request")
+        expect(ask(schema: schema)).to eq("ddl" => [])
+        expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, true, true])
+        expect(burndown.llm_calls).to eq("llm-index-ideas" => 3)
+      end
+    end
+
+    it "doesn't ask again without response_format when 429s outlast the retries" do
+      3.times { fake.error("llm-index-ideas", status: 429) }
+
+      expect(ask_error(schema: schema).rule).to eq("llm_rate_limited")
+      expect(fake.asks.map { it.body.key?(:response_format) }).to eq([true, true, true])
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 3)
+    end
+
+    it "doesn't ask again when the reply was cut short, with no re-ask either" do
+      fake.cut_short("llm-index-ideas", '{"ddl": ["CREATE')
+
+      e = ask_error(schema: schema)
+
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply stopped for length")
+      expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
+    end
+
     it "fails with llm_bad_request when the ask without response_format is rejected too" do
-      fake.error("llm-index-ideas", status: 400).error("llm-index-ideas", status: 400)
+      fake.error("llm-index-ideas", status: 400, param: "response_format").error("llm-index-ideas", status: 400)
 
       expect { ask(schema: schema) }.to raise_error(Quaack::Driver::LLM::Error) { expect(it.rule).to eq("llm_bad_request") }
       expect(burndown.llm_calls).to eq("llm-index-ideas" => 2)
     end
 
     it "keeps sending response_format when the ask without it failed too" do
-      fake.error("llm-index-ideas", status: 400).error("llm-index-ideas", status: 400).reply("llm-index-ideas",
-                                                                                             { "ddl" => [] })
+      fake.error("llm-index-ideas", status: 400, param: "response_format").error("llm-index-ideas", status: 400)
+          .reply("llm-index-ideas", { "ddl" => [] })
       ask_error(schema: schema)
       ask(schema: schema)
 
@@ -272,6 +315,27 @@ RSpec.describe "the OpenAI-compatible adapter" do
       expect(burndown.llm_calls).to eq("llm-rewrites" => 1)
     end
 
+    # The gem raises its ConversionError for these, whose message quotes
+    # what it couldn't convert.
+    it "fails with llm_bad_response on a completion whose choices are null, without keeping the gem's error" do
+      fake.raw("llm-index-ideas",
+               JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m", choices: nil))
+
+      e = ask_error
+
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message")
+      expect(e.cause).to be_nil
+    end
+
+    it "fails with llm_bad_response on content that isn't text, without quoting it" do
+      fake.reply_message("llm-index-ideas", { role: "assistant", content: { text: "SENTINEL-CONTENT" } })
+
+      e = ask_error
+
+      expect(sans_sizes(e.message)).to eq("llm_bad_response: the reply couldn't be read as a message")
+      expect(e.cause).to be_nil
+    end
+
     it "fails with llm_bad_response on a reply the gem can't read as a completion" do
       fake.raw("llm-index-ideas",
                JSON.generate(id: "c", object: "chat.completion", created: 0, model: "m",
@@ -358,6 +422,75 @@ RSpec.describe "the OpenAI-compatible adapter" do
       fake.error("llm-index-ideas", status: 401)
 
       expect(sans_sizes(ask_error.message)).to eq("llm_auth: the API refused the key (401)")
+    end
+  end
+
+  # The gem reads OPENAI_BASE_URL, OPENAI_ORG_ID, OPENAI_PROJECT_ID, and
+  # OPENAI_CUSTOM_HEADERS. Only driver.json picks where asks go, and only
+  # OpenAI hears the OpenAI settings.
+  describe "the gem's OPENAI_ variables" do
+    let(:header_transport) do
+      Class.new do
+        attr_reader :seen
+
+        def initialize = @seen = []
+
+        def call(request, step:)
+          @seen << { url: request.url.to_s, headers: request.headers.except("authorization") }
+          body = { id: "c", object: "chat.completion", created: 0, model: "m",
+                   choices: [{ index: 0, message: { role: "assistant", content: step }, finish_reason: "stop" }] }
+          OpenAI::HTTPClient::Response.new(status: 200, headers: { "content-type" => "application/json" },
+                                           body: JSON.generate(body))
+        end
+      end.new
+    end
+    let(:openai_env) do
+      { "OPENAI_ORG_ID" => "SENTINEL-ORG", "OPENAI_PROJECT_ID" => "SENTINEL-PROJECT",
+        "OPENAI_CUSTOM_HEADERS" => "X-Sentinel: SENTINEL-HEADER",
+        "OPENAI_BASE_URL" => "https://sentinel.example.com/v1" }
+    end
+
+    def openai_settings(block = {})
+      Quaack::Driver::LLM.settings({ "provider" => "openai_compatible", "model" => "m", **block }, env: {})
+    end
+
+    def ask_through(settings)
+      with_env(openai_env) do
+        Quaack::Driver::LLM::Client.new(settings:, api_key: "k", burndown:, transport: header_transport)
+      end.ask(step: "llm-rewrites", messages: messages, max_tokens: 10)
+      header_transport.seen.last
+    end
+
+    it "go to OpenAI's own API without a base_url, ignoring OPENAI_BASE_URL" do
+      seen = ask_through(openai_settings)
+
+      expect(seen[:url]).to eq("https://api.openai.com/v1/chat/completions")
+      expect(seen[:headers]).to include("openai-organization" => "SENTINEL-ORG",
+                                        "openai-project" => "SENTINEL-PROJECT", "x-sentinel" => "SENTINEL-HEADER")
+    end
+
+    it "go to OpenAI's own API at a base_url whose host differs only in case" do
+      seen = ask_through(openai_settings("base_url" => "https://API.OpenAI.com/v1"))
+
+      expect(seen[:headers]).to include("openai-organization" => "SENTINEL-ORG",
+                                        "openai-project" => "SENTINEL-PROJECT", "x-sentinel" => "SENTINEL-HEADER")
+    end
+
+    # Hosts that start with OpenAI's, or put it before an @, aren't OpenAI's.
+    %w[https://api.openai.com.evil.example/v1 https://api.openai.com@evil.example/v1].each do |url|
+      it "never go to a lookalike host, #{url}" do
+        seen = ask_through(openai_settings("base_url" => url))
+
+        expect(seen[:url]).to include("evil.example")
+        expect(seen[:headers].to_s).not_to include("SENTINEL")
+      end
+    end
+
+    it "never go to another provider's base_url" do
+      seen = ask_through(openai_settings("base_url" => "https://api.groq.com/openai/v1"))
+
+      expect(seen[:url]).to eq("https://api.groq.com/openai/v1/chat/completions")
+      expect(seen[:headers].to_s).not_to include("SENTINEL")
     end
   end
 

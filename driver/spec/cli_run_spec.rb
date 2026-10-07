@@ -10,6 +10,7 @@ require "quaack/driver/runs"
 require_relative "support/anthropic_credentials"
 require_relative "support/aws_credentials"
 require_relative "support/fake_llm"
+require_relative "support/fake_openai"
 
 RSpec.describe "quaack run" do
   let(:home) { Dir.mktmpdir("quaack-cli-run") }
@@ -1078,6 +1079,22 @@ RSpec.describe "quaack run" do
         expect(fake.asks.map { [it.body[:model], it.url] })
           .to eq([["claude-from-block", "https://llm.example.com/v1/messages"]])
         expect(client.burndown).to be_a(Quaack::Driver::Burndown)
+      end
+
+      it "builds an openai_compatible client with the settings' model, base_url, and key variable" do
+        openai = FakeOpenAI.new
+        block = { "provider" => "openai_compatible", "model" => "model-from-block",
+                  "base_url" => "https://api.groq.com/openai/v1", "api_key_env" => "QUAACK_SPEC_KEY" }
+        settings = Quaack::Driver::LLM.settings(block, env: {})
+        client = with_env("QUAACK_SPEC_KEY" => "fake-key", "OPENAI_API_KEY" => nil) do
+          Quaack::Driver::CLI.build_client(settings, transport: openai)
+        end
+        openai.reply("llm-rewrites", "ok")
+        client.ask(step: "llm-rewrites", messages: [{ role: "user", content: "hi" }], max_tokens: 10)
+
+        expect(openai.asks.map { [it.body[:model], it.url] })
+          .to eq([["model-from-block", "https://api.groq.com/openai/v1/chat/completions"]])
+        expect(client.burndown.llm_calls).to eq("llm-rewrites" => 1)
       end
 
       it "builds the client from the block's settings" do

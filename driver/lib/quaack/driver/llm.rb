@@ -62,6 +62,11 @@ module Quaack
       NAME = /\A[A-Za-z_][A-Za-z0-9_]*\z/
       LINE = /\A[^\n\r]*\S[^\n\r]*\z/
       URL = %r{\Ahttps?://[^\s/]+\S*\z}
+      # A full chat completions endpoint, which provider docs often show. The
+      # openai gem adds /chat/completions to base_url itself, so this one
+      # would 404.
+      ENDPOINT = %r{/chat/completions/?\z}
+      NOT_ROOT = "must be the API root, such as https://api.groq.com/openai/v1, without /chat/completions"
       # An AWS region's name, such as us-east-1 or us-gov-west-1.
       REGION = /\A[a-z]{2}(-[a-z]+)+-\d+\z/
 
@@ -152,6 +157,7 @@ module Quaack
       def self.check(label, name, value)
         ok, problem = CHECKS.fetch(name)
         raise ConfigError, "#{label} #{problem}" unless ok.call(value)
+        raise ConfigError, "#{label} #{NOT_ROOT}" if name == "base_url" && ENDPOINT.match?(value)
 
         value
       end

@@ -2,6 +2,7 @@
 
 require "json"
 require "openai"
+require "uri"
 require_relative "error"
 
 module Quaack
@@ -11,8 +12,10 @@ module Quaack
       # gem, behind Client. One adapter serves every provider that speaks it:
       # OpenAI, Groq, Google Gemini's OpenAI-compatible endpoint, OpenRouter,
       # and local servers such as Ollama. The settings' base_url picks which;
-      # without one, the gem's own lookup applies: OPENAI_BASE_URL, then
-      # OpenAI.
+      # without one, it's OpenAI. Only the settings decide: the gem's own
+      # OPENAI_BASE_URL is ignored. The gem's OPENAI_ORG_ID,
+      # OPENAI_PROJECT_ID, and OPENAI_CUSTOM_HEADERS go only to OpenAI's own
+      # API, never to another provider.
       #
       # Credentials: a key given (specs pass one) wins; then the variable the
       # settings' api_key_env names, or OPENAI_API_KEY when they name none.
@@ -26,9 +29,11 @@ module Quaack
       # JSON-only line, so the model sees it either way. It's also sent as a
       # response_format of type json_schema, without strict, since not every
       # schema QUAACK uses fits strict mode's rules. When the API rejects a
-      # request that carried response_format (a 400 or 422), the adapter asks
-      # once more without it, and if that works it stops sending it for the
-      # rest of the run. Both attempts count.
+      # request that carried response_format (a 400 or 422 whose param is
+      # response_format, or whose body names it), the adapter asks once more
+      # without it, and if that works it stops sending it for the rest of
+      # the run. Both attempts count. Any other 400 or 422, such as a context
+      # that's too long, is llm_bad_request at once.
       #
       # Retries are the gem's own: it retries a 408, 409, 429, or 5xx, and a
       # connection that failed before the request went out, up to
@@ -58,14 +63,22 @@ module Quaack
 
         SCHEMA_LINE = "The JSON object must match this JSON schema: "
 
+        # Where asks go without a base_url, and its host, the only one that
+        # hears the gem's OpenAI settings.
+        OPENAI_BASE_URL = "https://api.openai.com/v1"
+        OPENAI_HOST = "api.openai.com"
+
+        # The request parameter a rejection of the schema names.
+        SCHEMA_PARAM = "response_format"
+
         def initialize(settings:, transport: nil, api_key: nil, max_retries: ::OpenAI::Client::DEFAULT_MAX_RETRIES)
           @model = settings.model
           @schema_mode = true
           @attempts = Attempts.new(transport)
           api_key ||= named_key(settings.api_key_env || DEFAULT_KEY_ENV)
-          options = { api_key:, max_retries:, http_client: @attempts }
-          options[:base_url] = settings.base_url if settings.base_url
-          @openai = ::OpenAI::Client.new(**options)
+          base_url = settings.base_url || OPENAI_BASE_URL
+          @openai = ::OpenAI::Client.new(api_key:, max_retries:, http_client: @attempts, base_url:,
+                                         **openai_only(base_url))
         end
 
         def enforces_schema? = false
@@ -116,6 +129,16 @@ module Quaack
           key
         end
 
+        # The gem's OpenAI settings, for any host but OpenAI's, turned off:
+        # no organization or project, and, through the gem's marker for
+        # headers already resolved, no OPENAI_CUSTOM_HEADERS. For OpenAI's,
+        # nothing, so the gem reads them as usual.
+        def openai_only(base_url)
+          return {} if URI(base_url).host.downcase == OPENAI_HOST
+
+          { organization: nil, project: nil, default_headers: ::OpenAI::Internal::ClientOptions::ResolvedHeaders.new }
+        end
+
         # The system prompt, if there is one, is the first message.
         def chat(system, messages)
           system ? [{ role: "system", content: system }, *messages] : messages
@@ -129,11 +152,20 @@ module Quaack
 
           begin
             completions.create(**params, response_format: response_format(schema))
-          rescue *REJECTED
+          rescue *REJECTED => e
+            raise unless schema_rejected?(e)
+
             completion = completions.create(**params)
             @schema_mode = false
             completion
           end
+        end
+
+        # Whether a request was rejected for its response_format: the error
+        # names it as its param, or, for an API that names none, its body
+        # mentions it.
+        def schema_rejected?(error)
+          error.param == SCHEMA_PARAM || body_text(error.body).to_s.include?(SCHEMA_PARAM)
         end
 
         def response_format(schema) = { type: :json_schema, json_schema: { name: "reply", schema: schema } }

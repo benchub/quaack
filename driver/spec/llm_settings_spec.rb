@@ -108,6 +108,18 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
                                                 "llm.base_url in ~/.quaack/driver.json must be an http or https URL"],
       "a base_url with a space" => [{ "base_url" => "https://a b/SENTINEL-VALUE" },
                                     "llm.base_url in ~/.quaack/driver.json must be an http or https URL"],
+      "a base_url that's a chat completions endpoint" => [
+        { "provider" => "openai_compatible", "model" => "m",
+          "base_url" => "https://api.groq.com/openai/v1/chat/completions" },
+        "llm.base_url in ~/.quaack/driver.json must be the API root, such as https://api.groq.com/openai/v1, " \
+        "without /chat/completions"
+      ],
+      "a base_url that's a chat completions endpoint, with a slash" => [
+        { "provider" => "openai_compatible", "model" => "m",
+          "base_url" => "https://SENTINEL-VALUE/v1/chat/completions/" },
+        "llm.base_url in ~/.quaack/driver.json must be the API root, such as https://api.groq.com/openai/v1, " \
+        "without /chat/completions"
+      ],
       "an api_key_env that holds a key, not a name" => [{ "api_key_env" => "sk-ant-SENTINEL-VALUE" },
                                                         "llm.api_key_env in ~/.quaack/driver.json must be the " \
                                                         "name of an environment variable"],
@@ -172,6 +184,14 @@ RSpec.describe "Quaack::Driver::LLM.settings" do
       e = config_error(nil, env: { "QUAACK_MODEL" => "SENTINEL-VALUE\n" })
 
       expect(e.message).to eq("QUAACK_MODEL must be a non-empty string")
+    end
+
+    it "fails on a QUAACK_LLM_BASE_URL that's a chat completions endpoint, naming the variable" do
+      e = config_error({ "provider" => "openai_compatible", "model" => "m" },
+                       env: { "QUAACK_LLM_BASE_URL" => "https://SENTINEL-VALUE/v1/chat/completions" })
+
+      expect(e.message).to eq("QUAACK_LLM_BASE_URL must be the API root, such as https://api.groq.com/openai/v1, " \
+                              "without /chat/completions")
     end
 
     it "checks a block value even when the environment overrides it" do
