@@ -44,9 +44,10 @@ RSpec.describe Quaack::Driver::Deploy do
   # the transport's `true` probe, exits 255, as when the ssh login expires
   # during the install.
   # With slow: true, the version check hangs. A remote command that starts
-  # with one of fail_on prints "boom" and exits 1. One that starts with one
-  # of fail_after runs, then exits 1, so ssh fails after its whole stdout.
-  def fake_ssh(path: true, probe: true, expired: false, slow: false, fail_on: [], fail_after: [])
+  # with one of fail_on prints "boom" and exits 1. One that starts with the
+  # after: of a { after: prefix } in fail_on runs, then exits 1, so ssh
+  # fails after its whole stdout.
+  def fake_ssh(path: true, probe: true, expired: false, slow: false, fail_on: [])
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
     File.write(script, <<~SH)
@@ -59,11 +60,16 @@ RSpec.describe Quaack::Driver::Deploy do
       #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
       #{"case \"$*\" in quaacks*|true) exit 255 ;; esac" if expired}
       #{"case \"$*\" in quaacks*) exec sleep 30 ;; esac" if slow}
-      #{fail_on.map { "case \"$*\" in '#{it}'*) echo boom; exit 1 ;; esac" }.join("\n")}
-      #{fail_after.map { "case \"$*\" in '#{it}'*) cd \"$HOME\" && sh -c \"$*\"; exit 1 ;; esac" }.join("\n")}
+      #{fail_on.map { failing(it) }.join("\n")}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
+  end
+
+  def failing(rule)
+    return "case \"$*\" in '#{rule}'*) echo boom; exit 1 ;; esac" if rule.is_a?(String)
+
+    "case \"$*\" in '#{rule.fetch(:after)}'*) cd \"$HOME\" && sh -c \"$*\"; exit 1 ;; esac"
   end
 
   let(:stubs) do
@@ -331,9 +337,9 @@ RSpec.describe Quaack::Driver::Deploy do
 
     # Task 20261006-22: the new version is live and checked by then, so a
     # cleanup step that fails is a warning, not a failed deploy.
-    def deploy_main(fail_on, fail_after: [])
+    def deploy_main(fail_on)
       err = StringIO.new
-      fake_ssh(fail_on:, fail_after:)
+      fake_ssh(fail_on:)
       status = with_env("PATH" => "#{dir}:#{ENV.fetch("PATH")}") do
         described_class.main(["--host", "jump-1"], stdout: out, stderr: err)
       end
@@ -375,7 +381,7 @@ RSpec.describe Quaack::Driver::Deploy do
       FileUtils.mkdir_p(deploy_dir)
       File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
 
-      status, err = deploy_main([], fail_after: ["ruby -e"])
+      status, err = deploy_main([{ after: "ruby -e" }])
 
       expect(status).to eq(0)
       expect(err.lines.first).to eq("quaack deploy: warning: listing old versions failed on jump-1, but quaacks " \
