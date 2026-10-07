@@ -161,7 +161,7 @@ RSpec.describe "quaacks report-payload" do
           "slow" => { "total_blocks" => 400, "hit" => 300, "read" => 100, "stable" => true, "timed_out" => false },
           "typical" => { "total_blocks" => 190, "hit" => 190, "read" => 0, "stable" => true, "timed_out" => false }
         },
-        "verdicts" => { "slow" => "better", "typical" => "no_worse" }
+        "verdicts" => { "slow" => "better", "typical" => "no_worse" }, "plan" => nil
       )
       expect(label("rewrite_1:none")).to include("indexes" => [],
                                                  "verdicts" => { "slow" => "better", "typical" => "better" })
@@ -189,7 +189,45 @@ RSpec.describe "quaacks report-payload" do
     it "lists a rewrite run dropped for timing out, with its indexes and no measurements" do
       expect(label("rewrite_1:top:2")).to eq("label" => "rewrite_1:top:2", "search" => "rewrite_1",
                                              "indexes" => ["quaack_a"], "timed_out" => true,
-                                             "measurements" => nil, "verdicts" => nil)
+                                             "measurements" => nil, "verdicts" => nil, "plan" => nil)
+    end
+
+    context "with measured plans, as measurement keeps one per set" do
+      let(:outcome) do
+        payload_of do |store|
+          scan = node("Index Scan", 40, relation: "orders", index: "orders_created_at_id_idx")
+                 .merge("Shared Hit Blocks" => 300, "Shared Read Blocks" => 100, "Index Cond" => "(id = '#{sentinel}')",
+                        "Output" => [sentinel], "Shared Dirtied Blocks" => 3)
+          combinations = store.read("index_baseline")
+          combinations["combinations"]["original:top:1"]["slow"]["plan"] = [{ "Plan" => scan }]
+          combinations["combinations"]["original:top:1"]["typical"]["plan"] = [{ "Plan" => node("Seq Scan", 1) }]
+          store.write("index_baseline", combinations)
+          runs = store.read("candidate_runs")
+          runs["candidates"]["rewrite_1"]["none"]["slow"]["plan"] =
+            [{ "Plan" => node("Seq Scan", 9).merge("Shared Hit Blocks" => sentinel, "Shared Read Blocks" => -1) }]
+          store.write("candidate_runs", runs)
+        end
+      end
+
+      it "sends each label's measured plan on the slow values as plan nodes, with its block counts" do
+        expect(label("original:top:1")["plan"]).to eq(
+          [{ "node" => "Index Scan", "relation" => "public.orders", "index" => "orders_created_at_id_idx",
+             "est_rows" => 40, "actual_rows" => 40, "selectivity" => 0.04, "depth" => 0,
+             "shared_hit_blocks" => 300, "shared_read_blocks" => 100 }]
+        )
+      end
+
+      it "sends a block count that isn't a count as nil, and none of a plan's conditions or other fields" do
+        expect(label("rewrite_1:none")["plan"].first).to include("shared_hit_blocks" => nil,
+                                                                 "shared_read_blocks" => nil)
+        expect_no_leaks(sentinels, outcome)
+      end
+
+      it "sends nil for a label without a measured plan on the slow values" do
+        expect(label("rewrite_1:top:1")["plan"]).to be_nil
+        expect(label("original:top:2")["plan"]).to be_nil
+        expect(label("rewrite_1:top:2")["plan"]).to be_nil
+      end
     end
 
     context "when a label in the store isn't a label QUAACK makes" do

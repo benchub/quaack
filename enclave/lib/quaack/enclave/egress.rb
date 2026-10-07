@@ -33,8 +33,8 @@ module Quaack
     # So the whitelist must list only fields whose values are always
     # shape-class data. The exceptions are the burndown type, whose
     # stages and totals must pass Protocol::Burndown.valid?, and the report
-    # type, whose original_plan and each rewrite's plan must pass
-    # Protocol::PlanNodes.valid?, and whose index_sources must pass
+    # type, whose original_plan and each rewrite's and label's plan must
+    # pass Protocol::PlanNodes.valid?, and whose index_sources must pass
     # Protocol::IndexSources.valid?, and the step_counts type, whose
     # fields must pass Protocol::StepCounts.valid?, or it raises
     # Egress::Error. A value must be plain JSON data, though: nil, true,
@@ -130,16 +130,15 @@ module Quaack
 
       # A report's plans are nested too, so each must be exactly plan nodes
       # (see Protocol::PlanNodes.valid?): original_plan, and the plan of each
-      # of rewrites, an Array of Hashes, unless it's nil. Both fields are
-      # needed. A rewrite's plan key may be a Symbol or a String, as JSON
-      # writes either as "plan", so every value under either is checked.
+      # of rewrites and of labels (each an Array of Hashes), unless it's nil.
+      # All three fields are needed. A rewrite's or label's plan key may be a
+      # Symbol or a String, as JSON writes either as "plan", so every value
+      # under either is checked.
       # index_sources must be exactly counts under QUAACK's own source
       # names (see Protocol::IndexSources.valid?), and is needed too. The
       # report's other fields still go out unchecked.
       def check_report(fields)
-        rewrites = fields["rewrites"]
-        unless Protocol::PlanNodes.valid?(fields["original_plan"]) && rewrites.is_a?(Array) &&
-               rewrites.all? { it.is_a?(Hash) && rewrite_plans?(it) }
+        unless Protocol::PlanNodes.valid?(fields["original_plan"]) && %w[rewrites labels].all? { plans?(fields[it]) }
           raise Error, "a value in this report message has a plan that isn't plan nodes"
         end
         return if Protocol::IndexSources.valid?(fields["index_sources"])
@@ -147,11 +146,14 @@ module Quaack
         raise Error, "a value in this report message has index sources that aren't counts by source"
       end
 
-      # Whether every value of rewrite under a plan key, Symbol or String,
-      # is nil or plan nodes. PlainData has already taken only Symbol and
-      # String keys.
-      def rewrite_plans?(rewrite)
-        rewrite.all? { |key, plan| key.to_s != "plan" || plan.nil? || Protocol::PlanNodes.valid?(plan) }
+      # Whether entries (the rewrites or the labels) is an Array of Hashes,
+      # and every value of each under a plan key, Symbol or String, is nil
+      # or plan nodes. PlainData has already taken only Symbol and String
+      # keys.
+      def plans?(entries)
+        entries.is_a?(Array) && entries.all? do |entry|
+          entry.is_a?(Hash) && entry.all? { |key, plan| key.to_s != "plan" || plan.nil? || Protocol::PlanNodes.valid?(plan) }
+        end
       end
     end
   end

@@ -68,6 +68,8 @@ RSpec.describe "quaacks baseline, against a real server" do
                                                     combination: "original:top:1", timeout_ms: 5_000)
 
     expect(measured["slow"]["total_blocks"]).to be < stored.read("baseline")["sets"]["slow"]["total_blocks"]
+    top = measured["slow"]["plan"][0]["Plan"]
+    expect(top["Shared Hit Blocks"] + top["Shared Read Blocks"]).to eq(measured["slow"]["total_blocks"])
   ensure
     conn&.close
   end
@@ -99,5 +101,20 @@ RSpec.describe "quaacks baseline, against a real server" do
     expect(summary["plans"].size).to eq(3)
     expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)).not_to have_key("plans")
     expect(Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)["stable"]).to be(true)
+  end
+
+  it "keeps the redacted plan of the run with the most blocks, stable or not, the run its hit and read come from" do
+    map = { "$1" => { "value" => "secret-7", "type" => "unknown" } }
+    runs = [plan(10, 5), plan(10, 9), plan(10, 9)]
+    runs.each { it[0]["Plan"]["Filter"] = "(a = 'secret-7'::text)" }
+    runs[2][0]["Execution Time"] = 2.5
+
+    summary = Quaack::Enclave::Measurement.summarize(runs, map)
+
+    expect(summary["plan"][0]["Plan"]["Shared Read Blocks"]).to eq(9)
+    expect(summary["plan"][0]["Execution Time"]).to eq(1.5)
+    expect(summary["plan"].to_json).not_to include("secret-7")
+    stable = Quaack::Enclave::Measurement.summarize([plan(1, 1)] * 3, map)
+    expect(stable["plan"]).to eq(plan(1, 1))
   end
 end
