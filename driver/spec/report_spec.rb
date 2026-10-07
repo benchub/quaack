@@ -211,8 +211,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "shows every rewrite, ranked or not, pretty-printed, in order" do
       payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5")
-      opening = %(<details class="query">\n<summary>)
-      expect(queries.scan(%r{<article class="rewrite" id="rewrite-(\d+)">#{opening}<h3>([^<]+)</h3>}))
+      opening = %(<details class="query" id="rewrite-(\\d+)">\n<summary>)
+      expect(queries.scan(%r{<article class="rewrite">#{opening}<h3>([^<]+)</h3>}))
         .to eq([["1", "Rewrite Vivid Cove"], ["2", "Rewrite Smooth Kayak"]])
       expect(queries).to include("<code>SELECT id\nFROM t\nWHERE a &lt; $1\nORDER BY id</code>")
       expect(queries).to include("<code>SELECT id\nFROM t\nWHERE b = $1\nLIMIT 5</code>")
@@ -222,12 +222,13 @@ RSpec.describe Quaack::Driver::Report do
       payload["rewrites"] << fated(2, "same_plans", sql: "SELECT id FROM t WHERE b = $1 LIMIT 5", source: "llm")
       same_plans = esc("Postgres plans it exactly as it plans your query, so it can't run any differently. " \
                        "QUAACK didn't test it further.")
-      blocks = queries.scan(%r{<details class="query">\s*<summary>(.*?)</summary>(.*?)</details>}m)
+      blocks = queries.scan(%r{<details class="query"[^>]*>\s*<summary>(.*?)</summary>(.*?)</details>}m)
       expect(blocks.map(&:first)).to eq(
         ["<h3>Your query</h3>",
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
          "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat your query and " \
-         "is ranked below.</span>",
+         "is ranked below.</span> <span class=\"warn\">Read it with care: the test data left some of its " \
+         "conditions untested.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM.</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
       )
@@ -235,6 +236,39 @@ RSpec.describe Quaack::Driver::Report do
       expect(blocks[1].last).to include(%(<li><code class="sql">a &lt; $1</code></li>))
       expect(queries.scan('<pre class="sql">').size).to eq(3)
       expect(queries).not_to match(/<details[^>]*\bopen\b/)
+    end
+
+    describe "a warning inside a rewrite's collapsed section" do
+      def warning(atoms: [], empirical: nil)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical)
+        summary = section(render(payload), "queries")[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>}m]
+        summary[%r{<span class="warn">(.*?)</span>}, 1]
+      end
+
+      let(:assumed) do
+        [{ "table" => "public.s", "column" => "c", "references_table" => "public.a", "type_column" => "t",
+           "id_column" => "i" }]
+      end
+
+      it "flags it in the summary line, so a closed section still shows it" do
+        expect(warning(atoms: ["a < $1"])).to eq("Read it with care: the test data left some of its conditions " \
+                                                 "untested.")
+        expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
+        expect(warning(atoms: ["a < $1"], empirical: assumed))
+          .to eq("Read it with care: it relies on what your data holds today, and the test data left some of " \
+                 "its conditions untested.")
+      end
+
+      it "flags nothing when the section holds neither warning" do
+        expect(warning).to be_nil
+        expect(warning(atoms: [7], empirical: [])).to be_nil
+      end
+    end
+
+    it "points each link into the queries at the collapsed section, which opens to show it" do
+      expect(html).to include('<details class="query" id="rewrite-1">')
+      expect(html.scan(' id="rewrite-1"').size).to eq(1)
+      expect(html).to include("details.query:target::details-content { content-visibility: visible; }")
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
@@ -625,6 +659,10 @@ RSpec.describe Quaack::Driver::Report do
         expect(section(render(payload), "ranking")).to include(
           "Who proposed it is who proposed the rewrite. QUAACK doesn't record who thought of each index"
         )
+        expect(section(render(payload), "ranking")).to include(
+          "It also says that for a rewrite whose source this run didn't record, or that's missing from what " \
+          "QUAACK's jump server sent.</p>"
+        )
         payload["excluded"] = { "rewrite_1:top:1" => "not_better", "rewrite_1:none" => "below_top_three" }
         payload["top"] = [payload["top"].first.merge("label" => "original:top:1")]
         expect(section(render(payload), "ranking"))
@@ -876,7 +914,16 @@ RSpec.describe Quaack::Driver::Report do
     it "marks nothing, and says nothing of marks, when the plans have the same steps" do
       payload["rewrites"].first["plan"] = payload["original_plan"].map(&:dup)
       expect(explanation).not_to include("differs")
-      expect(explanation).not_to include('class="note"')
+      expect(explanation).not_to include("A step marked")
+    end
+
+    it "says, under your query's plan, that blocks count every loop and an InitPlan's can show twice" do
+      note = "<p class=\"note\">Blocks read count every time a step ran, while actual rows are for one run, so " \
+             "a step that ran many times can show one row next to thousands of blocks. And a subquery Postgres " \
+             "runs once up front (an InitPlan) has its blocks counted in the step that used its result, which " \
+             "needn&#39;t be the step it&#39;s listed under, so those blocks can show up twice.</p>"
+      expect(explanation).to include("</table>#{note}\n<p>QUAACK didn&#39;t keep a measured plan")
+      expect(explanation.scan(note).size).to eq(1)
     end
 
     it "says one row, a share too small to round, and a row count it doesn't have" do
@@ -888,12 +935,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows.last).to include(%(<td class="num">12,345</td><td class="missing">not recorded</td>))
     end
 
-    it "says a step's blocks read as its shared hit and read blocks together, or not recorded without either" do
+    it "says a step's blocks read as its shared hit and read blocks together, or not recorded without both" do
       payload["original_plan"] = [[12_000, 345], [0, 0], [nil, 9], [8, nil], [nil, nil]].map do |hit, read|
         pnode("Seq Scan", 0, hit:, read:)
       end
       expect(plan_rows(explanation).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>}, 1] })
-        .to eq(["12,345", "0", "9", "8", "not recorded"])
+        .to eq(["12,345", "0", "not recorded", "not recorded", "not recorded"])
     end
 
     it "says a share is under 0.1% only when it is above zero and would round to 0.0%" do
@@ -1986,8 +2033,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "prints, escaped, every value a winning report shows" do
       expect_escaped(rendered(sentinels),
-                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<article class="rewrite" id="',
-                     %(<article class="rewrite" id="#{escaped}"><details class="query">\n<summary><h3>),
+                     "<title>QUAACK report ", "<h1>QUAACK report ", "<li>", '<details class="query" id="',
+                     %(<article class="rewrite"><details class="query" id="#{escaped}">\n<summary><h3>),
                      "QUAACK found something better than your query as it is: ",
                      "<code>SELECT ", "rewrite rules ", '<li><code class="sql">',
                      '<tr class="rank"><td class="num">1</td><td>',
