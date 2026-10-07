@@ -525,14 +525,7 @@ Still open from the build and reviews of 20260922-25:
 
 ### 20260928-1. `quaack setup`: one command for steps 2 through 4. Done, see BACKLOG-COMPLETE.md.
 
-### 20260928-2. `quaack start --captured-at`.
-
-`quaacks intake` takes `--captured-at <time>` (DESIGN.md's input, clock-anchor), but `quaack start` accepts exactly `--server`, `--query`, and `--plan`, so an operator starting from the laptop can't pass it. The clock is then anchored at intake time, which is wrong for a plan captured earlier. Accept an optional `--captured-at` and pass it through.
-
-- **Depends on:** None.
-- **Came from:** Writing the user-facing README (2026-09-28).
-- **Design:** input, clock-anchor.
-- **Status:** todo
+### 20260928-2. `quaack start --captured-at`. Done, see BACKLOG-COMPLETE.md.
 
 ### 20260928-3. LLM provider seam, configuration, and Anthropic auth without a key. Done, see BACKLOG-COMPLETE.md.
 

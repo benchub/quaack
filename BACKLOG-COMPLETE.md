@@ -5789,3 +5789,13 @@ Check how a resumed run treats indexes that already exist on the racetrack. They
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** `quaacks index-build --run ID --index N` builds only the Nth index and sends its progress line. The driver calls `--index 1`, takes the total from its line, calls 2 through total, then makes the plain call, which skips built indexes, hides all, records burndown, and writes `index_build`. A resumed run skips indexes already on the racetrack. All three gems went to 0.1.6, with the `rake full` stamp.
+
+### 20260928-2. `quaack start --captured-at`.
+
+`quaacks intake` takes `--captured-at <time>` (DESIGN.md's input, clock-anchor), but `quaack start` accepts exactly `--server`, `--query`, and `--plan`, so an operator starting from the laptop can't pass it. The clock is then anchored at intake time, which is wrong for a plan captured earlier. Accept an optional `--captured-at` and pass it through.
+
+- **Depends on:** None.
+- **Came from:** Writing the user-facing README (2026-09-28).
+- **Design:** input, clock-anchor.
+- **Status:** done
+- **Landed:** `quaack start` takes an optional `--captured-at <time>` and passes it unchanged to `quaacks intake --captured-at`, which validates it. A refused value reads `bad_captured_at` with fixed driver text giving the accepted format. README and DESIGN.md document it.
