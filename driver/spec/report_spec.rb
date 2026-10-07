@@ -150,6 +150,7 @@ RSpec.describe Quaack::Driver::Report do
         "QUAACK found something better than your query as it is: rewrite Vivid Cove with no new indexes. It read 300 " \
         "blocks on the slow values, against 1,000 for your query as it is (70% fewer)."
       )
+      expect(section(html, "summary")).not_to include("It built and measured")
     end
 
     it "says over 99% fewer, as the winner's table does, when rounding would say all of them" do
@@ -627,6 +628,9 @@ RSpec.describe Quaack::Driver::Report do
     it "sets apart the whole definition of an index it can't take apart" do
       payload["indexes"]["quaack_a"]["ddl"] = "CREATE UNIQUE INDEX ON public.t (created_at)"
       expect(ranking).to include("Your query with a new index on #{sq("CREATE UNIQUE INDEX ON public.t (created_at)")}")
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE UNIQUE INDEX ON public.t USING btree (created_at)"
+      expect(section(render(payload), "ranking"))
+        .to include("Your query with a new index on #{sq("CREATE UNIQUE INDEX ON public.t USING btree (created_at)")}")
     end
 
     it "puts an index's method inside its SQL when it isn't a btree, and keeps its predicate" do
@@ -634,6 +638,20 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking)
         .to include("Your query with a new index on #{sq("public.t USING brin (created_at) WHERE a &lt; ?")}")
       expect(ranking).not_to include("(brin)")
+    end
+
+    # Task 20261003-4: a quoted table name can hold a space, or even USING.
+    it "takes apart an index on a quoted table name with a space in it" do
+      payload["indexes"]["quaack_a"]["ddl"] = 'CREATE INDEX ON public."my USING t" USING btree (created_at)'
+      expect(ranking).to include("Your query with a new index on #{sq("public.&quot;my USING t&quot; (created_at)")}")
+      payload["indexes"]["quaack_a"]["ddl"] = 'CREATE INDEX ON "s x"."my t" USING gin (b) WHERE a < ?'
+      expect(section(render(payload), "ranking"))
+        .to include("Your query with a new index on #{sq("&quot;s x&quot;.&quot;my t&quot; USING gin (b) " \
+                                                         "WHERE a &lt; ?")}")
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON café.t USING btree (créé)"
+      expect(section(render(payload), "ranking")).to include("Your query with a new index on #{sq("café.t (créé)")}")
+      payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.data USING btree (a)"
+      expect(section(render(payload), "ranking")).to include("Your query with a new index on #{sq("public.data (a)")}")
     end
 
     describe "what was measured and not ranked" do
@@ -701,6 +719,23 @@ RSpec.describe Quaack::Driver::Report do
         )
       end
 
+      it "says a candidate timed out on the other values, or was worse where your query has no number" do
+        payload["labels"][2].merge!("measurements" => { "slow" => m(500, 1), "typical" => { "timed_out" => true } },
+                                    "verdicts" => { "slow" => "better", "typical" => "worse" })
+        expect(unranked).to include("Read fewer blocks on the slow values (500, against 1,000), but timed out on " \
+                                    "the typical values.</td></tr>")
+        payload["labels"][2]["measurements"]["typical"] = m(900, 1)
+        payload["original_measurements"]["typical"] = { "timed_out" => true }
+        expect(section(render(payload), "ranking")).to include("Read fewer blocks on the slow values (500, against " \
+                                                               "1,000), but was worse on the typical values.</td></tr>")
+      end
+
+      it "gives no numbers for a candidate that wasn't better where your query timed out on the slow values" do
+        payload["original_measurements"]["slow"] = { "timed_out" => true }
+        expect(unranked).to include(row("Rewrite Vivid Cove with a new index on #{sq("public.t (a, b)")}",
+                                        "Was no better than your query as it is."))
+      end
+
       it "says a candidate lost a tie on index size, fell outside the top three, or was dropped on real data" do
         payload["excluded"] = { "rewrite_1:top:1" => "footprint_tie" }
         expect(unranked).to include("(a, b)</code></td><td>#{rule}</td><td>Beat your query as it is, but tied with a " \
@@ -723,6 +758,12 @@ RSpec.describe Quaack::Driver::Report do
 
       it "lists a label once, by why it was left out, when one of its sets also timed out" do
         payload["labels"][2]["timed_out"] = true
+        expect(rows.size).to eq(1)
+        expect(unranked).not_to include("imed out while")
+      end
+
+      it "leaves out a ranked candidate, even one of whose sets timed out" do
+        payload["labels"][0]["timed_out"] = true
         expect(rows.size).to eq(1)
         expect(unranked).not_to include("imed out while")
       end
@@ -1048,6 +1089,16 @@ RSpec.describe Quaack::Driver::Report do
       end
     end
 
+    it "moves to the next unit just where the number would round to 1,024 of the one before" do
+      mb = 1024 * 1024
+      sizes = { (1023 * 1024) + 511 => "1,023 kB", (1023 * 1024) + 512 => "1.0 MB",
+                (1023 * mb) + (mb * 0.94).to_i => "1,023.9 MB", (1023 * mb) + (mb * 0.96).to_i => "1.0 GB" }
+      sizes.each do |bytes, text|
+        payload["indexes"]["quaack_a"]["size"] = bytes
+        expect(section(render(payload), "indexes")).to include(%(<td class="num">#{text}</td>))
+      end
+    end
+
     it "lists only the indexes the payload carries, whatever a label names" do
       payload["labels"][0]["indexes"] = %w[quaack_a quaack_gone]
       expect(indexes.scan("<tr><td>").size).to eq(2)
@@ -1243,6 +1294,14 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows(accountable, "rewrites")["You"].last(5)).to eq(%w[0 0 0 0 2])
     end
 
+    it "counts every fate that neither proved a rewrite wrong nor judged it not better as stopped for another reason" do
+      others = %w[counterexamples_failed rewrite_test_untested production_timed_out production_not_compared
+                  below_top_three measurement_timed_out]
+      stopped = rewrites + others.each_with_index.map { |fate, i| fated(20 + i, fate, source: "operator") }
+      counted = rows(render(payload.merge("rewrites" => stopped)), "rewrites")
+      expect(counted["You"].last(5)).to eq(%w[0 0 0 0 8])
+    end
+
     it "says not recorded, never zero, for proposals and refusals the burndown doesn't count" do
       expect(rows(accountable, "rewrites")["You"].first(2)).to eq(["not recorded", "not recorded"])
       expect(rows(html, "rewrites")[esc("QUAACK's own rules")]).to eq(["not recorded", "not recorded", "0", "0",
@@ -1266,11 +1325,21 @@ RSpec.describe Quaack::Driver::Report do
       it "has a row per source and one for all of them, and a column per outcome" do
         table = html[%r{<table id="accountability-indexes">.*?</table>}m]
         expect(table.scan(%r{<th scope="col"[^>]*>(.*?)</th>}).flatten)
-          .to eq(["Source", "Proposed", "Already existed", "Planner ignored", "Built and measured", "Not better",
-                  "Ranked"])
+          .to eq(["Source", "Proposed", "Already existed", "Planner ignored or couldn&#39;t try", "Built and measured",
+                  "Not better", "Ranked"])
         expect(rows(html, "indexes").keys)
           .to eq(["Generator one, from the query&#39;s text", "Generator two, from the query&#39;s plan", "The LLM",
                   "All sources together"])
+      end
+
+      # Task 20261003-4: HypoPG's refusals count there too, and the planner
+      # was never asked about those.
+      it "says under the table that an index it couldn't try never reached the planner" do
+        expect(section(html, "accountability")).to include(
+          "<p class=\"note\">Planner ignored or couldn't try also counts the ideas QUAACK couldn't try, because " \
+          "HypoPG, which it uses to try an index without building it, couldn't create them. The planner was never " \
+          "asked about those.</p>"
+        )
       end
 
       it "says not recorded for every count by source that the payload doesn't carry" do
@@ -1335,6 +1404,10 @@ RSpec.describe Quaack::Driver::Report do
 
         it "doesn't count an index whose only label beat the query and fell below the top three" do
           expect(built("below_top_three")).to eq(%w[2 0 1])
+        end
+
+        it "doesn't count an index whose only label was dropped when its results were compared" do
+          expect(built("result_mismatch")).to eq(%w[2 0 1])
         end
 
         it "doesn't count an index whose only label timed out and was never judged" do
@@ -1421,16 +1494,16 @@ RSpec.describe Quaack::Driver::Report do
           "index-from-query" => { "original" => rec(0, 3, added: { "generator_one" => 3 }),
                                   "rewrite_1" => rec(0, 2, added: { "generator_one" => 2 }) },
           "index-from-plan" => { "original" => rec(0, 4, added: { "generator_two" => 4 }) },
-          "llm-index-ideas" => { "original" => rec(0, 1, added: { "llm" => 5 },
-                                                         dropped: { "covered_by_existing" => 1, "duplicate" => 1,
+          "llm-index-ideas" => { "original" => rec(0, 1, added: { "llm" => 6 },
+                                                         dropped: { "covered_by_existing" => 2, "duplicate" => 1,
                                                                     "never_used" => 1, "hypopg_refused" => 1 }) },
           "llm-index-refine" => { "original" => rec(0, 0, added: { "llm" => 1 }, dropped: { "never_used" => 1 }) }
         )
         counted = rows(accountable, "indexes")
         expect(counted["Generator one, from the query&#39;s text"]).to eq(["5"] + (["not recorded"] * 5))
         expect(counted["Generator two, from the query&#39;s plan"]).to eq(["4"] + (["not recorded"] * 5))
-        expect(counted["The LLM"]).to eq(["6", "1", "3", "not recorded", "not recorded", "not recorded"])
-        expect(counted["All sources together"].first).to eq("15")
+        expect(counted["The LLM"]).to eq(["7", "2", "3", "not recorded", "not recorded", "not recorded"])
+        expect(counted["All sources together"].first).to eq("16")
       end
     end
   end
@@ -1626,6 +1699,15 @@ RSpec.describe Quaack::Driver::Report do
                 "Reading your own rewrites: 1 call", "Test data written to break the rewrites: 3 calls",
                 "Index suggestions for the rewrites: 4 calls",
                 "Revised index suggestions for the rewrites: 2 calls"])
+    end
+
+    # Task 20261003-4: the driver counts its calls in memory, so a resumed
+    # run counts only those since it resumed.
+    it "says the LLM calls are this run of quaack's, so a resumed run leaves out the earlier ones" do
+      note = "<p class=\"note\">These are the calls this run of quaack made. If you resumed the run, they " \
+             "leave out the calls made before it stopped.</p>"
+      expect(burndown_section).to include("</ul>\n#{note}")
+      expect(section(html, "burndown")).to include(note)
     end
 
     it "says so when the driver counted no LLM call" do
@@ -2036,6 +2118,13 @@ RSpec.describe Quaack::Driver::Report do
       expect(out).not_to include("<zz")
       expect(out).not_to include('"zz')
       expect(out.scan(escaped).size).to be > 60
+    end
+
+    it "prints, escaped, the round of LLM-written data that proved a rewrite wrong" do
+      disproved = fated(2, "counterexamples_disproved", source: "llm", round: z)
+      out = rendered(sentinels.merge("rewrites" => sentinels["rewrites"] + [disproved]))
+      expect(out).to include("to break it (round #{escaped}), so it&#39;s wrong.")
+      expect(out).not_to include("<zz")
     end
 
     it "lets no markup from a negative payload through, in text or in an attribute" do

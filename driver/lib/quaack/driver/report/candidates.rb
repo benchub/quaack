@@ -14,7 +14,6 @@ module Quaack
       # It also says, for each label selection left out of the ranking, what it
       # read against the original and why that wasn't enough.
       module Candidates
-        DDL = /\ACREATE INDEX ON ((\S+) USING (\w+) (.*))\z/m
         ORIGINAL = "your query as it is"
         LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indexes take less " \
                                     "disk space.",
@@ -46,7 +45,7 @@ module Quaack
         # apart pastes after CREATE INDEX ON as working SQL.
         def target(name)
           ddl = indexes.dig(name, "ddl") or return "QUAACK couldn't describe (#{Format.sql_span(name)})"
-          on, table, method, rest = DDL.match(ddl)&.captures
+          on, table, method, rest = IndexDdl.parts(ddl)
           return "on #{Format.sql_span(ddl)}" unless table
 
           "on #{Format.sql_span(method == "btree" ? "#{table} #{rest}" : on)}"

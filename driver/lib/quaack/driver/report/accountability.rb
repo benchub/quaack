@@ -28,8 +28,8 @@ module Quaack
       module Accountability
         REWRITE_COLUMNS = ["Proposed", "Not kept", "Same plan as the original", "Wrong results",
                            "Not better", "Ranked", "Stopped for another reason"].freeze
-        INDEX_COLUMNS = ["Proposed", "Already existed", "Planner ignored", "Built and measured", "Not better",
-                         "Ranked"].freeze
+        INDEX_COLUMNS = ["Proposed", "Already existed", "Planner ignored or couldn't try", "Built and measured",
+                         "Not better", "Ranked"].freeze
 
         # Each source of rewrites: its row's name, and the stage that
         # counts what it proposed.
