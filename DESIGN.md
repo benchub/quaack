@@ -255,6 +255,8 @@ For version 1, we assume the schema dump and partial index predicates contain no
 
 Everything that leaves the enclave goes through one egress function, and that function only accepts fields on a whitelist. If a field isn't on the whitelist, it isn't sent at all. We don't scrub it and send it anyway. Adding a field to the whitelist is the single place where this policy gets reviewed.
 
+The enclave's own SQL names every catalog relation, function, operator, and type with its schema, such as `pg_catalog.pg_class`, `pg_catalog.count(*)`, `OPERATOR(pg_catalog.=)`, and `::pg_catalog.text`, and calls HypoPG's functions in the schema `pg_extension` says HypoPG is in. A database or role `search_path` can put another schema ahead of `pg_catalog`, and an unqualified name would then find whatever is planted there: an operator that says no could hide another client from run-server or a volatile function from volatility. `IN`, `LIKE`, `IS DISTINCT FROM`, `NULLIF`, row comparisons, and a simple `CASE` use an operator that can't be qualified, so the enclave writes them another way. A spec checks every SQL string in the enclave. The production and racetrack reads are done. The rest, mostly arena reads, are on a shrinking list (20261007-9). `COLLATE "C"` isn't qualified yet (20261007-3).
+
 A step whose upstream store entry is missing, because the step that writes it hasn't run, refuses with the rule `missing_<entry>`, such as `missing_statistics`. Entry names are fixed words in the code, never data, so the rule is shape.
 
 ### Where QUAACK runs.
