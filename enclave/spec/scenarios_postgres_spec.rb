@@ -187,5 +187,51 @@ RSpec.describe Quaack::Enclave::Scenarios do
     expect(builder.dropped).to eq(0)
   end
 
+  # A pool value that satisfies the atom can break the column's CHECK, so
+  # the Picker also tries the CHECK's own values.
+  describe "with a CHECK IN list on the atom's column" do
+    before do
+      conn.exec(<<~SQL)
+        CREATE TABLE fx.e (id integer PRIMARY KEY,
+          workflow_state text NOT NULL CHECK (workflow_state IN ('active', 'deleted')),
+          role_state text NOT NULL CHECK (role_state IN ('active', 'completed', 'invited')));
+      SQL
+    end
+
+    def column_values(scenarios, column)
+      scenarios.values.flatten.map { |r| r.values[r.columns.index(column)] }
+    end
+
+    def every_scenario_loads(scenarios)
+      scenarios.each_value { |rows| expect(run(rows, "SELECT count(*) FROM fx.e")).to eq([[rows.size.to_s]]) }
+    end
+
+    it "picks the CHECK's value for workflow_state <> 'deleted'" do
+      sql = "SELECT id FROM fx.e WHERE workflow_state <> 'deleted'"
+      scenarios = build(sql)
+      expect(values(scenarios[:s1], "e", "workflow_state")).to include("active")
+      expect(column_values(scenarios, "workflow_state")).to all(satisfy { |v| %w[active deleted].include?(v) })
+      expect(run(scenarios[:s1], sql).size).to be >= 1
+      every_scenario_loads(scenarios)
+    end
+
+    it "picks the CHECK's value for role_state LIKE 'c%'" do
+      sql = "SELECT id FROM fx.e WHERE role_state LIKE 'c%'"
+      scenarios = build(sql)
+      expect(values(scenarios[:s1], "e", "role_state")).to include("completed")
+      expect(run(scenarios[:s1], sql).size).to be >= 1
+      every_scenario_loads(scenarios)
+    end
+
+    # No value the CHECK allows starts with x, so no row can hit. The hit
+    # groups are left out, as a near miss with no value is, rather than
+    # given a value that breaks the CHECK.
+    it "leaves out a hit no CHECK value satisfies, and never breaks the CHECK" do
+      scenarios = build("SELECT id FROM fx.e WHERE role_state LIKE 'x%'")
+      expect(column_values(scenarios, "role_state")).to all(satisfy { |v| %w[active completed invited].include?(v) })
+      every_scenario_loads(scenarios)
+    end
+  end
+
   def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
 end

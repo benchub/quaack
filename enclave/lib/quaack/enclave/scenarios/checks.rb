@@ -46,6 +46,10 @@ module Quaack
             raise(refusal || Error.new(:unsatisfiable_check))
         end
 
+        # Each CHECK's own satisfying values for the column. One may still
+        # break another CHECK on it.
+        def values(table, col) = own_values(table, col)
+
         # Whether any CHECK constrains the column.
         def checked?(table, col) = @nodes[[table, col.name]].any?
 
