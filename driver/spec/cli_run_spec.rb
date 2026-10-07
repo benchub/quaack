@@ -186,6 +186,36 @@ RSpec.describe "quaack run" do
                                   "quaack: [19/19] Writing the report (report)\n")
     end
 
+    it "skips operator-rewrites on a resumed run with a rewrites file, and rewrite-correctness for each rewrite" do
+      entries["operator_rewrites_checked"] = true
+      [1, 2].each do |n|
+        entries.merge!("rewrite_#{n}" => true, "index_search_rewrite_#{n}" => true,
+                       "index_ranking_rewrite_#{n}" => true, "rewrite_pruned_#{n}" => true,
+                       "rewrite_survived_#{n}" => true, "rewrite_index_ideas_#{n}" => true,
+                       "index_generated_rewrite_#{n}" => true, "index_llm_ranked_rewrite_#{n}" => true)
+      end
+
+      expect(cli.run(["run", "--run", run_id, "--rewrites", rewrites_file, "--out", out])).to eq(0)
+
+      skipped = "Already done, skipping:"
+      tested = "#{skipped} Testing the rewrite for wrong results (rewrite-correctness)"
+      # The skips from rewrite-rules through rewrite-correctness, less plan-pruning's sub-steps.
+      lines = progress.grep(%r{\Aquaack: \[([5-9]|10)/19\] (?!Rewrite \w+ \w+: .*\(rewrite-(index|prune))})
+      expect(lines).to eq(
+        ["quaack: [5/19] #{skipped} Applying QUAACK's own rewrite rules to the query (rewrite-rules)\n",
+         "quaack: [6/19] #{skipped} Asking the LLM for rewrites of the query (llm-rewrites)\n",
+         "quaack: [7/19] #{skipped} Checking your own rewrites (operator-rewrites)\n",
+         "quaack: [8/19] Searching for indexes for each rewrite (plan-pruning)\n",
+         "quaack: [8/19] 2 rewrites already done in Ns (plan-pruning)\n",
+         "quaack: [9/19] #{skipped} Setting up the arena, a second database for test rows (arena-setup)\n",
+         "quaack: [10/19] Testing each rewrite for wrong results (rewrite-correctness)\n",
+         "quaack: [10/19] Rewrite Dreamy Wren: #{tested}\n",
+         "quaack: [10/19] Rewrite Tawny Crab: #{tested}\n",
+         "quaack: [10/19] No rewrites left to test in Ns (rewrite-correctness)\n"]
+      )
+      expect(fake.asks).to eq([])
+    end
+
     it "prints a step's sub-steps for each rewrite, under the step, by the rewrite's name" do
       entries.merge!("rewrite_1" => true, "index_search_rewrite_1" => true, "index_ranking_rewrite_1" => false,
                      "rewrite_pruned_1" => true, "rewrite_survived_1" => true, "rewrite_index_ideas_1" => true,
