@@ -629,9 +629,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(ranking).to include("Your query with a new index on #{sq("CREATE UNIQUE INDEX ON public.t (created_at)")}")
     end
 
-    it "names an index's method when it isn't a btree, and keeps its predicate" do
+    it "puts an index's method inside its SQL when it isn't a btree, and keeps its predicate" do
       payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING brin (created_at) WHERE a < ?"
-      expect(ranking).to include("Your query with a new index on #{sq("public.t (created_at) WHERE a &lt; ?")} (brin)")
+      expect(ranking).to include("Your query with a new index on #{sq("public.t USING brin (created_at) WHERE a &lt; ?")}")
+      expect(ranking).not_to include("(brin)")
     end
 
     describe "what was measured and not ranked" do
@@ -2092,6 +2093,14 @@ RSpec.describe Quaack::Driver::Report do
       when Array then value.map { scrub(it) }
       else value
       end
+    end
+
+    it "names each rewrite from the same run ID everywhere, even one with a control character in it" do
+      out = described_class.render(payload, run_id: "R\u0001x\u0002")
+      expect(out).to eq(described_class.render(payload, run_id: "Rx"))
+      name = Quaack::Driver::RewriteNames.name("Rx", 1)
+      expect(section(out, "queries")).to include("Rewrite #{name}")
+      expect(section(out, "ranking")).to include("Rewrite #{name}")
     end
 
     it "lets no control character in a value open, close, or mark SQL the report didn't" do

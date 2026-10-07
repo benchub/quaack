@@ -48,7 +48,13 @@ module Quaack
     module Report
       module_function
 
-      def render(payload, run_id:, llm_calls: {}) = View.new(named(payload, run_id), run_id, llm_calls).render
+      # The run ID loses its SQL marks (Format.unmarked) before anything
+      # uses it, so named and View draw each rewrite's name from the same
+      # string.
+      def render(payload, run_id:, llm_calls: {})
+        run_id = Format.unmarked(run_id)
+        View.new(named(payload, run_id), run_id, llm_calls).render
+      end
 
       def write(payload, run_id:, path:, llm_calls: {})
         File.write(path, render(payload, run_id:, llm_calls:))

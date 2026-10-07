@@ -14,7 +14,7 @@ module Quaack
       # It also says, for each label selection left out of the ranking, what it
       # read against the original and why that wasn't enough.
       module Candidates
-        DDL = /\ACREATE INDEX ON (\S+) USING (\w+) (.*)\z/m
+        DDL = /\ACREATE INDEX ON ((\S+) USING (\w+) (.*))\z/m
         ORIGINAL = "your query as it is"
         LOST = { "footprint_tie" => "beat #{ORIGINAL}, but tied with a candidate whose new indexes take less " \
                                     "disk space.",
@@ -41,13 +41,15 @@ module Quaack
         end
 
         # A built index by what it's on, such as "on public.t (a, b)", from
-        # its DDL. A method other than btree is named after it.
+        # its DDL. A method other than btree stays in the SQL just as the
+        # DDL gives it, such as "on public.t USING gin (b)", so what's set
+        # apart pastes after CREATE INDEX ON as working SQL.
         def target(name)
           ddl = indexes.dig(name, "ddl") or return "QUAACK couldn't describe (#{Format.sql_span(name)})"
-          table, method, rest = DDL.match(ddl)&.captures
+          on, table, method, rest = DDL.match(ddl)&.captures
           return "on #{Format.sql_span(ddl)}" unless table
 
-          "on #{Format.sql_span("#{table} #{rest}")}#{" (#{method})" unless method == "btree"}"
+          "on #{Format.sql_span(method == "btree" ? "#{table} #{rest}" : on)}"
         end
 
         def list(items) = items.size < 3 ? items.join(" and ") : "#{items[0..-2].join(", ")}, and #{items.last}"
