@@ -5856,3 +5856,13 @@ llm-rewrites' payload carries the rule-made rewrites' SQL, and the prompt says n
 - **Design:** llm-rewrites, rewrite-rules.
 - **Status:** done
 - **Landed:** `quaacks rewrite-payload` sends `rule_rewrites`, `{sql, rules}` for each stored rule-sourced rewrite. Its SQL is built on the redacted query, and a guard sends one only if every constant in it is in the redacted query or is `1`/`true`. Transformations and assumptions are never sent. The whitelist allows the field, and the llm-rewrites system prompt says not to repeat them. The four corpus `llm-rewrites-1/prompt.md` system sections were updated. All three gems went to 0.1.8, with the `rake full` stamp.
+
+### 20261006-9. A timed-out index build can race its resume.
+
+From the review of 20261004-11. When a per-index `quaacks index-build --index N` call hits the enclave timeout, the driver kills ssh, but the backend `CREATE INDEX` may keep running on the racetrack. A quick resume then issues a second `CREATE INDEX` for the same `quaack_<hash>` name, which can wait on it and then fail on a duplicate name (`enclave/lib/quaack/enclave/steps/index_build.rb` ~73, `IndexBuild.create`). The single-call build had this too, but per-index timeouts make it likelier. Fix with `statement_timeout` on the build connection, or by waiting on or cancelling a running build of the same name before creating it.
+
+- **Depends on:** 20261004-11.
+- **Came from:** The review of 20261004-11.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** `Enclave::BuildConnection` sets `client_connection_check_interval = '2s'` on the build connection (Postgres 14+), so the server ends an orphaned build soon after its client goes away. Before each build, `IndexBuild.create` cancels any other active backend still building the same `quaack_<hash>` name (`pg_cancel_backend`) and waits up to 30s, else refuses `index_build_orphan_running`. The chosen fix is to cancel, not wait. All three gems went to 0.1.9, with the `rake full` stamp.

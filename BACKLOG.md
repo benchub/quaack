@@ -2399,14 +2399,7 @@ From the review of 20261004-10.
 - **Design:** Transport, config.
 - **Status:** todo
 
-### 20261006-9. A timed-out index build can race its resume.
-
-From the review of 20261004-11. When a per-index `quaacks index-build --index N` call hits the enclave timeout, the driver kills ssh, but the backend `CREATE INDEX` may keep running on the racetrack. A quick resume then issues a second `CREATE INDEX` for the same `quaack_<hash>` name, which can wait on it and then fail on a duplicate name (`enclave/lib/quaack/enclave/steps/index_build.rb` ~73, `IndexBuild.create`). The single-call build had this too, but per-index timeouts make it likelier. Fix with `statement_timeout` on the build connection, or by waiting on or cancelling a running build of the same name before creating it.
-
-- **Depends on:** 20261004-11.
-- **Came from:** The review of 20261004-11.
-- **Design:** index-build.
-- **Status:** todo
+### 20261006-9. A timed-out index build can race its resume. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-10. Stats trimming: minor findings from 20261001-7.
 
@@ -2449,4 +2442,17 @@ From the review of 20261001-28. `rewrite_payload.rb` (~46) leaves a rule rewrite
 - **Depends on:** 20261001-28.
 - **Came from:** The review of 20261001-28.
 - **Design:** llm-rewrites, rewrite-rules.
+- **Status:** todo
+
+### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9.
+
+From the review of 20261006-9 (`enclave/lib/quaack/enclave/build_connection.rb`).
+1. Nothing tests the 30s deadline that refuses `index_build_orphan_running` (~45).
+2. If two runs share a racetrack database and build the same DDL at once, the second cancels the first run's live build. Before, the second would have failed on the duplicate name instead. Say in DESIGN.md whether runs may share a racetrack. If they may, scope the cancel to backends with no client.
+3. If the role can see an orphan's query (`pg_read_all_stats`) but can't signal it, say because a superuser owns it, `pg_cancel_backend` raises a raw permission error (~47). Refuse it by rule instead.
+4. Nothing tests the `state = 'active'` filter (~59).
+
+- **Depends on:** 20261006-9.
+- **Came from:** The review of 20261006-9.
+- **Design:** index-build.
 - **Status:** todo
