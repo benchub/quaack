@@ -1484,17 +1484,7 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 ### 20261001-12. `quaack run`'s progress lines say in plain English what each step does, and 12a shows each index it builds. Done, see BACKLOG-COMPLETE.md.
 
 
-### 20261001-13. Streamed progress: minor findings.
-
-The review of 20261001-12 found two minor items:
-
-1. Progress lines count toward the transport's output cap. An index-build run that builds a very large number of indexes could hit `output_too_large` from the progress lines alone. That fails safe, but consider leaving room for one line per index, or not counting progress lines toward the cap.
-2. The driver's progress block runs inside the transport's read loop. If the block raises or runs slowly, it holds up reading, and that can push the run past its timeout. Consider rescuing the block's errors and logging them.
-
-- **Depends on:** 20261001-12.
-- **Came from:** The review of 20261001-12, 2026-10-01.
-- **Design:** The transport.
-- **Status:** todo
+### 20261001-13. Streamed progress: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command. Done, see BACKLOG-COMPLETE.md.
 
@@ -2375,4 +2365,15 @@ From the review of 20261007-2.
 - **Depends on:** 20261007-2.
 - **Came from:** The review of 20261007-2.
 - **Design:** Deploying the enclave.
+- **Status:** todo
+
+### 20261007-8. Progress-block rescue: minors from 20261001-13.
+
+From the review of 20261001-13.
+1. In `driver/lib/quaack/driver/transport/base.rb` (~89-98), `Reply.progress(line)` now runs inside the rescue. A parse error of the driver's own would read as "progress output failed" and switch progress off. The whole-run parse still catches real problems. Move `Reply.progress` out of the rescue.
+2. In `driver/lib/quaack/driver/pipeline.rb` (~363-366), `build_index` sets `total` before its `note` call. If the block raised first, `total` would stay 0 and `build_indexes` would skip the remaining indexes. That can't happen today, but it's fragile. Pin the order with a test, or don't let `total` depend on the block finishing.
+
+- **Depends on:** 20261001-13.
+- **Came from:** The review of 20261001-13.
+- **Design:** Transport, progress lines.
 - **Status:** todo

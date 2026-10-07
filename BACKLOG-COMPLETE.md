@@ -6276,3 +6276,16 @@ From the review of 20261004-87 and 20261004-59.
 - **Design:** report.
 - **Status:** done
 - **Landed:** The hint in a rewrite's summary is now based on `unchecked_atoms`, so it goes away once a later round checks every condition. When both warnings apply, it uses the two-sentence wording. A spec checks the `details.query:target` outline rule, and a code comment gives the browser versions `::details-content` needs. Driver only. Landed with 20261006-19 item 1.
+
+### 20261001-13. Streamed progress: minor findings.
+
+The review of 20261001-12 found two minor items:
+
+1. Progress lines count toward the transport's output cap. An index-build run that builds a very large number of indexes could hit `output_too_large` from the progress lines alone. That fails safe, but consider leaving room for one line per index, or not counting progress lines toward the cap.
+2. The driver's progress block runs inside the transport's read loop. If the block raises or runs slowly, it holds up reading, and that can push the run past its timeout. Consider rescuing the block's errors and logging them.
+
+- **Depends on:** 20261001-12.
+- **Came from:** The review of 20261001-12, 2026-10-01.
+- **Design:** The transport.
+- **Status:** done
+- **Landed:** Item 2: `Transport::Base#on_line` now catches a StandardError from the progress block, such as `Errno::EPIPE` when stderr closes. It warns once ("quaack: progress output failed ...; the run goes on without it."), stops calling the block, and reads the call to its end. The result is checked as usual. Interrupt still stops the run. Item 1 no longer applies: index-build makes one call per index, so progress lines no longer pile up toward the output cap. Driver only.
