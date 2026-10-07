@@ -6040,3 +6040,13 @@ Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md
 - **Design:** rewrite-rules, report.
 - **Status:** done
 - **Landed:** Each rule in RULES now has its own page, `docs/transforms/<rule>.md`. A page says what the rule does and when it refuses, what it rests on, and gives a real before/after example made by running the rule on Postgres against a Rails-style schema. DESIGN.md's rewrite-rules table is now an index that links to the pages. In the report, "Where it came from" links a rule's name to its GitHub page through `Report::RuleLinks#source_html`. A link is built only from an exact match in `Protocol::StepCounts::RULE_NAMES`, and the output is escaped. Any other name stays plain text. `spec/transform_docs_spec.rb` checks that every rule has a page, every page names a rule, and DESIGN.md's index links each one. Driver and docs only, with no version bump. Built in parallel with 20261006-15 at the user's request.
+
+### 20261006-17. Clock binding: overloaded user functions.
+
+From the second review of 20261006-5. `clock_params` (`enclave/lib/quaack/enclave/insert_clock_words.rb` ~131-137) checks `reads_clock?` over every overload's parameter types. With a user function overloaded as `f(text)` and `f(date)`, `fx.f($1)` into a `text` column, with `$1 = 'today'`, is anchored to a date, though Postgres resolves the unknown argument to `f(text)` and would load `'today'`. Anchor only when every candidate's parameter type at that position is a date/time type, or else bind as written and refuse it.
+
+- **Depends on:** 20261006-5.
+- **Came from:** The second review of 20261006-5.
+- **Design:** counterexamples inserts, clock anchoring.
+- **Status:** done
+- **Landed:** `Types#reads_clock?(firm: true)` (`enclave/lib/quaack/enclave/insert_clock_words.rb`) now anchors a `$n` only when every candidate type for each of its targets agrees on reading it as a real date/time type (`disagree?`). With `f(text)` and `f(date)` both defined, `fx.f($n)` is bound as written and refused as `clock_literal`. A single `f(date)`, casts, `daterange`, `::date[]`, date columns, and a domain over date still anchor. All three gems went to 0.1.18, with the `rake full` stamp.

@@ -2343,14 +2343,7 @@ From the review of 20261006-8. DESIGN.md (~277) still says only "`quaack start` 
 - **Design:** config.
 - **Status:** todo
 
-### 20261006-17. Clock binding: overloaded user functions.
-
-From the second review of 20261006-5. `clock_params` (`enclave/lib/quaack/enclave/insert_clock_words.rb` ~131-137) checks `reads_clock?` over every overload's parameter types. With a user function overloaded as `f(text)` and `f(date)`, `fx.f($1)` into a `text` column, with `$1 = 'today'`, is anchored to a date, though Postgres resolves the unknown argument to `f(text)` and would load `'today'`. Anchor only when every candidate's parameter type at that position is a date/time type, or else bind as written and refuse it.
-
-- **Depends on:** 20261006-5.
-- **Came from:** The second review of 20261006-5.
-- **Design:** counterexamples inserts, clock anchoring.
-- **Status:** todo
+### 20261006-17. Clock binding: overloaded user functions. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-18. `unused_join_removal`: minor findings from 20261001-27. Done, see BACKLOG-COMPLETE.md.
 
@@ -2436,4 +2429,15 @@ From the review of 20261004-14.
 - **Depends on:** 20261004-14.
 - **Came from:** The review of 20261004-14.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261006-27. Clock overloads: minors from 20261006-17.
+
+From the review of 20261006-17 (`enclave/lib/quaack/enclave/insert_clock_words.rb`).
+1. A target whose candidates mix a pseudo type and a date type, such as `f(anyelement)` beside `f(date)`, now counts as disagreeing. Its `$n` is refused where it used to be anchored. That's conservative and rare, so revisit it only if someone hits it.
+2. The comment at ~198 says "one target's types disagree", but `oids` drops pseudo types before counting. Fix the wording.
+
+- **Depends on:** 20261006-17.
+- **Came from:** The review of 20261006-17.
+- **Design:** counterexamples inserts, clock anchoring.
 - **Status:** todo
