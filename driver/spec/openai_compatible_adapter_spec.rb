@@ -469,6 +469,23 @@ RSpec.describe "the OpenAI-compatible adapter" do
                                         "openai-project" => "SENTINEL-PROJECT", "x-sentinel" => "SENTINEL-HEADER")
     end
 
+    it "go to OpenAI's own API at a base_url whose host differs only in case" do
+      seen = ask_through(openai_settings("base_url" => "https://API.OpenAI.com/v1"))
+
+      expect(seen[:headers]).to include("openai-organization" => "SENTINEL-ORG",
+                                        "openai-project" => "SENTINEL-PROJECT", "x-sentinel" => "SENTINEL-HEADER")
+    end
+
+    # Hosts that start with OpenAI's, or put it before an @, aren't OpenAI's.
+    %w[https://api.openai.com.evil.example/v1 https://api.openai.com@evil.example/v1].each do |url|
+      it "never go to a lookalike host, #{url}" do
+        seen = ask_through(openai_settings("base_url" => url))
+
+        expect(seen[:url]).to include("evil.example")
+        expect(seen[:headers].to_s).not_to include("SENTINEL")
+      end
+    end
+
     it "never go to another provider's base_url" do
       seen = ask_through(openai_settings("base_url" => "https://api.groq.com/openai/v1"))
 

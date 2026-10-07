@@ -134,7 +134,7 @@ module Quaack
         # headers already resolved, no OPENAI_CUSTOM_HEADERS. For OpenAI's,
         # nothing, so the gem reads them as usual.
         def openai_only(base_url)
-          return {} if URI(base_url).host == OPENAI_HOST
+          return {} if URI(base_url).host.downcase == OPENAI_HOST
 
           { organization: nil, project: nil, default_headers: ::OpenAI::Internal::ClientOptions::ResolvedHeaders.new }
         end
