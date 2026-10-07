@@ -25,6 +25,24 @@ FAKE_COPILOT_RECORD_SCRIPT = <<~'RUBY'
   print ENV.fetch("QUAACK_FAKE_COPILOT_REPLY", "{\"ddl\":[]}")
 RUBY
 
+# Writes a reply several pipe buffers long, but holds back its last 4KB until the spec says go. Then it
+# writes that tail and exits at once, while a busy spec thread holds the GVL, so the adapter wakes only
+# after the exit status is ready and the tail is still in the pipe.
+FAKE_COPILOT_TAIL_SCRIPT = <<~RUBY
+  dir = ENV.fetch("QUAACK_FAKE_COPILOT_DIR")
+  tail = File.binread(File.join(dir, "tail.json"))
+  $stdout.write(File.binread(File.join(dir, "head.json")))
+  $stdout.flush
+  File.write(File.join(dir, "ready"), "")
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+  until File.exist?(File.join(dir, "go"))
+    exit!(3) if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    sleep 0.001
+  end
+  $stdout.syswrite(tail)
+  exit!(0)
+RUBY
+
 RSpec.describe "the copilot_cli adapter" do
   # Generous enough for a loaded machine, yet far below the fake grandchild's 60-second sleep, so a real
   # hang on its stdout still trips it.
@@ -205,6 +223,45 @@ RSpec.describe "the copilot_cli adapter" do
       }
     end
     expect_recorded_cwd_removed
+  end
+
+  def wait_for_file(path)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + hang_limit
+    sleep 0.01 until File.exist?(path) || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+  end
+
+  def hold_gvl(seconds)
+    stop = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+    nil while Process.clock_gettime(Process::CLOCK_MONOTONIC) < stop
+  end
+
+  it "keeps the whole reply when the command writes several pipe buffers and exits at once" do
+    ddl = Array.new(4) { |i| "CREATE INDEX idx_#{i} ON t (#{"c" * 80_000})" }
+    reply = JSON.generate(ddl:)
+    File.write(File.join(@dir, "head.json"), reply[0...-4096])
+    File.write(File.join(@dir, "tail.json"), reply[-4096..])
+    command = File.join(@dir, "fake-copilot")
+    script(command, FAKE_COPILOT_TAIL_SCRIPT)
+    template = [command, "{prompt_file}", "{model}"]
+
+    hog = nil
+    signal = Thread.new do
+      wait_for_file(File.join(@dir, "ready"))
+      sleep 0.2 # the adapter drains the head and goes back to waiting
+      hog = Thread.new { hold_gvl(0.5) }
+      File.write(File.join(@dir, "go"), "")
+    end
+    result = with_env("QUAACK_FAKE_COPILOT_DIR" => @dir) do
+      Timeout.timeout(hang_limit) { ask(template: template, timeout: hang_limit * 3) }
+    ensure
+      signal.kill
+      hog&.kill
+    end
+
+    expect(result).to eq("ddl" => ddl)
+    # A cut-short reply fails the schema and the client asks again, so one command means the first reply
+    # arrived whole.
+    expect(burndown.llm_calls).to eq("llm-index-ideas" => 1)
   end
 
   it "does not hang after a successful command leaks stdout from a detached grandchild" do
