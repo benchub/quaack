@@ -177,7 +177,56 @@ RSpec.describe "quaack executable" do
                                           "--plan", "/p", *extra)
 
         expect([out, status.exitstatus]).to eq(["", 64]), extra.inspect
-        expect(err).to include("quaack start --server <name> --query <file> --plan <file> [--port <n>]\n")
+        expect(err).to include("quaack start --server <name> --query <file> --plan <file> [--port <n>] " \
+                               "[--captured-at <time>]\n")
+      end
+      expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
+    end
+
+    # Task 20260928-2.
+    it "passes --captured-at, given anywhere among the options, to intake" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--captured-at", "2026-10-01T09:30:00Z",
+                                        "--server", "prod-1", "--query", "/q", "--plan", "/p")
+
+      expect([out, status.exitstatus]).to eq(["20260926T010203Z-0123abcd\n", 0]), err
+      expect(File.read(File.join(dir, "ssh-args")))
+        .to include("jump-1 quaacks intake --query /q --plan /p --server prod-1 --captured-at 2026-10-01T09:30:00Z")
+    end
+
+    it "passes no --captured-at to intake when the operator gave none" do
+      out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "prod-1", "--query", "/q",
+                                        "--plan", "/p")
+
+      expect([out, status.exitstatus]).to eq(["20260926T010203Z-0123abcd\n", 0]), err
+      expect(File.read(File.join(dir, "ssh-args"))).not_to include("captured-at")
+    end
+
+    # intake checks the value, and its error line holds only the rule, so
+    # the driver says what a good one looks like.
+    it "says what --captured-at must be when intake refuses it" do
+      e = env
+      File.write(File.join(dir, "bin", "ssh"), <<~SH)
+        #!/bin/sh
+        #{version_answer}
+        printf '{"type":"error","step":"intake","rule":"bad_captured_at"}\\n'
+        exit 70
+      SH
+      out, err, status = Open3.capture3(e, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                        "--plan", "/p", "--captured-at", "yesterday")
+
+      expect([out, err, status.exitstatus])
+        .to eq(["", "quaack start failed: bad_captured_at: --captured-at must be an ISO-8601 time with a zone, " \
+                    "such as 2026-10-01T09:30:00Z or 2026-10-01T09:30:00-04:00, no earlier than 1970 and no more " \
+                    "than one day ahead of the jump server's clock\n", 1])
+    end
+
+    it "rejects --captured-at twice, or without a value, with the usage message" do
+      [%w[--captured-at 2026-10-01T09:30:00Z --captured-at 2026-10-01T09:30:00Z], %w[--captured-at]].each do |extra|
+        out, err, status = Open3.capture3(env, RbConfig.ruby, exe, "start", "--server", "p", "--query", "/q",
+                                          "--plan", "/p", *extra)
+
+        expect([out, status.exitstatus]).to eq(["", 64]), extra.inspect
+        expect(err).to include("--plan <file> [--port <n>] [--captured-at <time>]\n")
       end
       expect(File.exist?(File.join(dir, "ssh-args"))).to be(false)
     end
@@ -317,7 +366,7 @@ RSpec.describe "quaack executable" do
     def quaack(*argv) = Open3.capture3(env, RbConfig.ruby, exe, *argv, chdir: dir)
     def ssh_log = File.exist?(File.join(dir, "ssh-log")) ? File.read(File.join(dir, "ssh-log")) : ""
 
-    start = %w[start --server prod-1 --query /q --plan /p --port 6543]
+    start = %w[start --server prod-1 --query /q --plan /p --port 6543 --captured-at 2026-10-01T09:30:00Z]
     setup = %w[setup --run 20260926T010203Z-0123abcd --host rs-1 --port 6432 --racetrack-db rt --arena-db ar]
     run = %w[run --run 20260926T010203Z-0123abcd --rewrites r.sql --out o.html --host rs-1 --port 6432
              --racetrack-db rt --arena-db ar]

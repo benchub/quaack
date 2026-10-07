@@ -424,7 +424,14 @@ The run keeps the port, and every connection to production uses it: inventory, q
 
 The paths are on the jump server. A relative path starts from your home directory there, so `slow/events.sql` means the jump server's `~/slow/events.sql`. A quoted leading `~/`, as in `--query '~/slow/events.sql'`, is expanded by `quaacks` on the jump server; `~otheruser` is not special. If your laptop's shell expands `~` first and gives QUAACK a path under your laptop home, `quaack start` refuses before ssh and asks for a jump-server path. QUAACK checks both files, starts a run, and prints the **run ID**. Every later command takes it. If the jump server can't read the file, QUAACK says whether it was missing, a final symlink, not a regular file, or permission denied, without printing the path.
 
-QUAACK runs every candidate as if `now()` and `current_date` were the moment you ran `quaack start`. If your query uses them, start the run soon after you capture the plan. (`quaacks intake` takes a `--captured-at` time, but `quaack start` can't pass it through yet. That's backlog task 20260928-2.)
+QUAACK runs every candidate as if `now()` and `current_date` were the moment the production plan ran. By default, that's the moment you ran `quaack start`. If your query uses them and you captured the plan earlier, pass the time it ran with `--captured-at`:
+
+```sh
+quaack start --server prod-db-1 --query slow/events.sql --plan slow/events-plan.json \
+  --captured-at 2026-10-01T09:30:00-04:00
+```
+
+It's an ISO-8601 time with a zone, such as `2026-10-01T09:30:00Z` or `2026-10-01T09:30:00-04:00`, with optional fractional seconds. It can't be earlier than 1970 or more than one day ahead of the jump server's clock. `quaacks intake` checks it on the jump server, and refuses anything else as `bad_captured_at`.
 
 ### Step 3. Set up the run (optional).
 

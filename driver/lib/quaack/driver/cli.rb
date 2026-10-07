@@ -10,14 +10,14 @@ module Quaack
     # The quaack command line, run by an engineer on their laptop.
     class CLI
       USAGE = "Usage: quaack --version\n       " \
-              "quaack start --server <name> --query <file> --plan <file> [--port <n>]\n       " \
+              "quaack start --server <name> --query <file> --plan <file> [--port <n>] [--captured-at <time>]\n       " \
               "quaack deploy --host <jump server>\n       " \
               "quaack setup --run <ID> #{SetupCommand::USAGE}\n       " \
               "quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--enclave-timeout-seconds <n>] " \
               "#{SetupCommand::USAGE}\n".freeze
       EX_USAGE = 64
       START_OPTIONS = %w[--server --query --plan].freeze
-      START_OPTIONAL = %w[--port].freeze
+      START_OPTIONAL = %w[--port --captured-at].freeze
       RUN_OPTIONAL = (%w[--rewrites --out --enclave-timeout-seconds] + SetupCommand::OPTIONS).freeze
       # What setup and run load, only once they run.
       RUN_FILES = %w[burndown driver_config enclave_error enclave_version llm operator_candidates pipeline progress runs
@@ -60,12 +60,14 @@ module Quaack
       end
 
       # The start options as a Hash, or nil unless argv is each of them
-      # exactly once, with a value, and --port at most once, in any order.
+      # exactly once, with a value, and --port and --captured-at each at most
+      # once, in any order. Each key is the option's name as a keyword, such
+      # as captured_at.
       def start_options(argv)
         options = argv.size.even? && SetupCommand.optional(argv, START_OPTIONS + START_OPTIONAL)
         return unless options && START_OPTIONS.all? { options.key?(it) }
 
-        options.to_h { |name, value| [name.delete_prefix("--").to_sym, value] }
+        options.to_h { |name, value| [name.delete_prefix("--").tr("-", "_").to_sym, value] }
       end
 
       # Prints the run ID, or only the rule of a failure: the enclave's

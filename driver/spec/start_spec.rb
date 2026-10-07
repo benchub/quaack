@@ -28,7 +28,8 @@ RSpec.describe Quaack::Driver::Start do
   def remote_intake(run_id: self.run_id, version: nil)
     body = "File.write(#{File.join(dir, "got").inspect}, JSON.generate(inputs[:options])); " \
            "[{ type: :run, run_id: #{run_id.inspect} }]"
-    options = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value }
+    options = { "query" => :value, "plan" => :value, "server" => :value, "port" => :value,
+                "captured-at" => :value }
     command = EnclaveCommands.probe(dir, body, options:)
     # The probe step answers as intake: the wrapper swaps the subcommand.
     bin = EnclaveCommands.remote_quaacks(File.join(dir, "remote-bin"), command)
@@ -57,8 +58,11 @@ RSpec.describe Quaack::Driver::Start do
     expect(File.exist?(File.join(dir, "got"))).to be(false)
   end
 
-  def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", port: nil, **)
-    described_class.new(home:, ssh:, **).call(server:, query:, plan:, **(port ? { port: } : {}))
+  # start's optional flags, port: and captured_at:, go to call when given,
+  # and the other options to new.
+  def start(server: "prod-1", query: "/q q.sql", plan: "/p.json", **options)
+    flags = options.slice(:port, :captured_at).compact
+    described_class.new(home:, ssh:, **options.except(:port, :captured_at)).call(server:, query:, plan:, **flags)
   end
 
   it "runs intake on the host jump_command prints for the server, and records the run's jump host" do
@@ -79,6 +83,30 @@ RSpec.describe Quaack::Driver::Start do
     expect(start(port: "6543")).to eq(run_id)
     expect(JSON.parse(File.read(File.join(dir, "got"))))
       .to eq("query" => "/q q.sql", "plan" => "/p.json", "server" => "prod-1", "port" => "6543")
+  end
+
+  # Task 20260928-2: intake parses and checks it, so start passes it as is.
+  it "passes --captured-at to intake unchanged, given one" do
+    configure("echo jump-1")
+    remote_intake
+
+    expect(start(captured_at: "2026-10-01T09:30:00.5-04:00")).to eq(run_id)
+    expect(JSON.parse(File.read(File.join(dir, "got"))))
+      .to eq("query" => "/q q.sql", "plan" => "/p.json", "server" => "prod-1",
+             "captured-at" => "2026-10-01T09:30:00.5-04:00")
+  end
+
+  # The remote shell sees the value as one quoted word, so it can't run
+  # anything or split into more options.
+  it "passes a --captured-at holding shell syntax to intake as one word, running none of it" do
+    configure("echo jump-1")
+    remote_intake
+    pwned = File.join(dir, "pwned")
+    value = "2026-10-01T09:30:00Z --server other; touch #{pwned}; echo $(touch #{pwned})"
+
+    expect(start(captured_at: value)).to eq(run_id)
+    expect(JSON.parse(File.read(File.join(dir, "got")))).to include("captured-at" => value, "server" => "prod-1")
+    expect(File.exist?(pwned)).to be(false)
   end
 
   it "refuses a port that isn't a whole number from 1 to 65535 before ssh" do
