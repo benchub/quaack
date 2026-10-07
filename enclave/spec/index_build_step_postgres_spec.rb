@@ -280,4 +280,105 @@ RSpec.describe "quaacks index-build, against a real server" do
   ensure
     conn&.close
   end
+
+  # 20261006-9: a build whose client was killed, as the driver's timeout
+  # kills ssh, while its CREATE INDEX waits on a lock another session holds.
+  context "with an orphaned build of the same index" do
+    let(:ddl) { "CREATE INDEX ON public.orders (note)" }
+    let(:name) { Quaack::Enclave::IndexBuild.name(ddl) }
+
+    def builders(conn)
+      conn.exec_params(<<~SQL, ["CREATE INDEX #{name} %"]).column_values(0).map(&:to_i)
+        SELECT pid FROM pg_stat_activity WHERE state = 'active' AND query LIKE $1
+      SQL
+    end
+
+    def wait_for(seconds)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+      sleep 0.05 until yield || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      yield
+    end
+
+    # builder builds ARGV's index from its own process, after
+    # BuildConnection.configure unless ARGV's last is "false". Without
+    # configure, the server doesn't check for a lost client, as before
+    # Postgres 14.
+    let(:builder) do
+      <<~RUBY
+        require "pg"
+        require "quaack/enclave/index_build"
+        host, port, dbname, user, password, name, ddl, configure = ARGV
+        c = PG.connect(host:, port:, dbname:, user:, password:)
+        Quaack::Enclave::BuildConnection.configure(c) unless configure == "false"
+        Quaack::Enclave::IndexBuild.create(c, name, ddl)
+      RUBY
+    end
+    let(:server) { [production.host, production.port.to_s, production.name, production.user, production.password] }
+
+    def spawn_builder(configure)
+      Process.spawn(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", builder,
+                    *server, name, ddl, configure.to_s)
+    end
+
+    # Starts builder, waits until its backend is running the build, kills
+    # it, and returns the backend's pid.
+    def orphan(conn, configure: true)
+      child = spawn_builder(configure)
+      wait_for(10) { builders(conn).any? }
+      Process.kill(:KILL, child)
+      Process.wait(child)
+      builders(conn).first
+    end
+
+    def build_in_thread
+      Thread.new do
+        c = production.connect
+        Quaack::Enclave::BuildConnection.configure(c)
+        Quaack::Enclave::IndexBuild.create(c, name, ddl)
+      ensure
+        c&.close
+      end
+    end
+
+    # @locker holds the lock. @monitor watches from outside its
+    # transaction, since pg_stat_activity holds still within one.
+    before do
+      @locker = production.connect
+      @monitor = production.connect
+      seed(@locker)
+      @locker.exec("BEGIN; LOCK TABLE public.orders IN ACCESS EXCLUSIVE MODE")
+    end
+
+    after do
+      @locker&.close
+      @monitor&.close
+    end
+
+    it "cancels the orphan before building, so a resume builds it without a duplicate name" do
+      orphaned = orphan(@monitor, configure: false)
+      expect(orphaned).to be_a(Integer)
+      resume = build_in_thread
+      cancelled = wait_for(5) { !builders(@monitor).include?(orphaned) }
+      @locker.exec("COMMIT")
+
+      expect(cancelled).to be(true)
+
+      expect(resume.value).to be_positive
+      count = @monitor.exec_params("SELECT count(*) FROM pg_class WHERE relname = $1", [name]).getvalue(0, 0)
+      expect(count).to eq("1")
+    end
+
+    it "sets client_connection_check_interval, so the server ends the orphan soon after its client is gone" do
+      conn = production.connect
+      Quaack::Enclave::BuildConnection.configure(conn)
+      expect(conn.exec("SHOW client_connection_check_interval").getvalue(0, 0)).to eq("2s")
+      orphaned = orphan(@monitor)
+
+      gone = wait_for(8) { !builders(@monitor).include?(orphaned) }
+
+      expect([orphaned.class, gone]).to eq([Integer, true])
+    ensure
+      conn&.close
+    end
+  end
 end

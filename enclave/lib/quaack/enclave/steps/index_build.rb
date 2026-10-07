@@ -70,7 +70,7 @@ module Quaack
           ddls = Enclave::IndexBuild.combinations(store).values.flatten.uniq
           ddl = ddls[number - 1] or return
 
-          Enclave::IndexBuild::SETTINGS.each { |k, v| connection.exec("SET #{k} = '#{v}'") }
+          Enclave::BuildConnection.configure(connection)
           starting.call(number, ddls.size, ddl)
           Enclave::IndexBuild.create(connection, Enclave::IndexBuild.name(ddl), ddl)
         end
