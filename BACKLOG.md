@@ -2348,17 +2348,7 @@ From the builder and review of 20261001-7.
 
 ### 20261006-11. Run the spec suites in parallel. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-12. Parallel suites: minor findings from 20261006-11.
-
-From the review of 20261006-11.
-1. A suite killed by a signal shows as "exit " with no number, since `exitstatus` is nil (`Rakefile` ~83). Name the signal instead. This predates 20261006-11.
-2. The image-build lock file is in `Dir.tmpdir`, so two runs with different `TMPDIR` values don't share it and can still build the same tag at once (`spec/support/test_postgres.rb` ~237). Use a fixed per-user path.
-3. If a suite thread raises an unexpected exception, `join` re-raises it in order, so later suites' output never prints and their child processes are orphaned (`Rakefile` ~76-93). The run still fails. Join every thread before raising, and print what each one held.
-
-- **Depends on:** 20261006-11.
-- **Came from:** The review of 20261006-11.
-- **Design:** None (test infrastructure).
-- **Status:** todo
+### 20261006-12. Parallel suites: minor findings from 20261006-11. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs.
 
@@ -2464,4 +2454,15 @@ From the review of 20260929-20.
 - **Depends on:** 20260929-20.
 - **Came from:** The review of 20260929-20.
 - **Design:** Deploying the enclave.
+- **Status:** todo
+
+### 20261006-23. Parallel suites: minors from 20261006-12.
+
+From the review of 20261006-12.
+1. A suite whose thread raised prints only its header, with no `cd ... && ...` command line to rerun it (`Rakefile` ~88-92). Print the command line too.
+2. The raise test (`spec/rakefile_spec.rb` ~298-320) has no root `.` suite, so nothing checks that a root suite that raised stays out of `ran`.
+
+- **Depends on:** 20261006-12.
+- **Came from:** The review of 20261006-12.
+- **Design:** None (test infrastructure).
 - **Status:** todo

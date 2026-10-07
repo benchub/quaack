@@ -5953,3 +5953,16 @@ Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next
 - **Design:** Where QUAACK runs, "Deploying the enclave".
 - **Status:** done
 - **Landed:** After `quaacks version` answers correctly, `quaack deploy` (with `driver/lib/quaack/driver/deploy_cleanup.rb`) keeps the version it just installed and the highest installed version older than that, for `quaacks` and then `quaack-protocol`. It uninstalls every other older version with `gem uninstall --user-install -v`, printing a line for each. Newer versions are left alone, with a line saying so. It also deletes old gem files from `~/.quaack/deploy`. Versions are compared as `Gem::Version`. It only touches those two gem names, never uses sudo, and removes nothing when the deploy fails. The user was asleep, so the main session decided (2026-10-07) to keep the highest version older than the new one, not the version installed before this deploy. This is driver-only, with no version bump.
+
+### 20261006-12. Parallel suites: minor findings from 20261006-11.
+
+From the review of 20261006-11.
+1. A suite killed by a signal shows as "exit " with no number, since `exitstatus` is nil (`Rakefile` ~83). Name the signal instead. This predates 20261006-11.
+2. The image-build lock file is in `Dir.tmpdir`, so two runs with different `TMPDIR` values don't share it and can still build the same tag at once (`spec/support/test_postgres.rb` ~237). Use a fixed per-user path.
+3. If a suite thread raises an unexpected exception, `join` re-raises it in order, so later suites' output never prints and their child processes are orphaned (`Rakefile` ~76-93). The run still fails. Join every thread before raising, and print what each one held.
+
+- **Depends on:** 20261006-11.
+- **Came from:** The review of 20261006-11.
+- **Design:** None (test infrastructure).
+- **Status:** done
+- **Landed:** A suite killed by a signal now shows `failed (killed by SIGKILL)` in its header and in the failure summary. The test image's build lock moved to `~/.cache/quaack/quaack-test-postgres-<hash>.lock`, so it no longer depends on TMPDIR. Each suite's thread now catches its own exceptions and records `<suite> (raised <Class>: <message>)` as failed and not run. Every other suite still prints, and the run fails naming that suite.
