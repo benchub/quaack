@@ -20,6 +20,14 @@ module Quaack
         ARROW = '<span class="arrow" aria-hidden="true">-&gt; </span>'
         MARK = ' <strong class="mark">differs</strong>'
         MARKED = "A step marked “differs”, and shaded, is one the other plan doesn't have in the same place."
+        # What the blocks column can't say in its header: Postgres counts a
+        # step's blocks over all its loops but its actual rows per loop, and
+        # counts an InitPlan's blocks in the step that ran it, not the step
+        # it hangs from.
+        BLOCKS_NOTE = "Blocks read count every time a step ran, while actual rows are for one run, so a step that " \
+                      "ran many times can show one row next to thousands of blocks. And a subquery Postgres runs " \
+                      "once up front (an InitPlan) has its blocks counted in the step that used its result, which " \
+                      "needn't be the step it's listed under, so those blocks can show up twice."
 
         # The table of plan, marking the steps not in other. other is nil
         # when there is no plan to compare with, and nothing is marked.
@@ -50,11 +58,12 @@ module Quaack
         end
 
         # A step's blocks read: its shared hit and read blocks together, as
-        # Postgres counts them, the steps under it included. nil if the
-        # payload has neither, as for a plan from a plain EXPLAIN.
+        # Postgres counts them, the steps under it included. nil unless the
+        # payload has both, as for a plan from a plain EXPLAIN, which has
+        # neither: one alone isn't the total.
         def step_blocks(node)
-          counts = node.values_at("shared_hit_blocks", "shared_read_blocks").grep(Integer)
-          counts.sum unless counts.empty?
+          counts = node.values_at("shared_hit_blocks", "shared_read_blocks")
+          counts.sum if counts.all?(Integer)
         end
 
         def indent(depth) = format(' style="padding-left: %.2frem"', INDENT + (STEP * depth))

@@ -876,7 +876,16 @@ RSpec.describe Quaack::Driver::Report do
     it "marks nothing, and says nothing of marks, when the plans have the same steps" do
       payload["rewrites"].first["plan"] = payload["original_plan"].map(&:dup)
       expect(explanation).not_to include("differs")
-      expect(explanation).not_to include('class="note"')
+      expect(explanation).not_to include("A step marked")
+    end
+
+    it "says, under your query's plan, that blocks count every loop and an InitPlan's can show twice" do
+      note = "<p class=\"note\">Blocks read count every time a step ran, while actual rows are for one run, so " \
+             "a step that ran many times can show one row next to thousands of blocks. And a subquery Postgres " \
+             "runs once up front (an InitPlan) has its blocks counted in the step that used its result, which " \
+             "needn&#39;t be the step it&#39;s listed under, so those blocks can show up twice.</p>"
+      expect(explanation).to include("</table>#{note}\n<p>QUAACK didn&#39;t keep a measured plan")
+      expect(explanation.scan(note).size).to eq(1)
     end
 
     it "says one row, a share too small to round, and a row count it doesn't have" do
@@ -888,12 +897,12 @@ RSpec.describe Quaack::Driver::Report do
       expect(rows.last).to include(%(<td class="num">12,345</td><td class="missing">not recorded</td>))
     end
 
-    it "says a step's blocks read as its shared hit and read blocks together, or not recorded without either" do
+    it "says a step's blocks read as its shared hit and read blocks together, or not recorded without both" do
       payload["original_plan"] = [[12_000, 345], [0, 0], [nil, 9], [8, nil], [nil, nil]].map do |hit, read|
         pnode("Seq Scan", 0, hit:, read:)
       end
       expect(plan_rows(explanation).first.map { it[%r{<td class="[a-z]+">([^<]*)</td></tr>}, 1] })
-        .to eq(["12,345", "0", "9", "8", "not recorded"])
+        .to eq(["12,345", "0", "not recorded", "not recorded", "not recorded"])
     end
 
     it "says a share is under 0.1% only when it is above zero and would round to 0.0%" do

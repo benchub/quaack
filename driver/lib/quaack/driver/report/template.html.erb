@@ -127,6 +127,7 @@
 <% end %>
 <p>How Postgres runs your query now:</p>
 <%= plan_table(original_plan, winner_plan) %>
+<p class="note"><%= h Plans::BLOCKS_NOTE %></p>
 <% if measured_plan %>
 <p>How it runs <%= h Words.lower(describe(winner["label"])) %>, as QUAACK measured it on the slow values:</p>
 <%= plan_table(measured_plan, original_plan) %>
