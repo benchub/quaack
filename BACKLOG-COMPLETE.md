@@ -6262,3 +6262,17 @@ From the review of 20261006-22.
 - **Old gem files.** A failed old-gem-file removal now has its own warning test.
 
 Driver only, no version bump.
+
+### 20261007-6. Report sections: minors from 20261004-87 and 20261004-59.
+
+From the review of 20261004-87 and 20261004-59.
+1. The rewrite summary's warning hint (`driver/lib/quaack/driver/report/rewrites.rb` ~156) uses `atoms(entry)`, so it still says some conditions went untested after a later round checked them all. Use the conditions still unchecked, or say "at first", and add a spec.
+2. The `details.query:target` outline rule (`template.html.erb` ~36) has no test. Assert it, or drop it.
+3. Add a code comment by the `::details-content` rule. It needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section.
+4. Wording option for the hint: "Read it with care: it relies on what your data holds today. The test data also left some of its conditions untested."
+
+- **Depends on:** 20261004-59.
+- **Came from:** The review of 20261004-87 and 20261004-59.
+- **Design:** report.
+- **Status:** done
+- **Landed:** The hint in a rewrite's summary is now based on `unchecked_atoms`, so it goes away once a later round checks every condition. When both warnings apply, it uses the two-sentence wording. A spec checks the `details.query:target` outline rule, and a code comment gives the browser versions `::details-content` needs. Driver only. Landed with 20261006-19 item 1.
