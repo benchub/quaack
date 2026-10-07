@@ -6331,3 +6331,15 @@ The review of 20261004-53 found:
 - The report file and the ssh pipes are still unwrapped and fail loudly.
 
 The specs use real closed `IO.pipe`s, and one spawns `exe/quaack`. DESIGN.md is updated. Driver only.
+
+### 20261007-7. Deploy cleanup: comment and brittle specs from 20261007-2.
+
+From the review of 20261007-2.
+1. The comment at `driver/lib/quaack/driver/deploy_cleanup.rb` (~59) says gem takes an empty `--install-dir` "as no dir at all". It actually resolves to the current directory, the remote `$HOME`. Fix the comment.
+2. `driver/spec/deploy_spec.rb` (~252) matches the exact `pinned` command string, so three specs fail on any command text change, not on behavior. Move them to behavioral checks.
+
+- **Depends on:** 20261007-2.
+- **Came from:** The review of 20261007-2.
+- **Design:** Deploying the enclave.
+- **Status:** done
+- **Landed:** The comment in `deploy_cleanup.rb` now says gem resolves an empty `--install-dir` to the current directory, the remote `$HOME`. The three deploy specs that matched the exact `pinned` command string now check behavior. A `stub_gem` wrapper on the fake jump server's PATH logs each `gem uninstall` and runs the real gem, and the specs check what's left installed. Removing `--install-dir`, `&&`, or `realpath` still turns them red. This is driver only.

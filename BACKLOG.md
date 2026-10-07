@@ -2330,16 +2330,7 @@ From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb
 
 ### 20261007-6. Report sections: minors from 20261004-87 and 20261004-59. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-7. Deploy cleanup: comment and brittle specs from 20261007-2.
-
-From the review of 20261007-2.
-1. The comment at `driver/lib/quaack/driver/deploy_cleanup.rb` (~59) says gem takes an empty `--install-dir` "as no dir at all". It actually resolves to the current directory, the remote `$HOME`. Fix the comment.
-2. `driver/spec/deploy_spec.rb` (~252) matches the exact `pinned` command string, so three specs fail on any command text change, not on behavior. Move them to behavioral checks.
-
-- **Depends on:** 20261007-2.
-- **Came from:** The review of 20261007-2.
-- **Design:** Deploying the enclave.
-- **Status:** todo
+### 20261007-7. Deploy cleanup: comment and brittle specs from 20261007-2. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-8. Progress-block rescue: minors from 20261001-13.
 
