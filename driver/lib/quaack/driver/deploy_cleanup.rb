@@ -56,8 +56,11 @@ module Quaack
       # ruby resolves, as it does for LISTING. It's the real path, since
       # RubyGems compares the real path of --install-dir with the spec
       # dirs it finds under the path as given, so a symlinked home would
-      # otherwise match nothing.
-      UNINSTALL = %(gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')")
+      # otherwise match nothing. It stops if ruby can't resolve that dir,
+      # since gem would take an empty --install-dir as no dir at all. Each
+      # step wraps it in a group with 2>&1, so ruby's stderr shows in the
+      # warning too (task 20261007-2).
+      UNINSTALL = %(d=$(ruby -e 'print File.realpath(Gem.user_dir)') && gem uninstall --install-dir "$d")
 
       # What to do after installing installed, gem name => version string,
       # in uninstall order, given what LISTING printed: [progress line,
@@ -84,7 +87,7 @@ module Quaack
         todo[:newer].map { ["leaving #{name} #{it} on #{host}, since it's newer than #{current}", nil, nil] } +
           todo[:remove].map do |old|
             ["removing #{name} #{old} from #{host}",
-             "#{UNINSTALL} #{Shellwords.join(["-v", old.to_s, name])} 2>&1",
+             "{ #{UNINSTALL} #{Shellwords.join(["-v", old.to_s, name])}; } 2>&1",
              "gem uninstall #{name} #{old}"]
           end
       end

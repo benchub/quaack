@@ -44,7 +44,9 @@ RSpec.describe Quaack::Driver::Deploy do
   # the transport's `true` probe, exits 255, as when the ssh login expires
   # during the install.
   # With slow: true, the version check hangs. A remote command that starts
-  # with one of fail_on prints "boom" and exits 1.
+  # with one of fail_on prints "boom" and exits 1. One that starts with the
+  # after: of a { after: prefix } in fail_on runs, then exits 1, so ssh
+  # fails after its whole stdout.
   def fake_ssh(path: true, probe: true, expired: false, slow: false, fail_on: [])
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
@@ -58,10 +60,16 @@ RSpec.describe Quaack::Driver::Deploy do
       #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
       #{"case \"$*\" in quaacks*|true) exit 255 ;; esac" if expired}
       #{"case \"$*\" in quaacks*) exec sleep 30 ;; esac" if slow}
-      #{fail_on.map { "case \"$*\" in '#{it}'*) echo boom; exit 1 ;; esac" }.join("\n")}
+      #{fail_on.map { failing(it) }.join("\n")}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
+  end
+
+  def failing(rule)
+    return "case \"$*\" in '#{rule}'*) echo boom; exit 1 ;; esac" if rule.is_a?(String)
+
+    "case \"$*\" in '#{rule.fetch(:after)}'*) cd \"$HOME\" && sh -c \"$*\"; exit 1 ;; esac"
   end
 
   let(:stubs) do
@@ -241,7 +249,7 @@ RSpec.describe Quaack::Driver::Deploy do
 
     # How each uninstall starts: pinned to the user gem dir, which the
     # jump server's ruby resolves.
-    let(:pinned) { %(gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')") }
+    let(:pinned) { %({ d=$(ruby -e 'print File.realpath(Gem.user_dir)') && gem uninstall --install-dir "$d") }
 
     it "removes every older version but the highest, of both gems, saying so for each" do
       %w[0.0.1 0.0.2 0.1.0].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
@@ -257,10 +265,10 @@ RSpec.describe Quaack::Driver::Deploy do
         quaack deploy: removing quaack-protocol 0.0.1 from jump-1
       OUT
       expect(uninstalls).to eq(<<~CMDS.lines)
-        #{pinned} -v 0.0.2 quaacks 2>&1
-        #{pinned} -v 0.0.1 quaacks 2>&1
-        #{pinned} -v 0.0.2 quaack-protocol 2>&1
-        #{pinned} -v 0.0.1 quaack-protocol 2>&1
+        #{pinned} -v 0.0.2 quaacks; } 2>&1
+        #{pinned} -v 0.0.1 quaacks; } 2>&1
+        #{pinned} -v 0.0.2 quaack-protocol; } 2>&1
+        #{pinned} -v 0.0.1 quaack-protocol; } 2>&1
       CMDS
     end
 
@@ -305,7 +313,7 @@ RSpec.describe Quaack::Driver::Deploy do
 
       expect(installed("pg_query")).to eq(%w[0.0.1 0.0.2 0.0.3])
       expect(installed("quaacks-extra")).to eq(%w[0.0.1 0.0.2])
-      expect(uninstalls).to eq(["#{pinned} -v 0.0.1 quaacks 2>&1\n"])
+      expect(uninstalls).to eq(["#{pinned} -v 0.0.1 quaacks; } 2>&1\n"])
     end
 
     # Task 20261006-22: `gem uninstall --user-install` also removes a
@@ -343,7 +351,7 @@ RSpec.describe Quaack::Driver::Deploy do
       FileUtils.mkdir_p(deploy_dir)
       File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
 
-      expect(deploy_main(["gem uninstall"])).to eq(
+      expect(deploy_main(["{ d="])).to eq(
         [0, %w[quaacks quaack-protocol].map do |name|
           "quaack deploy: warning: gem uninstall #{name} 0.0.1 failed on jump-1, but quaacks #{current} is " \
             "installed and checked:\nboom\n"
@@ -364,6 +372,55 @@ RSpec.describe Quaack::Driver::Deploy do
       expect(out.string.lines.last).to eq("quaack deploy: installed quaacks #{current} on jump-1\n")
       expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
       expect(uninstalls).to eq([])
+    end
+
+    # Its stdout lists everything, so only the failure keeps it from
+    # removing anything.
+    it "removes nothing, not even listed versions and gem files, when the listing prints them but fails" do
+      %w[0.0.1 0.0.2].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
+      FileUtils.mkdir_p(deploy_dir)
+      File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
+
+      status, err = deploy_main([{ after: "ruby -e" }])
+
+      expect(status).to eq(0)
+      expect(err.lines.first).to eq("quaack deploy: warning: listing old versions failed on jump-1, but quaacks " \
+                                    "#{current} is installed and checked:\n")
+      expect(err).to include("spec:quaacks-0.0.1.gemspec\n", "file:quaacks-0.0.1.gem\n")
+      expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+      expect(installed("quaack-protocol")).to eq(["0.0.1", "0.0.2", protocol])
+      expect(File.exist?(File.join(deploy_dir, "quaacks-0.0.1.gem"))).to be(true)
+      expect(File.read(File.join(dir, "remote"))).not_to match(/uninstall|rm /)
+    end
+
+    it "warns with the remote ruby's own message, and still succeeds, when it can't resolve the user gem dir" do
+      %w[0.0.1 0.0.2].each { plant("quaacks", it) }
+      File.write(File.join(stubs, "ruby"), <<~SH)
+        #!/bin/sh
+        case "$*" in *File.realpath*) echo 'realpath: No such file or directory - planted' >&2; exit 1 ;; esac
+        exec '#{RbConfig.ruby}' "$@"
+      SH
+      FileUtils.chmod(0o755, File.join(stubs, "ruby"))
+
+      expect(deploy_main([])).to eq(
+        [0, "quaack deploy: warning: gem uninstall quaacks 0.0.1 failed on jump-1, but quaacks #{current} is " \
+            "installed and checked:\nrealpath: No such file or directory - planted\n"]
+      )
+      expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+    end
+
+    it "warns, naming the step and host, and still succeeds, when removing old gem files fails" do
+      %w[0.0.1 0.0.2].each { plant("quaacks", it) }
+      FileUtils.mkdir_p(deploy_dir)
+      File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
+
+      expect(deploy_main(["rm -f"])).to eq(
+        [0, "quaack deploy: warning: removing old gem files failed on jump-1, but quaacks #{current} is installed " \
+            "and checked:\nboom\n"]
+      )
+      expect(out.string.lines.last).to eq("quaack deploy: installed quaacks #{current} on jump-1\n")
+      expect(installed("quaacks")).to eq(["0.0.2", current])
+      expect(File.exist?(File.join(deploy_dir, "quaacks-0.0.1.gem"))).to be(true)
     end
 
     it "parses only plain versions of its own two gems out of the listing" do
