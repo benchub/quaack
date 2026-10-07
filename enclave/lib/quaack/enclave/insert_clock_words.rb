@@ -13,12 +13,17 @@ module Quaack
     #
     #   InsertClockWords.check(cols, rows, column_types, settings, connection)
     #   # => nil, or raises Error "clock_literal: a value for column shipped could read the clock"
+    #   InsertClockWords.clock_params(cols, rows, column_types, settings, connection) { |number| value }
+    #   # => { location => number } for each $n whose value the block gives would read the clock
     #
     # cols is the insert's column list, rows its VALUES rows, and
     # column_types each column's type OID by name. check takes rows
-    # InsertValues has checked, each $n already bound to its literal.
+    # InsertValues has checked, each $n already bound to its literal;
+    # clock_params takes them unbound, before Counterexamples binds each
+    # $n, so it can bind the clock anchor's value instead where the word
+    # would read the clock (task 20261006-5).
     #
-    # Each string constant is read as every type it could become
+    # Each string constant (or $n) is read as every type it could become
     # on its way into its column, and each one it could become is checked:
     # - its column's type, and the type of each cast between it and the
     #   column, as '{today}'::text::date[] is text and date[];
@@ -108,7 +113,7 @@ module Quaack
       Element = Data.define(:of)
       Parameter = Data.define(:func, :position, :open)
 
-      # A string constant, its value's column, and where it could be
+      # A string constant or $n, its value's column, and where it could be
       # read as a type.
       Value = Data.define(:node, :column, :targets)
 
@@ -120,6 +125,15 @@ module Quaack
         raise Error.new("clock_literal", "a value for column #{refused.column} could read the clock") if refused
 
         nil
+      end
+
+      def clock_params(cols, rows, column_types, settings, connection)
+        types = Types.new(column_types, settings, connection)
+        values(cols, rows).filter_map do |value|
+          param = value.node.param_ref or next
+          text = yield param.number
+          [param.location, param.number] if text && types.reads_clock?(text, value.targets)
+        end.to_h
       end
 
       def constant(node) = node.a_const&.sval&.sval
@@ -134,6 +148,7 @@ module Quaack
         inner = node.inner
         case inner
         when PgQuery::A_Const then constant(node) ? [Value.new(node:, column:, targets:)] : []
+        when PgQuery::ParamRef then [Value.new(node:, column:, targets:)]
         when PgQuery::TypeCast then walk(inner.arg, column, [*closed(targets), Cast.new(inner.type_name)])
         when PgQuery::A_ArrayExpr then inner.elements.flat_map { walk(it, column, element_targets(it, targets)) }
         when PgQuery::FuncCall then arguments(inner, column, targets)

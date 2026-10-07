@@ -11,6 +11,7 @@ require_relative "vacuity_guard"
 require_relative "counterexamples/evaluated"
 require_relative "counterexamples/parent_rows"
 require_relative "counterexamples/deferral"
+require_relative "counterexamples/clock_binding"
 
 module Quaack
   module Enclave
@@ -29,7 +30,13 @@ module Quaack
     # bound to its real value from the placeholder map (Redaction's form),
     # as a string constant the column's type reads, or NULL for a NULL
     # literal. A $n the map doesn't have refuses the insert with
-    # unknown_placeholder. The bound insert then goes through the inbound
+    # unknown_placeholder. Where the value is a clock word ('now', 'today',
+    # 'tomorrow', or 'yesterday', as ClockLiterals::WORD matches it) and
+    # the insert's clock_literal rule would find the $n reads the clock
+    # there (ClockBinding), the $n is bound to the word's value
+    # from the clock anchor instead, written out in the session's TimeZone,
+    # so the fixture is the same every round, and neither a refusal nor
+    # its absence says whether the literal was a clock word. The bound insert then goes through the inbound
     # check (InsertCheck), and a refusal keeps only its rule. Each value of
     # an accepted insert is then evaluated in arena (see Evaluated); one
     # Postgres can't evaluate, such as a bad cast, refuses the insert with
@@ -140,41 +147,44 @@ module Quaack
         accepted = []
         refused = []
         inserts.each_with_index do |sql, index|
-          accepted << Evaluated.of(conn, InsertCheck.check(bind(sql, placeholder_map), tables, settings, conn))
+          bound = bind(sql, placeholder_map, ClockBinding.anchored(conn, sql, placeholder_map, tables, settings))
+          accepted << Evaluated.of(conn, InsertCheck.check(bound, tables, settings, conn))
         rescue InsertCheck::Error, Refusal => e
           refused << { index:, rule: e.rule.to_s }
         end
         [accepted, refused]
       end
 
-      # The insert with each $n replaced by its literal.
-      def bind(sql, placeholder_map)
+      # The insert with each $n replaced by its literal, or by its anchored
+      # text where anchored has its location.
+      def bind(sql, placeholder_map, anchored = {})
         tree = PgQuery.parse(sql).tree
-        replace_params(tree, placeholder_map)
+        replace_params(tree) { literal(it, placeholder_map, anchored) }
         PgQuery.deparse(tree)
       rescue PgQuery::ParseError
         raise Refusal, "unparsable"
       end
 
-      def replace_params(node, map)
+      def replace_params(node, &literal)
         case node
         when Google::Protobuf::RepeatedField
-          node.each_with_index { |c, i| param?(c) ? node[i] = literal(c, map) : replace_params(c, map) }
+          node.each_with_index { |c, i| param?(c) ? node[i] = literal.call(c) : replace_params(c, &literal) }
         when Google::Protobuf::MessageExts
           node.class.descriptor.each do |field|
             value = field.get(node)
-            param?(value) ? field.set(node, literal(value, map)) : replace_params(value, map)
+            param?(value) ? field.set(node, literal.call(value)) : replace_params(value, &literal)
           end
         end
       end
 
       def param?(value) = value.is_a?(PgQuery::Node) && value.param_ref
 
-      def literal(param, map)
+      def literal(param, map, anchored)
         entry = map["$#{param.param_ref.number}"] or raise Refusal, "unknown_placeholder"
-        return PgQuery::Node.new(a_const: PgQuery::A_Const.new(isnull: true)) if entry["value"].nil?
+        value = anchored.fetch(param.param_ref.location) { entry["value"] }
+        return PgQuery::Node.new(a_const: PgQuery::A_Const.new(isnull: true)) if value.nil?
 
-        PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: entry["value"])))
+        PgQuery::Node.new(a_const: PgQuery::A_Const.new(sval: PgQuery::String.new(sval: value)))
       end
     end
   end

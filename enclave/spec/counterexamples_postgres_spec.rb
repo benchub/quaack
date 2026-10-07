@@ -4,6 +4,7 @@ require "quaack/enclave/arena_runner"
 require "pg_query"
 require "quaack/enclave/counterexamples"
 require "quaack/enclave/predicate_atoms"
+require "quaack/enclave/racetrack"
 
 # llm-counterexamples, the enclave's half: bind the real literals into the LLM's
 # shape-level inserts, send them through the inbound check, and fill
@@ -285,21 +286,57 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       .to eq([["5001"]])
   end
 
-  describe "a placeholder whose literal is a clock word (task 20261004-95)" do
-    let(:map) { { "$1" => { "value" => "today", "type" => "unknown" } } }
+  describe "a placeholder whose literal is a clock word (task 20261006-5)" do
+    let(:map) do
+      { "$1" => { "value" => " Today ", "type" => "unknown" }, "$2" => { "value" => "NOW", "type" => "unknown" },
+        "$3" => { "value" => "tomorrow", "type" => "unknown" },
+        "$4" => { "value" => "today 10:00", "type" => "unknown" } }
+    end
 
-    before { conn.exec("CREATE TABLE fx.tagged (id integer PRIMARY KEY, tags text[], day date)") }
+    before do
+      conn.exec("CREATE TABLE fx.stamps (id integer PRIMARY KEY, day date, at timestamptz, local timestamp,
+                   note text, days daterange, due date, tags text[], dates date[])")
+      Quaack::Enclave::Racetrack.create_clock_anchor(conn, "'2024-03-09 23:30:00+00'::pg_catalog.timestamptz")
+      conn.exec("SET TimeZone = 'Pacific/Chatham'")
+    end
 
-    def tagged(insert) = described_class.prepare(conn, [insert], placeholder_map: map, tables: [tn("tagged")])
+    def stamps(*inserts) = described_class.prepare(conn, inserts, placeholder_map: map, tables: [tn("stamps")])
 
-    it "binds the word and refuses it where it could read the clock" do
-      expect(tagged("INSERT INTO fx.tagged (id, day) VALUES (1, $1)").refused)
+    it "binds the clock anchor's value, in the session's TimeZone, where the word would read the clock" do
+      prepared = stamps("INSERT INTO fx.stamps (id, day, at, local, note, days, due)
+                         VALUES (1, $1, $2, $2::timestamp, $1, daterange($1, NULL), $3)")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT day::text, at = '2024-03-09 23:30:00+00', local::text, note, days::text, due::text
+                             FROM fx.stamps"))
+        .to eq([["2024-03-10", "t", "2024-03-10 13:15:00", " Today ", "[2024-03-10,)", "2024-03-11"]])
+    end
+
+    it "binds the word itself where a text function splits it into a text[]" do
+      prepared = stamps("INSERT INTO fx.stamps (id, tags) VALUES (1, string_to_array($1, ','))")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT tags::text FROM fx.stamps")).to eq([['{" Today "}']])
+    end
+
+    it "binds the anchor's value where a text function's result is cast to a date[]" do
+      prepared = stamps("INSERT INTO fx.stamps (id, dates) VALUES (1, string_to_array($3, ',')::date[])")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT dates::text FROM fx.stamps")).to eq([["{2024-03-11}"]])
+    end
+
+    it "still refuses a placeholder that holds a clock word and more" do
+      expect(stamps("INSERT INTO fx.stamps (id, local) VALUES (1, $4)").refused)
         .to eq([{ index: 0, rule: "clock_literal" }])
     end
 
-    it "refuses it, rather than loading another value, where it reaches an array type through a text function" do
-      prepared = tagged("INSERT INTO fx.tagged (id, tags) VALUES (1, string_to_array($1, ','))")
-      expect([prepared.refused, prepared.inserts]).to eq([[{ index: 0, rule: "clock_literal" }], []])
+    it "still refuses a clock word the insert writes itself" do
+      expect(stamps("INSERT INTO fx.stamps (id, day) VALUES (1, 'today')").refused)
+        .to eq([{ index: 0, rule: "clock_literal" }])
+    end
+
+    it "loads a clock word the insert writes itself where a text function splits it into a text[]" do
+      prepared = stamps("INSERT INTO fx.stamps (id, tags) VALUES (1, string_to_array('today', ','))")
+      expect(prepared.refused).to eq([])
+      expect(load(prepared, "SELECT tags::text FROM fx.stamps")).to eq([["{today}"]])
     end
   end
 

@@ -1,7 +1,7 @@
 PATH
   remote: driver
   specs:
-    quaack-driver (0.1.9)
+    quaack-driver (0.1.10)
       anthropic (~> 1.73)
       aws-sdk-bedrockruntime (~> 1.0)
       openai (~> 0.95)
@@ -11,7 +11,7 @@ PATH
 PATH
   remote: enclave
   specs:
-    quaacks (0.1.9)
+    quaacks (0.1.10)
       pg (~> 1.6)
       pg_query (~> 6.2)
       quaack-protocol
@@ -19,7 +19,7 @@ PATH
 PATH
   remote: protocol
   specs:
-    quaack-protocol (0.1.9)
+    quaack-protocol (0.1.10)
 
 GEM
   remote: https://rubygems.org/
@@ -156,9 +156,9 @@ CHECKSUMS
   pg (1.6.3-arm64-darwin) sha256=7240330b572e6355d7c75a7de535edb5dfcbd6295d9c7777df4d9dddfb8c0e5f
   pg_query (6.2.3) sha256=450bea944058d5cbe2547a6ee86a19bc639c265b26047b8bc937e009df6771df
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
-  quaack-driver (0.1.9)
-  quaack-protocol (0.1.9)
-  quaacks (0.1.9)
+  quaack-driver (0.1.10)
+  quaack-protocol (0.1.10)
+  quaacks (0.1.10)
   racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
   rainbow (3.1.1) sha256=039491aa3a89f42efa1d6dec2fc4e62ede96eb6acd95e52f1ad581182b79bc6a
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
