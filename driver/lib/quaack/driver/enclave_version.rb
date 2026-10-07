@@ -27,10 +27,12 @@ module Quaack
         raise Mismatch, "#{host} has quaacks #{shown}, but this driver needs #{ENCLAVE_VERSION}. #{deploy(host)}"
       end
 
+      # A version call that failed for ssh or a timeout raises its own
+      # EnclaveError. Any other failure means quaacks didn't answer.
       def remote(transport, host)
         transport.call("version").messages.find { it["type"] == "version" }&.fetch("version", nil)
       rescue EnclaveError => e
-        raise e if e.rule == "ssh_failed"
+        raise e if %w[ssh_failed timeout].include?(e.rule)
 
         raise Mismatch, "quaacks isn't installed on #{host}, or isn't on PATH for non-interactive ssh there. " \
                         "#{deploy(host)}", cause: nil

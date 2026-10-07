@@ -20,9 +20,10 @@ module Quaack
         NAME = /\A[a-z][a-z0-9-]{0,62}\z/
 
         # How long a call may run, in seconds, before the driver kills it.
-        # Some steps run many queries, so it's generous. `quaack start` and
-        # `quaack run` pass enclave_timeout_seconds from the driver config,
-        # or run's --enclave-timeout-seconds, in its place.
+        # Some steps run many queries, so it's generous. `quaack start`,
+        # `quaack setup`, and `quaack run` pass enclave_timeout_seconds from
+        # the driver config, or run's --enclave-timeout-seconds, in its
+        # place.
         DEFAULT_TIMEOUT = 3600
         # The most a call may print. Far more than any step's messages.
         MAX_OUTPUT_BYTES = 64 * 1024 * 1024

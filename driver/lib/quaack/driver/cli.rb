@@ -25,8 +25,8 @@ module Quaack
 
       # transport builds the transport to a jump host, and client the LLM
       # client from its LLM::Settings. Specs pass fakes for both, since
-      # they're the edges. run passes transport the enclave call timeout as
-      # timeout:, and setup passes none, for the default.
+      # they're the edges. run and setup pass transport the enclave call
+      # timeout as timeout:.
       def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil)
         @stdout = stdout
         @stderr = stderr

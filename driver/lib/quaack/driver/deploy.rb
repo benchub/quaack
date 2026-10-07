@@ -59,12 +59,13 @@ module Quaack
       end
 
       # stdout gets a line as each step starts, or nothing if it's nil.
-      def initialize(host:, ssh: "ssh", checkout: CHECKOUT, stdout: nil)
+      # version_timeout bounds the version check, in seconds.
+      def initialize(host:, ssh: "ssh", checkout: CHECKOUT, stdout: nil, version_timeout: Transport::Base::DEFAULT_TIMEOUT)
         @host = host
         @ssh = ssh
         @checkout = checkout
         @stdout = stdout
-        @transport = Transport::Ssh.new(host:, ssh:)
+        @transport = Transport::Ssh.new(host:, ssh:, timeout: version_timeout)
       end
 
       # Returns the version that quaacks on the jump server now answers.
@@ -129,7 +130,7 @@ module Quaack
         advice = DeployDiagnosis.new(host: @host, ssh: @ssh).call
         raise Error, advice ? "#{found}\n#{advice}" : "#{found} #{GENERAL_ADVICE}", cause: nil
       rescue EnclaveError => e
-        again = e.rule_with_note(next_step: "run `quaack deploy --host #{@host}` again")
+        again = e.rule_with_note(next_step: "run `quaack deploy --host #{@host}` again", timeout_hint: false)
         raise Error, "installed quaacks #{ENCLAVE_VERSION} on #{@host}, but #{again}", cause: nil
       end
 

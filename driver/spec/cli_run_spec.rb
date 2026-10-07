@@ -705,6 +705,17 @@ RSpec.describe "quaack run" do
     expect(transport.calls.map(&:first)).to eq(["version"])
   end
 
+  # Task 20261006-8: a version call that timed out says so.
+  it "says a version check that timed out timed out, not that quaacks isn't installed" do
+    failing["version"] = Quaack::Driver::EnclaveError.new(subcommand: "version", rule: "timeout", signal: "TERM",
+                                                          timeout_seconds: 3600)
+    status = cli.run(["run", "--run", run_id, "--out", out])
+
+    expect([status, errors]).to eq([1, "quaack run failed: timeout: the enclave call timed out after 1h00m00s; " \
+                                       "raise `enclave_timeout_seconds` in ~/.quaack/driver.json, or pass " \
+                                       "--enclave-timeout-seconds to quaack run\n"])
+  end
+
   it "names no version it doesn't recognize as one" do
     replies["version"] = [{ "type" => "version", "version" => "x y\n" }]
     cli.run(["run", "--run", run_id, "--out", out])
@@ -758,8 +769,14 @@ RSpec.describe "quaack run" do
       expect(timeouts).to eq([90.5])
     end
 
+    it "takes a --enclave-timeout-seconds of plain digits" do
+      expect(run_with("--enclave-timeout-seconds", "90")).to eq(0)
+      expect(timeouts).to eq([90.0])
+    end
+
     it "refuses a --enclave-timeout-seconds that isn't a positive number, before touching the jump server" do
-      %w[0 -5 abc 1e999].each do |value|
+      # Task 20261006-8: only plain decimal numbers, not Float()'s other forms.
+      %w[0 -5 abc 1e999 0x10 1_000 1e3 .5 5. +5 0.0].each do |value|
         stderr.truncate(0)
         stderr.rewind
 

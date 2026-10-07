@@ -41,9 +41,8 @@ module Quaack
       private
 
       def setup(run_id, server)
-        host = Runs.new(@home).host(run_id) or return @stderr.print("quaack setup: unknown run ID\n") || CLI::EX_USAGE
-        transport = @transport.call(host)
-        EnclaveVersion.check!(transport, host)
+        host = Runs.new(@home).host(run_id) or return usage_error("unknown run ID")
+        transport = checked(host) or return CLI::EX_USAGE
         Setup.run(transport:, run_id:, entries: Pipeline.status(transport, run_id), server:,
                   progress: Progress.new(io: @stderr, total: Setup::STEPS.size))
         @stdout.print "#{run_id} set up\n"
@@ -52,6 +51,26 @@ module Quaack
         @stderr.print "quaack setup failed: #{EnclaveError.shown(e, resume(run_id), **Runs.new(@home).where(run_id))}\n"
         1
       end
+
+      # A transport to host, once its quaacks is this driver's version, or
+      # nil when the driver config is Bad.
+      def checked(host)
+        timeout = enclave_timeout or return
+        @transport.call(host, timeout:).tap { EnclaveVersion.check!(it, host) }
+      end
+
+      # How long each enclave call may run: the config's
+      # enclave_timeout_seconds, as for start and run, or else
+      # Transport::Base::DEFAULT_TIMEOUT. nil, once it prints why, for a
+      # driver config that's Bad.
+      def enclave_timeout
+        DriverConfig.enclave_timeout(DriverConfig.read(@home), nil, Transport::Base::DEFAULT_TIMEOUT)
+      rescue DriverConfig::Bad => e
+        usage_error(e.message)
+        nil
+      end
+
+      def usage_error(message) = @stderr.print("quaack setup: #{message}\n") || CLI::EX_USAGE
 
       # What to do after ssh_failed.
       def resume(run_id) = "resume with `quaack setup --run #{run_id}`"
