@@ -4,6 +4,7 @@ require "digest"
 require "json"
 require "pg_query"
 require_relative "build_connection"
+require_relative "build_order"
 require_relative "index_store"
 
 module Quaack
@@ -41,7 +42,7 @@ module Quaack
       def build(store, connection, starting: nil, built: nil)
         BuildConnection.configure(connection)
         combinations = combinations(store)
-        indexes = create_all(connection, combinations.values.flatten.uniq, starting)
+        indexes = create_all(connection, BuildOrder.ddls(combinations), starting)
         hide_all(connection, "indexes" => indexes)
         built&.call(indexes)
         store.write("index_build", "indexes" => indexes,
