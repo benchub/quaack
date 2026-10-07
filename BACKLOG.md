@@ -2121,17 +2121,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 
 ### 20261004-84. Progress: the LLM wait's clock sits on a note's line. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-85. Closed output pipes: minors from 20261004-62.
-
-1. `QuietStream` only guards `print`. Every write to it uses `print` today, but a later `puts`, `write`, `<<` or `printf` would skip the guard silently. Guard the other write methods, or pin with a spec that they're unused.
-2. `quaack setup` changed without docs or tests: `Progress` wraps every stream, so with stderr closed setup now runs its steps silently instead of dying at its first progress line, yet its own `quaack setup failed:` message is unwrapped and still raises `Errno::EPIPE` (exit 1). Decide setup's rule to match `quaack run`, test it with a real `IO.pipe`, and say so in DESIGN.md.
-3. With `quaack run … 2>&1 | head`, stdout closes too: the run tears down and writes the report, then printing the report's path raises `Errno::EPIPE` out of `cli.run`. DESIGN.md says so. Decide whether that should exit cleanly with the run's real exit code.
-
-- **Depends on:** 20261004-62.
-- **Came from:** The review of 20261004-62 and its builder.
-- **Design:** Progress lines for `quaack run`.
-- **Decided by the user (2026-10-07):** On a closed pipe, finish and exit with the real code. Ignore EPIPE on progress and on printing the report path, so the run finishes, writes its report, and exits with its real exit code. Setup follows the same rule, its own failure message included.
-- **Status:** todo
+### 20261004-85. Closed output pipes: minors from 20261004-62. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites. Done, see BACKLOG-COMPLETE.md.
 
@@ -2369,4 +2359,16 @@ From the review of 20261001-13.
 - **Depends on:** 20260930-14.
 - **Came from:** The user's scoping of 20260930-14, 2026-10-07.
 - **Design:** trust boundary.
+- **Status:** todo
+
+### 20261007-10. Closed pipes: minors from 20261004-85.
+
+From the review of 20261004-85 (`driver/lib/quaack/driver/quiet_stream.rb`, `cli.rb`).
+1. `quaack start` (`cli.rb` ~77), `quaack deploy` (~88), and the usage paths before the wrap still write to unwrapped streams. If the same rule should apply everywhere, wrap them too.
+2. `QuietStream` rescues every `IOError` and `SystemCallError`, so a full disk (ENOSPC) on a regular-file stdout drops the report path line without a word. The report file itself still fails loudly. Consider rescuing only `Errno::EPIPE`, `IOError`, and `ECONNRESET`, so ENOSPC stays loud.
+3. `flush` isn't guarded. An explicit `flush` on a closed pipe would raise, though nothing calls it today.
+
+- **Depends on:** 20261004-85.
+- **Came from:** The review of 20261004-85.
+- **Design:** The `quaack run` command, `quaack setup`.
 - **Status:** todo

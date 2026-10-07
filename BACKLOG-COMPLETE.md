@@ -6312,3 +6312,22 @@ The review of 20261004-53 found:
 - **Decided by the user (2026-10-07):** Item 2: put the index method inside the SQL span, as `USING gin (...)`, so copy-paste gives working SQL.
 - **Status:** done
 - **Landed:** Item 1: `Report.render` strips SQL marks from the run ID once (`Format.unmarked`), and both the payload's rewrite names and the view use that one ID. A marked run ID used to give one rewrite two names. Item 2: for a non-btree index, the inline SQL span is now the candidate's own DDL after `CREATE INDEX ON`, such as `public.t USING brin (created_at) WHERE a < ?`, so the old ` (brin)` label outside the span is gone. Btree keeps `public.t (a, b)`, since the default method can be left out. Escaping is unchanged, and partial indexes keep their `WHERE`. Driver only.
+
+### 20261004-85. Closed output pipes: minors from 20261004-62.
+
+1. `QuietStream` only guards `print`. Every write to it uses `print` today, but a later `puts`, `write`, `<<` or `printf` would skip the guard silently. Guard the other write methods, or pin with a spec that they're unused.
+2. `quaack setup` changed without docs or tests: `Progress` wraps every stream, so with stderr closed setup now runs its steps silently instead of dying at its first progress line, yet its own `quaack setup failed:` message is unwrapped and still raises `Errno::EPIPE` (exit 1). Decide setup's rule to match `quaack run`, test it with a real `IO.pipe`, and say so in DESIGN.md.
+3. With `quaack run … 2>&1 | head`, stdout closes too: the run tears down and writes the report, then printing the report's path raises `Errno::EPIPE` out of `cli.run`. DESIGN.md says so. Decide whether that should exit cleanly with the run's real exit code.
+
+- **Depends on:** 20261004-62.
+- **Came from:** The review of 20261004-62 and its builder.
+- **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-07):** On a closed pipe, finish and exit with the real code. Ignore EPIPE on progress and on printing the report path, so the run finishes, writes its report, and exits with its real exit code. Setup follows the same rule, its own failure message included.
+- **Status:** done
+- **Landed:** The user decided (2026-10-07) to finish and exit with the real code:
+- `QuietStream` now guards `puts`, `write`, `printf`, `putc`, and `<<` as well as `print`.
+- `quaack setup` wraps stdout and stderr, so with a closed pipe it runs every step and exits 0, 1, or 64, its failure and usage messages included.
+- `quaack run` wraps stdout as well as stderr, so `2>&1 | head` writes the report, tears down, and exits with its real code.
+- The report file and the ssh pipes are still unwrapped and fail loudly.
+
+The specs use real closed `IO.pipe`s, and one spawns `exe/quaack`. DESIGN.md is updated. Driver only.
