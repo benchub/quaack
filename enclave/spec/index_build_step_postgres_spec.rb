@@ -5,6 +5,7 @@ require "quaack/enclave/index_build"
 require "quaack/enclave/burndown"
 require "quaack/enclave/error_filter"
 require "timeout"
+require_relative "support/catalog_shadow"
 
 # DESIGN.md's index-build: `quaacks index-build` builds every distinct index from the
 # index-search and rewrite-index-ideas rankings and the set-aside GIN/GiST/SP-GiST candidates,
@@ -353,6 +354,34 @@ RSpec.describe "quaacks index-build, against a real server" do
 
   # 20261006-9: a build whose client was killed, as the driver's timeout
   # kills ssh, while its CREATE INDEX waits on a lock another session holds.
+  # Task 20260930-14: the build connection's search_path puts public ahead
+  # of pg_catalog, and public's comparisons say no (see CatalogShadow).
+  # The catalog reads and the indisvalid update still find QUAACK's index.
+  context "when public's comparison operators shadow pg_catalog's" do
+    let(:ddl) { "CREATE INDEX ON public.orders (note)" }
+    let(:name) { Quaack::Enclave::IndexBuild.name(ddl) }
+
+    it "builds, sizes, hides, and shows the index, and finds it built on a second call" do
+      conn = production.connect
+      seed(conn)
+      CatalogShadow.plant(conn, :operators)
+      conn.exec("SET search_path = public, pg_catalog")
+      build = { "indexes" => { name => { "ddl" => ddl } } }
+      index_build = Quaack::Enclave::IndexBuild
+
+      size = index_build.create(conn, name, ddl)
+      expect([size, index_build.create(conn, name, ddl)]).to eq([size, size])
+      expect(size).to be_positive
+      index_build.hide_all(conn, build)
+      hidden = index_build.valid_names(conn, build)
+      index_build.set_valid(conn, [name], true, schemas: "public")
+
+      expect([hidden, index_build.valid_names(conn, build)]).to eq([[], [name]])
+    ensure
+      conn&.close
+    end
+  end
+
   context "with an orphaned build of the same index" do
     let(:ddl) { "CREATE INDEX ON public.orders (note)" }
     let(:name) { Quaack::Enclave::IndexBuild.name(ddl) }
@@ -422,6 +451,25 @@ RSpec.describe "quaacks index-build, against a real server" do
     after do
       @locker&.close
       @monitor&.close
+    end
+
+    # Task 20260930-14: public's <> and LIKE, ahead of pg_catalog's on the
+    # resume's search_path, would find no orphan.
+    it "cancels the orphan when public's comparison operators shadow pg_catalog's" do
+      CatalogShadow.plant(@monitor, :operators)
+      orphaned = orphan(@monitor, configure: false)
+      resume = Thread.new do
+        c = production.connect
+        c.exec("SET search_path = public, pg_catalog")
+        Quaack::Enclave::IndexBuild.create(c, name, ddl)
+      ensure
+        c&.close
+      end
+      cancelled = wait_for(5) { !builders(@monitor).include?(orphaned) }
+      @locker.exec("COMMIT")
+
+      expect(cancelled).to be(true)
+      expect(resume.value).to be_positive
     end
 
     it "cancels the orphan before building, so a resume builds it without a duplicate name" do

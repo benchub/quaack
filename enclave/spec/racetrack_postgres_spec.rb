@@ -6,6 +6,7 @@ require "quaack/enclave/racetrack"
 require "quaack/enclave/clock_anchoring"
 require "quaack/enclave/intake"
 require "quaack/enclave/store"
+require_relative "support/catalog_shadow"
 
 # DESIGN.md's racetrack-setup: the racetrack gets hypopg, the quaack schema, and
 # quaack.clock_anchor(), which returns the run's clock anchor from clock-anchor.
@@ -113,6 +114,27 @@ RSpec.describe Quaack::Enclave::Racetrack do
         expect([error&.rule, error&.message]).to eq(%w[racetrack_quaack_schema_foreign racetrack_quaack_schema_foreign])
         expect(value("SELECT count(*) FROM pg_extension WHERE extname = 'hypopg'")).to eq("0")
       end
+    end
+
+    # Task 20260930-14: public's comparisons, ahead of pg_catalog's on the
+    # search_path, would find nothing foreign.
+    it "is refused when public's comparison operators shadow pg_catalog's" do
+      conn.exec("CREATE SCHEMA quaack")
+      conn.exec("CREATE TABLE quaack.sentinel_table (id int)")
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators)
+
+      expect(refusal&.rule).to eq("racetrack_quaack_schema_foreign")
+    end
+
+    it "is refused when public's count, one short, shadows pg_catalog's" do
+      conn.exec("CREATE SCHEMA quaack")
+      conn.exec("CREATE TABLE quaack.sentinel_table (id int)")
+      conn.exec("SET search_path = public, pg_catalog")
+      conn.exec("CREATE AGGREGATE public.count(*) " \
+                "(sfunc = pg_catalog.int8inc, stype = pg_catalog.int8, initcond = '-1')")
+
+      expect(refusal&.rule).to eq("racetrack_quaack_schema_foreign")
     end
   end
 

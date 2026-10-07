@@ -48,14 +48,15 @@ module Quaack
       # How many objects in the quaack schema aren't ours. It's zero when
       # there's no such schema.
       FOREIGN_SQL = <<~SQL
-        SELECT count(*) FROM pg_catalog.pg_depend d
-        JOIN pg_catalog.pg_namespace n ON n.oid = d.refobjid
-        WHERE d.refclassid = 'pg_catalog.pg_namespace'::pg_catalog.regclass AND n.nspname = 'quaack'
-          AND NOT (d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
-                   AND d.objid IS NOT DISTINCT FROM (
+        SELECT pg_catalog.count(*) FROM pg_catalog.pg_depend d
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) d.refobjid
+        WHERE d.refclassid OPERATOR(pg_catalog.=) 'pg_catalog.pg_namespace'::pg_catalog.regclass
+          AND n.nspname OPERATOR(pg_catalog.=) 'quaack'
+          AND NOT (d.classid OPERATOR(pg_catalog.=) 'pg_catalog.pg_proc'::pg_catalog.regclass
+                   AND COALESCE(d.objid OPERATOR(pg_catalog.=) (
                      SELECT oid FROM pg_catalog.pg_proc
-                     WHERE oid = pg_catalog.to_regprocedure('quaack.clock_anchor()')
-                       AND prorettype = 'pg_catalog.timestamptz'::pg_catalog.regtype))
+                     WHERE oid OPERATOR(pg_catalog.=) pg_catalog.to_regprocedure('quaack.clock_anchor()')
+                       AND prorettype OPERATOR(pg_catalog.=) 'pg_catalog.timestamptz'::pg_catalog.regtype), false))
       SQL
 
       module_function

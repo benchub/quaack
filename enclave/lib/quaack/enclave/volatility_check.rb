@@ -93,15 +93,16 @@ module Quaack
         SELECT pg_catalog.quote_ident(n.nspname), pg_catalog.quote_ident(p.proname),
                pg_catalog.quote_ident(vn.nspname), pg_catalog.quote_ident(v.proname)
         FROM pg_catalog.pg_proc p
-        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-        LEFT JOIN pg_catalog.pg_aggregate a ON a.aggfnoid = p.oid
-        JOIN pg_catalog.pg_proc v ON v.oid IN (p.oid, a.aggtransfn, a.aggfinalfn, a.aggcombinefn, a.aggserialfn,
-                                               a.aggdeserialfn, a.aggmtransfn, a.aggminvtransfn, a.aggmfinalfn)
-        JOIN pg_catalog.pg_namespace vn ON vn.oid = v.pronamespace
-        WHERE n.nspname = ANY ($1::text[]) AND p.proname = $2 AND v.provolatile = 'v'
-          AND $3::int >= p.pronargs - p.pronargdefaults
-          AND ($3::int <= p.pronargs OR p.provariadic <> 0)
-        ORDER BY pg_catalog.array_position($1::text[], n.nspname::text), p.oid, v.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) p.pronamespace
+        LEFT JOIN pg_catalog.pg_aggregate a ON a.aggfnoid OPERATOR(pg_catalog.=) p.oid
+        JOIN pg_catalog.pg_proc v ON v.oid OPERATOR(pg_catalog.=) ANY (ARRAY[p.oid, a.aggtransfn, a.aggfinalfn,
+          a.aggcombinefn, a.aggserialfn, a.aggdeserialfn, a.aggmtransfn, a.aggminvtransfn, a.aggmfinalfn])
+        JOIN pg_catalog.pg_namespace vn ON vn.oid OPERATOR(pg_catalog.=) v.pronamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[]) AND p.proname OPERATOR(pg_catalog.=) $2
+          AND v.provolatile OPERATOR(pg_catalog.=) 'v'
+          AND $3::int OPERATOR(pg_catalog.>=) (p.pronargs OPERATOR(pg_catalog.-) p.pronargdefaults)
+          AND ($3::int OPERATOR(pg_catalog.<=) p.pronargs OR p.provariadic OPERATOR(pg_catalog.<>) 0)
+        ORDER BY pg_catalog.array_position($1::pg_catalog.text[], n.nspname::pg_catalog.text), p.oid, v.oid
         LIMIT 1
       SQL
 
@@ -111,10 +112,10 @@ module Quaack
       # in the path counts, since the parse doesn't say what t is.
       ATTRIBUTE_SQL = FUNCTION_SQL.sub("ORDER BY", <<~SQL.chomp)
         AND EXISTS (SELECT FROM pg_catalog.pg_type at
-                    WHERE at.oid = p.proargtypes[0]
-                      AND (at.typtype = 'c' OR at.oid IN ('record'::pg_catalog.regtype,
-                           'anyelement'::pg_catalog.regtype, 'anycompatible'::pg_catalog.regtype,
-                           '"any"'::pg_catalog.regtype)))
+                    WHERE at.oid OPERATOR(pg_catalog.=) p.proargtypes[0]
+                      AND (at.typtype OPERATOR(pg_catalog.=) 'c' OR at.oid OPERATOR(pg_catalog.=) ANY (ARRAY[
+                           'record'::pg_catalog.regtype, 'anyelement'::pg_catalog.regtype,
+                           'anycompatible'::pg_catalog.regtype, '"any"'::pg_catalog.regtype]::pg_catalog.oid[])))
         ORDER BY
       SQL
 
@@ -122,11 +123,12 @@ module Quaack
         SELECT pg_catalog.quote_ident(n.nspname), o.oprname, pg_catalog.quote_ident(fn.nspname),
                pg_catalog.quote_ident(f.proname)
         FROM pg_catalog.pg_operator o
-        JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace
-        JOIN pg_catalog.pg_proc f ON f.oid = o.oprcode
-        JOIN pg_catalog.pg_namespace fn ON fn.oid = f.pronamespace
-        WHERE n.nspname = ANY ($1::text[]) AND o.oprname = $2 AND o.oprkind = $3 AND f.provolatile = 'v'
-        ORDER BY pg_catalog.array_position($1::text[], n.nspname::text), o.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) o.oprnamespace
+        JOIN pg_catalog.pg_proc f ON f.oid OPERATOR(pg_catalog.=) o.oprcode
+        JOIN pg_catalog.pg_namespace fn ON fn.oid OPERATOR(pg_catalog.=) f.pronamespace
+        WHERE n.nspname OPERATOR(pg_catalog.=) ANY ($1::pg_catalog.text[]) AND o.oprname OPERATOR(pg_catalog.=) $2
+          AND o.oprkind OPERATOR(pg_catalog.=) $3 AND f.provolatile OPERATOR(pg_catalog.=) 'v'
+        ORDER BY pg_catalog.array_position($1::pg_catalog.text[], n.nspname::pg_catalog.text), o.oid
         LIMIT 1
       SQL
 

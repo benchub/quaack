@@ -79,7 +79,8 @@ module Quaack
       def params(connection, bound)
         bound.prepare(connection, STATEMENT)
         oids = PG::TextDecoder::Array.new.decode(connection.exec_params(
-          "SELECT parameter_types::oid[]::text[] FROM pg_prepared_statements WHERE name = $1", [STATEMENT]
+          "SELECT parameter_types::pg_catalog.oid[]::pg_catalog.text[] FROM pg_catalog.pg_prepared_statements " \
+          "WHERE name OPERATOR(pg_catalog.=) $1", [STATEMENT]
         ).getvalue(0, 0))
         bound.values.zip(oids).map { |value, oid| { value:, type: Integer(oid) } }
       ensure
@@ -94,7 +95,8 @@ module Quaack
       end
 
       def prepared?(connection)
-        connection.exec_params("SELECT 1 FROM pg_prepared_statements WHERE name = $1", [STATEMENT]).ntuples.positive?
+        connection.exec_params("SELECT 1 FROM pg_catalog.pg_prepared_statements WHERE name OPERATOR(pg_catalog.=) $1",
+                               [STATEMENT]).ntuples.positive?
       end
 
       # The measurement for three parsed EXPLAIN JSON outputs.

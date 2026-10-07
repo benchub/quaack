@@ -569,6 +569,18 @@ RSpec.describe Quaack::Enclave::RunServerCheck do
       expect(error.clients).to eq([{ "pid" => other.backend_pid, "backend_start" => started }])
     end
 
+    # Task 20260930-14: public's = and <> say no to everything, so an
+    # unqualified backend_type = 'client backend' or pid <> ALL(...) would
+    # count no clients.
+    it "still sees another client that public's comparison operators would hide" do
+      record_inventory
+      shadow(:operators)
+      other = connect
+
+      error = failure
+      expect([error&.rule, error&.clients&.map { it["pid"] }]).to eq(["run_server_other_clients", [other.backend_pid]])
+    end
+
     it "passes a run server that matches production's inventory, whatever public shadows" do
       record_inventory
       shadow

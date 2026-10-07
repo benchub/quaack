@@ -2,6 +2,7 @@
 
 require_relative "support/index_search_run"
 require "quaack/enclave/measurement"
+require_relative "support/catalog_shadow"
 
 # DESIGN.md's baseline and run-discipline: `quaacks baseline` hides every built index and runs the
 # original three times per literal set under RunDiscipline, recording total
@@ -70,6 +71,23 @@ RSpec.describe "quaacks baseline, against a real server" do
     expect(measured["slow"]["total_blocks"]).to be < stored.read("baseline")["sets"]["slow"]["total_blocks"]
     top = measured["slow"]["plan"][0]["Plan"]
     expect(top["Shared Hit Blocks"] + top["Shared Read Blocks"]).to eq(measured["slow"]["total_blocks"])
+  ensure
+    conn&.close
+  end
+
+  # Task 20260930-14: the connection's search_path puts public ahead of
+  # pg_catalog, and public's comparisons say no (see CatalogShadow).
+  # pg_prepared_statements is still read for the parameters' types, and
+  # the statement is still deallocated.
+  it "binds each value with its type when public's comparison operators shadow pg_catalog's" do
+    conn = production.connect
+    CatalogShadow.plant(conn, :operators)
+    conn.exec("SET search_path = public, pg_catalog")
+    map = { "$1" => { "value" => "5", "type" => "unknown" }, "$2" => { "value" => "x", "type" => "unknown" } }
+    bound = Quaack::Enclave::Redaction.binding("SELECT $1::int, $2::text", map)
+
+    expect(Quaack::Enclave::Measurement.params(conn, bound)).to eq([{ value: "5", type: 23 }, { value: "x", type: 25 }])
+    expect(conn.exec("SELECT pg_catalog.count(*) FROM pg_catalog.pg_prepared_statements").getvalue(0, 0)).to eq("0")
   ensure
     conn&.close
   end

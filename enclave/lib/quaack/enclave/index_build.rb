@@ -5,6 +5,7 @@ require "json"
 require "pg_query"
 require_relative "build_connection"
 require_relative "build_order"
+require_relative "index_build_sql"
 require_relative "index_store"
 
 module Quaack
@@ -106,14 +107,9 @@ module Quaack
         size(connection, oid(connection, schema, name))
       end
 
-      def size(connection, oid) = connection.exec_params("SELECT pg_relation_size($1::oid)", [oid]).getvalue(0, 0).to_i
+      def size(connection, oid) = connection.exec_params(SIZE_SQL, [oid]).getvalue(0, 0).to_i
 
-      def oid(connection, schema, name)
-        connection.exec_params(<<~SQL, [schema, name]).values.dig(0, 0)
-          SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'i'
-        SQL
-      end
+      def oid(connection, schema, name) = connection.exec_params(OID_SQL, [schema, name]).values.dig(0, 0)
 
       # Each of build's index names, mapped to its table's schema.
       def schemas(build) = build["indexes"].transform_values { index_stmt(it["ddl"]).relation.schemaname }
@@ -124,13 +120,7 @@ module Quaack
       def set_valid(connection, names, valid, schemas:)
         pairs = names.map { [schemas.is_a?(Hash) ? schemas.fetch(it) : schemas, it] }
         enc = PG::TextEncoder::Array.new
-        connection.exec_params(<<~SQL, [valid, enc.encode(pairs.map(&:first)), enc.encode(pairs.map(&:last))])
-          UPDATE pg_index i SET indisvalid = $1 FROM pg_class c, pg_namespace n
-          WHERE c.oid = i.indexrelid AND n.oid = c.relnamespace
-            AND (n.nspname, c.relname) IN (SELECT * FROM unnest($2::text[], $3::text[]))
-            AND c.relname LIKE 'quaack\\_%'
-            AND NOT i.indisunique AND NOT i.indisprimary AND NOT i.indisexclusion
-        SQL
+        connection.exec_params(SET_VALID_SQL, [valid, enc.encode(pairs.map(&:first)), enc.encode(pairs.map(&:last))])
       end
 
       def hide(connection, names, schemas:) = set_valid(connection, names, false, schemas:)
@@ -161,12 +151,8 @@ module Quaack
       def valid_names(connection, build)
         pairs = schemas(build).to_a
         enc = PG::TextEncoder::Array.new
-        connection.exec_params(<<~SQL, [enc.encode(pairs.map(&:last)), enc.encode(pairs.map(&:first))]).column_values(0)
-          SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE (n.nspname, c.relname) IN (SELECT * FROM unnest($1::text[], $2::text[])) AND i.indisvalid
-          ORDER BY c.relname
-        SQL
+        connection.exec_params(VALID_NAMES_SQL, [enc.encode(pairs.map(&:last)), enc.encode(pairs.map(&:first))])
+                  .column_values(0)
       end
 
       def index_names(node)
