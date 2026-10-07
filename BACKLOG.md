@@ -562,6 +562,7 @@ These are minor findings from the build and round-one review of 20260928-4:
 - **Depends on:** 20260928-4.
 - **Came from:** The build report and both reviews of 20260928-4.
 - **Design:** Where QUAACK runs.
+- **Decided by the user (2026-10-07):** Ignore `OPENAI_BASE_URL`. Only driver.json decides where asks go.
 - **Status:** todo
 
 ### 20260929-3. `quaack deploy`: show progress, and diagnose PATH. Done, see BACKLOG-COMPLETE.md.
@@ -761,6 +762,7 @@ The 20260930-9 builder listed catalog relations and functions the enclave still 
 - **Depends on:** 20260930-9.
 - **Came from:** The build of 20260930-9.
 - **Design:** What goes into the enclave.
+- **Decided by the user (2026-10-07):** Qualify every catalog relation, function, operator, and cast the enclave reads, arena reads included. Add a spec that flags unqualified catalog names in enclave SQL, so new code can't slip back.
 - **Status:** todo
 
 ### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
@@ -1413,6 +1415,7 @@ Ideas to settle before building:
 - **Depends on:** 20260928-4.
 - **Came from:** The user, 2026-09-29.
 - **Design:** Where QUAACK runs, llm-index-ideas, llm-rewrites, llm-counterexamples, burndown.
+- **Decided by the user (2026-10-07):** Make routing configurable among all the ideas above: failover, round-robin per ask, fan-out (opt-in per step), and pinning steps to providers. A provider type may appear more than once. For example, two `copilot_cli` entries with different models count as two providers. Make adversarial pairing configurable too, with the complementary model as an option: llm-counterexamples uses a different provider from the one that wrote the rewrite. That means tracking which provider and model produced each idea, rewrite, and counterexample, and the final report should show it.
 - **Status:** todo
 
 ### 20260929-20. `quaack deploy` removes old enclave versions. Done, see BACKLOG-COMPLETE.md.
