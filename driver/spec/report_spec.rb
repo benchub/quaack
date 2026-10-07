@@ -631,7 +631,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "puts an index's method inside its SQL when it isn't a btree, and keeps its predicate" do
       payload["indexes"]["quaack_a"]["ddl"] = "CREATE INDEX ON public.t USING brin (created_at) WHERE a < ?"
-      expect(ranking).to include("Your query with a new index on #{sq("public.t USING brin (created_at) WHERE a &lt; ?")}")
+      expect(ranking)
+        .to include("Your query with a new index on #{sq("public.t USING brin (created_at) WHERE a &lt; ?")}")
       expect(ranking).not_to include("(brin)")
     end
 
