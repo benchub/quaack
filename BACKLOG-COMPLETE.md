@@ -6060,3 +6060,25 @@ From the review of 20261001-28. `rewrite_payload.rb` (~46) leaves a rule rewrite
 - **Design:** llm-rewrites, rewrite-rules.
 - **Status:** done
 - **Landed:** `enclave/spec/rule_constants_postgres_spec.rb` runs every rule in RULES on its `docs/transforms` page's schema and Before query, filling placeholders from a LITERALS table, then redacting. It asserts that the rule fires and that every rewrite it takes part in holds only the redacted query's constants plus `RULE_CONSTANTS`, collected with `RewritePayload.constants`. A separate example fails when a rule in RULES has no page, schema, Before block, or LITERALS entry. No rule writes a disallowed constant today. The change is tests only, with no version bump. The review noted two harmless nits and filed no task for them: a stale LITERALS entry for a removed rule wouldn't be flagged, and one check is repeated.
+
+### 20261006-16. Timeout docs: two gaps from 20261006-8.
+
+From the review of 20261006-8. DESIGN.md (~277) still says only "`quaack start` and `quaack run` refuse" a bad driver.json. `quaack setup` refuses one too now, even for a bad `jump_command` it never uses. README.md (~189) gives only `5400` as a flag example. DESIGN.md also shows `90.5`, which the code accepts.
+
+- **Depends on:** 20261006-8.
+- **Came from:** The review of 20261006-8.
+- **Design:** config.
+- **Status:** done
+- **Landed:** DESIGN.md now says `quaack start`, `quaack setup`, and `quaack run` all refuse a bad driver.json, and that setup checks the whole file, `jump_command` included. README.md gives `5400` or `90.5` as the flag examples. Docs only, landed with 20261006-26.
+
+### 20261006-26. Rule pages: style nits from 20261004-14.
+
+From the review of 20261004-14.
+1. The "Before" query in `docs/transforms/not_in_to_not_exists.md` reads `NOT users.id IN (...)`, the deparser's form, not `users.id NOT IN (...)` as Rails writes it. Show the Rails form, or say the query is shown as QUAACK deparses it.
+2. DESIGN.md's rule index (~813-824) writes SQL keywords bare in the descriptions but in backticks in the Needs column. Pick one style.
+
+- **Depends on:** 20261004-14.
+- **Came from:** The review of 20261004-14.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** The Before block in `docs/transforms/not_in_to_not_exists.md` is unchanged. A new note says queries are shown as QUAACK deparses them, so Rails' `users.id NOT IN (...)` reads `NOT users.id IN (...)`. The "What it does" column in DESIGN.md's rule index now puts SQL keywords in backticks, like the Needs column. Docs only, landed with 20261006-16.

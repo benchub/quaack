@@ -2327,14 +2327,7 @@ From the builder and review of 20261001-7.
 
 ### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-16. Timeout docs: two gaps from 20261006-8.
-
-From the review of 20261006-8. DESIGN.md (~277) still says only "`quaack start` and `quaack run` refuse" a bad driver.json. `quaack setup` refuses one too now, even for a bad `jump_command` it never uses. README.md (~189) gives only `5400` as a flag example. DESIGN.md also shows `90.5`, which the code accepts.
-
-- **Depends on:** 20261006-8.
-- **Came from:** The review of 20261006-8.
-- **Design:** config.
-- **Status:** todo
+### 20261006-16. Timeout docs: two gaps from 20261006-8. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-17. Clock binding: overloaded user functions. Done, see BACKLOG-COMPLETE.md.
 
@@ -2413,16 +2406,7 @@ From the review of 20261006-15. Changing `cancelled |= pids` to `+=` in `enclave
 - **Design:** index-build.
 - **Status:** todo
 
-### 20261006-26. Rule pages: style nits from 20261004-14.
-
-From the review of 20261004-14.
-1. The "Before" query in `docs/transforms/not_in_to_not_exists.md` reads `NOT users.id IN (...)`, the deparser's form, not `users.id NOT IN (...)` as Rails writes it. Show the Rails form, or say the query is shown as QUAACK deparses it.
-2. DESIGN.md's rule index (~813-824) writes SQL keywords bare in the descriptions but in backticks in the Needs column. Pick one style.
-
-- **Depends on:** 20261004-14.
-- **Came from:** The review of 20261004-14.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261006-26. Rule pages: style nits from 20261004-14. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-27. Clock overloads: minors from 20261006-17.
 
