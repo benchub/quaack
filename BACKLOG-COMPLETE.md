@@ -6169,3 +6169,16 @@ From the review of 20261004-12. Dropping `.uniq` in `enclave/lib/quaack/enclave/
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** A new test sets a DDL in several combinations, and also sets it aside twice. It asserts the DDL is built and counted once, in progress, `index_build`, and burndown. Dropping `.uniq` turns it red. Landed with 20261007-1. Test only.
+
+### 20261006-20. Picker CHECK values: minor findings from 20261004-4.
+
+From the review of 20261004-4 (`enclave/lib/quaack/enclave/scenarios/picker.rb`, `enclave/spec/scenarios_postgres_spec.rb`).
+1. The `LIKE 'x%'` test's title and comment (spec ~225-228) say the hit groups are left out. The code actually keeps a hit row with `role_state = 'active'`, which fails the atom but passes the CHECK. Fix the wording.
+2. No test separates the CHECK-passing fallback from `:skip` (picker.rb ~48). If the fallback always returned `:skip`, every test would still pass, though S3 and S6 would lose their rows. Add an assertion on those rows.
+3. The non-near `:skip` branch (picker.rb ~48) is effectively dead and has no test. With CHECK values appended, it's reached only when a column's CHECKs reject each other's values, and `Checks#satisfying` already refuses that. The near-miss `return :skip if near` (~46) has no test that tells it from a fallback either. Pin both, or simplify.
+
+- **Depends on:** 20261004-4.
+- **Came from:** The review of 20261004-4.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** In `enclave/spec/scenarios_postgres_spec.rb`, the `LIKE 'x%'` test's title and comment now say what happens: the hit keeps `'active'`, which passes the CHECK but fails the atom. A new test checks S3's and S6's rows, so a fallback that returns `:skip` goes red. Another new test pins the near-miss `return :skip if near` with a join, where no near miss can fail the atom. The non-near `|| :skip` (picker.rb ~48) isn't dead, as this entry said. It guards contradictory CHECKs on one column, and join keys with disjoint CHECKs. Without it, a NOT NULL column gets a NULL. It's left as is, and filed as 20261007-5. Test only.

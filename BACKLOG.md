@@ -2326,17 +2326,7 @@ From the review of 20261004-86.
 - **Design:** report, measure.
 - **Status:** todo
 
-### 20261006-20. Picker CHECK values: minor findings from 20261004-4.
-
-From the review of 20261004-4 (`enclave/lib/quaack/enclave/scenarios/picker.rb`, `enclave/spec/scenarios_postgres_spec.rb`).
-1. The `LIKE 'x%'` test's title and comment (spec ~225-228) say the hit groups are left out. The code actually keeps a hit row with `role_state = 'active'`, which fails the atom but passes the CHECK. Fix the wording.
-2. No test separates the CHECK-passing fallback from `:skip` (picker.rb ~48). If the fallback always returned `:skip`, every test would still pass, though S3 and S6 would lose their rows. Add an assertion on those rows.
-3. The non-near `:skip` branch (picker.rb ~48) is effectively dead and has no test. With CHECK values appended, it's reached only when a column's CHECKs reject each other's values, and `Checks#satisfying` already refuses that. The near-miss `return :skip if near` (~46) has no test that tells it from a fallback either. Pin both, or simplify.
-
-- **Depends on:** 20261004-4.
-- **Came from:** The review of 20261004-4.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261006-20. Picker CHECK values: minor findings from 20261004-4. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-21. index-build: test that a DDL in several combinations is built once. Done, see BACKLOG-COMPLETE.md.
 
@@ -2412,4 +2402,13 @@ From the review of 20261007-1. In `enclave/spec/index_build_step_postgres_spec.r
 - **Depends on:** 20261007-1.
 - **Came from:** The review of 20261007-1.
 - **Design:** index-build.
+- **Status:** todo
+
+### 20261007-5. Picker: pin or refuse the non-near `:skip` guard.
+
+From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb` (~48) returns `:skip` when no candidate passes every CHECK. That happens with contradictory CHECKs on one column (`CHECK (n > 10) CHECK (n < 5)`, `WHERE n = 1`), or with join keys whose CHECKs don't overlap. Without the guard, the scenarios get NULL in those columns, which breaks NOT NULL. Neither setup is realistic. Pin the guard with one of those fixtures, or refuse such queries cleanly and list them in DESIGN.md as unsupported in v1. Don't delete it.
+
+- **Depends on:** 20261006-20.
+- **Came from:** The builder of 20261006-20.
+- **Design:** rewrite-test.
 - **Status:** todo
