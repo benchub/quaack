@@ -2332,16 +2332,7 @@ From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb
 
 ### 20261007-7. Deploy cleanup: comment and brittle specs from 20261007-2. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-8. Progress-block rescue: minors from 20261001-13.
-
-From the review of 20261001-13.
-1. In `driver/lib/quaack/driver/transport/base.rb` (~89-98), `Reply.progress(line)` now runs inside the rescue. A parse error of the driver's own would read as "progress output failed" and switch progress off. The whole-run parse still catches real problems. Move `Reply.progress` out of the rescue.
-2. In `driver/lib/quaack/driver/pipeline.rb` (~363-366), `build_index` sets `total` before its `note` call. If the block raised first, `total` would stay 0 and `build_indexes` would skip the remaining indexes. That can't happen today, but it's fragile. Pin the order with a test, or don't let `total` depend on the block finishing.
-
-- **Depends on:** 20261001-13.
-- **Came from:** The review of 20261001-13.
-- **Design:** Transport, progress lines.
-- **Status:** todo
+### 20261007-8. Progress-block rescue: minors from 20261001-13. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-9. Qualify catalog names in the enclave's arena reads (stage 2 of 20260930-14).
 
