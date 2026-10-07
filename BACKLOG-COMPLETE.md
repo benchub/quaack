@@ -6139,3 +6139,33 @@ From the builder of 20261006-3.
 - `n_distinct` or `dependencies` not in Postgres's text format
 
 Tests plant operators, `array_to_json`, and a `public.text` type, and include an inheritance parent. DESIGN.md documents dedupe's fail-closed drop of partial indexes on withheld types, and a test pins it. All three gems went to 0.1.20, with the `rake full` stamp. It passed its second review after one fix round.
+
+### 20261007-1. The orphan-cancel deadline test flakes under load.
+
+`enclave/spec/index_build_step_postgres_spec.rb` ~496 is the deadline test from 20261006-15. It runs a backend that ignores `pg_cancel_backend`, with `wait: 1`, and expects `index_build_orphan_running`. During 20261006-7's first `rake full`, with every suite running in parallel, the error wasn't raised. The test passed alone and on the rerun. A flaky test in the per-commit check costs a rerun every time it trips. Find the race, maybe the orphan not yet active, or the stubborn function not yet looping when the wait starts. Make the setup wait for a state it can observe instead of relying on timing.
+
+- **Depends on:** 20261006-15.
+- **Came from:** The builder of 20261006-7, 2026-10-07.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** The deadline test now waits until the stubborn backend shows `state = 'active'` and `wait_event = 'PgSleep'`, and the function keeps its whole sleep loop inside the block that catches the cancel. That closes the statement-boundary gap where a cancel could stop it under load. The fix rests on reasoning: the old flake never reproduced. Five review runs and ten builder runs under load passed. Landed with 20261006-25 and 20261006-21. Test only.
+
+### 20261006-25. Orphan cancel: two test nits from 20261006-15.
+
+From the review of 20261006-15. Changing `cancelled |= pids` to `+=` in `enclave/lib/quaack/enclave/build_connection.rb` (~51) leaves the "once each" test green (`enclave/spec/index_build_step_postgres_spec.rb` ~416), because the orphan stops after the first cancel. Only tests read the return value. Separately, the permission test (~441) leaves the orphan blocked until `after` closes the locker, after which it may finish building. Terminate it in the test.
+
+- **Depends on:** 20261006-15.
+- **Came from:** The review of 20261006-15.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** The "once each" test now uses a backend that survives three cancels, so `|=` changed to `+=` turns it red. The permission test terminates its orphan. Landed with 20261007-1. Test only.
+
+### 20261006-21. index-build: test that a DDL in several combinations is built once.
+
+From the review of 20261004-12. Dropping `.uniq` in `enclave/lib/quaack/enclave/build_order.rb` (~16) leaves `index_build_step_postgres_spec.rb` green. No fixture there has a DDL in more than one combination, so nothing catches an index built or counted twice. Add a fixture where a DDL is in both `top` and `combination`, or in two searches. Assert that the total and the built list have no duplicates.
+
+- **Depends on:** 20261004-12.
+- **Came from:** The review of 20261004-12.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** A new test sets a DDL in several combinations, and also sets it aside twice. It asserts the DDL is built and counted once, in progress, `index_build`, and burndown. Dropping `.uniq` turns it red. Landed with 20261007-1. Test only.
