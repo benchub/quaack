@@ -2350,14 +2350,7 @@ From the builder and review of 20261001-7.
 
 ### 20261006-12. Parallel suites: minor findings from 20261006-11. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs.
-
-From the review of 20261004-1. candidate-runs sends `measured` as the kept runs only (`enclave/lib/quaack/enclave/steps/candidate_runs.rb` ~37), but its summary reads it as the total (`driver/lib/quaack/driver/counted_summary.rb` ~84-86). When every run times out, the line says "No rewrites to measure", and "Measured 5 rewrite runs, 2 timed out" really means 2 out of 7. baseline and index-baseline do count timed-out runs in their totals. Send kept plus timed out as `measured`, or change the wording. Also, no realistic index-rank run gives a non-zero `combined`, so only a direct unit test covers it.
-
-- **Depends on:** 20261004-1.
-- **Came from:** The builder and review of 20261004-1.
-- **Design:** Progress lines for `quaack run`.
-- **Status:** todo
+### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-14. `rule_rewrites` guard: drops a future rule's rewrites without a word.
 
@@ -2454,4 +2447,13 @@ From the review of 20261006-12.
 - **Depends on:** 20261006-12.
 - **Came from:** The review of 20261006-12.
 - **Design:** None (test infrastructure).
+- **Status:** todo
+
+### 20261006-24. index-rank: cover a non-zero `combined` count with a real run.
+
+Set aside from 20261006-13. No realistic index-rank run in the specs gives a non-zero `combined` (the number of indexes in the best combination), so only a direct unit test of the count function covers it. Add a Postgres fixture where a combination of two indexes beats the best single index, and assert the step_counts line's `combined`.
+
+- **Depends on:** 20261006-13.
+- **Came from:** The builder and review of 20261004-1, then 20261006-13.
+- **Design:** index-rank, progress lines for `quaack run`.
 - **Status:** todo

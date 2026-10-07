@@ -5980,3 +5980,13 @@ From the review of 20261001-27.
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** Tests now pin a three-item comma join past an unrelated equality, a joining and a joined table that are inheritance children (refusal kept), and a self-referencing foreign key. The "read nowhere else" count is now per scope (`unused_join_removal/reads.rb`): only references inside the joining SELECT count, and a `name.column` or `name.*` in a nested SELECT whose own FROM binds the name first is that SELECT's. So the same join in each UNION ALL branch is removed in each, and Rails' `IN (SELECT users.id FROM users ...)` next to `JOIN users` fires. Bare columns of the table's columns still block at any depth inside the SELECT. Gems bumped to 0.1.15.
+
+### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs.
+
+From the review of 20261004-1. candidate-runs sends `measured` as the kept runs only (`enclave/lib/quaack/enclave/steps/candidate_runs.rb` ~37), but its summary reads it as the total (`driver/lib/quaack/driver/counted_summary.rb` ~84-86). When every run times out, the line says "No rewrites to measure", and "Measured 5 rewrite runs, 2 timed out" really means 2 out of 7. baseline and index-baseline do count timed-out runs in their totals. Send kept plus timed out as `measured`, or change the wording. Also, no realistic index-rank run gives a non-zero `combined`, so only a direct unit test covers it.
+
+- **Depends on:** 20261004-1.
+- **Came from:** The builder and review of 20261004-1.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** candidate-runs now sends `measured` as kept runs plus timed-out runs, the total, as baseline and index-baseline do. So "Measured N rewrite runs, M timed out" reads M of N. "No rewrites to measure" shows only when there were no runs. The driver needed no change. The side note (only a direct unit test covers index-rank's non-zero `combined`) was set aside and filed as 20261006-24. All three gems went to 0.1.16, with the `rake full` stamp.
