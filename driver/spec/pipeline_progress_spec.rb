@@ -511,6 +511,15 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 ["Picked 2 top choices, 4 left out"]])
     end
 
+    it "counts candidate-runs' timed-out runs as measured, even when every run timed out" do
+      entries["candidate_runs"] = false
+      replies["candidate-runs"] = counts(measured: 3, timed_out: 3)
+
+      run
+
+      expect(closing("candidate-runs")).to eq(["Measured 3 rewrite runs, 3 timed out"])
+    end
+
     it "says when the measuring steps had nothing to measure or pick" do
       entries.merge!(%w[candidate_runs minimax result_comparison selection].to_h { [it, false] })
       replies.merge!("candidate-runs" => counts(measured: 0, timed_out: 0),

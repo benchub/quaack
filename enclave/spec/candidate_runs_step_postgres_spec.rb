@@ -88,7 +88,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
 
     outcome = run("candidate-runs")
 
-    expect(outcome.stdout).to eq(counts_then_done(measured: 1, timed_out: 1))
+    expect(outcome.stdout).to eq(counts_then_done(measured: 2, timed_out: 1))
     entry = stored.read("candidate_runs")
     expect(entry["candidates"].keys).to eq(["rewrite_2"])
     expect(entry["candidates"]["rewrite_2"].keys).to eq(["none"])
