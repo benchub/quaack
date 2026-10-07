@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "quiet_stream"
+
 module Quaack
   module Driver
     # `quaack setup --run <ID>`, with the run-server flags in any order
@@ -22,12 +24,16 @@ module Quaack
         pairs.to_h if pairs.map(&:first).uniq.size == pairs.size && pairs.all? { allowed.include?(it.first) }
       end
 
-      # transport builds the transport to a jump host, as for CLI.
+      # transport builds the transport to a jump host, as for CLI. Its
+      # output on stdout and stderr is only for show, as run's is: once a
+      # write to either fails, such as to a closed pipe, the rest there are
+      # skipped, its failure message included, and setup goes on to its own
+      # exit status (QuietStream).
       def initialize(home, transport, stdout, stderr)
         @home = home
         @transport = transport
-        @stdout = stdout
-        @stderr = stderr
+        @stdout = QuietStream.wrap(stdout)
+        @stderr = QuietStream.wrap(stderr)
       end
 
       # The exit status, or nil if argv isn't well formed.
