@@ -166,8 +166,9 @@ module Quaack
       end
 
       # Prints the line for a step as it starts. Each step starts a child
-      # process, and Ruby flushes stdout before it spawns one, so the line
-      # shows while the step runs.
+      # process, and the CLI's stdout writes through at once (QuietStream),
+      # as Ruby's own stdout flushes before it spawns one, so the line shows
+      # while the step runs.
       def say(line) = @stdout&.print("quaack deploy: #{line}\n")
 
       def tail(out) = out.to_s.lines.last(TAIL).join

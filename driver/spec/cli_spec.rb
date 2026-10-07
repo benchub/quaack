@@ -321,6 +321,61 @@ RSpec.describe "quaack executable" do
     end
   end
 
+  # Task 20261007-10: every command's output is only for show, as run's and
+  # setup's are, so with stdout and stderr one pipe whose reader has closed
+  # (`quaack … 2>&1 | head`), each still exits with its own status. stderr
+  # writes through at once, so its messages meet the closed pipe in the
+  # process itself.
+  describe "when its output's reader has closed" do
+    let(:dir) { Dir.mktmpdir("quaack-cli-closed") }
+
+    after { FileUtils.rm_rf(dir) }
+
+    # The executable's exit status with env and argv, its stdout and stderr
+    # one pipe whose reader has closed, or the exception it died of. An
+    # uncaught Errno::EPIPE exits 1 too, so a status of 1 alone wouldn't
+    # show that the command finished.
+    def closed_status(env, *argv)
+      reader, writer = IO.pipe
+      reader.close
+      ended = File.join(dir, "ended")
+      record = "at_exit { File.write(#{ended.dump}, $!.class.name) }; load ARGV.shift"
+      pid = Process.spawn(env, RbConfig.ruby, "-e", record, exe, *argv, out: writer, err: writer)
+      writer.close
+      status = Process.wait2(pid).last.exitstatus
+      (ended = File.read(ended)) == "SystemExit" ? status : ended
+    end
+
+    # A driver config whose jump_command fails, so start fails before ssh.
+    def failing_jump
+      FileUtils.mkdir_p(File.join(dir, ".quaack"))
+      File.write(File.join(dir, ".quaack", "driver.json"), '{"jump_command": "exit 1"}')
+      { "HOME" => dir }
+    end
+
+    it "exits 1 when start fails" do
+      expect(closed_status(failing_jump, "start", "--server", "p", "--query", "/q", "--plan", "/p")).to eq(1)
+    end
+
+    it "exits with the usage status when start refuses an option" do
+      expect(closed_status({ "HOME" => dir }, "start", "--server", "p", "--query", "/q", "--plan", "/p",
+                           "--port", "x")).to eq(64)
+    end
+
+    it "exits 1 when deploy fails" do
+      File.write(File.join(dir, "ssh"), "#!/bin/sh\ncat >/dev/null\nexit 1\n")
+      FileUtils.chmod(0o755, File.join(dir, "ssh"))
+
+      expect(closed_status({ "PATH" => "#{dir}:#{ENV.fetch("PATH")}" }, "deploy", "--host", "jump-1")).to eq(1)
+    end
+
+    it "exits with the usage status for a usage error" do
+      [%w[deploy], %w[start --server p], %w[bogus], ["run", "--run", "\xFF".b]].each do |argv|
+        expect(closed_status({ "HOME" => dir }, *argv)).to eq(64), argv.inspect
+      end
+    end
+  end
+
   # Task 20261004-38: every argument is checked for UTF-8 before any
   # subcommand looks at it, and the refusal names the flag, never the value.
   describe "arguments that aren't UTF-8" do
