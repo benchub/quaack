@@ -5909,3 +5909,19 @@ From 20261004-82's builder and review. Only the original plan carries per-node b
 - **Design:** report, measure, egress.
 - **Status:** done
 - **Landed:** Each measured set stores `"plan"`, the redacted plan of its most-blocks run, the same run whose totals `MeasuredLabels.summary` reports. `report-payload` sends each label's slow-set plan through the original plan's `nodes()` extraction. Egress and the driver's reply check require `labels` to be an Array of Hashes, with each `plan` nil or valid under `PlanNodes`. "Why the winner reads fewer blocks" shows the winner's measured plan with its blocks. Without one, it says in words why the column is empty. There's no store-format bump, since older stores just lack `"plan"`. All three gems went to 0.1.12, with the `rake full` stamp.
+
+### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
+
+When no value in the pool satisfies both the atom and the column's CHECKs, the Picker falls back to the first value in the pool, even if that value breaks a CHECK. On Canvas-like schemas:
+- `workflow_state <> 'deleted'` picks `'DELETED'`, which isn't in the CHECK's IN list.
+- `role_state LIKE 'c%'` picks `'c%'`.
+
+S1 then fails to load with `fixture_load_failed` (23514), so every candidate is disproved. This was there before 20261004-2. It will likely hit the next Canvas run.
+
+The fix: add the CHECK's own values that satisfy the atom to the Picker's candidates. Test on real Postgres with a CHECK IN list and both atoms above.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** The Picker (`enclave/lib/quaack/enclave/scenarios/picker.rb`) now tries each CHECK's own values on the slot's columns (`Checks#values`) after the pool values. When no candidate satisfies every atom, it falls back to the first candidate that passes every CHECK, so a fixture never breaks a CHECK and fails as `fixture_load_failed`. An atom left unhit is still marked untested by vacuity-guard. The new tests run on real Postgres with `workflow_state <> 'deleted'`, `role_state LIKE 'c%'`, and an unsatisfiable `LIKE 'x%'`. All three gems went to 0.1.13, with the `rake full` stamp.

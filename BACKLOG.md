@@ -1904,20 +1904,7 @@ The review of 20261003-38 found four minor issues:
 - **Design:** rewrite-test, ErrorFilter.
 - **Status:** todo
 
-### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK.
-
-When no value in the pool satisfies both the atom and the column's CHECKs, the Picker falls back to the first value in the pool, even if that value breaks a CHECK. On Canvas-like schemas:
-- `workflow_state <> 'deleted'` picks `'DELETED'`, which isn't in the CHECK's IN list.
-- `role_state LIKE 'c%'` picks `'c%'`.
-
-S1 then fails to load with `fixture_load_failed` (23514), so every candidate is disproved. This was there before 20261004-2. It will likely hit the next Canvas run.
-
-The fix: add the CHECK's own values that satisfy the atom to the Picker's candidates. Test on real Postgres with a CHECK IN list and both atoms above.
-
-- **Depends on:** 20261004-2.
-- **Came from:** The build of 20261004-2.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261004-4. The Picker breaks CHECK constraints when no value fits both the atom and the CHECK. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-5. Build the original query's scenarios once, not once per rewrite.
 
@@ -2466,4 +2453,16 @@ From the review of 20261004-86.
 - **Depends on:** 20261004-86.
 - **Came from:** The review of 20261004-86.
 - **Design:** report, measure.
+- **Status:** todo
+
+### 20261006-20. Picker CHECK values: minor findings from 20261004-4.
+
+From the review of 20261004-4 (`enclave/lib/quaack/enclave/scenarios/picker.rb`, `enclave/spec/scenarios_postgres_spec.rb`).
+1. The `LIKE 'x%'` test's title and comment (spec ~225-228) say the hit groups are left out. The code actually keeps a hit row with `role_state = 'active'`, which fails the atom but passes the CHECK. Fix the wording.
+2. No test separates the CHECK-passing fallback from `:skip` (picker.rb ~48). If the fallback always returned `:skip`, every test would still pass, though S3 and S6 would lose their rows. Add an assertion on those rows.
+3. The non-near `:skip` branch (picker.rb ~48) is effectively dead and has no test. With CHECK values appended, it's reached only when a column's CHECKs reject each other's values, and `Checks#satisfying` already refuses that. The near-miss `return :skip if near` (~46) has no test that tells it from a fallback either. Pin both, or simplify.
+
+- **Depends on:** 20261004-4.
+- **Came from:** The review of 20261004-4.
+- **Design:** rewrite-test.
 - **Status:** todo
