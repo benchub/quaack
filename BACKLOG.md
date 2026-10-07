@@ -2331,6 +2331,13 @@ From the second review of 20261006-7.
 
 20260930-14 qualifies the production and racetrack reads and adds a spec that allowlists the remaining files. This task qualifies every catalog relation, function, operator, and cast in the rest of the enclave's SQL: the arena, arena schema, scenarios, insert checks, rewrite-rules catalog, assumption checks, volatility checks, and so on. Shrink the spec's allowlist to empty. Forms that can't take an `OPERATOR(...)` prefix need restructuring: `IN (list)`, `IS [NOT] DISTINCT FROM`, `NULLIF`, `LIKE`, and simple `CASE`. Arena objects come from the production schema dump, so a planted operator can shadow there too.
 
+Also from the review of 20260930-14 stage 1:
+- Several files still on the list run on the racetrack, not just the arena. Each is a racetrack read, so qualify it first: `assumption_check*`, `rewrite_rules/catalog*`, `steps/rewrite_check.rb`, `server_clock.rb` (`NOW_SQL`, run on every measurement), `result_comparison/tiebreaker.rb`, `steps/index_search.rb` (~145), and `rewrite_candidate_check.rb`.
+- `single_candidate_test/hypopg.rb` (~508): no test covers `quote_ident` on HypoPG's schema. Add a schema that needs quoting, such as `"Hypo"`.
+- `user_schema.rb` `SHADOW_SQL`: no shadow test covers the `found.kind` and `found.name` comparisons. Only the static spec catches a bare `=` there.
+- In `enclave/spec/index_build_step_postgres_spec.rb` (~355) and `volatility_check_spec.rb` (~587), the new blocks went in under comments that belong to the next block. Move them.
+- The header comments in `insert_check.rb` (~29) and `rewrite_candidate_check.rb` (~31) say the connection is production. They actually get the arena and racetrack connections.
+
 - **Depends on:** 20260930-14.
 - **Came from:** The user's scoping of 20260930-14, 2026-10-07.
 - **Design:** trust boundary.
