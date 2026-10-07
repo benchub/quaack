@@ -5937,3 +5937,19 @@ Test that the build order is grouped by table, and that every index still gets b
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** `Enclave::BuildOrder.ddls` (`enclave/lib/quaack/enclave/build_order.rb`) takes index-build's distinct DDL and groups it by the parsed `[schemaname, relname]`. Tables appear in the order they first show up, and each table keeps its own order. The plain call and `--index N` both use it, so each table's indexes are built back to back. All three gems went to 0.1.14, with the `rake full` stamp.
+
+### 20260929-20. `quaack deploy` removes old enclave versions.
+
+Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next to the old ones in the jump server's user gem directory, so versions pile up. After a successful install and version check, have deploy remove every version of those two gems older than the last release. It keeps the version it just installed and the one before it, so the operator can still fall back one release.
+
+- Remove only QUAACK's own gems (`quaacks` and `quaack-protocol`), only from the user gem directory, and only with `gem uninstall --user-install -v <version>`. Never touch shared dependencies such as pg or pg_query, and never use sudo.
+- Do it only after the new version answers `quaacks --version` correctly. A failed deploy removes nothing.
+- Print a line for each version removed, like the other deploy progress lines.
+- Also clear the old gem files out of `~/.quaack/deploy`.
+- Open question: "the last release" here means the version installed before this deploy. If the operator skipped a release, is that still right, or should deploy keep the highest version older than the new one? Settle this before building.
+
+- **Depends on:** nothing open.
+- **Came from:** The user, 2026-09-29, after the bump to 0.1.1.
+- **Design:** Where QUAACK runs, "Deploying the enclave".
+- **Status:** done
+- **Landed:** After `quaacks version` answers correctly, `quaack deploy` (with `driver/lib/quaack/driver/deploy_cleanup.rb`) keeps the version it just installed and the highest installed version older than that, for `quaacks` and then `quaack-protocol`. It uninstalls every other older version with `gem uninstall --user-install -v`, printing a line for each. Newer versions are left alone, with a line saying so. It also deletes old gem files from `~/.quaack/deploy`. Versions are compared as `Gem::Version`. It only touches those two gem names, never uses sudo, and removes nothing when the deploy fails. The user was asleep, so the main session decided (2026-10-07) to keep the highest version older than the new one, not the version installed before this deploy. This is driver-only, with no version bump.

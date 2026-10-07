@@ -1415,20 +1415,7 @@ Ideas to settle before building:
 - **Design:** Where QUAACK runs, llm-index-ideas, llm-rewrites, llm-counterexamples, burndown.
 - **Status:** todo
 
-### 20260929-20. `quaack deploy` removes old enclave versions.
-
-Every `quaack deploy` installs the new `quaacks` and `quaack-protocol` gems next to the old ones in the jump server's user gem directory, so versions pile up. After a successful install and version check, have deploy remove every version of those two gems older than the last release. It keeps the version it just installed and the one before it, so the operator can still fall back one release.
-
-- Remove only QUAACK's own gems (`quaacks` and `quaack-protocol`), only from the user gem directory, and only with `gem uninstall --user-install -v <version>`. Never touch shared dependencies such as pg or pg_query, and never use sudo.
-- Do it only after the new version answers `quaacks --version` correctly. A failed deploy removes nothing.
-- Print a line for each version removed, like the other deploy progress lines.
-- Also clear the old gem files out of `~/.quaack/deploy`.
-- Open question: "the last release" here means the version installed before this deploy. If the operator skipped a release, is that still right, or should deploy keep the highest version older than the new one? Settle this before building.
-
-- **Depends on:** nothing open.
-- **Came from:** The user, 2026-09-29, after the bump to 0.1.1.
-- **Design:** Where QUAACK runs, "Deploying the enclave".
-- **Status:** todo
+### 20260929-20. `quaack deploy` removes old enclave versions. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-1. `quaack run` prints the LLM error's detail. Done, see BACKLOG-COMPLETE.md.
 
@@ -2465,4 +2452,16 @@ From the review of 20261004-12. Dropping `.uniq` in `enclave/lib/quaack/enclave/
 - **Depends on:** 20261004-12.
 - **Came from:** The review of 20261004-12.
 - **Design:** index-build.
+- **Status:** todo
+
+### 20261006-22. Deploy cleanup: minor findings from 20260929-20.
+
+From the review of 20260929-20.
+1. `gem uninstall --user-install` also uninstalls from GEM_HOME (`driver/lib/quaack/driver/deploy_cleanup.rb` ~72). If the same old version sits in a writable GEM_HOME, such as an rbenv or asdf Ruby, it could be removed there too. Deploy never installs there. Check whether pinning `--install-dir Gem.user_dir` instead is cleaner.
+2. If the listing or an uninstall fails after a good install and version check, deploy exits 1 even though the new version is live (`deploy.rb` ~116-124). Consider making cleanup failures a warning.
+3. The "leaving <newer>" path (~69) is hard to reach for real, since a newer `quaacks` would win the bin wrapper and fail the version check first. Its test reaches it only through a planted gem with no executable.
+
+- **Depends on:** 20260929-20.
+- **Came from:** The review of 20260929-20.
+- **Design:** Deploying the enclave.
 - **Status:** todo
