@@ -223,13 +223,39 @@ RSpec.describe Quaack::Enclave::Scenarios do
       every_scenario_loads(scenarios)
     end
 
-    # No value the CHECK allows starts with x, so no row can hit. The hit
-    # groups are left out, as a near miss with no value is, rather than
-    # given a value that breaks the CHECK.
-    it "leaves out a hit no CHECK value satisfies, and never breaks the CHECK" do
-      scenarios = build("SELECT id FROM fx.e WHERE role_state LIKE 'x%'")
+    # No value the CHECK allows starts with x, so no row can hit. Each hit
+    # row keeps the first value that passes the CHECK, 'active', though it
+    # fails the atom, rather than take one that breaks the CHECK.
+    it "keeps a hit no CHECK value satisfies, with a value that passes the CHECK but fails the atom" do
+      sql = "SELECT id FROM fx.e WHERE role_state LIKE 'x%'"
+      scenarios = build(sql)
       expect(column_values(scenarios, "role_state")).to all(satisfy { |v| %w[active completed invited].include?(v) })
+      expect(values(scenarios[:s1], "e", "role_state")).to eq(["active"])
+      expect(run(scenarios[:s1], sql)).to eq([])
       every_scenario_loads(scenarios)
+    end
+
+    # S1 can't tell the fallback from leaving the hit out: its near miss
+    # takes 'active' too, as a value that fails the atom, and is the same
+    # row. The hit's copy in S3, and the many group in S6, can.
+    it "keeps S3's copy and S6's groups when the hit takes the CHECK-passing fallback" do
+      scenarios = build("SELECT id FROM fx.e WHERE role_state LIKE 'x%'")
+      expect(values(scenarios[:s3], "e", "role_state")).to eq(%w[active active])
+      expect(values(scenarios[:s6], "e", "role_state")).to eq(%w[active active active])
+    end
+  end
+
+  # Every tier the CHECK allows passes tier <> 'bronze', so no near miss
+  # can fail it. The near miss is left out, rather than given a CHECK
+  # value that hits. Its own customer and order would make it a second
+  # row, not a copy of the hit's.
+  it "leaves out a near miss when every value the CHECK allows satisfies the atom" do
+    sql = "SELECT o.id FROM fx.orders o JOIN fx.customers c ON c.id = o.customer_id WHERE c.tier <> 'bronze'"
+    scenarios = build(sql)
+    expect(rows_of(scenarios[:s1], "customers").size).to eq(1)
+    expect(run(scenarios[:s1], sql).size).to eq(1)
+    scenarios.each_value do |rows|
+      expect(run(rows, "SELECT count(*) FROM fx.orders")).to eq([[rows_of(rows, "orders").size.to_s]])
     end
   end
 
