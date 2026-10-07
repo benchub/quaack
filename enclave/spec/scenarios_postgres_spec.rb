@@ -259,5 +259,14 @@ RSpec.describe Quaack::Enclave::Scenarios do
     end
   end
 
+  # No value passes both CHECKs, so the Picker's fallback finds none and
+  # skips the row, rather than leave n NULL and break NOT NULL.
+  it "skips a row when no value passes contradictory CHECKs, rather than leave a NOT NULL column NULL" do
+    conn.exec("CREATE TABLE fx.x (id integer PRIMARY KEY, n integer NOT NULL CHECK (n > 10) CHECK (n < 5))")
+    scenarios = build("SELECT id FROM fx.x WHERE n = 1")
+    expect(scenarios.values.flat_map { |rows| values(rows, "x", "n") }).not_to include(nil)
+    loads_every_scenario(scenarios, "fx.x")
+  end
+
   def tn(name) = Quaack::Enclave::TableName.new(schema: "fx", name:)
 end
