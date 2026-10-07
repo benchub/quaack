@@ -6299,3 +6299,16 @@ The third review of 20261002-12 found one surviving mutation. Returning before t
 - **Design:** LLM client.
 - **Status:** done
 - **Landed:** A new spec in `driver/spec/copilot_cli_adapter_spec.rb` pins the drain after the child exits. The fake `copilot` writes about 316KB, holds back its last 4KB until signalled, then writes it and exits. A spec thread holds the GVL, so the adapter wakes only after the exit status is ready. The spec asserts the whole reply parses in one call. With the drain moved after the status return, it went red 20 of 20 runs in the build and 5 of 5 in review. With the real code it passed 10 of 10. Spec only.
+
+### 20261004-68. Inline SQL: minors from 20261004-53.
+
+The review of 20261004-53 found:
+1. `Report.named` names rewrites from the raw run ID, but `View` uses the scrubbed one for `Words.rewrite` and `Words.search`. A run ID containing `\u0001` or `\u0002` would get mismatched rewrite names. Real run IDs are generated, so either use one source for both or refuse such a run ID.
+2. An index method other than btree, such as "(gin)", sits outside the SQL span. Decide whether it belongs inside.
+
+- **Depends on:** 20261004-53.
+- **Came from:** The review of 20261004-53, 2026-10-05.
+- **Design:** report.
+- **Decided by the user (2026-10-07):** Item 2: put the index method inside the SQL span, as `USING gin (...)`, so copy-paste gives working SQL.
+- **Status:** done
+- **Landed:** Item 1: `Report.render` strips SQL marks from the run ID once (`Format.unmarked`), and both the payload's rewrite names and the view use that one ID. A marked run ID used to give one rewrite two names. Item 2: for a non-btree index, the inline SQL span is now the candidate's own DDL after `CREATE INDEX ON`, such as `public.t USING brin (created_at) WHERE a < ?`, so the old ` (brin)` label outside the span is gone. Btree keeps `public.t (a, b)`, since the default method can be left out. Escaping is unchanged, and partial indexes keep their `WHERE`. Driver only.

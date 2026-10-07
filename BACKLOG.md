@@ -2065,17 +2065,7 @@ From the build and review of 20261004-51:
 
 ### 20261004-67. ServerClock: minors from 20261004-34. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-68. Inline SQL: minors from 20261004-53.
-
-The review of 20261004-53 found:
-1. `Report.named` names rewrites from the raw run ID, but `View` uses the scrubbed one for `Words.rewrite` and `Words.search`. A run ID containing `\u0001` or `\u0002` would get mismatched rewrite names. Real run IDs are generated, so either use one source for both or refuse such a run ID.
-2. An index method other than btree, such as "(gin)", sits outside the SQL span. Decide whether it belongs inside.
-
-- **Depends on:** 20261004-53.
-- **Came from:** The review of 20261004-53, 2026-10-05.
-- **Design:** report.
-- **Decided by the user (2026-10-07):** Item 2: put the index method inside the SQL span, as `USING gin (...)`, so copy-paste gives working SQL.
-- **Status:** todo
+### 20261004-68. Inline SQL: minors from 20261004-53. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-69. Rewrite burndown: minors from 20261001-19. Done, see BACKLOG-COMPLETE.md.
 
