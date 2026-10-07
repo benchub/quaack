@@ -481,7 +481,7 @@ RSpec.describe "quaacks index-build, against a real server" do
     end
 
     def activity(conn, pid)
-      conn.exec_params("SELECT state, query FROM pg_stat_activity WHERE pid = $1", [pid]).first
+      conn.exec_params("SELECT state, wait_event, query FROM pg_stat_activity WHERE pid = $1", [pid]).first
     end
 
     before do
@@ -489,37 +489,60 @@ RSpec.describe "quaacks index-build, against a real server" do
       seed(@admin)
     end
 
-    after { @admin&.close }
+    after do
+      @admin.exec_params("SELECT pg_terminate_backend($1)", [@stubborn.backend_pid]) if @stubborn
+      @stubborn&.close
+      @admin&.close
+    end
 
-    # An expression index whose function swallows every cancel, as a
-    # backend stuck where pg_cancel_backend doesn't take effect would.
-    it "refuses index_build_orphan_running once the wait is up, if the orphan won't stop" do
-      @admin.exec(<<~SQL)
+    # A function that swallows the first %<cancels>d cancels, then sleeps on,
+    # unguarded, so the next one stops it, as a backend stuck where
+    # pg_cancel_backend doesn't take effect would. Each statement start is
+    # a point where a cancel takes effect, so the whole wait sits inside the
+    # handler's block, not just each sleep. Only a cancel that lands while
+    # the handler runs, just after the one it caught, could slip through,
+    # and cancel_orphans spaces them 0.1 s apart (20261007-1).
+    let(:stubborn_function) do
+      <<~SQL
         CREATE FUNCTION public.stubborn(int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$
-        DECLARE stop timestamptz := clock_timestamp() + interval '60 s';
+        DECLARE caught int := 0;
         BEGIN
-          WHILE clock_timestamp() < stop LOOP
-            BEGIN PERFORM pg_sleep(0.05); EXCEPTION WHEN query_canceled THEN NULL; END;
+          WHILE caught < %<cancels>d LOOP
+            BEGIN
+              LOOP PERFORM pg_sleep(0.05); END LOOP;
+            EXCEPTION WHEN query_canceled THEN caught := caught + 1;
+            END;
           END LOOP;
+          PERFORM pg_sleep(60);
           RETURN $1;
         END $$
       SQL
+    end
+
+    # Starts building an index on stubborn, and returns the index's name
+    # and the backend's pid once the backend is sleeping in the function,
+    # not merely active: until then, a cancel stops the build outright.
+    def stubborn(cancels)
+      @admin.exec(format(stubborn_function, cancels:))
       name = Quaack::Enclave::IndexBuild.name("CREATE INDEX ON public.orders ((public.stubborn(id)))")
-      stubborn = production.connect
-      pid = stubborn.backend_pid
-      stubborn.send_query("CREATE INDEX #{name} ON public.orders ((public.stubborn(id)))")
-      running = wait_for(10) { activity(@admin, pid)&.fetch("state") == "active" }
+      @stubborn = production.connect
+      pid = @stubborn.backend_pid
+      @stubborn.send_query("CREATE INDEX #{name} ON public.orders ((public.stubborn(id)))")
+      sleeping = wait_for(10) { activity(@admin, pid)&.values_at("state", "wait_event") == %w[active PgSleep] }
+      expect(sleeping).to be(true)
+      [name, pid]
+    end
+
+    it "refuses index_build_orphan_running once the wait is up, if the orphan won't stop" do
+      name, pid = stubborn(1_000_000)
       conn = production.connect
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      expect(running).to be(true)
       expect { Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1) }
         .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_orphan_running")
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be_between(1, 5)
       expect(activity(@admin, pid)["state"]).to eq("active")
     ensure
-      @admin.exec_params("SELECT pg_terminate_backend($1)", [pid]) if pid
-      stubborn&.close
       conn&.close
     end
 
