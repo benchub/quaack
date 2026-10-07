@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "tmpdir"
+require "quaack/enclave/dedupe"
 require "quaack/enclave/pii_classification"
 require "quaack/enclave/planner_statistics"
 require "quaack/enclave/config"
@@ -127,6 +128,23 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       store.write("statistics", data)
 
       expect { described_class.run(store:, config:) }.to raise_error(KeyError, /sendable_columns/)
+      expect(store.entry?("classification")).to be(false)
+    end
+
+    # A frequency that isn't a number in 0..1, such as a value a function
+    # planted on the search_path wrote, fails classify, which stores
+    # nothing, rather than letting it out (see OutboundShape).
+    it "fails on a statistics entry with a value of the wrong shape in a statistics object's frequency" do
+      sentinel = LeakCheck::Sentinels.claim { "sentinel#{SecureRandom.hex(6)}" }
+      conn.exec("CREATE STATISTICS accounts_status_id (mcv) ON status, id FROM accounts; ANALYZE accounts")
+      Quaack::Enclave::PlannerStatistics.run(store:, relations: [accounts], connection: conn)
+      data = store.read("statistics")
+      data["tables"].first["extended_statistics"].first["most_common_freqs"][0] = sentinel
+      store.write("statistics", data)
+
+      expect { described_class.run(store:, config:) }.to raise_error(described_class::Error) { |error|
+        expect([error.rule, error.message.include?(sentinel)]).to eq(["statistics_bad_shape", false])
+      }
       expect(store.entry?("classification")).to be(false)
     end
   end
@@ -500,6 +518,23 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect(stored_gear["columns"]["p"]["most_common_vals"]).to be_nil
 
       expect_no_leaks(set, objects: { outbound: res.outbound_statistics })
+    end
+
+    # DESIGN.md's index-dedupe fails closed on them: since none is
+    # low-cardinality, however few values it holds, dedupe drops a partial
+    # candidate whose predicate compares one with a constant. A predicate
+    # with no constant, such as ip IS NULL, still passes, as on any column.
+    it "makes dedupe drop a partial candidate whose predicate compares one with a constant" do
+      res = gear_result
+      search = Quaack::Enclave::Dedupe.new(statistics: Quaack::Enclave::PlannerStatistics.load(store).statistics,
+                                           low_cardinality: res.low_cardinality)
+      partial = lambda do |predicate|
+        Quaack::Enclave::IndexCandidate.new(table: gear, key: ["kind"], predicate:, sources: [:llm])
+      end
+      on_ip, on_kind, ip_null = ["ip = '127.0.0.1'", "kind = 'odd'", "ip IS NULL"].map(&partial)
+
+      expect(search.filter([on_ip, on_kind, ip_null])).to eq([on_kind, ip_null])
+      expect(search.drops.map { [it.candidate, it.reason] }).to eq([[on_ip, :partial_not_low_cardinality]])
     end
   end
 

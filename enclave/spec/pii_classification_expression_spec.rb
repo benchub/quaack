@@ -18,7 +18,8 @@ RSpec.describe Quaack::Enclave::PiiClassification do
     table = { "schema" => "public", "name" => "t", "column_names" => %w[status kind email], "columns" => {},
               "indexes" => [{ "name" => "i", "definition" => definition, "columns" => { "lower" => mcv } }],
               "extended_statistics" => [{ "schema" => "public", "name" => "s", "definition" => definition,
-                                          "most_common_vals" => [%w[a b]], "most_common_freqs" => [0.5] }] }
+                                          "kinds" => ["m"], "most_common_vals" => [%w[a b]],
+                                          "most_common_freqs" => [0.5] }] }
     described_class.outbound({ "tables" => [table] }, columns)["tables"].first
   end
 

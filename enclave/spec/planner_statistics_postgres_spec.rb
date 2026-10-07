@@ -286,6 +286,90 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
     end
   end
 
+  # Every catalog read names pg_catalog's operator for each comparison, so
+  # operators planted ahead of pg_catalog's on the search_path can't change
+  # what it reads. These say no to everything: one oid against another (the
+  # joins, the inheritance check, and the table, index, and statistics-object
+  # lookups) and one name against another (the schema, table, and
+  # statistics-object names). They say no rather than yes, so a bare
+  # operator fails fast instead of crawling the whole catalog. An
+  # inheritance parent must still be refused.
+  describe "the catalog reads" do
+    let(:other_store) { Quaack::Enclave::Store.create(base: @base) }
+
+    it "read the same entry with no-to-everything operators planted ahead of pg_catalog's" do
+      conn.exec("CREATE TABLE parent (a int); CREATE TABLE child () INHERITS (parent)")
+      described_class.run(store: other_store, relations: [customers, orders], connection: conn)
+      want = other_store.read("statistics")["tables"]
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.no_oid(pg_catalog.oid, pg_catalog.oid) RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT false $$;
+        CREATE FUNCTION public.no_name(pg_catalog.name, pg_catalog.name) RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT false $$;
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog.oid, RIGHTARG = pg_catalog.oid, FUNCTION = public.no_oid);
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog.name, RIGHTARG = pg_catalog.name, FUNCTION = public.no_name);
+        SET search_path = public, pg_catalog;
+      SQL
+      run
+
+      expect(want.map { [it["indexes"].size, it["extended_statistics"].size] }).to eq([[4, 0], [4, 1]])
+      expect(store.read("statistics")["tables"]).to eq(want)
+      expect(error_of { run([table("public", "parent")]) }.rule).to eq("inheritance_parent")
+    end
+
+    # Every function and type they name is pg_catalog's too, so one planted
+    # ahead of it can't write what they read. These write a sentinel: an
+    # array_to_json, and a text type with casts from the types the reads
+    # cast to text.
+    let(:sentinel) { LeakCheck::Sentinels.claim { "sentinel#{SecureRandom.hex(6)}" } }
+
+    def unplanted_tables
+      described_class.run(store: other_store, relations: [customers, orders], connection: conn)
+      other_store.read("statistics")["tables"]
+    end
+
+    def planted_tables
+      run
+      JSON.generate(store.read("statistics")["tables"])
+    end
+
+    def planted_read(sql)
+      want = unplanted_tables
+      conn.exec("#{sql}\nSET search_path = public, pg_catalog;")
+      got = planted_tables
+
+      expect(got).not_to include(sentinel)
+      # With a text type ahead of pg_catalog's, pg_get_indexdef names
+      # pg_catalog's in a predicate's cast: the same index.
+      expect(JSON.parse(got.gsub("::pg_catalog.text", "::text"))).to eq(want)
+    end
+
+    it "read the same entry with an array_to_json planted ahead of pg_catalog's" do
+      planted_read(<<~SQL)
+        CREATE FUNCTION public.array_to_json(pg_catalog.anyarray) RETURNS pg_catalog.json
+          LANGUAGE sql AS $$ SELECT pg_catalog.to_json(ARRAY['#{sentinel}']) $$;
+      SQL
+    end
+
+    it "read the same entry with a text type planted ahead of pg_catalog's" do
+      planted_read(<<~SQL)
+        CREATE TYPE public.text AS ENUM ('{#{sentinel}}', '{0.5}');
+        CREATE FUNCTION public.leak_kinds(pg_catalog."char"[]) RETURNS public.text
+          LANGUAGE sql AS $$ SELECT '{#{sentinel}}'::public.text $$;
+        CREATE FUNCTION public.leak_freqs(pg_catalog.float4[]) RETURNS public.text
+          LANGUAGE sql AS $$ SELECT '{0.5}'::public.text $$;
+        CREATE FUNCTION public.leak_ndistinct(pg_catalog.pg_ndistinct) RETURNS public.text
+          LANGUAGE sql AS $$ SELECT '{#{sentinel}}'::public.text $$;
+        CREATE FUNCTION public.leak_dependencies(pg_catalog.pg_dependencies) RETURNS public.text
+          LANGUAGE sql AS $$ SELECT '{#{sentinel}}'::public.text $$;
+        CREATE CAST (pg_catalog."char"[] AS public.text) WITH FUNCTION public.leak_kinds;
+        CREATE CAST (pg_catalog.float4[] AS public.text) WITH FUNCTION public.leak_freqs;
+        CREATE CAST (pg_catalog.pg_ndistinct AS public.text) WITH FUNCTION public.leak_ndistinct;
+        CREATE CAST (pg_catalog.pg_dependencies AS public.text) WITH FUNCTION public.leak_dependencies;
+      SQL
+    end
+  end
+
   describe "refusals" do
     it "refuses a relation the catalog doesn't have as unknown_relation, storing nothing" do
       error = error_of { run([orders, table("public", "gone")]) }

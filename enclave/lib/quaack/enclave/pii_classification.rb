@@ -3,6 +3,7 @@
 require "pg_query"
 require_relative "table_name"
 require_relative "planner_statistics"
+require_relative "pii_classification/outbound_shape"
 
 module Quaack
   module Enclave
@@ -126,7 +127,7 @@ module Quaack
 
       def outbound(data, columns)
         classes = columns.to_h { [[it["schema"], it["table"], it["column"]], it] }
-        { "tables" => data["tables"].map { outbound_table(it, classes) } }
+        { "tables" => data["tables"].map { outbound_table(it, classes).tap { OutboundShape.check(it) } } }
       end
 
       def outbound_table(table, classes)
