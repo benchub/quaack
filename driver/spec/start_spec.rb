@@ -143,6 +143,34 @@ RSpec.describe Quaack::Driver::Start do
     end
   end
 
+  # Task 20261004-10: enclave_timeout_seconds bounds start's enclave calls too.
+  it "kills an enclave call that runs past the config's enclave_timeout_seconds, and says which setting to raise" do
+    FileUtils.mkdir_p(File.join(home, ".quaack"))
+    File.write(File.join(home, ".quaack", "driver.json"),
+               JSON.generate("jump_command" => "echo jump-1", "enclave_timeout_seconds" => 1))
+    # quaacks answers version, so the check passes, and intake hangs.
+    bin = EnclaveCommands.remote_quaacks(File.join(dir, "remote-bin"), EnclaveCommands.raw("sleep 30"))
+    wrapper = File.join(bin, "quaacks")
+    File.write(wrapper, File.read(wrapper).sub("exec ", "#{version_answer(nil)}exec "))
+    error = nil
+    began = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    expect { start }.to raise_error(Quaack::Driver::EnclaveError) { error = it }
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - began).to be < 10
+    expect([error.rule, error.timeout_seconds]).to eq(["timeout", 1])
+    expect(error.rule_with_note).to start_with("timeout: the enclave call timed out after 0h00m01s; " \
+                                               "raise `enclave_timeout_seconds`")
+  end
+
+  it "refuses a config whose enclave_timeout_seconds isn't a positive number" do
+    path = File.join(home, ".quaack", "driver.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, JSON.generate("jump_command" => "echo jump-1", "enclave_timeout_seconds" => 0))
+
+    expect { start }.to raise_error(Quaack::Driver::Start::Error,
+                                    "bad_driver_config: #{path}: enclave_timeout_seconds must be a positive number")
+  end
+
   it "refuses a config that isn't a JSON object" do
     path = File.join(home, ".quaack", "driver.json")
     FileUtils.mkdir_p(File.dirname(path))

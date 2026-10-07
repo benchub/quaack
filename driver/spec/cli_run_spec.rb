@@ -80,7 +80,7 @@ RSpec.describe "quaack run" do
     t = transport
     h = hosts
     Quaack::Driver::CLI.new(stdout:, stderr:, home:,
-                            transport: lambda { |host|
+                            transport: lambda { |host, **|
                               h << host
                               t
                             },
@@ -597,7 +597,8 @@ RSpec.describe "quaack run" do
       [["run", "--run", run_id, "--host", "a", "--host", "b"], ["run", "--run", run_id, "--arena-db"]].each do |argv|
         expect(cli.run(argv)).to eq(64)
       end
-      expect(errors).to include("quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] [--host <host>]")
+      expect(errors).to include("quaack run --run <ID> [--rewrites <file>] [--out <path>] [--keep] " \
+                                "[--enclave-timeout-seconds <n>] [--host <host>]")
       expect(transport.calls).to eq([])
     end
   end
@@ -715,6 +716,73 @@ RSpec.describe "quaack run" do
     expect(Quaack::Driver::ENCLAVE_VERSION).to eq(EnclaveCommands.enclave_version)
   end
 
+  # Task 20261004-10: how long each enclave call may run, from
+  # enclave_timeout_seconds in ~/.quaack/driver.json, or --enclave-timeout-seconds.
+  describe "the enclave call timeout" do
+    let(:timeouts) { [] }
+    let(:cli) do
+      t = transport
+      seen = timeouts
+      Quaack::Driver::CLI.new(stdout:, stderr:, home:,
+                              transport: lambda { |_host, timeout:|
+                                seen << timeout
+                                t
+                              },
+                              client: ->(_settings) { fake.client(burndown: Quaack::Driver::Burndown.new) })
+    end
+
+    def write_config(config)
+      FileUtils.mkdir_p(File.join(home, ".quaack"))
+      File.write(File.join(home, ".quaack", "driver.json"),
+                 JSON.generate({ "jump_command" => "echo jump-1", **config }))
+    end
+
+    def run_with(*flags) = cli.run(["run", "--run", run_id, "--out", out, *flags])
+
+    it "gives the transport 3600 seconds when nothing sets it" do
+      expect(run_with).to eq(0)
+      expect(timeouts).to eq([3600])
+    end
+
+    it "gives the transport the config's enclave_timeout_seconds" do
+      write_config("enclave_timeout_seconds" => 7200)
+
+      expect(run_with).to eq(0)
+      expect(timeouts).to eq([7200])
+    end
+
+    it "lets --enclave-timeout-seconds override the config" do
+      write_config("enclave_timeout_seconds" => 7200)
+
+      expect(run_with("--enclave-timeout-seconds", "90.5")).to eq(0)
+      expect(timeouts).to eq([90.5])
+    end
+
+    it "refuses a --enclave-timeout-seconds that isn't a positive number, before touching the jump server" do
+      %w[0 -5 abc 1e999].each do |value|
+        stderr.truncate(0)
+        stderr.rewind
+
+        expect([run_with("--enclave-timeout-seconds", value), errors])
+          .to eq([64, "quaack run: --enclave-timeout-seconds must be a positive number\n"])
+      end
+      expect([timeouts, transport.calls]).to eq([[], []])
+    end
+
+    it "refuses a config enclave_timeout_seconds that isn't a positive number" do
+      path = File.join(home, ".quaack", "driver.json")
+      [0, -1, "60", true, nil].each do |value|
+        write_config("enclave_timeout_seconds" => value)
+        stderr.truncate(0)
+        stderr.rewind
+
+        expect([run_with, errors]).to eq([64, "quaack run: bad_driver_config: #{path}: " \
+                                              "enclave_timeout_seconds must be a positive number\n"])
+      end
+      expect(timeouts).to eq([])
+    end
+  end
+
   describe "the llm block of ~/.quaack/driver.json" do
     include AnthropicCredentials
 
@@ -729,7 +797,7 @@ RSpec.describe "quaack run" do
       t = transport
       h = hosts
       Quaack::Driver::CLI.new(stdout:, stderr:, home:, client: build_client,
-                              transport: lambda { |host|
+                              transport: lambda { |host, **|
                                 h << host
                                 t
                               })
@@ -896,7 +964,7 @@ RSpec.describe "quaack run" do
       let(:cli) do
         h = hosts
         t = transport
-        Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host|
+        Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host, **|
           h << host
           t
         })

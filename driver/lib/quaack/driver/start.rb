@@ -49,8 +49,7 @@ module Quaack
 
       def call(server:, query:, plan:, port: nil)
         args = intake_args(server:, query:, plan:, port:)
-        host = jump_host(jump_command, server)
-        transport = Transport::Ssh.new(host:, ssh: @ssh)
+        host, transport = jump(server)
         EnclaveVersion.check!(transport, host)
         run_id = transport.call("intake", args:).messages.find { it["type"] == "run" }&.fetch("run_id", nil)
         raise Error, "bad_run_id" unless run_id.is_a?(String) && Runs::RUN_ID.match?(run_id)
@@ -60,6 +59,15 @@ module Quaack
       end
 
       private
+
+      # The jump host for server, from the config's jump_command, and a
+      # transport to it with the config's enclave_timeout_seconds.
+      def jump(server)
+        config = driver_config
+        host = jump_host(config["jump_command"], server)
+        [host, Transport::Ssh.new(host:, ssh: @ssh,
+                                  timeout: DriverConfig.enclave_timeout(config, nil, Transport::Base::DEFAULT_TIMEOUT))]
+      end
 
       # intake's arguments, once each is checked: --port only when given.
       def intake_args(server:, query:, plan:, port:)
@@ -91,9 +99,8 @@ module Quaack
         path == home_path || path.to_s.start_with?("#{home_path}/")
       end
 
-      def jump_command
-        config = DriverConfig.read(@home) or raise Error, "no_driver_config"
-        config["jump_command"]
+      def driver_config
+        DriverConfig.read(@home) or raise Error, "no_driver_config"
       rescue DriverConfig::Bad => e
         raise Error, e.message
       end

@@ -28,7 +28,8 @@ module Quaack
     #   as a message of a type or with a field not on the protocol's
     #   whitelist, so the two sides disagree on the protocol.
     # - timeout: the run took longer than the transport's timeout, so the
-    #   driver killed it.
+    #   driver killed it. timeout_seconds is that timeout, and the note
+    #   says which setting raises it.
     # - output_too_large: the run printed more than the transport reads, so
     #   the driver killed it.
     class EnclaveError < StandardError
@@ -37,7 +38,7 @@ module Quaack
       EX_USAGE = 64
       EX_SOFTWARE = 70
 
-      attr_reader :subcommand, :rule, :exit_status, :signal
+      attr_reader :subcommand, :rule, :exit_status, :signal, :timeout_seconds
 
       # What run_from_older_version means: the run's store is in an older
       # format, whose entries this version would misread.
@@ -74,8 +75,9 @@ module Quaack
       # exit_status is the process's exit status, or nil if a signal ended
       # it. signal is that signal's name, such as "TERM", or nil.
       def initialize(subcommand:, rule:, step: nil, sqlstate: nil, reason: nil, function: nil, column: nil, # rubocop:disable Metrics/ParameterLists
-                     clients: nil, cycle: nil, exit_status: nil, signal: nil)
+                     clients: nil, cycle: nil, exit_status: nil, signal: nil, timeout_seconds: nil)
         @subcommand = subcommand
+        @timeout_seconds = timeout_seconds
         @rule = rule
         @line = { step:, sqlstate:, reason:, function:, column:, clients:, cycle: }.freeze
         @exit_status = exit_status
@@ -147,9 +149,17 @@ module Quaack
       # What rule_with_note adds after the rule, or nil.
       def note
         return OLDER_VERSION if rule == "run_from_older_version"
+        return timed_out if rule == "timeout" && timeout_seconds
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 
         named_schema
+      end
+
+      def timed_out
+        total = timeout_seconds.ceil
+        format("the enclave call timed out after %<h>dh%<m>02dm%<s>02ds; raise `enclave_timeout_seconds` in " \
+               "~/.quaack/driver.json, or pass --enclave-timeout-seconds to quaack run",
+               h: total / 3600, m: total % 3600 / 60, s: total % 60)
       end
 
       # Which call died, and how. ssh exits 255 for its own failures, and

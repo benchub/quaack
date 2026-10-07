@@ -129,6 +129,14 @@ RSpec.describe Quaack::Driver::EnclaveError, "#rule_with_note" do
                        "`quaack setup --run R1`")
   end
 
+  it "says how long a timed-out call ran, and which setting raises the limit" do
+    expect(error("timeout", signal: "TERM", timeout_seconds: 3600).rule_with_note(next_step: "resume"))
+      .to eq("timeout: the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds` in " \
+             "~/.quaack/driver.json, or pass --enclave-timeout-seconds to quaack run")
+    expect(error("timeout", timeout_seconds: 5432.2).rule_with_note)
+      .to start_with("timeout: the enclave call timed out after 1h30m33s;")
+  end
+
   it "ignores next_step for every other rule" do
     expect(error("timeout", exit_status: nil, signal: "TERM").rule_with_note(next_step: "resume")).to eq("timeout")
   end

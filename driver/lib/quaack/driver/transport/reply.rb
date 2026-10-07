@@ -200,9 +200,9 @@ module Quaack
             rewrites.all? { it.is_a?(Hash) && (it["plan"].nil? || Protocol::PlanNodes.valid?(it["plan"])) }
         end
 
-        def failure(subcommand, status, error = nil, rule: "incomplete")
+        def failure(subcommand, status, error = nil, rule: "incomplete", timeout_seconds: nil)
           fields = error ? ErrorFields.call(error) : { rule: }
-          EnclaveError.new(subcommand:, **fields, **ending(status))
+          EnclaveError.new(subcommand:, **fields, **ending(status), timeout_seconds:)
         end
       end
     end

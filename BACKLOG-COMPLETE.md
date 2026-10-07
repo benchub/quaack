@@ -5765,3 +5765,15 @@ From the builder of 20261004-91. `bytea`, geometric types (`point` and the like)
 - **Decided by the user (2026-10-06):** flip the rule to an allowlist: only types whose values are safe to send (such as numeric, boolean, date/time, uuid and enum types, and domains over them) may be classed low-cardinality and send values. Every other type is withheld like json.
 - **Status:** done
 - **Landed:** Statistics records `sendable_columns`: text-like types (text/PII path, unchanged) plus an allowlist of int2/4/8, numeric, float4/8, money, oid, bool, date/time types, interval, uuid, enum, and domains over them. Everything else (bytea, bit, geometric, inet/cidr/macaddr, "char", arrays, structured, unknown) is withheld. The column-type query uses OPERATOR(pg_catalog.=), covering 20261006-2 item 2. Store format bumped to 4 so runs classified by older code are refused. Follow-ups: 20261006-7.
+
+### 20261004-10. Make the enclave call timeout configurable.
+
+The driver kills any enclave call after `Transport::Base::DEFAULT_TIMEOUT` (3600s, `driver/lib/quaack/driver/transport/base.rb`). Nothing passes in a different value, though the comment says the driver's config does. On a real Canvas run, index-build failed after exactly 1h00m00s.
+
+Add a driver config setting for this timeout, with a `quaack run` flag to override it, and pass it to every `Transport::Ssh.new` that runs pipeline steps. Validate it as a positive number. Say in the failure message which setting to raise when a call hits the limit, for example: "the enclave call timed out after 1h00m00s; raise `enclave_timeout_seconds`". Document it in the README.
+
+- **Depends on:** none.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** Transport, config.
+- **Status:** done
+- **Landed:** `enclave_timeout_seconds` in driver.json (positive number, default 3600), overridden by `quaack run --enclave-timeout-seconds N`. `quaack run` (with its setup and teardown) and `quaack start` use it. A timed-out call names the setting to raise. README and DESIGN.md document it.
