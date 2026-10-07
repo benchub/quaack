@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "support/index_search_run"
+require "quaack/enclave/stats_payload"
 
 # `quaacks index-payload` (DESIGN.md's llm-index-ideas): the shape-only payload for the LLM,
 # the way the jump server runs it, after a real index-search.
@@ -54,7 +55,9 @@ RSpec.describe "quaacks index-payload, against a real server" do
     expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
     expect(sent["plan"].first).to include("Plan")
     expect(sent["schema"]).to eq("tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);\n")
-    expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
+    outbound = stored.read("classification")["outbound_statistics"]
+    expect(sent["stats"]).to eq(Quaack::Enclave::StatsPayload.subset(outbound, [query]))
+    expect(sent["stats"]["tables"].first["columns"].map { it["name"] }).to eq(%w[note status])
     shapes = stored.read("placeholder_shapes")
     expect(sent["placeholders"].keys).to eq(shapes.keys)
     expect(sent["placeholders"]["$1"]).to eq(
@@ -62,6 +65,25 @@ RSpec.describe "quaacks index-payload, against a real server" do
       "est_rows" => shapes["$1"]["rows"]["estimated_rows"], "actual_rows" => shapes["$1"]["rows"]["actual_rows"]
     )
     expect(sent["placeholders"]["$1"]["actual_rows"]).to be_positive
+  end
+
+  # DESIGN.md's llm-index-ideas: stats go out only for the columns the
+  # query references. The query names note and status, not total.
+  it "sends no stats for a column the query doesn't reference, and keeps the referenced ones" do
+    searched
+    classification = stored.read("classification")
+    columns = classification["outbound_statistics"]["tables"].first["columns"]
+    columns.find { it["name"] == "total" }["most_common_vals"] = [sentinels.text]
+    columns.find { it["name"] == "status" }["most_common_freqs"] = [0.123456789]
+    stored.write("classification", classification)
+
+    outcome = index_payload
+    sent = payload(outcome)
+
+    expect(outcome.stdout).not_to include(sentinels.text)
+    expect(sent["stats"]["tables"].first["columns"]).to eq(columns.select { %w[note status].include?(it["name"]) })
+    expect(outcome.stdout).to include("0.123456789")
+    expect(stored.read("classification")["outbound_statistics"]["tables"].first["columns"]).to eq(columns)
   end
 
   context "with a timestamptz range" do

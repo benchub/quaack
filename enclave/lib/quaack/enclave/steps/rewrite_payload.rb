@@ -18,7 +18,7 @@ module Quaack
              placeholders: IndexPayload.placeholders(store),
              plan: store.read("redacted_plan")["explain"].map { it.except("Settings") },
              schema: IndexPayload.schema(store),
-             stats: store.read("classification")["outbound_statistics"] }]
+             stats: IndexPayload.stats(store) }]
         end
       end
     end

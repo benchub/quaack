@@ -52,8 +52,26 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect(sent["plan"]).to eq(stored.read("redacted_plan")["explain"].map { it.except("Settings") })
       expect(sent["schema"])
         .to eq("tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id integer);\n")
-      expect(sent["stats"]).to eq(stored.read("classification")["outbound_statistics"])
+      outbound = stored.read("classification")["outbound_statistics"]
+      expect(sent["stats"]).to eq(Quaack::Enclave::StatsPayload.subset(outbound, [query]))
+      expect(sent["stats"]["tables"].first["columns"].map { it["name"] }).to eq(%w[note status])
       expect_no_leaks(sentinels, outcome)
+    end
+
+    # DESIGN.md's llm-rewrites: the stats are llm-index-ideas', cut to the
+    # columns the query references. The query names note and status, not total.
+    it "sends no stats for a column the query doesn't reference" do
+      ready
+      classification = stored.read("classification")
+      columns = classification["outbound_statistics"]["tables"].first["columns"]
+      columns.find { it["name"] == "total" }["most_common_vals"] = [sentinels.text]
+      stored.write("classification", classification)
+
+      outcome = quaacks.run("rewrite-payload", "--run", store.run_id)
+      sent = JSON.parse(outcome.stdout.lines.first)
+
+      expect(outcome.stdout).not_to include(sentinels.text)
+      expect(sent["stats"]["tables"].first["columns"]).to eq(columns.select { %w[note status].include?(it["name"]) })
     end
 
     # A run an older quaacks classified before the sendable-type allowlist
@@ -67,6 +85,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
         { "name" => "b", "n_distinct" => 2, "null_frac" => 0, "correlation" => nil,
           "most_common_freqs" => [0.5, 0.5], "most_common_vals" => "{#{sentinels.text},other}" }
       stored.write("classification", classification)
+      stored.write("qualified_query", "SELECT o.b FROM public.orders o")
 
       current = quaacks.run("rewrite-payload", "--run", store.run_id)
       expect(current.stdout).to include(sentinels.text), "the planted value must reach the payload of a current run"
