@@ -85,17 +85,27 @@ module Quaack
         # loop, so an error in it, such as a closed stderr under the
         # progress printer, would end the call and kill a run that's going
         # fine. Instead the first error is warned about, the block isn't
-        # called again, and the run is read to its end.
+        # called again, and the run is read to its end. Only the block's
+        # errors are rescued: an error in reading the line is the driver's
+        # own bug, and it ends the call as it would without a block. A line
+        # that isn't a valid progress message isn't handed to the block, and
+        # the check of the whole run refuses it once the run ends.
         def on_line(progress)
           return unless progress
 
           lambda do |line|
             message = Reply.progress(line)
-            progress&.call(message) if message
-          rescue StandardError => e
-            progress = nil
-            progress_failed(e)
+            hand(progress, message) { progress = nil } if progress && message
           end
+        end
+
+        # Calls progress with message, or warns and yields, so on_line
+        # stops calling it, if it raises.
+        def hand(progress, message)
+          progress.call(message)
+        rescue StandardError => e
+          yield
+          progress_failed(e)
         end
 
         # Warns on stderr that the progress block raised. Writing there

@@ -357,7 +357,9 @@ module Quaack
         end
 
         # Prints index number's progress line and returns its total, or 0
-        # if there's no such index.
+        # if there's no such index. It takes the total before it prints, since
+        # the transport rescues a failed print, and the rest must still be
+        # built.
         def build_index(transport, run_id, number, progress)
           total = 0
           transport.call("index-build", args: { run: run_id, index: number.to_s }) do |message|
