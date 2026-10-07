@@ -9,29 +9,32 @@ module Quaack
     module PlannerStatistics
       # The catalog reads behind PlannerStatistics.run: one table's entry, as
       # plain JSON data for the store. See PlannerStatistics for its form.
-      # The caller holds the read-only transaction.
+      # The caller holds the read-only transaction. Every comparison names
+      # pg_catalog's operator, so one planted ahead of it on the search_path
+      # can't change what a read finds.
       module Catalog
         TABLE_SQL = <<~SQL
           SELECT c.oid, c.reltuples, c.relpages,
-                 EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent = c.oid)
+                 EXISTS (SELECT FROM pg_catalog.pg_inherits i WHERE i.inhparent OPERATOR(pg_catalog.=) c.oid)
           FROM pg_catalog.pg_class c
-          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = $1 AND c.relname = $2
+          JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+          WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
         SQL
 
         # One relation's own pg_stats rows. An index's are its expressions'.
         PG_STATS_SQL = <<~SQL
           SELECT attname, null_frac, avg_width, n_distinct, most_common_vals::text, most_common_freqs::text,
                  histogram_bounds::text, correlation
-          FROM pg_catalog.pg_stats WHERE schemaname = $1 AND tablename = $2 AND NOT inherited
+          FROM pg_catalog.pg_stats WHERE schemaname OPERATOR(pg_catalog.=) $1
+           AND tablename OPERATOR(pg_catalog.=) $2 AND NOT inherited
           ORDER BY attname COLLATE "C"
         SQL
 
         INDEXES_SQL = <<~SQL
           SELECT c.relname, pg_catalog.pg_get_indexdef(i.indexrelid), pg_catalog.pg_relation_size(i.indexrelid)
           FROM pg_catalog.pg_index i
-          JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid
-          WHERE i.indrelid = $1 AND i.indisvalid
+          JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) i.indexrelid
+          WHERE i.indrelid OPERATOR(pg_catalog.=) $1 AND i.indisvalid
           ORDER BY c.relname COLLATE "C"
         SQL
 
@@ -43,10 +46,11 @@ module Quaack
                  array_to_json(d.most_common_val_nulls), array_to_json(d.most_common_freqs),
                  array_to_json(d.most_common_base_freqs)
           FROM pg_catalog.pg_statistic_ext s
-          JOIN pg_catalog.pg_namespace n ON n.oid = s.stxnamespace
+          JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) s.stxnamespace
           LEFT JOIN pg_catalog.pg_stats_ext d
-            ON d.statistics_schemaname = n.nspname AND d.statistics_name = s.stxname AND NOT d.inherited
-          WHERE s.stxrelid = $1
+            ON d.statistics_schemaname OPERATOR(pg_catalog.=) n.nspname
+           AND d.statistics_name OPERATOR(pg_catalog.=) s.stxname AND NOT d.inherited
+          WHERE s.stxrelid OPERATOR(pg_catalog.=) $1
           ORDER BY n.nspname COLLATE "C", s.stxname COLLATE "C"
         SQL
 

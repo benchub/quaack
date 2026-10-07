@@ -286,6 +286,35 @@ RSpec.describe Quaack::Enclave::PlannerStatistics do
     end
   end
 
+  # Every catalog read names pg_catalog's operator for each comparison, so
+  # operators planted ahead of pg_catalog's on the search_path can't change
+  # what it reads. These say no to everything: one oid against another (the
+  # joins, the inheritance check, and the table, index, and statistics-object
+  # lookups) and one name against another (the schema, table, and
+  # statistics-object names). They say no rather than yes, so a bare
+  # operator fails fast instead of crawling the whole catalog.
+  describe "the catalog reads" do
+    let(:other_store) { Quaack::Enclave::Store.create(base: @base) }
+
+    it "read the same entry with no-to-everything operators planted ahead of pg_catalog's" do
+      described_class.run(store: other_store, relations: [customers, orders], connection: conn)
+      want = other_store.read("statistics")["tables"]
+      conn.exec(<<~SQL)
+        CREATE FUNCTION public.no_oid(pg_catalog.oid, pg_catalog.oid) RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT false $$;
+        CREATE FUNCTION public.no_name(pg_catalog.name, pg_catalog.name) RETURNS pg_catalog.bool
+          LANGUAGE sql AS $$ SELECT false $$;
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog.oid, RIGHTARG = pg_catalog.oid, FUNCTION = public.no_oid);
+        CREATE OPERATOR public.= (LEFTARG = pg_catalog.name, RIGHTARG = pg_catalog.name, FUNCTION = public.no_name);
+        SET search_path = public, pg_catalog;
+      SQL
+      run
+
+      expect(want.map { [it["indexes"].size, it["extended_statistics"].size] }).to eq([[4, 0], [4, 1]])
+      expect(store.read("statistics")["tables"]).to eq(want)
+    end
+  end
+
   describe "refusals" do
     it "refuses a relation the catalog doesn't have as unknown_relation, storing nothing" do
       error = error_of { run([orders, table("public", "gone")]) }

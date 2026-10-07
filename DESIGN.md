@@ -685,6 +685,8 @@ A dropped duplicate isn't lost work. If generator one's ideal key already exists
 
 Drop any partial index candidate whose predicate uses a column that isn't low-cardinality, as defined in classify. This applies to every generator, including generator two's partial indexes. A predicate on a column with 50 or more distinct values risks putting PII into the DDL. The one exception is a predicate with no literal at all, made only of bare columns tested with `IS NULL`, `IS NOT NULL`, or as a boolean (`archived`, `NOT archived`), joined by `AND`, such as `WHERE deleted_at IS NULL`. It holds no values, only column names, so it's allowed on any column.
 
+This fails closed on a column whose type classify withholds, such as `inet`, `"char"`, or a bit string. Such a column is never low-cardinality, however few values it holds, so a partial index that compares it with a constant gets dropped.
+
 HypoPG can't model every index method (GIN, GiST, and SP-GiST among them), so set aside any candidate using a method HypoPG can't model that survive this filter. Carry them forward to measurement-setup untested, and note that they weren't tested.
 
 ### index-test. Single-candidate testing.
