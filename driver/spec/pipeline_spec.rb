@@ -419,7 +419,7 @@ RSpec.describe Quaack::Driver::Pipeline, "arena-setup and index-build to selecti
     { "index_search_original" => true, "index_generated_original" => true, "index_ranking_original" => true,
       "rewrite_rules_applied" => true, "rewrites_generated" => true }
   end
-  let(:chain) { %w[index-build baseline index-baseline candidate-runs minimax result-comparison selection] }
+  let(:chain) { %w[index-build index-build baseline index-baseline candidate-runs minimax result-comparison selection] }
   let(:failing) { {} }
   let(:transport) do
     all = { "status" => [{ "type" => "status", "entries" => done }],
@@ -450,7 +450,7 @@ RSpec.describe Quaack::Driver::Pipeline, "arena-setup and index-build to selecti
     expect(transport.calls.map(&:first)).to eq(%w[status index-feedback arena-setup rewrite-test status] +
                                                chain)
     args = transport.calls.drop(2).map { it.last[:args] }
-    expect(args.uniq).to eq([{ run: "RUN" }, { run: "RUN", search: "rewrite_1" }])
+    expect(args.uniq).to eq([{ run: "RUN" }, { run: "RUN", search: "rewrite_1" }, { run: "RUN", index: "1" }])
   end
 
   it "resumes: skips each step whose output is stored" do

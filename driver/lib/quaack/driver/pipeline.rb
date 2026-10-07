@@ -334,15 +334,37 @@ module Quaack
           end
         end
 
-        # Calls the step, printing each progress message it sends, and
-        # returns how many it sent: for index-build, how many indexes it built.
+        # Calls the step and returns, for index-build, how many indexes it
+        # built.
         def call(transport, subcommand, run_id, progress)
-          lines = 0
-          transport.call(subcommand, args: { run: run_id }) do |message|
-            lines += 1
+          return build_indexes(transport, run_id, progress) if subcommand == "index-build"
+
+          transport.call(subcommand, args: { run: run_id })
+        end
+
+        # Builds each index in its own `index-build --index n` call, so each
+        # gets its own timeout and a rerun picks up after the last one built
+        # (the enclave skips any already built). The first call's progress
+        # line gives the total; none means there's nothing to build. Then
+        # the plain call finds them all built, hides them, and writes
+        # index_build. Its progress lines repeat the ones already printed,
+        # so they're not printed again.
+        def build_indexes(transport, run_id, progress)
+          total = build_index(transport, run_id, 1, progress)
+          (2..total).each { build_index(transport, run_id, it, progress) }
+          transport.call("index-build", args: { run: run_id })
+          total
+        end
+
+        # Prints index number's progress line and returns its total, or 0
+        # if there's no such index.
+        def build_index(transport, run_id, number, progress)
+          total = 0
+          transport.call("index-build", args: { run: run_id, index: number.to_s }) do |message|
+            total = message["total"].to_i
             progress.note(building(message))
           end
-          lines
+          total
         end
 
         # An index-build progress message as its line: which index is starting, and

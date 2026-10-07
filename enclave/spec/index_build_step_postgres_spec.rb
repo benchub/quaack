@@ -119,6 +119,76 @@ RSpec.describe "quaacks index-build, against a real server" do
     expect_no_leaks(sentinels, outcome)
   end
 
+  def progress_lines(outcome) = outcome.stdout.lines[0...-1].map { JSON.parse(it) }
+
+  def oids(conn) = indexes(conn).select { it["relname"].start_with?("quaack_") }.to_h { [it["relname"], it["oid"]] }
+
+  # 20261004-11: the driver builds one index per call, so each gets its own
+  # timeout, then makes a plain call that finds them all built.
+  it "builds only the index --index names, sends its one progress line, and writes nothing else" do
+    ranked_run
+    total = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten.uniq.size
+    burndown = Quaack::Enclave::Burndown.read(stored)
+    conn = production.connect
+
+    outcome = run("index-build", "--index", "2")
+
+    expect([outcome.stdout.lines.last, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect(progress_lines(outcome).map { it.values_at("type", "index", "total") })
+      .to eq([["index_build_progress", 2, total]])
+    expect(progress_lines(outcome).first["ddl"]).to start_with("CREATE INDEX quaack_")
+    expect(oids(conn).size).to eq(1)
+    expect(stored.entry?("index_build")).to be(false)
+    expect(Quaack::Enclave::Burndown.read(stored)).to eq(burndown)
+  ensure
+    conn&.close
+  end
+
+  it "sends nothing and builds nothing for an --index past the last index" do
+    ranked_run
+    total = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten.uniq.size
+    conn = production.connect
+
+    outcome = run("index-build", "--index", (total + 1).to_s)
+
+    expect(outcome.stdout).to eq(%({"type":"done"}\n))
+    expect(oids(conn)).to eq({})
+  ensure
+    conn&.close
+  end
+
+  it "refuses an --index that isn't a positive whole number" do
+    ranked_run
+
+    expect(%w[0 -1 x 1.5].map { run("index-build", "--index", it).stdout })
+      .to all(eq(%({"type":"error","step":"index-build","rule":"index_build_bad_index"}\n)))
+  end
+
+  # A resumed run: the indexes an earlier call built are on the racetrack,
+  # so they're skipped, not built again and not failures.
+  it "skips indexes already built, by one-index calls or an earlier run, and records them all" do
+    ranked_run
+    total = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten.uniq.size
+    conn = production.connect
+    run("index-build", "--index", "1")
+    first = oids(conn)
+
+    again = run("index-build", "--index", "1")
+    (2..total).each { run("index-build", "--index", it.to_s) }
+    built = oids(conn)
+    final = run("index-build")
+
+    expect([again.stdout.lines.last, final.stdout.lines.last]).to eq([%({"type":"done"}\n)] * 2)
+    expect(built.slice(*first.keys)).to eq(first)
+    expect(built.size).to eq(total)
+    expect(oids(conn)).to eq(built)
+    expect(stored.read("index_build")["indexes"].keys).to match_array(built.keys)
+    expect(stored.read("index_build")["indexes"].values.map { it["size"] }).to all(be_positive)
+    expect(indexes(conn).select { built.key?(it["relname"]) }.map { it["indisvalid"] }).to all(eq("f"))
+  ensure
+    conn&.close
+  end
+
   it "builds the unused low-cardinality B-tree candidates index-test set aside (20260927-11)" do
     ranked_run
     btree = Quaack::Enclave::IndexCandidate.new(table: orders, key: %w[status total], sources: [:parse])
