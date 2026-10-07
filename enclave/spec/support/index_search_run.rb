@@ -59,6 +59,7 @@ RSpec.shared_context "an index search run" do
 
   def capture_and_classify(conn, explain)
     store.write("plan", explain)
+    store.write("qualified_query", query)
     store.write("relations", [{ "schema" => "public", "name" => "orders" }])
     Quaack::Enclave::PlannerStatistics.run(store:, relations: [orders], connection: conn)
     Quaack::Enclave::PiiClassification.run(store:, config: Quaack::Enclave::Config.new({}))

@@ -64,6 +64,16 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
       .to eq(entry["baseline"].transform_values { it.slice("total_cost", "plan") })
   end
 
+  # The rewrite orders by total, which the original query doesn't name, so
+  # its payload keeps total's stats too.
+  it "sends stats for the columns the original query or the rewrite references" do
+    ready
+
+    payload = JSON.parse(run("index-payload", "--search", "rewrite_1").stdout.lines.first)
+
+    expect(payload["stats"]["tables"].first["columns"].map { it["name"] }).to eq(%w[note status total])
+  end
+
   [[{ survived: nil }, "not yet through rewrite-test and counterexamples"],
    [{ survived: false }, "dropped by rewrite-test and counterexamples"],
    [{ discarded: true }, "pruned by plan-pruning"]].each do |marks, why|

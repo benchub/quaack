@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../schema_payload"
+require_relative "../stats_payload"
 require_relative "../candidate_ddl_redaction"
 require_relative "../index_store"
 require_relative "index_search"
@@ -33,7 +34,9 @@ module Quaack
       #                  "set_aside" => [{ "ddl", "sources" }] }
       #                The plans are the stored ones, redacted through redact. Only the
       #                best candidate (see best) keeps each set's "plan".
-      #   stats        the classification's outbound_statistics (classify)
+      #   stats        the classification's outbound_statistics (classify), cut by
+      #                StatsPayload to the columns the qualified query references
+      #                and, for a rewrite search, the rewrite's SQL too
       #
       # Trust boundary. Every field is shape-class except the candidates'
       # DDL: generator two reads the unredacted plan, so a stored predicate
@@ -61,12 +64,21 @@ module Quaack
         # is its slow-literal plan as index-search stored it, redacted
         # through redact. placeholders stay the original's shapes and rows.
         def message(store, search, entry)
-          stats = store.read("classification")["outbound_statistics"]
+          outbound = store.read("classification")["outbound_statistics"]
           query, plan = query_and_plan(store, search, entry)
+          sqls = [store.read("qualified_query")]
+          sqls << store.read(search)["sql"] unless search == "original"
           { type: :index_payload, query:, placeholders: placeholders(store),
             plan: plan.map { it.except("Settings") },
             schema: schema(store),
-            mechanical_results: mechanical(entry, CandidateDdlRedaction.new(stats)), stats: }
+            mechanical_results: mechanical(entry, CandidateDdlRedaction.new(outbound)),
+            stats: StatsPayload.subset(outbound, sqls) }
+        end
+
+        # The stats llm-rewrites sends: outbound statistics cut to the
+        # columns the qualified query references (StatsPayload).
+        def stats(store)
+          StatsPayload.subset(store.read("classification")["outbound_statistics"], [store.read("qualified_query")])
         end
 
         def query_and_plan(store, search, entry)
