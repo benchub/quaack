@@ -43,7 +43,8 @@ RSpec.describe Quaack::Driver::Deploy do
   # expired: true, every call after gem install, the version check and
   # the transport's `true` probe, exits 255, as when the ssh login expires
   # during the install.
-  def fake_ssh(path: true, probe: true, expired: false)
+  # With slow: true, the version check hangs.
+  def fake_ssh(path: true, probe: true, expired: false, slow: false)
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
     File.write(script, <<~SH)
@@ -55,6 +56,7 @@ RSpec.describe Quaack::Driver::Deploy do
       printf '%s\\n' "$*" >> '#{dir}/remote'
       #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
       #{"case \"$*\" in quaacks*|true) exit 255 ;; esac" if expired}
+      #{"case \"$*\" in quaacks*) exec sleep 30 ;; esac" if slow}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
@@ -119,6 +121,16 @@ RSpec.describe Quaack::Driver::Deploy do
       MSG
     }
     expect(Dir.children(File.join(user_dir, "gems"))).to include("quaacks-#{Quaack::Driver::ENCLAVE_VERSION}")
+  end
+
+  # Task 20261006-8: deploy doesn't read enclave_timeout_seconds, so its
+  # timeout doesn't say to raise it, nor that quaacks isn't installed.
+  it "says the version check timed out, without naming a setting deploy doesn't read" do
+    deployer = described_class.new(host: "jump-1", ssh: fake_ssh(slow: true), version_timeout: 1)
+    expect { deployer.call }.to raise_error(described_class::Error) { |e|
+      expect(e.message).to eq("installed quaacks #{Quaack::Driver::ENCLAVE_VERSION} on jump-1, but timeout: the " \
+                              "enclave call timed out after 0h00m01s")
+    }
   end
 
   it "falls back to the general advice when the diagnosis probe fails" do

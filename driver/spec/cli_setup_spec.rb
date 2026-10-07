@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "stringio"
 require "tmpdir"
 require "quaack/driver/cli"
@@ -16,6 +17,7 @@ RSpec.describe "quaack setup" do
   let(:stdout) { StringIO.new }
   let(:stderr) { StringIO.new }
   let(:hosts) { [] }
+  let(:timeouts) { [] }
   let(:order) do
     %w[inventory run-server qualify schema-dump statistics volatility classify redact literals clock-anchor
        racetrack-setup]
@@ -42,8 +44,10 @@ RSpec.describe "quaack setup" do
   let(:cli) do
     t = transport
     h = hosts
-    Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host|
+    seen = timeouts
+    Quaack::Driver::CLI.new(stdout:, stderr:, home:, transport: lambda { |host, **options|
       h << host
+      seen << options[:timeout]
       t
     })
   end
@@ -243,5 +247,37 @@ RSpec.describe "quaack setup" do
     end
     expect(hosts).to eq([])
     expect(stderr.string).to include("quaack setup --run <ID> [--host <host>] [--port <port>]")
+  end
+
+  # Task 20261006-8: setup's enclave calls get enclave_timeout_seconds from
+  # ~/.quaack/driver.json too, so a timeout's note, which says to raise it,
+  # holds for setup.
+  describe "the enclave call timeout" do
+    def write_config(config)
+      FileUtils.mkdir_p(File.join(home, ".quaack"))
+      File.write(File.join(home, ".quaack", "driver.json"),
+                 JSON.generate({ "jump_command" => "echo jump-1", **config }))
+    end
+
+    it "gives the transport 3600 seconds when nothing sets it" do
+      expect(cli.run(["setup", "--run", run_id])).to eq(0)
+      expect(timeouts).to eq([3600])
+    end
+
+    it "gives the transport the config's enclave_timeout_seconds" do
+      write_config("enclave_timeout_seconds" => 7200)
+
+      expect(cli.run(["setup", "--run", run_id])).to eq(0)
+      expect(timeouts).to eq([7200])
+    end
+
+    it "refuses a config enclave_timeout_seconds that isn't a positive number, before touching the jump server" do
+      write_config("enclave_timeout_seconds" => 0)
+      path = File.join(home, ".quaack", "driver.json")
+
+      expect([cli.run(["setup", "--run", run_id]), errors])
+        .to eq([64, "quaack setup: bad_driver_config: #{path}: enclave_timeout_seconds must be a positive number\n"])
+      expect([timeouts, transport.calls]).to eq([[], []])
+    end
   end
 end

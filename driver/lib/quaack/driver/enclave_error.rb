@@ -57,6 +57,11 @@ module Quaack
                          "run_server_command's for any you didn't. The user and password come from " \
                          "#{LIBPQ_SETUP}".freeze
 
+      # What timeout's note adds, for a timeout that enclave_timeout_seconds
+      # set: start, setup, and run read it.
+      TIMEOUT_HINT = "; raise `enclave_timeout_seconds` in ~/.quaack/driver.json, or pass " \
+                     "--enclave-timeout-seconds to quaack run"
+
       # The error line's fields beyond its rule.
       LINE_FIELDS = %i[step sqlstate reason function column clients cycle].freeze
       LINE_FIELDS.each { |field| define_method(field) { @line[field] } }
@@ -112,9 +117,15 @@ module Quaack
       # record of the run, never
       # from the enclave, whose error line holds only the rule: libpq's
       # message can name the user or the database.
-      def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil)
+      #
+      # timeout's note says which setting raises the timeout, unless
+      # timeout_hint is false, for a caller whose timeout no setting
+      # changes, such as deploy.
+      def rule_with_note(next_step: "resume the run", jump: nil, server: nil, port: nil, timeout_hint: true)
         return "#{rule}: #{to_go_on(next_step, jump || "<jump server>", server, port)}" if to_go_on?
-        return "#{rule}: #{note}" if note
+
+        added = note(timeout_hint)
+        return "#{rule}: #{added}" if added
 
         return rule unless rule == "query_unparsable"
 
@@ -144,18 +155,17 @@ module Quaack
       end
 
       # What rule_with_note adds after the rule, or nil.
-      def note
+      def note(timeout_hint)
         return FixedNotes::BY_RULE[rule] if FixedNotes::BY_RULE.key?(rule)
-        return timed_out if rule == "timeout" && timeout_seconds
+        return timed_out(timeout_hint) if rule == "timeout" && timeout_seconds
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 
         named_schema
       end
 
-      def timed_out
+      def timed_out(hint)
         total = timeout_seconds.ceil
-        format("the enclave call timed out after %<h>dh%<m>02dm%<s>02ds; raise `enclave_timeout_seconds` in " \
-               "~/.quaack/driver.json, or pass --enclave-timeout-seconds to quaack run",
+        format("the enclave call timed out after %<h>dh%<m>02dm%<s>02ds#{TIMEOUT_HINT if hint}",
                h: total / 3600, m: total % 3600 / 60, s: total % 60)
       end
 

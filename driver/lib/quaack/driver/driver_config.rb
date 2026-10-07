@@ -6,7 +6,8 @@ module Quaack
   module Driver
     # The driver config on the laptop, ~/.quaack/driver.json: a JSON object.
     # `quaack start` reads its jump_command, and `quaack run` its llm block
-    # (see LLM.settings). Both read enclave_timeout_seconds, if it's there:
+    # (see LLM.settings). Both, and `quaack setup`, read
+    # enclave_timeout_seconds, if it's there:
     # how long each enclave call may run, in seconds, before the driver
     # kills it (Transport::Base::DEFAULT_TIMEOUT without it).
     module DriverConfig
@@ -15,6 +16,11 @@ module Quaack
       class Bad < StandardError
         def initialize(path, problem) = super("bad_driver_config: #{path}: #{problem}")
       end
+
+      # What --enclave-timeout-seconds takes: digits, with an optional
+      # fractional part. Not Float()'s other forms, such as 0x10, 1_000,
+      # or 1e3.
+      PLAIN = /\A\d+(\.\d+)?\z/
 
       # A --enclave-timeout-seconds that isn't a positive number.
       class BadFlag < StandardError
@@ -44,11 +50,12 @@ module Quaack
       # How long each enclave call may run, in seconds: flag, the text of
       # --enclave-timeout-seconds, if given, else config's (as read gives
       # it, or nil) enclave_timeout_seconds, else default. A flag that isn't
-      # a positive number raises BadFlag.
+      # a plain decimal number of seconds, PLAIN, or isn't positive raises
+      # BadFlag.
       def self.enclave_timeout(config, flag, default)
         return config&.fetch("enclave_timeout_seconds", nil) || default unless flag
 
-        Float(flag, exception: false).then { it if seconds?(it) } or raise BadFlag
+        (Float(flag) if PLAIN.match?(flag)).then { it if seconds?(it) } or raise BadFlag
       end
 
       # Whether something is at path. Unlike File.exist?, it raises Bad
