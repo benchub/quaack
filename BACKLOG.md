@@ -2306,16 +2306,7 @@ From the builder of 20261006-3.
 
 ### 20261006-9. A timed-out index build can race its resume. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-10. Stats trimming: minor findings from 20261001-7.
-
-From the builder and review of 20261001-7.
-1. A table alias with a column list, such as `FROM orders o(a, b)`, makes `o.a` keep a column named `a`, not the real column it renames, so the real column's stats can be dropped. Map aliased column names back to the real columns, or keep the whole table when an alias carries a column list (`enclave/lib/quaack/enclave/stats_payload.rb`).
-2. DESIGN.md (llm-index-ideas, ~755) and the comment at `stats_payload.rb` ~16-19 say a column qualified by a CTE's alias counts for every table with that name. In the code, a CTE referenced by its own name (`FROM recent`, then `recent.x`) maps to a table named `recent`. Nothing is dropped, since the CTE body's own references are counted, but fix the wording or treat CTE names like subquery aliases.
-
-- **Depends on:** 20261001-7.
-- **Came from:** The builder and review of 20261001-7.
-- **Design:** llm-index-ideas, llm-rewrites.
-- **Status:** todo
+### 20261006-10. Stats trimming: minor findings from 20261001-7. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-11. Run the spec suites in parallel. Done, see BACKLOG-COMPLETE.md.
 
@@ -2417,4 +2408,15 @@ From the review of 20261006-17 (`enclave/lib/quaack/enclave/insert_clock_words.r
 - **Depends on:** 20261006-17.
 - **Came from:** The review of 20261006-17.
 - **Design:** counterexamples inserts, clock anchoring.
+- **Status:** todo
+
+### 20261006-28. Stats trimming: join aliases with column lists, and a boundary test.
+
+From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
+1. `renames` (~116-123) reads only `range_var` aliases, so a join alias's column list is ignored. For `SELECT j.x FROM (orders o JOIN customers c ON o.customer_id = c.id) j(x)`, the subset drops `orders.id`, the column `j.x` renames. This SQL is rare. Keep every column of the tables under any join alias that has a column list.
+2. Changing the length guard (~61) from `>` to `>=` leaves every test green. Add a test with a list exactly as long as the table's columns.
+
+- **Depends on:** 20261006-10.
+- **Came from:** The review of 20261006-10.
+- **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** todo

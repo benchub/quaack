@@ -6082,3 +6082,15 @@ From the review of 20261004-14.
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** The Before block in `docs/transforms/not_in_to_not_exists.md` is unchanged. A new note says queries are shown as QUAACK deparses them, so Rails' `users.id NOT IN (...)` reads `NOT users.id IN (...)`. The "What it does" column in DESIGN.md's rule index now puts SQL keywords in backticks, like the Needs column. Docs only, landed with 20261006-16.
+
+### 20261006-10. Stats trimming: minor findings from 20261001-7.
+
+From the builder and review of 20261001-7.
+1. A table alias with a column list, such as `FROM orders o(a, b)`, makes `o.a` keep a column named `a`, not the real column it renames, so the real column's stats can be dropped. Map aliased column names back to the real columns, or keep the whole table when an alias carries a column list (`enclave/lib/quaack/enclave/stats_payload.rb`).
+2. DESIGN.md (llm-index-ideas, ~755) and the comment at `stats_payload.rb` ~16-19 say a column qualified by a CTE's alias counts for every table with that name. In the code, a CTE referenced by its own name (`FROM recent`, then `recent.x`) maps to a table named `recent`. Nothing is dropped, since the CTE body's own references are counted, but fix the wording or treat CTE names like subquery aliases.
+
+- **Depends on:** 20261001-7.
+- **Came from:** The builder and review of 20261001-7.
+- **Design:** llm-index-ideas, llm-rewrites.
+- **Status:** done
+- **Landed:** `StatsPayload` maps each name in a table alias's column list (`FROM orders o(a, b, c)`) to the real column at that position in the outbound stats. Those columns are in attnum order with dropped columns skipped, the same way Postgres skips them, and the review checked this against real Postgres with a dropped column. A list longer than the known columns keeps the whole table. The subset still only removes entries. The code comment and DESIGN.md now say a CTE name resolves like a table of that name. All three gems went to 0.1.19, with the `rake full` stamp.
