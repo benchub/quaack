@@ -5891,3 +5891,11 @@ A first build (reverted commit 50b1c27 on `main`'s history, `counterexamples/clo
 - **Design:** What goes into the enclave; insert check; clock anchoring.
 - **Status:** done
 - **Landed:** `bind` puts the anchored value into a `$n` whose whole literal is a clock word, but only where a real date/time type reads it (`counterexamples/clock_binding.rb`, `InsertClockWords.clock_params` with `reads_clock?(firm: true)`). A `$n` that only a polymorphic parameter reads is bound as written and refused as `clock_literal`. `Types#holds_clock?` limits reading a clock word, and the malformed-literal fallback, to types that can hold a date/time, so `string_to_array($1, ',')` and `string_to_array('today', ',')` into `text[]` load the word as written. `'today 10:00'` is still refused. All three gems went to 0.1.10, with the `rake full` stamp. It passed its second review after one fix round, for the polymorphic-parameter case.
+
+### 20261001-27. rewrite-rules rule: `unused_join_removal`.
+
+- **Depends on:** 20261001-22.
+- **Came from:** 20261001-21.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** `RewriteRules::UnusedJoinRemoval` (`enclave/lib/quaack/enclave/rewrite_rules/unused_join_removal.rb`, with `candidates.rb` and `Catalog#strict_foreign_key?`) removes an inner JOIN, or a comma-FROM item and its join conjuncts, to a table read nowhere else. Every join conjunct must be a plain `=` matching a validated, non-deferrable FK's pairs exactly, on plain tables with no inheritance, no RLS on the joined table, enabled RI triggers, the key's own `=` operator, and deterministic collations. Joining columns must be catalog NOT NULL. It records `foreign_key` and `not_null` assumptions. In RULES and `RULE_NAMES`, it sits between `union_outer_filter_removal` and `polymorphic_key_copy`. DESIGN.md's rules table row lists every condition and what v1 doesn't support. All three gems went to 0.1.11, with the `rake full` stamp.
