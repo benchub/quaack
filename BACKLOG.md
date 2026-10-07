@@ -2356,17 +2356,7 @@ From the review of 20261004-12. Dropping `.uniq` in `enclave/lib/quaack/enclave/
 - **Design:** index-build.
 - **Status:** todo
 
-### 20261006-22. Deploy cleanup: minor findings from 20260929-20.
-
-From the review of 20260929-20.
-1. `gem uninstall --user-install` also uninstalls from GEM_HOME (`driver/lib/quaack/driver/deploy_cleanup.rb` ~72). If the same old version sits in a writable GEM_HOME, such as an rbenv or asdf Ruby, it could be removed there too. Deploy never installs there. Check whether pinning `--install-dir Gem.user_dir` instead is cleaner.
-2. If the listing or an uninstall fails after a good install and version check, deploy exits 1 even though the new version is live (`deploy.rb` ~116-124). Consider making cleanup failures a warning.
-3. The "leaving <newer>" path (~69) is hard to reach for real, since a newer `quaacks` would win the bin wrapper and fail the version check first. Its test reaches it only through a planted gem with no executable.
-
-- **Depends on:** 20260929-20.
-- **Came from:** The review of 20260929-20.
-- **Design:** Deploying the enclave.
-- **Status:** todo
+### 20261006-22. Deploy cleanup: minor findings from 20260929-20. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-23. Parallel suites: minors from 20261006-12. Done, see BACKLOG-COMPLETE.md.
 
@@ -2419,4 +2409,16 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 - **Depends on:** 20261006-15.
 - **Came from:** The builder of 20261006-7, 2026-10-07.
 - **Design:** index-build.
+- **Status:** todo
+
+### 20261007-2. Deploy cleanup warnings: test gaps from 20261006-22.
+
+From the review of 20261006-22.
+1. Replacing `return unless out` with `out ||= ""` in `driver/lib/quaack/driver/deploy.rb` (~127) leaves every test green, since an empty listing also plans nothing. Pin "a failed listing skips all cleanup" in a way an empty listing can't satisfy.
+2. If the remote `ruby -e 'print File.realpath(...)'` fails (`deploy_cleanup.rb` ~60), its stderr isn't captured, so the warning shows only gem's "not installed" text.
+3. No test plants a failing old-gem-file removal on its own.
+
+- **Depends on:** 20261006-22.
+- **Came from:** The review of 20261006-22.
+- **Design:** Deploying the enclave.
 - **Status:** todo

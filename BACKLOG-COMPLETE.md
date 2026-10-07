@@ -6106,3 +6106,16 @@ From the review of 20261006-12.
 - **Design:** None (test infrastructure).
 - **Status:** done
 - **Landed:** A suite whose thread raised now prints its `cd ... && ...` rerun line under its header, as every other suite does (`rerun_line` in the `Rakefile`). A separate test checks that a root suite that raised is never counted as run, and that the run fails with the root-must-run rule. This is test infrastructure only, with no version bump.
+
+### 20261006-22. Deploy cleanup: minor findings from 20260929-20.
+
+From the review of 20260929-20.
+1. `gem uninstall --user-install` also uninstalls from GEM_HOME (`driver/lib/quaack/driver/deploy_cleanup.rb` ~72). If the same old version sits in a writable GEM_HOME, such as an rbenv or asdf Ruby, it could be removed there too. Deploy never installs there. Check whether pinning `--install-dir Gem.user_dir` instead is cleaner.
+2. If the listing or an uninstall fails after a good install and version check, deploy exits 1 even though the new version is live (`deploy.rb` ~116-124). Consider making cleanup failures a warning.
+3. The "leaving <newer>" path (~69) is hard to reach for real, since a newer `quaacks` would win the bin wrapper and fail the version check first. Its test reaches it only through a planted gem with no executable.
+
+- **Depends on:** 20260929-20.
+- **Came from:** The review of 20260929-20.
+- **Design:** Deploying the enclave.
+- **Status:** done
+- **Landed:** Deploy's uninstall now runs `gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')"`, which touches only the user gem directory. A copy in a separate GEM_HOME is left alone, and a real-gem test checks that. The realpath is needed under symlinked homes. A failed listing, uninstall, or old-file removal after a good install prints a warning naming the step and host, and deploy still exits 0. A failed listing skips the rest of the cleanup. The "leaving <newer>" path has a comment saying why it's hard to reach. DESIGN.md matches. Driver only, no version bump.
