@@ -41,7 +41,9 @@ module Quaack
       #                    (MeasuredLabels): { "label", "search" (original
       #                    or rewrite_<n>), "indexes" (built names),
       #                    "measurements", "verdicts" (minimax's, per
-      #                    literal set), "timed_out" }
+      #                    literal set), "timed_out", "plan" (its
+      #                    measured plan's node shapes on the slow literal
+      #                    set, block counts included, or nil) }
       #   rewrites         one per stored rewrite, ranked or not: {
       #                    "rewrite" (rewrite_<n>), "sql", "source" (rule,
       #                    llm, or operator), "rules", and "empirical"
@@ -107,7 +109,7 @@ module Quaack
           stats = PlannerStatistics.load(store).statistics
           labels = MeasuredLabels.call(store)
           [{ type: :report, **selection.slice("top", "excluded", "infinite_sets").transform_keys(&:to_sym),
-             **original(store, stats), labels:, rewrites: rewrites(store, stats),
+             **original(store, stats), labels: measured_plans(store, labels, stats), rewrites: rewrites(store, stats),
              indexes: indexes(store, stats), timed_out_count: store.read("candidate_runs")["timed_out_count"],
              index_sources: IndexSources.call(store, labels, selection), **findings(store, selection["top"]) }]
         end
@@ -121,6 +123,17 @@ module Quaack
         def original(store, stats)
           { original_sql: original_sql(store), original_plan: nodes(store.read("redacted_plan")["explain"], stats),
             original_measurements: store.read("baseline")["sets"].transform_values { MeasuredLabels.summary(it) } }
+        end
+
+        # Each label with "plan": its measured plan on the slow values (the
+        # run measurement kept, with BUFFERS), as nodes, or nil for a label
+        # that timed out or was measured before measurement kept one.
+        def measured_plans(store, labels, stats)
+          sets = MeasuredLabels.measured(store).to_h
+          labels.map do |label|
+            plan = sets[label["label"]]&.dig("slow", "plan")
+            label.merge("plan" => plan && nodes(plan, stats))
+          end
         end
 
         def rewrites(store, stats)

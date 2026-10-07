@@ -706,7 +706,7 @@ RSpec.describe Quaack::Driver::Transport do
     it "reads a report whose plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
       node = %({"node":"Seq Scan","relation":"public.t","index":null,"est_rows":5,"actual_rows":5.5,) +
              %("selectivity":0.05,"depth":0,"shared_hit_blocks":12,"shared_read_blocks":null)
-      sources = %(,"index_sources":#{JSON.generate(index_sources)})
+      sources = %(,"labels":[],"index_sources":#{JSON.generate(index_sources)})
       good = %({"type":"report","original_plan":[#{node}}],"rewrites":[{"plan":null},{"plan":[#{node}}]}]#{sources}})
       result = raw("print #{"#{good}\n{\"type\":\"done\"}\n".inspect}").call("probe")
 
@@ -732,6 +732,29 @@ RSpec.describe Quaack::Driver::Transport do
       end
     end
 
+    # Task 20261004-86: each label's measured plan too.
+    it "reads a report whose labels' plans Protocol::PlanNodes.valid? passes, and refuses one whose plans it doesn't" do
+      node = { "node" => "Index Scan", "relation" => "public.t", "index" => "t_a_idx", "est_rows" => 5,
+               "actual_rows" => 5, "selectivity" => nil, "depth" => 0, "shared_hit_blocks" => 7,
+               "shared_read_blocks" => 2 }
+      report = lambda do |labels|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => labels,
+                        "index_sources" => index_sources }.compact)
+      end
+      good = [{ "label" => "rewrite_1:none", "plan" => [node] }, { "label" => "original:none", "plan" => nil }]
+      result = raw("print #{"#{report.call(good)}\n{\"type\":\"done\"}\n".inspect}").call("probe")
+
+      expect(result.messages.map { it["labels"] }).to eq([good])
+      [[{ "plan" => [node.merge("filter" => sentinel)] }],
+       [{ "plan" => [node.merge("shared_hit_blocks" => sentinel)] }],
+       [{ "plan" => sentinel }], [sentinel], { sentinel => { "plan" => [node] } }, nil].each do |labels|
+        error = refusal(report.call(labels))
+
+        expect(error.rule).to eq("unexpected_output"), "for #{labels}"
+        expect(error.full_message(highlight: false)).not_to include(sentinel)
+      end
+    end
+
     let(:index_sources) do
       { "generator_one" => { "built" => 2, "not_better" => 1, "ranked" => 1 },
         "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
@@ -741,7 +764,9 @@ RSpec.describe Quaack::Driver::Transport do
     # Task 20261004-80. Egress sends a report only if its index_sources
     # pass Protocol::IndexSources.valid?, so the driver checks the same.
     it "reads a report whose index_sources Protocol::IndexSources.valid? passes, and refuses one it doesn't" do
-      report = ->(sources) { JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], **sources }) }
+      report = lambda do |sources|
+        JSON.generate({ "type" => "report", "original_plan" => [], "rewrites" => [], "labels" => [], **sources })
+      end
       result = raw("print #{"#{report.call("index_sources" => index_sources)}\n{\"type\":\"done\"}\n".inspect}")
                .call("probe")
 

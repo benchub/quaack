@@ -31,6 +31,12 @@ module Quaack
         MISSING = %(<td class="missing">#{Words::MISSING}</td>).freeze
         CACHE = "Fewer blocks read means fewer pages pulled through the cache, so less pressure on the memory " \
                 "every other query shares."
+        # Why the winner's plan has no blocks: the payload has no measured
+        # plan for it, as a run measured before the enclave kept one doesn't.
+        NO_MEASURED_PLAN = "QUAACK didn't keep a measured plan for the winner, since this run measured it before " \
+                           "QUAACK kept one, so the blocks it read at each step aren't recorded."
+        ESTIMATED_PLAN = "The plan below is the one Postgres expected, from EXPLAIN without running the query, " \
+                         "which counts no blocks."
 
         def initialize(payload, run_id, llm_calls = {})
           @payload = Format.unmarked(payload)

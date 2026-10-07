@@ -27,6 +27,10 @@ module Quaack
     #   "stable"       whether total_blocks was the same in all three runs
     #   "total_blocks" the max of the three (for an unstable literal, blocks-metric and
     #                  minimax use the max)
+    #   "plan"         the redacted plan of the run with the most blocks (the
+    #                  first, if several tie), the run MeasuredLabels takes
+    #                  hit and read from, so its top node's counts are the
+    #                  ones the report shows
     #   "plans"        only when unstable: each run's plan, redacted through
     #                  redact against that set's literals
     # total_blocks is shared hit + read, local hit + read, and temp read +
@@ -98,10 +102,13 @@ module Quaack
         counts = runs.map { counts(it) }
         totals = counts.map { it["total_blocks"] }
         out = { "timed_out" => false, "runs" => counts, "stable" => totals.uniq.size == 1,
-                "total_blocks" => totals.max }
+                "total_blocks" => totals.max, "plan" => most_blocks(runs, totals, map) }
         out["plans"] = runs.map { Redaction.plan(it, map).explain } unless out["stable"]
         out
       end
+
+      # The redacted plan of the first run with the most blocks.
+      def most_blocks(runs, totals, map) = Redaction.plan(runs[totals.index(totals.max)], map).explain
 
       def counts(explain)
         top = explain[0]["Plan"]

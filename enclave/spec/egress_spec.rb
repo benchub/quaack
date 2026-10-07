@@ -244,6 +244,11 @@ RSpec.describe Quaack::Enclave::Egress do
        { "rewrite" => "rewrite_2", "plan" => nil }]
     end
 
+    let(:labels) do
+      [{ "label" => "original:top:1", "measurements" => { "slow" => { "total_blocks" => 4 } }, "plan" => [plan_node] },
+       { "label" => "rewrite_1:none", "plan" => nil }]
+    end
+
     let(:index_sources) do
       { "generator_one" => { "built" => 2, "not_better" => 1, "ranked" => 1 },
         "generator_two" => { "built" => 0, "not_better" => 0, "ranked" => 0 },
@@ -252,10 +257,33 @@ RSpec.describe Quaack::Enclave::Egress do
 
     it "sends a report whose plans are plan nodes and index sources are counts as it is, other fields unchecked" do
       out = egress.serialize(type: :report, original_plan: [plan_node], rewrites:, index_sources:,
-                             labels: "value of labels", rows: EGRESS_SENTINEL)
+                             labels:, top: "value of top", rows: EGRESS_SENTINEL)
 
-      expect(JSON.parse(out)).to eq("type" => "report", "original_plan" => [plan_node], "rewrites" => rewrites,
-                                    "labels" => "value of labels", "index_sources" => index_sources)
+      expect(JSON.parse(out)).to eq("type" => "report", "top" => "value of top", "original_plan" => [plan_node],
+                                    "labels" => labels, "rewrites" => rewrites, "index_sources" => index_sources)
+    end
+
+    # Task 20261004-86: each label's measured plan must be plan nodes too.
+    [
+      ["a planted String in a block count of a label's plan",
+       ->(n) { [{ "label" => "original:none", "plan" => [n, n.merge("shared_hit_blocks" => EGRESS_SENTINEL)] }] }],
+      ["a planted field in a node of a label's plan", ->(n) { [{ "plan" => [n.merge("filter" => EGRESS_SENTINEL)] }] }],
+      ["a planted field in a node of a label's plan under a Symbol key",
+       ->(n) { [{ plan: [n.merge("index_cond" => EGRESS_SENTINEL)] }] }],
+      ["a value in place of a label's plan", ->(_) { [{ "plan" => EGRESS_SENTINEL }] }],
+      ["a value in place of a label", ->(_) { [EGRESS_SENTINEL] }],
+      ["a value in place of the labels", ->(_) { EGRESS_SENTINEL }],
+      ["no labels", ->(_) {}]
+    ].each do |what, changed|
+      it "refuses one with #{what}, without quoting it" do
+        message = { type: :report, original_plan: [plan_node], rewrites:, labels: changed.call(plan_node),
+                    index_sources: }.compact
+        refusal = "a value in this report message has a plan that isn't plan nodes"
+        expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
+          expect(e.message).not_to include(EGRESS_SENTINEL)
+          expect(e.cause).to be_nil
+        }
+      end
     end
 
     # Task 20261004-80: index_sources must be only counts under QUAACK's own
@@ -270,7 +298,7 @@ RSpec.describe Quaack::Enclave::Egress do
       ["no index_sources", ->(_) {}]
     ].each do |what, changed|
       it "refuses one with #{what} in index_sources, without quoting it" do
-        message = { type: :report, original_plan: [plan_node], rewrites:,
+        message = { type: :report, original_plan: [plan_node], rewrites:, labels:,
                     index_sources: changed.call(index_sources) }.compact
         refusal = "a value in this report message has index sources that aren't counts by source"
         expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
@@ -282,7 +310,7 @@ RSpec.describe Quaack::Enclave::Egress do
 
     it "refuses index_sources whose source is a Symbol, as JSON would write it, without quoting it" do
       planted = index_sources.except("llm").merge(EGRESS_SENTINEL.to_sym => index_sources["llm"])
-      expect { egress.serialize(type: :report, original_plan: [plan_node], rewrites:, index_sources: planted) }
+      expect { egress.serialize(type: :report, original_plan: [plan_node], rewrites:, labels:, index_sources: planted) }
         .to raise_error(described_class::Error) { expect(it.message).not_to include(EGRESS_SENTINEL) }
     end
 
@@ -313,7 +341,7 @@ RSpec.describe Quaack::Enclave::Egress do
     ].each do |what, original, changed|
       it "refuses one with #{what}, without quoting it" do
         message = { type: :report, original_plan: original ? original.call(plan_node) : [plan_node],
-                    rewrites: changed ? changed.call(plan_node) : rewrites, index_sources: }.compact
+                    rewrites: changed ? changed.call(plan_node) : rewrites, labels:, index_sources: }.compact
         refusal = "a value in this report message has a plan that isn't plan nodes"
         expect { egress.serialize(message) }.to raise_error(described_class::Error, refusal) { |e|
           expect(e.message).not_to include(EGRESS_SENTINEL)

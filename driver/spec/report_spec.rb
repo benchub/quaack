@@ -893,6 +893,51 @@ RSpec.describe Quaack::Driver::Report do
       expect(explanation).not_to include("differs")
     end
 
+    it "says why the winner's blocks aren't recorded when the run kept no measured plan for it" do
+      expect(explanation).to include(
+        "<p>QUAACK didn&#39;t keep a measured plan for the winner, since this run measured it before QUAACK kept " \
+        "one, so the blocks it read at each step aren&#39;t recorded. The plan below is the one Postgres expected, " \
+        "from EXPLAIN without running the query, which counts no blocks.</p>\n<p>How it runs rewrite Vivid Cove"
+      )
+    end
+
+    it "says why there is no plan with the new indexes when the run kept no measured plan for the winner" do
+      payload["top"].reverse!
+      expect(explanation).to include("<p>#{ERB::Util.html_escape(described_class::View::NO_MEASURED_PLAN)}</p>")
+      expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::ESTIMATED_PLAN))
+    end
+
+    context "with the winner's measured plan" do
+      before do
+        payload["labels"].each { it["plan"] = nil }
+        payload["labels"].find { it["label"] == "rewrite_1:none" }["plan"] =
+          [pnode("Limit", 0, hit: 250, read: 50), pnode("Index Scan", 1, relation: "public.t", index: "t_a_idx",
+                                                                         hit: 240, read: 50)]
+        payload["labels"].find { it["label"] == "original:top:1" }["plan"] =
+          [pnode("Index Scan", 0, relation: "public.t", index: "quaack_a", hit: 300, read: 100)]
+      end
+
+      it "shows it, with its blocks, in place of the plan Postgres expected" do
+        expect(explanation).to include("<p>How it runs rewrite Vivid Cove with no new indexes, as QUAACK measured " \
+                                       "it on the slow values:</p>")
+        expect(explanation).not_to include("How it runs rewrite Vivid Cove with no new indexes:</p>")
+        expect(plan_rows(explanation).size).to eq(2)
+        expect(plan_rows(explanation).last.map { it[%r{<td class="num">([^<]*)</td></tr>}, 1] }).to eq(%w[300 290])
+        expect(plan_rows(explanation).last.last).to include("<td>#{sq("t_a_idx")}</td>")
+        expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::NO_MEASURED_PLAN))
+        expect(explanation).not_to include(ERB::Util.html_escape(described_class::View::ESTIMATED_PLAN))
+      end
+
+      it "shows the plan with the new indexes when the winner is the original query with them" do
+        payload["top"].reverse!
+        expect(explanation).to include("<p>How it runs your query with ")
+        expect(explanation).not_to include("The plan with the new indexes: not recorded.")
+        expect(plan_rows(explanation).size).to eq(2)
+        expect(plan_rows(explanation).last.first).to include("<td>#{sq("quaack_a")}</td>")
+        expect(plan_rows(explanation).last.first).to include(%(<td class="num">400</td></tr>))
+      end
+    end
+
     it "is left out when nothing beat the original" do
       expect(render(negative_payload)).not_to include('id="explanation"')
     end

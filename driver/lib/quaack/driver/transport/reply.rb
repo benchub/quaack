@@ -193,11 +193,13 @@ module Quaack
         end
 
         # Whether a report's original_plan, and the plan of each of its
-        # rewrites unless it's nil, are plan nodes, as egress checks.
+        # rewrites and labels unless it's nil, are plan nodes, as egress
+        # checks.
         def report_plans?(line)
-          rewrites = line["rewrites"]
-          Protocol::PlanNodes.valid?(line["original_plan"]) && rewrites.is_a?(Array) &&
-            rewrites.all? { it.is_a?(Hash) && (it["plan"].nil? || Protocol::PlanNodes.valid?(it["plan"])) }
+          Protocol::PlanNodes.valid?(line["original_plan"]) && %w[rewrites labels].all? do |field|
+            line[field].is_a?(Array) &&
+              line[field].all? { it.is_a?(Hash) && (it["plan"].nil? || Protocol::PlanNodes.valid?(it["plan"])) }
+          end
         end
 
         def failure(subcommand, status, error = nil, rule: "incomplete", timeout_seconds: nil)
