@@ -15,6 +15,7 @@ module Quaack
     #   # => nil, or raises Error "clock_literal: a value for column shipped could read the clock"
     #   InsertClockWords.clock_params(cols, rows, column_types, settings, connection) { |number| value }
     #   # => { location => number } for each $n whose value the block gives would read the clock
+    #   #    as a type that isn't a pseudo-type
     #
     # cols is the insert's column list, rows its VALUES rows, and
     # column_types each column's type OID by name. check takes rows
@@ -132,7 +133,7 @@ module Quaack
         values(cols, rows).filter_map do |value|
           param = value.node.param_ref or next
           text = yield param.number
-          [param.location, param.number] if text && types.reads_clock?(text, value.targets)
+          [param.location, param.number] if text && types.reads_clock?(text, value.targets, firm: true)
         end.to_h
       end
 
@@ -185,10 +186,15 @@ module Quaack
           @infos = {}
         end
 
-        def reads_clock?(text, targets)
+        # firm leaves out a polymorphic or other pseudo-type target, which
+        # Postgres could resolve to text, so a $n is anchored only where a
+        # real date or time type reads it (task 20261006-5).
+        def reads_clock?(text, targets, firm: false)
           return false unless loose?(text)
 
-          targets.flat_map { oids(it) }.uniq.any? { reads?(text, it) }
+          oids = targets.flat_map { oids(it) }.uniq
+          oids = oids.reject { info(it).kind == "p" } if firm
+          oids.any? { reads?(text, it) }
         end
 
         private

@@ -323,6 +323,23 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       expect(load(prepared, "SELECT dates::text FROM fx.stamps")).to eq([["{2024-03-11}"]])
     end
 
+    {
+      "array_append(ARRAY['x'], $1)" => "array_append(ARRAY['x'], $3)",
+      "array_prepend($1, '{x}'::text[])" => "array_prepend($3, '{x}'::text[])"
+    }.each do |what, value|
+      it "binds the word itself, and refuses it, where only a polymorphic parameter could read it, as in #{what}" do
+        prepared = stamps("INSERT INTO fx.stamps (id, tags) VALUES (1, #{value})")
+        expect([prepared.refused, prepared.inserts]).to eq([[{ index: 0, rule: "clock_literal" }], []])
+      end
+    end
+
+    it "writes 'now' with its offset, so a time a fall-back change repeats is the anchor's instant" do
+      Quaack::Enclave::Racetrack.create_clock_anchor(conn, "'2024-11-03 05:30:00+00'::pg_catalog.timestamptz")
+      conn.exec("SET TimeZone = 'America/New_York'")
+      prepared = stamps("INSERT INTO fx.stamps (id, at) VALUES (1, $2)")
+      expect(load(prepared, "SELECT at = '2024-11-03 05:30:00+00' FROM fx.stamps")).to eq([["t"]])
+    end
+
     it "still refuses a placeholder that holds a clock word and more" do
       expect(stamps("INSERT INTO fx.stamps (id, local) VALUES (1, $4)").refused)
         .to eq([{ index: 0, rule: "clock_literal" }])
