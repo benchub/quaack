@@ -3,6 +3,7 @@
 require_relative "../assumption_check"
 require_relative "../rewrite_assumptions"
 require_relative "catalog/calls"
+require_relative "catalog/foreign_keys"
 require_relative "catalog/standalone"
 require_relative "catalog/types"
 
@@ -56,6 +57,7 @@ module Quaack
       class Catalog
         include Standalone
         include Calls
+        include ForeignKeys
         include Types
 
         Column = Data.define(:name, :comparable)
