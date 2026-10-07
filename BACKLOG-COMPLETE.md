@@ -5829,3 +5829,20 @@ Update CLAUDE.md's description of the two commands if it changes.
 - **Design:** None (test infrastructure).
 - **Status:** done
 - **Landed:** The `Rakefile` runs every suite at once, one thread per suite, and holds each suite's output until it finishes, then prints it under a header naming the suite, whether it passed, and its wall time. Every failure rule is unchanged. `TestPostgres` builds the test image under a per-tag `flock`, so parallel suites build it once. No shared fixed paths were found, and peak Docker memory was about 853 MiB. The per-commit check went from about 19 minutes to about 10.
+
+### 20261004-1. `quaack run` step summaries: counts and rule names from the enclave.
+
+20261003-15 gives each finished step a summary, but some steps can only say what they did, not how much. The enclave sends the driver nothing but `done` for index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison and selection. And rewrite-rules doesn't say which rules fired. So the lines read "Searched for indexes", not "Found 12 possible index definitions mechanically", and rewrite-rules gives counts only.
+
+The rule:
+
+- Add an allowlisted counts message, sent by each of those steps when it finishes. It carries only small integers with fixed key names, such as `{"type":"step_counts","found":12}`. The protocol whitelist checks every key and that every value is a non-negative integer.
+- rewrite-rules reports which rules fired, by name. The names must come from a constant list shared through the protocol gem, matching the enclave's RULES. The whitelist and the driver both refuse any name not on that list.
+- The driver's summaries use these counts and names.
+- Sentinel tests: a value planted in the data never reaches the counts or the names. A forged message carrying a string where a count belongs is refused.
+
+- **Depends on:** 20261003-15.
+- **Came from:** The build of 20261003-15. The user asked for it, 2026-10-04.
+- **Design:** Progress lines for `quaack run`, the protocol whitelist.
+- **Status:** done
+- **Landed:** A new allowlisted `step_counts` message (`Protocol::StepCounts`: fixed count keys with Integer values from 0 to below 10^12, plus an optional `rules` list drawn from `RULE_NAMES`, which a spec ties to the enclave's RULES) goes out before `done` from index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison, and selection. rewrite-rules sends the names of the rules that fired. Egress and the driver both check it, and the driver falls back to the plain line on a bad or incomplete message. The summaries use the counts (`driver/lib/quaack/driver/counted_summary.rb`). All three gems went to 0.1.7, with the `rake full` stamp.

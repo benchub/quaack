@@ -1899,21 +1899,7 @@ These are findings from building and reviewing 20261003-29:
 - **Design:** rewrite-rules, `existence_in_flip`.
 - **Status:** todo
 
-### 20261004-1. `quaack run` step summaries: counts and rule names from the enclave.
-
-20261003-15 gives each finished step a summary, but some steps can only say what they did, not how much. The enclave sends the driver nothing but `done` for index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison and selection. And rewrite-rules doesn't say which rules fired. So the lines read "Searched for indexes", not "Found 12 possible index definitions mechanically", and rewrite-rules gives counts only.
-
-The rule:
-
-- Add an allowlisted counts message, sent by each of those steps when it finishes. It carries only small integers with fixed key names, such as `{"type":"step_counts","found":12}`. The protocol whitelist checks every key and that every value is a non-negative integer.
-- rewrite-rules reports which rules fired, by name. The names must come from a constant list shared through the protocol gem, matching the enclave's RULES. The whitelist and the driver both refuse any name not on that list.
-- The driver's summaries use these counts and names.
-- Sentinel tests: a value planted in the data never reaches the counts or the names. A forged message carrying a string where a count belongs is refused.
-
-- **Depends on:** 20261003-15.
-- **Came from:** The build of 20261003-15. The user asked for it, 2026-10-04.
-- **Design:** Progress lines for `quaack run`, the protocol whitelist.
-- **Status:** todo
+### 20261004-1. `quaack run` step summaries: counts and rule names from the enclave. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-2. Step 9 re-probes CHECK constraints thousands of times. Done, see BACKLOG-COMPLETE.md.
 
@@ -2452,4 +2438,13 @@ From the review of 20261006-11.
 - **Depends on:** 20261006-11.
 - **Came from:** The review of 20261006-11.
 - **Design:** None (test infrastructure).
+- **Status:** todo
+
+### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs.
+
+From the review of 20261004-1. candidate-runs sends `measured` as the kept runs only (`enclave/lib/quaack/enclave/steps/candidate_runs.rb` ~37), but its summary reads it as the total (`driver/lib/quaack/driver/counted_summary.rb` ~84-86). When every run times out, the line says "No rewrites to measure", and "Measured 5 rewrite runs, 2 timed out" really means 2 out of 7. baseline and index-baseline do count timed-out runs in their totals. Send kept plus timed out as `measured`, or change the wording. Also, no realistic index-rank run gives a non-zero `combined`, so only a direct unit test covers it.
+
+- **Depends on:** 20261004-1.
+- **Came from:** The builder and review of 20261004-1.
+- **Design:** Progress lines for `quaack run`.
 - **Status:** todo
