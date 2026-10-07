@@ -2354,18 +2354,7 @@ From the review of 20261001-28. `rewrite_payload.rb` (~46) leaves a rule rewrite
 - **Design:** llm-rewrites, rewrite-rules.
 - **Status:** todo
 
-### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9.
-
-From the review of 20261006-9 (`enclave/lib/quaack/enclave/build_connection.rb`).
-1. Nothing tests the 30s deadline that refuses `index_build_orphan_running` (~45).
-2. If two runs share a racetrack database and build the same DDL at once, the second cancels the first run's live build. Before, the second would have failed on the duplicate name instead. Say in DESIGN.md whether runs may share a racetrack. If they may, scope the cancel to backends with no client.
-3. If the role can see an orphan's query (`pg_read_all_stats`) but can't signal it, say because a superuser owns it, `pg_cancel_backend` raises a raw permission error (~47). Refuse it by rule instead.
-4. Nothing tests the `state = 'active'` filter (~59).
-
-- **Depends on:** 20261006-9.
-- **Came from:** The review of 20261006-9.
-- **Design:** index-build.
-- **Status:** todo
+### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-16. Timeout docs: two gaps from 20261006-8.
 
@@ -2449,4 +2438,13 @@ Set aside from 20261006-13. No realistic index-rank run in the specs gives a non
 - **Depends on:** 20261006-13.
 - **Came from:** The builder and review of 20261004-1, then 20261006-13.
 - **Design:** index-rank, progress lines for `quaack run`.
+- **Status:** todo
+
+### 20261006-25. Orphan cancel: two test nits from 20261006-15.
+
+From the review of 20261006-15. Changing `cancelled |= pids` to `+=` in `enclave/lib/quaack/enclave/build_connection.rb` (~51) leaves the "once each" test green (`enclave/spec/index_build_step_postgres_spec.rb` ~416), because the orphan stops after the first cancel. Only tests read the return value. Separately, the permission test (~441) leaves the orphan blocked until `after` closes the locker, after which it may finish building. Terminate it in the test.
+
+- **Depends on:** 20261006-15.
+- **Came from:** The review of 20261006-15.
+- **Design:** index-build.
 - **Status:** todo

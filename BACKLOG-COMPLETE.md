@@ -6001,3 +6001,17 @@ From the review of 20261004-1. candidate-runs sends `measured` as the kept runs 
 - **Status:** dropped
 - **Dropped by the user (2026-10-07):** It was an optimization only, and the cheap version is stale: each rewrite already gets its own enclave process. A batch `rewrite-test` isn't worth building without evidence that scenario building costs much. If 20261004-27 shows that it does, file a new task.
 - **Set aside (2026-10-07):** The builder found this stale as written. `rewrite-test` handles one rewrite per call. The driver (`CounterexampleStage#rewrite`) makes a separate enclave call for each rewrite, and each call already builds the original's scenarios once. Repeated builds happen across processes, so sharing in memory changes nothing. A real fix crosses the protocol. Option 1 is a batch `rewrite-test` taking several `--search` values in one process, which means changing the driver's `CounterexampleStage` and resume. Option 2 caches built scenarios in the enclave store. It adds trust-boundary surface, and probe caches still rebuild. With either option, the vacuity guard depends on each rewrite's `honour` copies, so only the Builder's output can be shared. The builder recommends option 1. The user to decide: drop it, or rewrite it as option 1.
+
+### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9.
+
+From the review of 20261006-9 (`enclave/lib/quaack/enclave/build_connection.rb`).
+1. Nothing tests the 30s deadline that refuses `index_build_orphan_running` (~45).
+2. If two runs share a racetrack database and build the same DDL at once, the second cancels the first run's live build. Before, the second would have failed on the duplicate name instead. Say in DESIGN.md whether runs may share a racetrack. If they may, scope the cancel to backends with no client.
+3. If the role can see an orphan's query (`pg_read_all_stats`) but can't signal it, say because a superuser owns it, `pg_cancel_backend` raises a raw permission error (~47). Refuse it by rule instead.
+4. Nothing tests the `state = 'active'` filter (~59).
+
+- **Depends on:** 20261006-9.
+- **Came from:** The review of 20261006-9.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** `BuildConnection.cancel_orphans(..., wait:)` returns the pids it cancelled. A `pg_cancel_backend` permission error is refused as `index_build_orphan_cancel_denied`, with no cause attached. Real-Postgres tests cover the 30s deadline (a backend that ignores the cancel), the permission refusal (a role that can see the orphan but can't signal it), and the idle filter. DESIGN.md says a racetrack serves one run at a time. Also fixed: `IndexBuild::Error` had no `rule`, so every index-build refusal went out as `internal_error`. It now goes out under its own fixed rule name. All three gems went to 0.1.17, with the `rake full` stamp.
