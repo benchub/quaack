@@ -6365,3 +6365,16 @@ From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** A Postgres-backed spec in `enclave/spec/scenarios_postgres_spec.rb` pins the Picker's non-near `:skip` guard. The fixture is `fx.x (n integer NOT NULL CHECK (n > 10) CHECK (n < 5))` with `WHERE n = 1`. No scenario row holds NULL, and every scenario loads. Replacing `|| :skip` with `|| nil` turns it red. The guard is kept, not changed to a refusal, so the change is spec only with no version bump.
+
+### 20261007-10. Closed pipes: minors from 20261004-85.
+
+From the review of 20261004-85 (`driver/lib/quaack/driver/quiet_stream.rb`, `cli.rb`).
+1. `quaack start` (`cli.rb` ~77), `quaack deploy` (~88), and the usage paths before the wrap still write to unwrapped streams. If the same rule should apply everywhere, wrap them too.
+2. `QuietStream` rescues every `IOError` and `SystemCallError`, so a full disk (ENOSPC) on a regular-file stdout drops the report path line without a word. The report file itself still fails loudly. Consider rescuing only `Errno::EPIPE`, `IOError`, and `ECONNRESET`, so ENOSPC stays loud.
+3. `flush` isn't guarded. An explicit `flush` on a closed pipe would raise, though nothing calls it today.
+
+- **Depends on:** 20261004-85.
+- **Came from:** The review of 20261004-85.
+- **Design:** The `quaack run` command, `quaack setup`.
+- **Status:** done
+- **Landed:** `CLI#initialize` now wraps stdout and stderr in `QuietStream` for every `quaack` command, including `start`, `deploy`, `--version`, and every usage path. `QuietStream` skips a write only when the stream is gone: `Errno::EPIPE`, `Errno::ECONNRESET`, or `IOError` (`QuietStream::GONE`). ENOSPC and other failed writes still raise. `flush` gets the same guard. It also sets `sync = true` on the stream it wraps. A buffered pipe stdout was flushed at spawn, and the EPIPE it raised couldn't be caught, so `quaack run ... 2>&1 | head` would die at its first ssh call. Spawned real-executable specs cover start, deploy, and usage errors on a closed pipe. DESIGN.md is updated. Driver only.

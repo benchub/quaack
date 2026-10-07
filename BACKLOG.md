@@ -2336,14 +2336,4 @@ From the second review of 20261006-7.
 - **Design:** trust boundary.
 - **Status:** todo
 
-### 20261007-10. Closed pipes: minors from 20261004-85.
-
-From the review of 20261004-85 (`driver/lib/quaack/driver/quiet_stream.rb`, `cli.rb`).
-1. `quaack start` (`cli.rb` ~77), `quaack deploy` (~88), and the usage paths before the wrap still write to unwrapped streams. If the same rule should apply everywhere, wrap them too.
-2. `QuietStream` rescues every `IOError` and `SystemCallError`, so a full disk (ENOSPC) on a regular-file stdout drops the report path line without a word. The report file itself still fails loudly. Consider rescuing only `Errno::EPIPE`, `IOError`, and `ECONNRESET`, so ENOSPC stays loud.
-3. `flush` isn't guarded. An explicit `flush` on a closed pipe would raise, though nothing calls it today.
-
-- **Depends on:** 20261004-85.
-- **Came from:** The review of 20261004-85.
-- **Design:** The `quaack run` command, `quaack setup`.
-- **Status:** todo
+### 20261007-10. Closed pipes: minors from 20261004-85. Done, see BACKLOG-COMPLETE.md.
