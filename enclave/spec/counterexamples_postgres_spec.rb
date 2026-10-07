@@ -333,6 +333,27 @@ RSpec.describe Quaack::Enclave::Counterexamples do
       end
     end
 
+    describe "into a user function's parameter (task 20261006-17)" do
+      before do
+        conn.exec(<<~SQL)
+          CREATE FUNCTION fx.f(t text) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'text:' || t $$;
+          CREATE FUNCTION fx.f(d date) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'date:' || d::text $$;
+          CREATE FUNCTION fx.g(d date) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'date:' || d::text $$;
+        SQL
+      end
+
+      it "binds the word itself, and refuses it, where the overloads' parameter types disagree" do
+        prepared = stamps("INSERT INTO fx.stamps (id, note) VALUES (1, fx.f($3))")
+        expect([prepared.refused, prepared.inserts]).to eq([[{ index: 0, rule: "clock_literal" }], []])
+      end
+
+      it "binds the anchor's value where the function's one parameter type is a date" do
+        prepared = stamps("INSERT INTO fx.stamps (id, note) VALUES (1, fx.g($3))")
+        expect(prepared.refused).to eq([])
+        expect(load(prepared, "SELECT note FROM fx.stamps")).to eq([["date:2024-03-11"]])
+      end
+    end
+
     it "writes 'now' with its offset, so a time a fall-back change repeats is the anchor's instant" do
       Quaack::Enclave::Racetrack.create_clock_anchor(conn, "'2024-11-03 05:30:00+00'::pg_catalog.timestamptz")
       conn.exec("SET TimeZone = 'America/New_York'")
