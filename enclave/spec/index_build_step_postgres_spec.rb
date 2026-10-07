@@ -122,6 +122,30 @@ RSpec.describe "quaacks index-build, against a real server" do
 
   def progress_lines(outcome) = outcome.stdout.lines[0...-1].map { JSON.parse(it) }
 
+  # 20261006-21: the combination often holds the top entry's index, and a
+  # set-aside candidate can repeat. Each DDL is built and counted once.
+  it "builds and counts once a DDL that's in several combinations" do
+    ranked_run
+    ranking = store.read("index_ranking_original")
+    ranking["combination"] = { "ddl" => ranking["top"].first["ddl"] + ranking["top"].last["ddl"] }
+    store.write("index_ranking_original", ranking)
+    entry = store.read("index_search_original")
+    entry["dedupe"]["set_aside"] = [spgist, spgist]
+    store.write("index_search_original", entry)
+    distinct = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten
+    expect(distinct.size - distinct.uniq.size).to be >= 2
+
+    progress = progress_lines(run("index-build"))
+
+    total = distinct.uniq.size
+    expect(progress.map { it.values_at("index", "total") }).to eq((1..total).map { [it, total] })
+    expect(progress.map { it["ddl"] }.uniq.size).to eq(total)
+    build = stored.read("index_build")
+    expect(build["indexes"].size).to eq(total)
+    expect(build["combinations"].values_at("original:set_aside:1", "original:set_aside:2").uniq.size).to eq(1)
+    expect(Quaack::Enclave::Burndown.read(stored)["totals"]["indexes_built"]).to eq(total)
+  end
+
   def oids(conn) = indexes(conn).select { it["relname"].start_with?("quaack_") }.to_h { [it["relname"], it["oid"]] }
 
   # 20261004-11: the driver builds one index per call, so each gets its own
@@ -413,15 +437,6 @@ RSpec.describe "quaacks index-build, against a real server" do
       expect(count).to eq("1")
     end
 
-    it "returns the orphans it cancelled, once each" do
-      orphaned = orphan(@monitor, configure: false)
-      conn = production.connect
-
-      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name)).to eq([orphaned])
-    ensure
-      conn&.close
-    end
-
     # 20261006-15: a role that can see the orphan's query (pg_read_all_stats)
     # but can't signal it, since a superuser owns it.
     context "when the build role can't signal the orphan" do
@@ -454,6 +469,11 @@ RSpec.describe "quaacks index-build, against a real server" do
         expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "index-build")))
           .to eq("type" => "error", "step" => "index-build", "rule" => "index_build_orphan_cancel_denied")
         expect([orphaned.class, builders(@monitor).include?(orphaned)]).to eq([Integer, true])
+
+        # Ends the orphan here, so it can't build once after closes the
+        # locker (20261006-25).
+        @monitor.exec_params("SELECT pg_terminate_backend($1)", [orphaned])
+        expect(wait_for(5) { !builders(@monitor).include?(orphaned) }).to be(true)
       end
     end
 
@@ -481,7 +501,7 @@ RSpec.describe "quaacks index-build, against a real server" do
     end
 
     def activity(conn, pid)
-      conn.exec_params("SELECT state, query FROM pg_stat_activity WHERE pid = $1", [pid]).first
+      conn.exec_params("SELECT state, wait_event, query FROM pg_stat_activity WHERE pid = $1", [pid]).first
     end
 
     before do
@@ -489,37 +509,72 @@ RSpec.describe "quaacks index-build, against a real server" do
       seed(@admin)
     end
 
-    after { @admin&.close }
+    after do
+      @admin.exec_params("SELECT pg_terminate_backend($1)", [@stubborn.backend_pid]) if @stubborn
+      @stubborn&.close
+      @admin&.close
+    end
 
-    # An expression index whose function swallows every cancel, as a
-    # backend stuck where pg_cancel_backend doesn't take effect would.
-    it "refuses index_build_orphan_running once the wait is up, if the orphan won't stop" do
-      @admin.exec(<<~SQL)
+    # A function that swallows the first %<cancels>d cancels, then sleeps on,
+    # unguarded, so the next one stops it, as a backend stuck where
+    # pg_cancel_backend doesn't take effect would. Each statement start is
+    # a point where a cancel takes effect, so the whole wait sits inside the
+    # handler's block, not just each sleep. Only a cancel that lands while
+    # the handler runs, just after the one it caught, could slip through,
+    # and cancel_orphans spaces them 0.1 s apart (20261007-1).
+    let(:stubborn_function) do
+      <<~SQL
         CREATE FUNCTION public.stubborn(int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$
-        DECLARE stop timestamptz := clock_timestamp() + interval '60 s';
+        DECLARE caught int := 0;
         BEGIN
-          WHILE clock_timestamp() < stop LOOP
-            BEGIN PERFORM pg_sleep(0.05); EXCEPTION WHEN query_canceled THEN NULL; END;
+          WHILE caught < %<cancels>d LOOP
+            BEGIN
+              LOOP PERFORM pg_sleep(0.05); END LOOP;
+            EXCEPTION WHEN query_canceled THEN caught := caught + 1;
+            END;
           END LOOP;
+          PERFORM pg_sleep(60);
           RETURN $1;
         END $$
       SQL
+    end
+
+    # Starts building an index on stubborn, and returns the index's name
+    # and the backend's pid once the backend is sleeping in the function,
+    # not merely active: until then, a cancel stops the build outright.
+    def stubborn(cancels)
+      @admin.exec(format(stubborn_function, cancels:))
       name = Quaack::Enclave::IndexBuild.name("CREATE INDEX ON public.orders ((public.stubborn(id)))")
-      stubborn = production.connect
-      pid = stubborn.backend_pid
-      stubborn.send_query("CREATE INDEX #{name} ON public.orders ((public.stubborn(id)))")
-      running = wait_for(10) { activity(@admin, pid)&.fetch("state") == "active" }
+      @stubborn = production.connect
+      pid = @stubborn.backend_pid
+      @stubborn.send_query("CREATE INDEX #{name} ON public.orders ((public.stubborn(id)))")
+      sleeping = wait_for(10) { activity(@admin, pid)&.values_at("state", "wait_event") == %w[active PgSleep] }
+      expect(sleeping).to be(true)
+      [name, pid]
+    end
+
+    it "refuses index_build_orphan_running once the wait is up, if the orphan won't stop" do
+      name, pid = stubborn(1_000_000)
       conn = production.connect
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      expect(running).to be(true)
       expect { Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1) }
         .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_orphan_running")
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be_between(1, 5)
       expect(activity(@admin, pid)["state"]).to eq("active")
     ensure
-      @admin.exec_params("SELECT pg_terminate_backend($1)", [pid]) if pid
-      stubborn&.close
+      conn&.close
+    end
+
+    # 20261006-25: the backend outlasts three rounds of cancels, so it's
+    # cancelled four times but returned once.
+    it "returns the orphans it cancelled, once each, though it cancelled them more than once" do
+      name, pid = stubborn(3)
+      conn = production.connect
+
+      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name)).to eq([pid])
+      expect(activity(@admin, pid)["state"]).not_to eq("active")
+    ensure
       conn&.close
     end
 
