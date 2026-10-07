@@ -4,6 +4,7 @@ require "pg_query"
 require_relative "../deparse"
 require_relative "tree"
 require_relative "unused_join_removal/candidates"
+require_relative "unused_join_removal/reads"
 
 module Quaack
   module Enclave
@@ -54,12 +55,16 @@ module Quaack
       #   every joining column not null. A WHERE that requires a nullable
       #   column to be non-null doesn't count in v1.
       # - The query reads the joined table nowhere else. No column
-      #   reference anywhere in the query, at any depth, names it, other
-      #   than in the conditions the rule removes: no column, no name.*, no
-      #   whole row. No bare column anywhere has the name of one of its
-      #   columns, since it might be that table's. The SELECT that joins it
-      #   has no bare * in its select list. Any further condition on it, in
-      #   the ON or the WHERE, blocks the rule.
+      #   reference that might resolve to it names it, other than in the
+      #   conditions the rule removes: no column, no name.*, no whole row.
+      #   Only references inside the SELECT that joins it might, and not a
+      #   name.column or name.* that a nested SELECT's own FROM binds first
+      #   (Reads), so another UNION branch, or Rails' IN (SELECT users.id
+      #   FROM users ...), may use the name. No bare column in that SELECT,
+      #   at any depth, has the name of one of its columns, since it might
+      #   be that table's. The SELECT that joins it has no bare * in its
+      #   select list. Any further condition on it, in the ON or the WHERE,
+      #   blocks the rule.
       # - Nowhere does the query have a locking clause, which can name the
       #   table, or a NATURAL or USING join, whose columns are found by name.
       class UnusedJoinRemoval
@@ -85,8 +90,7 @@ module Quaack
         def removals(tree, catalog)
           return [] unless allowed?(tree)
 
-          refs = Candidates.every(tree, PgQuery::ColumnRef)
-          Candidates.in(tree).select { unread?(it, refs, catalog) && proven?(it, catalog) }
+          Candidates.in(tree).select { unread?(it, catalog) && proven?(it, catalog) }
         end
 
         # Whether tree has no locking clause and no NATURAL or USING join.
@@ -98,16 +102,10 @@ module Quaack
         # Whether no column reference but those in the removal's own
         # conditions might read the joined table, and the SELECT has no
         # bare *.
-        def unread?(removal, refs, catalog)
+        def unread?(removal, catalog)
           name = Tree.refname(removal.joined)
           columns = catalog.column_names(*pair(removal.joined))
-          refs.count { might_read?(it, name, columns) } == removal.pairs.size && !bare_star?(removal.select)
-        end
-
-        # Whether ref names name, or is a bare column of one of its columns.
-        def might_read?(ref, name, columns)
-          fields = ref.fields.map { it.string&.sval }
-          fields.include?(name) || (fields.size == 1 && columns.include?(fields.first))
+          Reads.count(removal.select, name, columns) == removal.pairs.size && !bare_star?(removal.select)
         end
 
         def bare_star?(select)

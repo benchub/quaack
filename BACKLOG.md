@@ -2399,18 +2399,7 @@ From the second review of 20261006-5. `clock_params` (`enclave/lib/quaack/enclav
 - **Design:** counterexamples inserts, clock anchoring.
 - **Status:** todo
 
-### 20261006-18. `unused_join_removal`: minor findings from 20261001-27.
-
-From the review of 20261001-27.
-1. In `enclave/lib/quaack/enclave/rewrite_rules/unused_join_removal/candidates.rb` (~118), the `joining&.size == 1` guard has no test. Weakening it to `positive?` would crash the rule (nil `.last`) on a comma join with a conjunct that doesn't touch the joined table, such as `e.id = p.user_id`. Add a three-item comma join with an unrelated column equality.
-2. In `catalog/foreign_keys.rb` (~46), the inheritance-child refusal (`i.inhrelid IN (ch.oid, pa.oid)`) has no test. Add one, or drop the restriction if it isn't needed for soundness.
-3. No spec pins a self-referencing FK, such as `employees e JOIN employees m ON e.manager_id = m.id`. The review found it fires correctly.
-4. Coverage: `unread?` (~100) counts references by name across the whole query, so it refuses whenever another scope reuses the joined table's name. Examples: the same join in both UNION ALL branches, or Rails' `posts.user_id IN (SELECT "users"."id" FROM "users" ...)` next to `JOIN users`. Count per scope instead, so these can fire.
-
-- **Depends on:** 20261001-27.
-- **Came from:** The review of 20261001-27.
-- **Design:** rewrite-rules.
-- **Status:** todo
+### 20261006-18. `unused_join_removal`: minor findings from 20261001-27. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-19. Measured plans: minor findings from 20261004-86.
 
