@@ -6244,3 +6244,21 @@ From the review of 20261007-1. In `enclave/spec/index_build_step_postgres_spec.r
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** The "won't stop" example now wraps `cancel_orphans` in `Timeout.timeout(30)`, so a broken deadline fails in about 35 seconds with a clear error instead of hanging the run. A cap inside the stubborn function wouldn't have worked: it runs once per row of the `CREATE INDEX`, so the build still wouldn't end. Test only.
+
+### 20261007-2. Deploy cleanup warnings: test gaps from 20261006-22.
+
+From the review of 20261006-22.
+1. Replacing `return unless out` with `out ||= ""` in `driver/lib/quaack/driver/deploy.rb` (~127) leaves every test green, since an empty listing also plans nothing. Pin "a failed listing skips all cleanup" in a way an empty listing can't satisfy.
+2. If the remote `ruby -e 'print File.realpath(...)'` fails (`deploy_cleanup.rb` ~60), its stderr isn't captured, so the warning shows only gem's "not installed" text.
+3. No test plants a failing old-gem-file removal on its own.
+
+- **Depends on:** 20261006-22.
+- **Came from:** The review of 20261006-22.
+- **Design:** Deploying the enclave.
+- **Status:** done
+- **Landed:** Changes to deploy cleanup:
+- **Uninstall command.** It's now `{ d=$(ruby -e 'print File.realpath(Gem.user_dir)') && gem uninstall --install-dir "$d" ...; } 2>&1`, so a failed realpath runs no uninstall and the warning shows ruby's error. Before this, a failed realpath ran `gem uninstall --install-dir ""`. RubyGems reads that as the current directory, the remote `$HOME`, so it passed silently and could uninstall from `$HOME` if that was a gem dir. The review checked the new command under `sh` and `dash`.
+- **Planning.** `prune` now always plans from `out.to_s`. A new test plants a listing that prints versions and then fails, and checks that nothing is removed.
+- **Old gem files.** A failed old-gem-file removal now has its own warning test.
+
+Driver only, no version bump.

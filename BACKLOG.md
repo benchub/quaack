@@ -2331,17 +2331,7 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 
 ### 20261007-1. The orphan-cancel deadline test flakes under load. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-2. Deploy cleanup warnings: test gaps from 20261006-22.
-
-From the review of 20261006-22.
-1. Replacing `return unless out` with `out ||= ""` in `driver/lib/quaack/driver/deploy.rb` (~127) leaves every test green, since an empty listing also plans nothing. Pin "a failed listing skips all cleanup" in a way an empty listing can't satisfy.
-2. If the remote `ruby -e 'print File.realpath(...)'` fails (`deploy_cleanup.rb` ~60), its stderr isn't captured, so the warning shows only gem's "not installed" text.
-3. No test plants a failing old-gem-file removal on its own.
-
-- **Depends on:** 20261006-22.
-- **Came from:** The review of 20261006-22.
-- **Design:** Deploying the enclave.
-- **Status:** todo
+### 20261007-2. Deploy cleanup warnings: test gaps from 20261006-22. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-3. Statistics hardening: minors from 20261006-7.
 
@@ -2377,4 +2367,15 @@ From the review of 20261004-87 and 20261004-59.
 - **Depends on:** 20261004-59.
 - **Came from:** The review of 20261004-87 and 20261004-59.
 - **Design:** report.
+- **Status:** todo
+
+### 20261007-7. Deploy cleanup: comment and brittle specs from 20261007-2.
+
+From the review of 20261007-2.
+1. The comment at `driver/lib/quaack/driver/deploy_cleanup.rb` (~59) says gem takes an empty `--install-dir` "as no dir at all". It actually resolves to the current directory, the remote `$HOME`. Fix the comment.
+2. `driver/spec/deploy_spec.rb` (~252) matches the exact `pinned` command string, so three specs fail on any command text change, not on behavior. Move them to behavioral checks.
+
+- **Depends on:** 20261007-2.
+- **Came from:** The review of 20261007-2.
+- **Design:** Deploying the enclave.
 - **Status:** todo
