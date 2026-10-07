@@ -13,12 +13,18 @@ module Quaack
     #
     #   InsertClockWords.check(cols, rows, column_types, settings, connection)
     #   # => nil, or raises Error "clock_literal: a value for column shipped could read the clock"
+    #   InsertClockWords.clock_params(cols, rows, column_types, settings, connection) { |number| value }
+    #   # => { location => number } for each $n whose value the block gives would read the clock
+    #   #    as a type that isn't a pseudo-type
     #
     # cols is the insert's column list, rows its VALUES rows, and
     # column_types each column's type OID by name. check takes rows
-    # InsertValues has checked, each $n already bound to its literal.
+    # InsertValues has checked, each $n already bound to its literal;
+    # clock_params takes them unbound, before Counterexamples binds each
+    # $n, so it can bind the clock anchor's value instead where the word
+    # would read the clock (task 20261006-5).
     #
-    # Each string constant is read as every type it could become
+    # Each string constant (or $n) is read as every type it could become
     # on its way into its column, and each one it could become is checked:
     # - its column's type, and the type of each cast between it and the
     #   column, as '{today}'::text::date[] is text and date[];
@@ -108,7 +114,7 @@ module Quaack
       Element = Data.define(:of)
       Parameter = Data.define(:func, :position, :open)
 
-      # A string constant, its value's column, and where it could be
+      # A string constant or $n, its value's column, and where it could be
       # read as a type.
       Value = Data.define(:node, :column, :targets)
 
@@ -120,6 +126,15 @@ module Quaack
         raise Error.new("clock_literal", "a value for column #{refused.column} could read the clock") if refused
 
         nil
+      end
+
+      def clock_params(cols, rows, column_types, settings, connection)
+        types = Types.new(column_types, settings, connection)
+        values(cols, rows).filter_map do |value|
+          param = value.node.param_ref or next
+          text = yield param.number
+          [param.location, param.number] if text && types.reads_clock?(text, value.targets, firm: true)
+        end.to_h
       end
 
       def constant(node) = node.a_const&.sval&.sval
@@ -134,6 +149,7 @@ module Quaack
         inner = node.inner
         case inner
         when PgQuery::A_Const then constant(node) ? [Value.new(node:, column:, targets:)] : []
+        when PgQuery::ParamRef then [Value.new(node:, column:, targets:)]
         when PgQuery::TypeCast then walk(inner.arg, column, [*closed(targets), Cast.new(inner.type_name)])
         when PgQuery::A_ArrayExpr then inner.elements.flat_map { walk(it, column, element_targets(it, targets)) }
         when PgQuery::FuncCall then arguments(inner, column, targets)
@@ -170,10 +186,15 @@ module Quaack
           @infos = {}
         end
 
-        def reads_clock?(text, targets)
+        # firm leaves out a polymorphic or other pseudo-type target, which
+        # Postgres could resolve to text, so a $n is anchored only where a
+        # real date or time type reads it (task 20261006-5).
+        def reads_clock?(text, targets, firm: false)
           return false unless loose?(text)
 
-          targets.flat_map { oids(it) }.uniq.any? { reads?(text, it) }
+          oids = targets.flat_map { oids(it) }.uniq
+          oids = oids.reject { info(it).kind == "p" } if firm
+          oids.any? { reads?(text, it) }
         end
 
         private
@@ -199,7 +220,7 @@ module Quaack
         end
 
         def reads?(text, oid)
-          return false unless text && loose?(text)
+          return false unless text && loose?(text) && holds_clock?(oid)
 
           info = info(oid)
           return WORD.match?(text) if info.clock
@@ -207,6 +228,20 @@ module Quaack
           parts(text, info)
         rescue ArgumentError
           true
+        end
+
+        # Whether a value of the type could hold a date or time: it is
+        # one, or a domain, array, range, multirange, or composite of one
+        # somewhere inside, or a pseudo-type. Text read as any other type
+        # reads no clock, even text it can't split (task 20261006-5).
+        def holds_clock?(oid, seen = [])
+          return false if seen.include?(oid)
+
+          info = info(oid)
+          return true if info.clock || info.kind == "p"
+
+          [info.base, info.element, info.subtype, info.range, *info.fields].compact
+                                                                           .any? { holds_clock?(it, [*seen, oid]) }
         end
 
         def parts(text, info)

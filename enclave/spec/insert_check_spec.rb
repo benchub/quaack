@@ -376,6 +376,8 @@ RSpec.describe Quaack::Enclave::InsertCheck do
       "a word in a composite's quoted text field, in an array" => ["spans", "'{\"(2024-01-01,\\\"to day now\\\")\"}'"],
       "the words in a nested ARRAY for a text[]" => ["notes", "ARRAY[ARRAY['now'], ARRAY['today']]"],
       "the words in an ARRAY of text[] casts, for a text[]" => ["notes", "ARRAY['{now}'::text[]]"],
+      "a word a text function splits into a text[] (task 20261006-5)" => ["notes", "string_to_array('today', ',')"],
+      "words a text function splits into a text[]" => ["notes", "string_to_array('now,Today', ',')"],
       "DEFAULT and NULL" => ["at, on_day", "DEFAULT, NULL"]
     }.each do |what, (columns, values)|
       it "accepts #{what}" do
