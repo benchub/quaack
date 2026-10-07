@@ -2440,20 +2440,16 @@ From the builder and review of 20261001-7.
 - **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** todo
 
-### 20261006-11. Run the spec suites in parallel.
+### 20261006-11. Run the spec suites in parallel. Done, see BACKLOG-COMPLETE.md.
 
-The per-commit check takes about 19 minutes because the `Rakefile` runs the suites one after another: enclave about 10.5 minutes, root about 6.3 (mostly the eight kept pipeline replays), driver about 2, protocol under a second. They're separate processes, and each starts its own Postgres container with a Docker-assigned port, pid-named databases, and stale-container cleanup that removes only containers whose owner pid has exited. So they can run at once, and wall time drops to about the slowest suite.
+### 20261006-12. Parallel suites: minor findings from 20261006-11.
 
-Run every suite at the same time, in both `rake` and `rake full`. Keep every current rule: every suite runs even after one fails, and the run fails if any suite fails, if a suite runs no examples, or if the root `spec/` suite didn't run. Buffer each suite's output and print it whole, under a header naming the suite, when that suite finishes, so the output doesn't interleave. Keep RuboCop and the version-stamp checks as they are. Print each suite's wall time.
+From the review of 20261006-11.
+1. A suite killed by a signal shows as "exit " with no number, since `exitstatus` is nil (`Rakefile` ~83). Name the signal instead. This predates 20261006-11.
+2. The image-build lock file is in `Dir.tmpdir`, so two runs with different `TMPDIR` values don't share it and can still build the same tag at once (`spec/support/test_postgres.rb` ~237). Use a fixed per-user path.
+3. If a suite thread raises an unexpected exception, `join` re-raises it in order, so later suites' output never prints and their child processes are orphaned (`Rakefile` ~76-93). The run still fails. Join every thread before raising, and print what each one held.
 
-Check these before relying on it, and fix what you find:
-- Concurrent builds of the test Postgres image from `spec/support/postgres/Dockerfile`, all with the same tag, at suite start.
-- Specs that write a fixed path a parallel suite could also write, such as a real `~/.quaack`, a fixed temp file name, or `spec/fixtures/full_replay_versions.json` (written only after everything passes).
-- Docker memory with four containers at once.
-
-Update CLAUDE.md's description of the two commands if it changes.
-
-- **Depends on:** None.
-- **Came from:** The user, 2026-10-06, after profiling the per-commit check.
+- **Depends on:** 20261006-11.
+- **Came from:** The review of 20261006-11.
 - **Design:** None (test infrastructure).
 - **Status:** todo

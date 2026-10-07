@@ -5810,3 +5810,22 @@ The llm-index-ideas payload's `stats` covers every column of each table the quer
 - **Status:** done
 - **Decided by the user (2026-10-06):** trim both llm-index-ideas and llm-rewrites; `*` and `t.*` keep every column of the tables they cover.
 - **Landed:** `StatsPayload.subset` (enclave/lib/quaack/enclave/stats_payload.rb) cuts each table's outbound `columns` to those the SQL references, found with pg_query. index-payload uses the qualified query (plus the rewrite SQL for a `rewrite_<n>` search), and rewrite-payload uses the qualified query. Unresolvable columns are kept for every table with that name. Bare `*`, whole-row refs, NATURAL joins, and unparseable SQL keep whole tables. Stored statistics and classification stay whole. No other LLM step sends stats.
+
+### 20261006-11. Run the spec suites in parallel.
+
+The per-commit check takes about 19 minutes because the `Rakefile` runs the suites one after another: enclave about 10.5 minutes, root about 6.3 (mostly the eight kept pipeline replays), driver about 2, protocol under a second. They're separate processes, and each starts its own Postgres container with a Docker-assigned port, pid-named databases, and stale-container cleanup that removes only containers whose owner pid has exited. So they can run at once, and wall time drops to about the slowest suite.
+
+Run every suite at the same time, in both `rake` and `rake full`. Keep every current rule: every suite runs even after one fails, and the run fails if any suite fails, if a suite runs no examples, or if the root `spec/` suite didn't run. Buffer each suite's output and print it whole, under a header naming the suite, when that suite finishes, so the output doesn't interleave. Keep RuboCop and the version-stamp checks as they are. Print each suite's wall time.
+
+Check these before relying on it, and fix what you find:
+- Concurrent builds of the test Postgres image from `spec/support/postgres/Dockerfile`, all with the same tag, at suite start.
+- Specs that write a fixed path a parallel suite could also write, such as a real `~/.quaack`, a fixed temp file name, or `spec/fixtures/full_replay_versions.json` (written only after everything passes).
+- Docker memory with four containers at once.
+
+Update CLAUDE.md's description of the two commands if it changes.
+
+- **Depends on:** None.
+- **Came from:** The user, 2026-10-06, after profiling the per-commit check.
+- **Design:** None (test infrastructure).
+- **Status:** done
+- **Landed:** The `Rakefile` runs every suite at once, one thread per suite, and holds each suite's output until it finishes, then prints it under a header naming the suite, whether it passed, and its wall time. Every failure rule is unchanged. `TestPostgres` builds the test image under a per-tag `flock`, so parallel suites build it once. No shared fixed paths were found, and peak Docker memory was about 853 MiB. The per-commit check went from about 19 minutes to about 10.
