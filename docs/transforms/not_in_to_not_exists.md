@@ -18,7 +18,7 @@ Here it states: `public.users.id` is not null; `public.enrollments.user_id` is n
 
 A `NOT IN` subquery on two not-null columns. Postgres runs `NOT EXISTS` as an anti-join, which it can't do for `NOT IN`.
 
-QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs, so the example shows them that way. The rule made this "after" on Postgres 18, from these tables:
+QUAACK replaces each constant with a placeholder, such as `$1`, before any rule runs, so the example shows them that way. It also shows both queries as QUAACK deparses them, so the Rails form `users.id NOT IN (...)` reads `NOT users.id IN (...)`. The rule made this "after" on Postgres 18, from these tables:
 
 ```sql
 CREATE TABLE public.users (id bigint PRIMARY KEY, name text, workflow_state text NOT NULL);
