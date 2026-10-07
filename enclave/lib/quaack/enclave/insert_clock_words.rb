@@ -188,9 +188,14 @@ module Quaack
 
         # firm leaves out a polymorphic or other pseudo-type target, which
         # Postgres could resolve to text, so a $n is anchored only where a
-        # real date or time type reads it (task 20261006-5).
+        # real date or time type reads it (task 20261006-5). It's also
+        # false where one target's types disagree, as for a function
+        # overloaded as f(text) and f(date): Postgres could resolve the
+        # call to either, so the $n is bound as written, and check refuses
+        # it (task 20261006-17).
         def reads_clock?(text, targets, firm: false)
           return false unless loose?(text)
+          return false if firm && targets.any? { disagree?(text, oids(it)) }
 
           oids = targets.flat_map { oids(it) }.uniq
           oids = oids.reject { info(it).kind == "p" } if firm
@@ -202,6 +207,10 @@ module Quaack
         # Whether a clock word could be in the text once quotes and escapes
         # are undone. Nothing without one can read the clock.
         def loose?(text) = WORD.match?(text) || WORD.match?(text.gsub(/[\\"]/, ""))
+
+        # Whether some of a target's types read the text as the clock, as
+        # a real (not pseudo) type, and others don't.
+        def disagree?(text, oids) = (1...oids.size).cover?(oids.count { info(it).kind != "p" && reads?(text, it) })
 
         def oids(target)
           case target
