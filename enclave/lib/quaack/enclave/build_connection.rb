@@ -33,19 +33,31 @@ module Quaack
       end
 
       # Cancels any other backend still building name, such as one whose
-      # client the driver's timeout killed, and waits up to WAIT
-      # seconds for it to stop. Its client is gone, so nobody reads its
-      # result, and waiting it out could cost the resume's whole timeout.
-      # Only QUAACK names an index quaack_ and a DDL hash, so this never
-      # touches someone else's build.
-      def cancel_orphans(connection, name)
-        deadline = now + WAIT
+      # client the driver's timeout killed, waits up to wait seconds for it
+      # to stop, and returns the pids it cancelled. Its client is gone, so
+      # nobody reads its result, and waiting it out could cost the resume's
+      # whole timeout. Only QUAACK names an index quaack_ and a DDL hash,
+      # and a racetrack serves one run at a time (DESIGN.md's index-build),
+      # so this never touches someone else's build. A backend the role may
+      # not signal, such as a superuser's, is refused by rule, never with
+      # Postgres's error.
+      def cancel_orphans(connection, name, wait: WAIT)
+        deadline = now + wait
+        cancelled = []
         until (pids = builders(connection, name)).empty?
           raise IndexBuild::Error, "index_build_orphan_running" if now > deadline
 
-          pids.each { connection.exec_params("SELECT pg_cancel_backend($1)", [it]) }
+          pids.each { cancel(connection, it) }
+          cancelled |= pids
           sleep 0.1
         end
+        cancelled
+      end
+
+      def cancel(connection, pid)
+        connection.exec_params("SELECT pg_cancel_backend($1)", [pid])
+      rescue PG::InsufficientPrivilege
+        raise IndexBuild::Error, "index_build_orphan_cancel_denied", cause: nil
       end
 
       def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -53,7 +65,7 @@ module Quaack
       # A fresh transaction each call, so pg_stat_activity isn't the
       # snapshot an open transaction keeps.
       def builders(connection, name)
-        connection.exec_params(<<~SQL, ["CREATE INDEX #{name} %"]).column_values(0)
+        connection.exec_params(<<~SQL, ["CREATE INDEX #{name} %"]).column_values(0).map(&:to_i)
           SELECT pid FROM pg_stat_activity
           WHERE pid <> pg_backend_pid() AND datname = current_database() AND state = 'active' AND query LIKE $1
         SQL

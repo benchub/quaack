@@ -27,9 +27,10 @@ module Quaack
     #                    "<search>:set_aside:<n>" => [name] }
     # Each name is quaack_ and a hash of the DDL, in the table's schema, so a
     # rerun finds and skips an index it already built. The DDL can hold a
-    # literal, so index_build stays in the store.
+    # literal, so index_build stays in the store. An Error's message is its
+    # rule, which ErrorFilter sends out.
     module IndexBuild
-      class Error < StandardError; end
+      Error = Class.new(StandardError) { def rule = message }
 
       SETTINGS = { "maintenance_work_mem" => "1GB", "max_parallel_maintenance_workers" => "4" }.freeze
 
