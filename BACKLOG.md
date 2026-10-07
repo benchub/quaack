@@ -2351,16 +2351,7 @@ From the builder of 20261004-88.
 - **Design:** input, qualify.
 - **Status:** todo
 
-### 20261006-5. Bind a clock-word placeholder to the anchored value (20261004-95 item 4).
-
-Split from 20261004-95. `bind` puts the query's real literals into `$n` before the insert check. A `clock_literal` refusal therefore tells the LLM one bit (whether a placeholder holds a clock word, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead avoids both. The user decided (2026-10-06) to bind the anchored value.
-
-A first build (reverted commit 50b1c27 on `main`'s history, `counterexamples/clock_binding.rb`) failed the second review: it anchored placeholders whose word never reaches a date/time value. `INSERT INTO t (id, tags) VALUES (1, string_to_array($1, ','))` into `tags text[]` with `$1 = 'today'` loaded `{2024-01-01}` instead of `{today}`. The literal `'today'` form is also refused as `clock_literal` though no date/time is reachable (insert_clock_words.rb ~158-160, ~222-223). Restrict anchoring, and the malformed-literal fallback, to targets that can hold a date/time value. Start from the reverted commit and add regressions for both forms. Also cover a placeholder holding a clock word plus more, such as `'today 10:00'` (still refused today).
-
-- **Depends on:** 20261004-95.
-- **Came from:** 20261004-95 item 4, and its second review.
-- **Design:** What goes into the enclave; insert check; clock anchoring.
-- **Status:** todo
+### 20261006-5. Bind a clock-word placeholder to the anchored value (20261004-95 item 4). Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-6. Clock words and defaults: minors from 20261004-95.
 
@@ -2454,4 +2445,13 @@ From the review of 20261006-8. DESIGN.md (~277) still says only "`quaack start` 
 - **Depends on:** 20261006-8.
 - **Came from:** The review of 20261006-8.
 - **Design:** config.
+- **Status:** todo
+
+### 20261006-17. Clock binding: overloaded user functions.
+
+From the second review of 20261006-5. `clock_params` (`enclave/lib/quaack/enclave/insert_clock_words.rb` ~131-137) checks `reads_clock?` over every overload's parameter types. With a user function overloaded as `f(text)` and `f(date)`, `fx.f($1)` into a `text` column, with `$1 = 'today'`, is anchored to a date, though Postgres resolves the unknown argument to `f(text)` and would load `'today'`. Anchor only when every candidate's parameter type at that position is a date/time type, or else bind as written and refuse it.
+
+- **Depends on:** 20261006-5.
+- **Came from:** The second review of 20261006-5.
+- **Design:** counterexamples inserts, clock anchoring.
 - **Status:** todo

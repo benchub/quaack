@@ -5879,3 +5879,15 @@ From the review of 20261004-10.
 - **Design:** Transport, config.
 - **Status:** done
 - **Landed:** `quaack setup` reads `enclave_timeout_seconds`, defaulting to 3600, and refuses a bad driver.json before touching the jump server. `quaack deploy` keeps its fixed timeout, and its timeout message names no setting (`EnclaveError#rule_with_note(timeout_hint:)`). `--enclave-timeout-seconds` takes only plain decimals. A timed-out version check reports `timeout`, not "quaacks isn't installed". This was driver-only, with no version bump.
+
+### 20261006-5. Bind a clock-word placeholder to the anchored value (20261004-95 item 4).
+
+Split from 20261004-95. `bind` puts the query's real literals into `$n` before the insert check. A `clock_literal` refusal therefore tells the LLM one bit (whether a placeholder holds a clock word, like `bad_value`), and `VALUES ($1)` is refused when `$1` is `'today'`. Binding the anchored value instead avoids both. The user decided (2026-10-06) to bind the anchored value.
+
+A first build (reverted commit 50b1c27 on `main`'s history, `counterexamples/clock_binding.rb`) failed the second review: it anchored placeholders whose word never reaches a date/time value. `INSERT INTO t (id, tags) VALUES (1, string_to_array($1, ','))` into `tags text[]` with `$1 = 'today'` loaded `{2024-01-01}` instead of `{today}`. The literal `'today'` form is also refused as `clock_literal` though no date/time is reachable (insert_clock_words.rb ~158-160, ~222-223). Restrict anchoring, and the malformed-literal fallback, to targets that can hold a date/time value. Start from the reverted commit and add regressions for both forms. Also cover a placeholder holding a clock word plus more, such as `'today 10:00'` (still refused today).
+
+- **Depends on:** 20261004-95.
+- **Came from:** 20261004-95 item 4, and its second review.
+- **Design:** What goes into the enclave; insert check; clock anchoring.
+- **Status:** done
+- **Landed:** `bind` puts the anchored value into a `$n` whose whole literal is a clock word, but only where a real date/time type reads it (`counterexamples/clock_binding.rb`, `InsertClockWords.clock_params` with `reads_clock?(firm: true)`). A `$n` that only a polymorphic parameter reads is bound as written and refused as `clock_literal`. `Types#holds_clock?` limits reading a clock word, and the malformed-literal fallback, to types that can hold a date/time, so `string_to_array($1, ',')` and `string_to_array('today', ',')` into `text[]` load the word as written. `'today 10:00'` is still refused. All three gems went to 0.1.10, with the `rake full` stamp. It passed its second review after one fix round, for the polymorphic-parameter case.
