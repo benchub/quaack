@@ -2420,3 +2420,12 @@ From the review of 20261006-10 (`enclave/lib/quaack/enclave/stats_payload.rb`).
 - **Came from:** The review of 20261006-10.
 - **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** todo
+
+### 20261007-1. The orphan-cancel deadline test flakes under load.
+
+`enclave/spec/index_build_step_postgres_spec.rb` ~496 is the deadline test from 20261006-15. It runs a backend that ignores `pg_cancel_backend`, with `wait: 1`, and expects `index_build_orphan_running`. During 20261006-7's first `rake full`, with every suite running in parallel, the error wasn't raised. The test passed alone and on the rerun. A flaky test in the per-commit check costs a rerun every time it trips. Find the race, maybe the orphan not yet active, or the stubborn function not yet looping when the wait starts. Make the setup wait for a state it can observe instead of relying on timing.
+
+- **Depends on:** 20261006-15.
+- **Came from:** The builder of 20261006-7, 2026-10-07.
+- **Design:** index-build.
+- **Status:** todo
