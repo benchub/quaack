@@ -189,6 +189,50 @@ RSpec.describe "quaacks index-build, against a real server" do
     conn&.close
   end
 
+  # 20261004-12: every index on one table is built before the next table's,
+  # while the first is still in cache. Tables go in the order they first
+  # appear; within a table, the order is the one they arrived in.
+  context "with candidates on two tables that arrive interleaved" do
+    let(:items) { Quaack::Enclave::TableName.new(schema: "public", name: "items") }
+
+    def candidate(table, key) = Quaack::Enclave::IndexCandidate.new(table:, key: [key], sources: [:parse])
+
+    def interleaved_run
+      ranked_run
+      conn = production.connect
+      conn.exec("CREATE TABLE public.items (a int, b int); INSERT INTO public.items VALUES (1, 1), (2, 2)")
+      set_aside(candidate(items, "a"), candidate(orders, "total"), candidate(items, "b"))
+    ensure
+      conn&.close
+    end
+
+    def set_aside(*planted)
+      entry = store.read("index_search_original")
+      entry["set_aside"] = planted.map { Quaack::Enclave::IndexStore.candidate_plain(it) }
+      store.write("index_search_original", entry)
+    end
+
+    def table(ddl) = ddl[/ ON (\S+) /, 1]
+    def names(lines) = lines.map { it["ddl"][/\ACREATE INDEX (\S+) /, 1] }
+
+    it "builds them grouped by table, both one per call and in a plain call, and builds and reports them all" do
+      interleaved_run
+      arrived = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten.uniq
+      expect(arrived.map { table(it) }.slice_when { |a, b| a != b }.count).to be > 2
+      grouped = arrived.partition { table(it) == "public.orders" }.flatten.map { Quaack::Enclave::IndexBuild.name(it) }
+
+      one_by_one = (1..arrived.size).flat_map { progress_lines(run("index-build", "--index", it.to_s)) }
+      plain = progress_lines(run("index-build"))
+
+      expect(names(plain)).to eq(grouped)
+      expect(plain.map { it["index"] }).to eq((1..arrived.size).to_a)
+      expect(one_by_one).to eq(plain)
+      build = stored.read("index_build")
+      expect(build["indexes"].keys).to match_array(grouped)
+      expect(build["indexes"].values.map { it["size"] }).to all(be_positive)
+    end
+  end
+
   it "builds the unused low-cardinality B-tree candidates index-test set aside (20260927-11)" do
     ranked_run
     btree = Quaack::Enclave::IndexCandidate.new(table: orders, key: %w[status total], sources: [:parse])

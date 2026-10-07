@@ -67,7 +67,7 @@ module Quaack
         # does nothing past the last index. An index already there is
         # skipped (IndexBuild.create).
         def build_one(store, connection, number, starting)
-          ddls = Enclave::IndexBuild.combinations(store).values.flatten.uniq
+          ddls = Enclave::BuildOrder.ddls(Enclave::IndexBuild.combinations(store))
           ddl = ddls[number - 1] or return
 
           Enclave::BuildConnection.configure(connection)
