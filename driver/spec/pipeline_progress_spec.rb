@@ -637,3 +637,37 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     end
   end
 end
+
+# index-build's first call's progress line gives the total. The transport
+# rescues an error in the progress block, such as a closed stderr under the
+# printer, so the total must be taken before the line is printed, or a
+# failed print would leave it 0 and skip the rest of the indexes.
+RSpec.describe Quaack::Driver::Pipeline::MeasurementStage, "when printing index-build's progress fails" do
+  # Stands in for the ssh transport, at the edge: index 1's call hands its
+  # block a progress line that counts three indexes, and, like the real
+  # transport, rescues what the block raises.
+  let(:transport) do
+    calls = []
+    Object.new.tap do |transport|
+      transport.define_singleton_method(:calls) { calls }
+      transport.define_singleton_method(:call) do |subcommand, args: {}, **, &progress|
+        calls << [subcommand, args[:index]]
+        begin
+          progress&.call({ "type" => "index_build_progress", "index" => 1, "total" => 3 }) if args[:index] == "1"
+        rescue StandardError
+          nil
+        end
+        Data.define(:messages).new(messages: [])
+      end
+    end
+  end
+
+  it "still builds every index the first progress line counts" do
+    progress = Object.new.tap { it.define_singleton_method(:note) { |_| raise Errno::EPIPE } }
+
+    total = described_class.build_indexes(transport, "RUN", progress)
+
+    expect([total, transport.calls]).to eq([3, [%w[index-build 1], %w[index-build 2], %w[index-build 3],
+                                                ["index-build", nil]]])
+  end
+end

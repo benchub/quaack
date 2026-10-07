@@ -624,6 +624,21 @@ RSpec.describe Quaack::Driver::Transport do
       expect(result.messages).to eq([])
     end
 
+    # Only the block's errors are the progress printer's. An error in the
+    # driver's own reading of a progress line is a bug, and it ends the
+    # call as it would without a block, not as a progress failure.
+    it "lets an error in reading a progress line end the call, not switch progress off" do
+      File.write(go, "")
+      bug = Class.new(StandardError)
+      allow(Quaack::Driver::Transport::Reply).to receive(:progress).and_raise(bug, "driver bug")
+      calls = 0
+
+      expect do
+        expect { waiting(progress_line).call("probe") { calls += 1 } }.to raise_error(bug, "driver bug")
+      end.not_to output.to_stderr
+      expect(calls).to eq(0)
+    end
+
     it "reads a run with progress lines the same way when the call has no block" do
       File.write(go, "")
 
