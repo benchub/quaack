@@ -81,7 +81,7 @@ task :spec do
         reason = suite_failure(status)
         outcome = status&.success? ? "passed" : "failed (#{reason})"
         print_suite(printing, "#{suite}: #{outcome} in #{format("%.1f", seconds)}s",
-                    "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}\n#{out}") do
+                    "#{rerun_line(path, cmd)}#{out}") do
           ran << dir if status
           failed << "#{suite} (#{reason})" unless status&.success?
         end
@@ -90,11 +90,16 @@ task :spec do
     # thread, join would re-raise it before the later suites printed.
     rescue StandardError => e
       reason = "raised #{e.class}: #{e.message}"
-      print_suite(printing, "#{suite}: failed (#{reason})", "") { failed << "#{suite} (#{reason})" }
+      print_suite(printing, "#{suite}: failed (#{reason})", rerun_line(path, cmd)) { failed << "#{suite} (#{reason})" }
     end
   end.each(&:join)
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
   abort "Spec suites failed: #{failed.join(", ")}" unless failed.empty?
+end
+
+# The shell line that reruns one suite by hand, from any directory.
+def rerun_line(path, cmd)
+  "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}\n"
 end
 
 # Holding `printing`, records a suite's result with the block, then prints
