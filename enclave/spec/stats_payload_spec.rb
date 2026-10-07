@@ -66,6 +66,17 @@ RSpec.describe Quaack::Enclave::StatsPayload do
       .to eq([["public", []], ["public", []], ["archive", %w[note]]])
   end
 
+  it "maps a column-alias list's names back to the real columns by position" do
+    sql = "SELECT o.a, c FROM public.orders o(a, b, c) JOIN public.customers cu(k) ON cu.k = o.b"
+
+    expect(kept(sql)).to eq("orders" => %w[id customer_id status], "customers" => %w[id])
+  end
+
+  it "keeps the whole table when a column-alias list is longer than the columns it knows" do
+    expect(kept("SELECT cu.a FROM public.customers cu(a, b, c, d, e)"))
+      .to eq("orders" => [], "customers" => %w[id name email region])
+  end
+
   it "keeps an unqualified or unresolvable column for every table that has it" do
     sql = "SELECT name, sub.status FROM public.orders o JOIN public.customers c ON true " \
           "JOIN (SELECT 1) sub ON id = 1"

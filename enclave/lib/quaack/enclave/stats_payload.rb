@@ -13,10 +13,15 @@ module Quaack
     #
     # pg_query finds every ColumnRef, in any clause, subquery, or CTE, and
     # every USING name. A qualifier resolves to each table the query names
-    # with it as alias, table name, or schema and table name. A column
-    # whose qualifier resolves to no table (a subquery's or CTE's alias),
-    # or that has none, counts for every table that has a column of that
-    # name. A star, a whole-row reference, or a NATURAL join keeps every
+    # with it as alias, table name, or schema and table name. A CTE read
+    # by its name, or by an alias for it, resolves like a table of that
+    # name. That drops nothing real, since the CTE body's own references
+    # count. A column whose qualifier resolves to no table (a subquery's
+    # alias), or that has none, counts for every table that has a column
+    # of that name. A name from an alias's column list, as in
+    # orders o(a, b), also keeps the real column at its position: classify
+    # lists a table's columns in attnum order. A list longer than those
+    # columns keeps the whole table. A star, a whole-row reference, or a NATURAL join keeps every
     # column of the tables it covers, and a bare * keeps them all. A query
     # that won't parse keeps everything. It fails toward sending: what it
     # can't pin down, it keeps.
@@ -44,7 +49,19 @@ module Quaack
       def kept_names(table, keep)
         return :all if keep.full.any? { matches?(it, table) }
 
-        keep.columns.filter_map { |qualifier, name| name if qualifier.nil? || matches?(qualifier, table) }
+        names = keep.columns.filter_map { |qualifier, name| name if qualifier.nil? || matches?(qualifier, table) }
+        renamed(table, keep, names)
+      end
+
+      # names, plus the real column each one renames through a column-alias
+      # list on this table, matched by position; :all when a list is longer
+      # than the table's columns.
+      def renamed(table, keep, names)
+        lists = keep.renames.filter_map { |target, colnames| colnames if matches?(target, table) }
+        return :all if lists.any? { it.size > table["columns"].size }
+
+        positions = lists.flat_map { |colnames| names.filter_map { colnames.index(it) } }
+        names | positions.map { table["columns"][it]["name"] }
       end
 
       # A qualifier is [schema, name], schema nil when the query left it off.
@@ -53,8 +70,12 @@ module Quaack
       end
 
       # What one query references: Keep, or :all.
-      Keep = Data.define(:full, :columns) do
-        def |(other) = Keep.new(full: full | other.full, columns: columns | other.columns)
+      # renames holds [qualifier, column-alias names] for each table an
+      # alias with a column list renames.
+      Keep = Data.define(:full, :columns, :renames) do
+        def |(other)
+          Keep.new(full: full | other.full, columns: columns | other.columns, renames: renames | other.renames)
+        end
       end
 
       def references(sql)
@@ -62,7 +83,7 @@ module Quaack
         nodes = []
         walk(tree, nodes)
         aliases = alias_map(nodes)
-        Collector.new(aliases).collect(nodes)
+        Collector.new(aliases, renames(nodes)).collect(nodes)
       rescue PgQuery::ParseError
         :all
       end
@@ -86,10 +107,23 @@ module Quaack
         nodes.each do |key, value|
           next unless key == :range_var
 
-          target = [value[:schemaname].to_s.empty? ? nil : value[:schemaname], value[:relname]]
-          names(value, target).each { map[it] |= [target] }
+          resolved = target(value)
+          names(value, resolved).each { map[it] |= [resolved] }
         end
         map
+      end
+
+      def renames(nodes)
+        nodes.filter_map do |key, value|
+          colnames = value.dig(:alias, :colnames) if key == :range_var
+          next unless colnames
+
+          [target(value), colnames.map { it.dig(:string, :sval) }]
+        end
+      end
+
+      def target(range_var)
+        [range_var[:schemaname].to_s.empty? ? nil : range_var[:schemaname], range_var[:relname]]
       end
 
       def names(range_var, (schema, name))
@@ -98,8 +132,9 @@ module Quaack
 
       # Builds one query's Keep from its ColumnRefs and joins.
       class Collector
-        def initialize(aliases)
+        def initialize(aliases, renames)
           @aliases = aliases
+          @renames = renames
           @full = []
           @columns = []
         end
@@ -110,7 +145,7 @@ module Quaack
 
             using(value) if key == :join_expr
           end
-          Keep.new(full: @full.uniq, columns: @columns.uniq)
+          Keep.new(full: @full.uniq, columns: @columns.uniq, renames: @renames.uniq)
         end
 
         private
