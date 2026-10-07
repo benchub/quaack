@@ -5866,3 +5866,16 @@ From the review of 20261004-11. When a per-index `quaacks index-build --index N`
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** `Enclave::BuildConnection` sets `client_connection_check_interval = '2s'` on the build connection (Postgres 14+), so the server ends an orphaned build soon after its client goes away. Before each build, `IndexBuild.create` cancels any other active backend still building the same `quaack_<hash>` name (`pg_cancel_backend`) and waits up to 30s, else refuses `index_build_orphan_running`. The chosen fix is to cancel, not wait. All three gems went to 0.1.9, with the `rake full` stamp.
+
+### 20261006-8. Enclave timeout: minor findings from 20261004-10.
+
+From the review of 20261004-10.
+1. `quaack setup` keeps a fixed 3600s timeout, but a timed-out call there still says to raise `enclave_timeout_seconds`, which setup does not read (`driver/lib/quaack/driver/enclave_error.rb` `timed_out`, `setup_command.rb`). Have setup read the setting, or drop the hint when the timeout did not come from the config or flag. Deploy may have the same issue if its calls go through `Transport::Base`.
+2. `--enclave-timeout-seconds` parses with `Float()`, so it accepts forms like `0x10` and `1_000` (`driver_config.rb`). Harmless, but looser than a plain number of seconds.
+3. `EnclaveVersion.check!` reads any failed version call, including a timeout, as "quaacks is not installed".
+
+- **Depends on:** 20261004-10.
+- **Came from:** The builder and review of 20261004-10.
+- **Design:** Transport, config.
+- **Status:** done
+- **Landed:** `quaack setup` reads `enclave_timeout_seconds`, defaulting to 3600, and refuses a bad driver.json before touching the jump server. `quaack deploy` keeps its fixed timeout, and its timeout message names no setting (`EnclaveError#rule_with_note(timeout_hint:)`). `--enclave-timeout-seconds` takes only plain decimals. A timed-out version check reports `timeout`, not "quaacks isn't installed". This was driver-only, with no version bump.

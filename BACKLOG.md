@@ -2387,17 +2387,7 @@ From the builder of 20261006-3.
 - **Design:** statistics, index-dedupe, trust boundary.
 - **Status:** todo
 
-### 20261006-8. Enclave timeout: minor findings from 20261004-10.
-
-From the review of 20261004-10.
-1. `quaack setup` keeps a fixed 3600s timeout, but a timed-out call there still says to raise `enclave_timeout_seconds`, which setup does not read (`driver/lib/quaack/driver/enclave_error.rb` `timed_out`, `setup_command.rb`). Have setup read the setting, or drop the hint when the timeout did not come from the config or flag. Deploy may have the same issue if its calls go through `Transport::Base`.
-2. `--enclave-timeout-seconds` parses with `Float()`, so it accepts forms like `0x10` and `1_000` (`driver_config.rb`). Harmless, but looser than a plain number of seconds.
-3. `EnclaveVersion.check!` reads any failed version call, including a timeout, as "quaacks is not installed".
-
-- **Depends on:** 20261004-10.
-- **Came from:** The builder and review of 20261004-10.
-- **Design:** Transport, config.
-- **Status:** todo
+### 20261006-8. Enclave timeout: minor findings from 20261004-10. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-9. A timed-out index build can race its resume. Done, see BACKLOG-COMPLETE.md.
 
@@ -2455,4 +2445,13 @@ From the review of 20261006-9 (`enclave/lib/quaack/enclave/build_connection.rb`)
 - **Depends on:** 20261006-9.
 - **Came from:** The review of 20261006-9.
 - **Design:** index-build.
+- **Status:** todo
+
+### 20261006-16. Timeout docs: two gaps from 20261006-8.
+
+From the review of 20261006-8. DESIGN.md (~277) still says only "`quaack start` and `quaack run` refuse" a bad driver.json. `quaack setup` refuses one too now, even for a bad `jump_command` it never uses. README.md (~189) gives only `5400` as a flag example. DESIGN.md also shows `90.5`, which the code accepts.
+
+- **Depends on:** 20261006-8.
+- **Came from:** The review of 20261006-8.
+- **Design:** config.
 - **Status:** todo
