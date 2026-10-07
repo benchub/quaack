@@ -2368,16 +2368,7 @@ From the review of 20260929-20.
 - **Design:** Deploying the enclave.
 - **Status:** todo
 
-### 20261006-23. Parallel suites: minors from 20261006-12.
-
-From the review of 20261006-12.
-1. A suite whose thread raised prints only its header, with no `cd ... && ...` command line to rerun it (`Rakefile` ~88-92). Print the command line too.
-2. The raise test (`spec/rakefile_spec.rb` ~298-320) has no root `.` suite, so nothing checks that a root suite that raised stays out of `ran`.
-
-- **Depends on:** 20261006-12.
-- **Came from:** The review of 20261006-12.
-- **Design:** None (test infrastructure).
-- **Status:** todo
+### 20261006-23. Parallel suites: minors from 20261006-12. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-24. index-rank: cover a non-zero `combined` count with a real run.
 

@@ -6094,3 +6094,15 @@ From the builder and review of 20261001-7.
 - **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** done
 - **Landed:** `StatsPayload` maps each name in a table alias's column list (`FROM orders o(a, b, c)`) to the real column at that position in the outbound stats. Those columns are in attnum order with dropped columns skipped, the same way Postgres skips them, and the review checked this against real Postgres with a dropped column. A list longer than the known columns keeps the whole table. The subset still only removes entries. The code comment and DESIGN.md now say a CTE name resolves like a table of that name. All three gems went to 0.1.19, with the `rake full` stamp.
+
+### 20261006-23. Parallel suites: minors from 20261006-12.
+
+From the review of 20261006-12.
+1. A suite whose thread raised prints only its header, with no `cd ... && ...` command line to rerun it (`Rakefile` ~88-92). Print the command line too.
+2. The raise test (`spec/rakefile_spec.rb` ~298-320) has no root `.` suite, so nothing checks that a root suite that raised stays out of `ran`.
+
+- **Depends on:** 20261006-12.
+- **Came from:** The review of 20261006-12.
+- **Design:** None (test infrastructure).
+- **Status:** done
+- **Landed:** A suite whose thread raised now prints its `cd ... && ...` rerun line under its header, as every other suite does (`rerun_line` in the `Rakefile`). A separate test checks that a root suite that raised is never counted as run, and that the run fails with the root-must-run rule. This is test infrastructure only, with no version bump.
