@@ -72,28 +72,49 @@ task :spec do
   failed = []
   printing = Mutex.new
   env = { "SPEC_OPTS" => nil, FullReplay::ENV_VAR => (Rake::Task[:full].already_invoked ? "1" : nil) }
+  cmd = [Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "--options", ".rspec", "spec"]
   SPEC_SUITES.map do |dir|
-    cmd = [Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "--options", ".rspec", "spec"]
     path = File.join(__dir__, dir)
+    suite = File.join(dir, "spec")
     Thread.new do
       run_suite(env, *cmd, chdir: path) do |out, status, seconds|
-        suite = File.join(dir, "spec")
-        # status is nil when the command couldn't start.
-        reason = status ? "exit #{status.exitstatus}" : "couldn't start"
+        reason = suite_failure(status)
         outcome = status&.success? ? "passed" : "failed (#{reason})"
-        printing.synchronize do
+        print_suite(printing, "#{suite}: #{outcome} in #{format("%.1f", seconds)}s",
+                    "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}\n#{out}") do
           ran << dir if status
           failed << "#{suite} (#{reason})" unless status&.success?
-          puts "==> #{suite}: #{outcome} in #{format("%.1f", seconds)}s"
-          puts "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}"
-          print out
-          $stdout.flush
         end
       end
+    # A bug in the task itself fails only its own suite. Raised out of the
+    # thread, join would re-raise it before the later suites printed.
+    rescue StandardError => e
+      reason = "raised #{e.class}: #{e.message}"
+      print_suite(printing, "#{suite}: failed (#{reason})", "") { failed << "#{suite} (#{reason})" }
     end
   end.each(&:join)
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
   abort "Spec suites failed: #{failed.join(", ")}" unless failed.empty?
+end
+
+# Holding `printing`, records a suite's result with the block, then prints
+# its header and body whole, so the suites' output never interleaves.
+def print_suite(printing, header, body)
+  printing.synchronize do
+    yield
+    puts "==> #{header}"
+    print body
+    $stdout.flush
+  end
+end
+
+# Why a suite failed. status is nil when the command couldn't start, and a
+# suite killed by a signal has no exit status.
+def suite_failure(status)
+  if status.nil? then "couldn't start"
+  elsif status.signaled? then "killed by SIG#{Signal.signame(status.termsig)}"
+  else "exit #{status.exitstatus}"
+  end
 end
 
 # Runs one suite's command, holding its output, and yields the output, the

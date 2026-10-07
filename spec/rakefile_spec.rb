@@ -249,8 +249,8 @@ RSpec.describe "the Rakefile" do
 
     # Runs the real task after running `patch`, Ruby code that can wrap the
     # task's run_suite or Gem.ruby.
-    def run_with(suites, patch)
-      scratch_tree(suites) do |dir|
+    def run_with(suites, patch, code: {})
+      scratch_tree(suites, code:) do |dir|
         code = %(require "rake"; load "Rakefile"; #{patch}; Rake::Task[:spec].invoke)
         Open3.capture2e(RbConfig.ruby, "-e", code, chdir: dir)
       end
@@ -283,6 +283,40 @@ RSpec.describe "the Rakefile" do
 
       expect(status).not_to be_success, out
       expect(out).to include("The root spec/ suite didn't run")
+    end
+
+    it "names the signal that killed a suite" do
+      out, status = scratch_tree(%w[. foo], code: { "foo" => 'Process.kill("KILL", Process.pid)' }) do |dir|
+        rake("spec", chdir: dir)
+      end
+
+      expect(status).not_to be_success, out
+      expect(sections(out).keys).to include(a_string_starting_with("==> foo/spec: failed (killed by SIGKILL) in "))
+      expect(out).to include("Spec suites failed: foo/spec (killed by SIGKILL)")
+    end
+
+    # The suite that raises is joined first. The other still runs to the end,
+    # and its output prints, before the task fails naming the one that raised.
+    it "prints every suite's output, and names the suite, when one raises in the task itself" do
+      patch = <<~RUBY
+        module RaiseFirst
+          def run_suite(*, chdir:, &)
+            raise "planted failure" if File.basename(chdir) == "aaa"
+
+            super
+          end
+        end
+        extend RaiseFirst
+      RUBY
+      out, status = run_with(%w[aaa bbb], patch, code: { "bbb" => "sleep 1" })
+
+      expect(status).not_to be_success, out
+      expect(runs(out).keys).to eq(["bbb"])
+      expect(sections(out).keys).to include(
+        "==> aaa/spec: failed (raised RuntimeError: planted failure)",
+        a_string_starting_with("==> bbb/spec: passed in ")
+      )
+      expect(out).to include("Spec suites failed: aaa/spec (raised RuntimeError: planted failure)")
     end
 
     it "gives each failed suite's exit status" do
