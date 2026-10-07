@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "fixed_notes"
 require_relative "production_failed_note"
 
 module Quaack
@@ -39,11 +40,6 @@ module Quaack
       EX_SOFTWARE = 70
 
       attr_reader :subcommand, :rule, :exit_status, :signal, :timeout_seconds
-
-      # What run_from_older_version means: the run's store is in an older
-      # format, whose entries this version would misread.
-      OLDER_VERSION = "an older version of QUAACK started this run, and this version can't resume it. " \
-                      "Start a new run with quaack start."
 
       # What incomplete's note adds for exit 255, and what ssh_failed's says.
       EXIT_255 = "The ssh session failed or ended, or the remote process was killed: check your ssh login, " \
@@ -99,7 +95,8 @@ module Quaack
       # error line holds only the rule, so the driver adds the note. A
       # rewrite-test refusal that names its column gets the table, column, and type,
       # and an fk_cycle refusal that names its tables gets them. A run an
-      # older version started gets what to do instead.
+      # older version started gets what to do instead, and a refused
+      # --captured-at what a good one looks like.
       #
       # incomplete gets the subcommand and how it ended, and ssh_failed what
       # to check, then next_step, the caller's words for what to do after,
@@ -148,7 +145,7 @@ module Quaack
 
       # What rule_with_note adds after the rule, or nil.
       def note
-        return OLDER_VERSION if rule == "run_from_older_version"
+        return FixedNotes::BY_RULE[rule] if FixedNotes::BY_RULE.key?(rule)
         return timed_out if rule == "timeout" && timeout_seconds
         return reason_message(reason) if %w[query_unreadable plan_unreadable].include?(rule) && reason
 

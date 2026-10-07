@@ -12,13 +12,17 @@ require_relative "transport/ssh"
 
 module Quaack
   module Driver
-    # `quaack start --server <prod> --query <file> --plan <file> [--port <n>]`
-    # (DESIGN.md, "Where QUAACK runs" and input). The query and plan paths
+    # `quaack start --server <prod> --query <file> --plan <file> [--port <n>]
+    # [--captured-at <time>]` (DESIGN.md, "Where QUAACK runs" and input). The query and plan paths
     # are on the jump server, and their files never leave it. --port is
     # production's port, for a server that doesn't listen where the
     # operator's libpq setup on the jump server points. It's checked here,
     # as run-server's --port is (Protocol::Port), and passed to intake,
     # which checks it again. Without it, libpq's setup picks the port.
+    # --captured-at, the time the production plan ran, goes to intake as
+    # is, one quoted word on ssh's remote command line, and intake parses
+    # and checks it (clock-anchor). Without it, intake anchors the clock at
+    # its own time.
     #
     # It finds the jump server with jump_command from the driver config,
     # ~/.quaack/driver.json on the laptop: a one-line shell command in which
@@ -47,8 +51,8 @@ module Quaack
         @jump_timeout = jump_timeout
       end
 
-      def call(server:, query:, plan:, port: nil)
-        args = intake_args(server:, query:, plan:, port:)
+      def call(server:, query:, plan:, port: nil, captured_at: nil)
+        args = intake_args(server:, query:, plan:, port:, captured_at:)
         host, transport = jump(server)
         EnclaveVersion.check!(transport, host)
         run_id = transport.call("intake", args:).messages.find { it["type"] == "run" }&.fetch("run_id", nil)
@@ -69,12 +73,13 @@ module Quaack
                                   timeout: DriverConfig.enclave_timeout(config, nil, Transport::Base::DEFAULT_TIMEOUT))]
       end
 
-      # intake's arguments, once each is checked: --port only when given.
-      def intake_args(server:, query:, plan:, port:)
+      # intake's arguments, once each is checked: --port and --captured-at
+      # only when given. intake parses and checks --captured-at itself.
+      def intake_args(server:, query:, plan:, port:, captured_at:)
         check_remote_path!("query", query)
         check_remote_path!("plan", plan)
         check_port!(port)
-        { query:, plan:, server:, **(port ? { port: } : {}) }
+        { query:, plan:, server:, **(port ? { port: } : {}), **(captured_at ? { "captured-at": captured_at } : {}) }
       end
 
       def check_port!(port)
