@@ -23,14 +23,18 @@ module Quaack
       #                   divergence on production data, which selection drops
       #                   and the report shows prominently
       #   "partial_count" how many verdicts were partial, for the report
-      # Rows never leave the enclave, and nothing but DONE goes out.
+      # Rows never leave the enclave. It sends one step_counts: compared,
+      # how many candidates it compared, discarded, how many of those
+      # differed, and partial, partial_count. Then DONE.
       module ResultComparison
         module_function
 
         def call(store:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
-          store.write("result_comparison", entry(verdicts(store, connection)))
-          []
+          entry = entry(verdicts(store, connection))
+          store.write("result_comparison", entry)
+          [{ type: :step_counts, compared: entry["verdicts"].size, discarded: entry["discarded"].size,
+             partial: entry["partial_count"] }]
         ensure
           connection&.close
         end

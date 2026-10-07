@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "quaack/enclave/rewrite_rules"
+require "quaack/protocol/step_counts"
 
 # DESIGN.md's rewrite-rules' generator: it holds a list of rules and chains them, and
 # knows nothing about any one rule. These rules are fakes, given through the
@@ -147,5 +148,9 @@ RSpec.describe Quaack::Enclave::RewriteRules do
                 not_in_to_not_exists existence_in_flip distinct_join_to_exists cte_hoist_dedupe
                 union_outer_filter_removal polymorphic_key_copy])
     expect(described_class::RULES).to all(respond_to(:rewrites) & have_attributes(description: a_kind_of(String)))
+  end
+
+  it "names its rules exactly as the protocol's shared list does, which the driver and egress check against" do
+    expect(described_class::RULES.map(&:name)).to eq(Quaack::Protocol::StepCounts::RULE_NAMES)
   end
 end

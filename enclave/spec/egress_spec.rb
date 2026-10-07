@@ -68,9 +68,9 @@ RSpec.describe Quaack::Enclave::Egress do
     end
 
     it "keeps every field on each type's list, and only those, for every type on the whitelist" do
-      # A burndown's fields must be a burndown, and a report's plans plan
-      # nodes, so they get their own tests below.
-      whitelist.except(:burndown, :report).each do |type, fields|
+      # A burndown's fields must be a burndown, a report's plans plan nodes,
+      # and step_counts' counts, so they get their own tests below.
+      whitelist.except(:burndown, :report, :step_counts).each do |type, fields|
         message = fields.to_h { |f| [f, "value of #{f}"] }.merge(type: type, not_on_the_list: EGRESS_SENTINEL)
         out = egress.serialize(message)
 
@@ -206,6 +206,30 @@ RSpec.describe Quaack::Enclave::Egress do
     it "refuses one missing stages or totals, since the check needs both" do
       expect { egress.serialize(type: :burndown, stages: {}) }.to raise_error(described_class::Error)
       expect { egress.serialize(type: :burndown, totals: {}) }.to raise_error(described_class::Error)
+    end
+  end
+
+  describe "a step_counts message" do
+    it "sends counts and fired rule names as they are, and drops other fields" do
+      out = egress.serialize(type: :step_counts, found: 12, used: 3, rules: ["or_to_union"], sql: EGRESS_SENTINEL)
+
+      expect(JSON.parse(out)).to eq("type" => "step_counts", "found" => 12, "used" => 3, "rules" => ["or_to_union"])
+    end
+
+    [
+      ["a string where a count belongs", { found: EGRESS_SENTINEL }],
+      ["a numeric string where a count belongs", { found: "12" }],
+      ["a negative count", { timed_out: -1 }],
+      ["a rule name not on the list", { rules: ["or_to_union", EGRESS_SENTINEL] }],
+      ["rules that aren't an Array", { rules: EGRESS_SENTINEL }]
+    ].each do |what, fields|
+      it "refuses one with #{what}, without quoting it" do
+        expect { egress.serialize(type: :step_counts, **fields) }
+          .to raise_error(described_class::Error, "a value in this step_counts message isn't counts") { |e|
+            expect(e.message).not_to include(EGRESS_SENTINEL)
+            expect(e.cause).to be_nil
+          }
+      end
     end
   end
 

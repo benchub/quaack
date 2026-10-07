@@ -33,7 +33,8 @@ RSpec.describe "quaacks baseline, against a real server" do
 
     outcome = run("baseline")
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(sets: 3, timed_out: 0), "", 0])
     expect_no_leaks(sentinels, outcome)
     baseline = stored.read("baseline")
     expect(baseline["sets"].keys).to match_array(%w[slow worst_case typical])

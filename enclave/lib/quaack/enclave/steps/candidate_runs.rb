@@ -24,14 +24,18 @@ module Quaack
       #   "timed_out_count" how many were dropped, for the report
       #   "measurement_runs" how many runs it took (Measurement.runs), the
       #                     dropped ones' included, for the burndown
-      # Every built index is hidden again at the end. Its only line is DONE.
+      # Every built index is hidden again at the end. It sends one
+      # step_counts: measured, how many runs it kept, and timed_out, how
+      # many it dropped. Then DONE.
       module CandidateRuns
         module_function
 
         def call(store:, **)
           connection = Enclave::RunServer.connect(store, :racetrack)
-          store.write("candidate_runs", entry(store, connection))
-          []
+          entry = entry(store, connection)
+          store.write("candidate_runs", entry)
+          [{ type: :step_counts, measured: entry["candidates"].values.sum(&:size),
+             timed_out: entry["timed_out_count"] }]
         ensure
           if connection
             Enclave::IndexBuild.hide_all(connection, store.read("index_build"))

@@ -6,6 +6,7 @@ require_relative "protocol/burndown"
 require_relative "protocol/plan_nodes"
 require_relative "protocol/index_sources"
 require_relative "protocol/port"
+require_relative "protocol/step_counts"
 
 module Quaack
   # The messages the driver and the enclave script exchange. Both sides load

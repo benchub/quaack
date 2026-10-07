@@ -35,7 +35,8 @@ RSpec.describe "quaacks index-baseline, against a real server" do
     outcome = run("index-baseline")
 
     expect(stored.read("index_baseline")["combinations"]).not_to have_key("rewrite_1:top:1")
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(combinations: original_keys.size, timed_out: 0), "", 0])
     expect_no_leaks(sentinels, outcome)
     result = stored.read("index_baseline")
     expect(original_keys).not_to be_empty
@@ -58,7 +59,7 @@ RSpec.describe "quaacks index-baseline, against a real server" do
 
     outcome = run("index-baseline")
 
-    expect(outcome.stdout).to eq(%({"type":"done"}\n))
+    expect(outcome.stdout).to eq(counts_then_done(combinations: original_keys.size, timed_out: original_keys.size))
     result = stored.read("index_baseline")
     expect(result["timed_out"]).to match_array(original_keys)
     expect(result["combinations"].values.flat_map(&:values)).to all(eq("timed_out" => true, "ran" => 1))

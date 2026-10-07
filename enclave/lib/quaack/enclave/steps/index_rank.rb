@@ -7,6 +7,7 @@ require_relative "../literal_set"
 require_relative "../run_server"
 require_relative "../single_candidate_test"
 require_relative "index_search"
+require_relative "step_counts"
 
 module Quaack
   module Enclave
@@ -33,7 +34,9 @@ module Quaack
       # (index_generated_<search>), it also writes index_llm_ranked_<search>,
       # so a resumed rewrite-index-ideas knows its second index-rank ran. Before
       # either, it records the ranking in the burndown (IndexBurndown.record_rank).
-      # Its only line is DONE.
+      # It sends one step_counts: ranked, how many single indexes made the
+      # top, and combined, how many indexes the best combination holds (0
+      # for none). Then DONE.
       module IndexRank
         OPTIONS = { "search" => :value }.freeze
 
@@ -47,9 +50,10 @@ module Quaack
           raise Error, "index_rank_no_index_search" unless store.entry?("index_search_#{search}")
 
           connection = Enclave::RunServer.connect(store, :racetrack)
-          store.write("index_ranking_#{search}", ranking(store, search, connection))
+          ranking = ranking(store, search, connection)
+          store.write("index_ranking_#{search}", ranking)
           store.write("index_llm_ranked_#{search}", true) if store.entry?("index_generated_#{search}")
-          []
+          [StepCounts.index_rank(ranking)]
         ensure
           connection&.close
         end
@@ -78,7 +82,7 @@ module Quaack
 
         def used(entry)
           (entry["results"] + (entry["llm_results"] || []))
-            .select { !it["refusal"] && it["plans"].values.any? { |plan| plan["used"] } }
+            .select { StepCounts.used?(it) }
             .map { IndexStore.candidate(it["candidate"]) }
         end
 

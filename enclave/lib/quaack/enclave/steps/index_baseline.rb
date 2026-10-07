@@ -14,7 +14,9 @@ module Quaack
       #   "combinations" { combination key => { set name => measurement } }
       #   "timed_out"    the combination keys where any set timed out
       #   "measurement_runs" how many runs it took (Measurement.runs), for the burndown
-      # Every built index is hidden again at the end. Its only line is DONE.
+      # Every built index is hidden again at the end. It sends one
+      # step_counts: combinations, how many it measured, and timed_out, how
+      # many of those timed out. Then DONE.
       module IndexBaseline
         module_function
 
@@ -22,8 +24,9 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           build = store.read("index_build")
           results = measure_all(connection, store, build["combinations"].keys.grep(/\Aoriginal:/))
-          store.write("index_baseline", entry(results))
-          []
+          entry = entry(results)
+          store.write("index_baseline", entry)
+          [{ type: :step_counts, combinations: results.size, timed_out: entry["timed_out"].size }]
         ensure
           Enclave::IndexBuild.hide_all(connection, build) if connection && build
           connection&.close

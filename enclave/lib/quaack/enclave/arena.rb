@@ -8,7 +8,7 @@ module Quaack
   module Enclave
     # DESIGN.md's arena-setup: build arena, the empty database rewrite-test loads fixtures into.
     #
-    #   Arena.build(store:, racetrack:, name:, connect:)  # nil, or raises an Error
+    #   Arena.build(store:, racetrack:, name:, connect:)  # => 12, how many tables, or raises an Error
     #
     # racetrack is a superuser's connection to the run server's racetrack
     # database, used only to create and drop arena; name is the run's
@@ -31,6 +31,8 @@ module Quaack
     # needed), every default that reads the clock anchored to it
     # (ClockDefaults), and DISABLE TRIGGER USER on every table with a user trigger,
     # so FK triggers still fire. Constraints are left as the dump made them.
+    # It returns how many tables, plain or partitioned, arena then holds
+    # outside the system schemas.
     #
     # An Error's message is its rule and nothing else.
     module Arena
@@ -54,6 +56,12 @@ module Quaack
         WHERE NOT t.tgisinternal AND t.tgparentid = 0
       SQL
 
+      TABLE_COUNT_SQL = <<~SQL
+        SELECT count(*) FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p') AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+      SQL
+
       module_function
 
       def build(store:, racetrack:, name:, connect:)
@@ -64,7 +72,7 @@ module Quaack
         Racetrack.create_clock_anchor(arena, literal)
         ClockDefaults.anchor(arena)
         disable_user_triggers(arena)
-        nil
+        Integer(arena.exec(TABLE_COUNT_SQL).getvalue(0, 0))
       ensure
         arena&.close
       end

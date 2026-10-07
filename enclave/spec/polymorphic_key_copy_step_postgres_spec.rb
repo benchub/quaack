@@ -106,7 +106,7 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
     expect(rows(rewritten)).to eq(want)
   end
 
-  it "sends only rewrite_outcome lines, with neither the type literal nor any data" do
+  it "sends only rewrite_outcome lines and the rule's name, with neither the type literal nor any data" do
     prepare
 
     outcome = rewrite_rules
@@ -115,7 +115,8 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
     expect(outcome.stdout).not_to include(klass)
     expect(lines(outcome)).to eq(
       [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "accepted", "rule" => nil,
-         "rewrite" => "rewrite_1", "warnings" => [] }, { "type" => "done" }]
+         "rewrite" => "rewrite_1", "warnings" => [] },
+       { "type" => "step_counts", "rules" => ["polymorphic_key_copy"] }, { "type" => "done" }]
     )
   end
 
@@ -129,7 +130,8 @@ RSpec.describe "quaacks rewrite-rules with polymorphic_key_copy, against a real 
 
       expect(lines(outcome)).to eq(
         [{ "type" => "rewrite_outcome", "index" => 1, "outcome" => "rejected", "rule" => "unmet_assumption",
-           "rewrite" => nil, "warnings" => [] }, { "type" => "done" }]
+           "rewrite" => nil, "warnings" => [] },
+         { "type" => "step_counts", "rules" => ["polymorphic_key_copy"] }, { "type" => "done" }]
       )
       expect(stored.entry?("rewrite_1")).to be(false)
       expect_no_leaks(sentinels, outcome)

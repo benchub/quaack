@@ -3,6 +3,7 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/burndown"
 require "quaack/enclave/refinement"
+require "quaack/enclave/steps/step_counts"
 
 # `quaacks index-rank` (DESIGN.md's index-rank): ranks and combines every tested
 # candidate of a search, mechanical and LLM, after a real index-search and
@@ -17,7 +18,7 @@ RSpec.describe "quaacks index-rank, against a real server" do
     quaacks.run("index-test", "--run", store.run_id, stdin: JSON.generate("ddls" => ddls), env: libpq_env)
   end
 
-  it "stores the top three and the best combination from mechanical and LLM candidates, and sends only done" do
+  it "stores the top three and the best combination from mechanical and LLM candidates, sends counts and done" do
     prepare
     # The sentinel is a literal in the slow and worst-case sets, so a plan
     # stored unredacted carries it, and the leak check below bites.
@@ -29,9 +30,13 @@ RSpec.describe "quaacks index-rank, against a real server" do
 
     outcome = index_rank
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
-    expect_no_leaks(sentinels, outcome)
     ranking = stored.read("index_ranking_original")
+    # No combination beats the best single index here, so none combined.
+    expect(ranking["combination"]).to be_nil
+    expect(ranking["top"].size).to be >= 2
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(ranked: ranking["top"].size, combined: 0), "", 0])
+    expect_no_leaks(sentinels, outcome)
     entry = stored.read("index_search_original")
     used = (entry["results"] + entry["llm_results"]).select { it["plans"].values.any? { |p| p["used"] } }
     expect(used.size).to be >= 2
@@ -135,7 +140,7 @@ RSpec.describe "quaacks index-rank, against a real server" do
 
       outcome = index_rank
 
-      expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+      expect([outcome.stdout.lines.last, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
       expect(stored.read("index_ranking_original")["top"]).not_to be_empty
     end
   end
@@ -145,5 +150,16 @@ RSpec.describe "quaacks index-rank, against a real server" do
 
     expect(index_rank.stdout).to eq(error_line("index_rank_no_index_search"))
     expect(index_rank("--search", "rewrite_1").stdout).to eq(error_line("index_rank_unknown_search"))
+  end
+end
+
+# Task 20261004-1: index-rank's step_counts, from its ranking.
+RSpec.describe Quaack::Enclave::Steps::StepCounts, ".index_rank" do
+  it "counts the top single indexes, and the indexes in the best combination" do
+    ranking = { "top" => [{ "ddl" => ["a"] }, { "ddl" => ["b"] }], "combination" => { "ddl" => %w[a b c] } }
+
+    expect(described_class.index_rank(ranking)).to eq(type: :step_counts, ranked: 2, combined: 3)
+    expect(described_class.index_rank(ranking.merge("combination" => nil)))
+      .to eq(type: :step_counts, ranked: 2, combined: 0)
   end
 end

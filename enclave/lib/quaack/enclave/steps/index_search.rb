@@ -16,6 +16,7 @@ require_relative "../run_server"
 require_relative "../single_candidate_test"
 require_relative "../structural_discard"
 require_relative "../unused_set_aside"
+require_relative "step_counts"
 
 module Quaack
   module Enclave
@@ -58,8 +59,9 @@ module Quaack
       # Raw plans aren't saved.
       #
       # The racetrack is production data and candidates can hold literals,
-      # so nothing here goes out. Its only line is DONE, and a failure names
-      # only its rule.
+      # so nothing of them goes out. It sends one step_counts: found, how
+      # many candidates it tested, and used, how many of those the planner
+      # used. Then DONE. A failure names only its rule.
       module IndexSearch
         OPTIONS = { "search" => :value }.freeze
         # A rewrite search names the rewrite_<n> entry rewrite-check stored.
@@ -79,8 +81,9 @@ module Quaack
         def call(store:, options:, **)
           search = check(store, options.fetch("search", "original"))
           connection = Enclave::RunServer.connect(store, :racetrack)
-          store.write("index_search_#{search}", search_entry(store, connection, search))
-          []
+          entry = search_entry(store, connection, search)
+          store.write("index_search_#{search}", entry)
+          [StepCounts.index_search(entry)]
         ensure
           connection&.close
         end

@@ -3,6 +3,7 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/burndown"
 require "quaack/enclave/generator_one"
+require "quaack/enclave/steps/step_counts"
 
 # `quaacks index-search` (DESIGN.md's index-search and index-from-query to index-test) the way the jump server
 # runs it: the installed quaacks in its own process, outside Bundler.
@@ -52,14 +53,17 @@ RSpec.describe "quaacks index-search, against a real server" do
     )
   end
 
-  it "runs the mechanical search, saves it per search, and prints only DONE" do
+  it "runs the mechanical search, saves it per search, and prints only its counts and DONE" do
     prepare
 
     outcome = index_search
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
-    expect_no_leaks(sentinels, outcome)
     entry = stored.read("index_search_original")
+    found = entry["results"].size
+    used = entry["results"].count { used?(it) }
+    expect([found, used]).to all(be_positive)
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([counts_then_done(found:, used:), "", 0])
+    expect_no_leaks(sentinels, outcome)
     search = restored_search(entry)
     expect(search.proposals.map { it.sources.to_a.sort }).to include(%i[parse plan])
     expect(search.considered).to eq(search.proposals.size + search.set_aside.size + search.drops.size)
@@ -177,7 +181,7 @@ RSpec.describe "quaacks index-search, against a real server" do
 
       outcome = index_search
 
-      expect([outcome.stdout, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
+      expect([outcome.stdout.lines.last, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), 0])
       expect(stored.read("index_search_original")["parameter_types"].values).to include("integer")
     end
   end
@@ -200,7 +204,7 @@ RSpec.describe "quaacks index-search, against a real server" do
 
   it "accepts --search original, and refuses any other search" do
     prepare
-    expect(index_search("--search", "original").stdout).to eq(%({"type":"done"}\n))
+    expect(index_search("--search", "original").stdout.lines.last).to eq(%({"type":"done"}\n))
 
     outcome = index_search("--search", "rewrite_1")
     expect([outcome.stdout, outcome.status.exitstatus]).to eq([error_line("index_search_unknown_search"), 70])
@@ -219,5 +223,18 @@ RSpec.describe "quaacks index-search, against a real server" do
     conn.close
 
     expect_failed(index_search, "plan_gate_mismatch_likely_stale_statistics")
+  end
+end
+
+# Task 20261004-1: index-search's step_counts, from its entry.
+RSpec.describe Quaack::Enclave::Steps::StepCounts, ".index_search" do
+  def result(used, refusal = nil)
+    { "refusal" => refusal, "plans" => { "slow" => { "used" => false }, "typical" => { "used" => used } } }
+  end
+
+  it "counts every tested candidate as found, and as used only the ones the planner used and HypoPG took" do
+    entry = { "results" => [result(true), result(false), result(true, { "rule" => "hypopg_refused" }), result(true)] }
+
+    expect(described_class.index_search(entry)).to eq(type: :step_counts, found: 4, used: 2)
   end
 end

@@ -408,9 +408,11 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
       run(out:, rewrites: ["SELECT 9"])
 
       expect(ended.grep(/ in \d+s \(/).map { it[/\(([^()]+)\)\z/, 1] })
-        .to eq(%w[llm-index-ideas llm-index-refine rewrite-rules llm-rewrites operator-rewrites plan-pruning
-                  rewrite-correctness rewrite-index-ideas index-build report])
-      expect(ended).to include("Ranking the index ideas (index-rank)", "Picking the top three (selection)")
+        .to eq(%w[index-search llm-index-ideas llm-index-refine index-rank rewrite-rules llm-rewrites
+                  operator-rewrites plan-pruning arena-setup rewrite-correctness rewrite-index-ideas index-build
+                  baseline index-baseline candidate-runs minimax result-comparison selection report])
+      # Task 20261004-1: each enclave step now says how much it did, so
+      # every step with a summary closes.
     end
 
     it "waits on a short line for counterexamples' first ask, which repeats its sub-step, and keeps the asks again" do
@@ -443,6 +445,121 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 "Reading the query's shape for the LLM (llm-index-ideas)",
                 "Waiting for the LLM (llm-index-ideas)",
                 "Recording that the LLM gave no index ideas (llm-index-ideas)"])
+    end
+  end
+
+  # Task 20261004-1: the steps that say how much they did from the
+  # enclave's step_counts, and fall back to saying only what they did
+  # without one.
+  describe "step counts from the enclave" do
+    def counts(**fields) = [{ "type" => "step_counts", **fields.transform_keys(&:to_s) }]
+
+    it "says how many indexes index-search found and the planner used, and what index-rank ranked" do
+      entries.merge!("index_search_original" => false, "index_ranking_original" => false)
+      replies["index-search"] = counts(found: 12, used: 3)
+      replies["index-rank"] = counts(ranked: 3, combined: 2)
+
+      run
+
+      expect(closing("index-search")).to eq(["Found 12 possible indexes mechanically, 3 used by the planner"])
+      expect(closing("index-rank")).to eq(["Ranked the top 3 indexes, and a combination of 2"])
+    end
+
+    it "says when index-search found nothing and index-rank had nothing to rank" do
+      entries.merge!("index_search_original" => false, "index_ranking_original" => false)
+      replies["index-search"] = counts(found: 0, used: 0)
+      replies["index-rank"] = counts(ranked: 0, combined: 0)
+
+      run
+
+      expect([closing("index-search"), closing("index-rank")])
+        .to eq([["Found no possible index mechanically"], ["No index to rank"]])
+    end
+
+    it "names the rules that fired in rewrite-rules, with an Oxford comma" do
+      entries["rewrite_rules_applied"] = false
+      accepted = outcomes("rewrite_outcome", { "outcome" => "accepted", "rewrite" => "rewrite_1" },
+                          { "outcome" => "rejected", "rule" => "plan_unchanged" })
+      replies["rewrite-rules"] = accepted + counts(rules: %w[key_in_self_join])
+      run
+      replies["rewrite-rules"] = accepted + counts(rules: %w[shared_scan_cte key_in_self_join or_to_union])
+      run
+
+      expect(closing("rewrite-rules"))
+        .to eq(["QUAACK's rules made 2 rewrites, 1 kept, with key_in_self_join",
+                "QUAACK's rules made 2 rewrites, 1 kept, with shared_scan_cte, key_in_self_join, and or_to_union"])
+    end
+
+    it "says how much each measuring step did" do
+      entries.merge!(%w[arena_setup baseline index_baseline candidate_runs minimax result_comparison
+                        selection].to_h { [it, false] })
+      replies.merge!("arena-setup" => counts(tables: 12), "baseline" => counts(sets: 3, timed_out: 1),
+                     "index-baseline" => counts(combinations: 4, timed_out: 0),
+                     "candidate-runs" => counts(measured: 5, timed_out: 2),
+                     "minimax" => counts(compared: 6, survivors: 2),
+                     "result-comparison" => counts(compared: 3, discarded: 1, partial: 2),
+                     "selection" => counts(top: 2, excluded: 4))
+
+      run
+
+      steps = %w[arena-setup baseline index-baseline candidate-runs minimax result-comparison selection]
+      expect(steps.map { closing(it) })
+        .to eq([["Set up the arena with 12 tables"], ["Measured the original query on 3 literal sets, 1 timed out"],
+                ["Measured the original query with 4 sets of indexes"], ["Measured 5 rewrite runs, 2 timed out"],
+                ["Checked 6 choices against the original on every literal, 2 held up"],
+                ["Checked the rows of 3 rewrites on production data, 1 differed, 2 checks partial"],
+                ["Picked 2 top choices, 4 left out"]])
+    end
+
+    it "says when the measuring steps had nothing to measure or pick" do
+      entries.merge!(%w[candidate_runs minimax result_comparison selection].to_h { [it, false] })
+      replies.merge!("candidate-runs" => counts(measured: 0, timed_out: 0),
+                     "minimax" => counts(compared: 0, survivors: 0),
+                     "result-comparison" => counts(compared: 0, discarded: 0, partial: 0),
+                     "selection" => counts(top: 0, excluded: 0))
+
+      run
+
+      expect(%w[candidate-runs minimax result-comparison selection].map { closing(it) })
+        .to eq([["No rewrites to measure"], ["No choices to check against the original"],
+                ["No rewrites to check on production data"], ["No choice beat the original"]])
+    end
+
+    it "leaves out a combination, partial checks, and choices left out when there are none" do
+      entries.merge!(%w[index_ranking_original result_comparison selection].to_h { [it, false] })
+      replies.merge!("index-rank" => counts(ranked: 2, combined: 0),
+                     "result-comparison" => counts(compared: 1, discarded: 0, partial: 0),
+                     "selection" => counts(top: 1, excluded: 0))
+
+      run
+
+      expect(%w[index-rank result-comparison selection].map { closing(it) })
+        .to eq([["Ranked the top 2 indexes"], ["Checked the rows of 1 rewrite on production data, 0 differed"],
+                ["Picked 1 top choice"]])
+    end
+
+    it "says only what a step did when its step_counts lacks a count the summary needs" do
+      entries.merge!("index_search_original" => false, "baseline" => false)
+      replies.merge!("index-search" => counts(found: 3), "baseline" => counts(timed_out: 0))
+
+      run
+
+      expect([closing("index-search"), closing("baseline")])
+        .to eq([["Searched for indexes"], ["Measured the original query"]])
+    end
+
+    it "refuses a forged step_counts, with a string where a count belongs or a name not on the list" do
+      entries.merge!("index_search_original" => false, "rewrite_rules_applied" => false, "arena_setup" => false)
+      replies["index-search"] = counts(found: PROGRESS_SENTINEL, used: 1)
+      replies["arena-setup"] = counts(tables: "12")
+      replies["rewrite-rules"] = outcomes("rewrite_outcome", { "outcome" => "accepted", "rewrite" => "rewrite_1" }) +
+                                 counts(rules: ["key_in_self_join", PROGRESS_SENTINEL])
+
+      run
+
+      expect([closing("index-search"), closing("arena-setup"), closing("rewrite-rules")])
+        .to eq([["Searched for indexes"], ["Set up the arena"], ["QUAACK's rules made 1 rewrite, 1 kept"]])
+      expect(stderr.string).not_to include(PROGRESS_SENTINEL)
     end
   end
 
