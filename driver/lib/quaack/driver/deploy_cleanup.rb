@@ -49,12 +49,25 @@ module Quaack
         { remove: older.drop(1), newer: installed.select { it > new_version }.sort.reverse }
       end
 
+      # How each uninstall starts. `--user-install` would also remove a
+      # matching version from GEM_HOME, such as an rbenv or asdf Ruby's,
+      # where deploy never installs (task 20261006-22). `--install-dir`
+      # touches only the dir it names, the user gem dir, which the remote
+      # ruby resolves, as it does for LISTING. It's the real path, since
+      # RubyGems compares the real path of --install-dir with the spec
+      # dirs it finds under the path as given, so a symlinked home would
+      # otherwise match nothing.
+      UNINSTALL = %(gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')")
+
       # What to do after installing installed, gem name => version string,
       # in uninstall order, given what LISTING printed: [progress line,
       # command or nil, what the command is] for each step. It leaves a
       # version newer than the one installed and says so, uninstalls each
-      # version plan removes with `gem uninstall --user-install` only, and
-      # then deletes the old gem files in REMOTE_DIR.
+      # version plan removes from the user gem dir only, and then deletes
+      # the old gem files in REMOTE_DIR. A newer version is hard to meet
+      # for real: the bin/quaacks wrapper runs the highest installed
+      # quaacks, so a newer one would answer the version check, which
+      # fails before cleanup starts.
       def self.steps(listing, installed, host:)
         listing = parse_listing(listing)
         steps = installed.flat_map { |name, version| gem_steps(name, version, listing[:specs].fetch(name, []), host) }
@@ -71,7 +84,7 @@ module Quaack
         todo[:newer].map { ["leaving #{name} #{it} on #{host}, since it's newer than #{current}", nil, nil] } +
           todo[:remove].map do |old|
             ["removing #{name} #{old} from #{host}",
-             "#{Shellwords.join(["gem", "uninstall", "--user-install", "-v", old.to_s, name])} 2>&1",
+             "#{UNINSTALL} #{Shellwords.join(["-v", old.to_s, name])} 2>&1",
              "gem uninstall #{name} #{old}"]
           end
       end

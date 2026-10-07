@@ -24,8 +24,9 @@ module Quaack
     # a line on stdout as each step starts. If quaacks installed but won't
     # run over ssh, DeployDiagnosis works out why, and the failure says what
     # to change on the jump server. Once the check passes, it removes the
-    # older versions of the two gems but the highest, with `gem uninstall
-    # --user-install`, and their old gem files in ~/.quaack/deploy.
+    # older versions of the two gems but the highest from the user gem dir,
+    # and their old gem files in ~/.quaack/deploy. A cleanup step that
+    # fails is a warning, not a failed deploy.
     class Deploy
       # A failure, with a message for the engineer.
       class Error < StandardError; end
@@ -54,20 +55,23 @@ module Quaack
         return unless argv.size == 2 && argv.first == "--host"
 
         host = argv.last
-        stdout.print "quaack deploy: installed quaacks #{new(host:, stdout:).call} on #{host}\n"
+        stdout.print "quaack deploy: installed quaacks #{new(host:, stdout:, stderr:).call} on #{host}\n"
         0
       rescue Error, ArgumentError => e
         stderr.print "quaack deploy failed: #{e.message}\n"
         1
       end
 
-      # stdout gets a line as each step starts, or nothing if it's nil.
+      # stdout gets a line as each step starts, and stderr a warning for
+      # each cleanup step that fails, or nothing if it's nil.
       # version_timeout bounds the version check, in seconds.
-      def initialize(host:, ssh: "ssh", checkout: CHECKOUT, stdout: nil, version_timeout: Transport::Base::DEFAULT_TIMEOUT)
+      def initialize(host:, ssh: "ssh", checkout: CHECKOUT, stdout: nil, stderr: nil, # rubocop:disable Metrics/ParameterLists
+                     version_timeout: Transport::Base::DEFAULT_TIMEOUT)
         @host = host
         @ssh = ssh
         @checkout = checkout
         @stdout = stdout
+        @stderr = stderr
         @transport = Transport::Ssh.new(host:, ssh:, timeout: version_timeout)
       end
 
@@ -115,24 +119,37 @@ module Quaack
 
       # After the version check passed: lists what's on the jump server,
       # then prints each step DeployCleanup.steps gives and runs its
-      # command, if it has one.
+      # command, if it has one. The new version is live and checked by
+      # then, so a step that fails is a warning on stderr, and the rest
+      # still run. If the listing fails, nothing is removed.
       def prune
-        out = ssh(Shellwords.join(["ruby", "-e", DeployCleanup::LISTING]), nil, "listing old versions")
+        out = cleanup(Shellwords.join(["ruby", "-e", DeployCleanup::LISTING]), "listing old versions")
+        return unless out
+
         installed = GEMS.keys.reverse.to_h { [it, version(it)] }
         DeployCleanup.steps(out, installed, host: @host).each do |line, command, what|
           say line
-          ssh(command, nil, what) if command
+          cleanup(command, what) if command
         end
       end
 
+      # Runs a cleanup command and returns its stdout, or warns and returns
+      # nil if it fails.
+      def cleanup(command, what) = ssh(command, nil, what, warn: true)
+
       # Runs command on the jump server with stdin, and returns its stdout.
-      # If it fails, raises Error, with the tail of what it printed.
-      def ssh(command, stdin, what)
+      # If it fails, raises Error, with the tail of what it printed, or with
+      # warn, prints that as a warning on stderr and returns nil.
+      def ssh(command, stdin, what, warn: false)
         argv = [@ssh, *Transport::Ssh::DEFAULT_OPTIONS, "--", @host, command]
         run = Transport::Child.run(argv, stdin:, timeout: TIMEOUT, max_output_bytes: 16 * 1024 * 1024)
         return run.stdout if run.limit.nil? && run.status.success?
 
-        raise Error, "#{what} failed on #{@host}:\n#{tail(run.stdout)}"
+        failed = "#{what} failed on #{@host}"
+        raise Error, "#{failed}:\n#{tail(run.stdout)}" unless warn
+
+        @stderr&.print("quaack deploy: warning: #{failed}, but quaacks #{ENCLAVE_VERSION} is installed and checked:\n" \
+                       "#{tail(run.stdout)}")
       rescue Transport::Child::NotStarted
         raise Error, "couldn't run #{@ssh}", cause: nil
       end

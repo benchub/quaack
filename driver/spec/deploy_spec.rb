@@ -43,8 +43,9 @@ RSpec.describe Quaack::Driver::Deploy do
   # expired: true, every call after gem install, the version check and
   # the transport's `true` probe, exits 255, as when the ssh login expires
   # during the install.
-  # With slow: true, the version check hangs.
-  def fake_ssh(path: true, probe: true, expired: false, slow: false)
+  # With slow: true, the version check hangs. A remote command that starts
+  # with one of fail_on prints "boom" and exits 1.
+  def fake_ssh(path: true, probe: true, expired: false, slow: false, fail_on: [])
     script = File.join(dir, "ssh")
     bin = path ? "#{user_dir}/bin:" : ""
     File.write(script, <<~SH)
@@ -57,6 +58,7 @@ RSpec.describe Quaack::Driver::Deploy do
       #{"[ \"$*\" = 'sh -s' ] && exit 255" unless probe}
       #{"case \"$*\" in quaacks*|true) exit 255 ;; esac" if expired}
       #{"case \"$*\" in quaacks*) exec sleep 30 ;; esac" if slow}
+      #{fail_on.map { "case \"$*\" in '#{it}'*) echo boom; exit 1 ;; esac" }.join("\n")}
       cd "$HOME" && exec sh -c "$*"
     SH
     script.tap { FileUtils.chmod(0o755, it) }
@@ -71,8 +73,11 @@ RSpec.describe Quaack::Driver::Deploy do
   end
 
   # The jump server session's environment: outside any bundle, with the
-  # user gem dir and vendor/bundle as its gems.
-  def remote_env = clean.merge("GEM_PATH" => "#{user_dir}:#{vendor}")
+  # user gem dir and vendor/bundle as its gems, plus gem_home, when it's
+  # set, as GEM_HOME, the way an rbenv or asdf Ruby can set it.
+  let(:gem_home) { nil }
+
+  def remote_env = clean.merge("GEM_PATH" => [user_dir, gem_home, vendor].compact.join(":"), "GEM_HOME" => gem_home)
 
   def deploy(ssh: self.ssh) = described_class.new(host: "jump-1", ssh:).call
 
@@ -234,6 +239,10 @@ RSpec.describe Quaack::Driver::Deploy do
 
     def uninstalls = File.read(File.join(dir, "remote")).lines.grep(/uninstall/)
 
+    # How each uninstall starts: pinned to the user gem dir, which the
+    # jump server's ruby resolves.
+    let(:pinned) { %(gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')") }
+
     it "removes every older version but the highest, of both gems, saying so for each" do
       %w[0.0.1 0.0.2 0.1.0].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
 
@@ -248,10 +257,10 @@ RSpec.describe Quaack::Driver::Deploy do
         quaack deploy: removing quaack-protocol 0.0.1 from jump-1
       OUT
       expect(uninstalls).to eq(<<~CMDS.lines)
-        gem uninstall --user-install -v 0.0.2 quaacks 2>&1
-        gem uninstall --user-install -v 0.0.1 quaacks 2>&1
-        gem uninstall --user-install -v 0.0.2 quaack-protocol 2>&1
-        gem uninstall --user-install -v 0.0.1 quaack-protocol 2>&1
+        #{pinned} -v 0.0.2 quaacks 2>&1
+        #{pinned} -v 0.0.1 quaacks 2>&1
+        #{pinned} -v 0.0.2 quaack-protocol 2>&1
+        #{pinned} -v 0.0.1 quaack-protocol 2>&1
       CMDS
     end
 
@@ -296,7 +305,65 @@ RSpec.describe Quaack::Driver::Deploy do
 
       expect(installed("pg_query")).to eq(%w[0.0.1 0.0.2 0.0.3])
       expect(installed("quaacks-extra")).to eq(%w[0.0.1 0.0.2])
-      expect(uninstalls).to eq(["gem uninstall --user-install -v 0.0.1 quaacks 2>&1\n"])
+      expect(uninstalls).to eq(["#{pinned} -v 0.0.1 quaacks 2>&1\n"])
+    end
+
+    # Task 20261006-22: `gem uninstall --user-install` also removes a
+    # matching version from GEM_HOME. Deploy never installs there, so the
+    # uninstall is pinned to the user gem dir.
+    context "when GEM_HOME is a writable gem dir of its own" do
+      let(:gem_home) { File.join(dir, "gem-home") }
+
+      it "uninstalls an old version from the user gem dir only, leaving the same version in GEM_HOME" do
+        %w[0.0.1 0.0.2].each { plant("quaacks", it) }
+        _, status = Open3.capture2e(remote_env, RbConfig.ruby, "-S", "gem", "install", "--local",
+                                    "--ignore-dependencies", "--no-document", build_plant("quaacks", "0.0.1"))
+        raise "gem install failed" unless status.success?
+
+        expect(deploy_with_progress).to eq(current)
+
+        expect(installed("quaacks")).to eq(["0.0.2", current])
+        expect(Dir.children(File.join(gem_home, "specifications"))).to eq(["quaacks-0.0.1.gemspec"])
+      end
+    end
+
+    # Task 20261006-22: the new version is live and checked by then, so a
+    # cleanup step that fails is a warning, not a failed deploy.
+    def deploy_main(fail_on)
+      err = StringIO.new
+      fake_ssh(fail_on:)
+      status = with_env("PATH" => "#{dir}:#{ENV.fetch("PATH")}") do
+        described_class.main(["--host", "jump-1"], stdout: out, stderr: err)
+      end
+      [status, err.string]
+    end
+
+    it "warns, naming the step and host, and still succeeds, when an uninstall fails" do
+      %w[0.0.1 0.0.2].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
+      FileUtils.mkdir_p(deploy_dir)
+      File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
+
+      expect(deploy_main(["gem uninstall"])).to eq(
+        [0, %w[quaacks quaack-protocol].map do |name|
+          "quaack deploy: warning: gem uninstall #{name} 0.0.1 failed on jump-1, but quaacks #{current} is " \
+            "installed and checked:\nboom\n"
+        end.join]
+      )
+      expect(out.string.lines.last).to eq("quaack deploy: installed quaacks #{current} on jump-1\n")
+      expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+      expect(File.exist?(File.join(deploy_dir, "quaacks-0.0.1.gem"))).to be(false)
+    end
+
+    it "warns, naming the step and host, and still succeeds, when listing old versions fails" do
+      %w[0.0.1 0.0.2].each { plant("quaacks", it) }
+
+      expect(deploy_main(["ruby -e"])).to eq(
+        [0, "quaack deploy: warning: listing old versions failed on jump-1, but quaacks #{current} is installed " \
+            "and checked:\nboom\n"]
+      )
+      expect(out.string.lines.last).to eq("quaack deploy: installed quaacks #{current} on jump-1\n")
+      expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+      expect(uninstalls).to eq([])
     end
 
     it "parses only plain versions of its own two gems out of the listing" do
