@@ -117,7 +117,7 @@ module Quaack
 
           ReplyJSON.parse(text, schema)
         rescue Error => e
-          raise unless reask?(e, schema, text)
+          raise unless reask?(schema, text)
 
           messages = [*messages, { role: "assistant", content: text }, { role: "user", content: reask(e) }]
           ReplyJSON.parse(@adapter.reply(step:, system:, messages:, max_tokens:, schema:, count:), schema)
@@ -134,12 +134,11 @@ module Quaack
           end
         end
 
-        # Whether error calls for a re-ask: there's a schema the adapter
-        # doesn't enforce, and a reply, text, came back that ReplyJSON
-        # refused. text is nil when the adapter raised.
-        def reask?(error, schema, text)
-          schema && text && error.rule == "llm_bad_response" && !@adapter.enforces_schema?
-        end
+        # Whether a failed ask calls for a re-ask: there's a schema the
+        # adapter doesn't enforce, and a reply, text, came back that ReplyJSON
+        # refused. text is nil when the adapter raised, so with text the
+        # error is ReplyJSON's, always llm_bad_response.
+        def reask?(schema, text) = schema && text && !@adapter.enforces_schema?
 
         def reask(error) = format(REASK, error.message.delete_prefix("#{error.rule}: "))
 

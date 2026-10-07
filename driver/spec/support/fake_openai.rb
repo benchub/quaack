@@ -66,9 +66,9 @@ class FakeOpenAI
 
   # Queues one failed attempt for step, an HTTP error the way OpenAI sends
   # it. `retry_after_ms` keeps the gem's backoff short. `param` is the
-  # request parameter the error names, if any.
-  def error(step, status:, retry_after_ms: "1", param: nil)
-    body = { error: { message: "fake error #{status}", type: "invalid_request_error", param: param, code: nil } }
+  # request parameter the error names, if any, and `message` the body's.
+  def error(step, status:, retry_after_ms: "1", param: nil, message: "fake error #{status}")
+    body = { error: { message: message, type: "invalid_request_error", param: param, code: nil } }
     @scripts[step] << [status, { "retry-after-ms" => retry_after_ms }, body]
     self
   end

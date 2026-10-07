@@ -216,7 +216,7 @@ To change the model, the provider, or where the key comes from, add an `llm` blo
 | --- | --- | --- |
 | `provider` | Which API to call: `anthropic`, `openai_compatible` for OpenAI, Groq, Gemini, OpenRouter, Ollama, and any other server that speaks OpenAI's Chat Completions API, `bedrock` for Claude on AWS Bedrock, or `copilot_cli` for a local Copilot CLI command. | `anthropic` |
 | `model` | The model to ask. Required for `openai_compatible` and `bedrock`. | `claude-opus-5-5` for `anthropic`; `claude-opus-5.5` for `copilot_cli` |
-| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. Not for `copilot_cli`. | The provider's own, or `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` |
+| `base_url` | Where to send requests, such as a gateway, or which OpenAI-compatible provider. An `http` or `https` URL. Not for `copilot_cli`. | The provider's own, or `ANTHROPIC_BASE_URL` for `anthropic`. `openai_compatible` ignores `OPENAI_BASE_URL`. |
 | `api_key_env` | The name of an environment variable that holds the key. When it's set, the driver uses only that variable, and fails with `llm_auth` if it's empty. Only for `anthropic` and `openai_compatible`. | The lookup above for `anthropic`, `OPENAI_API_KEY` for `openai_compatible` |
 | `aws_region` | For `bedrock` only: the AWS region to call, such as `us-east-1`. | `AWS_REGION`, `AWS_DEFAULT_REGION`, or your AWS profile's region |
 | `aws_profile` | For `bedrock` only: the AWS profile, in `~/.aws`, whose credentials to use. | The AWS SDK's usual lookup |
@@ -231,9 +231,11 @@ If `driver.json` itself is bad, `quaack start` and `quaack run` say which file a
 
 With `"provider": "openai_compatible"`, the driver talks to OpenAI's Chat Completions API, through the official `openai` gem, at `base_url`. It sends the key from the variable `api_key_env` names, or from `OPENAI_API_KEY` when it names none, as a bearer token. If that variable is unset or empty, `quaack run` fails with `llm_auth` before it makes any call. Give a `model` too: there's no default.
 
+Check your provider's docs: these were current when written, but nobody has checked them against each provider since.
+
 | Provider | `base_url` | `api_key_env` | `model`, for example |
 | --- | --- | --- | --- |
-| OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-5` |
+| OpenAI | leave it out | leave it out (`OPENAI_API_KEY`) | `gpt-4.1` |
 | Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-2.5-pro` |
 | OpenRouter | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4.1` |
@@ -253,13 +255,15 @@ For example, for Groq:
 }
 ```
 
-then `export GROQ_API_KEY=...` before `quaack run`. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
+then `export GROQ_API_KEY=...` before `quaack run`. Give the API root as `base_url`, not the full endpoint: the driver adds `/chat/completions` itself, so a `base_url` that ends in it is a usage error. Ollama needs no key, but the driver still wants one, so set the variable to anything, such as `export OLLAMA_API_KEY=ollama`.
 
 The models are examples. Use one your account can call, and **make it a strong model**: QUAACK asks for careful SQL work, and a small model is mostly a waste of time and tokens.
 
+**Reasoning models need headroom.** A reasoning model, such as OpenAI's `gpt-5` or `o3`, or Gemini 2.5, spends its token limit on thinking as well as on the reply. QUAACK asks for at most 4000 or 8000 tokens a reply, so a long think can use them all up and leave no reply, and the run stops with `llm_bad_response: the reply stopped for length`. That's why the table's OpenAI example is `gpt-4.1`, which doesn't reason. If you use a reasoning model and see that error, pick a model that reasons less, or not at all.
+
 **Structured output.** At several steps, QUAACK asks for JSON in a fixed shape, and checks every reply. A reply in the wrong shape gets one more try. If the model gets it wrong twice, the run stops with `llm_bad_response`. Strong models rarely do.
 
-> **Privacy: other OpenAI settings go to every provider.** The `openai` gem reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`, and sends what they hold to whatever `base_url` you use, not just to OpenAI. So a custom header carrying a secret, or your OpenAI organization and project IDs, would reach Groq, Gemini, or whichever provider you point QUAACK at. Unset those variables before `quaack run` unless your provider is OpenAI.
+> **Your other OpenAI settings stay with OpenAI.** The `openai` gem reads `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, and `OPENAI_CUSTOM_HEADERS`. The driver sends what they hold only when `base_url` is OpenAI's own (`api.openai.com`), never to Groq, Gemini, or any other provider. It ignores `OPENAI_BASE_URL`: only `base_url`, or `QUAACK_LLM_BASE_URL`, says where requests go.
 
 #### AWS Bedrock.
 
