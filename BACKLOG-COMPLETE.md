@@ -5966,3 +5966,17 @@ From the review of 20261006-11.
 - **Design:** None (test infrastructure).
 - **Status:** done
 - **Landed:** A suite killed by a signal now shows `failed (killed by SIGKILL)` in its header and in the failure summary. The test image's build lock moved to `~/.cache/quaack/quaack-test-postgres-<hash>.lock`, so it no longer depends on TMPDIR. Each suite's thread now catches its own exceptions and records `<suite> (raised <Class>: <message>)` as failed and not run. Every other suite still prints, and the run fails naming that suite.
+
+### 20261006-18. `unused_join_removal`: minor findings from 20261001-27.
+
+From the review of 20261001-27.
+1. In `enclave/lib/quaack/enclave/rewrite_rules/unused_join_removal/candidates.rb` (~118), the `joining&.size == 1` guard has no test. Weakening it to `positive?` would crash the rule (nil `.last`) on a comma join with a conjunct that doesn't touch the joined table, such as `e.id = p.user_id`. Add a three-item comma join with an unrelated column equality.
+2. In `catalog/foreign_keys.rb` (~46), the inheritance-child refusal (`i.inhrelid IN (ch.oid, pa.oid)`) has no test. Add one, or drop the restriction if it isn't needed for soundness.
+3. No spec pins a self-referencing FK, such as `employees e JOIN employees m ON e.manager_id = m.id`. The review found it fires correctly.
+4. Coverage: `unread?` (~100) counts references by name across the whole query, so it refuses whenever another scope reuses the joined table's name. Examples: the same join in both UNION ALL branches, or Rails' `posts.user_id IN (SELECT "users"."id" FROM "users" ...)` next to `JOIN users`. Count per scope instead, so these can fire.
+
+- **Depends on:** 20261001-27.
+- **Came from:** The review of 20261001-27.
+- **Design:** rewrite-rules.
+- **Status:** done
+- **Landed:** Tests now pin a three-item comma join past an unrelated equality, a joining and a joined table that are inheritance children (refusal kept), and a self-referencing foreign key. The "read nowhere else" count is now per scope (`unused_join_removal/reads.rb`): only references inside the joining SELECT count, and a `name.column` or `name.*` in a nested SELECT whose own FROM binds the name first is that SELECT's. So the same join in each UNION ALL branch is removed in each, and Rails' `IN (SELECT users.id FROM users ...)` next to `JOIN users` fires. Bare columns of the table's columns still block at any depth inside the SELECT. Gems bumped to 0.1.15.

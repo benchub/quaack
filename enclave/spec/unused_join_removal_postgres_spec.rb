@@ -172,7 +172,64 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnusedJoinRemoval do
     expect(generated.rewrites.map(&:sql)).to include("SELECT p.id FROM public.posts p JOIN public.narrow n ON true")
   end
 
+  it "takes a comma join of three, past a conjunct that doesn't touch the joined table" do
+    sql = "SELECT p.id FROM public.posts p, public.users u, public.orphans o WHERE u.id = p.user_id AND o.id = p.id - 9"
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq(["SELECT p.id FROM public.posts p, public.orphans o WHERE o.id = (p.id - 9)"])
+    expect(same_rows(sql, rewrites)).to eq([["10"], ["11"]])
+  end
+
+  it "takes a self-referencing foreign key, removing the side the key points at" do
+    conn.exec(<<~SQL)
+      CREATE TABLE public.employees (id int PRIMARY KEY, manager_id int NOT NULL REFERENCES public.employees);
+      INSERT INTO public.employees VALUES (1, 1), (2, 1), (3, 1), (4, 2);
+    SQL
+    sql = "SELECT e.id FROM public.employees e JOIN public.employees m ON e.manager_id = m.id"
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq(["SELECT e.id FROM public.employees e"])
+    expect(same_rows(sql, rewrites)).to eq([["1"], ["2"], ["3"], ["4"]])
+  end
+
+  it "takes the same join in each branch of a UNION ALL, one rewrite per branch" do
+    branch = "SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id WHERE p.org = "
+    sql = "#{branch}5 UNION ALL #{branch}6"
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq(
+      ["SELECT p.id FROM public.posts p WHERE p.org = 5 UNION ALL #{branch}6",
+       "#{branch}5 UNION ALL SELECT p.id FROM public.posts p WHERE p.org = 6"]
+    )
+    expect(same_rows(sql, rewrites)).to eq([["10"], ["11"], ["12"]])
+  end
+
+  it "takes Rails' join next to a subquery that reads its own table of the same name" do
+    sql = qualified('SELECT "posts".* FROM "posts" INNER JOIN "users" ON "users"."id" = "posts"."user_id" ' \
+                    'WHERE "posts"."user_id" IN (SELECT "users"."id" FROM "users" WHERE "users"."name" = $1)')
+
+    rewrites = rewritten(sql)
+
+    expect(rewrites).to eq(
+      ["SELECT posts.* FROM public.posts WHERE posts.user_id IN " \
+       "(SELECT users.id FROM public.users WHERE users.name = $1)"]
+    )
+    expect(same_rows(sql, rewrites, ["ann"]).map(&:first)).to eq(%w[10 11])
+  end
+
   refusals = {
+    "a subquery binds the name but reads it with a bare column" =>
+      "SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id " \
+      "WHERE p.user_id IN (SELECT u.id FROM public.users u WHERE name = 'ann')",
+    "a subquery's aliased join hides its own table of the name, so the name reads the joined one" =>
+      "SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id " \
+      "WHERE EXISTS (SELECT 1 FROM (public.orphans u JOIN public.comments c ON true) j WHERE u.id = 1)",
+    "a subquery in another FROM, which can't see that FROM's own table of the name, reads it" =>
+      "SELECT p.id FROM public.posts p JOIN public.users u ON p.user_id = u.id " \
+      "WHERE EXISTS (SELECT 1 FROM public.orphans u, (SELECT u.name) s)",
     "the select list reads the joined table" => "SELECT p.id, u.name FROM public.posts p JOIN public.users u " \
                                                 "ON p.user_id = u.id",
     "the select list holds its star" => "SELECT p.id, u.* FROM public.posts p JOIN public.users u ON p.user_id = u.id",
@@ -292,6 +349,25 @@ RSpec.describe Quaack::Enclave::RewriteRules::UnusedJoinRemoval do
 
       expect(rows(sql)).to eq([])
       expect(rewritten(sql)).to eq([])
+    end
+
+    it "doesn't fire on a joining table that's an inheritance child" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.base (id int PRIMARY KEY);
+        CREATE TABLE public.kid (user_id int NOT NULL REFERENCES public.users) INHERITS (public.base);
+      SQL
+
+      expect(rewritten("SELECT s.id FROM public.kid s JOIN public.users t ON s.user_id = t.id")).to eq([])
+    end
+
+    it "doesn't fire on a joined table that's an inheritance child" do
+      conn.exec(<<~SQL)
+        CREATE TABLE public.base (id int PRIMARY KEY);
+        CREATE TABLE public.kid (PRIMARY KEY (id)) INHERITS (public.base);
+        CREATE TABLE public.uses (id int PRIMARY KEY, kid_id int NOT NULL REFERENCES public.kid);
+      SQL
+
+      expect(rewritten("SELECT s.id FROM public.uses s JOIN public.kid t ON s.kid_id = t.id")).to eq([])
     end
 
     it "doesn't fire on a joined table with row-level security, which the join filters by" do
