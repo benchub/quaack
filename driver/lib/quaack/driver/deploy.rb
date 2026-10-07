@@ -121,13 +121,12 @@ module Quaack
       # then prints each step DeployCleanup.steps gives and runs its
       # command, if it has one. The new version is live and checked by
       # then, so a step that fails is a warning on stderr, and the rest
-      # still run. If the listing fails, nothing is removed.
+      # still run. If the listing fails, cleanup returns nil, not the
+      # listing's stdout, so there are no steps and nothing is removed.
       def prune
         out = cleanup(Shellwords.join(["ruby", "-e", DeployCleanup::LISTING]), "listing old versions")
-        return unless out
-
         installed = GEMS.keys.reverse.to_h { [it, version(it)] }
-        DeployCleanup.steps(out, installed, host: @host).each do |line, command, what|
+        DeployCleanup.steps(out.to_s, installed, host: @host).each do |line, command, what|
           say line
           cleanup(command, what) if command
         end
