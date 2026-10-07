@@ -4,6 +4,7 @@ require "rubocop/rake_task"
 require "json"
 require "fileutils"
 require "shellwords"
+require "open3"
 require_relative "rakelib/full_replay"
 
 RuboCop::RakeTask.new
@@ -59,23 +60,52 @@ end
 # The suites see QUAACK_FULL_REPLAY only while `rake full` runs them. A value
 # exported in the shell is removed, so it can't make plain rake skip the
 # stamp check in spec/full_replay_stamp_spec.rb.
+#
+# The suites run at the same time, each in its own process with its own
+# Postgres container, so the check takes about as long as the slowest suite.
+# Each suite's output is held until it finishes, then printed whole under a
+# header that names it, says how it ended, and gives its wall time, so the
+# suites' output never interleaves.
 desc "Run every gem's specs, plus the cross-gem specs in spec/"
 task :spec do
   ran = []
   failed = []
+  printing = Mutex.new
   env = { "SPEC_OPTS" => nil, FullReplay::ENV_VAR => (Rake::Task[:full].already_invoked ? "1" : nil) }
-  SPEC_SUITES.each do |dir|
+  SPEC_SUITES.map do |dir|
     cmd = [Gem.ruby, "-rrspec/core", "-e", RSPEC, "--", "--options", ".rspec", "spec"]
     path = File.join(__dir__, dir)
-    puts "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}"
-    sh(env, *cmd, chdir: path, verbose: false) do |ok, status|
-      # sh gives nil, not false, when the command couldn't start.
-      ran << dir unless ok.nil?
-      failed << "#{File.join(dir, "spec")} (#{ok.nil? ? "couldn't start" : "exit #{status.exitstatus}"})" unless ok
+    Thread.new do
+      run_suite(env, *cmd, chdir: path) do |out, status, seconds|
+        suite = File.join(dir, "spec")
+        # status is nil when the command couldn't start.
+        reason = status ? "exit #{status.exitstatus}" : "couldn't start"
+        outcome = status&.success? ? "passed" : "failed (#{reason})"
+        printing.synchronize do
+          ran << dir if status
+          failed << "#{suite} (#{reason})" unless status&.success?
+          puts "==> #{suite}: #{outcome} in #{format("%.1f", seconds)}s"
+          puts "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}"
+          print out
+          $stdout.flush
+        end
+      end
     end
-  end
+  end.each(&:join)
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
   abort "Spec suites failed: #{failed.join(", ")}" unless failed.empty?
+end
+
+# Runs one suite's command, holding its output, and yields the output, the
+# exit status (nil if the command couldn't start), and the wall time.
+def run_suite(env, *cmd, chdir:)
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  begin
+    out, status = Open3.capture2e(env, *cmd, chdir: chdir)
+  rescue SystemCallError => e
+    out = "#{e.message}\n"
+  end
+  yield out, status, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 end
 
 desc "Run RuboCop and every spec, with every recorded pipeline replay variant"

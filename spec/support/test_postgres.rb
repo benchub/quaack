@@ -3,6 +3,7 @@
 require "digest"
 require "open3"
 require "socket"
+require "tmpdir"
 require "pg"
 
 # Throwaway Postgres for the test suites. Any suite can load it:
@@ -227,11 +228,22 @@ module TestPostgres
     "quaack-test-postgres:#{Digest::SHA256.file(File.join(dir, "Dockerfile")).hexdigest[0, 12]}"
   end
 
-  def build_image
-    docker("image", "inspect", image_tag)
-  rescue RuntimeError
-    docker("build", "-q", "-t", image_tag, DIR)
+  # rake starts every suite at once, so several processes can reach
+  # build_image together. A lock file, one per tag, makes them take turns:
+  # the first builds, and the rest find its image. Concurrent builds that tag
+  # the same image can fail on Docker's containerd image store.
+  module ImageBuild
+    def self.run(tag, dir)
+      File.open(File.join(Dir.tmpdir, "#{tag.tr(":", "-")}.lock"), File::RDWR | File::CREAT, 0o600) do |lock|
+        lock.flock(File::LOCK_EX)
+        TestPostgres.docker("image", "inspect", tag)
+      rescue RuntimeError
+        TestPostgres.docker("build", "-q", "-t", tag, dir)
+      end
+    end
   end
+
+  def build_image = ImageBuild.run(image_tag, DIR)
 
   # Removes containers whose owning process is gone. A container whose owner
   # is still running belongs to another spec process, maybe in another
