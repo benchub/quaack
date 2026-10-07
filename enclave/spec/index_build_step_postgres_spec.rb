@@ -3,6 +3,7 @@
 require_relative "support/index_search_run"
 require "quaack/enclave/index_build"
 require "quaack/enclave/burndown"
+require "quaack/enclave/error_filter"
 
 # DESIGN.md's index-build: `quaacks index-build` builds every distinct index from the
 # index-search and rewrite-index-ideas rankings and the set-aside GIN/GiST/SP-GiST candidates,
@@ -412,6 +413,50 @@ RSpec.describe "quaacks index-build, against a real server" do
       expect(count).to eq("1")
     end
 
+    it "returns the orphans it cancelled, once each" do
+      orphaned = orphan(@monitor, configure: false)
+      conn = production.connect
+
+      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name)).to eq([orphaned])
+    ensure
+      conn&.close
+    end
+
+    # 20261006-15: a role that can see the orphan's query (pg_read_all_stats)
+    # but can't signal it, since a superuser owns it.
+    context "when the build role can't signal the orphan" do
+      let(:watcher) { "watcher_#{SecureRandom.hex(6)}" }
+
+      before do
+        production.server.admin.exec(<<~SQL)
+          CREATE ROLE #{watcher} LOGIN PASSWORD '#{production.password}' IN ROLE pg_read_all_stats, pg_signal_backend
+        SQL
+      end
+
+      after do
+        @watching&.close
+        production.server.admin.exec("DROP ROLE IF EXISTS #{watcher}")
+      end
+
+      it "refuses as index_build_orphan_cancel_denied, with no raw error, and leaves the orphan running" do
+        orphaned = orphan(@monitor, configure: false)
+        @watching = PG.connect(host: production.host, port: production.port, dbname: production.name,
+                               user: watcher, password: production.password)
+
+        error = begin
+          Quaack::Enclave::BuildConnection.cancel_orphans(@watching, name)
+        rescue StandardError => e
+          e
+        end
+
+        expect(error).to an_instance_of(Quaack::Enclave::IndexBuild::Error)
+          .and(having_attributes(message: "index_build_orphan_cancel_denied", cause: nil))
+        expect(JSON.parse(Quaack::Enclave::ErrorFilter.to_egress(error, step: "index-build")))
+          .to eq("type" => "error", "step" => "index-build", "rule" => "index_build_orphan_cancel_denied")
+        expect([orphaned.class, builders(@monitor).include?(orphaned)]).to eq([Integer, true])
+      end
+    end
+
     it "sets client_connection_check_interval, so the server ends the orphan soon after its client is gone" do
       conn = production.connect
       Quaack::Enclave::BuildConnection.configure(conn)
@@ -422,6 +467,73 @@ RSpec.describe "quaacks index-build, against a real server" do
 
       expect([orphaned.class, gone]).to eq([Integer, true])
     ensure
+      conn&.close
+    end
+  end
+
+  # 20261006-15: backends that match the orphan's name but that the cancel
+  # mustn't wait out forever, or touch at all.
+  context "with a backend the cancel can't stop, or one that's idle" do
+    def wait_for(seconds)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+      sleep 0.05 until yield || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      yield
+    end
+
+    def activity(conn, pid)
+      conn.exec_params("SELECT state, query FROM pg_stat_activity WHERE pid = $1", [pid]).first
+    end
+
+    before do
+      @admin = production.connect
+      seed(@admin)
+    end
+
+    after { @admin&.close }
+
+    # An expression index whose function swallows every cancel, as a
+    # backend stuck where pg_cancel_backend doesn't take effect would.
+    it "refuses index_build_orphan_running once the wait is up, if the orphan won't stop" do
+      @admin.exec(<<~SQL)
+        CREATE FUNCTION public.stubborn(int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$
+        DECLARE stop timestamptz := clock_timestamp() + interval '60 s';
+        BEGIN
+          WHILE clock_timestamp() < stop LOOP
+            BEGIN PERFORM pg_sleep(0.05); EXCEPTION WHEN query_canceled THEN NULL; END;
+          END LOOP;
+          RETURN $1;
+        END $$
+      SQL
+      name = Quaack::Enclave::IndexBuild.name("CREATE INDEX ON public.orders ((public.stubborn(id)))")
+      stubborn = production.connect
+      pid = stubborn.backend_pid
+      stubborn.send_query("CREATE INDEX #{name} ON public.orders ((public.stubborn(id)))")
+      running = wait_for(10) { activity(@admin, pid)&.fetch("state") == "active" }
+      conn = production.connect
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      expect(running).to be(true)
+      expect { Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1) }
+        .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_orphan_running")
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be_between(1, 5)
+      expect(activity(@admin, pid)["state"]).to eq("active")
+    ensure
+      @admin.exec_params("SELECT pg_terminate_backend($1)", [pid]) if pid
+      stubborn&.close
+      conn&.close
+    end
+
+    it "leaves alone an idle connection whose last query built the same index" do
+      name = Quaack::Enclave::IndexBuild.name("CREATE INDEX ON public.orders (note)")
+      idle = production.connect
+      idle.exec("CREATE INDEX #{name} ON public.orders (note)")
+      conn = production.connect
+
+      expect(activity(@admin, idle.backend_pid).values_at("state", "query"))
+        .to eq(["idle", "CREATE INDEX #{name} ON public.orders (note)"])
+      expect(Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1)).to eq([])
+    ensure
+      idle&.close
       conn&.close
     end
   end
