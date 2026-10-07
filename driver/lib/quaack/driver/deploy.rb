@@ -5,6 +5,7 @@ require "rbconfig"
 require "shellwords"
 require "tmpdir"
 require "quaack/protocol/version"
+require_relative "deploy_cleanup"
 require_relative "deploy_diagnosis"
 require_relative "enclave_version"
 require_relative "transport/child"
@@ -22,7 +23,9 @@ module Quaack
     # the gems' own dependencies, such as pg_query, from rubygems. It prints
     # a line on stdout as each step starts. If quaacks installed but won't
     # run over ssh, DeployDiagnosis works out why, and the failure says what
-    # to change on the jump server.
+    # to change on the jump server. Once the check passes, it removes the
+    # older versions of the two gems but the highest, with `gem uninstall
+    # --user-install`, and their old gem files in ~/.quaack/deploy.
     class Deploy
       # A failure, with a message for the engineer.
       class Error < StandardError; end
@@ -30,7 +33,7 @@ module Quaack
       # The gems, in install order, and each one's gemspec in the checkout.
       GEMS = { "quaack-protocol" => "protocol/quaack-protocol.gemspec", "quaacks" => "enclave/quaacks.gemspec" }.freeze
       # Relative to the remote user's home, where ssh starts.
-      REMOTE_DIR = ".quaack/deploy"
+      REMOTE_DIR = DeployCleanup::REMOTE_DIR
       # The checkout this file is in, when it runs from one.
       CHECKOUT = File.expand_path("../../../..", __dir__)
       # gem install compiles pg_query, which takes a while.
@@ -76,7 +79,7 @@ module Quaack
           install(files)
         end
         say "checking quaacks on #{@host}"
-        check
+        check.tap { prune }
       end
 
       private
@@ -110,12 +113,24 @@ module Quaack
             "gem install")
       end
 
-      # Runs command on the jump server with stdin, and raises Error, with
-      # the tail of what it printed, if it fails.
+      # After the version check passed: lists what's on the jump server,
+      # then prints each step DeployCleanup.steps gives and runs its
+      # command, if it has one.
+      def prune
+        out = ssh(Shellwords.join(["ruby", "-e", DeployCleanup::LISTING]), nil, "listing old versions")
+        installed = GEMS.keys.reverse.to_h { [it, version(it)] }
+        DeployCleanup.steps(out, installed, host: @host).each do |line, command, what|
+          say line
+          ssh(command, nil, what) if command
+        end
+      end
+
+      # Runs command on the jump server with stdin, and returns its stdout.
+      # If it fails, raises Error, with the tail of what it printed.
       def ssh(command, stdin, what)
         argv = [@ssh, *Transport::Ssh::DEFAULT_OPTIONS, "--", @host, command]
         run = Transport::Child.run(argv, stdin:, timeout: TIMEOUT, max_output_bytes: 16 * 1024 * 1024)
-        return if run.limit.nil? && run.status.success?
+        return run.stdout if run.limit.nil? && run.status.success?
 
         raise Error, "#{what} failed on #{@host}:\n#{tail(run.stdout)}"
       rescue Transport::Child::NotStarted

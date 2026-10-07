@@ -194,6 +194,143 @@ RSpec.describe Quaack::Driver::Deploy do
     expect(File.read(seen)).to eq("")
   end
 
+  # Task 20260929-20: deploy keeps the version it installed and the highest
+  # one older than that, and removes the rest of quaacks and quaack-protocol.
+  describe "removing old versions" do
+    let(:current) { Quaack::Driver::ENCLAVE_VERSION }
+    let(:protocol) { Quaack::Protocol::VERSION }
+    let(:out) { StringIO.new }
+    let(:deploy_dir) { File.join(home, ".quaack", "deploy") }
+
+    # Installs a stand-in gem of name and version into the user gem dir. It
+    # has no files and no executable, so the bin/quaacks wrapper still runs
+    # the real quaacks.
+    def plant(name, version)
+      _, status = Open3.capture2e(remote_env, RbConfig.ruby, "-S", "gem", "install", "--user-install", "--local",
+                                  "--ignore-dependencies", "--no-document", build_plant(name, version))
+      raise "gem install failed" unless status.success?
+    end
+
+    def build_plant(name, version)
+      src = File.join(dir, "plant", "#{name}-#{version}").tap { FileUtils.mkdir_p(it) }
+      File.write(File.join(src, "x.gemspec"),
+                 "Gem::Specification.new { |s| s.name = #{name.inspect}; s.version = #{version.inspect}; " \
+                 "s.summary = 'x'; s.authors = ['x'] }\n")
+      _, status = Open3.capture2e(clean, RbConfig.ruby, "-S", "gem", "build", "x.gemspec", "--output", "x.gem",
+                                  chdir: src)
+      raise "gem build failed" unless status.success?
+
+      File.join(src, "x.gem")
+    end
+
+    def installed(name)
+      Dir.children(File.join(user_dir, "specifications")).filter_map { it[/\A#{name}-(\d[^-]*)\.gemspec\z/, 1] }
+         .sort_by { Gem::Version.new(it) }
+    end
+
+    def deploy_with_progress(ssh: self.ssh) = described_class.new(host: "jump-1", ssh:, stdout: out).call
+
+    def removed_lines = out.string.lines.grep(/removing|leaving/)
+
+    def uninstalls = File.read(File.join(dir, "remote")).lines.grep(/uninstall/)
+
+    it "removes every older version but the highest, of both gems, saying so for each" do
+      %w[0.0.1 0.0.2 0.1.0].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
+
+      expect(deploy_with_progress).to eq(current)
+
+      expect(installed("quaacks")).to eq(["0.1.0", current])
+      expect(installed("quaack-protocol")).to eq(["0.1.0", protocol])
+      expect(removed_lines).to eq(<<~OUT.lines)
+        quaack deploy: removing quaacks 0.0.2 from jump-1
+        quaack deploy: removing quaacks 0.0.1 from jump-1
+        quaack deploy: removing quaack-protocol 0.0.2 from jump-1
+        quaack deploy: removing quaack-protocol 0.0.1 from jump-1
+      OUT
+      expect(uninstalls).to eq(<<~CMDS.lines)
+        gem uninstall --user-install -v 0.0.2 quaacks 2>&1
+        gem uninstall --user-install -v 0.0.1 quaacks 2>&1
+        gem uninstall --user-install -v 0.0.2 quaack-protocol 2>&1
+        gem uninstall --user-install -v 0.0.1 quaack-protocol 2>&1
+      CMDS
+    end
+
+    it "keeps the highest older version by version order, not string order, when a release was skipped" do
+      %w[0.0.9 0.0.10].each { plant("quaacks", it) }
+
+      deploy_with_progress
+
+      expect(installed("quaacks")).to eq(["0.0.10", current])
+      expect(removed_lines).to eq(["quaack deploy: removing quaacks 0.0.9 from jump-1\n"])
+    end
+
+    it "leaves a version newer than the one it installed, and says so" do
+      %w[0.0.1 0.0.2 99.0.0].each { plant("quaacks", it) }
+
+      deploy_with_progress
+
+      expect(installed("quaacks")).to eq(["0.0.2", current, "99.0.0"])
+      expect(removed_lines).to eq(["quaack deploy: leaving quaacks 99.0.0 on jump-1, since it's newer than " \
+                                   "#{current}\n", "quaack deploy: removing quaacks 0.0.1 from jump-1\n"])
+    end
+
+    it "removes nothing when the version check fails" do
+      %w[0.0.1 0.0.2].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
+      FileUtils.mkdir_p(deploy_dir)
+      File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
+
+      expect { deploy_with_progress(ssh: fake_ssh(path: false)) }.to raise_error(described_class::Error)
+
+      expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+      expect(installed("quaack-protocol")).to eq(["0.0.1", "0.0.2", protocol])
+      expect(File.exist?(File.join(deploy_dir, "quaacks-0.0.1.gem"))).to be(true)
+      expect(File.read(File.join(dir, "remote"))).not_to match(/uninstall|rm /)
+      expect(removed_lines).to eq([])
+    end
+
+    it "never uninstalls another gem, even an old one in the user gem dir" do
+      %w[0.0.1 0.0.2 0.0.3].each { plant("pg_query", it) }
+      %w[0.0.1 0.0.2].each { |v| %w[quaacks-extra quaacks].each { |n| plant(n, v) } }
+
+      deploy_with_progress
+
+      expect(installed("pg_query")).to eq(%w[0.0.1 0.0.2 0.0.3])
+      expect(installed("quaacks-extra")).to eq(%w[0.0.1 0.0.2])
+      expect(uninstalls).to eq(["gem uninstall --user-install -v 0.0.1 quaacks 2>&1\n"])
+    end
+
+    it "parses only plain versions of its own two gems out of the listing" do
+      listing = ["spec:quaacks-0.0.1.gemspec", "spec:quaacks-0.0.2;touch pwned.gemspec", "spec:quaacks-$(id).gemspec",
+                 "spec:quaacks-extra-0.0.1.gemspec", "spec:pg-1.6.0.gemspec", "spec:quaack-protocol-0.1.10.gemspec",
+                 "file:quaacks-0.0.1.gem", "file:quaacks-0.0.1.gem; rm -rf ~", "file:notes.txt",
+                 "noise quaacks-0.0.3.gemspec"].join("\n")
+      expect(Quaack::Driver::DeployCleanup.parse_listing(listing)).to eq(
+        specs: { "quaacks" => [Gem::Version.new("0.0.1")], "quaack-protocol" => [Gem::Version.new("0.1.10")] },
+        files: ["quaacks-0.0.1.gem"]
+      )
+    end
+
+    it "compares versions as versions: 0.1.10 is newer than 0.1.9" do
+      versions = %w[0.1.8 0.1.9 0.1.10 0.1.12].map { Gem::Version.new(it) }
+      expect(Quaack::Driver::DeployCleanup.plan(versions, Gem::Version.new("0.1.11")))
+        .to eq(remove: %w[0.1.9 0.1.8].map { Gem::Version.new(it) }, newer: [Gem::Version.new("0.1.12")])
+    end
+
+    it "clears old gem files out of ~/.quaack/deploy, keeping the ones it just installed and anything else" do
+      FileUtils.mkdir_p(deploy_dir)
+      %w[quaacks-0.0.1.gem quaack-protocol-0.0.1.gem quaacks-0.0.2.gem notes.txt].each do |name|
+        File.write(File.join(deploy_dir, name), "old")
+      end
+
+      deploy_with_progress
+
+      expect(Dir.children(deploy_dir).sort)
+        .to eq(["notes.txt", "quaack-protocol-#{protocol}.gem", "quaacks-#{current}.gem"])
+      expect(out.string.lines.grep(/gem files/))
+        .to eq(["quaack deploy: removing 3 old gem files from ~/.quaack/deploy on jump-1\n"])
+    end
+  end
+
   # The installed quaacks refuses to run where the driver gem is installed
   # too, the wrong deploy the exe's guard catches.
   it "leaves a quaacks that refuses to run once the driver gem is installed beside it" do
