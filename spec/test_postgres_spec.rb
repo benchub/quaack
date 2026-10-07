@@ -165,6 +165,34 @@ RSpec.describe TestPostgres do
     end
   end
 
+  # Each process gets its own TMPDIR, as runs from different shells might, so
+  # a lock file under the temp directory wouldn't make them take turns.
+  it "builds the image only once when processes with different temp directories need it at once" do
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "calls.log")
+      built = File.join(dir, "built")
+      File.write(File.join(dir, "docker"), <<~SH, perm: 0o755)
+        #!/bin/sh
+        echo "$1" >> #{log}
+        case "$1" in
+          image) [ -e #{built} ] ;;
+          build) sleep 1; touch #{built} ;;
+        esac
+      SH
+      code = "require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}; TestPostgres.build_image"
+      pids = Array.new(3) do |i|
+        tmp = File.join(dir, "tmp#{i}")
+        Dir.mkdir(tmp)
+        Process.spawn({ "PATH" => "#{dir}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}", "TMPDIR" => tmp },
+                      RbConfig.ruby, "-e", code)
+      end
+      statuses = pids.map { Process.wait2(it).last }
+
+      expect(statuses).to all(be_success)
+      expect(File.readlines(log, chomp: true).tally).to eq("image" => 3, "build" => 1)
+    end
+  end
+
   it "counts a process it may not signal as alive" do
     expect(TestPostgres.process_alive?(1)).to be(true)
   end

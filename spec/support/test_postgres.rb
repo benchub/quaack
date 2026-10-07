@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "fileutils"
 require "open3"
 require "socket"
 require "tmpdir"
@@ -231,10 +232,14 @@ module TestPostgres
   # rake starts every suite at once, so several processes can reach
   # build_image together. A lock file, one per tag, makes them take turns:
   # the first builds, and the rest find its image. Concurrent builds that tag
-  # the same image can fail on Docker's containerd image store.
+  # the same image can fail on Docker's containerd image store. The lock sits
+  # at a fixed per-user path, not under TMPDIR, so runs from shells with
+  # different TMPDIR values still share it.
   module ImageBuild
     def self.run(tag, dir)
-      File.open(File.join(Dir.tmpdir, "#{tag.tr(":", "-")}.lock"), File::RDWR | File::CREAT, 0o600) do |lock|
+      lock_dir = File.join(Dir.home, ".cache", "quaack")
+      FileUtils.mkdir_p(lock_dir)
+      File.open(File.join(lock_dir, "#{tag.tr(":", "-")}.lock"), File::RDWR | File::CREAT, 0o600) do |lock|
         lock.flock(File::LOCK_EX)
         TestPostgres.docker("image", "inspect", tag)
       rescue RuntimeError
