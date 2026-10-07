@@ -2323,14 +2323,7 @@ From the builder and review of 20261001-7.
 
 ### 20261006-13. Step counts: candidate-runs' measured count leaves out timed-out runs. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-14. `rule_rewrites` guard: drops a future rule's rewrites without a word.
-
-From the review of 20261001-28. `rewrite_payload.rb` (~46) leaves a rule rewrite out of `rule_rewrites` when it holds a constant that isn't in the redacted query and isn't in `RULE_CONSTANTS` (`1`, `true`). No rule writes any other constant today. But a new rule that writes `NULL` or `0` would have its rewrites dropped without a word, and the LLM might repeat them. Add a spec that runs every rule in RULES over the existing rule fixtures and checks that each constant they write is in `RULE_CONSTANTS`, so adding a rule forces the list to be updated.
-
-- **Depends on:** 20261001-28.
-- **Came from:** The review of 20261001-28.
-- **Design:** llm-rewrites, rewrite-rules.
-- **Status:** todo
+### 20261006-14. `rule_rewrites` guard: drops a future rule's rewrites without a word. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-15. Orphaned-build cancel: minor findings from 20261006-9. Done, see BACKLOG-COMPLETE.md.
 

@@ -6050,3 +6050,13 @@ From the second review of 20261006-5. `clock_params` (`enclave/lib/quaack/enclav
 - **Design:** counterexamples inserts, clock anchoring.
 - **Status:** done
 - **Landed:** `Types#reads_clock?(firm: true)` (`enclave/lib/quaack/enclave/insert_clock_words.rb`) now anchors a `$n` only when every candidate type for each of its targets agrees on reading it as a real date/time type (`disagree?`). With `f(text)` and `f(date)` both defined, `fx.f($n)` is bound as written and refused as `clock_literal`. A single `f(date)`, casts, `daterange`, `::date[]`, date columns, and a domain over date still anchor. All three gems went to 0.1.18, with the `rake full` stamp.
+
+### 20261006-14. `rule_rewrites` guard: drops a future rule's rewrites without a word.
+
+From the review of 20261001-28. `rewrite_payload.rb` (~46) leaves a rule rewrite out of `rule_rewrites` when it holds a constant that isn't in the redacted query and isn't in `RULE_CONSTANTS` (`1`, `true`). No rule writes any other constant today. But a new rule that writes `NULL` or `0` would have its rewrites dropped without a word, and the LLM might repeat them. Add a spec that runs every rule in RULES over the existing rule fixtures and checks that each constant they write is in `RULE_CONSTANTS`, so adding a rule forces the list to be updated.
+
+- **Depends on:** 20261001-28.
+- **Came from:** The review of 20261001-28.
+- **Design:** llm-rewrites, rewrite-rules.
+- **Status:** done
+- **Landed:** `enclave/spec/rule_constants_postgres_spec.rb` runs every rule in RULES on its `docs/transforms` page's schema and Before query, filling placeholders from a LITERALS table, then redacting. It asserts that the rule fires and that every rewrite it takes part in holds only the redacted query's constants plus `RULE_CONSTANTS`, collected with `RewritePayload.constants`. A separate example fails when a rule in RULES has no page, schema, Before block, or LITERALS entry. No rule writes a disallowed constant today. The change is tests only, with no version bump. The review noted two harmless nits and filed no task for them: a stale LITERALS entry for a removed rule wouldn't be flagged, and one check is repeated.
