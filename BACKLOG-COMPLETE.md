@@ -5990,3 +5990,14 @@ From the review of 20261004-1. candidate-runs sends `measured` as the kept runs 
 - **Design:** Progress lines for `quaack run`.
 - **Status:** done
 - **Landed:** candidate-runs now sends `measured` as kept runs plus timed-out runs, the total, as baseline and index-baseline do. So "Measured N rewrite runs, M timed out" reads M of N. "No rewrites to measure" shows only when there were no runs. The driver needed no change. The side note (only a direct unit test covers index-rank's non-zero `combined`) was set aside and filed as 20261006-24. All three gems went to 0.1.16, with the `rake full` stamp.
+
+### 20261004-5. Build the original query's scenarios once, not once per rewrite.
+
+`steps/counterexamples.rb` calls `ScenarioTests.run` once per candidate. Each call builds a new `Builder`, which rebuilds the same scenarios for the original query and loses its probe caches. Build them once per run and share them across candidates, so the outcomes stay the same.
+
+- **Depends on:** 20261004-2.
+- **Came from:** The build of 20261004-2.
+- **Design:** rewrite-test.
+- **Status:** dropped
+- **Dropped by the user (2026-10-07):** It was an optimization only, and the cheap version is stale: each rewrite already gets its own enclave process. A batch `rewrite-test` isn't worth building without evidence that scenario building costs much. If 20261004-27 shows that it does, file a new task.
+- **Set aside (2026-10-07):** The builder found this stale as written. `rewrite-test` handles one rewrite per call. The driver (`CounterexampleStage#rewrite`) makes a separate enclave call for each rewrite, and each call already builds the original's scenarios once. Repeated builds happen across processes, so sharing in memory changes nothing. A real fix crosses the protocol. Option 1 is a batch `rewrite-test` taking several `--search` values in one process, which means changing the driver's `CounterexampleStage` and resume. Option 2 caches built scenarios in the enclave store. It adds trust-boundary surface, and probe caches still rebuild. With either option, the vacuity guard depends on each rewrite's `honour` copies, so only the Builder's output can be shared. The builder recommends option 1. The user to decide: drop it, or rewrite it as option 1.
