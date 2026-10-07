@@ -122,6 +122,30 @@ RSpec.describe "quaacks index-build, against a real server" do
 
   def progress_lines(outcome) = outcome.stdout.lines[0...-1].map { JSON.parse(it) }
 
+  # 20261006-21: the combination often holds the top entry's index, and a
+  # set-aside candidate can repeat. Each DDL is built and counted once.
+  it "builds and counts once a DDL that's in several combinations" do
+    ranked_run
+    ranking = store.read("index_ranking_original")
+    ranking["combination"] = { "ddl" => ranking["top"].first["ddl"] + ranking["top"].last["ddl"] }
+    store.write("index_ranking_original", ranking)
+    entry = store.read("index_search_original")
+    entry["dedupe"]["set_aside"] = [spgist, spgist]
+    store.write("index_search_original", entry)
+    distinct = Quaack::Enclave::IndexBuild.combinations(stored).values.flatten
+    expect(distinct.size - distinct.uniq.size).to be >= 2
+
+    progress = progress_lines(run("index-build"))
+
+    total = distinct.uniq.size
+    expect(progress.map { it.values_at("index", "total") }).to eq((1..total).map { [it, total] })
+    expect(progress.map { it["ddl"] }.uniq.size).to eq(total)
+    build = stored.read("index_build")
+    expect(build["indexes"].size).to eq(total)
+    expect(build["combinations"].values_at("original:set_aside:1", "original:set_aside:2").uniq.size).to eq(1)
+    expect(Quaack::Enclave::Burndown.read(stored)["totals"]["indexes_built"]).to eq(total)
+  end
+
   def oids(conn) = indexes(conn).select { it["relname"].start_with?("quaack_") }.to_h { [it["relname"], it["oid"]] }
 
   # 20261004-11: the driver builds one index per call, so each gets its own
