@@ -1474,17 +1474,7 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 - **Design:** schema-dump, arena-setup.
 - **Status:** todo
 
-### 20261001-11. Progress output: minor findings.
-
-The review of 20261001-8 found two minor items:
-
-1. Nothing tests the skip line that operator-rewrites prints on a resumed run with `--rewrites`. If that line broke, every later `[n/18]` number would be off by one, and no spec would catch it. Nothing tests the rewrite-correctness skip note for each rewrite either. Add a cli_run progress spec that resumes with `rewrites_generated` and `operator_rewrites_checked` set and passes `--rewrites`. It should assert `[6/18] operator-rewrites: already done, skipping`, and cover the rewrite-correctness note too.
-2. In `Progress#step`, if the first `say` raises, such as EPIPE on stderr, `start` is still nil. The rescue's `since(nil)` then raises a TypeError that hides the real error. Set `start` before the first `say`.
-
-- **Depends on:** 20261001-8.
-- **Came from:** The review of 20261001-8, 2026-10-01.
-- **Design:** The `quaack run` command.
-- **Status:** todo
+### 20261001-11. Progress output: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-12. `quaack run`'s progress lines say in plain English what each step does, and 12a shows each index it builds. Done, see BACKLOG-COMPLETE.md.
 
@@ -2215,17 +2205,7 @@ From the reviews of 20260924-7.
 
 ### 20261004-95. Insert check: clock words, loose ends. Done, see BACKLOG-COMPLETE.md.
 
-### 20261006-1. Waiting-for-the-LLM line: minors from 20261004-84.
-
-From the review of 20261004-84.
-1. `driver/spec/pipeline_progress_spec.rb` (~432): the new `it` has no blank line before it.
-2. `progress.rb` (~107-110): the `sub_step` comment still says a repeated note "is left out on a terminal"; it can now print as a wait line.
-3. Removing `note &&` in `Progress#shown` stays green. Harmless today, since no step note repeats its step's line, but nothing pins it. Add a test or drop the guard.
-
-- **Depends on:** 20261004-84.
-- **Came from:** The review of 20261004-84.
-- **Design:** Progress lines for `quaack run`.
-- **Status:** todo
+### 20261006-1. Waiting-for-the-LLM line: minors from 20261004-84. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-2. Structured columns: minors from 20261004-91.
 

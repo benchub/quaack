@@ -6208,3 +6208,29 @@ These are review minors from 20261004-50.
 - **Design:** report.
 - **Status:** done
 - **Landed:** A rewrite's summary line flags when its collapsed section holds the empirical or untested-conditions warning (`Rewrites#warning`). Each rewrite's id is now on its `<details>`, and a CSS-only `:target` rule shows the section when a link is followed. That needs a recent browser; older ones leave the section closed. The not-ranked note now covers unknown-source and missing-from-payload rewrites. DESIGN.md matches. Driver only. Landed with 20261004-87.
+
+### 20261006-1. Waiting-for-the-LLM line: minors from 20261004-84.
+
+From the review of 20261004-84.
+1. `driver/spec/pipeline_progress_spec.rb` (~432): the new `it` has no blank line before it.
+2. `progress.rb` (~107-110): the `sub_step` comment still says a repeated note "is left out on a terminal"; it can now print as a wait line.
+3. Removing `note &&` in `Progress#shown` stays green. Harmless today, since no step note repeats its step's line, but nothing pins it. Add a test or drop the guard.
+
+- **Depends on:** 20261004-84.
+- **Came from:** The review of 20261004-84.
+- **Design:** Progress lines for `quaack run`.
+- **Status:** done
+- **Landed:** Added the missing spec blank line and fixed the `sub_step` comment. Dropped the `note &&` guard in `Progress#shown`: no realistic note reaches it, and the review checked every `note` and `step_note` caller. Driver only. Landed with 20261001-11.
+
+### 20261001-11. Progress output: minor findings.
+
+The review of 20261001-8 found two minor items:
+
+1. Nothing tests the skip line that operator-rewrites prints on a resumed run with `--rewrites`. If that line broke, every later `[n/18]` number would be off by one, and no spec would catch it. Nothing tests the rewrite-correctness skip note for each rewrite either. Add a cli_run progress spec that resumes with `rewrites_generated` and `operator_rewrites_checked` set and passes `--rewrites`. It should assert `[6/18] operator-rewrites: already done, skipping`, and cover the rewrite-correctness note too.
+2. In `Progress#step`, if the first `say` raises, such as EPIPE on stderr, `start` is still nil. The rescue's `since(nil)` then raises a TypeError that hides the real error. Set `start` before the first `say`.
+
+- **Depends on:** 20261001-8.
+- **Came from:** The review of 20261001-8, 2026-10-01.
+- **Design:** The `quaack run` command.
+- **Status:** done
+- **Landed:** Item 1: a new cli_run spec pins the operator-rewrites skip line on a resumed run with `--rewrites` (step 7 of 19), and the rewrite-correctness skip note for each rewrite. Breaking either one turns it red. Item 2 was already done: `clocked` sets the start before the first `say` (b74ba62), and existing specs pin it. Driver only. Landed with 20261006-1.
