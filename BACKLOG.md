@@ -2237,14 +2237,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 - **Design:** Progress lines for `quaack run`.
 - **Status:** todo
 
-### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites.
-
-From 20261004-82's builder and review. Only the original plan carries per-node block counts, because it comes from the operator's `EXPLAIN (ANALYZE, BUFFERS)`. A rewrite's plan in the report is a hypothetical `EXPLAIN`, so in "Why the winner reads fewer blocks" the winner's blocks column is all "not recorded" and the report doesn't say why. Record a measured plan (ANALYZE, BUFFERS) for each ranked candidate from its measurement runs (today these keep plans only when a run is unstable), and send it in the payload within the same `PlanNodes` boundary. Until then, the report should say in words why the winner's column is empty.
-
-- **Depends on:** 20261004-82.
-- **Came from:** The builder and review of 20261004-82.
-- **Design:** report, measure, egress.
-- **Status:** todo
+### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-87. Plan tree blocks column: minors from 20261004-82.
 
@@ -2462,4 +2455,15 @@ From the review of 20261001-27.
 - **Depends on:** 20261001-27.
 - **Came from:** The review of 20261001-27.
 - **Design:** rewrite-rules.
+- **Status:** todo
+
+### 20261006-19. Measured plans: minor findings from 20261004-86.
+
+From the review of 20261004-86.
+1. `View::NO_MEASURED_PLAN` (`driver/lib/quaack/driver/report/view.rb` ~36) blames an older measurement run for every nil plan. That's the only path to a nil plan today, but a new path would make the sentence wrong. Tie the wording to the cause, or check it when one is added.
+2. An unstable set stores its most-blocks plan twice, in `"plan"` and in `"plans"` (`enclave/lib/quaack/enclave/measurement.rb` ~105-106). The storage cost is small.
+
+- **Depends on:** 20261004-86.
+- **Came from:** The review of 20261004-86.
+- **Design:** report, measure.
 - **Status:** todo

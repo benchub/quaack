@@ -5899,3 +5899,13 @@ A first build (reverted commit 50b1c27 on `main`'s history, `counterexamples/clo
 - **Design:** rewrite-rules.
 - **Status:** done
 - **Landed:** `RewriteRules::UnusedJoinRemoval` (`enclave/lib/quaack/enclave/rewrite_rules/unused_join_removal.rb`, with `candidates.rb` and `Catalog#strict_foreign_key?`) removes an inner JOIN, or a comma-FROM item and its join conjuncts, to a table read nowhere else. Every join conjunct must be a plain `=` matching a validated, non-deferrable FK's pairs exactly, on plain tables with no inheritance, no RLS on the joined table, enabled RI triggers, the key's own `=` operator, and deterministic collations. Joining columns must be catalog NOT NULL. It records `foreign_key` and `not_null` assumptions. In RULES and `RULE_NAMES`, it sits between `union_outer_filter_removal` and `polymorphic_key_copy`. DESIGN.md's rules table row lists every condition and what v1 doesn't support. All three gems went to 0.1.11, with the `rake full` stamp.
+
+### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites.
+
+From 20261004-82's builder and review. Only the original plan carries per-node block counts, because it comes from the operator's `EXPLAIN (ANALYZE, BUFFERS)`. A rewrite's plan in the report is a hypothetical `EXPLAIN`, so in "Why the winner reads fewer blocks" the winner's blocks column is all "not recorded" and the report doesn't say why. Record a measured plan (ANALYZE, BUFFERS) for each ranked candidate from its measurement runs (today these keep plans only when a run is unstable), and send it in the payload within the same `PlanNodes` boundary. Until then, the report should say in words why the winner's column is empty.
+
+- **Depends on:** 20261004-82.
+- **Came from:** The builder and review of 20261004-82.
+- **Design:** report, measure, egress.
+- **Status:** done
+- **Landed:** Each measured set stores `"plan"`, the redacted plan of its most-blocks run, the same run whose totals `MeasuredLabels.summary` reports. `report-payload` sends each label's slow-set plan through the original plan's `nodes()` extraction. Egress and the driver's reply check require `labels` to be an Array of Hashes, with each `plan` nil or valid under `PlanNodes`. "Why the winner reads fewer blocks" shows the winner's measured plan with its blocks. Without one, it says in words why the column is empty. There's no store-format bump, since older stores just lack `"plan"`. All three gems went to 0.1.12, with the `rake full` stamp.
