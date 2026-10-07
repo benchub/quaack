@@ -2319,14 +2319,7 @@ From the second review of 20261006-7.
 
 ### 20261007-4. The orphan deadline test hangs, not fails, when the deadline breaks. Done, see BACKLOG-COMPLETE.md.
 
-### 20261007-5. Picker: pin or refuse the non-near `:skip` guard.
-
-From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb` (~48) returns `:skip` when no candidate passes every CHECK. That happens with contradictory CHECKs on one column (`CHECK (n > 10) CHECK (n < 5)`, `WHERE n = 1`), or with join keys whose CHECKs don't overlap. Without the guard, the scenarios get NULL in those columns, which breaks NOT NULL. Neither setup is realistic. Pin the guard with one of those fixtures, or refuse such queries cleanly and list them in DESIGN.md as unsupported in v1. Don't delete it.
-
-- **Depends on:** 20261006-20.
-- **Came from:** The builder of 20261006-20.
-- **Design:** rewrite-test.
-- **Status:** todo
+### 20261007-5. Picker: pin or refuse the non-near `:skip` guard. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-6. Report sections: minors from 20261004-87 and 20261004-59. Done, see BACKLOG-COMPLETE.md.
 

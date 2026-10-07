@@ -6355,3 +6355,13 @@ From the review of 20261001-13.
 - **Design:** Transport, progress lines.
 - **Status:** done
 - **Landed:** `Reply.progress` now runs outside the rescue in `Transport::Base#on_line`. Only the progress block's own errors are caught, in the new `hand`. A driver bug in reading a progress line now ends the call, the way it did before 20261001-13. `build_index` keeps `total` set before its `note` call, and a new test pins that order, so a failing note can't make `build_indexes` skip indexes. Driver only.
+
+### 20261007-5. Picker: pin or refuse the non-near `:skip` guard.
+
+From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb` (~48) returns `:skip` when no candidate passes every CHECK. That happens with contradictory CHECKs on one column (`CHECK (n > 10) CHECK (n < 5)`, `WHERE n = 1`), or with join keys whose CHECKs don't overlap. Without the guard, the scenarios get NULL in those columns, which breaks NOT NULL. Neither setup is realistic. Pin the guard with one of those fixtures, or refuse such queries cleanly and list them in DESIGN.md as unsupported in v1. Don't delete it.
+
+- **Depends on:** 20261006-20.
+- **Came from:** The builder of 20261006-20.
+- **Design:** rewrite-test.
+- **Status:** done
+- **Landed:** A Postgres-backed spec in `enclave/spec/scenarios_postgres_spec.rb` pins the Picker's non-near `:skip` guard. The fixture is `fx.x (n integer NOT NULL CHECK (n > 10) CHECK (n < 5))` with `WHERE n = 1`. No scenario row holds NULL, and every scenario loads. Replacing `|| :skip` with `|| nil` turns it red. The guard is kept, not changed to a refusal, so the change is spec only with no version bump.
