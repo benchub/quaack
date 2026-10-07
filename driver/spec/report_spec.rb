@@ -934,7 +934,7 @@ RSpec.describe Quaack::Driver::Report do
              "a step that ran many times can show one row next to thousands of blocks. And a subquery Postgres " \
              "runs once up front (an InitPlan) has its blocks counted in the step that used its result, which " \
              "needn&#39;t be the step it&#39;s listed under, so those blocks can show up twice.</p>"
-      expect(explanation).to include("</table>#{note}\n<p>QUAACK didn&#39;t keep a measured plan")
+      expect(explanation).to include("</table>#{note}\n<p>QUAACK has no measured plan")
       expect(explanation.scan(note).size).to eq(1)
     end
 
@@ -971,8 +971,8 @@ RSpec.describe Quaack::Driver::Report do
 
     it "says why the winner's blocks aren't recorded when the run kept no measured plan for it" do
       expect(explanation).to include(
-        "<p>QUAACK didn&#39;t keep a measured plan for the winner, since this run measured it before QUAACK kept " \
-        "one, so the blocks it read at each step aren&#39;t recorded. The plan below is the one Postgres expected, " \
+        "<p>QUAACK has no measured plan for the winner, so the blocks it read at each step aren&#39;t recorded. " \
+        "The plan below is the one Postgres expected, " \
         "from EXPLAIN without running the query, which counts no blocks.</p>\n<p>How it runs rewrite Vivid Cove"
       )
     end
