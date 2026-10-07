@@ -21,7 +21,7 @@ module Quaack
       # two lists match. A rule's name is QUAACK's own constant.
       RULE_NAMES = %w[implied_predicate_removal transitive_predicate_copy shared_scan_cte key_in_self_join
                       or_to_union not_in_to_not_exists existence_in_flip distinct_join_to_exists cte_hoist_dedupe
-                      union_outer_filter_removal polymorphic_key_copy].map(&:freeze).freeze
+                      union_outer_filter_removal unused_join_removal polymorphic_key_copy].map(&:freeze).freeze
 
       # As Burndown's: no real count comes near it.
       MAX_COUNT = 10**12
