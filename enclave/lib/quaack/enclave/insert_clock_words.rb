@@ -199,7 +199,7 @@ module Quaack
         end
 
         def reads?(text, oid)
-          return false unless text && loose?(text)
+          return false unless text && loose?(text) && holds_clock?(oid)
 
           info = info(oid)
           return WORD.match?(text) if info.clock
@@ -207,6 +207,20 @@ module Quaack
           parts(text, info)
         rescue ArgumentError
           true
+        end
+
+        # Whether a value of the type could hold a date or time: it is
+        # one, or a domain, array, range, multirange, or composite of one
+        # somewhere inside, or a pseudo-type. Text read as any other type
+        # reads no clock, even text it can't split (task 20261006-5).
+        def holds_clock?(oid, seen = [])
+          return false if seen.include?(oid)
+
+          info = info(oid)
+          return true if info.clock || info.kind == "p"
+
+          [info.base, info.element, info.subtype, info.range, *info.fields].compact
+                                                                           .any? { holds_clock?(it, [*seen, oid]) }
         end
 
         def parts(text, info)
