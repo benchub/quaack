@@ -3,6 +3,7 @@
 require "digest"
 require "json"
 require "pg_query"
+require_relative "build_connection"
 require_relative "index_store"
 
 module Quaack
@@ -38,7 +39,7 @@ module Quaack
       # literal, so the caller must redact it before it leaves. built, if
       # given, is called with the built indexes before index_build is written.
       def build(store, connection, starting: nil, built: nil)
-        SETTINGS.each { |k, v| connection.exec("SET #{k} = '#{v}'") }
+        BuildConnection.configure(connection)
         combinations = combinations(store)
         indexes = create_all(connection, combinations.values.flatten.uniq, starting)
         hide_all(connection, "indexes" => indexes)
@@ -95,6 +96,7 @@ module Quaack
         schema = stmt.relation.schemaname
         raise Error, "index_build_unqualified" if schema.empty?
 
+        BuildConnection.cancel_orphans(connection, name)
         unless oid(connection, schema, name)
           stmt.idxname = name
           connection.exec(PgQuery.deparse_stmt(stmt))
