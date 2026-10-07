@@ -10,8 +10,9 @@ module Quaack
       # The catalog reads behind PlannerStatistics.run: one table's entry, as
       # plain JSON data for the store. See PlannerStatistics for its form.
       # The caller holds the read-only transaction. Every comparison names
-      # pg_catalog's operator, so one planted ahead of it on the search_path
-      # can't change what a read finds.
+      # pg_catalog's operator, and every function and cast pg_catalog's
+      # function and type, so one planted ahead of it on the search_path
+      # can't change what a read finds or write what it returns.
       module Catalog
         TABLE_SQL = <<~SQL
           SELECT c.oid, c.reltuples, c.relpages,
@@ -23,8 +24,8 @@ module Quaack
 
         # One relation's own pg_stats rows. An index's are its expressions'.
         PG_STATS_SQL = <<~SQL
-          SELECT attname, null_frac, avg_width, n_distinct, most_common_vals::text, most_common_freqs::text,
-                 histogram_bounds::text, correlation
+          SELECT attname, null_frac, avg_width, n_distinct, most_common_vals::pg_catalog.text,
+                 most_common_freqs::pg_catalog.text, histogram_bounds::pg_catalog.text, correlation
           FROM pg_catalog.pg_stats WHERE schemaname OPERATOR(pg_catalog.=) $1
            AND tablename OPERATOR(pg_catalog.=) $2 AND NOT inherited
           ORDER BY attname COLLATE "C"
@@ -41,10 +42,10 @@ module Quaack
         # array_to_json, because most_common_vals is a two-dimensional
         # text[]. Postgres writes the JSON, so it always parses.
         EXTENDED_SQL = <<~SQL
-          SELECT n.nspname, s.stxname, pg_catalog.pg_get_statisticsobjdef(s.oid), s.stxkind::text,
-                 d.n_distinct::text, d.dependencies::text, array_to_json(d.most_common_vals),
-                 array_to_json(d.most_common_val_nulls), array_to_json(d.most_common_freqs),
-                 array_to_json(d.most_common_base_freqs)
+          SELECT n.nspname, s.stxname, pg_catalog.pg_get_statisticsobjdef(s.oid), s.stxkind::pg_catalog.text,
+                 d.n_distinct::pg_catalog.text, d.dependencies::pg_catalog.text,
+                 pg_catalog.array_to_json(d.most_common_vals), pg_catalog.array_to_json(d.most_common_val_nulls),
+                 pg_catalog.array_to_json(d.most_common_freqs), pg_catalog.array_to_json(d.most_common_base_freqs)
           FROM pg_catalog.pg_statistic_ext s
           JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) s.stxnamespace
           LEFT JOIN pg_catalog.pg_stats_ext d

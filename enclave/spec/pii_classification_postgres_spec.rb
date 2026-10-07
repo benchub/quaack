@@ -130,6 +130,23 @@ RSpec.describe Quaack::Enclave::PiiClassification do
       expect { described_class.run(store:, config:) }.to raise_error(KeyError, /sendable_columns/)
       expect(store.entry?("classification")).to be(false)
     end
+
+    # A frequency that isn't a number in 0..1, such as a value a function
+    # planted on the search_path wrote, fails classify, which stores
+    # nothing, rather than letting it out (see OutboundShape).
+    it "fails on a statistics entry with a value of the wrong shape in a statistics object's frequency" do
+      sentinel = LeakCheck::Sentinels.claim { "sentinel#{SecureRandom.hex(6)}" }
+      conn.exec("CREATE STATISTICS accounts_status_id (mcv) ON status, id FROM accounts; ANALYZE accounts")
+      Quaack::Enclave::PlannerStatistics.run(store:, relations: [accounts], connection: conn)
+      data = store.read("statistics")
+      data["tables"].first["extended_statistics"].first["most_common_freqs"][0] = sentinel
+      store.write("statistics", data)
+
+      expect { described_class.run(store:, config:) }.to raise_error(described_class::Error) { |error|
+        expect([error.rule, error.message.include?(sentinel)]).to eq(["statistics_bad_shape", false])
+      }
+      expect(store.entry?("classification")).to be(false)
+    end
   end
 
   describe "what may leave" do
