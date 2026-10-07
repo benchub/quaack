@@ -3,6 +3,7 @@
 require "erb"
 require_relative "words"
 require_relative "format"
+require_relative "index_ddl"
 require_relative "candidates"
 require_relative "rewrites"
 require_relative "rule_links"
