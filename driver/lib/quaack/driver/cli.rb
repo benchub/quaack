@@ -124,12 +124,14 @@ module Quaack
       # Transport::Base::DEFAULT_TIMEOUT. A flag that isn't a positive
       # number is a usage error.
       #
-      # Its progress and messages on stderr are only for show: once a write
-      # there fails, such as to a closed pipe, the rest are skipped and the
-      # run goes on to its own exit status (QuietStream).
+      # Its progress and messages on stderr, and the report's path and done
+      # on stdout, are only for show: once a write to either fails, such as
+      # to a closed pipe (`quaack run … 2>&1 | head`), the rest there are
+      # skipped and the run goes on, writes its report, and exits with its
+      # own status (QuietStream).
       def run_command(run:, rewrites:, timeout:, **options)
         require_run
-        @stderr = QuietStream.wrap(@stderr)
+        @stderr, @stdout = [@stderr, @stdout].map { QuietStream.wrap(it) }
         where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
         sqls, client, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
 

@@ -313,6 +313,54 @@ RSpec.describe "quaack run" do
     end
   end
 
+  describe "when stdout is a pipe whose reader has closed" do
+    # A real pipe, as when the program reading stdout exits.
+    let(:pipe) { IO.pipe.tap { it.first.close } }
+    let(:stdout) { pipe.last }
+
+    after { stdout.close }
+
+    it "writes the report, tears down, and exits 0 without printing its path" do
+      expect([cli.run(["run", "--run", run_id, "--out", out]), errors]).to eq([0, torn])
+      expect(File.read(out)).to include("QUAACK report #{run_id}")
+      expect(transport.calls.map(&:first).last).to eq("teardown")
+    end
+
+    it "still exits 1 when teardown fails after the report" do
+      failing["teardown"] = Quaack::Driver::EnclaveError.new(subcommand: "teardown", rule: "teardown_failed")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect(File.read(out)).to include("QUAACK report #{run_id}")
+      expect(errors).to include("quaack run failed: teardown_failed")
+    end
+  end
+
+  # `quaack run … 2>&1 | head`: one real pipe, its reader closed, for both.
+  describe "when stdout and stderr are one pipe whose reader has closed" do
+    let(:pipe) { IO.pipe.tap { it.first.close } }
+    let(:stdout) { pipe.last }
+    let(:stderr) { pipe.last }
+
+    after { pipe.last.close }
+
+    it "runs to the end, writes the report, tears down, and exits 0" do
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+      expect(File.read(out)).to include("QUAACK report #{run_id}")
+      expect(transport.calls.map(&:first).last).to eq("teardown")
+    end
+
+    it "exits 1 when a step fails, and still tears down" do
+      failing["report-payload"] = Quaack::Driver::EnclaveError.new(subcommand: "report-payload", rule: "arena_missing")
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(1)
+      expect(transport.calls.map(&:first).last).to eq("teardown")
+    end
+
+    it "exits with the usage status for an unknown run" do
+      expect(cli.run(["run", "--run", "20260926T010203Z-ffffffff", "--out", out])).to eq(64)
+    end
+  end
+
   def rewrites_file(text = "SELECT 2 WHERE $1;\n")
     File.join(home, "rewrites.sql").tap { File.write(it, text) }
   end

@@ -252,6 +252,58 @@ RSpec.describe "quaack setup" do
   # Task 20261006-8: setup's enclave calls get enclave_timeout_seconds from
   # ~/.quaack/driver.json too, so a timeout's note, which says to raise it,
   # holds for setup.
+  # Real pipes whose readers have closed, as when the program reading the
+  # output exits. Setup's output is only for show, as run's is, so it
+  # finishes and exits with its own status.
+  describe "when stderr is a pipe whose reader has closed" do
+    let(:pipe) { IO.pipe.tap { it.first.close } }
+    let(:stderr) { pipe.last }
+
+    after { stderr.close }
+
+    it "runs every step and exits 0" do
+      expect([cli.run(["setup", "--run", run_id]), stdout.string]).to eq([0, "#{run_id} set up\n"])
+      expect(subcommands).to eq(%w[version status] + order)
+    end
+
+    it "stops at a failing step and exits 1, though its failure message can't be written" do
+      failing["qualify"] = Quaack::Driver::EnclaveError.new(subcommand: "qualify", rule: "unknown_relation")
+
+      expect([cli.run(["setup", "--run", run_id]), stdout.string]).to eq([1, ""])
+      expect(subcommands.last).to eq("qualify")
+    end
+
+    it "exits with the usage status for an unknown run" do
+      expect(cli.run(["setup", "--run", "20260926T010203Z-ffffffff"])).to eq(64)
+    end
+  end
+
+  describe "when stdout is a pipe whose reader has closed" do
+    let(:pipe) { IO.pipe.tap { it.first.close } }
+    let(:stdout) { pipe.last }
+
+    after { stdout.close }
+
+    it "runs every step and exits 0" do
+      expect(cli.run(["setup", "--run", run_id])).to eq(0)
+      expect(subcommands).to eq(%w[version status] + order)
+      expect(errors).to eq("")
+    end
+  end
+
+  # The real executable, with stdout and stderr one pipe whose reader has
+  # closed: `quaack setup … 2>&1 | head`. Its $stderr writes through at
+  # once, so a usage error meets the closed pipe in the process itself.
+  it "exits the executable with the usage status for an unknown run when its output's reader has closed" do
+    reader, writer = IO.pipe
+    reader.close
+    pid = Process.spawn({ "HOME" => home }, RbConfig.ruby, File.join(GEM_ROOT, "exe", "quaack"), "setup", "--run",
+                        "20260926T010203Z-ffffffff", out: writer, err: writer)
+    writer.close
+
+    expect(Process.wait2(pid).last.exitstatus).to eq(64)
+  end
+
   describe "the enclave call timeout" do
     def write_config(config)
       FileUtils.mkdir_p(File.join(home, ".quaack"))
