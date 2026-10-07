@@ -57,6 +57,25 @@ module CatalogNames
     ["quaack/enclave/clock_defaults.rb", "ALTER "] => "the end of an ALTER TABLE built in pieces"
   }.freeze
 
+  # The 29 files catalog_names_spec's list of files not yet qualified held
+  # when task 20260930-14 made it. That list may only shrink, so it must
+  # stay within these. Never add a file here: qualify the file instead.
+  NOT_YET_QUALIFIED_AT_START = %w[
+    quaack/enclave/arena.rb quaack/enclave/arena_runner/deferred.rb quaack/enclave/arena_runner/pipeline.rb
+    quaack/enclave/arena_runner/sequences.rb quaack/enclave/arena_schema.rb
+    quaack/enclave/arena_schema/domain_checks.rb quaack/enclave/arena_schema/unique_indexes.rb
+    quaack/enclave/assumption_check.rb quaack/enclave/assumption_check/denormalized_equal.rb
+    quaack/enclave/clock_defaults.rb quaack/enclave/counterexamples/evaluated.rb
+    quaack/enclave/denormalized_fixture.rb quaack/enclave/insert_check.rb quaack/enclave/insert_clock_words.rb
+    quaack/enclave/insert_values.rb quaack/enclave/result_comparison/tiebreaker.rb
+    quaack/enclave/rewrite_candidate_check.rb quaack/enclave/rewrite_rules/catalog.rb
+    quaack/enclave/rewrite_rules/catalog/calls.rb quaack/enclave/rewrite_rules/catalog/foreign_keys.rb
+    quaack/enclave/rewrite_rules/catalog/types.rb quaack/enclave/rewrite_rules/existence_in_flip.rb
+    quaack/enclave/scenarios/ties.rb quaack/enclave/scenarios/types.rb quaack/enclave/scenarios/values.rb
+    quaack/enclave/server_clock.rb quaack/enclave/steps/index_search.rb quaack/enclave/steps/rewrite_check.rb
+    quaack/enclave/value_pools.rb
+  ].freeze
+
   # A string of SQL: where it is, and its parse, nil for one on SKIP.
   # label names it in a finding, such as "line 12".
   Site = Data.define(:file, :label, :text, :parse)
@@ -81,6 +100,9 @@ module CatalogNames
     Loaded.sites(namespace, root).each { found[it.file].concat(violations(it)) }
     found.reject { _2.empty? }
   end
+
+  # The files on list that NOT_YET_QUALIFIED_AT_START doesn't have.
+  def added(list) = list - NOT_YET_QUALIFIED_AT_START
 
   def parse(text)
     PgQuery.parse(text)
