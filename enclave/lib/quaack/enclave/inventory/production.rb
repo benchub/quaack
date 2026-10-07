@@ -43,12 +43,13 @@ module Quaack
         # max_worker_processes, the pool parallel workers come from, and
         # enable_gathermerge, which turns on the Gather Merge node.
         PARALLEL_SQL = "SELECT name, pg_catalog.current_setting(name) FROM pg_catalog.pg_settings " \
-                       "WHERE name LIKE '%parallel%' OR name IN ('max_worker_processes', 'enable_gathermerge') " \
+                       "WHERE name OPERATOR(pg_catalog.~~) '%parallel%' OR name OPERATOR(pg_catalog.=) " \
+                       "ANY ('{max_worker_processes,enable_gathermerge}'::pg_catalog.text[]) " \
                        "ORDER BY name"
         EXTENSIONS_SQL = "SELECT extname, extversion FROM pg_catalog.pg_extension ORDER BY extname"
         DATABASE_SQL = "SELECT datname, datcollate, datctype, datlocprovider::pg_catalog.text, datlocale, " \
                        "datcollversion " \
-                       "FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()"
+                       "FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
 
         module_function
 

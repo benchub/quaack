@@ -6,6 +6,7 @@ require "quaack/enclave/schema_dump"
 require "quaack/enclave/store"
 require "quaack/enclave/error_filter"
 require "quaack/enclave/arena"
+require_relative "support/catalog_shadow"
 
 # Every example runs real pg_dump against real Postgres. The dev Macs have
 # no pg_dump 18, so pg_dump runs inside the harness's own container, through
@@ -146,6 +147,21 @@ RSpec.describe Quaack::Enclave::SchemaDump do
       expect(result.tables).to eq([])
       expect(store.read("schema_subset")).to eq({ "tables" => [], "ddl" => "" })
       expect(created_tables(store.read("schema_dump")["ddl"])).to eq(%w[public.customers public.orders])
+    end
+
+    # Task 20260930-14: a search_path that puts public first, with public
+    # holding comparisons that say no and functions and relations named
+    # like the catalog's (see CatalogShadow). The reads still find the
+    # whole chain, the schemas, and the database's encoding and version.
+    it "is the same chain when public shadows the catalog's operators, functions, and relations" do
+      relations = [table("sales", "items"), table("sales", "a")]
+      want = run(relations)
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators, :current_setting, :current_database, :pg_database)
+
+      other = Quaack::Enclave::Store.create(base: @base)
+      expect(described_class.run(store: other, relations:, connection: conn, conninfo:, pg_dump:)).to eq(want)
+      expect(other.read("schema_subset")["tables"]).to eq(subset.sort.map { it.split(".") })
     end
 
     it "refuses a relation the catalog doesn't have, and stores nothing" do

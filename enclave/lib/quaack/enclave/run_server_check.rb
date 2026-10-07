@@ -49,12 +49,12 @@ module Quaack
     # sends those too, so the operator can find and stop them. No other
     # pg_stat_activity column is read.
     #
-    # Every catalog relation, function, and type the check's SQL names is
-    # qualified with pg_catalog, as is Inventory::Production's SQL, which
-    # the check shares. A search_path can put another schema before
-    # pg_catalog, and an unqualified name would then find a relation or
-    # function there, such as a public.pg_stat_activity that hides the
-    # other clients. Operators, such as = and LIKE, aren't qualified.
+    # Every catalog relation, function, operator, and type the check's SQL
+    # names is qualified with pg_catalog, as is Inventory::Production's SQL,
+    # which the check shares. A search_path can put another schema before
+    # pg_catalog, and an unqualified name would then find a relation,
+    # function, or operator there, such as a public.pg_stat_activity, or a
+    # public <> that says no, either of which hides the other clients.
     #
     # Not checked, so unsupported in v1: per-tablespace random_page_cost
     # and seq_page_cost, which the inventory doesn't record, and schedulers
@@ -78,14 +78,18 @@ module Quaack
       # value fits a plan whose SETTINGS doesn't list it: SETTINGS would
       # list it (the flag), and it's at its built-in default.
       PLANNER_SQL = <<~SQL
-        SELECT name, 'EXPLAIN' = ANY(pg_catalog.pg_settings_get_flags(name))
-                     AND setting IS NOT DISTINCT FROM boot_val AS unlisted_ok
+        SELECT name, 'EXPLAIN' OPERATOR(pg_catalog.=) ANY(pg_catalog.pg_settings_get_flags(name))
+                     AND COALESCE(setting OPERATOR(pg_catalog.=) boot_val, setting IS NULL AND boot_val IS NULL)
+                     AS unlisted_ok
         FROM pg_catalog.pg_settings
-        WHERE 'EXPLAIN' = ANY(pg_catalog.pg_settings_get_flags(name)) OR category LIKE 'Query Tuning%'
-           OR name IN ('TimeZone', 'DateStyle', 'IntervalStyle')
+        WHERE 'EXPLAIN' OPERATOR(pg_catalog.=) ANY(pg_catalog.pg_settings_get_flags(name))
+           OR category OPERATOR(pg_catalog.~~) 'Query Tuning%'
+           OR name OPERATOR(pg_catalog.=) ANY ('{TimeZone,DateStyle,IntervalStyle}'::pg_catalog.text[])
       SQL
-      CLIENTS_SQL = "SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity " \
-                    "WHERE backend_type = 'client backend' AND pid <> ALL($1::int[])"
+      # A client backend whose pid isn't in $1.
+      OTHER_CLIENT = "backend_type OPERATOR(pg_catalog.=) 'client backend' " \
+                     "AND pid OPERATOR(pg_catalog.<>) ALL($1::int[])"
+      CLIENTS_SQL = "SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity WHERE #{OTHER_CLIENT}".freeze
       # The other clients, for the operator to find: only each one's pid and
       # the UTC time it started, oldest first, at most MAX_CLIENTS. Nothing
       # else about a client is read.
@@ -95,11 +99,11 @@ module Quaack
       OTHER_CLIENTS_SQL = <<~SQL.freeze
         SELECT pid, #{BACKEND_START_SQL}
         FROM pg_catalog.pg_stat_activity
-        WHERE backend_type = 'client backend' AND pid <> ALL($1::int[]) AND backend_start IS NOT NULL
+        WHERE #{OTHER_CLIENT} AND backend_start IS NOT NULL
         ORDER BY backend_start, pid
         LIMIT #{MAX_CLIENTS}
       SQL
-      HYPOPG_SQL = "SELECT 1 FROM pg_catalog.pg_available_extensions WHERE name = 'hypopg'"
+      HYPOPG_SQL = "SELECT 1 FROM pg_catalog.pg_available_extensions WHERE name OPERATOR(pg_catalog.=) 'hypopg'"
       CRON_ACTIVE_SQL = "SELECT pg_catalog.count(*) FROM cron.job WHERE active"
 
       module_function

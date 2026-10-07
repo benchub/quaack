@@ -23,10 +23,11 @@ module Quaack
       # use and that has a function named $2.
       SCHEMA_SQL = <<~SQL
         SELECT n.nspname
-        FROM unnest($1::text[]) WITH ORDINALITY AS path(nspname, position)
-        JOIN pg_catalog.pg_namespace n ON n.nspname = path.nspname
+        FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS path(nspname, position)
+        JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) path.nspname
         WHERE pg_catalog.has_schema_privilege(n.oid, 'USAGE')
-          AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p WHERE p.pronamespace = n.oid AND p.proname = $2)
+          AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+                      WHERE p.pronamespace OPERATOR(pg_catalog.=) n.oid AND p.proname OPERATOR(pg_catalog.=) $2)
         ORDER BY path.position
         LIMIT 1
       SQL

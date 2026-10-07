@@ -95,30 +95,34 @@ module Quaack
       ANCESTORS_SQL = <<~SQL
         WITH RECURSIVE chain (oid) AS (
           SELECT c.oid
-          FROM json_to_recordset($1::json) AS start (schema text, name text)
-          JOIN pg_catalog.pg_namespace n ON n.nspname = start.schema
-          JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname = start.name
+          FROM pg_catalog.json_to_recordset($1::json) AS start (schema pg_catalog.text, name pg_catalog.text)
+          JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) start.schema
+          JOIN pg_catalog.pg_class c
+            ON c.relnamespace OPERATOR(pg_catalog.=) n.oid AND c.relname OPERATOR(pg_catalog.=) start.name
           UNION
           SELECT con.confrelid
           FROM chain
-          JOIN pg_catalog.pg_constraint con ON con.conrelid = chain.oid AND con.contype = 'f'
+          JOIN pg_catalog.pg_constraint con
+            ON con.conrelid OPERATOR(pg_catalog.=) chain.oid AND con.contype OPERATOR(pg_catalog.=) 'f'
         )
         SELECT n.nspname, c.relname
         FROM chain
-        JOIN pg_catalog.pg_class c ON c.oid = chain.oid
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) chain.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
         ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C"
       SQL
 
       # public and dba, whichever the database has. dba is there because
       # functions can reference it (20261001-9; 20261001-10 replaces this).
-      ALWAYS_SQL = "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname IN ('public', 'dba')"
+      ALWAYS_SQL = "SELECT nspname FROM pg_catalog.pg_namespace " \
+                   "WHERE nspname OPERATOR(pg_catalog.=) ANY ('{public,dba}'::pg_catalog.name[])"
 
       # Every extension but plpgsql, which every database already has, and
       # its schema. pg_dump emits CREATE EXTENSION only for those named with
       # --extension when it also has --schema, and arena needs them.
       EXTENSIONS_SQL = "SELECT e.extname, n.nspname FROM pg_catalog.pg_extension e " \
-                       "JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname <> 'plpgsql'"
+                       "JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) e.extnamespace " \
+                       "WHERE e.extname OPERATOR(pg_catalog.<>) 'plpgsql'"
 
       FLAGS = %w[--schema-only --no-owner --no-privileges --strict-names --encoding=UTF8 --no-password].freeze
 
@@ -185,6 +189,9 @@ module Quaack
         # as a connection string. Its URI prefix match is case sensitive.
         CONNECTION_STRING = %r{=|\Apostgres(?:ql)?://}
 
+        ENCODING_SQL = "SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database " \
+                       "WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()"
+
         def no_secrets!(conninfo)
           unless conninfo.keys.all? { PLAIN_KEY.match?(it.to_s) }
             raise Error.new("bad_conninfo_key", "a conninfo key must be a plain libpq keyword")
@@ -197,8 +204,7 @@ module Quaack
         end
 
         def not_sql_ascii!(connection)
-          encoding = connection.exec_params("SELECT pg_encoding_to_char(encoding) FROM pg_database " \
-                                            "WHERE datname = current_database()", []).getvalue(0, 0)
+          encoding = connection.exec_params(ENCODING_SQL, []).getvalue(0, 0)
           raise Error.new("sql_ascii_database", "a SQL_ASCII database isn't supported") if encoding == "SQL_ASCII"
         end
       end
@@ -229,7 +235,7 @@ module Quaack
 
       def new_enough!(pg_dump, connection)
         ours = pg_dump_major(pg_dump)
-        server = connection.exec_params("SELECT current_setting('server_version_num')", []).getvalue(0, 0)
+        server = connection.exec_params("SELECT pg_catalog.current_setting('server_version_num')", []).getvalue(0, 0)
         theirs = Integer(server) / 10_000
         return if ours >= theirs
 

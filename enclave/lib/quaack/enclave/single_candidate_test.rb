@@ -5,6 +5,7 @@ require_relative "canonical_plan"
 require_relative "index_candidate"
 require_relative "plan_node"
 require_relative "redaction"
+require_relative "single_candidate_test/hypopg"
 
 module Quaack
   module Enclave
@@ -192,8 +193,6 @@ module Quaack
       # hypopg_create_index.
       STATEMENT = "quaack_5a4"
 
-      CREATE_SQL = "SELECT indexrelid, indexname, hypopg_relation_size(indexrelid) FROM hypopg_create_index($1)"
-
       # SQLSTATE classes and codes that mean the session failed, not the
       # candidate. See the comment at the top.
       SESSION_FAILURE = /\A(?:08|25|40|53|57|58)|\A(?:55P03|XX001|XX002)\z/
@@ -350,7 +349,7 @@ module Quaack
         def measure(candidates)
           raise Error, :session_closed unless @open
 
-          SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec("SELECT hypopg_reset()") }
+          SingleCandidateTest.guarded(:hypopg_failed) { @connection.exec(HypoPG.reset_sql(hypopg(:hypopg_failed))) }
           SingleCandidateTest.unrenderable(candidates) || created(candidates)
         end
 
@@ -391,9 +390,12 @@ module Quaack
           @connection.exec("BEGIN READ ONLY")
           @connection.exec("SET LOCAL plan_cache_mode = force_custom_plan")
           @connection.exec("SET LOCAL hypopg.enabled = on")
-          @connection.exec("SELECT hypopg_reset()")
+          @connection.exec(HypoPG.reset_sql(hypopg(:explain_failed)))
           raise Error, :indexes_hidden if hidden_indexes?
         end
+
+        # HypoPG's schema, quoted, read once (see HypoPG.schema).
+        def hypopg(rule) = (@hypopg ||= HypoPG.schema(@connection, rule))
 
         # HypoPG keeps real indexes hidden with hypopg_hide_index for the
         # session, and hypopg_reset doesn't unhide them, so the baseline and
@@ -402,13 +404,13 @@ module Quaack
         # HypoPG before 1.4 has no hypopg_hidden_indexes, so the run fails
         # closed there, as explain_failed with 42883.
         def hidden_indexes?
-          @connection.exec("SELECT count(*) FROM hypopg_hidden_indexes()").getvalue(0, 0) != "0"
+          @connection.exec(HypoPG.hidden_count_sql(hypopg(:explain_failed))).getvalue(0, 0) != "0"
         end
 
         def finish
           @connection.exec("ROLLBACK") unless @connection.transaction_status.zero?
           deallocate if @prepared
-          @connection.exec("SELECT hypopg_reset()")
+          @connection.exec(HypoPG.reset_sql(hypopg(:cleanup_failed)))
         end
 
         def deallocate
@@ -423,7 +425,7 @@ module Quaack
           # never released: nothing in it writes, and the run's rollback
           # ends every one left open.
           @connection.exec("SAVEPOINT #{STATEMENT}")
-          created = @connection.exec_params(CREATE_SQL, [candidate.to_ddl])
+          created = @connection.exec_params(HypoPG.create_sql(hypopg(:hypopg_failed)), [candidate.to_ddl])
           [Integer(created.getvalue(0, 0)), created.getvalue(0, 1), Integer(created.getvalue(0, 2))]
         rescue StandardError => e
           raise unless SingleCandidateTest.postgres_error?(e)

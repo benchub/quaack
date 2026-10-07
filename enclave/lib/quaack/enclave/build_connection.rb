@@ -55,7 +55,7 @@ module Quaack
       end
 
       def cancel(connection, pid)
-        connection.exec_params("SELECT pg_cancel_backend($1)", [pid])
+        connection.exec_params("SELECT pg_catalog.pg_cancel_backend($1)", [pid])
       rescue PG::InsufficientPrivilege
         raise IndexBuild::Error, "index_build_orphan_cancel_denied", cause: nil
       end
@@ -66,8 +66,10 @@ module Quaack
       # snapshot an open transaction keeps.
       def builders(connection, name)
         connection.exec_params(<<~SQL, ["CREATE INDEX #{name} %"]).column_values(0).map(&:to_i)
-          SELECT pid FROM pg_stat_activity
-          WHERE pid <> pg_backend_pid() AND datname = current_database() AND state = 'active' AND query LIKE $1
+          SELECT pid FROM pg_catalog.pg_stat_activity
+          WHERE pid OPERATOR(pg_catalog.<>) pg_catalog.pg_backend_pid()
+            AND datname OPERATOR(pg_catalog.=) pg_catalog.current_database()
+            AND state OPERATOR(pg_catalog.=) 'active' AND query OPERATOR(pg_catalog.~~) $1
         SQL
       end
     end

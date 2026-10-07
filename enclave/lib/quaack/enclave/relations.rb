@@ -106,18 +106,18 @@ module Quaack
         WITH RECURSIVE tree (oid, path) AS (
           SELECT c.oid, ARRAY[c.oid]
           FROM pg_catalog.pg_class c
-          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = $1 AND c.relname = $2
+          JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
+          WHERE n.nspname OPERATOR(pg_catalog.=) $1 AND c.relname OPERATOR(pg_catalog.=) $2
           UNION ALL
-          SELECT i.inhrelid, tree.path || i.inhrelid
+          SELECT i.inhrelid, tree.path OPERATOR(pg_catalog.||) i.inhrelid
           FROM tree
-          JOIN pg_catalog.pg_inherits i ON i.inhparent = tree.oid
+          JOIN pg_catalog.pg_inherits i ON i.inhparent OPERATOR(pg_catalog.=) tree.oid
           WHERE $3::boolean
         )
         SELECT n.nspname, c.relname, c.relkind
         FROM tree
-        JOIN pg_catalog.pg_class c ON c.oid = tree.oid
-        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_class c ON c.oid OPERATOR(pg_catalog.=) tree.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace
         ORDER BY tree.path
       SQL
 

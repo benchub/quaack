@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "quaack/enclave/store"
 require_relative "support/production_server"
+require_relative "support/catalog_shadow"
 
 # `quaacks qualify --run <run ID>` (DESIGN.md, input and qualify) the way the jump
 # server runs it: the installed quaacks in its own process, outside Bundler,
@@ -183,6 +184,45 @@ RSpec.describe "quaacks qualify, against a real server" do
       expect(qualify.stdout).to eq(done)
       expect(stored.read("relations")).to eq([{ "schema" => "public", "name" => "orders" },
                                               { "schema" => "public", "name" => "items" }])
+    end
+  end
+
+  # Task 20260930-14: the session's search_path puts public ahead of
+  # pg_catalog, and public holds comparisons that say no (see
+  # CatalogShadow). Every read still names pg_catalog's, so it finds what
+  # it did without them.
+  context "when public's comparison operators shadow pg_catalog's" do
+    let(:role) { "app_#{SecureRandom.hex(4)}" }
+
+    after { production.server.admin.exec(%(DROP ROLE IF EXISTS "#{role}")) }
+
+    def shadow(ddl = "")
+      production.server.admin.exec(%(ALTER DATABASE "#{production.name}" SET search_path = public, pg_catalog))
+      conn = production.connect
+      conn.exec(ddl) unless ddl.empty?
+      CatalogShadow.plant(conn, :operators)
+      conn.close
+    end
+
+    it "resolves the query's relations through the plan's search_path as before" do
+      pgpass
+      shadow
+
+      expect(qualify.stdout).to eq(done)
+      expect(stored.read("relations")).to eq([{ "schema" => "sales", "name" => "orders" },
+                                              { "schema" => "public", "name" => "items" }])
+    end
+
+    context "with the default search path" do
+      let(:plan_settings) { {} }
+
+      it "still refuses a query a role's schema could change as ambiguous_user_schema" do
+        pgpass
+        production.server.admin.exec(%(CREATE ROLE "#{role}"))
+        shadow(%(CREATE SCHEMA "#{role}"; CREATE TABLE "#{role}".orders (id int, note text)))
+
+        expect_failed(qualify, "ambiguous_user_schema")
+      end
     end
   end
 

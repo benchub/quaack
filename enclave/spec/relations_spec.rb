@@ -2,6 +2,7 @@
 
 require "quaack/enclave/relations"
 require "quaack/enclave/error_filter"
+require_relative "support/catalog_shadow"
 
 # Every example runs against real Postgres, since checking a relkind means
 # reading the production catalog. Each one gets a fresh copy of the sample
@@ -672,6 +673,16 @@ RSpec.describe Quaack::Enclave::Relations do
 
     it "refuses one that shadows a pg_catalog name when the search path puts its schema first" do
       expect { check("SELECT * FROM generate_series(1, 3)", { "search_path" => "public, pg_catalog" }) }
+        .to rejected("user_function_in_from")
+    end
+
+    # Task 20260930-14: with public's = saying yes to everything, an
+    # unqualified one could match pg_catalog's schema with any name.
+    it "refuses a user-defined one when public's = says yes ahead of pg_catalog's" do
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :yes_operators)
+
+      expect { check("SELECT * FROM view_rows()", { "search_path" => "pg_catalog, public" }) }
         .to rejected("user_function_in_from")
     end
 

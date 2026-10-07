@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "quaack/enclave/volatility_check"
+require_relative "support/catalog_shadow"
 
 # Every example runs against real Postgres, since whether a function is
 # volatile is in the production catalog. Each one gets a fresh copy of the
@@ -584,6 +585,31 @@ RSpec.describe Quaack::Enclave::VolatilityCheck do
   end
 
   # t.f calls the function f on t's row, when t has no column f.
+  # Task 20260930-14: the session's search_path puts public ahead of
+  # pg_catalog, and public's comparisons say no (see CatalogShadow), so an
+  # unqualified one would find no volatile function anywhere.
+  describe "a catalog read when public's comparison operators shadow pg_catalog's" do
+    before do
+      function("a.bump()", "VOLATILE")
+      function("a.bumpo(public.orders)", "VOLATILE")
+      conn.exec("CREATE TYPE a.pair AS (x int)")
+      function("a.to_pair(int)", "VOLATILE", returns: "a.pair", body: "SELECT ROW($1)::a.pair")
+      conn.exec("CREATE CAST (int AS a.pair) WITH FUNCTION a.to_pair(int)")
+      function("a.op_volatile(x int, y int)", "VOLATILE", returns: "boolean", body: "SELECT true")
+      conn.exec("CREATE OPERATOR a.%%% (LEFTARG = int, RIGHTARG = int, FUNCTION = a.op_volatile)")
+      conn.exec("SET search_path = public, pg_catalog")
+      CatalogShadow.plant(conn, :operators)
+    end
+
+    it "still aborts on a volatile function, operator, attribute, and cast" do
+      expect { check("SELECT a.bump()") }.to volatile_error("function a.bump is volatile")
+      expect { check("SELECT 1 %%% 2", path("a")) }
+        .to volatile_error("operator a.%%% calls volatile function a.op_volatile")
+      expect { check("SELECT 1::a.pair") }.to volatile_error("cast to a.pair calls volatile function a.to_pair")
+      expect { check("SELECT o.bumpo FROM orders o", path("a")) }.to volatile_error("function a.bumpo is volatile")
+    end
+  end
+
   describe "attribute notation" do
     before do
       function("public.bumpo(public.orders)", "VOLATILE")

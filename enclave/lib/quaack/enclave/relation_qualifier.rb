@@ -71,9 +71,9 @@ module Quaack
       # role may use, each with its place in the path.
       RESOLVE_SQL = <<~SQL
         SELECT n.nspname
-        FROM unnest($1::text[]) WITH ORDINALITY AS path(nspname, position)
-        JOIN pg_catalog.pg_namespace n ON n.nspname = path.nspname
-        JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname = $2
+        FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS path(nspname, position)
+        JOIN pg_catalog.pg_namespace n ON n.nspname OPERATOR(pg_catalog.=) path.nspname
+        JOIN pg_catalog.pg_class c ON c.relnamespace OPERATOR(pg_catalog.=) n.oid AND c.relname OPERATOR(pg_catalog.=) $2
         WHERE pg_catalog.has_schema_privilege(n.oid, 'USAGE')
         ORDER BY path.position
         LIMIT 1

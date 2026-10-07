@@ -64,45 +64,54 @@ module Quaack
       # the FIRST_FOUND kinds.
       SHADOW_SQL = <<~SQL
         WITH path AS (
-          SELECT entry, min(position) AS position
-          FROM unnest($1::text[]) WITH ORDINALITY AS p(entry, position)
-          WHERE entry <> '$user'
+          SELECT entry, pg_catalog.min(position) AS position
+          FROM pg_catalog.unnest($1::pg_catalog.text[]) WITH ORDINALITY AS p(entry, position)
+          WHERE entry OPERATOR(pg_catalog.<>) '$user'
           GROUP BY entry
         ),
         wanted AS (
-          SELECT kind, name, position FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS w(kind, name, position)
+          SELECT kind, name, position
+          FROM ROWS FROM (pg_catalog.unnest($2::pg_catalog.text[]), pg_catalog.unnest($3::pg_catalog.text[]))
+            WITH ORDINALITY AS w(kind, name, position)
         ),
         holders AS (
           SELECT n.nspname, wanted.kind, wanted.name, wanted.position,
             pg_catalog.has_schema_privilege(n.oid, 'USAGE') AS usable
           FROM pg_catalog.pg_namespace n
-          JOIN wanted ON CASE wanted.kind
-            WHEN 'relation' THEN EXISTS (
-              SELECT FROM pg_catalog.pg_class c WHERE c.relnamespace = n.oid AND c.relname = wanted.name)
-            WHEN 'type' THEN EXISTS (
-              SELECT FROM pg_catalog.pg_type t WHERE t.typnamespace = n.oid AND t.typname = wanted.name)
-            WHEN 'collation' THEN EXISTS (
-              SELECT FROM pg_catalog.pg_collation l WHERE l.collnamespace = n.oid AND l.collname = wanted.name)
-            WHEN 'function' THEN EXISTS (
-              SELECT FROM pg_catalog.pg_proc f WHERE f.pronamespace = n.oid AND f.proname = wanted.name)
-            WHEN 'operator' THEN EXISTS (
-              SELECT FROM pg_catalog.pg_operator o WHERE o.oprnamespace = n.oid AND o.oprname = wanted.name)
+          JOIN wanted ON CASE
+            WHEN wanted.kind OPERATOR(pg_catalog.=) 'relation' THEN EXISTS (
+              SELECT FROM pg_catalog.pg_class c
+              WHERE c.relnamespace OPERATOR(pg_catalog.=) n.oid AND c.relname OPERATOR(pg_catalog.=) wanted.name)
+            WHEN wanted.kind OPERATOR(pg_catalog.=) 'type' THEN EXISTS (
+              SELECT FROM pg_catalog.pg_type t
+              WHERE t.typnamespace OPERATOR(pg_catalog.=) n.oid AND t.typname OPERATOR(pg_catalog.=) wanted.name)
+            WHEN wanted.kind OPERATOR(pg_catalog.=) 'collation' THEN EXISTS (
+              SELECT FROM pg_catalog.pg_collation l
+              WHERE l.collnamespace OPERATOR(pg_catalog.=) n.oid AND l.collname OPERATOR(pg_catalog.=) wanted.name)
+            WHEN wanted.kind OPERATOR(pg_catalog.=) 'function' THEN EXISTS (
+              SELECT FROM pg_catalog.pg_proc f
+              WHERE f.pronamespace OPERATOR(pg_catalog.=) n.oid AND f.proname OPERATOR(pg_catalog.=) wanted.name)
+            WHEN wanted.kind OPERATOR(pg_catalog.=) 'operator' THEN EXISTS (
+              SELECT FROM pg_catalog.pg_operator o
+              WHERE o.oprnamespace OPERATOR(pg_catalog.=) n.oid AND o.oprname OPERATOR(pg_catalog.=) wanted.name)
           END
         ),
         listed AS (
-          SELECT holders.*, path.position AS listed_at FROM holders LEFT JOIN path ON path.entry = holders.nspname
+          SELECT holders.*, path.position AS listed_at
+          FROM holders LEFT JOIN path ON path.entry OPERATOR(pg_catalog.=) holders.nspname
         )
-        SELECT shadow.nspname, shadow.kind, shadow.name, shadow.nspname = current_user
+        SELECT shadow.nspname, shadow.kind, shadow.name, shadow.nspname OPERATOR(pg_catalog.=) current_user
         FROM listed shadow
-        JOIN pg_catalog.pg_roles r ON r.rolname = shadow.nspname
+        JOIN pg_catalog.pg_roles r ON r.rolname OPERATOR(pg_catalog.=) shadow.nspname
         WHERE (shadow.listed_at IS NULL OR EXISTS (
             SELECT FROM listed nearer
-            WHERE (nearer.kind, nearer.name) = (shadow.kind, shadow.name)
-              AND nearer.listed_at > $4::int AND nearer.listed_at < shadow.listed_at))
-          AND NOT (shadow.kind = ANY ($5::text[]) AND EXISTS (
+            WHERE nearer.kind OPERATOR(pg_catalog.=) shadow.kind AND nearer.name OPERATOR(pg_catalog.=) shadow.name
+              AND nearer.listed_at OPERATOR(pg_catalog.>) $4::int
+              AND nearer.listed_at OPERATOR(pg_catalog.<) shadow.listed_at))
+          AND NOT (shadow.kind OPERATOR(pg_catalog.=) ANY ($5::pg_catalog.text[]) AND EXISTS (
             SELECT FROM listed found
-            WHERE (found.kind, found.name) = (shadow.kind, shadow.name) AND found.listed_at < $4::int
-              AND found.usable))
+            WHERE found.kind OPERATOR(pg_catalog.=) shadow.kind AND found.name OPERATOR(pg_catalog.=) shadow.name
+              AND found.listed_at OPERATOR(pg_catalog.<) $4::int AND found.usable))
         ORDER BY shadow.nspname, shadow.position
         LIMIT 1
       SQL
