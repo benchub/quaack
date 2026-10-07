@@ -27,9 +27,15 @@ module Quaack
       # client from its LLM::Settings. Specs pass fakes for both, since
       # they're the edges. run and setup pass transport the enclave call
       # timeout as timeout:.
+      #
+      # Every command's output on stdout and stderr, usage messages
+      # included, is only for show: once a write to either fails, such as
+      # to a closed pipe (`quaack … 2>&1 | head`), the rest there are
+      # skipped and the command goes on to its own exit status
+      # (QuietStream).
       def initialize(stdout: $stdout, stderr: $stderr, home: Dir.home, transport: nil, client: nil)
-        @stdout = stdout
-        @stderr = stderr
+        @stdout = QuietStream.wrap(stdout)
+        @stderr = QuietStream.wrap(stderr)
         @home = home
         @transport = transport || ->(host, **timeout) { Transport::Ssh.new(host:, **timeout) }
         @client = client || ->(settings) { CLI.build_client(settings) }
@@ -125,13 +131,11 @@ module Quaack
       # number is a usage error.
       #
       # Its progress and messages on stderr, and the report's path and done
-      # on stdout, are only for show: once a write to either fails, such as
-      # to a closed pipe (`quaack run … 2>&1 | head`), the rest there are
-      # skipped and the run goes on, writes its report, and exits with its
-      # own status (QuietStream).
+      # on stdout, are only for show, as every command's are (initialize):
+      # with stdout and stderr gone, the run still goes on, writes its
+      # report, and exits with its own status.
       def run_command(run:, rewrites:, timeout:, **options)
         require_run
-        @stderr, @stdout = [@stderr, @stdout].map { QuietStream.wrap(it) }
         where = Runs.new(@home).where(run) or return usage_error("unknown run ID")
         sqls, client, timeout = prepare(rewrites, timeout) || (return usage_error(@problem))
 
