@@ -433,6 +433,7 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
                 "Asking the LLM again, for different rows (llm-counterexamples)",
                 "#{name}: Loading the LLM's rows and comparing results (counterexamples)"])
     end
+
     it "waits on a short line for llm-index-ideas' ask, which repeats its step, after the query's shape note" do
       entries["index_generated_original"] = false
       fake.reply("llm-index-ideas", { "indexes" => [] })

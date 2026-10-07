@@ -98,15 +98,16 @@ module Quaack
         say("Already done, skipping: #{description} (#{name})")
       end
 
-      def note(text) = say(text, note: true)
+      def note(text) = say(text)
 
       def step_note(name, text) = say("#{text} (#{name})")
 
       def within(prefix) = Within.new(self, prefix)
 
       # Runs the block as a sub-step of the current step, if any, whose line
-      # says description, so a note that repeats it is left out on a
-      # terminal (repeats_step?).
+      # says description, so on a terminal a note that repeats it is left
+      # out, or prints as a wait line if another note came between
+      # (repeats_step?, Repeat#shown).
       def sub_step(description, &) = @own ? @own.within(description, &) : yield
 
       # seconds as 42s, 1m30s, or 1h02m05s.
@@ -114,9 +115,9 @@ module Quaack
 
       # On a terminal, a line printed while a step runs is left open, so
       # the clock can be drawn after it. A new line ends it first.
-      def say(text, note: false)
+      def say(text)
         @lock.synchronize do
-          next unless (text = shown(text, note))
+          next unless (text = shown(text))
 
           finish(@line && @start && (@clock.call - @start))
           line = "quaack: [#{@number}/#{@total}] #{text}"
@@ -128,14 +129,16 @@ module Quaack
         end
       end
 
-      # On a terminal, whether text, a note, says no more than the step's
-      # own line, or the current sub-step's, however many lines came after
-      # it (Repeat). Callers hold the lock.
+      # On a terminal, whether text, a line under the step, says no more
+      # than the step's own line, or the current sub-step's, however many
+      # lines came after it (Repeat). Only an LLM ask's note does today,
+      # so the check needn't tell a note from a step_note. Callers hold
+      # the lock.
       def repeats_step?(text) = @tty && @own&.repeated?(text)
 
       # text as it prints, or nil if it's left out (Repeat#shown). Callers
       # hold the lock.
-      def shown(text, note) = @own ? @own.shown(text, note && repeats_step?(text)) : text
+      def shown(text) = @own ? @own.shown(text, repeats_step?(text)) : text
 
       # Ends the step: the open line takes the step's time as its final
       # reading, then the closing line, words and the time, gives it. With
