@@ -1255,6 +1255,7 @@ normalize, IS NORMALIZED, SYSTEM_USER, and COLLATION FOR. The normal-form keywor
 - **Design:** qualify, volatility, input.
 - **Trimmed (2026-09-29):** finished and note-only items removed. Git history has the full entry.
 - **Decided by the user (2026-10-05):** Rewrite them (schema-qualify functions, types, operators and names inside string literals).
+- **Decided by the user (2026-10-07):** Give IndexCandidate its own error class, `IndexCandidate::Error`, with a fixed rule name, and update callers to rescue it.
 - **Status:** todo
 
 ### 20260926-57. Update the e2e corpus for keyset support, and check for other drift. Done, see BACKLOG-COMPLETE.md.
@@ -1438,6 +1439,7 @@ The review of 20261001-3 found three minor items:
 - **Depends on:** 20261001-3.
 - **Came from:** The second review of 20261001-3, 2026-10-01.
 - **Design:** llm-index-ideas.
+- **Decided by the user (2026-10-07):** Item 3: keep the partitions' CREATE TABLE and index DDL in the payload for partitions of the query's tables.
 - **Status:** todo
 
 ### 20261001-5. An LLM error reads the reason out of a JSON array body.
@@ -2088,6 +2090,7 @@ The review of 20261004-53 found:
 - **Depends on:** 20261004-53.
 - **Came from:** The review of 20261004-53, 2026-10-05.
 - **Design:** report.
+- **Decided by the user (2026-10-07):** Item 2: put the index method inside the SQL span, as `USING gin (...)`, so copy-paste gives working SQL.
 - **Status:** todo
 
 ### 20261004-69. Rewrite burndown: minors from 20261001-19. Done, see BACKLOG-COMPLETE.md.
@@ -2153,6 +2156,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 - **Depends on:** 20261004-62.
 - **Came from:** The review of 20261004-62 and its builder.
 - **Design:** Progress lines for `quaack run`.
+- **Decided by the user (2026-10-07):** On a closed pipe, finish and exit with the real code. Ignore EPIPE on progress and on printing the report path, so the run finishes, writes its report, and exits with its real exit code. Setup follows the same rule, its own failure message included.
 - **Status:** todo
 
 ### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites. Done, see BACKLOG-COMPLETE.md.
@@ -2287,6 +2291,7 @@ From the review of 20261004-86.
 - **Depends on:** 20261004-86.
 - **Came from:** The review of 20261004-86.
 - **Design:** report, measure.
+- **Landed (2026-10-07), item 1:** `View::NO_MEASURED_PLAN` now names no cause: "QUAACK has no measured plan for the winner, so the blocks it read at each step aren't recorded." Item 2 is still open (enclave storage, which needs a version bump).
 - **Status:** todo
 
 ### 20261006-20. Picker CHECK values: minor findings from 20261004-4. Done, see BACKLOG-COMPLETE.md.
