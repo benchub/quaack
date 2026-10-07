@@ -2056,18 +2056,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 
 ### 20261004-58. ArenaRunner per-statement timeout: untested guards, and a nonzero session default. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-59. Collapsed report sections: hidden warnings and links into closed sections.
-
-These are review minors from 20261004-50.
-
-- **Warnings hidden in a closed section.** A rewrite's summary line gives no hint of two warnings inside its section: that it relies on something the data holds today but the schema doesn't enforce, and the list of conditions the test data never exercised. The README tells readers to read those rewrites extra carefully. Add a short flag to the summary line, such as "⚠ relies on data" or "untested conditions". Coordinate with 20261004-51, which rewords the untested-conditions note.
-- **Links lead into closed sections.** "Its SQL is under rewrite X, above" and "See rewrite X under the queries" link to the `<article>` around a closed `<details>`, so the target stays collapsed. Point the link at the `<details>` and open it on `:target` without JavaScript (for example, give the `<details>` the id). Otherwise, reword the links to say "expand rewrite X".
-- **The not-ranked table's note is incomplete.** It says "Who proposed it" reads "not recorded" for your query with new indexes. The cell also reads that way for a rewrite whose source is unknown or that's missing from the payload. Make the note cover those cases.
-
-- **Depends on:** 20261004-50.
-- **Came from:** The review of 20261004-50, 2026-10-05.
-- **Design:** report.
-- **Status:** todo
+### 20261004-59. Collapsed report sections: hidden warnings and links into closed sections. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-60. Teardown failure: edge cases from 20261004-32. Done, see BACKLOG-COMPLETE.md.
 
@@ -2175,16 +2164,7 @@ These parts of `driver/lib/quaack/driver/report/funnel.rb` have no test that goe
 
 ### 20261004-86. Plan tree table: measured plans, with blocks, for rewrites. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-87. Plan tree blocks column: minors from 20261004-82.
-
-1. A step with only one counter shows it as its total (hit missing, read 9 shows "9"). Postgres always writes both, so it's unlikely; show "not recorded" instead, or say why not. The spec pins today's behavior.
-2. Postgres counts an InitPlan's blocks in the step that runs it, not the step it hangs from, so they can appear twice in the table. The header ("with the steps under it") and DESIGN.md are true but incomplete; say so.
-3. The header doesn't say block counts are totals over all loops, while "actual rows" are per loop. A step run many times can show 1 row next to thousands of blocks. Say so in the header or a note.
-
-- **Depends on:** 20261004-82.
-- **Came from:** The review of 20261004-82.
-- **Design:** report.
-- **Status:** todo
+### 20261004-87. Plan tree blocks column: minors from 20261004-82. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-88. ambiguous_user_schema: minors and the operator's own schema. Done, see BACKLOG-COMPLETE.md.
 
@@ -2411,4 +2391,17 @@ From the builder of 20261006-20. `enclave/lib/quaack/enclave/scenarios/picker.rb
 - **Depends on:** 20261006-20.
 - **Came from:** The builder of 20261006-20.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261007-6. Report sections: minors from 20261004-87 and 20261004-59.
+
+From the review of 20261004-87 and 20261004-59.
+1. The rewrite summary's warning hint (`driver/lib/quaack/driver/report/rewrites.rb` ~156) uses `atoms(entry)`, so it still says some conditions went untested after a later round checked them all. Use the conditions still unchecked, or say "at first", and add a spec.
+2. The `details.query:target` outline rule (`template.html.erb` ~36) has no test. Assert it, or drop it.
+3. Add a code comment by the `::details-content` rule. It needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section.
+4. Wording option for the hint: "Read it with care: it relies on what your data holds today. The test data also left some of its conditions untested."
+
+- **Depends on:** 20261004-59.
+- **Came from:** The review of 20261004-87 and 20261004-59.
+- **Design:** report.
 - **Status:** todo

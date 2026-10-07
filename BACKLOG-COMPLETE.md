@@ -6182,3 +6182,29 @@ From the review of 20261004-4 (`enclave/lib/quaack/enclave/scenarios/picker.rb`,
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** In `enclave/spec/scenarios_postgres_spec.rb`, the `LIKE 'x%'` test's title and comment now say what happens: the hit keeps `'active'`, which passes the CHECK but fails the atom. A new test checks S3's and S6's rows, so a fallback that returns `:skip` goes red. Another new test pins the near-miss `return :skip if near` with a join, where no near miss can fail the atom. The non-near `|| :skip` (picker.rb ~48) isn't dead, as this entry said. It guards contradictory CHECKs on one column, and join keys with disjoint CHECKs. Without it, a NOT NULL column gets a NULL. It's left as is, and filed as 20261007-5. Test only.
+
+### 20261004-87. Plan tree blocks column: minors from 20261004-82.
+
+1. A step with only one counter shows it as its total (hit missing, read 9 shows "9"). Postgres always writes both, so it's unlikely; show "not recorded" instead, or say why not. The spec pins today's behavior.
+2. Postgres counts an InitPlan's blocks in the step that runs it, not the step it hangs from, so they can appear twice in the table. The header ("with the steps under it") and DESIGN.md are true but incomplete; say so.
+3. The header doesn't say block counts are totals over all loops, while "actual rows" are per loop. A step run many times can show 1 row next to thousands of blocks. Say so in the header or a note.
+
+- **Depends on:** 20261004-82.
+- **Came from:** The review of 20261004-82.
+- **Design:** report.
+- **Status:** done
+- **Landed:** A step with only one of its two block counters now shows "not recorded" (`Plans#step_blocks`). A note under the original plan table (`Plans::BLOCKS_NOTE`) explains two things: block counts are totals over every run of a step, while actual rows are per run, and InitPlan blocks can appear twice. DESIGN.md matches. Driver only. Landed with 20261004-59.
+
+### 20261004-59. Collapsed report sections: hidden warnings and links into closed sections.
+
+These are review minors from 20261004-50.
+
+- **Warnings hidden in a closed section.** A rewrite's summary line gives no hint of two warnings inside its section: that it relies on something the data holds today but the schema doesn't enforce, and the list of conditions the test data never exercised. The README tells readers to read those rewrites extra carefully. Add a short flag to the summary line, such as "⚠ relies on data" or "untested conditions". Coordinate with 20261004-51, which rewords the untested-conditions note.
+- **Links lead into closed sections.** "Its SQL is under rewrite X, above" and "See rewrite X under the queries" link to the `<article>` around a closed `<details>`, so the target stays collapsed. Point the link at the `<details>` and open it on `:target` without JavaScript (for example, give the `<details>` the id). Otherwise, reword the links to say "expand rewrite X".
+- **The not-ranked table's note is incomplete.** It says "Who proposed it" reads "not recorded" for your query with new indexes. The cell also reads that way for a rewrite whose source is unknown or that's missing from the payload. Make the note cover those cases.
+
+- **Depends on:** 20261004-50.
+- **Came from:** The review of 20261004-50, 2026-10-05.
+- **Design:** report.
+- **Status:** done
+- **Landed:** A rewrite's summary line flags when its collapsed section holds the empirical or untested-conditions warning (`Rewrites#warning`). Each rewrite's id is now on its `<details>`, and a CSS-only `:target` rule shows the section when a link is followed. That needs a recent browser; older ones leave the section closed. The not-ranked note now covers unknown-source and missing-from-payload rewrites. DESIGN.md matches. Driver only. Landed with 20261004-87.
