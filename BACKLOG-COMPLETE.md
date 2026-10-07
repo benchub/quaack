@@ -5777,3 +5777,15 @@ Add a driver config setting for this timeout, with a `quaack run` flag to overri
 - **Design:** Transport, config.
 - **Status:** done
 - **Landed:** `enclave_timeout_seconds` in driver.json (positive number, default 3600), overridden by `quaack run --enclave-timeout-seconds N`. `quaack run` (with its setup and teardown) and `quaack start` use it. A timed-out call names the setting to raise. README and DESIGN.md document it.
+
+### 20261004-11. Build each candidate index in its own enclave call.
+
+index-build builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
+
+Check how a resumed run treats indexes that already exist on the racetrack. They should be skipped, not built again, and not counted as failures.
+
+- **Depends on:** 20261004-10.
+- **Came from:** The user's Canvas run, 2026-10-04.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** `quaacks index-build --run ID --index N` builds only the Nth index and sends its progress line. The driver calls `--index 1`, takes the total from its line, calls 2 through total, then makes the plain call, which skips built indexes, hides all, records burndown, and writes `index_build`. A resumed run skips indexes already on the racetrack. All three gems went to 0.1.6, with the `rake full` stamp.

@@ -2012,16 +2012,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 
 ### 20261004-10. Make the enclave call timeout configurable. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-11. Build each candidate index in its own enclave call.
-
-index-build builds every candidate index in a single `quaacks index-build` call, so the total build time has to fit in one call's timeout. On a large table, a few indexes are enough to pass an hour. Have the driver call index-build once per index instead, so each index gets its own timeout and the run can resume after the last index built. Keep the progress output: one line per index, plus the step summary's count.
-
-Check how a resumed run treats indexes that already exist on the racetrack. They should be skipped, not built again, and not counted as failures.
-
-- **Depends on:** 20261004-10.
-- **Came from:** The user's Canvas run, 2026-10-04.
-- **Design:** index-build.
-- **Status:** todo
+### 20261004-11. Build each candidate index in its own enclave call. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-12. Build index-build's indexes in table order.
 
@@ -2441,4 +2432,13 @@ From the review of 20261004-10.
 - **Depends on:** 20261004-10.
 - **Came from:** The builder and review of 20261004-10.
 - **Design:** Transport, config.
+- **Status:** todo
+
+### 20261006-9. A timed-out index build can race its resume.
+
+From the review of 20261004-11. When a per-index `quaacks index-build --index N` call hits the enclave timeout, the driver kills ssh, but the backend `CREATE INDEX` may keep running on the racetrack. A quick resume then issues a second `CREATE INDEX` for the same `quaack_<hash>` name, which can wait on it and then fail on a duplicate name (`enclave/lib/quaack/enclave/steps/index_build.rb` ~73, `IndexBuild.create`). The single-call build had this too, but per-index timeouts make it likelier. Fix with `statement_timeout` on the build connection, or by waiting on or cancelling a running build of the same name before creating it.
+
+- **Depends on:** 20261004-11.
+- **Came from:** The review of 20261004-11.
+- **Design:** index-build.
 - **Status:** todo
