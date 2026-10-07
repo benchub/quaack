@@ -5925,3 +5925,15 @@ The fix: add the CHECK's own values that satisfy the atom to the Picker's candid
 - **Design:** rewrite-test.
 - **Status:** done
 - **Landed:** The Picker (`enclave/lib/quaack/enclave/scenarios/picker.rb`) now tries each CHECK's own values on the slot's columns (`Checks#values`) after the pool values. When no candidate satisfies every atom, it falls back to the first candidate that passes every CHECK, so a fixture never breaks a CHECK and fails as `fixture_load_failed`. An atom left unhit is still marked untested by vacuity-guard. The new tests run on real Postgres with `workflow_state <> 'deleted'`, `role_state LIKE 'c%'`, and an unsatisfiable `LIKE 'x%'`. All three gems went to 0.1.13, with the `rake full` stamp.
+
+### 20261004-12. Build index-build's indexes in table order.
+
+index-build builds the candidate indexes on the run server in whatever order they arrive. That can build one on a large table, then one on another large table, then go back to the first, so the first table's pages have already left the cache. Group the builds by table, so every index on one table is built before moving to the next, while that table is still in cache. Within a table, keep the current order.
+
+Test that the build order is grouped by table, and that every index still gets built and reported. If 20261004-11 has landed by then, keep its one-call-per-index structure and order those calls by table.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** `Enclave::BuildOrder.ddls` (`enclave/lib/quaack/enclave/build_order.rb`) takes index-build's distinct DDL and groups it by the parsed `[schemaname, relname]`. Tables appear in the order they first show up, and each table keeps its own order. The plain call and `--index N` both use it, so each table's indexes are built back to back. All three gems went to 0.1.14, with the `rake full` stamp.

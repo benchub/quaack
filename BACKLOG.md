@@ -1961,16 +1961,7 @@ Also, a twin that drops the type filter is caught only if counterexamples' LLM w
 
 ### 20261004-11. Build each candidate index in its own enclave call. Done, see BACKLOG-COMPLETE.md.
 
-### 20261004-12. Build index-build's indexes in table order.
-
-index-build builds the candidate indexes on the run server in whatever order they arrive. That can build one on a large table, then one on another large table, then go back to the first, so the first table's pages have already left the cache. Group the builds by table, so every index on one table is built before moving to the next, while that table is still in cache. Within a table, keep the current order.
-
-Test that the build order is grouped by table, and that every index still gets built and reported. If 20261004-11 has landed by then, keep its one-call-per-index structure and order those calls by table.
-
-- **Depends on:** none.
-- **Came from:** The user, 2026-10-04.
-- **Design:** index-build.
-- **Status:** todo
+### 20261004-12. Build index-build's indexes in table order. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261004-13. Two live-clock edge cases. Done, see BACKLOG-COMPLETE.md.
 
@@ -2465,4 +2456,13 @@ From the review of 20261004-4 (`enclave/lib/quaack/enclave/scenarios/picker.rb`,
 - **Depends on:** 20261004-4.
 - **Came from:** The review of 20261004-4.
 - **Design:** rewrite-test.
+- **Status:** todo
+
+### 20261006-21. index-build: test that a DDL in several combinations is built once.
+
+From the review of 20261004-12. Dropping `.uniq` in `enclave/lib/quaack/enclave/build_order.rb` (~16) leaves `index_build_step_postgres_spec.rb` green. No fixture there has a DDL in more than one combination, so nothing catches an index built or counted twice. Add a fixture where a DDL is in both `top` and `combination`, or in two searches. Assert that the total and the built list have no duplicates.
+
+- **Depends on:** 20261004-12.
+- **Came from:** The review of 20261004-12.
+- **Design:** index-build.
 - **Status:** todo
