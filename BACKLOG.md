@@ -1539,32 +1539,7 @@ The build and review of 20261001-17 found these:
 - **Design:** report, negative-result.
 - **Status:** todo
 
-### 20261003-4. Readable report: minor findings.
-
-The build and both reviews of 20261001-18 found these:
-
-- **Run the full check.** 20261001-18 landed without the enclave suite or the Docker-backed root specs. Run `bundle exec rake` on `main` and fix what's red, starting with the three assertions in `spec/pipeline_replay_spec.rb` that were reworded and never executed.
-- **Test gaps where a wrong change stays green** (the code is right):
-  - The LLM row's "Already existed" count: the fixture has one `covered_by_existing` and one `duplicate`, so swapping them passes. Use different counts.
-  - The kB to MB and MB to GB boundaries, and `Format.apart`'s rounding (it replaced `Format.fewer` in 20261004-65).
-  - The "It built and measured" paragraph being left out when there's a winner.
-  - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
-  - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
-  - The outcome column for five of the fates under "Stopped for another reason"; only `rewrite_test_failed`, `footprint_tie`, and `unfinished` are pinned.
-  - An index whose label result-comparison dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
-  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `counterexamples_disproved` rewrite.
-- **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
-- **The "refused on arrival" note leaves out a reason.** For rule rewrites, rewrite-rules' `failed_checks` also covers an assumption-check assumption failure and clock anchoring. The README has the same gap.
-- **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
-- **`Format.apart` may raise `FloatDomainError`** (this note was written about `Format.fewer`, which 20261004-65 replaced; check whether it still applies) if the original read 0 blocks on the slow values.
-- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no operator-rewrites warnings, so no report has ever shown one. Send them, or change the README.
-- **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
-- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing rewrite-rules rule names.
-
-- **Depends on:** 20261001-18.
-- **Came from:** The build and both reviews of 20261001-18, 2026-10-03.
-- **Design:** report, negative-result, burndown.
-- **Status:** todo
+### 20261003-4. Readable report: minor findings. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-5. Report payload: what the index accountability table still lacks.
 
@@ -2344,3 +2319,27 @@ Also from the review of 20260930-14 stage 1:
 - **Status:** todo
 
 ### 20261007-10. Closed pipes: minors from 20261004-85. Done, see BACKLOG-COMPLETE.md.
+
+### 20261007-11. Report: two choices to confirm with the user, plus a wording nit.
+
+From 20261003-4 (readable report minors), which left these open for the user:
+1. Should the rewrites table keep its seventh column?
+2. Should the report show rewrite-rules rule names? Rule names now link to their `docs/transforms` pages from "Where it came from".
+3. Nit from its review: the note at `driver/lib/quaack/driver/report/template.html.erb` (~221) still says "planner ignored". The column now reads "Planner ignored or couldn't try".
+
+- **Depends on:** 20261003-4.
+- **Came from:** The builder and review of 20261003-4.
+- **Design:** report.
+- **Status:** todo
+
+### 20261007-12. LLM adapters: findings from 20260929-1.
+
+From the builder of 20260929-1.
+1. The Anthropic adapter's `llm_auth` message is the gem's full error, body included. If a 401 body echoed the key, the key would show in QUAACK's output. The OpenAI-compatible adapter keeps that message to the status. Plant the key in the shared key-echo example for Anthropic and Bedrock, then trim their messages the same way.
+2. A 200 response whose `choices` is a string, or holds a number, raises `NoMethodError` out of the OpenAI-compatible adapter uncaught. Refuse it as `llm_bad_response`.
+3. These provider facts haven't been checked against docs or live providers: base URLs, example models, which providers enforce schemas, and `max_completion_tokens` support on Gemini, Ollama, and OpenRouter.
+
+- **Depends on:** 20260929-1.
+- **Came from:** The builder of 20260929-1.
+- **Design:** Where QUAACK runs, LLM providers.
+- **Status:** todo

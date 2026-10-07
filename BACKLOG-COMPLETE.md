@@ -6378,3 +6378,38 @@ From the review of 20261004-85 (`driver/lib/quaack/driver/quiet_stream.rb`, `cli
 - **Design:** The `quaack run` command, `quaack setup`.
 - **Status:** done
 - **Landed:** `CLI#initialize` now wraps stdout and stderr in `QuietStream` for every `quaack` command, including `start`, `deploy`, `--version`, and every usage path. `QuietStream` skips a write only when the stream is gone: `Errno::EPIPE`, `Errno::ECONNRESET`, or `IOError` (`QuietStream::GONE`). ENOSPC and other failed writes still raise. `flush` gets the same guard. It also sets `sync = true` on the stream it wraps. A buffered pipe stdout was flushed at spawn, and the EPIPE it raised couldn't be caught, so `quaack run ... 2>&1 | head` would die at its first ssh call. Spawned real-executable specs cover start, deploy, and usage errors on a closed pipe. DESIGN.md is updated. Driver only.
+
+### 20261003-4. Readable report: minor findings.
+
+The build and both reviews of 20261001-18 found these:
+
+- **Run the full check.** 20261001-18 landed without the enclave suite or the Docker-backed root specs. Run `bundle exec rake` on `main` and fix what's red, starting with the three assertions in `spec/pipeline_replay_spec.rb` that were reworded and never executed.
+- **Test gaps where a wrong change stays green** (the code is right):
+  - The LLM row's "Already existed" count: the fixture has one `covered_by_existing` and one `duplicate`, so swapping them passes. Use different counts.
+  - The kB to MB and MB to GB boundaries, and `Format.apart`'s rounding (it replaced `Format.fewer` in 20261004-65).
+  - The "It built and measured" paragraph being left out when there's a winner.
+  - `not_better` when the original timed out, `worse_on`'s timed-out branch, and a ranked label that also timed out.
+  - `index_rows` taking only the `original` search; `share` for a selectivity of 0; `node` preferring actual rows.
+  - The outcome column for five of the fates under "Stopped for another reason"; only `rewrite_test_failed`, `footprint_tie`, and `unfinished` are pinned.
+  - An index whose label result-comparison dropped: counting `result_mismatch` as not better stays green (`accountability.rb:84`).
+  - The escape on a fate's `round` (`template.html.erb:46`): the sentinel payload's fate doesn't print one. Add a `counterexamples_disproved` rewrite.
+- **"Planner ignored" counts indexes HypoPG refused,** which the planner was never asked about. Reword it or count them apart.
+- **The "refused on arrival" note leaves out a reason.** For rule rewrites, rewrite-rules' `failed_checks` also covers an assumption-check assumption failure and clock anchoring. The README has the same gap.
+- **An index on a quoted table name with a space** reads "with a new index on CREATE INDEX ON ...", since `Candidates::DDL` wants `\S+` for the table.
+- **`Format.apart` may raise `FloatDomainError`** (this note was written about `Format.fewer`, which 20261004-65 replaced; check whether it still applies) if the original read 0 blocks on the slow values.
+- **The README promises "a warning in the report"** for an operator rewrite the LLM doubts (near line 489). The payload carries no operator-rewrites warnings, so no report has ever shown one. Send them, or change the README.
+- **LLM call counts are the driver's in-memory counts,** so a resumed run shows only the calls made since it resumed.
+- **Confirm with the user** the two choices the builder made: the seventh rewrites column, and showing rewrite-rules rule names.
+
+- **Depends on:** 20261001-18.
+- **Came from:** The build and both reviews of 20261001-18, 2026-10-03.
+- **Design:** report, negative-result, burndown.
+- **Status:** done
+- **Landed:** Seven items were already done or no longer applied. Changes:
+- **Index DDL.** The new `Report::IndexDdl` splits index DDL with pg_query's scanner, cutting by bytes. Quoted, keyword, and non-ASCII table names now print right; any other DDL prints whole.
+- **Index-ideas column.** "Planner ignored" became "Planner ignored or couldn't try", with a note that HypoPG couldn't create those ideas.
+- **LLM call counts.** A note says the counts cover this run of quaack only.
+- **Operator-rewrite warnings.** The README describes them as counted but not yet shown. Sending them would need a version bump.
+- **Tests.** Nine test gaps are closed: the LLM row, size switch points, timed-out branches, fates, and an escaped round.
+
+Driver and docs only. Two choices the entry left for the user are filed as 20261007-11.
