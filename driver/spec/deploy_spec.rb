@@ -247,12 +247,30 @@ RSpec.describe Quaack::Driver::Deploy do
 
     def uninstalls = File.read(File.join(dir, "remote")).lines.grep(/uninstall/)
 
-    # How each uninstall starts: pinned to the user gem dir, which the
-    # jump server's ruby resolves.
-    let(:pinned) { %({ d=$(ruby -e 'print File.realpath(Gem.user_dir)') && gem uninstall --install-dir "$d") }
+    # Puts a gem on the fake jump server's PATH that logs the gem and
+    # version each uninstall asks for to dir/uninstalled, then runs the
+    # real gem, or with fail: true, prints "boom" and fails instead.
+    def stub_gem(fail: false)
+      File.write(File.join(stubs, "gem"), <<~SH)
+        #!/bin/sh
+        if [ "$1" = uninstall ]; then
+          for arg; do [ "$prev" = -v ] && v=$arg; prev=$arg; done
+          echo "$arg $v" >> '#{dir}/uninstalled'
+          #{"echo boom; exit 1" if fail}
+        fi
+        exec '#{File.join(RbConfig::CONFIG["bindir"], "gem")}' "$@"
+      SH
+      FileUtils.chmod(0o755, File.join(stubs, "gem"))
+    end
+
+    def uninstalled
+      path = File.join(dir, "uninstalled")
+      File.exist?(path) ? File.read(path).lines(chomp: true) : []
+    end
 
     it "removes every older version but the highest, of both gems, saying so for each" do
       %w[0.0.1 0.0.2 0.1.0].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
+      stub_gem
 
       expect(deploy_with_progress).to eq(current)
 
@@ -264,12 +282,7 @@ RSpec.describe Quaack::Driver::Deploy do
         quaack deploy: removing quaack-protocol 0.0.2 from jump-1
         quaack deploy: removing quaack-protocol 0.0.1 from jump-1
       OUT
-      expect(uninstalls).to eq(<<~CMDS.lines)
-        #{pinned} -v 0.0.2 quaacks; } 2>&1
-        #{pinned} -v 0.0.1 quaacks; } 2>&1
-        #{pinned} -v 0.0.2 quaack-protocol; } 2>&1
-        #{pinned} -v 0.0.1 quaack-protocol; } 2>&1
-      CMDS
+      expect(uninstalled).to eq(["quaacks 0.0.2", "quaacks 0.0.1", "quaack-protocol 0.0.2", "quaack-protocol 0.0.1"])
     end
 
     it "keeps the highest older version by version order, not string order, when a release was skipped" do
@@ -308,12 +321,14 @@ RSpec.describe Quaack::Driver::Deploy do
     it "never uninstalls another gem, even an old one in the user gem dir" do
       %w[0.0.1 0.0.2 0.0.3].each { plant("pg_query", it) }
       %w[0.0.1 0.0.2].each { |v| %w[quaacks-extra quaacks].each { |n| plant(n, v) } }
+      stub_gem
 
       deploy_with_progress
 
       expect(installed("pg_query")).to eq(%w[0.0.1 0.0.2 0.0.3])
       expect(installed("quaacks-extra")).to eq(%w[0.0.1 0.0.2])
-      expect(uninstalls).to eq(["#{pinned} -v 0.0.1 quaacks; } 2>&1\n"])
+      expect(installed("quaacks")).to eq(["0.0.2", current])
+      expect(uninstalled).to eq(["quaacks 0.0.1"])
     end
 
     # Task 20261006-22: `gem uninstall --user-install` also removes a
@@ -350,8 +365,9 @@ RSpec.describe Quaack::Driver::Deploy do
       %w[0.0.1 0.0.2].each { |v| %w[quaacks quaack-protocol].each { |n| plant(n, v) } }
       FileUtils.mkdir_p(deploy_dir)
       File.write(File.join(deploy_dir, "quaacks-0.0.1.gem"), "old")
+      stub_gem(fail: true)
 
-      expect(deploy_main(["{ d="])).to eq(
+      expect(deploy_main([])).to eq(
         [0, %w[quaacks quaack-protocol].map do |name|
           "quaack deploy: warning: gem uninstall #{name} 0.0.1 failed on jump-1, but quaacks #{current} is " \
             "installed and checked:\nboom\n"
@@ -359,6 +375,8 @@ RSpec.describe Quaack::Driver::Deploy do
       )
       expect(out.string.lines.last).to eq("quaack deploy: installed quaacks #{current} on jump-1\n")
       expect(installed("quaacks")).to eq(["0.0.1", "0.0.2", current])
+      expect(installed("quaack-protocol")).to eq(["0.0.1", "0.0.2", protocol])
+      expect(uninstalled).to eq(["quaacks 0.0.1", "quaack-protocol 0.0.1"])
       expect(File.exist?(File.join(deploy_dir, "quaacks-0.0.1.gem"))).to be(false)
     end
 

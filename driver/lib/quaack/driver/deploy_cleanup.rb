@@ -57,7 +57,8 @@ module Quaack
       # RubyGems compares the real path of --install-dir with the spec
       # dirs it finds under the path as given, so a symlinked home would
       # otherwise match nothing. It stops if ruby can't resolve that dir,
-      # since gem would take an empty --install-dir as no dir at all. Each
+      # since gem would resolve an empty --install-dir to the current dir,
+      # the remote $HOME, and look for the gem there. Each
       # step wraps it in a group with 2>&1, so ruby's stderr shows in the
       # warning too (task 20261007-2).
       UNINSTALL = %(d=$(ruby -e 'print File.realpath(Gem.user_dir)') && gem uninstall --install-dir "$d")
