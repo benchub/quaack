@@ -715,28 +715,7 @@ Minor findings from the review of 20260930-9:
 - **Design:** run-server.
 - **Status:** todo
 
-### 20260930-14. Unqualified catalog names elsewhere in the enclave.
-
-The 20260930-9 builder listed catalog relations and functions the enclave still reads without `pg_catalog.`, outside run-server. Each can be shadowed by the same search_path setup. Qualify them, or decide per step which are safe, such as ones on the arena, which QUAACK builds itself.
-
-- arena_runner/sequences.rb: `pg_sequence`, `pg_get_serial_sequence()`.
-- arena_schema.rb, arena_schema/domain_checks.rb, arena_schema/unique_indexes.rb: `format_type()`, `pg_get_expr()`, `pg_attribute`, `pg_attrdef`, `unnest()`, `pg_get_constraintdef()`, `pg_constraint`, `pg_class`, `pg_namespace`, `to_regclass()`, `pg_type`, `pg_get_indexdef()`, `generate_series()`, `pg_depend`, `pg_proc`, `pg_index`.
-- assumption_check.rb, from_functions.rb, relation_qualifier.rb, steps/rewrite_check.rb: `unnest()`.
-- index_build.rb: `pg_relation_size()`, `pg_class`, `pg_namespace`, `pg_index`, `unnest()`.
-- measurement.rb: `pg_prepared_statements`.
-- planner_statistics/catalog.rb: `pg_stats`. This one reads production, so it matters most.
-- racetrack.rb: `count(*)`. redaction/binding.rb: `json_agg()`.
-- result_comparison/tiebreaker.rb, scenarios/ties.rb, scenarios/values.rb, value_pools.rb: `pg_type`, `pg_range`, `pg_attribute`, `pg_collation`, `pg_enum`, `count()`.
-- schema_dump.rb: `pg_database`, `current_database()`, `current_setting()`. These also read production.
-- single_candidate_test.rb: the hypopg functions live in the extension's schema, not `pg_catalog`, so they need the extension's schema, not `pg_catalog.`.
-- steps/index_search.rb: `format_type()`.
-
-- **Depends on:** 20260930-9.
-- **Came from:** The build of 20260930-9.
-- **Design:** What goes into the enclave.
-- **Decided by the user (2026-10-07):** Qualify every catalog relation, function, operator, and cast the enclave reads, arena reads included. Add a spec that flags unqualified catalog names in enclave SQL, so new code can't slip back.
-- **Scoped by the user (2026-10-07):** A survey found 77 SQL sites with 493 unqualified names across about 45 enclave files. Most are bare operators and casts. Build this in stages. This task covers the production and racetrack reads, about 20 sites, plus the spec. The spec allowlists the files not yet fixed and fails if a file is added to that list. Arena reads go to 20261007-9. The survey script is in the build-20260930-14 scratch folder.
-- **Status:** todo
+### 20260930-14. Unqualified catalog names elsewhere in the enclave. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-14. Unreadable `~/.quaack/runs` reads as an unknown run ID.
 

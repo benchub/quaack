@@ -6456,3 +6456,33 @@ Other changes:
 - The README uses a model that doesn't reason, and says to check provider docs.
 
 This is driver-only. It passed its second review after one fix round, which added the lookalike-host specs.
+
+### 20260930-14. Unqualified catalog names elsewhere in the enclave.
+
+The 20260930-9 builder listed catalog relations and functions the enclave still reads without `pg_catalog.`, outside run-server. Each can be shadowed by the same search_path setup. Qualify them, or decide per step which are safe, such as ones on the arena, which QUAACK builds itself.
+
+- arena_runner/sequences.rb: `pg_sequence`, `pg_get_serial_sequence()`.
+- arena_schema.rb, arena_schema/domain_checks.rb, arena_schema/unique_indexes.rb: `format_type()`, `pg_get_expr()`, `pg_attribute`, `pg_attrdef`, `unnest()`, `pg_get_constraintdef()`, `pg_constraint`, `pg_class`, `pg_namespace`, `to_regclass()`, `pg_type`, `pg_get_indexdef()`, `generate_series()`, `pg_depend`, `pg_proc`, `pg_index`.
+- assumption_check.rb, from_functions.rb, relation_qualifier.rb, steps/rewrite_check.rb: `unnest()`.
+- index_build.rb: `pg_relation_size()`, `pg_class`, `pg_namespace`, `pg_index`, `unnest()`.
+- measurement.rb: `pg_prepared_statements`.
+- planner_statistics/catalog.rb: `pg_stats`. This one reads production, so it matters most.
+- racetrack.rb: `count(*)`. redaction/binding.rb: `json_agg()`.
+- result_comparison/tiebreaker.rb, scenarios/ties.rb, scenarios/values.rb, value_pools.rb: `pg_type`, `pg_range`, `pg_attribute`, `pg_collation`, `pg_enum`, `count()`.
+- schema_dump.rb: `pg_database`, `current_database()`, `current_setting()`. These also read production.
+- single_candidate_test.rb: the hypopg functions live in the extension's schema, not `pg_catalog`, so they need the extension's schema, not `pg_catalog.`.
+- steps/index_search.rb: `format_type()`.
+
+- **Depends on:** 20260930-9.
+- **Came from:** The build of 20260930-9.
+- **Design:** What goes into the enclave.
+- **Decided by the user (2026-10-07):** Qualify every catalog relation, function, operator, and cast the enclave reads, arena reads included. Add a spec that flags unqualified catalog names in enclave SQL, so new code can't slip back.
+- **Scoped by the user (2026-10-07):** A survey found 77 SQL sites with 493 unqualified names across about 45 enclave files. Most are bare operators and casts. Build this in stages. This task covers the production and racetrack reads, about 20 sites, plus the spec. The spec allowlists the files not yet fixed and fails if a file is added to that list. Arena reads go to 20261007-9. The survey script is in the build-20260930-14 scratch folder.
+- **Status:** done
+- **Landed:** Stage 1, as the user scoped it on 2026-10-07. Every catalog relation, function, operator, and cast is now `pg_catalog`-qualified in these reads:
+- **Production:** schema_dump, inventory/production, run_server_check, user_schema, relations, relation_qualifier, from_functions, volatility_check, and volatility_check_cast_sql.
+- **Racetrack:** racetrack, measurement, index_build (its SQL is now in index_build_sql.rb), build_connection, and single_candidate_test.
+
+Forms that can't take a qualified operator were restructured (`IN`, `LIKE`, `IS NOT DISTINCT FROM`, row `=`, simple CASE). The review checked each one against the original on real Postgres, NULLs included. HypoPG's schema is read from `pg_extension`.
+
+`enclave/spec/catalog_names_spec.rb` scans the enclave's SQL for any unqualified name. It allows only files on a frozen list of 29 for 20261007-9, and the list may only shrink. Planted-shadow tests cover every read it fixed. All three gems went to 0.1.21, with the `rake full` stamp. It passed its second review after one fix round, which pinned the list so it can't grow. Stage 2 is 20261007-9.
