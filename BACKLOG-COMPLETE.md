@@ -5846,3 +5846,13 @@ The rule:
 - **Design:** Progress lines for `quaack run`, the protocol whitelist.
 - **Status:** done
 - **Landed:** A new allowlisted `step_counts` message (`Protocol::StepCounts`: fixed count keys with Integer values from 0 to below 10^12, plus an optional `rules` list drawn from `RULE_NAMES`, which a spec ties to the enclave's RULES) goes out before `done` from index-search, index-rank, arena-setup, baseline, index-baseline, candidate-runs, minimax, result-comparison, and selection. rewrite-rules sends the names of the rules that fired. Egress and the driver both check it, and the driver falls back to the plain line on a bad or incomplete message. The summaries use the counts (`driver/lib/quaack/driver/counted_summary.rb`). All three gems went to 0.1.7, with the `rake full` stamp.
+
+### 20261001-28. Tell the LLM what the rules already made.
+
+llm-rewrites' payload carries the rule-made rewrites' SQL, and the prompt says not to repeat them, as llm-index-ideas does with `mechanical_results`.
+
+- **Depends on:** 20261001-23.
+- **Came from:** 20261001-21.
+- **Design:** llm-rewrites, rewrite-rules.
+- **Status:** done
+- **Landed:** `quaacks rewrite-payload` sends `rule_rewrites`, `{sql, rules}` for each stored rule-sourced rewrite. Its SQL is built on the redacted query, and a guard sends one only if every constant in it is in the redacted query or is `1`/`true`. Transformations and assumptions are never sent. The whitelist allows the field, and the llm-rewrites system prompt says not to repeat them. The four corpus `llm-rewrites-1/prompt.md` system sections were updated. All three gems went to 0.1.8, with the `rake full` stamp.
