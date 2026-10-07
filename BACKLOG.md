@@ -2355,14 +2355,7 @@ From the second review of 20261006-7.
 - **Design:** statistics, classify, trust boundary.
 - **Status:** todo
 
-### 20261007-4. The orphan deadline test hangs, not fails, when the deadline breaks.
-
-From the review of 20261007-1. In `enclave/spec/index_build_step_postgres_spec.rb` (~552), the "won't stop" example builds a stubborn function that survives 1,000,000 cancels. With the deadline check broken, it loops forever instead of failing. Make the function stop after a bounded time, for example with a final `pg_sleep(60)` after a capped count, or wrap the example in `Timeout.timeout(30)`.
-
-- **Depends on:** 20261007-1.
-- **Came from:** The review of 20261007-1.
-- **Design:** index-build.
-- **Status:** todo
+### 20261007-4. The orphan deadline test hangs, not fails, when the deadline breaks. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261007-5. Picker: pin or refuse the non-near `:skip` guard.
 

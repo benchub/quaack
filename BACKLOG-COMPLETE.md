@@ -6234,3 +6234,13 @@ The review of 20261001-8 found two minor items:
 - **Design:** The `quaack run` command.
 - **Status:** done
 - **Landed:** Item 1: a new cli_run spec pins the operator-rewrites skip line on a resumed run with `--rewrites` (step 7 of 19), and the rewrite-correctness skip note for each rewrite. Breaking either one turns it red. Item 2 was already done: `clocked` sets the start before the first `say` (b74ba62), and existing specs pin it. Driver only. Landed with 20261006-1.
+
+### 20261007-4. The orphan deadline test hangs, not fails, when the deadline breaks.
+
+From the review of 20261007-1. In `enclave/spec/index_build_step_postgres_spec.rb` (~552), the "won't stop" example builds a stubborn function that survives 1,000,000 cancels. With the deadline check broken, it loops forever instead of failing. Make the function stop after a bounded time, for example with a final `pg_sleep(60)` after a capped count, or wrap the example in `Timeout.timeout(30)`.
+
+- **Depends on:** 20261007-1.
+- **Came from:** The review of 20261007-1.
+- **Design:** index-build.
+- **Status:** done
+- **Landed:** The "won't stop" example now wraps `cancel_orphans` in `Timeout.timeout(30)`, so a broken deadline fails in about 35 seconds with a clear error instead of hanging the run. A cap inside the stubborn function wouldn't have worked: it runs once per row of the `CREATE INDEX`, so the build still wouldn't end. Test only.
