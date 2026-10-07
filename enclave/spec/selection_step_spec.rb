@@ -21,7 +21,8 @@ RSpec.describe "quaacks selection" do
 
     outcome = quaacks.run("selection", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(top: 1, excluded: 1), "", 0])
     result = Quaack::Enclave::Store.open(store.run_id, base: quaacks.store_base).read("selection")
     expect(result["top"].map { it["label"] }).to eq(["original:top:1"])
     expect(result["excluded"]).to eq("rewrite_1:none" => "result_mismatch")

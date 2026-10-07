@@ -16,7 +16,12 @@ RSpec.describe "quaacks plan-pruning, against a real server" do
   end
 
   def run(step, *extra, stdin: nil) = quaacks.run(step, "--run", store.run_id, *extra, stdin:, env: libpq_env)
-  def done?(outcome) = [outcome.stderr, outcome.status.exitstatus, outcome.stdout] == ["", 0, %({"type":"done"}\n)]
+
+  # Its step_counts line, for a step that sends one, aside.
+  def done?(outcome)
+    lines = outcome.stdout.lines.reject { it.start_with?(%({"type":"step_counts",)) }
+    [outcome.stderr, outcome.status.exitstatus, lines] == ["", 0, [%({"type":"done"}\n)]]
+  end
 
   def rewrite(sql) = { "sql" => sql, "transformation" => "t #{sentinels.text}", "assumptions" => [] }
 

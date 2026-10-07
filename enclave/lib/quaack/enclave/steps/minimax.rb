@@ -11,14 +11,16 @@ module Quaack
       # (index-only candidates) against the bare original baseline, with
       # Enclave::Minimax. A candidate's footprint is the sum of the built
       # index sizes in its combination (0 for none). It writes minimax as
-      # Minimax.decide returns it. Its only line is DONE.
+      # Minimax.decide returns it. It sends one step_counts: compared, how
+      # many candidates it gave verdicts, and survivors, how many of those
+      # never lost to the original. Then DONE.
       module Minimax
         module_function
 
         def call(store:, **)
-          store.write("minimax", Enclave::Minimax.decide(original: store.read("baseline")["sets"],
-                                                         candidates: candidates(store)))
-          []
+          decided = Enclave::Minimax.decide(original: store.read("baseline")["sets"], candidates: candidates(store))
+          store.write("minimax", decided)
+          [{ type: :step_counts, compared: decided["verdicts"].size, survivors: decided["survivors"].size }]
         end
 
         def candidates(store)

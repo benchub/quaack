@@ -2,6 +2,7 @@
 
 require "pg_query"
 require "quaack/enclave/burndown"
+require "quaack/enclave/egress"
 require "quaack/enclave/rewrite_rules"
 require "quaack/enclave/steps/rewrite_rules"
 require_relative "support/index_search_run"
@@ -36,6 +37,14 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       "warnings" => [] }
   end
 
+  def rules_line(names) = { "type" => "step_counts", "rules" => names }
+
+  # The step's messages but its step_counts.
+  def outcomes_of(messages) = messages.select { it[:type] == :rewrite_outcome }
+
+  # The rule names its step_counts message carries.
+  def fired(messages) = messages.find { it[:type] == :step_counts }.fetch(:rules)
+
   it "stores a rule's rewrite as rewrite-check stores one, with its source and rule names" do
     prepare
     expect(store.read("redacted_query")).to include("$1").and include("o2.id")
@@ -52,13 +61,14 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     expect(stored.entry?("rewrite_2")).to be(false)
   end
 
-  it "sends only one rewrite_outcome per rewrite, and nothing of the literals" do
+  it "sends only one rewrite_outcome per rewrite and the rules that fired, and nothing of the literals" do
     prepare
     expect(stored.read("literal_sets").to_s).to include(sentinels.text)
 
     outcome = rewrite_rules
 
-    expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+    expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), rules_line(["key_in_self_join"]),
+                                  { "type" => "done" }])
     expect_no_leaks(sentinels, outcome)
   end
 
@@ -116,7 +126,8 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
 
       outcome = rerun
 
-      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), rules_line(["key_in_self_join"]),
+                                    { "type" => "done" }])
       expect(stored.entry?("rewrite_2")).to be(false)
       expect([stored.read("rewrite_1"), Quaack::Enclave::Burndown.read(stored)]).to eq(first)
       expect(status["entries"]).to include("rewrite_rules_applied" => true)
@@ -174,12 +185,12 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
   context "when no rule fires" do
     let(:query) { plain_query }
 
-    it "sends nothing but done, stores no rewrite, and still writes the marker" do
+    it "sends no outcome and no rule, stores no rewrite, and still writes the marker" do
       prepare
 
       outcome = rewrite_rules
 
-      expect([lines(outcome), outcome.status.exitstatus]).to eq([[{ "type" => "done" }], 0])
+      expect([lines(outcome), outcome.status.exitstatus]).to eq([[rules_line([]), { "type" => "done" }], 0])
       expect(stored.entry?("rewrite_1")).to be(false)
       expect(stored.entry?("rewrite_rules_applied")).to be(true)
       expect(burndown("rewrite-rules")).to eq(six_c({}, 0))
@@ -214,7 +225,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
     it "puts each rewrite through inbound-check, assumption-check, and structural-discard, as rewrite-check says" do
       prepare
 
-      outcomes = call_step(rules)
+      outcomes = outcomes_of(call_step(rules))
 
       expect(outcomes.map { it.values_at(:index, :outcome, :rule, :rewrite) }).to eq(
         [[1, :rejected, "bad_placeholder", nil], [2, :rejected, "unmet_assumption", nil],
@@ -244,7 +255,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
         end
       end.new(name: "second")
 
-      outcomes = call_step([first, second, first])
+      outcomes = outcomes_of(call_step([first, second, first]))
 
       expect(outcomes.map { it[:rewrite] }).to eq(%w[rewrite_1 rewrite_2])
       expect(stored.read("rewrite_2").slice("sql", "transformation", "rules")).to eq(
@@ -255,6 +266,48 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       expect(burndown("rewrite-rules")).to eq(six_c({ "first" => 2, "second" => 1 }, 2, duplicate: 1))
     end
 
+    # Task 20261004-1: a rule's name goes out only if it's on the protocol's
+    # shared list, so a name that isn't, such as a planted sentinel, never does.
+    it "names only the fired rules on the shared list, in its order, and never a planted name" do
+      prepare
+      select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
+      planted = fake_rule.new(name: sentinels.word, sql: "#{select} AND 1 = 1", assumptions: [])
+      known = %w[or_to_union key_in_self_join].map.with_index(2) do |name, n|
+        fake_rule.new(name:, sql: "#{select} AND #{n} = #{n}", assumptions: [])
+      end
+      silent = Data.define(:name) do
+        def description = "never fires"
+        def rewrites(*) = []
+      end.new(name: "shared_scan_cte")
+
+      messages = call_step([planted, *known, silent])
+
+      expect(outcomes_of(messages).size).to eq(3)
+      expect(fired(messages)).to eq(%w[key_in_self_join or_to_union])
+      expect_no_leaks(sentinels, stdout: JSON.generate(messages.map { Quaack::Enclave::Egress.serialize(it) }))
+    end
+
+    it "names every rule a chained rewrite applied, not only its first" do
+      prepare
+      first = fake_rule.new(name: "or_to_union", assumptions: [],
+                            sql: "SELECT o.note, o.status FROM public.orders o WHERE o.status = $2")
+      second = Data.define(:name) do
+        def description = "the fake rule #{name}"
+
+        def rewrites(parse, _catalog, _literals)
+          return [] unless parse.query.end_with?("WHERE o.status = $2")
+
+          [Quaack::Enclave::RewriteRules::Rewrite.new(tree: PgQuery.parse("#{parse.query} AND o.note = $1").tree,
+                                                      assumptions: [])]
+        end
+      end.new(name: "key_in_self_join")
+
+      messages = call_step([first, second])
+
+      expect(stored.read("rewrite_2")["rules"]).to eq(%w[or_to_union key_in_self_join])
+      expect(fired(messages)).to eq(%w[key_in_self_join or_to_union])
+    end
+
     it "counts the rewrites over the cap in the marker and the rewrite-rules burndown" do
       prepare
       select = "SELECT o.note, o.status FROM public.orders o WHERE o.note = $1"
@@ -262,7 +315,7 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
       duplicates = [fake_rule.new(name: "duplicate_rule2", sql: "#{select} AND 2 = 2", assumptions: []),
                     fake_rule.new(name: "duplicate_rule7", sql: "#{select} AND 7 = 7", assumptions: [])]
 
-      outcomes = call_step([*eleven, *duplicates])
+      outcomes = outcomes_of(call_step([*eleven, *duplicates]))
 
       expect(outcomes.map { it[:rewrite] }).to eq((1..10).map { "rewrite_#{it}" })
       expect(stored.read("rewrite_1").slice("sql", "transformation", "rules")).to eq(
@@ -306,7 +359,8 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
 
       outcome = rewrite_rules
 
-      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"), { "type" => "done" }])
+      expect(lines(outcome)).to eq([outcome_line(1, "accepted", nil, "rewrite_1"),
+                                    rules_line(["implied_predicate_removal"]), { "type" => "done" }])
       expect(stored.read("rewrite_1")).to include(
         "sql" => rewritten, "source" => "rule", "rules" => ["implied_predicate_removal"]
       )

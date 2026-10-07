@@ -82,7 +82,8 @@ RSpec.describe "quaacks arena-setup, against a real server" do
 
     outcome = arena_setup
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    # The dump's two tables, customers and the sentinel-named one.
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([counts_then_done(tables: 2), "", 0])
     expect(stored.read("arena_setup")).to be(true)
     expect_no_leaks(sentinels, outcome)
     expect(arena_values("SELECT datlocprovider::text, datlocale, datcollate, datctype FROM pg_database " \
@@ -124,7 +125,7 @@ RSpec.describe "quaacks arena-setup, against a real server" do
 
     it "fills them from the clock anchor, whether the insert leaves them out or writes DEFAULT" do
       record_run_server
-      expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
+      expect(arena_setup.stdout).to eq(counts_then_done(tables: 1))
 
       row = ["2026-09-23 22:15:00.123456+00", "2026-09-23 22:15:00.123+00", "2026-09-23", "2026-09-24",
              "2026-09-23 22:15:00.123456+00", "2026-09-23 22:15:00.123456", "22:15:00", "22:15:00.123456+00",
@@ -147,7 +148,7 @@ RSpec.describe "quaacks arena-setup, against a real server" do
                                                  "datctype" => "en_US.utf8", **entry },
                                  "settings" => { "TimeZone" => "UTC" } })
 
-      expect(arena_setup.stdout).to eq(%({"type":"done"}\n))
+      expect(arena_setup.stdout).to eq(counts_then_done(tables: 2))
       expect(arena_values("SELECT datlocprovider::text, datlocale, datcollate, datctype FROM pg_database " \
                           "WHERE datname = current_database()"))
         .to eq([row])

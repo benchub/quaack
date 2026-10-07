@@ -16,7 +16,13 @@ RSpec.describe "quaacks rewrite-index-ideas, against a real server" do
   let(:rewrite_sql) { sorted }
 
   def run(step, *extra, stdin: nil) = quaacks.run(step, "--run", store.run_id, *extra, stdin:, env: libpq_env)
-  def done?(outcome) = [outcome.stderr, outcome.status.exitstatus, outcome.stdout] == ["", 0, %({"type":"done"}\n)]
+
+  # Its step_counts line, for a step that sends one, aside.
+  def done?(outcome)
+    lines = outcome.stdout.lines.reject { it.start_with?(%({"type":"step_counts",)) }
+    [outcome.stderr, outcome.status.exitstatus, lines] == ["", 0, [%({"type":"done"}\n)]]
+  end
+
   def error_line(step, rule) = %({"type":"error","step":"#{step}","rule":"#{rule}"}\n)
   def status = JSON.parse(run("status").stdout.lines.first)["entries"]
 

@@ -5,6 +5,7 @@ require "quaack/protocol/whitelist"
 require "quaack/protocol/burndown"
 require "quaack/protocol/index_sources"
 require "quaack/protocol/plan_nodes"
+require "quaack/protocol/step_counts"
 require_relative "plain_data"
 
 module Quaack
@@ -34,7 +35,9 @@ module Quaack
     # stages and totals must pass Protocol::Burndown.valid?, and the report
     # type, whose original_plan and each rewrite's plan must pass
     # Protocol::PlanNodes.valid?, and whose index_sources must pass
-    # Protocol::IndexSources.valid?, or it raises Egress::Error. A value must be plain JSON data, though: nil, true,
+    # Protocol::IndexSources.valid?, and the step_counts type, whose
+    # fields must pass Protocol::StepCounts.valid?, or it raises
+    # Egress::Error. A value must be plain JSON data, though: nil, true,
     # false, an Integer, a Float, a String, a Symbol (sent as its name), or
     # an Array or Hash of those, with String or Symbol keys. Anything else,
     # such as an exception, a Struct, a Time, or a subclass of String, could
@@ -99,6 +102,7 @@ module Quaack
         fields.each_value { PlainData.check(it) }
         check_burndown(fields) if type == "burndown"
         check_report(fields) if type == "report"
+        check_step_counts(fields) if type == "step_counts"
         JSON.generate({ "type" => type, **fields })
       rescue PlainData::NotPlain, JSON::JSONError
         raise Error, "a value in this #{type} message can't be written as JSON", cause: nil
@@ -112,6 +116,16 @@ module Quaack
         return if Protocol::Burndown.valid?(stages: fields["stages"], totals: fields["totals"])
 
         raise Error, "a value in this burndown message isn't a burndown"
+      end
+
+      # A step_counts message's fields must be exactly counts under fixed
+      # names, and fired rule names from the shared list (see
+      # Protocol::StepCounts.valid?), so nothing from a run rides out where
+      # a count belongs.
+      def check_step_counts(fields)
+        return if Protocol::StepCounts.valid?(fields)
+
+        raise Error, "a value in this step_counts message isn't counts"
       end
 
       # A report's plans are nested too, so each must be exactly plan nodes

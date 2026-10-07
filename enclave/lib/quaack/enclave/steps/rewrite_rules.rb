@@ -5,6 +5,7 @@ require_relative "../burndown"
 require_relative "../rewrite_rules"
 require_relative "../rewrite_rules/catalog"
 require_relative "rewrite_check"
+require "quaack/protocol/step_counts"
 
 module Quaack
   module Enclave
@@ -46,10 +47,13 @@ module Quaack
       # and kept, not stored twice (stored, and RewriteCheck.check). The
       # burndown is recorded only if it holds no rewrite-rules record yet.
       #
-      # Its only output is one rewrite_outcome per rewrite, as rewrite-check
+      # Its output is one rewrite_outcome per rewrite, as rewrite-check
       # sends: index, outcome, rule (why it was rejected, one of the check's
-      # constants), rewrite (the entry name), and warnings, always [].
-      # Nothing of the SQL or the literals goes out.
+      # constants), rewrite (the entry name), and warnings, always []. Then
+      # one step_counts whose rules are the names of the rules applied in
+      # any rewrite the generator gave, in Protocol::StepCounts::RULE_NAMES
+      # order. Only a name on that list goes out. Nothing of the SQL or the
+      # literals goes out.
       #
       # rules is there for specs, to give the step fake rules.
       module RewriteRules
@@ -66,7 +70,14 @@ module Quaack
             generated.rewrites.map { rewrite(it) }
           end
           store.write("rewrite_rules_applied", "duplicates" => generated.duplicates, "over_cap" => generated.over_cap)
-          outcomes
+          [*outcomes, { type: :step_counts, rules: fired(generated) }]
+        end
+
+        # The shared list's names of the rules applied in any rewrite the
+        # generator gave.
+        def fired(generated)
+          applied = generated.rewrites.flat_map { it.rules.map(&:name) }
+          Protocol::StepCounts::RULE_NAMES.select { applied.include?(it) }
         end
 
         # { accepted SQL => entry name } for the rule-made rewrites the store

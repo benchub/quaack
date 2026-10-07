@@ -35,7 +35,8 @@ RSpec.describe "quaacks minimax" do
   it "stores ranked survivors with footprints and per-literal verdicts, printing only DONE" do
     outcome = quaacks.run("minimax", "--run", store.run_id, env: ENV.keys.grep(/\APG/).to_h { [it, nil] })
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(compared: 4, survivors: 2), "", 0])
     result = stored.read("minimax")
     expect(result["survivors"].map { it.slice("label", "footprint") }).to eq(
       [{ "label" => "rewrite_1:none", "footprint" => 0 }, { "label" => "original:top:2", "footprint" => 100 }]

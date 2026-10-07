@@ -26,6 +26,16 @@ end
 # Without it, quaacks refuses (see cli_spec.rb).
 ENV["QUAACKS_DEV_CHECKOUT"] = "1"
 
+# What a step that reports counts prints when it succeeds: its step_counts
+# line, its counts in whitelist order as egress writes them, then DONE.
+def counts_then_done(**counts)
+  require "quaack/protocol/whitelist"
+  ordered = Quaack::Protocol::WHITELIST.fetch(:step_counts).select { counts.key?(it) }.to_h { [it, counts[it]] }
+  raise ArgumentError, "not a step_counts field" unless ordered.size == counts.size
+
+  "#{JSON.generate({ type: "step_counts", **ordered })}\n{\"type\":\"done\"}\n"
+end
+
 # Sets each environment variable in changes, a nil value unsetting it, for
 # the block, then puts every one back.
 def with_env(changes)

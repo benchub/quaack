@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "counted_summary"
+
 module Quaack
   module Driver
     # What each step of `quaack run` did, for its closing progress line,
@@ -9,10 +11,11 @@ module Quaack
     #
     # Trust boundary. Each is built only from counts and QUAACK's own words,
     # never from text in the result, which can come from the enclave or the
-    # LLM. The report's path is the operator's own --out. The driver has no
-    # list of rewrite-rules' rule names, and rewrite-rules sends none, so rewrite-rules' says
-    # only how many rewrites the rules made. Sub-steps print no closing
-    # line, so they have none.
+    # LLM. The report's path is the operator's own --out. The enclave steps
+    # that print nothing else send a step_counts message, and rewrite-rules
+    # names the rules that fired in one, which CountedSummary reads only
+    # once it passes Protocol::StepCounts.valid?. Sub-steps print no
+    # closing line, so they have none.
     module StepSummary
       module_function
 
@@ -32,12 +35,15 @@ module Quaack
         aside.zero? ? got : "#{got} and tested, #{aside} set aside untested"
       end
 
-      # rewrite-rules', from rewrite-rules' reply.
+      # rewrite-rules', from rewrite-rules' reply, with the rules that fired
+      # if its step_counts names them.
       def rules(reply)
         outcomes = reply.messages.select { it["type"] == "rewrite_outcome" }
         return "No rule applied" if outcomes.empty?
 
-        "QUAACK's rules made #{count(outcomes.size, "rewrite")}, #{kept(outcomes)} kept"
+        names = CountedSummary.fired(reply)
+        made = "QUAACK's rules made #{count(outcomes.size, "rewrite")}, #{kept(outcomes)} kept"
+        names.empty? ? made : "#{made}, with #{CountedSummary.listed(names)}"
       end
 
       # llm-rewrites', from RewriteGeneration's result.
@@ -82,26 +88,26 @@ module Quaack
       end
 
       SUMMARY = {
-        "index-search" => ->(_) { "Searched for indexes" },
+        "index-search" => ->(reply) { CountedSummary.searched(reply) },
         "llm-index-ideas" => ->(result) { ideas(result.rounds.flat_map(&:ddls), result.rounds.flat_map(&:outcomes)) },
         "llm-index-refine" => ->(result) { refined(result) },
-        "index-rank" => ->(_) { "Ranked the index ideas" },
+        "index-rank" => ->(reply) { CountedSummary.ranked(reply) },
         "rewrite-rules" => ->(reply) { rules(reply) },
         "llm-rewrites" => ->(result) { rewrites(result) },
         "operator-rewrites" => ->(result) { operator(result) },
         "plan-pruning" => ->(ran) { per_rewrite(ran, "Searched for indexes for", "No rewrites to search") },
-        "arena-setup" => ->(_) { "Set up the arena" },
+        "arena-setup" => ->(reply) { CountedSummary.arena(reply) },
         "rewrite-correctness" => ->(passed) { tested(passed) },
         "rewrite-index-ideas" => lambda { |ran|
           per_rewrite(ran, "Asked for index ideas for", "No rewrites needed index ideas")
         },
         "index-build" => ->(n) { n.zero? ? "No index to build" : "Built #{count(n, "index", "indexes")}" },
-        "baseline" => ->(_) { "Measured the original query" },
-        "index-baseline" => ->(_) { "Measured the original query with each set of indexes" },
-        "candidate-runs" => ->(_) { "Measured each rewrite" },
-        "minimax" => ->(_) { "Checked each choice against the original on every literal" },
-        "result-comparison" => ->(_) { "Checked each rewrite's rows on production data" },
-        "selection" => ->(_) { "Picked the top choices" },
+        "baseline" => ->(reply) { CountedSummary.baseline(reply) },
+        "index-baseline" => ->(reply) { CountedSummary.index_baseline(reply) },
+        "candidate-runs" => ->(reply) { CountedSummary.candidate_runs(reply) },
+        "minimax" => ->(reply) { CountedSummary.minimax(reply) },
+        "result-comparison" => ->(reply) { CountedSummary.result_comparison(reply) },
+        "selection" => ->(reply) { CountedSummary.selection(reply) },
         "report" => ->(path) { "Wrote the report to #{path}" }
       }.freeze
 
@@ -109,8 +115,9 @@ module Quaack
       # as counts or the report's path, so they close the step even on a
       # terminal (Progress#step's informative). The rest only say the step
       # is done, which there the clock already shows.
-      INFORMATIVE = %w[llm-index-ideas llm-index-refine rewrite-rules llm-rewrites operator-rewrites plan-pruning
-                       rewrite-correctness rewrite-index-ideas index-build report].freeze
+      INFORMATIVE = %w[index-search llm-index-ideas llm-index-refine index-rank rewrite-rules llm-rewrites
+                       operator-rewrites plan-pruning arena-setup rewrite-correctness rewrite-index-ideas index-build
+                       baseline index-baseline candidate-runs minimax result-comparison selection report].freeze
     end
   end
 end

@@ -193,6 +193,16 @@ module Quaack
       # CandidateDdlRedaction, as report carries it, with the index's
       # quaack_ name, which report carries too.
       index_build_progress: %i[index total ddl].freeze,
+      # What a step did, as counts, for the driver's closing progress line,
+      # sent by index-search, index-rank, arena-setup, baseline,
+      # index-baseline, candidate-runs, minimax, result-comparison,
+      # selection, and rewrite-rules. Each field but rules is a count, and
+      # rules is rewrite-rules' fired rules, by name. The values are checked
+      # on the way out: the egress function sends it only if
+      # Protocol::StepCounts.valid? passes, so every count is a small
+      # non-negative Integer and every name is on StepCounts::RULE_NAMES.
+      step_counts: %i[found used ranked combined tables sets timed_out combinations measured compared survivors
+                      discarded partial top excluded rules].freeze,
       # The last line of every call to the enclave script that succeeded,
       # after the step's own lines. It carries nothing.
       done: [].freeze

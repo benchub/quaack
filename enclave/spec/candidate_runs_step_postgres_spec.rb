@@ -46,7 +46,8 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
 
     outcome = run("candidate-runs")
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(measured: combos.size + 1, timed_out: 0), "", 0])
     expect_no_leaks(sentinels, outcome)
     entry = stored.read("candidate_runs")
     expect(entry["candidates"].keys).to eq(["rewrite_1"])
@@ -65,7 +66,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
 
     # DESIGN.md's blocks-metric and minimax, end to end: minimax reads these real runs.
     run("index-baseline")
-    expect(run("minimax").stdout).to eq(%({"type":"done"}\n))
+    expect(run("minimax").stdout.lines.last).to eq(%({"type":"done"}\n))
     verdicts = stored.read("minimax")["verdicts"]
     expect(verdicts.keys).to include("rewrite_1:none", *combos)
     best_combo = combos.min_by { runs[it]["slow"]["total_blocks"] }
@@ -87,7 +88,7 @@ RSpec.describe "quaacks candidate-runs, against a real server" do
 
     outcome = run("candidate-runs")
 
-    expect(outcome.stdout).to eq(%({"type":"done"}\n))
+    expect(outcome.stdout).to eq(counts_then_done(measured: 1, timed_out: 1))
     entry = stored.read("candidate_runs")
     expect(entry["candidates"].keys).to eq(["rewrite_2"])
     expect(entry["candidates"]["rewrite_2"].keys).to eq(["none"])

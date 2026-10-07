@@ -22,7 +22,8 @@ RSpec.describe "quaacks result-comparison, against a real server" do
 
     outcome = run("result-comparison")
 
-    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus]).to eq([%({"type":"done"}\n), "", 0])
+    expect([outcome.stdout, outcome.stderr, outcome.status.exitstatus])
+      .to eq([counts_then_done(compared: 2, discarded: 1, partial: 0), "", 0])
     expect_no_leaks(sentinels, outcome)
     entry = stored.read("result_comparison")
     pass = { "result" => "pass", "rule" => nil }

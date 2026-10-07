@@ -20,7 +20,8 @@ module Quaack
       #                slowest racetrack baseline run (or MAX_MS, if every
       #                set timed out)
       #   "measurement_runs" how many runs it took (Measurement.runs), for the burndown
-      # Its only line is DONE.
+      # It sends one step_counts: sets, how many literal sets it measured,
+      # and timed_out, how many of those timed out. Then DONE.
       module Baseline
         ORIGINAL_TIMEOUT_MS = 900_000
 
@@ -30,8 +31,9 @@ module Quaack
           connection = Enclave::RunServer.connect(store, :racetrack)
           sets = Measurement.measure(connection:, store:, sql: store.read("anchored_query"), combination: nil,
                                      timeout_ms: ORIGINAL_TIMEOUT_MS)
-          store.write("baseline", entry(sets))
-          []
+          entry = entry(sets)
+          store.write("baseline", entry)
+          [{ type: :step_counts, sets: sets.size, timed_out: entry["timed_out"].size }]
         ensure
           connection&.close
         end
