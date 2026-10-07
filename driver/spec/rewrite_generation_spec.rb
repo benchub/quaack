@@ -35,6 +35,19 @@ RSpec.describe Quaack::Driver::RewriteGeneration do
     expect(described_class::SCHEMA.dig(:properties, :rewrites, :maxItems)).to eq(5)
   end
 
+  # Task 20261001-28: DESIGN.md's llm-rewrites, as llm-index-ideas does with mechanical_results.
+  it "sends the rule-made rewrites in the payload and says not to repeat them" do
+    payload["rule_rewrites"] = [{ "sql" => "SELECT 1", "rules" => ["key_in_self_join"] }]
+
+    run
+    ask = fake.asks.first
+
+    expect(JSON.parse(ask.body[:messages].first[:content][/```json\n(.*)\n```/m, 1])["rule_rewrites"])
+      .to eq(payload["rule_rewrites"])
+    expect(ask.body[:system]).to include("rule_rewrites are the rewrites QUAACK's own rules already made")
+      .and include("don't repeat them")
+  end
+
   it "has the enclave check the LLM's rewrites as they are, and returns them with the outcomes" do
     result = run
 

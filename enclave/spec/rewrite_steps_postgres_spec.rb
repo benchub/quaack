@@ -36,7 +36,7 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
   end
 
   describe "rewrite-payload" do
-    it "sends the redacted query, placeholders, plan, schema, and stats, as index-payload does" do
+    it "sends the redacted query, placeholders, plan, schema, and stats, as index-payload does, and no rule rewrites" do
       ready
 
       outcome = quaacks.run("rewrite-payload", "--run", store.run_id)
@@ -44,7 +44,8 @@ RSpec.describe "quaacks rewrite-payload and rewrite-check, against a real server
       expect([outcome.stderr, outcome.status.exitstatus, outcome.stdout.lines.last])
         .to eq(["", 0, %({"type":"done"}\n)])
       sent = JSON.parse(outcome.stdout.lines.first)
-      expect(sent.keys).to eq(%w[type query placeholders plan schema stats])
+      expect(sent.keys).to eq(%w[type query placeholders plan schema rule_rewrites stats])
+      expect(sent["rule_rewrites"]).to eq([])
       expect(sent["type"]).to eq("rewrite_payload")
       expect(sent["query"]).to eq(stored.read("redacted_query"))
       expect(sent["placeholders"])

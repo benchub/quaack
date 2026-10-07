@@ -369,4 +369,60 @@ RSpec.describe "quaacks rewrite-rules, against a real server" do
                                             burndown: Quaack::Enclave::Burndown.read(stored) })
     end
   end
+
+  # Task 20261001-28: DESIGN.md's llm-rewrites. rewrite-payload sends the rule-made
+  # rewrites' SQL and rule names, so the LLM doesn't repeat them.
+  describe "rewrite-payload's rule_rewrites" do
+    def rewrite_payload
+      store.write("schema_subset", "tables" => [%w[public orders]], "ddl" => "CREATE TABLE public.orders (id int);\n")
+      outcome = quaacks.run("rewrite-payload", "--run", store.run_id)
+      expect([outcome.stderr, outcome.status.exitstatus]).to eq(["", 0])
+      outcome
+    end
+
+    def rule_rewrites(outcome) = JSON.parse(outcome.stdout.lines.first)["rule_rewrites"]
+
+    it "sends each rule-made rewrite's SQL and rule names, and nothing of the literals" do
+      prepare
+      rewrite_rules
+
+      outcome = rewrite_payload
+
+      expect(rule_rewrites(outcome)).to eq([{ "sql" => rewritten, "rules" => ["key_in_self_join"] }])
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    it "sends no other source's rewrite, no unknown rule name, and never assumptions or a transformation" do
+      prepare
+      rewrite_rules
+      entry = stored.read("rewrite_1")
+      stored.write("rewrite_1", entry.merge("rules" => ["key_in_self_join", sentinels.text],
+                                            "transformation" => sentinels.text,
+                                            "assumptions" => [{ "kind" => "denormalized_equal",
+                                                                "type_value" => sentinels.text }]))
+      stored.write("rewrite_2", entry.merge("source" => "llm", "sql" => "#{rewritten} AND true"))
+
+      outcome = rewrite_payload
+
+      expect(rule_rewrites(outcome)).to eq([{ "sql" => rewritten, "rules" => ["key_in_self_join"] }])
+      expect_no_leaks(sentinels, outcome)
+    end
+
+    # The check itself works: a rule-made rewrite whose SQL holds a constant
+    # the redacted query doesn't, and no rule writes, is never sent.
+    it "never sends a rule-made rewrite whose SQL holds a planted literal" do
+      prepare
+      rewrite_rules
+      entry = stored.read("rewrite_1")
+      stored.write("rewrite_1", entry.merge("sql" => rewritten.sub("$1", "'#{sentinels.text}'")))
+      stored.write("rewrite_2", entry.merge("sql" => rewritten.sub("$1", "42")))
+      stored.write("rewrite_3", entry.merge("sql" => "#{rewritten} AND EXISTS (SELECT 1) AND true"))
+
+      outcome = rewrite_payload
+
+      expect(rule_rewrites(outcome)).to eq([{ "sql" => "#{rewritten} AND EXISTS (SELECT 1) AND true",
+                                              "rules" => ["key_in_self_join"] }])
+      expect_no_leaks(sentinels, outcome)
+    end
+  end
 end
