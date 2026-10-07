@@ -149,12 +149,13 @@ module Quaack
 
         # A hint for a rewrite's summary line, so a collapsed section still
         # shows that it holds a warning: what the rewrite rests on in the
-        # data, or conditions the test data never exercised. nil if neither.
+        # data, or conditions no test exercised, even later. nil if neither.
         def warning(entry)
           said = []
-          said << "it relies on what your data holds today" if empirical(entry)
-          said << "the test data left some of its conditions untested" unless atoms(entry).empty?
-          "Read it with care: #{said.join(", and ")}." unless said.empty?
+          said << "it relies on what your data holds today." if empirical(entry)
+          test_data = said.empty? ? "the test data" : "The test data also"
+          said << "#{test_data} left some of its conditions untested." if unchecked_atoms(entry).any?
+          "Read it with care: #{said.join(" ")}" unless said.empty?
         end
 
         # DESIGN.md's rewrite-rules: the rule-made rewrites a test disproved.

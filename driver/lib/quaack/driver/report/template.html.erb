@@ -34,6 +34,7 @@
   summary h3 { display: inline; margin: 0; }
   summary .source, summary .fate, summary .warn { display: block; margin-left: 1.1rem; }
   summary .warn { color: #8a5a00; font-weight: 600; }
+  /* ::details-content needs Chrome 131+, Safari 18.4+, or Firefox 143+. Older browsers land on the closed section. */
   details.query:target::details-content { content-visibility: visible; }
   details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }
   details.query > pre.sql, details.not-ranked > table { margin-top: 0.5rem; }

@@ -239,8 +239,8 @@ RSpec.describe Quaack::Driver::Report do
     end
 
     describe "a warning inside a rewrite's collapsed section" do
-      def warning(atoms: [], empirical: nil)
-        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical)
+      def warning(atoms: [], empirical: nil, covered: nil)
+        payload["rewrites"].first.merge!("untested_atoms" => atoms, "empirical" => empirical, "covered" => covered)
         summary = section(render(payload), "queries")[%r{<h3>Rewrite Vivid Cove</h3>.*?</summary>}m]
         summary[%r{<span class="warn">(.*?)</span>}, 1]
       end
@@ -255,8 +255,16 @@ RSpec.describe Quaack::Driver::Report do
                                                  "untested.")
         expect(warning(empirical: assumed)).to eq("Read it with care: it relies on what your data holds today.")
         expect(warning(atoms: ["a < $1"], empirical: assumed))
-          .to eq("Read it with care: it relies on what your data holds today, and the test data left some of " \
+          .to eq("Read it with care: it relies on what your data holds today. The test data also left some of " \
                  "its conditions untested.")
+      end
+
+      it "flags untested conditions only while a later test left some of them unchecked" do
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["a < $1"]))
+          .to eq("Read it with care: the test data left some of its conditions untested.")
+        expect(warning(atoms: ["a < $1", "t.b IS NULL"], covered: ["t.b IS NULL", "a < $1"])).to be_nil
+        expect(warning(atoms: ["a < $1"], empirical: assumed, covered: ["a < $1"]))
+          .to eq("Read it with care: it relies on what your data holds today.")
       end
 
       it "flags nothing when the section holds neither warning" do
@@ -269,6 +277,10 @@ RSpec.describe Quaack::Driver::Report do
       expect(html).to include('<details class="query" id="rewrite-1">')
       expect(html.scan(' id="rewrite-1"').size).to eq(1)
       expect(html).to include("details.query:target::details-content { content-visibility: visible; }")
+    end
+
+    it "outlines the section a link lands on, so it stands out from the others" do
+      expect(html).to include("details.query:target { outline: 2px solid #2f6fb3; outline-offset: 0.25rem; }")
     end
 
     it "shows SQL that pg_query can't parse as it was sent, escaped" do
