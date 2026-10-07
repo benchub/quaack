@@ -295,10 +295,9 @@ RSpec.describe "the Rakefile" do
       expect(out).to include("Spec suites failed: foo/spec (killed by SIGKILL)")
     end
 
-    # The suite that raises is joined first. The other still runs to the end,
-    # and its output prints, before the task fails naming the one that raised.
-    it "prints every suite's output, and names the suite, when one raises in the task itself" do
-      patch = <<~RUBY
+    # Makes the task itself raise for the aaa suite.
+    def raise_in_aaa
+      <<~RUBY
         module RaiseFirst
           def run_suite(*, chdir:, &)
             raise "planted failure" if File.basename(chdir) == "aaa"
@@ -308,7 +307,12 @@ RSpec.describe "the Rakefile" do
         end
         extend RaiseFirst
       RUBY
-      out, status = run_with(%w[aaa bbb], patch, code: { "bbb" => "sleep 1" })
+    end
+
+    # The suite that raises is joined first. The other still runs to the end,
+    # and its output prints, before the task fails naming the one that raised.
+    it "prints every suite's output, and names the suite, when one raises in the task itself" do
+      out, status = run_with(%w[aaa bbb], raise_in_aaa, code: { "bbb" => "sleep 1" })
 
       expect(status).not_to be_success, out
       expect(runs(out).keys).to eq(["bbb"])
@@ -317,6 +321,37 @@ RSpec.describe "the Rakefile" do
         a_string_starting_with("==> bbb/spec: passed in ")
       )
       expect(out).to include("Spec suites failed: aaa/spec (raised RuntimeError: planted failure)")
+    end
+
+    it "echoes the rerun command of a suite that raised in the task itself" do
+      scratch_tree(%w[aaa]) do |dir|
+        code = %(require "rake"; load "Rakefile"; #{raise_in_aaa}; Rake::Task[:spec].invoke)
+        out, status = Open3.capture2e(RbConfig.ruby, "-e", code, chdir: dir)
+        expect(status).not_to be_success, out
+        line = sections(out).fetch("==> aaa/spec: failed (raised RuntimeError: planted failure)").first
+
+        rerun, = Open3.capture2e("/bin/sh", "-c", line.to_s, chdir: Dir.tmpdir)
+        expect(runs(rerun).keys).to eq(["aaa"])
+      end
+    end
+
+    it "doesn't count a root suite that raised in the task itself as run" do
+      patch = <<~RUBY
+        module RaiseRoot
+          def run_suite(*, chdir:, &)
+            raise "planted failure" if File.realpath(chdir) == File.realpath(Dir.pwd)
+
+            super
+          end
+        end
+        extend RaiseRoot
+      RUBY
+      out, status = run_with(%w[. foo], patch)
+
+      expect(status).not_to be_success, out
+      expect(runs(out).keys).to eq(["foo"])
+      expect(sections(out).keys).to include("==> ./spec: failed (raised RuntimeError: planted failure)")
+      expect(out).to include("The root spec/ suite didn't run")
     end
 
     it "gives each failed suite's exit status" do

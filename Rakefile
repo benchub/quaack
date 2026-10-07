@@ -76,12 +76,13 @@ task :spec do
   SPEC_SUITES.map do |dir|
     path = File.join(__dir__, dir)
     suite = File.join(dir, "spec")
+    rerun = "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}\n"
     Thread.new do
       run_suite(env, *cmd, chdir: path) do |out, status, seconds|
         reason = suite_failure(status)
         outcome = status&.success? ? "passed" : "failed (#{reason})"
         print_suite(printing, "#{suite}: #{outcome} in #{format("%.1f", seconds)}s",
-                    "cd #{Shellwords.escape(path)} && env -u SPEC_OPTS #{Shellwords.join(cmd)}\n#{out}") do
+                    "#{rerun}#{out}") do
           ran << dir if status
           failed << "#{suite} (#{reason})" unless status&.success?
         end
@@ -90,7 +91,7 @@ task :spec do
     # thread, join would re-raise it before the later suites printed.
     rescue StandardError => e
       reason = "raised #{e.class}: #{e.message}"
-      print_suite(printing, "#{suite}: failed (#{reason})", "") { failed << "#{suite} (#{reason})" }
+      print_suite(printing, "#{suite}: failed (#{reason})", rerun) { failed << "#{suite} (#{reason})" }
     end
   end.each(&:join)
   abort "The root spec/ suite didn't run." if Dir.exist?(File.join(__dir__, "spec")) && !ran.include?(".")
