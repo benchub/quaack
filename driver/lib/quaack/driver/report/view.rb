@@ -5,6 +5,7 @@ require_relative "words"
 require_relative "format"
 require_relative "candidates"
 require_relative "rewrites"
+require_relative "rule_links"
 require_relative "indexes"
 require_relative "accountability"
 require_relative "plans"
@@ -21,6 +22,7 @@ module Quaack
       class View
         include Candidates
         include Rewrites
+        include RuleLinks
         include Indexes
         include Accountability
         include Plans

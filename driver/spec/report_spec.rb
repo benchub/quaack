@@ -18,6 +18,9 @@ RSpec.describe Quaack::Driver::Report do
   # SQL as the report sets it apart from the words around it.
   def sq(text) = %(<code class="sql">#{text}</code>)
 
+  # A rule's name as the report links it to the rule's page (DESIGN.md's rewrite-rules).
+  def link(rule) = %(<a href="https://github.com/benchub/quaack/blob/main/docs/transforms/#{rule}.md">#{rule}</a>)
+
   def fated(number, fate, **details)
     { "rewrite" => "rewrite_#{number}", "sql" => "SELECT #{number}", "source" => nil, "rules" => nil,
       "fate" => fate, "scenario" => nil, "rule" => nil, "round" => nil, "after" => nil, "plan" => nil,
@@ -90,13 +93,19 @@ RSpec.describe Quaack::Driver::Report do
   end
 
   describe "the layout" do
+    # The html less its links to rules' pages, which load nothing.
+    def unlinked(html)
+      html.gsub(%r{<a href="https://github\.com/benchub/quaack/blob/main/docs/transforms/\w+\.md">}, "")
+    end
+
     it "is one file of plain HTML and CSS: no scripts, no animation, nothing from the network" do
       expect(html).to start_with("<!DOCTYPE html>").and include("<style>")
-      expect(html).not_to match(/<script|<link|<img|<iframe|https?:|url\(|@import|animation|transition|src=/i)
+      expect(unlinked(html)).not_to match(/<script|<link|<img|<iframe|https?:|url\(|@import|animation|transition|src=/i)
     end
 
     it "loads nothing from the network in a negative report either" do
-      expect(render(negative_payload)).not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
+      expect(unlinked(render(negative_payload)))
+        .not_to match(/<script|<link|<img|https?:|url\(|@import|animation|src=/i)
     end
 
     it "sets inline SQL apart in monospace on a subtle background, wrapping long DDL inside the page" do
@@ -217,8 +226,8 @@ RSpec.describe Quaack::Driver::Report do
       expect(blocks.map(&:first)).to eq(
         ["<h3>Your query</h3>",
          "<h3>Rewrite Vivid Cove</h3> <span class=\"source\">Where it came from: made by QUAACK&#39;s own rewrite " \
-         "rule key_in_self_join.</span> <span class=\"fate\">What became of it: It beat your query and is ranked " \
-         "below.</span>",
+         "rule #{link("key_in_self_join")}.</span> <span class=\"fate\">What became of it: It beat your query and " \
+         "is ranked below.</span>",
          "<h3>Rewrite Smooth Kayak</h3> <span class=\"source\">Where it came from: suggested by the LLM.</span> " \
          "<span class=\"fate\">What became of it: #{same_plans}</span>"]
       )
@@ -293,14 +302,22 @@ RSpec.describe Quaack::Driver::Report do
         section(render(payload), "queries")[%r{<span class="source">.*?</span>}m]
       end
 
-      it "says which of QUAACK's rules made a rule-made rewrite" do
-        expect(source).to eq(esc(%(<span class="source">Where it came from: made by QUAACK's own rewrite rule ) +
-                                 %(key_in_self_join.</span>)))
+      it "says which of QUAACK's rules made a rule-made rewrite, linked to the rule's page" do
+        expect(source).to eq(esc(%(<span class="source">Where it came from: made by QUAACK's own rewrite rule ) \
+                                 "#{link("key_in_self_join")}.</span>"))
       end
 
-      it "names every rule of a chained rewrite, in order" do
+      it "names every rule of a chained rewrite, in order, each linked" do
         expect(source(rules: %w[or_to_union key_in_self_join]))
-          .to include(esc("made by QUAACK's own rewrite rules or_to_union, then key_in_self_join."))
+          .to include(esc("made by QUAACK's own rewrite rules #{link("or_to_union")}, then " \
+                          "#{link("key_in_self_join")}."))
+      end
+
+      it "links no name that isn't one of QUAACK's rules, and still names it" do
+        expect(source(rules: %w[made_up_rule key_in_self_join]))
+          .to include(esc("rules made_up_rule, then #{link("key_in_self_join")}."))
+        expect(source(rules: ["implied_predicate_removal.md#x"])).to include("rule implied_predicate_removal.md#x.")
+          .and(satisfy { !it.include?("<a ") })
       end
 
       it "names no rule, and leaves no dangling words, when the payload has none" do

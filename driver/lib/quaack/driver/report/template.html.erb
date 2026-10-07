@@ -61,7 +61,7 @@
 </details>
 <% rewrites.each do |r| %>
 <article class="rewrite" id="<%= h anchor(r["rewrite"]) %>"><details class="query">
-<summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= h(source(r) || Words::MISSING) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span></summary>
+<summary><h3><%= h called(r) %></h3> <span class="source">Where it came from: <%= source_html(r) %>.</span> <span class="fate">What became of it: <%= h fate(r) %></span></summary>
 <% if (assumed = empirical(r)) %>
 <p class="empirical"><%= h assumed %></p>
 <% end %>
