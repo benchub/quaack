@@ -2291,16 +2291,7 @@ From the reviews and builder of 20261004-95.
 - **Design:** insert check; arena setup; clock anchoring.
 - **Status:** todo
 
-### 20261006-7. Sendable columns: loose ends from 20261006-3.
-
-From the builder of 20261006-3.
-1. The other catalog queries in `planner_statistics/catalog.rb` (tables, pg_stats, indexes, extended statistics) still use bare operators. They don't decide what's sent, but a planted operator could make them answer wrongly. Qualify them. Related: 20260930-13, 20260930-14.
-2. Dedupe now drops partial indexes whose predicates use a newly withheld type (inet, `"char"`, bit and the like). That's fail-closed by design, but it's a behavior change: say so in DESIGN.md, or let those predicates through when they carry no values.
-
-- **Depends on:** 20261006-3.
-- **Came from:** The builder of 20261006-3.
-- **Design:** statistics, index-dedupe, trust boundary.
-- **Status:** todo
+### 20261006-7. Sendable columns: loose ends from 20261006-3. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261006-8. Enclave timeout: minor findings from 20261004-10. Done, see BACKLOG-COMPLETE.md.
 
@@ -2421,4 +2412,16 @@ From the review of 20261006-22.
 - **Depends on:** 20261006-22.
 - **Came from:** The review of 20261006-22.
 - **Design:** Deploying the enclave.
+- **Status:** todo
+
+### 20261007-3. Statistics hardening: minors from 20261006-7.
+
+From the second review of 20261006-7.
+1. `COLLATE "C"` in `enclave/lib/quaack/enclave/planner_statistics/catalog.rb` (~31, 39, 54) is still unqualified. A planted collation changes only row order, not values. Use `COLLATE pg_catalog."C"`.
+2. The `\d+` runs in `OutboundShape`'s NDISTINCT and DEPENDENCIES regexes (`pii_classification/outbound_shape.rb` ~22-26) have no length cap. With qualification in place, this is defense in depth only.
+3. `flag_lists?` (~90-92) says "one list per MCV item" but doesn't check that the counts match.
+
+- **Depends on:** 20261006-7.
+- **Came from:** The second review of 20261006-7.
+- **Design:** statistics, classify, trust boundary.
 - **Status:** todo

@@ -6119,3 +6119,23 @@ From the review of 20260929-20.
 - **Design:** Deploying the enclave.
 - **Status:** done
 - **Landed:** Deploy's uninstall now runs `gem uninstall --install-dir "$(ruby -e 'print File.realpath(Gem.user_dir)')"`, which touches only the user gem directory. A copy in a separate GEM_HOME is left alone, and a real-gem test checks that. The realpath is needed under symlinked homes. A failed listing, uninstall, or old-file removal after a good install prints a warning naming the step and host, and deploy still exits 0. A failed listing skips the rest of the cleanup. The "leaving <newer>" path has a comment saying why it's hard to reach. DESIGN.md matches. Driver only, no version bump.
+
+### 20261006-7. Sendable columns: loose ends from 20261006-3.
+
+From the builder of 20261006-3.
+1. The other catalog queries in `planner_statistics/catalog.rb` (tables, pg_stats, indexes, extended statistics) still use bare operators. They don't decide what's sent, but a planted operator could make them answer wrongly. Qualify them. Related: 20260930-13, 20260930-14.
+2. Dedupe now drops partial indexes whose predicates use a newly withheld type (inet, `"char"`, bit and the like). That's fail-closed by design, but it's a behavior change: say so in DESIGN.md, or let those predicates through when they carry no values.
+
+- **Depends on:** 20261006-3.
+- **Came from:** The builder of 20261006-3.
+- **Design:** statistics, index-dedupe, trust boundary.
+- **Status:** done
+- **Landed:** Every operator, function, and cast in the four statistics catalog queries (`planner_statistics/catalog.rb`) is now `pg_catalog`-qualified: `OPERATOR(pg_catalog.=)`, `pg_catalog.array_to_json`, and `::pg_catalog.text`. That closes a leak where a planted `public.array_to_json` put customer emails into extended statistics' frequencies, which classify sent unchecked. The new `PiiClassification::OutboundShape` refuses classify with `statistics_bad_shape`, storing nothing, when a statistic has the wrong shape:
+- frequencies or `null_frac` outside 0..1
+- a non-finite `n_distinct`
+- `correlation` outside -1..1
+- kinds not drawn from d/f/m/e
+- non-boolean null flags
+- `n_distinct` or `dependencies` not in Postgres's text format
+
+Tests plant operators, `array_to_json`, and a `public.text` type, and include an inheritance parent. DESIGN.md documents dedupe's fail-closed drop of partial indexes on withheld types, and a test pins it. All three gems went to 0.1.20, with the `rake full` stamp. It passed its second review after one fix round.
