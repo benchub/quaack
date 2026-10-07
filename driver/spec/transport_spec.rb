@@ -603,6 +603,27 @@ RSpec.describe Quaack::Driver::Transport do
       expect(seen).to eq([])
     end
 
+    # The block runs inside the read loop, so an error in it, such as a
+    # closed stderr under the progress printer, would end the call and kill
+    # a run that was going fine. The call warns once, stops calling the
+    # block, and reads the run to its end.
+    it "warns once and goes on without the block when the block raises" do
+      File.write(go, "")
+      calls = 0
+      two = "#{progress_line}\n#{progress_line.sub('"index":1', '"index":2')}"
+      result = nil
+
+      expect do
+        result = waiting(two).call("probe") do
+          calls += 1
+          raise Errno::EPIPE
+        end
+      end.to output(/\Aquaack: progress output failed \(Errno::EPIPE: Broken pipe\); the run goes on without it\.\n\z/)
+        .to_stderr
+      expect(calls).to eq(1)
+      expect(result.messages).to eq([])
+    end
+
     it "reads a run with progress lines the same way when the call has no block" do
       File.write(go, "")
 

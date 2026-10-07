@@ -55,7 +55,8 @@ module Quaack
         # Protocol::PROGRESS, with only its whitelisted fields) as soon as
         # its line arrives, while the run goes on. Progress messages are
         # left out of the Result, and the run is read and checked as a whole
-        # once it ends, just as without a block.
+        # once it ends, just as without a block. If the block raises, call
+        # warns once on stderr and stops calling it, but the run goes on.
         def call(subcommand, args: {}, input: nil, &progress)
           argv = argv(subcommand, args)
           run = run(argv, stdin(input), on_line(progress))
@@ -80,8 +81,30 @@ module Quaack
         end
 
         # What Child calls with each line: it hands progress each progress
-        # message. nil without a block.
-        def on_line(progress) = progress && ->(line) { Reply.progress(line)&.then(&progress) }
+        # message. nil without a block. The block runs inside Child's read
+        # loop, so an error in it, such as a closed stderr under the
+        # progress printer, would end the call and kill a run that's going
+        # fine. Instead the first error is warned about, the block isn't
+        # called again, and the run is read to its end.
+        def on_line(progress)
+          return unless progress
+
+          lambda do |line|
+            message = Reply.progress(line)
+            progress&.call(message) if message
+          rescue StandardError => e
+            progress = nil
+            progress_failed(e)
+          end
+        end
+
+        # Warns on stderr that the progress block raised. Writing there
+        # can fail too, as when stderr is what closed, and that's ignored.
+        def progress_failed(error)
+          warn("quaack: progress output failed (#{error.class}: #{error.message}); the run goes on without it.")
+        rescue StandardError
+          nil
+        end
 
         # Raises ArgumentError with no cause.
         def refuse(message) = raise(ArgumentError, message, cause: nil)
