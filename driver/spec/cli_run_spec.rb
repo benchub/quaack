@@ -54,7 +54,8 @@ RSpec.describe "quaack run" do
   # Stands in for ssh, at the edge: records each call.
   let(:failing) { {} }
   # Progress messages a call hands its block, by subcommand, as the real
-  # transport does while the run goes on.
+  # transport does while the run goes on. A call with --index streams only
+  # that index's messages, as `quaacks index-build --index` does.
   let(:streamed) { {} }
   let(:transport) do
     r = replies
@@ -66,7 +67,8 @@ RSpec.describe "quaack run" do
       define_method(:initialize) { @calls = [] }
       define_method(:call) do |subcommand, **options, &progress|
         @calls << [subcommand, options]
-        s.fetch(subcommand, []).each { progress&.call(it) }
+        index = options.dig(:args, :index)
+        s.fetch(subcommand, []).select { index.nil? || it["index"] == index.to_i }.each { progress&.call(it) }
         raise f[subcommand] if f.key?(subcommand)
 
         Data.define(:messages).new(messages: r.fetch(subcommand, []))
@@ -96,9 +98,9 @@ RSpec.describe "quaack run" do
 
     expect([status, errors]).to eq([0, torn])
     expect(hosts).to eq(["jump-1"])
-    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build baseline
-                                                  index-baseline candidate-runs minimax result-comparison selection
-                                                  report-payload teardown])
+    expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build
+                                                  index-build baseline index-baseline candidate-runs minimax
+                                                  result-comparison selection report-payload teardown])
     expect(transport.calls[1].last[:args]).to eq(run: run_id)
   end
 
@@ -217,6 +219,32 @@ RSpec.describe "quaack run" do
                            "quaack: [11/18] Built 2 indexes in Ns (index-build)\n"])
     end
 
+    # 20261004-11: each index gets its own enclave call, and so its own
+    # timeout, then a plain call hides them all and writes index_build.
+    it "builds each index in its own index-build call, then makes one plain call" do
+      entries["index_build"] = false
+      streamed["index-build"] = (1..3).map { { "type" => "index_build_progress", "index" => it, "total" => 3 } }
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      expect(transport.calls.select { it.first == "index-build" }.map { it.last[:args] })
+        .to eq([{ run: run_id, index: "1" }, { run: run_id, index: "2" }, { run: run_id, index: "3" },
+                { run: run_id }])
+      expect(progress.grep(/Building index|Built/))
+        .to eq(["quaack: [11/18] Building index 1/3\n", "quaack: [11/18] Building index 2/3\n",
+                "quaack: [11/18] Building index 3/3\n", "quaack: [11/18] Built 3 indexes in Ns (index-build)\n"])
+    end
+
+    it "makes just the one plain index-build call when there's no index to build" do
+      entries["index_build"] = false
+
+      expect(cli.run(["run", "--run", run_id, "--out", out])).to eq(0)
+
+      expect(transport.calls.select { it.first == "index-build" }.map { it.last[:args] })
+        .to eq([{ run: run_id, index: "1" }, { run: run_id }])
+      expect(progress.grep(/index-build\)\n\z/).last).to eq("quaack: [11/18] No index to build in Ns (index-build)\n")
+    end
+
     it "prints a failed line for the step that fails, before the failure" do
       failing["index-feedback"] = Quaack::Driver::EnclaveError.new(subcommand: "index-feedback", rule: "arena_missing")
 
@@ -243,8 +271,8 @@ RSpec.describe "quaack run" do
 
       expect([status, stdout.string]).to eq([0, "#{out}\n#{run_id} done\n"])
       expect(transport.calls.map(&:first)).to eq(%w[version status index-feedback arena-setup status index-build
-                                                    baseline index-baseline candidate-runs minimax result-comparison
-                                                    selection report-payload teardown])
+                                                    index-build baseline index-baseline candidate-runs minimax
+                                                    result-comparison selection report-payload teardown])
     end
 
     it "still exits 1 when a step fails" do

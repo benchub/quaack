@@ -50,8 +50,9 @@ RSpec.describe Quaack::Driver::Pipeline, "progress summaries" do
     e = entries
     t = tests
     Class.new do
-      define_method(:call) do |subcommand, input: nil, **, &progress|
-        s.fetch(subcommand, []).each { progress&.call(it) }
+      define_method(:call) do |subcommand, input: nil, args: {}, **, &progress|
+        index = args[:index]
+        s.fetch(subcommand, []).select { index.nil? || it["index"] == index.to_i }.each { progress&.call(it) }
         messages = case subcommand
                    when "status" then [{ "type" => "status", "entries" => e }]
                    when "rewrite-test"

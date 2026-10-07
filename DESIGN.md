@@ -1110,6 +1110,8 @@ measurement-setup, baseline, and candidate-runs measure real block counts on the
 
 Build every distinct index from index-search and rewrite-index-ideas, with `maintenance_work_mem` and `max_parallel_maintenance_workers` raised. Record each index's built size for the report.
 
+The driver builds one index per enclave call, `quaacks index-build --index <n>`, so each index gets its own timeout (`enclave_timeout_seconds`) and a big table's indexes don't all have to fit in one call. The first call's progress line gives the total, and the driver prints each index's line as its call starts. Then a plain `quaacks index-build` call hides them all, records their sizes, and writes `index_build`. Each index is named `quaack_` and a hash of its DDL, so any call skips an index that's already on the racetrack. A resumed run picks up after the last index built, and an index it skips isn't built again or counted as a failure.
+
 Hide all of them by setting `indisvalid` to false in `pg_index`. Only ever flip proposed non-unique indexes. Never touch existing constraints. Before measuring, confirm with a plain `EXPLAIN` that the right set of indexes is hidden.
 
 ### run-discipline. Run discipline.
