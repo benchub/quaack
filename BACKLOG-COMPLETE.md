@@ -6015,3 +6015,28 @@ From the review of 20261006-9 (`enclave/lib/quaack/enclave/build_connection.rb`)
 - **Design:** index-build.
 - **Status:** done
 - **Landed:** `BuildConnection.cancel_orphans(..., wait:)` returns the pids it cancelled. A `pg_cancel_backend` permission error is refused as `index_build_orphan_cancel_denied`, with no cause attached. Real-Postgres tests cover the 30s deadline (a backend that ignores the cancel), the permission refusal (a role that can see the orphan but can't signal it), and the idle filter. DESIGN.md says a racetrack serves one run at a time. Also fixed: `IndexBuild::Error` had no `rule`, so every index-build refusal went out as `internal_error`. It now goes out under its own fixed rule name. All three gems went to 0.1.17, with the `rake full` stamp.
+
+### 20261004-14. Give each mechanical rewrite rule its own doc page, with examples, and link to it from the report.
+
+The mechanical rules (rewrite-rules) are listed in a table in DESIGN.md. Move each one to its own page, `docs/transforms/<rule_name>.md`, named exactly as the rule appears in the enclave's `RULES` (for example `docs/transforms/implied_predicate_removal.md`). Each page has:
+- what the rule does, and when it applies and refuses (from the DESIGN.md table and the rule's code comments);
+- any assumption it rests on, such as `denormalized_equal`;
+- at least one example: the SQL before the rule and the SQL after, written as an ordinary Rails-style query. These come from 20261001-29, which no longer has them.
+
+DESIGN.md's table stays as a short index: one line per rule, linking to its page.
+
+In the final report, where a rewrite's source is a rule, link the rule's name to its page on GitHub: "Where it came from: made by QUAACK's own rewrite rule [implied_predicate_removal](https://github.com/benchub/quaack/blob/main/docs/transforms/implied_predicate_removal.md)."
+- Build the URL only from a rule name on the shared constant list of rule names, never from text in the enclave's message. A name not on the list gets no link, as now.
+- HTML-escape the link.
+
+Tests:
+- a spec that every rule in `RULES` has a page in `docs/transforms/`, and every page there names a rule in `RULES`, so a new rule can't land without its page;
+- a report spec for the link, and one showing that a name not on the list gets no link.
+
+Do this after 20261001-29 if it's in flight, since both touch the same DESIGN.md table.
+
+- **Depends on:** none.
+- **Came from:** The user, 2026-10-04.
+- **Design:** rewrite-rules, report.
+- **Status:** done
+- **Landed:** Each rule in RULES now has its own page, `docs/transforms/<rule>.md`. A page says what the rule does and when it refuses, what it rests on, and gives a real before/after example made by running the rule on Postgres against a Rails-style schema. DESIGN.md's rewrite-rules table is now an index that links to the pages. In the report, "Where it came from" links a rule's name to its GitHub page through `Report::RuleLinks#source_html`. A link is built only from an exact match in `Protocol::StepCounts::RULE_NAMES`, and the output is escaped. Any other name stays plain text. `spec/transform_docs_spec.rb` checks that every rule has a page, every page names a rule, and DESIGN.md's index links each one. Driver and docs only, with no version bump. Built in parallel with 20261006-15 at the user's request.
