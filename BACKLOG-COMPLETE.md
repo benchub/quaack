@@ -5799,3 +5799,14 @@ Check how a resumed run treats indexes that already exist on the racetrack. They
 - **Design:** input, clock-anchor.
 - **Status:** done
 - **Landed:** `quaack start` takes an optional `--captured-at <time>` and passes it unchanged to `quaacks intake --captured-at`, which validates it. A refused value reads `bad_captured_at` with fixed driver text giving the accepted format. README and DESIGN.md document it.
+
+### 20261001-7. Send stats only for the columns the query references.
+
+The llm-index-ideas payload's `stats` covers every column of each table the query uses. On wide tables that came to 52k characters for one query. Send stats only for the columns the query references anywhere (select list, WHERE, JOIN, GROUP BY, ORDER BY), found with pg_query from the qualified query. Keep the stored statistics whole. Update DESIGN.md (llm-index-ideas) to match. Settle against DESIGN.md first whether llm-rewrites or any other LLM step sends stats too.
+
+- **Depends on:** 20261001-3.
+- **Came from:** The user, 2026-10-01.
+- **Design:** classify, llm-index-ideas.
+- **Status:** done
+- **Decided by the user (2026-10-06):** trim both llm-index-ideas and llm-rewrites; `*` and `t.*` keep every column of the tables they cover.
+- **Landed:** `StatsPayload.subset` (enclave/lib/quaack/enclave/stats_payload.rb) cuts each table's outbound `columns` to those the SQL references, found with pg_query. index-payload uses the qualified query (plus the rewrite SQL for a `rewrite_<n>` search), and rewrite-payload uses the qualified query. Unresolvable columns are kept for every table with that name. Bare `*`, whole-row refs, NATURAL joins, and unparseable SQL keep whole tables. Stored statistics and classification stay whole. No other LLM step sends stats.

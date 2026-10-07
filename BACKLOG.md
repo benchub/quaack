@@ -1480,14 +1480,7 @@ The openai and anthropic gems retry a 408, 409, 429, or 5xx twice by default, wi
 - **Design:** LLM client, driver.json.
 - **Status:** todo
 
-### 20261001-7. Send stats only for the columns the query references.
-
-The llm-index-ideas payload's `stats` covers every column of each table the query uses. On wide tables that came to 52k characters for one query. Send stats only for the columns the query references anywhere (select list, WHERE, JOIN, GROUP BY, ORDER BY), found with pg_query from the qualified query. Keep the stored statistics whole. Update DESIGN.md (llm-index-ideas) to match. Settle against DESIGN.md first whether llm-rewrites or any other LLM step sends stats too.
-
-- **Depends on:** 20261001-3.
-- **Came from:** The user, 2026-10-01.
-- **Design:** classify, llm-index-ideas.
-- **Status:** todo
+### 20261001-7. Send stats only for the columns the query references. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261001-8. `quaack run` shows its progress. Done, see BACKLOG-COMPLETE.md.
 
@@ -2434,4 +2427,15 @@ From the review of 20261004-11. When a per-index `quaacks index-build --index N`
 - **Depends on:** 20261004-11.
 - **Came from:** The review of 20261004-11.
 - **Design:** index-build.
+- **Status:** todo
+
+### 20261006-10. Stats trimming: minor findings from 20261001-7.
+
+From the builder and review of 20261001-7.
+1. A table alias with a column list, such as `FROM orders o(a, b)`, makes `o.a` keep a column named `a`, not the real column it renames, so the real column's stats can be dropped. Map aliased column names back to the real columns, or keep the whole table when an alias carries a column list (`enclave/lib/quaack/enclave/stats_payload.rb`).
+2. DESIGN.md (llm-index-ideas, ~755) and the comment at `stats_payload.rb` ~16-19 say a column qualified by a CTE's alias counts for every table with that name. In the code, a CTE referenced by its own name (`FROM recent`, then `recent.x`) maps to a table named `recent`. Nothing is dropped, since the CTE body's own references are counted, but fix the wording or treat CTE names like subquery aliases.
+
+- **Depends on:** 20261001-7.
+- **Came from:** The builder and review of 20261001-7.
+- **Design:** llm-index-ideas, llm-rewrites.
 - **Status:** todo
