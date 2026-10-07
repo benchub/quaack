@@ -1489,14 +1489,7 @@ Handle objects the operator can't read. Including the `dba` schema made pg_dump 
 
 ### 20261002-12. A `copilot_cli` LLM provider: a local `copilot` command. Done, see BACKLOG-COMPLETE.md.
 
-### 20261003-1. `copilot_cli`: pin the drain after the child exits.
-
-The third review of 20261002-12 found one surviving mutation. Returning before the adapter drains stdout and stderr after the child's exit status arrives still passes every spec. It also passed an ad hoc check with 120KB on each pipe, so it's no known bug. But nothing pins the ordering, and a reply still in the pipe when the child exits could be cut short. Add a spec where the fake writes a large reply (at least several pipe buffers) and exits at once, and assert the whole reply arrives. Confirm the mutation goes red.
-
-- **Depends on:** 20261002-12.
-- **Came from:** The third review of 20261002-12, 2026-10-03.
-- **Design:** LLM client.
-- **Status:** todo
+### 20261003-1. `copilot_cli`: pin the drain after the child exits. Done, see BACKLOG-COMPLETE.md.
 
 ### 20261003-2. Take the recorded replay runs out of the per-commit check. Done, see BACKLOG-COMPLETE.md.
 

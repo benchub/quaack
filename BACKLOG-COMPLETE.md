@@ -6289,3 +6289,13 @@ The review of 20261001-12 found two minor items:
 - **Design:** The transport.
 - **Status:** done
 - **Landed:** Item 2: `Transport::Base#on_line` now catches a StandardError from the progress block, such as `Errno::EPIPE` when stderr closes. It warns once ("quaack: progress output failed ...; the run goes on without it."), stops calling the block, and reads the call to its end. The result is checked as usual. Interrupt still stops the run. Item 1 no longer applies: index-build makes one call per index, so progress lines no longer pile up toward the output cap. Driver only.
+
+### 20261003-1. `copilot_cli`: pin the drain after the child exits.
+
+The third review of 20261002-12 found one surviving mutation. Returning before the adapter drains stdout and stderr after the child's exit status arrives still passes every spec. It also passed an ad hoc check with 120KB on each pipe, so it's no known bug. But nothing pins the ordering, and a reply still in the pipe when the child exits could be cut short. Add a spec where the fake writes a large reply (at least several pipe buffers) and exits at once, and assert the whole reply arrives. Confirm the mutation goes red.
+
+- **Depends on:** 20261002-12.
+- **Came from:** The third review of 20261002-12, 2026-10-03.
+- **Design:** LLM client.
+- **Status:** done
+- **Landed:** A new spec in `driver/spec/copilot_cli_adapter_spec.rb` pins the drain after the child exits. The fake `copilot` writes about 316KB, holds back its last 4KB until signalled, then writes it and exits. A spec thread holds the GVL, so the adapter wakes only after the exit status is ready. The spec asserts the whole reply parses in one call. With the drain moved after the status return, it went red 20 of 20 runs in the build and 5 of 5 in review. With the real code it passed 10 of 10. Spec only.
