@@ -1901,6 +1901,7 @@ The review of 20261003-38 found four minor issues:
 - **Came from:** The build of 20261004-2.
 - **Design:** rewrite-test.
 - **Status:** todo
+- **Set aside (2026-10-07):** The builder found this stale as written. `rewrite-test` handles one rewrite per call. The driver (`CounterexampleStage#rewrite`) makes a separate enclave call for each rewrite, and each call already builds the original's scenarios once. Repeated builds happen across processes, so sharing in memory changes nothing. A real fix crosses the protocol. Option 1 is a batch `rewrite-test` taking several `--search` values in one process, which means changing the driver's `CounterexampleStage` and resume. Option 2 caches built scenarios in the enclave store. It adds trust-boundary surface, and probe caches still rebuild. With either option, the vacuity guard depends on each rewrite's `honour` copies, so only the Builder's output can be shared. The builder recommends option 1. The user to decide: drop it, or rewrite it as option 1.
 
 ### 20261004-6. Pin the type part of rewrite-test's probe cache key.
 
