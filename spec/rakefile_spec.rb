@@ -24,25 +24,34 @@ RSpec.describe "the Rakefile" do
   # Builds a scratch tree that holds a copy of the real Rakefile and a spec/
   # folder in each suite directory ("." is the root), then yields its path.
   # Each spec/ folder holds one spec that passes or fails as told, and prints
-  # the suite's name, process id, and working directory.
-  def scratch_tree(suites, failing: nil)
+  # the suite's name, process id, and working directory. `code` maps a suite
+  # to Ruby that its spec runs first.
+  def scratch_tree(suites, failing: nil, code: {})
     Dir.mktmpdir do |dir|
       FileUtils.cp(File.join(REPO_ROOT, "Rakefile"), dir)
       FileUtils.mkdir_p(File.join(dir, "rakelib"))
       FileUtils.cp(File.join(REPO_ROOT, "rakelib", "full_replay.rb"), File.join(dir, "rakelib"))
       write_versions(dir)
-      suites.each { |suite| write_suite_spec(dir, suite, failing:) }
+      suites.each { |suite| write_suite_spec(dir, suite, failing:, code: code.fetch(suite, "")) }
       yield dir
     end
   end
 
-  def write_suite_spec(dir, suite, failing:)
-    name = suite == "." ? "root" : suite.tr("/", "_")
+  def write_suite_spec(dir, suite, failing:, code: "")
+    name = suite_name(suite)
     FileUtils.mkdir_p(File.join(dir, suite, "spec"))
     File.write(File.join(dir, suite, "spec", "#{name}_spec.rb"), <<~RUBY)
-      RSpec.describe("#{name}") { it("runs") { puts "ran:#{name} pid:\#{Process.pid} pwd:\#{Dir.pwd}"; expect(#{suite != failing}).to eq(true) } }
+      RSpec.describe("#{name}") do
+        it("runs") do
+          #{code}
+          puts "ran:#{name} pid:\#{Process.pid} pwd:\#{Dir.pwd}"
+          expect(#{suite != failing}).to eq(true)
+        end
+      end
     RUBY
   end
+
+  def suite_name(suite) = suite == "." ? "root" : suite.tr("/", "_")
 
   def write_versions(dir, protocol: "1.2.3", driver: "2.3.4", enclave: "3.4.5")
     {
@@ -117,6 +126,74 @@ RSpec.describe "the Rakefile" do
       end
     end
 
+    # Ruby for a suite's spec that waits until `count` suites have reached it,
+    # so it passes only when the suites run at the same time.
+    def barrier(dir, count)
+      <<~RUBY
+        File.write(File.join(#{dir.inspect}, Process.pid.to_s), "")
+        deadline = Time.now + 15
+        sleep 0.05 until Dir.children(#{dir.inspect}).size >= #{count} || Time.now > deadline
+        raise "only \#{Dir.children(#{dir.inspect}).size} suites ran at once" if Dir.children(#{dir.inspect}).size < #{count}
+      RUBY
+    end
+
+    # The output each suite printed under its header, as {header => lines}.
+    def sections(out)
+      out.split(/^(?===> )/).grep(/\A==> /).to_h { |s| [s.lines.first.chomp, s.lines.drop(1).map(&:chomp)] }
+    end
+
+    it "runs the suites at the same time" do
+      suites = spec_suites
+      out, status = Dir.mktmpdir do |gate|
+        scratch_tree(suites, code: suites.to_h { [it, barrier(gate, suites.size)] }) { |dir| rake("spec", chdir: dir) }
+      end
+
+      expect(status).to be_success, out
+      expect(runs(out).keys).to contain_exactly("protocol", "enclave", "driver", "root")
+    end
+
+    # They run together, so each prints a line, waits, and prints another:
+    # unbuffered, their lines would interleave.
+    it "prints each suite's output whole, under a header naming it, as each suite finishes" do
+      out, status = Dir.mktmpdir do |gate|
+        code = { "." => 1.5, "foo" => 0 }.to_h do |suite, wait|
+          name = suite_name(suite)
+          [suite, %($stdout.sync = true; #{barrier(gate, 2)}
+                    puts "#{name}:1"; sleep 0.3; puts "#{name}:2"; sleep #{wait})]
+        end
+        scratch_tree(%w[. foo], code:) { |dir| rake("spec", chdir: dir) }
+      end
+
+      expect(status).to be_success, out
+      found = sections(out)
+      expect(found.keys.map { it[/\A==> (\S+):/, 1] }).to eq(%w[foo/spec ./spec])
+      found.each do |header, lines|
+        name = header.start_with?("==> foo/") ? "foo" : "root"
+        printed = lines.grep(/\A(root|foo):\d\z|\Aran:/)
+        expect(printed).to eq(["#{name}:1", "#{name}:2", printed.last]), out
+        expect(printed.last).to start_with("ran:#{name} ")
+      end
+    end
+
+    it "gives each suite's wall time in its header" do
+      out, status = scratch_tree(%w[. foo], code: { "foo" => "sleep 1.2" }) { |dir| rake("spec", chdir: dir) }
+
+      expect(status).to be_success, out
+      times = sections(out).keys.to_h { [it[/\A==> (\S+):/, 1], it[/ in (\d+\.\d+)s\z/, 1].to_f] }
+      expect(times.keys).to contain_exactly("./spec", "foo/spec")
+      expect(times["foo/spec"]).to be >= 1.2
+      expect(times["./spec"]).to be < times["foo/spec"]
+    end
+
+    it "says in each header whether the suite passed" do
+      out, status = run_suites(%w[. foo], failing: "foo")
+
+      expect(status).not_to be_success, out
+      expect(sections(out).keys).to contain_exactly(
+        a_string_starting_with("==> ./spec: passed in "), a_string_starting_with("==> foo/spec: failed (exit 1) in ")
+      )
+    end
+
     it "runs a new top-level suite without being told about it" do
       out, status = run_suites(%w[. foo])
 
@@ -171,7 +248,7 @@ RSpec.describe "the Rakefile" do
     end
 
     # Runs the real task after running `patch`, Ruby code that can wrap the
-    # task's sh or Gem.ruby.
+    # task's run_suite or Gem.ruby.
     def run_with(suites, patch)
       scratch_tree(suites) do |dir|
         code = %(require "rake"; load "Rakefile"; #{patch}; Rake::Task[:spec].invoke)
@@ -182,7 +259,7 @@ RSpec.describe "the Rakefile" do
     it "fails when SPEC_SUITES holds the root but the loop never runs it" do
       out, status = run_with(%w[. foo], <<~RUBY)
         module SkipRoot
-          def sh(*cmd, chdir:, **, &)
+          def run_suite(*, chdir:, &)
             super unless File.realpath(chdir) == File.realpath(Dir.pwd)
           end
         end

@@ -139,6 +139,32 @@ RSpec.describe TestPostgres do
     end
   end
 
+  # rake starts every suite at once, so on a machine without the image they
+  # all reach build_image together. The fake docker's build takes a second
+  # and makes the image exist only when it ends, so two processes that both
+  # checked before either finished would both build.
+  it "builds the image only once when several processes need it at the same time" do
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "calls.log")
+      built = File.join(dir, "built")
+      File.write(File.join(dir, "docker"), <<~SH, perm: 0o755)
+        #!/bin/sh
+        echo "$1" >> #{log}
+        case "$1" in
+          image) [ -e #{built} ] ;;
+          build) sleep 1; touch #{built} ;;
+        esac
+      SH
+      env = { "PATH" => "#{dir}#{File::PATH_SEPARATOR}#{ENV.fetch("PATH")}" }
+      code = "require #{File.join(REPO_ROOT, "spec", "support", "test_postgres").inspect}; TestPostgres.build_image"
+      pids = Array.new(3) { Process.spawn(env, RbConfig.ruby, "-e", code) }
+      statuses = pids.map { Process.wait2(it).last }
+
+      expect(statuses).to all(be_success)
+      expect(File.readlines(log, chomp: true).tally).to eq("image" => 3, "build" => 1)
+    end
+  end
+
   it "counts a process it may not signal as alive" do
     expect(TestPostgres.process_alive?(1)).to be(true)
   end
