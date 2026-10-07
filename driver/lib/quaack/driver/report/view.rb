@@ -34,9 +34,10 @@ module Quaack
         CACHE = "Fewer blocks read means fewer pages pulled through the cache, so less pressure on the memory " \
                 "every other query shares."
         # Why the winner's plan has no blocks: the payload has no measured
-        # plan for it, as a run measured before the enclave kept one doesn't.
-        NO_MEASURED_PLAN = "QUAACK didn't keep a measured plan for the winner, since this run measured it before " \
-                           "QUAACK kept one, so the blocks it read at each step aren't recorded."
+        # plan for it. It names no cause, so it stays true whatever left the
+        # plan out, such as a run measured before the enclave kept one.
+        NO_MEASURED_PLAN = "QUAACK has no measured plan for the winner, so the blocks it read at each step " \
+                           "aren't recorded."
         ESTIMATED_PLAN = "The plan below is the one Postgres expected, from EXPLAIN without running the query, " \
                          "which counts no blocks."
 
