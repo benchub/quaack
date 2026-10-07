@@ -4,6 +4,7 @@ require_relative "support/index_search_run"
 require "quaack/enclave/index_build"
 require "quaack/enclave/burndown"
 require "quaack/enclave/error_filter"
+require "timeout"
 
 # DESIGN.md's index-build: `quaacks index-build` builds every distinct index from the
 # index-search and rewrite-index-ideas rankings and the set-aside GIN/GiST/SP-GiST candidates,
@@ -558,7 +559,9 @@ RSpec.describe "quaacks index-build, against a real server" do
       conn = production.connect
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      expect { Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1) }
+      # Timeout caps the call, so a broken deadline fails here, not hangs
+      # on a backend that never stops (20261007-4).
+      expect { Timeout.timeout(30) { Quaack::Enclave::BuildConnection.cancel_orphans(conn, name, wait: 1) } }
         .to raise_error(Quaack::Enclave::IndexBuild::Error, "index_build_orphan_running")
       expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be_between(1, 5)
       expect(activity(@admin, pid)["state"]).to eq("active")
