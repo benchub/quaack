@@ -35,13 +35,18 @@ module Quaack
             fitting = candidates.lazy.select { |v| fits?(atoms, columns, near, v) }.first(shift + 1)
             if fitting.size > shift then fitting[shift]
             elsif shift.positive? then pick(atoms, columns, near, mode)
-            else
-              near ? :skip : candidates.find { |v| allowed?(columns, v) } || :skip
+            else fallback(candidates, columns, near)
             end
           end
         end
 
         private
+
+        def fallback(candidates, columns, near)
+          return :skip if near
+
+          candidates.find { |v| allowed?(columns, v) } || :skip
+        end
 
         def candidates(atoms, near)
           return rotated(@pools[near].failing, near) if near
